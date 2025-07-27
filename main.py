@@ -53,18 +53,14 @@ def terminate_process(pid, name="process"):
         print(f"Error terminating {name} (PID: {pid}): {e}")
         return False
 
-def start_process(script_name, name="process", log_prefix=""):
-    """Starts a Python script as a detached subprocess."""
+def start_process(script_name, name="process"): # Removed log_prefix parameter
+    """Starts a Python script as a subprocess, redirecting output to the console."""
     print(f"Starting {name} ({script_name})...")
     try:
-        # Redirect stdout/stderr to log files for better debugging in a detached process
-        # You might want to customize these log file paths
-        stdout_log = open(f"{log_prefix}{name}_stdout.log", "a")
-        stderr_log = open(f"{log_prefix}{name}_stderr.log", "a")
-
+        # Redirect stdout/stderr to sys.stdout and sys.stderr to print to the console
         process = subprocess.Popen([sys.executable, script_name], 
-                                   stdout=stdout_log, 
-                                   stderr=stderr_log,
+                                   stdout=sys.stdout, # Redirect to console
+                                   stderr=sys.stderr, # Redirect to console
                                    preexec_fn=os.setsid) # Detach from current process group
         print(f"{name} ({script_name}) started with PID {process.pid}.")
         return process
@@ -82,13 +78,13 @@ def main():
         os.remove(RESTART_FLAG_FILE)
 
     # Start the Email Command Listener
-    listener_process = start_process("email_command_listener.py", "Email Listener", "listener_")
+    listener_process = start_process("email_command_listener.py", "Email Listener") # No log_prefix
     if listener_process is None:
         print("Failed to start Email Listener. Exiting.")
         sys.exit(1)
 
     # Start the Ares Pipeline
-    pipeline_process = start_process(PIPELINE_SCRIPT_NAME, "Ares Pipeline", "pipeline_")
+    pipeline_process = start_process(PIPELINE_SCRIPT_NAME, "Ares Pipeline") # No log_prefix
     if pipeline_process is None:
         print("Failed to start Ares Pipeline. Exiting.")
         # Attempt to terminate listener if pipeline failed to start
@@ -102,7 +98,7 @@ def main():
                 print(f"Ares Pipeline (PID: {pipeline_process.pid}) has stopped unexpectedly.")
                 # Attempt to restart it
                 print("Attempting to restart Ares Pipeline...")
-                pipeline_process = start_process(PIPELINE_SCRIPT_NAME, "Ares Pipeline", "pipeline_")
+                pipeline_process = start_process(PIPELINE_SCRIPT_NAME, "Ares Pipeline")
                 if pipeline_process is None:
                     print("Failed to restart Ares Pipeline. Exiting orchestrator.")
                     break # Exit the main loop
@@ -125,7 +121,7 @@ def main():
                     print(f"Error removing restart flag file: {e}")
 
                 # Start a new pipeline process
-                pipeline_process = start_process(PIPELINE_SCRIPT_NAME, "Ares Pipeline", "pipeline_")
+                pipeline_process = start_process(PIPELINE_SCRIPT_NAME, "Ares Pipeline")
                 if pipeline_process is None:
                     print("Failed to restart Ares Pipeline after flag. Exiting orchestrator.")
                     break # Exit the main loop

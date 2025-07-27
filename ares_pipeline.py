@@ -1,7 +1,9 @@
 import os
 import sys
 import traceback
-from config import INITIAL_EQUITY, PIPELINE_PID_FILE, PIPELINE_SCRIPT_NAME # Import PID file config
+import signal # Import signal module for graceful shutdown
+import io # Import io module for capturing output
+from config import INITIAL_EQUITY, PIPELINE_PID_FILE # Import PID file config
 from ares_data_preparer import load_raw_data, get_sr_levels, calculate_and_label_regimes
 from ares_optimizer import run_grid_search_stage, run_coordinate_descent_stage, COARSE_PARAM_GRID
 from ares_deep_analyzer import run_walk_forward_analysis, run_monte_carlo_simulation, plot_results
@@ -36,6 +38,20 @@ def main():
     Main execution pipeline for the entire Ares project.
     This script orchestrates the download, optimization, and analysis process.
     """
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler) # Termination signal
+
+    # Write PID file at the very beginning
+    write_pid_file()
+
+    # Capture stdout and stderr to a string buffer
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    redirected_output = io.StringIO()
+    sys.stdout = redirected_output
+    sys.stderr = redirected_output
+
     email_subject = "Ares Pipeline FAILED"
     email_body = "The pipeline encountered an unexpected error."
     full_report = ["Ares Automated Pipeline Report"]
@@ -70,13 +86,13 @@ def main():
         best_coarse_params = coarse_results[0]['params']
         coarse_report = f"Best result from Coarse Search: ${coarse_results[0]['portfolio'].equity:,.2f}\nBest Coarse Params: {best_coarse_params}"
         print(coarse_report)
-        full_report.append("STAGE 2: COARSE OPTIMIZATION RESULTS (ares_optimizer)")
+        full_report.append("STAGE 2: COARSE OPTIMIZATION RESULTS")
         full_report.append(coarse_report + "\n")
-        send_email("Ares Pipeline: Stage 2 omplete", coarse_report)
+        send_email("Ares Pipeline: Stage 2 Complete", coarse_report)
 
         # --- STAGE 3: Fine-Tuning Optimization ---
         print(separator)
-        print("PIPELINE STAGE 3: COORDINATE DESCENT FINE-TUNING (ares_optimizer)")
+        print("PIPELINE STAGE 3: COORDINATE DESCENT FINE-TUNING")
         print(separator)
         # Pass futures_df and sr_levels to the optimization stage
         final_results = run_coordinate_descent_stage(best_coarse_params, klines_df, agg_trades_df, futures_df, sr_levels)
@@ -86,13 +102,13 @@ def main():
         
         fine_tuning_report = f"Best result from Fine-Tuning: ${final_portfolio.equity:,.2f}\nFinal Tuned Params: {best_params}"
         print(fine_tuning_report)
-        full_report.append("STAGE 3: FINE-TUNING RESULTS (ares_optimizer)")
+        full_report.append("STAGE 3: FINE-TUNING RESULTS")
         full_report.append(fine_tuning_report + "\n")
         send_email("Ares Pipeline: Stage 3 Complete", fine_tuning_report)
 
         # --- STAGE 4: Deep Analysis & Validation ---
         print(separator)
-        print("PIPELINE STAGE 4: DEEP ANALYSIS & VALIDATION (ares_deep_analyzer)")
+        print("PIPELINE STAGE 4: DEEP ANALYSIS & VALIDATION")
         print(separator)
         
         print("Re-preparing data with final optimized parameters for analysis...")
@@ -119,15 +135,24 @@ def main():
         email_body = "\n".join(full_report)
         
     except Exception as e:
-        print(f"\nAn error occurred during the pipeline: {e}")
-        email_body = f"An exception occurred during the pipeline process:\n\n{traceback.format_exc()}"
-        raise
+        # Capture the current log output when an error occurs
+        captured_logs = redirected_output.getvalue()
+        print(f"\nAn error occurred during the pipeline: {e}", file=old_stderr) # Print to original stderr
+        email_body = f"An exception occurred during the pipeline process:\n\n{traceback.format_exc()}\n\n--- Pipeline Logs ---\n{captured_logs}"
+        raise # Re-raise the exception to be caught by the orchestrator
         
     finally:
+        # Restore original stdout and stderr
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+
         print("\n" + separator)
         print("PIPELINE FINISHED. Sending final email report...")
         print(separator)
         send_email(email_subject, email_body)
+        remove_pid_file() # Ensure PID file is removed on normal exit or exception
+        sys.exit(0) # Explicitly exit to ensure the process terminates after email
+        
 
 if __name__ == "__main__":
     main()

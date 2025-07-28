@@ -4,9 +4,8 @@ import itertools
 import os
 import copy
 import traceback
-from config import (
-    INITIAL_EQUITY
-)
+# Import the main CONFIG dictionary
+from config import CONFIG
 from ares_data_preparer import load_raw_data, calculate_features_and_score, get_sr_levels 
 from ares_backtester import run_backtest 
 from ares_mailer import send_email
@@ -14,71 +13,97 @@ from ares_mailer import send_email
 # --- Efficient Optimization Configuration ---
 
 # The Coarse Grid is now expanded to test both weights AND key indicator values.
-COARSE_PARAM_GRID = {
-    # --- Confidence Score Weights ---
-    'weight_trend': [0.2, 0.5, 0.8], # Wider range for weights
-    'weight_reversion': [0.1, 0.3, 0.5],
-    'weight_sentiment': [0.1, 0.3, 0.5],
-    
-    # --- Trade Execution Parameters ---
-    'trade_entry_threshold': [0.4, 0.6, 0.8], # Entry threshold for confidence score
-    'sl_atr_multiplier': [1.0, 2.0, 3.0], # Stop loss distance in multiples of ATR
-    'take_profit_rr': [1.5, 2.5, 3.5], # Risk/Reward ratio for setting the take profit
+# Access OPTIMIZATION_CONFIG from CONFIG
+COARSE_PARAM_GRID = CONFIG['OPTIMIZATION_CONFIG']['COARSE_GRID_RANGES']
 
-    # --- Key Indicator Parameters (Periods, Thresholds, Multipliers) ---
-    'adx_period': [10, 20, 30], # ADX period for trend strength
-    'zscore_threshold': [1.0, 2.0, 3.0], # Z-score threshold for volume delta
-    'obv_lookback': [15, 30, 60], # OBV lookback period
-    'bband_length': [15, 30, 60], # Bollinger Band length
-    'bband_squeeze_threshold': [0.005, 0.015, 0.025], # Bollinger Band squeeze threshold
-    'atr_period': [10, 14, 20], # ATR period
-    'proximity_multiplier': [0.1, 0.25, 0.4], # Proximity multiplier for S/R interaction
-    'sma_period': [30, 50, 70], # SMA period for mean reversion
-    'volume_multiplier': [2, 3, 4], # Volume multiplier for regime labeling
-    'volatility_multiplier': [1, 2, 3], # Volatility multiplier for regime labeling
-    'trend_threshold': [20, 25, 30], # ADX trend threshold
-    'max_strength_threshold': [50, 60, 70], # ADX max strength threshold
-    'bband_std': [1.5, 2.0, 2.5], # Bollinger Band standard deviation
-    'scaling_factor': [50, 100, 150], # Scaling factor for MACD histogram normalization
-    'trend_strength_threshold': [20, 25, 30] # Threshold for trend strength in regime labeling
-}
+NUM_TUNING_POINTS = CONFIG['OPTIMIZATION_CONFIG']['FINE_TUNE_NUM_POINTS']
+TUNING_PERCENTAGE = CONFIG['OPTIMIZATION_CONFIG']['FINE_TUNE_RANGES_MULTIPLIER']
+INTEGER_PARAMS = CONFIG['OPTIMIZATION_CONFIG']['INTEGER_PARAMS']
 
-NUM_TUNING_POINTS = 5 
-TUNING_PERCENTAGE = 0.2 
-INTEGER_PARAMS = [
-    'adx_period', 'atr_period', 'sma_period', 'obv_lookback', 'bband_length',
-    'volume_multiplier', 'volatility_multiplier', 'trend_threshold', 
-    'max_strength_threshold', 'scaling_factor', 'trend_strength_threshold',
-]
-
-TOP_N_RESULTS = 5
+TOP_N_RESULTS = 5 # This can be moved to CONFIG if desired
 
 def run_grid_search_stage(param_grid, klines_df, agg_trades_df, futures_df, sr_levels, stage_name):
     """Runs a full grid search for a given parameter grid."""
     print(f"\n--- Starting {stage_name} ---")
     
-    keys, values = zip(*param_grid.items())
+    # The param_grid here is already the COARSE_GRID_RANGES from CONFIG
+    # We need to flatten the nested structure of param_grid for itertools.product
+    # and then reconstruct the nested dictionary for each combination.
+    
+    # Convert nested grid to flat list of (path, values) pairs
+    flat_param_paths = []
+    flat_param_values = []
+
+    def flatten_dict(d, parent_key=''):
+        for k, v in d.items():
+            new_key = f"{parent_key}.{k}" if parent_key else k
+            if isinstance(v, dict):
+                flatten_dict(v, new_key)
+            else:
+                flat_param_paths.append(new_key)
+                flat_param_values.append(v)
+
+    flatten_dict(param_grid)
+
+    keys = flat_param_paths
+    values = flat_param_values
+    
     param_combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
     
     print(f"Testing {len(param_combinations)} combinations for this stage...")
     
     results = []
-    for i, params in enumerate(param_combinations):
-        print(f"\n[{i+1}/{len(param_combinations)}] Testing: {params}")
+    for i, flat_params_combo in enumerate(param_combinations):
+        print(f"\n[{i+1}/{len(param_combinations)}] Testing: {flat_params_combo}")
         
+        # Convert flat_params_combo back to nested structure for calculate_features_and_score
+        current_params = {}
+        for path, value in flat_params_combo.items():
+            parts = path.split('.')
+            d = current_params
+            for j, p in enumerate(parts):
+                if j == len(parts) - 1:
+                    d[p] = value
+                else:
+                    if p not in d:
+                        d[p] = {}
+                    d = d[p]
+        
+        # Apply integer conversion for relevant parameters
+        for param_path in INTEGER_PARAMS:
+            parts = param_path.split('.')
+            val = get_param_value_from_path(current_params, parts)
+            if val is not None:
+                set_param_value_at_path(current_params, parts, int(round(val)))
+
+        # Handle weight normalization for relevant groups
+        for group_path, weight_keys in CONFIG['OPTIMIZATION_CONFIG']['WEIGHT_PARAMS_GROUPS']:
+            parts = group_path.split('.')
+            weights_dict = get_param_value_from_path(current_params, parts)
+            if weights_dict and isinstance(weights_dict, dict):
+                total_weight = sum(weights_dict.get(k, 0) for k in weight_keys)
+                if total_weight > 0:
+                    for k in weight_keys:
+                        set_param_value_at_path(weights_dict, [k], weights_dict.get(k, 0) / total_weight)
+                else: # If all weights are zero, distribute evenly
+                    num_keys = len(weight_keys)
+                    if num_keys > 0:
+                        for k in weight_keys:
+                            set_param_value_at_path(weights_dict, [k], 1.0 / num_keys)
+
         # Pass sr_levels to calculate_features_and_score
         prepared_df = calculate_features_and_score(
-            klines_df.copy(), agg_trades_df.copy(), futures_df.copy(), params, sr_levels
+            klines_df.copy(), agg_trades_df.copy(), futures_df.copy(), current_params, sr_levels
         )
         
-        portfolio_result = run_backtest(prepared_df, params)
+        portfolio_result = run_backtest(prepared_df, current_params) # Pass current_params to backtest
         
         if len(portfolio_result.trades) == 0:
             print("--> NO TRADES WERE MADE.")
         else:
             print(f"--> Resulting Equity: ${portfolio_result.equity:,.2f} | Total Trades: {len(portfolio_result.trades)}")
         
-        results.append({'params': params, 'portfolio': portfolio_result})
+        results.append({'params': current_params, 'portfolio': portfolio_result})
         
     results.sort(key=lambda x: x['portfolio'].equity, reverse=True)
     return results
@@ -90,10 +115,28 @@ def run_coordinate_descent_stage(best_params, klines_df, agg_trades_df, futures_
     current_best_params = copy.deepcopy(best_params)
     
     # Iterate through each parameter that was in the coarse grid
-    for param_to_tune in COARSE_PARAM_GRID.keys():
+    # We need to iterate through the flattened structure of COARSE_PARAM_GRID
+    all_param_paths = []
+    def collect_paths(d, parent_key=''):
+        for k, v in d.items():
+            new_key = f"{parent_key}.{k}" if parent_key else k
+            if isinstance(v, dict):
+                collect_paths(v, new_key)
+            else:
+                all_param_paths.append(new_key)
+    
+    collect_paths(CONFIG['OPTIMIZATION_CONFIG']['COARSE_GRID_RANGES'])
+
+    for param_to_tune in all_param_paths:
         print(f"\n--- Tuning Parameter: '{param_to_tune}' ---")
         
-        best_value = current_best_params[param_to_tune]
+        parts = param_to_tune.split('.')
+        best_value = get_param_value_from_path(current_best_params, parts)
+
+        if best_value is None:
+            print(f"Warning: Parameter '{param_to_tune}' not found in current best params. Skipping tuning.")
+            continue
+
         variation = abs(best_value * TUNING_PERCENTAGE)
         low_val = best_value - variation
         high_val = best_value + variation
@@ -108,15 +151,37 @@ def run_coordinate_descent_stage(best_params, klines_df, agg_trades_df, futures_
         best_value_for_param = None
 
         for value in tuning_values:
-            test_params = current_best_params.copy()
-            test_params[param_to_tune] = value
+            test_params = copy.deepcopy(current_best_params) # Deep copy to avoid modifying in loop
+            set_param_value_at_path(test_params, parts, value)
+
+            # Apply integer conversion for relevant parameters in test_params
+            for p_path in INTEGER_PARAMS:
+                p_parts = p_path.split('.')
+                val = get_param_value_from_path(test_params, p_parts)
+                if val is not None:
+                    set_param_value_at_path(test_params, p_parts, int(round(val)))
+
+            # Handle weight normalization for relevant groups in test_params
+            for group_path, weight_keys in CONFIG['OPTIMIZATION_CONFIG']['WEIGHT_PARAMS_GROUPS']:
+                gp_parts = group_path.split('.')
+                weights_dict = get_param_value_from_path(test_params, gp_parts)
+                if weights_dict and isinstance(weights_dict, dict):
+                    total_weight = sum(weights_dict.get(k, 0) for k in weight_keys)
+                    if total_weight > 0:
+                        for k in weight_keys:
+                            set_param_value_at_path(weights_dict, [k], weights_dict.get(k, 0) / total_weight)
+                    else:
+                        num_keys = len(weight_keys)
+                        if num_keys > 0:
+                            for k in weight_keys:
+                                set_param_value_at_path(weights_dict, [k], 1.0 / num_keys)
 
             # Pass sr_levels to calculate_features_and_score
             prepared_df = calculate_features_and_score(
                 klines_df.copy(), agg_trades_df.copy(), futures_df.copy(), test_params, sr_levels
             )
             
-            portfolio_result = run_backtest(prepared_df, test_params)
+            portfolio_result = run_backtest(prepared_df, test_params) # Pass test_params to backtest
             
             print(f"  Value: {value:<10} -> Equity: ${portfolio_result.equity:,.2f}")
 
@@ -126,14 +191,14 @@ def run_coordinate_descent_stage(best_params, klines_df, agg_trades_df, futures_
         
         if best_value_for_param is not None:
             print(f"==> Best value for '{param_to_tune}' is {best_value_for_param}. Updating parameters.")
-            current_best_params[param_to_tune] = best_value_for_param
+            set_param_value_at_path(current_best_params, parts, best_value_for_param)
 
     print("\n--- Running Final Backtest with Tuned Parameters ---")
     # Pass sr_levels to calculate_features_and_score
     prepared_df = calculate_features_and_score(
         klines_df.copy(), agg_trades_df.copy(), futures_df.copy(), current_best_params, sr_levels
     )
-    final_portfolio = run_backtest(prepared_df, current_best_params)
+    final_portfolio = run_backtest(prepared_df, current_best_params) # Pass current_best_params
 
     return [{'params': current_best_params, 'portfolio': final_portfolio}]
 
@@ -164,6 +229,28 @@ def format_report_to_string(final_results):
     report_lines.append(separator)
     return "\n".join(report_lines)
 
+# Helper functions for nested dictionary access
+def get_param_value_from_path(base_dict, path_parts):
+    """Helper to get a nested parameter value from a dictionary using a list of path parts."""
+    current = base_dict
+    for part in path_parts:
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return None # Path not found
+    return current
+
+def set_param_value_at_path(base_dict, path_parts, value):
+    """Helper to set a nested parameter value in a dictionary using a list of path parts."""
+    current = base_dict
+    for i, part in enumerate(path_parts):
+        if i == len(path_parts) - 1:
+            current[part] = value
+        else:
+            if part not in current or not isinstance(current[part], dict):
+                current[part] = {}
+            current = current[p]
+
 # This main block is now for running the optimizer as a standalone script
 if __name__ == "__main__":
     email_subject = "Ares Optimizer FAILED"
@@ -173,9 +260,14 @@ if __name__ == "__main__":
         klines_df, agg_trades_df, futures_df = load_raw_data() # Load futures_df here
         daily_df = klines_df.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
         sr_levels = get_sr_levels(daily_df)
-        # Pass futures_df to the optimization stages
-        coarse_results = run_grid_search_stage(COARSE_PARAM_GRID, klines_df, agg_trades_df, futures_df, sr_levels, "Stage 1: Coarse Grid Search")
-        if not coarse_results or coarse_results[0]['portfolio'].equity <= INITIAL_EQUITY:
+        
+        # Pass CONFIG['BEST_PARAMS'] as the initial parameters for coarse search
+        coarse_results = run_grid_search_stage(CONFIG['OPTIMIZATION_CONFIG']['COARSE_GRID_RANGES'], klines_df, agg_trades_df, futures_df, sr_levels, "Stage 1: Coarse Grid Search")
+        
+        # Access INITIAL_EQUITY from CONFIG
+        initial_equity = CONFIG['INITIAL_EQUITY']
+
+        if not coarse_results or coarse_results[0]['portfolio'].equity <= initial_equity:
             print("\nCoarse search did not yield any profitable results. Exiting.")
             email_subject = "Ares Optimizer Finished (No Profitable Results)"
             email_body = "The coarse search stage did not find any parameter combinations that resulted in a profit."

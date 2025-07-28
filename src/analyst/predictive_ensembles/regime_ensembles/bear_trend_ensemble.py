@@ -1,4 +1,3 @@
-# src/analyst/predictive_ensembles/regime_ensembles/bear_trend_ensemble.py
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression
@@ -212,20 +211,48 @@ class BearTrendEnsemble(BaseEnsemble):
         
         if self.models["lstm"]:
             lstm_probas = self.models["lstm"].predict(X_seq)
-            lstm_conf_values = [lstm_probas[i, y_seq_encoded[i]] for i in range(len(y_seq_encoded))]
-            meta_features_train['lstm_conf'] = pd.Series(lstm_conf_values, index=aligned_data.iloc[self.dl_config["sequence_length"]-1:].index)
+            # Ensure y_seq_encoded index aligns with X_seq for correct mapping
+            # And that the length of lstm_probas matches y_seq_encoded
+            if len(lstm_probas) == len(y_seq_encoded):
+                lstm_conf_values = [lstm_probas[i, y_seq_encoded[i]] for i in range(len(y_seq_encoded))]
+                meta_features_train['lstm_conf'] = pd.Series(lstm_conf_values, index=aligned_data.iloc[self.dl_config["sequence_length"]-1:].index)
+            else:
+                self.logger.warning("LSTM probas length mismatch with y_seq_encoded. Using random uniform for lstm_conf.")
+                meta_features_train['lstm_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
         else:
             meta_features_train['lstm_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
         if self.models["transformer"]:
             transformer_probas = self.models["transformer"].predict(X_seq)
-            transformer_conf_values = [transformer_probas[i, y_seq_encoded[i]] for i in range(len(y_seq_encoded))]
-            meta_features_train['transformer_conf'] = pd.Series(transformer_conf_values, index=aligned_data.iloc[self.dl_config["sequence_length"]-1:].index)
+            if len(transformer_probas) == len(y_seq_encoded):
+                transformer_conf_values = [transformer_probas[i, y_seq_encoded[i]] for i in range(len(y_seq_encoded))]
+                meta_features_train['transformer_conf'] = pd.Series(transformer_conf_values, index=aligned_data.iloc[self.dl_config["sequence_length"]-1:].index)
+            else:
+                self.logger.warning("Transformer probas length mismatch with y_seq_encoded. Using random uniform for transformer_conf.")
+                meta_features_train['transformer_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
         else:
             meta_features_train['transformer_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
+        # CHANGED: Pass GARCH volatility directly as a feature
         if self.models["garch"]:
-            meta_features_train['garch_volatility'] = np.random.uniform(0.001, 0.01, len(X_flat))
+            try:
+                # For training data, we can use the historical conditional volatility
+                # This is a simplification; a more rigorous approach would use out-of-sample
+                # predictions or a rolling forecast.
+                historical_volatility = self.models["garch"].conditional_volatility
+                # Align historical_volatility with the features_df index
+                # This might require resampling or reindexing
+                # For simplicity, let's take the last value of historical_volatility and replicate
+                # or use a rolling mean/std of returns as a proxy for historical volatility for meta-learner
+                
+                # A more robust way: align historical_volatility to the X_flat index
+                # This assumes historical_volatility has the same index as the original returns
+                # which aligns with aligned_data.
+                aligned_garch_vol = historical_volatility.reindex(aligned_data.index).fillna(method='ffill').fillna(0)
+                meta_features_train['garch_volatility'] = aligned_garch_vol
+            except Exception as e:
+                self.logger.error(f"Error getting historical GARCH volatility for meta-learner training: {e}")
+                meta_features_train['garch_volatility'] = np.random.uniform(0.001, 0.01, len(X_flat))
         else:
             meta_features_train['garch_volatility'] = np.random.uniform(0.001, 0.01, len(X_flat))
 
@@ -236,7 +263,11 @@ class BearTrendEnsemble(BaseEnsemble):
         else:
             meta_features_train['lgbm_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
-        meta_features_train = meta_features_train.join(aligned_data[['is_wyckoff_sos', 'is_wyckoff_sow', 'is_wyckoff_spring', 'is_wyckoff_upthrust',
+        # Add advanced features to meta_features_train (aligning indices)
+        # These features should be calculated for the historical data as well
+        # For simplicity, we'll just join them, assuming they were generated consistently
+        # In a real system, you'd compute these for the training set.
+        meta_features_train = meta_features_train.join(historical_features[['is_wyckoff_sos', 'is_wyckoff_sow', 'is_wyckoff_spring', 'is_wyckoff_upthrust',
                                                                       'is_accumulation_phase', 'is_distribution_phase',
                                                                       'is_liquidity_sweep', 'is_fake_breakout', 'is_large_bid_wall_near', 'is_large_ask_wall_near',
                                                                       'cvd_value', 'cvd_divergence_score', 'is_absorption', 'is_exhaustion',
@@ -252,8 +283,7 @@ class BearTrendEnsemble(BaseEnsemble):
             self.trained = False
             return
 
-        self.meta_learner_features = meta_features_train.columns.tolist()
-
+        # self.meta_learner_features is already set in _train_meta_learner
         self._train_meta_learner(meta_features_train, y_meta_train)
         self.trained = True
 
@@ -319,18 +349,17 @@ class BearTrendEnsemble(BaseEnsemble):
         else:
             individual_model_outputs['transformer_conf'] = 0.5
 
-        # GARCH Prediction
+        # CHANGED: Pass GARCH volatility directly as a feature
         if self.models["garch"]:
             try:
                 forecast = self.models["garch"].forecast(horizon=1, method='simulation')
-                garch_volatility = forecast.variance.iloc[-1].values[0]
-                garch_conf = 1 - np.clip(garch_volatility * 10, 0, 1)
-                individual_model_outputs['garch_conf'] = float(garch_conf)
+                garch_volatility = forecast.variance.iloc[-1].values[0] # Get the forecasted variance
+                individual_model_outputs['garch_volatility'] = float(garch_volatility)
             except Exception as e:
                 self.logger.error(f"Error forecasting with GARCH: {e}")
-                individual_model_outputs['garch_conf'] = 0.5
+                individual_model_outputs['garch_volatility'] = 0.005 # Default/neutral volatility
         else:
-            individual_model_outputs['garch_conf'] = 0.5
+            individual_model_outputs['garch_volatility'] = 0.005 # Default/neutral volatility
 
         # LightGBM Prediction
         if self.models["lgbm"]:
@@ -341,19 +370,24 @@ class BearTrendEnsemble(BaseEnsemble):
                 lgbm_proba = self.models["lgbm"].predict_proba(lgbm_features)[0]
                 bear_idx = np.where(self.models["lgbm"].classes_ == 'BEAR_TREND')[0]
                 lgbm_conf = lgbm_proba[bear_idx][0] if len(bear_idx) > 0 else np.max(lgbm_proba)
-                individual_model_outputs['lgbm_conf'] = float(lgbm_conf)
+                individual_model_outputs['lgbm_proba'] = float(lgbm_conf)
             except Exception as e:
                 self.logger.error(f"Error predicting with LightGBM: {e}")
-                individual_model_outputs['lgbm_conf'] = 0.5
+                individual_model_outputs['lgbm_proba'] = 0.5
         else:
-            individual_model_outputs['lgbm_conf'] = 0.5
+            individual_model_outputs['lgbm_proba'] = 0.5
 
         # --- Incorporate Advanced Features ---
+        # Ensure klines_df and agg_trades_df are passed to feature methods with sufficient history
+        # (current_features already contains combined historical + current data)
         wyckoff_feats = self._get_wyckoff_features(klines_df, current_price)
         manipulation_feats = self._get_manipulation_features(order_book_data, current_price, agg_trades_df)
         order_flow_feats = self._get_order_flow_features(agg_trades_df, order_book_data, klines_df)
-        multi_timeframe_feats = self._get_multi_timeframe_features(klines_df, klines_df)
+        # Assuming klines_df is sufficient for both HTF/MTF for these conceptual features
+        multi_timeframe_feats = self._get_multi_timeframe_features(klines_df, klines_df) 
 
+        # Add advanced features to individual_model_outputs for meta-learner
+        # Ensure values are floats/ints for meta-learner input
         individual_model_outputs.update({k: float(v) if isinstance(v, (int, float, np.number)) else 0.0 for k, v in wyckoff_feats.items()})
         individual_model_outputs.update({k: float(v) if isinstance(v, (int, float, np.number)) else 0.0 for k, v in manipulation_feats.items()})
         individual_model_outputs.update({k: float(v) if isinstance(v, (int, float, np.number)) else 0.0 for k, v in order_flow_feats.items()})
@@ -365,11 +399,15 @@ class BearTrendEnsemble(BaseEnsemble):
 
         if self.meta_learner:
             try:
+                # Prepare input for meta-learner: ensure all expected features are present and ordered
                 meta_features_for_pred = {}
-                for feature_name in self.meta_learner_features:
-                    meta_features_for_pred[feature_name] = individual_model_outputs.get(feature_name, 0.0)
+                for feature_name in self.meta_learner_features: # Use the stored feature names from training
+                    meta_features_for_pred[feature_name] = individual_model_outputs.get(feature_name, 0.0) # Default to 0.0 if missing
 
+                # Create a DataFrame from the dictionary, ensuring it's a single row
                 meta_input_data = pd.DataFrame([meta_features_for_pred])
+                
+                # Get prediction from meta-learner
                 final_prediction, final_confidence = self._get_meta_prediction(meta_input_data.iloc[0].to_dict())
 
             except Exception as e:
@@ -378,18 +416,19 @@ class BearTrendEnsemble(BaseEnsemble):
                 final_confidence = 0.0
         else:
             self.logger.warning(f"Meta-learner not available for {self.ensemble_name}. Averaging confidences.")
+            # Fallback to simple weighted average if meta-learner is not available
+            # Note: GARCH volatility is not a confidence, so it's excluded from this average.
             total_weighted_confidence = sum(individual_model_outputs.get(m, 0.5) * self.ensemble_weights.get(m.replace('_conf', ''), 1.0) 
-                                            for m in ['lstm_conf', 'transformer_conf', 'garch_conf', 'lgbm_conf'])
-            total_weight = sum(self.ensemble_weights.get(m.replace('_conf', ''), 1.0) for m in ['lstm_conf', 'transformer_conf', 'garch_conf', 'lgbm_conf'])
+                                            for m in ['lstm_conf', 'transformer_conf', 'lgbm_proba'])
+            total_weight = sum(self.ensemble_weights.get(m.replace('_conf', ''), 1.0) for m in ['lstm_conf', 'transformer_conf', 'lgbm_proba'])
             
             if total_weight > 0:
                 final_confidence = total_weighted_confidence / total_weight
             
             if final_confidence > self.min_confluence_confidence:
-                final_prediction = "SELL"
+                final_prediction = "SELL" # Default action for BEAR_TREND if confidence is high
             else:
                 final_prediction = "HOLD"
 
         self.logger.info(f"Ensemble Result for {self.ensemble_name}: Prediction={final_prediction}, Confidence={final_confidence:.2f}")
         return {"prediction": final_prediction, "confidence": final_confidence}
-

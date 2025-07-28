@@ -265,7 +265,10 @@ class BullTrendEnsemble(BaseEnsemble):
 
         if self.models["lgbm"]:
             # Average predictions from all fold models for the meta-feature
-            lgbm_probas_all_folds = [model.predict_proba(X_flat) for model in self.models["lgbm"]]
+            # Prepare flat data for non-DL models (LGBM)
+            X_flat_features_list = ['ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting']
+            X_flat = current_features_row[X_flat_features_list].copy() # Define X_flat here
+            X_flat = X_flat.fillna(0) # Fill NaNs for LGBM
             lgbm_probas = np.mean(lgbm_probas_all_folds, axis=0)
 
             # Get the classes from the first fold model

@@ -160,11 +160,27 @@ class MarketRegimeClassifier:
         if sr_levels and current_atr > 0:
             for level_info in sr_levels:
                 level_price = level_info['level_price']
+                level_type = level_info['type'] # "Support" or "Resistance"
+                
+                # Only consider relevant levels (e.g., Strong, Very Strong, Moderate)
+                if level_info["current_expectation"] not in ["Very Strong", "Strong", "Moderate"]:
+                    continue
+
                 tolerance_abs = current_atr * proximity_multiplier
-                if (current_price <= level_price + tolerance_abs) and \
-                   (current_price >= level_price - tolerance_abs):
-                    is_sr_interacting = True
-                    break
+                
+                # NEW LOGIC: Only care about Resistance if price is below it, Support if price is above it
+                directional_condition_met = False
+                if level_type == "Resistance" and current_price <= level_price:
+                    directional_condition_met = True
+                elif level_type == "Support" and current_price >= level_price:
+                    directional_condition_met = True
+                
+                if directional_condition_met:
+                    # Check for proximity within the tolerance band
+                    if (current_price <= level_price + tolerance_abs) and \
+                       (current_price >= level_price - tolerance_abs):
+                        is_sr_interacting = True
+                        break # Found an interacting S/R level that meets criteria
         
         if is_sr_interacting:
             print("Detected SR_ZONE_ACTION.")

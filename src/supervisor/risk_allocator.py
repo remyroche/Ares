@@ -3,15 +3,34 @@ import pandas as pd
 import numpy as np
 from src.config import CONFIG
 from src.utils.logger import system_logger
+from config import CONFIG
 
 class RiskAllocator:
-    def __init__(self, config=CONFIG):
+    def __init__(self, config=CONFIG, portfolio_risk_pct=None):
         self.config = config.get("supervisor", {})
         self.global_config = config
         self.initial_equity = self.global_config['INITIAL_EQUITY']
         self.logger = system_logger.getChild('RiskAllocator')
         self.allocated_capital_multiplier = self.config.get("initial_allocated_capital_multiplier", 1.0)
+        self.portfolio_risk_pct = portfolio_risk_pct if portfolio_risk_pct is not None else CONFIG['risk_allocator'].get('portfolio_risk_pct', 0.01)
 
+
+    def calculate_position_size(self, portfolio_balance, atr_value, price):
+        """
+        Calculates position size based on portfolio risk and volatility (ATR).
+        """
+        if atr_value == 0:
+            return 0
+            
+        # How much cash are we willing to risk on this trade?
+        cash_at_risk = portfolio_balance * self.portfolio_risk_pct
+        
+        # Position size = (Cash at Risk) / (Volatility in Dollars)
+        # We use 2 * ATR as a proxy for a stop-loss distance
+        position_size = cash_at_risk / (2 * atr_value)
+        
+        return position_size
+        
     def calculate_dynamic_capital_allocation(self, historical_pnl_data: pd.DataFrame):
         self.logger.info("Calculating Dynamic Capital Allocation...")
         lookback_days = self.config.get("risk_allocation_lookback_days", 30)

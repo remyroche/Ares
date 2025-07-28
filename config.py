@@ -85,6 +85,33 @@ CONFIG = {
             "volume_sma_period": 20,
             "atr_sma_period": 20
         }
+    },
+    # --- Tactician Specific Configurations ---
+    "tactician": {
+        "rl_agent": {
+            "model_path": "models/tactician_ppo_model.zip", # Path to save/load RL agent
+            "training_steps": 100000, # Number of steps for RL training
+            "reward_weights": { # Weights for different components of the reward function
+                "pnl": 0.6,
+                "drawdown_penalty": -0.2,
+                "liquidation_penalty": -1.0,
+                "confidence_bonus": 0.1
+            },
+            "l1_regularization_strength": 0.001, # L1 regularization strength for RL agent's network
+            "l2_regularization_strength": 0.001  # L2 regularization strength for RL agent's network
+        },
+        "laddering": {
+            "initial_leverage": 25, # Starting leverage for the first order
+            "max_leverage_cap": 100, # Absolute maximum leverage (set by Strategist, but Tactician uses this cap)
+            "min_lss_for_ladder": 70, # Minimum LSS to consider adding to a ladder
+            "min_confidence_for_ladder": 0.75, # Minimum directional confidence to add to a ladder
+            "ladder_step_leverage_increase": 5, # How much leverage increases per ladder step
+            "max_ladder_steps": 3 # Maximum number of additional ladder orders
+        },
+        "risk_management": {
+            "risk_per_trade_pct": 0.01 # Max 1% of capital risked per trade (from overall config)
+        },
+        "order_types": ["MARKET", "LIMIT"] # Supported order types for the Tactician
     }
 }
 

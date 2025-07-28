@@ -4,12 +4,11 @@ import numpy as np
 import pandas_ta as ta
 import os
 import sys
-from scipy.signal import find_peaks # For volume profile peaks
 
 # Assume these are available in the same package or through sys.path
 from config import CONFIG, KLINES_FILENAME
 from sr_analyzer import SRLevelAnalyzer # Assuming sr_analyzer.py is at the root or accessible
-from analyst.data_utils import load_klines_data # Reusing data loading utility
+from analyst.data_utils import load_klines_data, calculate_volume_profile # UPDATED: Import calculate_volume_profile
 
 class Strategist:
     """
@@ -86,62 +85,6 @@ class Strategist:
         
         anchored_df = klines_df.loc[anchor_index:]
         return self._calculate_vwap(anchored_df)
-
-    def _calculate_volume_profile(self, klines_df: pd.DataFrame, num_bins: int = 100):
-        """
-        Calculates Volume Profile (HVNs, LVNs, POC) for the given price range.
-        :param klines_df: DataFrame with 'Close' and 'Volume' columns.
-        :param num_bins: Number of price bins for the volume profile.
-        :return: dict with 'poc', 'hvn_levels', 'lvn_levels'
-        """
-        if klines_df.empty:
-            return {"poc": np.nan, "hvn_levels": [], "lvn_levels": []}
-
-        # Create price bins
-        min_price = klines_df['Low'].min()
-        max_price = klines_df['High'].max()
-        
-        if max_price == min_price: # Handle flat market
-            return {"poc": min_price, "hvn_levels": [min_price], "lvn_levels": []}
-
-        price_range = max_price - min_price
-        bin_size = price_range / num_bins
-
-        # Create a series of prices for each volume unit (conceptual, more precise is to use tick data)
-        # For OHLCV data, we distribute volume across the candle's range or use close price for simplicity
-        # Here, we'll use a simplified approach: map volume to the price range it occurred in.
-        
-        # Create bins and sum volume within each bin
-        bins = np.linspace(min_price, max_price, num_bins + 1)
-        
-        # Use pd.cut to assign each candle's midpoint to a bin and sum its volume
-        mid_prices = (klines_df['High'] + klines_df['Low']) / 2
-        volume_profile_series = klines_df.groupby(pd.cut(mid_prices, bins, include_lowest=True, labels=False))['Volume'].sum()
-        
-        # Map bin indices back to price midpoints for clarity
-        bin_midpoints = [(bins[i] + bins[i+1])/2 for i in range(num_bins)]
-        volume_profile = pd.Series(volume_profile_series.values, index=bin_midpoints)
-        volume_profile = volume_profile.fillna(0) # Fill bins with no volume as 0
-
-        # Point of Control (POC): Price level with highest volume
-        poc_price = volume_profile.idxmax() if not volume_profile.empty else np.nan
-
-        # High-Volume Nodes (HVNs): Peaks in the volume profile
-        # Find peaks in the volume_profile series
-        hvn_indices, _ = find_peaks(volume_profile.values, prominence=volume_profile.max() * 0.1) # 10% prominence
-        hvn_levels = [volume_profile.index[i] for i in hvn_indices]
-
-        # Low-Volume Nodes (LVNs): Troughs in the volume profile
-        lvn_indices, _ = find_peaks(-volume_profile.values, prominence=volume_profile.max() * 0.05) # 5% prominence for troughs
-        lvn_levels = [volume_profile.index[i] for i in lvn_indices]
-        
-        # Sort levels for consistency
-        hvn_levels.sort()
-        lvn_levels.sort()
-
-        self.logger.info(f"Volume Profile: POC={poc_price:.2f}, HVNs={hvn_levels}, LVNs={lvn_levels}")
-        return {"poc": poc_price, "hvn_levels": hvn_levels, "lvn_levels": lvn_levels}
-
 
     def _analyze_positional_bias(self, klines_htf: pd.DataFrame, current_price: float):
         """
@@ -238,7 +181,7 @@ class Strategist:
         ]
         
         # 2. Calculate Volume Profile levels
-        volume_profile_data = self._calculate_volume_profile(klines_htf)
+        volume_profile_data = calculate_volume_profile(klines_htf) # UPDATED: Call from data_utils
         poc = volume_profile_data["poc"]
         hvn_levels = volume_profile_data["hvn_levels"]
         lvn_levels = volume_profile_data["lvn_levels"]
@@ -290,7 +233,7 @@ class Strategist:
         # Scale cap from 25x to default_cap (e.g., 100x) based on health score (0-100)
         min_cap = 25 # Minimum leverage even in poor market health
         
-        # Linear scaling: (health_score / 100) * (default_cap - min_cap) + min_cap
+        # Linear scaling: (market_health_score / 100) * (default_cap - min_cap) + min_cap
         scaled_cap = (market_health_score / 100.0) * (default_cap - min_cap) + min_cap
         
         final_cap = min(default_cap, max(min_cap, int(scaled_cap)))
@@ -374,3 +317,4 @@ if __name__ == "__main__":
         print(f"{key}: {value}")
 
     print("\nStrategist Module Demonstration Complete.")
+

@@ -30,7 +30,7 @@ class Supervisor:
     and manages capital allocation over long time horizons. It also handles enhanced
     performance reporting.
     """
-    def __init__(self, config=CONFIG):
+    def __init__(self, config=CONFIG, firestore_manager=None):
         self.config = config.get("supervisor", {})
         self.global_config = config # Store global config to access BEST_PARAMS etc.
         self.initial_equity = self.global_config['INITIAL_EQUITY'] # Access from CONFIG
@@ -615,6 +615,58 @@ class Supervisor:
 
         except Exception as e:
             self.logger.error(f"Error updating strategy performance log (CSV/Firestore): {e}", exc_info=True)
+
+    def get_monthly_retraining_data(self, all_data):
+        """
+        Splits the data for monthly retraining.
+        - Training set: All data except the last 3 months.
+        - Walk-forward set: The last 3 months of data.
+        """
+        three_months_ago = all_data.index.max() - pd.DateOffset(months=3)
+        training_data = all_data[all_data.index < three_months_ago]
+        walk_forward_data = all_data[all_data.index >= three_months_ago]
+        return training_data, walk_forward_data
+
+    def run_monthly_update(self, all_klines, all_agg_trades, all_futures):
+        """
+        Orchestrates the monthly model update and parameter optimization.
+        """
+        self.logger.info("--- Starting Monthly Supervisor Update ---")
+
+        # 1. Update ML Training
+        self.logger.info("1. Retraining models with the latest data...")
+        training_klines, wf_klines = self.get_monthly_retraining_data(all_klines)
+        # ... (do the same for agg_trades and futures)
+
+        # Here you would call the training methods for your Analyst's models
+        # on the `training_klines`, `training_agg_trades`, etc.
+        # This will create the "challenger" model.
+
+        # 2. Optimize Parameters with the Governor
+        self.logger.info("2. Optimizing parameters with the Governor...")
+        # The `_implement_global_system_optimization` can be used here.
+        # It should run on the `training_klines` data.
+        
+        # 3. Create a Report
+        report = self.create_monthly_report()
+        self.logger.info(report)
+
+        # 4. A/B Testing (Champion vs. Challenger)
+        self.logger.info("4. Starting 1-week A/B test: Champion (old model) vs. Challenger (new model)...")
+        self.start_ab_test()
+
+    def create_monthly_report(self):
+        # ... (logic to generate a detailed report) ...
+        return "Monthly report content..."
+
+    def start_ab_test(self):
+        # This is a complex part. You would need to:
+        # - Have a way to load and run two versions of your models.
+        # - The `AresPipeline` would need to be instantiated twice,
+        #   one for the champion (live trading) and one for the challenger (paper trading).
+        # - A new `PaperTrader` class would be useful to simulate trades for the challenger.
+        # - After a week, you'd compare their performance and promote the winner.
+        pass
 
     async def orchestrate_supervision(self, current_date: datetime.date, total_equity: float, 
                                 daily_trade_logs: list, daily_pnl_per_regime: dict,

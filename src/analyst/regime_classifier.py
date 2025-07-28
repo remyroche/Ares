@@ -19,11 +19,12 @@ class MarketRegimeClassifier:
         self.kmeans_model = None # Placeholder for Wasserstein k-Means
         self.lgbm_classifier = None
         self.scaler = None
+        # The regime_map is now more conceptual, as LGBM will predict string labels
         self.regime_map = {
-            0: "BULL_TREND",
-            1: "BEAR_TREND",
-            2: "SIDEWAYS_RANGE",
-            3: "SR_ZONE_ACTION" # SR_ZONE_ACTION will be determined separately
+            "BULL_TREND": "BULL_TREND",
+            "BEAR_TREND": "BEAR_TREND",
+            "SIDEWAYS_RANGE": "SIDEWAYS_RANGE",
+            "SR_ZONE_ACTION": "SR_ZONE_ACTION" # SR_ZONE_ACTION will be determined separately
         }
         self.trained = False
 
@@ -53,8 +54,10 @@ class MarketRegimeClassifier:
             direction_score = np.clip(normalized_hist * scaling_factor, -1, 1)
 
         # Momentum Component (ADX)
-        klines_df.ta.adx(length=self.config["adx_period"], append=True, col_names=('ADX', 'DMP', 'DMN'))
-        current_adx = klines_df['ADX'].iloc[-1] if 'ADX' in klines_df.columns else 0
+        # Ensure ADX is calculated on the klines_df
+        klines_df_copy = klines_df.copy() # Avoid modifying original DataFrame passed in
+        klines_df_copy.ta.adx(length=self.config["adx_period"], append=True, col_names=('ADX', 'DMP', 'DMN'))
+        current_adx = klines_df_copy['ADX'].iloc[-1] if 'ADX' in klines_df_copy.columns else 0
 
         trend_threshold = self.config.get("trend_threshold", 20)
         max_strength_threshold = self.config.get("max_strength_threshold", 60)
@@ -70,50 +73,69 @@ class MarketRegimeClassifier:
 
     def train_classifier(self, historical_features: pd.DataFrame, historical_klines: pd.DataFrame):
         """
-        Trains the Market Regime Classifier.
-        This is a placeholder for Wasserstein k-Means + LightGBM.
+        Trains the Market Regime Classifier using a pseudo-labeling approach.
         The `SR_ZONE_ACTION` regime is determined dynamically and not part of the clustering.
         """
-        print("Placeholder: Training Market Regime Classifier (Wasserstein k-Means + LightGBM)...")
-        # For actual implementation:
-        # 1. Preprocess historical_features (e.g., scaling)
-        # 2. Apply Wasserstein k-Means (requires a custom implementation or specialized library)
-        #    - Cluster based on features like trend, volatility, volume patterns.
-        # 3. Map clusters to conceptual regimes (BULL_TREND, BEAR_TREND, SIDEWAYS_RANGE).
-        # 4. Train LightGBM classifier on features to predict these mapped regimes.
-
-        # Simulated training for demonstration
-        if historical_features.empty:
-            print("No historical features to train classifier.")
+        print("Training Market Regime Classifier (Pseudo-Labeling + LightGBM)...")
+        
+        if historical_features.empty or historical_klines.empty:
+            print("No historical features or klines to train classifier.")
             return
 
-        # Use a subset of features for clustering/classification
-        features_for_clustering = historical_features[['ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'autoencoder_reconstruction_error']].dropna()
-        if features_for_clustering.empty:
-            print("Insufficient features for training classifier after dropping NaNs.")
+        # Ensure klines and features are aligned by index
+        combined_data = historical_klines.join(historical_features, how='inner').dropna()
+
+        if combined_data.empty:
+            print("Insufficient aligned data for training classifier after dropping NaNs.")
+            return
+
+        # --- Pseudo-Labeling for Market Regimes ---
+        # 1. Calculate SMA_50 for overall trend direction
+        combined_data['SMA_50'] = combined_data['close'].rolling(window=50).mean()
+
+        # 2. Use ADX from features for trend strength
+        # ADX is already in historical_features, so it's in combined_data
+        adx_col = 'ADX'
+
+        # 3. Use MACD Histogram from features for short-term momentum
+        macd_hist_col = [col for col in combined_data.columns if 'MACDh_' in col][0] # Find MACD Hist column
+
+        # Initialize pseudo-labels
+        combined_data['simulated_label'] = "SIDEWAYS_RANGE" # Default to sideways
+
+        # Define thresholds from config
+        trend_threshold = self.config.get("trend_threshold", 20) # ADX value for strong trend
+
+        # Apply pseudo-labeling rules
+        # Bull Trend: ADX > threshold, MACD_HIST > 0, Close > SMA_50
+        bull_condition = (combined_data[adx_col] > trend_threshold) & \
+                         (combined_data[macd_hist_col] > 0) & \
+                         (combined_data['close'] > combined_data['SMA_50'])
+        combined_data.loc[bull_condition, 'simulated_label'] = "BULL_TREND"
+
+        # Bear Trend: ADX > threshold, MACD_HIST < 0, Close < SMA_50
+        bear_condition = (combined_data[adx_col] > trend_threshold) & \
+                         (combined_data[macd_hist_col] < 0) & \
+                         (combined_data['close'] < combined_data['SMA_50'])
+        combined_data.loc[bear_condition, 'simulated_label'] = "BEAR_TREND"
+
+        # Features for LightGBM training
+        # Use a consistent set of features that are generally available and relevant
+        features_for_lgbm = combined_data[['ADX', macd_hist_col, 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting']].dropna()
+        labels_for_lgbm = combined_data.loc[features_for_lgbm.index, 'simulated_label']
+
+        if features_for_lgbm.empty or labels_for_lgbm.empty:
+            print("Insufficient features or labels for training LightGBM after pseudo-labeling and dropping NaNs.")
             return
 
         self.scaler = StandardScaler()
-        scaled_features = self.scaler.fit_transform(features_for_clustering)
+        scaled_features = self.scaler.fit_transform(features_for_lgbm)
 
-        # Simulate K-Means clustering
-        n_clusters = self.config.get("kmeans_n_clusters", 3) # Exclude SR_ZONE_ACTION from K-Means
-        self.kmeans_model = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-        clusters = self.kmeans_model.fit_predict(scaled_features)
-
-        # Map clusters to simplified regimes for training LightGBM
-        # This mapping would be determined by analyzing cluster characteristics (e.g., mean ADX, MACD)
-        # For this placeholder, we'll just assign arbitrary labels to clusters
-        simulated_labels = np.array([
-            "BULL_TREND" if c == 0 else ("BEAR_TREND" if c == 1 else "SIDEWAYS_RANGE")
-            for c in clusters
-        ])
-
-        # Train LightGBM to predict these labels
-        self.lgbm_classifier = LGBMClassifier(random_state=42)
-        self.lgbm_classifier.fit(scaled_features, simulated_labels)
+        # Train LightGBM classifier on pseudo-labels
+        self.lgbm_classifier = LGBMClassifier(random_state=42, verbose=-1) # verbose=-1 suppresses training output
+        self.lgbm_classifier.fit(scaled_features, labels_for_lgbm)
         self.trained = True
-        print("Market Regime Classifier training placeholder complete.")
+        print("Market Regime Classifier training completed with pseudo-labeling.")
 
     def predict_regime(self, current_features: pd.DataFrame, current_klines: pd.DataFrame, sr_levels: list):
         """
@@ -125,14 +147,6 @@ class MarketRegimeClassifier:
             return "UNKNOWN", 0.0, 0.0 # Regime, Trend Strength, ADX
 
         # Check for SR_ZONE_ACTION first
-        # sr_analyzer.py's analyze method expects a DataFrame with 'Close', 'High', 'Low', 'Volume'
-        # For real-time, we'd need to pass a small window of recent data or just the current price and SR levels
-        
-        # To reuse sr_analyzer, we need to adapt the input.
-        # Let's assume current_klines contains enough data for sr_analyzer to work.
-        # sr_analyzer is initialized with the main Analyst, so it's available.
-        
-        # Check if current price is interacting with SR levels
         current_price = current_klines['close'].iloc[-1]
         current_atr = current_klines['ATR'].iloc[-1] if 'ATR' in current_klines.columns else 0
         proximity_multiplier = self.config.get("proximity_multiplier", 0.25) # From main config's analyst section
@@ -149,15 +163,33 @@ class MarketRegimeClassifier:
         
         if is_sr_interacting:
             print("Detected SR_ZONE_ACTION.")
-            return "SR_ZONE_ACTION", 0.0, 0.0 # No trend strength for SR zone
+            # For SR_ZONE_ACTION, trend strength is less relevant, return 0.0 for now
+            return "SR_ZONE_ACTION", 0.0, 0.0 
 
         # If not SR_ZONE_ACTION, proceed with LightGBM classification
-        features_for_prediction = current_features[['ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'autoencoder_reconstruction_error']].dropna()
-        if features_for_prediction.empty:
-            print("Insufficient features for regime prediction after dropping NaNs.")
+        # Ensure features for prediction match those used for training
+        # We need to ensure 'ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting' are present
+        
+        # Dynamically find the MACD_HIST column name
+        macd_hist_col = [col for col in current_features.columns if 'MACDh_' in col]
+        if not macd_hist_col:
+            print("MACD Histogram column not found in current_features. Cannot predict regime.")
+            return "UNKNOWN", 0.0, 0.0
+        macd_hist_col = macd_hist_col[0]
+
+        required_features = ['ADX', macd_hist_col, 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting']
+        
+        # Filter current_features to only include the required columns and handle potential missing ones
+        features_for_prediction_df = current_features[required_features].copy()
+        
+        # Fill any NaNs that might appear in the latest features before scaling
+        features_for_prediction_df.fillna(0, inplace=True) # Or use a more sophisticated imputation
+
+        if features_for_prediction_df.empty:
+            print("Insufficient features for regime prediction after filtering and dropping NaNs.")
             return "UNKNOWN", 0.0, 0.0
 
-        scaled_features = self.scaler.transform(features_for_prediction.tail(1)) # Predict for the latest data point
+        scaled_features = self.scaler.transform(features_for_prediction_df.tail(1)) # Predict for the latest data point
         predicted_regime = self.lgbm_classifier.predict(scaled_features)[0]
 
         # Calculate Trend Strength Score

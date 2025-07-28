@@ -4,3 +4,6 @@ numpy
 scipy
 plotly
 python-binance
+pywt
+scikit-learn
+lightgbm

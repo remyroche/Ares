@@ -128,3 +128,62 @@ def calculate_volume_profile(klines_df: pd.DataFrame, num_bins: int = 100):
     # print(f"Volume Profile: POC={poc_price:.2f}, HVNs={hvn_levels}, LVNs={lvn_levels}")
     return {"poc": poc_price, "hvn_levels": hvn_levels, "lvn_levels": lvn_levels, "volume_in_bins": volume_profile}
 
+def create_dummy_data(filename, data_type, num_records=1000, start_date='2023-01-01'):
+    """
+    Creates dummy CSV data for klines, aggregated trades, or futures.
+    This function is now centralized in data_utils.
+    """
+    if os.path.exists(filename):
+        print(f"Dummy data file '{filename}' already exists. Skipping creation.")
+        return
+
+    print(f"Creating dummy {data_type} data at {filename}...")
+    dates = pd.date_range(start=start_date, periods=num_records, freq='1min')
+
+    if data_type == 'klines':
+        # Simulate price movement
+        price = 1000 + np.cumsum(np.random.randn(num_records))
+        df = pd.DataFrame({
+            'open_time': dates,
+            'open': price,
+            'high': price + np.random.rand(num_records) * 5,
+            'low': price - np.random.rand(num_records) * 5,
+            'close': price + np.random.randn(num_records),
+            'volume': np.random.randint(100, 10000, num_records),
+            'close_time': dates + pd.Timedelta(minutes=1),
+            'quote_asset_volume': np.random.rand(num_records) * 100000,
+            'number_of_trades': np.random.randint(50, 500, num_records),
+            'taker_buy_base_asset_volume': np.random.rand(num_records) * 5000,
+            'taker_buy_quote_asset_volume': np.random.rand(num_records) * 50000,
+            'ignore': 0
+        })
+        df.set_index('open_time', inplace=True)
+    elif data_type == 'agg_trades':
+        df = pd.DataFrame({
+            'timestamp': dates,
+            'a': np.arange(num_records), # Aggregate tradeId
+            'p': 1000 + np.cumsum(np.random.randn(num_records) * 0.1), # Price
+            'q': np.random.rand(num_records) * 10, # Quantity
+            'f': np.arange(num_records), # First tradeId
+            'l': np.arange(num_records), # Last tradeId
+            'T': (dates.astype(np.int64) // 10**6), # Timestamp in ms
+            'm': np.random.choice([True, False], num_records), # Was the buyer the maker?
+            'M': np.random.choice([True, False], num_records)  # Was the trade the best price match?
+        })
+        df.set_index('timestamp', inplace=True)
+        df.rename(columns={'p': 'price', 'q': 'quantity', 'm': 'is_buyer_maker'}, inplace=True)
+    elif data_type == 'futures':
+        df = pd.DataFrame({
+            'timestamp': dates,
+            'fundingRate': np.random.rand(num_records) * 0.0001 - 0.00005, # Small positive/negative
+            'openInterest': np.random.rand(num_records) * 1000000 + 500000 # Large numbers
+        })
+        df.set_index('timestamp', inplace=True)
+    else:
+        print(f"Unknown data type: {data_type}. Skipping dummy data creation.")
+        return
+
+    os.makedirs(os.path.dirname(filename), exist_ok=True) # Ensure directory exists
+    df.to_csv(filename)
+    print(f"Dummy {data_type} data saved to '{filename}'.")
+

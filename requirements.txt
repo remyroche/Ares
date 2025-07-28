@@ -16,7 +16,7 @@ idna==3.7
 multidict==6.0.5
 numpy==1.26.4
 pandas==2.2.2
-pandas-ta==0.3.14
+pandas-ta==0.3.14b0 # Updated to the compatible version
 protobuf==4.25.3
 pyasn1==0.6.0
 pyasn1-modules==0.4.0
@@ -30,4 +30,3 @@ urllib3==2.2.1
 websockets==12.0
 yarl==1.9.4
 ccxt==4.3.43
-pytorch-tabnet

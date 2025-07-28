@@ -8,6 +8,11 @@ import asyncio # For async Firestore operations
 import uuid # For generating unique IDs for optimization runs
 import itertools # For generating parameter combinations in optimization
 
+# Import scikit-optimize for Bayesian Optimization
+from skopt import gp_minimize
+from skopt.space import Real, Integer # For defining search space dimensions
+from skopt.utils import use_named_args # For using named arguments in objective function
+
 # Assume these are available in the same package or through sys.path
 from config import CONFIG, INITIAL_EQUITY, BEST_PARAMS # Import BEST_PARAMS
 from utils.logger import system_logger
@@ -49,6 +54,12 @@ class Supervisor:
         self._initialize_optimized_params_csv()
         self._initialize_model_metadata_csv()
 
+        # Store historical data for optimization, loaded once
+        self._optimization_klines_df = None
+        self._optimization_agg_trades_df = None
+        self._optimization_futures_df = None
+        self._optimization_sr_levels = None
+
     def _initialize_daily_summary_csv(self):
         """Ensures the daily summary CSV file exists with correct headers."""
         if not os.path.exists(self.daily_summary_log_filename):
@@ -77,12 +88,25 @@ class Supervisor:
                 f.write("ModelName,Version,TrainingDate,PerformanceMetrics,FilePathReference,ConfigSnapshot\n")
             self.logger.info(f"Created model metadata log: {self.model_metadata_csv}")
 
-    def _evaluate_params_with_backtest(self, params: dict, klines_df, agg_trades_df, futures_df, sr_levels) -> dict:
+    def _evaluate_params_with_backtest(self, params: dict) -> dict:
         """
         Evaluates a given set of parameters by running a backtest.
-        Returns a dictionary of performance metrics including Final Equity, Sharpe Ratio, and Max Drawdown.
+        Returns a dictionary of performance metrics including Final Equity, Sharpe Ratio,
+        Max Drawdown, Profit Factor, and Win Rate.
         """
-        self.logger.info("  Evaluating parameter set with backtest...")
+        self.logger.debug("  Evaluating parameter set with backtest...")
+        
+        # Use pre-loaded optimization data
+        klines_df = self._optimization_klines_df
+        agg_trades_df = self._optimization_agg_trades_df
+        futures_df = self._optimization_futures_df
+        sr_levels = self._optimization_sr_levels
+
+        if klines_df is None or klines_df.empty:
+            self.logger.error("  Optimization data not loaded. Cannot run backtest evaluation.")
+            return {'Final Equity': -np.inf, 'Sharpe Ratio': -np.inf, 'Max Drawdown (%)': np.inf, 
+                    'Profit Factor': -np.inf, 'Win Rate (%)': -np.inf}
+
         try:
             # Prepare data with the current parameter set
             prepared_df = calculate_and_label_regimes(
@@ -92,7 +116,8 @@ class Supervisor:
             
             if prepared_df.empty:
                 self.logger.warning("    Prepared data is empty for this parameter set. Returning low scores.")
-                return {'Final Equity': -np.inf, 'Sharpe Ratio': -np.inf, 'Max Drawdown (%)': np.inf}
+                return {'Final Equity': -np.inf, 'Sharpe Ratio': -np.inf, 'Max Drawdown (%)': np.inf, 
+                        'Profit Factor': -np.inf, 'Win Rate (%)': -np.inf}
 
             # Run backtest with the current parameter set
             portfolio = run_backtest(prepared_df, params)
@@ -101,13 +126,16 @@ class Supervisor:
             num_days = (prepared_df.index.max() - prepared_df.index.min()).days if not prepared_df.empty else 0
             detailed_metrics = calculate_detailed_metrics(portfolio, num_days)
             
-            self.logger.info(f"    Backtest finished. Final Equity: ${detailed_metrics['Final Equity']:,.2f}, "
+            self.logger.debug(f"    Backtest finished. Final Equity: ${detailed_metrics['Final Equity']:,.2f}, "
                              f"Sharpe: {detailed_metrics['Sharpe Ratio']:.2f}, "
-                             f"Max Drawdown: {detailed_metrics['Max Drawdown (%)']:.2f}%")
+                             f"Max Drawdown: {detailed_metrics['Max Drawdown (%)']:.2f}%, "
+                             f"Profit Factor: {detailed_metrics['Profit Factor']:.2f}, "
+                             f"Win Rate: {detailed_metrics['Win Rate (%)']:.2f}%")
             return detailed_metrics
         except Exception as e:
             self.logger.error(f"  Error during backtest evaluation for params {params}: {e}", exc_info=True)
-            return {'Final Equity': -np.inf, 'Sharpe Ratio': -np.inf, 'Max Drawdown (%)': np.inf}
+            return {'Final Equity': -np.inf, 'Sharpe Ratio': -np.inf, 'Max Drawdown (%)': np.inf, 
+                    'Profit Factor': -np.inf, 'Win Rate (%)': -np.inf}
 
     def _get_param_value_from_path(self, base_dict, path_parts):
         """Helper to get a nested parameter value from a dictionary using a list of path parts."""
@@ -140,23 +168,14 @@ class Supervisor:
 
         # Iterate through all parameters in OPTIMIZATION_CONFIG to ensure they are set
         # This handles both coarse and fine-tuning parameters
-        all_opt_params = {}
-        all_opt_params.update(self.global_config['OPTIMIZATION_CONFIG']['COARSE_GRID_RANGES'])
-        # If fine-tuning, ranges are dynamically created, so we rely on nested_params having them.
+        # For skopt, we receive a flat list of values, so we need to map them back
+        # to the nested structure of BEST_PARAMS.
 
-        for param_path in all_opt_params.keys():
+        # The 'nested_params' here is actually a flat dict of param_path:value from skopt.
+        # We need to apply these values to a copy of BEST_PARAMS.
+        for param_path, value in nested_params.items():
             parts = param_path.split('.')
-            value = self._get_param_value_from_path(nested_params, parts)
-            
-            if value is not None:
-                self._set_param_value_at_path(flat_params, parts, value)
-            else:
-                # If a parameter path from OPTIMIZATION_CONFIG is not in nested_params,
-                # ensure it defaults to its value in BEST_PARAMS
-                default_value = self._get_param_value_from_path(self.global_config['BEST_PARAMS'], parts)
-                if default_value is not None:
-                    self._set_param_value_at_path(flat_params, parts, default_value)
-
+            self._set_param_value_at_path(flat_params, parts, value)
 
         # Handle INTEGER_PARAMS
         for param_path in self.global_config['OPTIMIZATION_CONFIG']['INTEGER_PARAMS']:
@@ -183,145 +202,181 @@ class Supervisor:
 
         return flat_params
 
+    def _define_optimization_dimensions(self):
+        """
+        Defines the search space dimensions for Bayesian Optimization based on OPTIMIZATION_CONFIG.
+        Returns a list of skopt.space Dimension objects and a list of corresponding parameter names.
+        """
+        dimensions = []
+        param_names = []
+
+        # Use COARSE_GRID_RANGES as the primary source for defining dimensions
+        for param_path, values in self.global_config['OPTIMIZATION_CONFIG']['COARSE_GRID_RANGES'].items():
+            if param_path in self.global_config['OPTIMIZATION_CONFIG']['INTEGER_PARAMS']:
+                dimensions.append(Integer(min(values), max(values), name=param_path))
+            else:
+                dimensions.append(Real(min(values), max(values), name=param_path))
+            param_names.append(param_path)
+        
+        return dimensions, param_names
+
+    def _objective_function(self, params_list, strategy_breakdown_data_ref):
+        """
+        Objective function for Bayesian Optimization.
+        Takes a list of parameter values, converts to a dict, runs backtest,
+        and returns a scalar score to be minimized (so, negative of performance).
+        """
+        # Map flat list of params back to a dictionary with named arguments
+        # This requires param_names to be accessible. We'll pass it via partial or closure.
+        # For simplicity with use_named_args, we assume params_list order matches dimensions.
+        
+        # Convert the flat list of parameters from skopt into a dictionary
+        # This assumes the order of params_list corresponds to self.optimization_param_names
+        candidate_nested_params = {}
+        for i, param_name in enumerate(self.optimization_param_names):
+            self._set_param_value_at_path(candidate_nested_params, param_name.split('.'), params_list[i])
+
+        # Convert to the flat structure expected by backtesting
+        flat_candidate_params = self._create_flat_params_dict(candidate_nested_params)
+
+        self.logger.info(f"  Evaluating candidate: {flat_candidate_params}")
+        metrics = self._evaluate_params_with_backtest(flat_candidate_params)
+
+        # Define a composite score to maximize (so return negative for minimization)
+        # Prioritize Sharpe, then Profit Factor, then Equity, then minimize Drawdown, maximize Win Rate
+        
+        # Handle cases where metrics might be -inf or inf
+        sharpe = metrics['Sharpe Ratio'] if np.isfinite(metrics['Sharpe Ratio']) else -1e9
+        profit_factor = metrics['Profit Factor'] if np.isfinite(metrics['Profit Factor']) else -1e9
+        final_equity = metrics['Final Equity'] if np.isfinite(metrics['Final Equity']) else INITIAL_EQUITY
+        max_drawdown = metrics['Max Drawdown (%)'] if np.isfinite(metrics['Max Drawdown (%)']) else 1e9
+        win_rate = metrics['Win Rate (%)'] if np.isfinite(metrics['Win Rate (%)']) else 0.0
+
+        # Weights for composite score (can be optimized or configured)
+        w_sharpe = 0.5
+        w_profit_factor = 0.2
+        w_equity = 0.2
+        w_drawdown = 0.1 # Negative weight as we want to minimize drawdown
+        w_win_rate = 0.1
+
+        # Normalize metrics to a similar scale if necessary, or use their raw values carefully
+        # For simplicity, let's use raw values and adjust weights.
+        
+        # Ensure profit_factor is not negative for log scaling if used
+        normalized_profit_factor = np.log1p(profit_factor) if profit_factor > 0 else 0 # log1p(x) = log(1+x)
+        
+        # Composite score (to be maximized)
+        composite_score = (
+            w_sharpe * sharpe +
+            w_profit_factor * normalized_profit_factor + # Use normalized profit factor
+            w_equity * (final_equity / INITIAL_EQUITY - 1) * 100 + # % return on initial equity
+            w_win_rate * win_rate - # Win rate directly
+            w_drawdown * max_drawdown # Penalize drawdown
+        )
+
+        # --- Explicit Regime-Specific Feedback ---
+        # Identify underperforming regimes from the previous period's data
+        underperforming_regimes = [
+            regime for regime, perf in strategy_breakdown_data_ref.items() 
+            if perf.get('NetPnL', 0) < 0 and perf.get('TotalTrades', 0) > 0 # Negative PnL and at least one trade
+        ]
+
+        if underperforming_regimes:
+            # This part is conceptual as we don't have per-regime backtest results for the *current* candidate.
+            # A true implementation would re-run backtests for specific regimes or have a model
+            # that predicts regime-specific performance for the candidate parameters.
+            
+            # For this implementation, we apply a general penalty if the overall Sharpe is low
+            # AND there were underperforming regimes in the *previous* period.
+            # This encourages the optimizer to find more robust parameters across all regimes.
+            
+            # Heuristic: If overall Sharpe is poor (e.g., < 0.5) AND there were underperforming regimes,
+            # apply a small additional penalty to encourage finding more stable parameters.
+            if sharpe < 0.5: # Example threshold for poor Sharpe
+                penalty_magnitude = 0.1 # Small penalty
+                composite_score -= penalty_magnitude * len(underperforming_regimes) # Larger penalty for more bad regimes
+                self.logger.info(f"  Penalty applied due to underperforming regimes: {underperforming_regimes}")
+
+        # Bayesian optimization minimizes, so return the negative of the score
+        return -composite_score
+
 
     async def _implement_global_system_optimization(self, historical_pnl_data: pd.DataFrame, strategy_breakdown_data: dict):
         """
-        Implements Global System Optimization (Meta-Learning).
-        This method integrates with the backtesting pipeline to tune parameters
-        using a two-stage approach: Coarse Grid Search followed by Fine-Tuning (Random Search).
+        Implements Global System Optimization (Meta-Learning) using Bayesian Optimization.
+        It integrates with the backtesting pipeline to tune parameters.
         """
-        self.logger.info("\nSupervisor: Running Global System Optimization (Meta-Learning) - Two-Stage Optimization...")
+        self.logger.info("\nSupervisor: Running Global System Optimization (Meta-Learning) - Bayesian Optimization...")
         
-        # Load raw data once for the optimization process
+        # Load raw data once for the optimization process and store it
         self.logger.info("  Loading raw data for optimization backtests...")
-        klines_df, agg_trades_df, futures_df = load_raw_data()
-        if klines_df is None or klines_df.empty:
+        self._optimization_klines_df, self._optimization_agg_trades_df, self._optimization_futures_df = load_raw_data()
+        if self._optimization_klines_df is None or self._optimization_klines_df.empty:
             self.logger.error("  Failed to load raw data for optimization. Skipping optimization.")
             return
 
-        daily_df = klines_df.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
-        sr_levels = get_sr_levels(daily_df)
+        daily_df = self._optimization_klines_df.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
+        self._optimization_sr_levels = get_sr_levels(daily_df)
         
-        best_overall_params = self.global_config['BEST_PARAMS'].copy()
-        # Initialize best performance with a dictionary of metrics
-        best_overall_performance = self._evaluate_params_with_backtest(best_overall_params, klines_df, agg_trades_df, futures_df, sr_levels)
-        self.logger.info(f"  Initial BEST_PARAMS performance: {best_overall_performance}")
-
-        # --- Stage 1: Coarse Grid Search ---
-        self.logger.info("\n--- Stage 1: Coarse Grid Search ---")
-        coarse_grid_ranges = self.global_config['OPTIMIZATION_CONFIG']['COARSE_GRID_RANGES']
+        # Define search space dimensions
+        self.optimization_dimensions, self.optimization_param_names = self._define_optimization_dimensions()
         
-        # Generate all combinations for coarse grid
-        keys = coarse_grid_ranges.keys()
-        values = coarse_grid_ranges.values()
+        # Initial evaluation of current BEST_PARAMS
+        initial_params_values = [self._get_param_value_from_path(self.global_config['BEST_PARAMS'], name.split('.')) 
+                                 for name in self.optimization_param_names]
         
-        coarse_param_combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
-        self.logger.info(f"  Evaluating {len(coarse_param_combinations)} coarse parameter combinations.")
+        # Ensure initial_params_values are within the defined dimensions (e.g., integer rounding)
+        for i, dim in enumerate(self.optimization_dimensions):
+            if isinstance(dim, Integer):
+                initial_params_values[i] = int(round(initial_params_values[i]))
+            else: # Real
+                initial_params_values[i] = float(initial_params_values[i])
+            # Clip to bounds if necessary (skopt handles this internally but good for consistency)
+            initial_params_values[i] = max(dim.low, min(dim.high, initial_params_values[i]))
 
-        for i, coarse_candidate_nested in enumerate(coarse_param_combinations):
-            # Transform nested candidate to flat params for backtesting
-            flat_candidate_params = self._create_flat_params_dict(coarse_candidate_nested)
-            
-            self.logger.info(f"  [Coarse {i+1}/{len(coarse_param_combinations)}] Testing: {flat_candidate_params}")
-            candidate_performance = self._evaluate_params_with_backtest(flat_candidate_params, klines_df, agg_trades_df, futures_df, sr_levels)
-            
-            # Compare performance: Prioritize Sharpe Ratio, then Final Equity, then minimize Max Drawdown
-            if (candidate_performance['Sharpe Ratio'] > best_overall_performance['Sharpe Ratio']) or \
-               (candidate_performance['Sharpe Ratio'] == best_overall_performance['Sharpe Ratio'] and \
-                candidate_performance['Final Equity'] > best_overall_performance['Final Equity']) or \
-               (candidate_performance['Sharpe Ratio'] == best_overall_performance['Sharpe Ratio'] and \
-                candidate_performance['Final Equity'] == best_overall_performance['Final Equity'] and \
-                candidate_performance['Max Drawdown (%)'] < best_overall_performance['Max Drawdown (%)']):
-                
-                best_overall_performance = candidate_performance.copy() # Store the dictionary of metrics
-                best_overall_params = flat_candidate_params.copy() # Store the flat best params
-                self.logger.info(f"    New best coarse found! Performance: {best_overall_performance}")
+        # Pass strategy_breakdown_data to the objective function
+        # We need to wrap the objective function to pass additional arguments
+        from functools import partial
+        objective_with_feedback = partial(self._objective_function, strategy_breakdown_data_ref=strategy_breakdown_data)
+
+        # Run Bayesian Optimization
+        n_calls = self.config.get("bayesian_opt_n_calls", 20) # Number of optimization iterations
+        n_initial_points = self.config.get("bayesian_opt_n_initial_points", 5) # Number of random initial points
+
+        self.logger.info(f"  Starting Bayesian Optimization with {n_calls} calls ({n_initial_points} initial random points).")
         
-        self.logger.info(f"\n--- Stage 1 Complete. Best Coarse Performance: {best_overall_performance} ---")
-        self.logger.info(f"  Best Coarse Params: {best_overall_params}")
+        # gp_minimize returns the result of the optimization
+        # `res.x` contains the best parameters found (as a list)
+        # `res.fun` contains the objective function value at `res.x` (minimized value)
+        res = gp_minimize(
+            func=objective_with_feedback,
+            dimensions=self.optimization_dimensions,
+            n_calls=n_calls,
+            n_initial_points=n_initial_points,
+            x0=[initial_params_values], # Provide initial point (current BEST_PARAMS)
+            random_state=self.config.get("bayesian_opt_random_state", 42),
+            verbose=True, # Show optimization progress
+            acq_func="gp_hedge" # Acquisition function
+        )
 
-        # --- Stage 2: Fine-Tuning (Random Search around best coarse) ---
-        self.logger.info("\n--- Stage 2: Fine-Tuning (Random Search) ---")
-        fine_tune_multiplier = self.global_config['OPTIMIZATION_CONFIG']['FINE_TUNE_RANGES_MULTIPLIER']
-        num_fine_tune_samples = self.global_config['OPTIMIZATION_CONFIG']['FINE_TUNE_NUM_POINTS']
+        # Extract best parameters found by the optimizer
+        best_params_list = res.x
+        
+        # Convert the best parameters list back to a nested dictionary
+        best_candidate_nested_params = {}
+        for i, param_name in enumerate(self.optimization_param_names):
+            self._set_param_value_at_path(best_candidate_nested_params, param_name.split('.'), best_params_list[i])
 
-        # Only proceed to fine-tuning if coarse search yielded profitable results
-        if best_overall_performance['Final Equity'] <= INITIAL_EQUITY:
-            self.logger.warning("  Best coarse performance not profitable. Skipping fine-tuning.")
-        else:
-            self.logger.info(f"  Running {num_fine_tune_samples} random samples for fine-tuning around best coarse params.")
-            
-            for i in range(num_fine_tune_samples):
-                fine_tune_candidate_nested = {}
-                
-                # Perturb each parameter that was in the coarse grid
-                for param_path, coarse_values in coarse_grid_ranges.items():
-                    current_best_val = self._get_param_value_from_path(best_overall_params, param_path.split('.'))
-                    
-                    if current_best_val is None: # Fallback if param not found in best_overall_params
-                        current_best_val = np.mean(coarse_values)
-
-                    # Define fine-tune range around current_best_val
-                    if isinstance(current_best_val, (int, float)):
-                        variation = abs(current_best_val * fine_tune_multiplier)
-                        low_bound = current_best_val - variation
-                        high_bound = current_best_val + variation
-                        
-                        # Ensure bounds are reasonable
-                        if len(coarse_values) > 0:
-                            low_bound = max(low_bound, min(coarse_values))
-                            high_bound = min(high_bound, max(coarse_values))
-
-                        if low_bound == high_bound: # Avoid division by zero in uniform
-                            fine_tuned_val = low_bound
-                        else:
-                            fine_tuned_val = np.random.uniform(low_bound, high_bound)
-                        
-                        if param_path in self.global_config['OPTIMIZATION_CONFIG']['INTEGER_PARAMS']:
-                            fine_tuned_val = int(round(fine_tuned_val))
-                        else:
-                            fine_tuned_val = round(fine_tuned_val, 4) # Round floats for consistency
-
-                        self._set_param_value_at_path(fine_tune_candidate_nested, param_path.split('.'), fine_tuned_val)
-                    # Handle weight groups here if they were part of coarse grid and need specific perturbation
-                    # For now, assuming simple numerical parameters.
-
-                # Transform nested candidate to flat params for backtesting
-                flat_candidate_params = self._create_flat_params_dict(fine_tune_candidate_nested)
-                
-                self.logger.info(f"  [Fine-Tune {i+1}/{num_fine_tune_samples}] Testing: {flat_candidate_params}")
-                candidate_performance = self._evaluate_params_with_backtest(flat_candidate_params, klines_df, agg_trades_df, futures_df, sr_levels)
-                
-                # Compare performance: Prioritize Sharpe Ratio, then Final Equity, then minimize Max Drawdown
-                if (candidate_performance['Sharpe Ratio'] > best_overall_performance['Sharpe Ratio']) or \
-                   (candidate_performance['Sharpe Ratio'] == best_overall_performance['Sharpe Ratio'] and \
-                    candidate_performance['Final Equity'] > best_overall_performance['Final Equity']) or \
-                   (candidate_performance['Sharpe Ratio'] == best_overall_performance['Sharpe Ratio'] and \
-                    candidate_performance['Final Equity'] == best_overall_performance['Final Equity'] and \
-                    candidate_performance['Max Drawdown (%)'] < best_overall_performance['Max Drawdown (%)']):
-                    
-                    best_overall_performance = candidate_performance.copy()
-                    best_overall_params = flat_candidate_params.copy()
-                    self.logger.info(f"    New best fine-tuned found! Performance: {best_overall_performance}")
+        # Create the final flat params dictionary for updating CONFIG.BEST_PARAMS
+        best_overall_params = self._create_flat_params_dict(best_candidate_nested_params)
+        
+        # Re-evaluate the best parameters to get their full metrics
+        best_overall_performance = self._evaluate_params_with_backtest(best_overall_params)
 
         self.logger.info(f"\n--- Optimization Complete. Final Best Performance: {best_overall_performance} ---")
         self.logger.info(f"  Final Optimized Parameters: {best_overall_params}")
 
-        # --- Feedback Loop from Regime-Specific Performance (Conceptual) ---
-        # A real meta-learning algorithm would use `strategy_breakdown_data` to inform
-        # its search. For example:
-        # - If 'BULL_TREND' regime performance is consistently poor, the optimizer might
-        #   focus on tuning parameters related to trend-following indicators or entry/exit
-        #   thresholds within that regime.
-        # - If 'SIDEWAYS_RANGE' performance is excellent, it might try to make the system
-        #   more aggressive in that regime by adjusting relevant parameters.
-        # This feedback would typically be integrated into the objective function or the
-        # proposal mechanism of the optimization algorithm.
-        self.logger.info(f"  (Conceptual) Meta-learning informed by regime performance: {strategy_breakdown_data}")
-
         # Update CONFIG.BEST_PARAMS with the newly found optimal parameters
-        # This is a critical step for the pipeline to use the optimized parameters.
-        # Deep update ensures nested dictionaries are handled.
         self._deep_update_dict(self.global_config['BEST_PARAMS'], best_overall_params)
         self.logger.info("  CONFIG.BEST_PARAMS updated with optimized values.")
 

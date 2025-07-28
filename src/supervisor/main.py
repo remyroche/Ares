@@ -28,6 +28,7 @@ class Supervisor:
         self.risk_allocator = RiskAllocator(config)
         self.optimizer = Optimizer(config, firestore_manager)
         self.ab_tester = ABTester(config, self.reporter)
+        self.last_monthly_update = None
 
     async def orchestrate_supervision(self, current_date: datetime.date, total_equity: float, 
                                 daily_trade_logs: list, daily_pnl_per_regime: dict,
@@ -56,7 +57,16 @@ class Supervisor:
         await self.reporter.update_daily_summary_csv_and_firestore(report["daily_summary"])
         await self.reporter.update_strategy_performance_log_and_firestore(current_date, report["strategy_breakdown"])
 
-        # 4. Global System Optimization (Meta-Learning) - Run periodically
+        # 4. Monthly Retraining and Optimization Trigger (simulated cron job)
+        if self.last_monthly_update is None or (current_date.month != self.last_monthly_update.month and current_date.day == 1):
+             self.logger.info(f"Monthly trigger: Kicking off training pipeline for {current_date.strftime('%Y-%m')}...")
+             # In a real system, this would trigger an external process, e.g., a Celery task or a script run.
+             # os.system('python backtesting/training_pipeline.py') # Example of triggering
+             self.last_monthly_update = current_date
+             # After the pipeline runs, you would manually or programmatically start the A/B test
+             # self.start_ab_test(...)
+
+        # 5. Global System Optimization (Meta-Learning) - Run periodically
         if current_date.day % self.config.get("meta_learning_frequency_days", 7) == 0:
             await self.optimizer.implement_global_system_optimization(updated_historical_pnl, report["strategy_breakdown"])
         

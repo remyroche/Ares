@@ -1,8 +1,73 @@
 # config.py
 
-# --- Configuration and Thresholds (Tune these based on your strategy and market conditions) ---
-# These values are illustrative and should be adjusted based on backtesting and live market observation.
+# Emails config (Assuming emails_config.py exists and is correctly structured)
+from emails_config import EMAIL_CONFIG, COMMAND_EMAIL_CONFIG
+
+# --- General Configuration ---
+# All configurations are now consolidated into a single CONFIG dictionary.
 CONFIG = {
+    # --- General System Parameters ---
+    "SYMBOL": 'ETHUSDT',
+    "INTERVAL": '1m',
+    "LOOKBACK_YEARS": 2,
+
+    # --- Data Caching Configuration ---
+    # Filenames are now generated dynamically based on SYMBOL, INTERVAL, LOOKBACK_YEARS
+    "KLINES_FILENAME": '', # Will be set dynamically below
+    "AGG_TRADES_FILENAME": '', # Will be set dynamically below
+    "FUTURES_FILENAME": '', # Will be set dynamically below
+    "PREPARED_DATA_FILENAME": '', # Will be set dynamically below
+
+    # --- Script Names ---
+    "DOWNLOADER_SCRIPT_NAME": "ares_data_downloader.py",
+    "PREPARER_SCRIPT_NAME": "ares_data_preparer.py",
+    "PIPELINE_SCRIPT_NAME": "src/ares_pipeline.py",
+    "BACKTESTING_PIPELINE_SCRIPT_NAME": "src/backtesting_pipeline.py",
+    "PIPELINE_PID_FILE": "ares_pipeline.pid",
+    "RESTART_FLAG_FILE": "restart_pipeline.flag",
+
+    # --- Portfolio & Risk Configuration ---
+    "INITIAL_EQUITY": 10000,
+    "RISK_PER_TRADE_PCT": 0.01, # Max 1% of capital risked per trade (used by Tactician)
+
+    # --- Optimal Indicator Parameters (BEST_PARAMS) ---
+    # This dictionary now contains the WEIGHTS for the confidence score, which will be found by the optimizer.
+    # It is part of the main CONFIG dictionary.
+    "BEST_PARAMS": {
+        # --- Confidence Score Weights ---
+        'weight_trend': 0.4,       # Importance of the trend-following component
+        'weight_reversion': 0.3,   # Importance of the mean-reversion component at S/R levels
+        'weight_sentiment': 0.3,   # Importance of the futures market sentiment
+        
+        # --- Trade Execution Parameters ---
+        'trade_entry_threshold': 0.6, # Confidence score needed to enter a trade (e.g., 0.6 means 60% confidence)
+        'sl_atr_multiplier': 1.5,     # Stop loss distance in multiples of ATR
+        'take_profit_rr': 2.0,        # Risk/Reward ratio for setting the take profit
+        
+        # --- Underlying Indicator Settings (these are now considered more stable) ---
+        'adx_period': 20, 
+        'trend_threshold': 25,
+        'max_strength_threshold': 60, 
+        'atr_period': 14, 
+        'proximity_multiplier': 0.25,
+        'sma_period': 50, 
+        'volume_multiplier': 3, 
+        'volatility_multiplier': 2,
+        'zscore_threshold': 1.5,
+        'obv_lookback': 20,
+        'bband_length': 20,
+        'bband_std': 2.0,
+        'bband_squeeze_threshold': 0.01,
+        'scaling_factor': 100, 
+        'trend_strength_threshold': 25
+    },
+
+    # --- General Trading Parameters (moved from root level to a 'general_trading' sub-dict for clarity) ---
+    "general_trading": {
+        "sr_proximity_pct": 0.005, # Price is considered "close" to S/R if within 0.5%
+        "confidence_wrong_direction_thresholds": [0.001, 0.005, 0.01, 0.015, 0.02], # 0.1%, 0.5%, 1%, 1.5%, 2%
+    },
+
     "bollinger_bands": {
         "window": 20,
         "num_std_dev": 2
@@ -25,8 +90,6 @@ CONFIG = {
     "funding_rate": {
         "high_positive_threshold": 0.0005 # e.g., 0.05% positive funding rate
     },
-    "sr_proximity_pct": 0.005, # Price is considered "close" to S/R if within 0.5%
-    "confidence_wrong_direction_thresholds": [0.001, 0.005, 0.01, 0.015, 0.02], # 0.1%, 0.5%, 1%, 1.5%, 2%
     # S/R Analyzer specific configurations
     "sr_analyzer": {
         "peak_prominence": 0.005,  # Minimum prominence for peak detection (as % of price)
@@ -58,7 +121,7 @@ CONFIG = {
             "ensemble_weights": {
                 "lstm": 0.3,
                 "transformer": 0.3,
-                "statistical": 0.2,
+                "statistical": 0.2, # This key might need to be 'garch' if it's GARCH model
                 "volume": 0.2
             },
             "min_confluence_confidence": 0.7, # Minimum average confidence for a trade signal
@@ -166,9 +229,9 @@ CONFIG = {
         "api_key": "YOUR_BINANCE_API_KEY", # !!! REPLACE WITH YOUR ACTUAL API KEY !!!
         "api_secret": "YOUR_BINANCE_API_SECRET", # !!! REPLACE WITH YOUR ACTUAL API SECRET !!!
         "websocket_streams": {
-            "kline": f"{SYMBOL.lower()}@kline_{INTERVAL}",
-            "aggTrade": f"{SYMBOL.lower()}@aggTrade",
-            "depth": f"{SYMBOL.lower()}@depth5@100ms", # 5-level order book, 100ms update speed
+            "kline": "", # Will be set dynamically below
+            "aggTrade": "", # Will be set dynamically below
+            "depth": "", # Will be set dynamically below
             "userData": True # Set to True to enable user data stream (requires API Key/Secret)
         }
     },
@@ -181,416 +244,112 @@ CONFIG = {
         "system_config_collection": "system_config", # For storing overall CONFIG state if needed
         "user_data_collection_path": "users", # Path for user-specific data
         "public_data_collection_path": "public/data" # Path for public/shared data
+    },
+    # --- Optimization Configuration ---
+    # Defines the parameter space for grid search and fine-tuning.
+    # Keys are parameter paths (e.g., "analyst.market_regime_classifier.adx_period")
+    # Values are lists of values for coarse grid, or ranges for fine-tuning.
+    "OPTIMIZATION_CONFIG": {
+        "COARSE_GRID_RANGES": {
+            # General Trading Parameters
+            "atr.stop_loss_multiplier": [1.0, 1.5, 2.0],
+            "atr.max_risk_per_trade_pct": [0.005, 0.01, 0.02],
+            "general_trading.sr_proximity_pct": [0.003, 0.005, 0.007], # Updated path
+            
+            # Analyst - Market Regime Classifier
+            "analyst.market_regime_classifier.adx_period": [10, 14, 20],
+            "analyst.market_regime_classifier.trend_scaling_factor": [50, 100, 150],
+            "analyst.market_regime_classifier.trend_threshold": [20, 25, 30],
+
+            # Analyst - Regime Predictive Ensembles
+            "analyst.regime_predictive_ensembles.min_confluence_confidence": [0.6, 0.7, 0.8],
+            "analyst.regime_predictive_ensembles.meta_learner_l1_reg": [0.01, 0.1, 0.5],
+            "analyst.regime_predictive_ensembles.meta_learner_l2_reg": [0.01, 0.1, 0.5],
+
+            # Analyst - Liquidation Risk Model
+            "analyst.liquidation_risk_model.volatility_impact": [0.3, 0.4, 0.5],
+            "analyst.liquidation_risk_model.order_book_depth_impact": [0.2, 0.3, 0.4],
+            "analyst.liquidation_risk_model.atr_to_std_factor": [2.0, 2.5, 3.0],
+            "analyst.liquidation_risk_model.ob_depth_range_pct": [0.003, 0.005, 0.007],
+            "analyst.liquidation_risk_model.liq_buffer_zone_pct": [0.0005, 0.001, 0.002],
+            "analyst.liquidation_risk_model.liq_buffer_weight": [1.0, 2.0, 3.0],
+            "analyst.liquidation_risk_model.ob_depth_scaling_factor": [5.0, 10.0, 15.0],
+            "analyst.liquidation_risk_model.max_safe_distance_pct": [0.03, 0.05, 0.07],
+
+            # Analyst - Market Health Analyzer (weights)
+            "analyst.market_health_analyzer.atr_weight": [0.2, 0.3, 0.4],
+            "analyst.market_health_analyzer.bollinger_weight": [0.2, 0.3, 0.4],
+            
+            # Tactician - Laddering
+            "tactician.laddering.initial_leverage": [20, 25, 30],
+            "tactician.laddering.min_lss_for_ladder": [60, 70, 80],
+            "tactician.laddering.ladder_step_leverage_increase": [3, 5, 7],
+            
+            # Strategist
+            "strategist.trading_range_atr_multiplier": [2.0, 3.0, 4.0],
+            "strategist.sr_relevance_threshold": [4.0, 5.0, 6.0],
+            "strategist.avwap_anchor_period": [30, 60, 90],
+
+            # Supervisor - Dynamic Risk Allocation
+            "supervisor.risk_allocation_lookback_days": [20, 30, 40],
+            "supervisor.max_capital_allocation_increase_pct": [0.75, 1.0, 1.25]
+        },
+        # Multiplier for defining the fine-tuning range around a coarse best parameter.
+        # E.g., if best is X, fine-tune range is [X * (1-FINE_TUNE_RANGES_MULTIPLIER), X * (1+FINE_TUNE_RANGES_MULTIPLIER)]
+        "FINE_TUNE_RANGES_MULTIPLIER": 0.15, # 15% range around the best coarse value
+        "FINE_TUNE_NUM_POINTS": 5, # Number of points to sample in the fine-tuning range
+
+        "INTEGER_PARAMS": [
+            "bollinger_bands.window", "bollinger_bands.num_std_dev", "atr.window",
+            "analyst.feature_engineering.wavelet_level", "analyst.feature_engineering.autoencoder_latent_dim",
+            "analyst.market_regime_classifier.kmeans_n_clusters", "analyst.market_regime_classifier.adx_period",
+            "analyst.market_regime_classifier.macd_fast_period", "analyst.market_regime_classifier.macd_slow_period",
+            "analyst.market_regime_classifier.macd_signal_period",
+            "analyst.liquidation_risk_model.lookback_periods_volatility",
+            "analyst.liquidation_risk_model.atr_period",
+            "analyst.market_health_analyzer.momentum_period",
+            "analyst.high_impact_candle_model.volume_sma_period", "analyst.high_impact_candle_model.atr_sma_period",
+            "tactician.laddering.initial_leverage", "tactician.laddering.ladder_step_leverage_increase",
+            "tactician.laddering.max_ladder_steps",
+            "strategist.ma_periods_for_bias", # Note: This is a list of integers, needs special handling
+            "strategist.avwap_anchor_period",
+            "supervisor.risk_allocation_lookback_days"
+        ],
+        # Groups of parameters that represent weights and should sum to 1 (or be normalized)
+        # Format: ("path.to.parent_dict", ["weight1_key", "weight2_key", ...])
+        "WEIGHT_PARAMS_GROUPS": [
+            ("analyst.regime_predictive_ensembles.ensemble_weights", ["lstm", "transformer", "statistical", "volume"]),
+            ("analyst.liquidation_risk_model", ["volatility_impact", "order_book_depth_impact", "position_impact"]),
+            ("analyst.market_health_analyzer", ["atr_weight", "bollinger_weight", "ma_cluster_weight", "momentum_weight", "obv_weight"]),
+        ]
     }
 }
 
-# Emails config
-from emails_config import EMAIL_CONFIG, COMMAND_EMAIL_CONFIG
+# Dynamically set filenames based on general config values
+CONFIG["KLINES_FILENAME"] = f"data_cache/{CONFIG['SYMBOL']}_{CONFIG['INTERVAL']}_{CONFIG['LOOKBACK_YEARS']}y_klines.csv"
+CONFIG["AGG_TRADES_FILENAME"] = f"data_cache/{CONFIG['SYMBOL']}_{CONFIG['LOOKBACK_YEARS']}y_aggtrades.csv"
+CONFIG["FUTURES_FILENAME"] = f"data_cache/{CONFIG['SYMBOL']}_futures_{CONFIG['LOOKBACK_YEARS']}y_data.csv"
+CONFIG["PREPARED_DATA_FILENAME"] = f"data_cache/{CONFIG['SYMBOL']}_{CONFIG['INTERVAL']}_{CONFIG['LOOKBACK_YEARS']}y_prepared_data.csv"
 
-# --- General Configuration ---
-SYMBOL = 'ETHUSDT'
-INTERVAL = '1m'
-LOOKBACK_YEARS = 2
+# Dynamically set WebSocket stream names
+CONFIG["live_trading"]["websocket_streams"]["kline"] = f"{CONFIG['SYMBOL'].lower()}@kline_{CONFIG['INTERVAL']}"
+CONFIG["live_trading"]["websocket_streams"]["aggTrade"] = f"{CONFIG['SYMBOL'].lower()}@aggTrade"
+CONFIG["live_trading"]["websocket_streams"]["depth"] = f"{CONFIG['SYMBOL'].lower()}@depth5@100ms"
 
-# --- Data Caching Configuration ---
-KLINES_FILENAME = f"{SYMBOL}_{INTERVAL}_{LOOKBACK_YEARS}y_klines.csv"
-AGG_TRADES_FILENAME = f"{SYMBOL}_{LOOKBACK_YEARS}y_aggtrades.csv"
-FUTURES_FILENAME = f"{SYMBOL}_futures_{LOOKBACK_YEARS}y_data.csv"
-PREPARED_DATA_FILENAME = f"{SYMBOL}_{INTERVAL}_{LOOKBACK_YEARS}y_prepared_data.csv"
-
-# --- Script Names ---
-DOWNLOADER_SCRIPT_NAME = "ares_data_downloader.py"
-PREPARER_SCRIPT_NAME = "ares_data_preparer.py"
-PIPELINE_SCRIPT_NAME = "src/ares_pipeline.py" # UPDATED PATH
-BACKTESTING_PIPELINE_SCRIPT_NAME = "src/backtesting_pipeline.py" # NEW PATH for backtesting
-PIPELINE_PID_FILE = "ares_pipeline.pid" # File to store the pipeline's PID
-RESTART_FLAG_FILE = "restart_pipeline.flag" # Flag file to signal pipeline restart
-
-# --- Portfolio & Risk Configuration ---
-INITIAL_EQUITY = 10000
-RISK_PER_TRADE_PCT = 0.01
-
-# --- Optimal Indicator Parameters ---
-# This dictionary now contains the WEIGHTS for the confidence score, which will be found by the optimizer.
-BEST_PARAMS = {
-    # --- Confidence Score Weights ---
-    'weight_trend': 0.4,       # Importance of the trend-following component
-    'weight_reversion': 0.3,   # Importance of the mean-reversion component at S/R levels
-    'weight_sentiment': 0.3,   # Importance of the futures market sentiment
-    
-    # --- Trade Execution Parameters ---
-    'trade_entry_threshold': 0.6, # Confidence score needed to enter a trade (e.g., 0.6 means 60% confidence)
-    'sl_atr_multiplier': 1.5,     # Stop loss distance in multiples of ATR
-    'take_profit_rr': 2.0,        # Risk/Reward ratio for setting the take profit
-    
-    # --- Underlying Indicator Settings (these are now considered more stable) ---
-    'adx_period': 20, 
-    'trend_threshold': 25,
-    'max_strength_threshold': 60, 
-    'atr_period': 14, 
-    'proximity_multiplier': 0.25,
-    'sma_period': 50, 
-    'volume_multiplier': 3, 
-    'volatility_multiplier': 2,
-    'zscore_threshold': 1.5,
-    'obv_lookback': 20,
-    'bband_length': 20,
-    'bband_std': 2.0,
-    'bband_squeeze_threshold': 0.01,
-    'scaling_factor': 100, 
-    'trend_strength_threshold': 25
-}
-
-# --- Optimization Configuration ---
-# Defines the parameter space for grid search and fine-tuning.
-# Keys are parameter paths (e.g., "analyst.market_regime_classifier.adx_period")
-# Values are lists of values for coarse grid, or ranges for fine-tuning.
-OPTIMIZATION_CONFIG = {
-    "COARSE_GRID_RANGES": {
-        # General Trading Parameters
-        "atr.stop_loss_multiplier": [1.0, 1.5, 2.0],
-        "atr.max_risk_per_trade_pct": [0.005, 0.01, 0.02],
-        "sr_proximity_pct": [0.003, 0.005, 0.007],
-        
-        # Analyst - Market Regime Classifier
-        "analyst.market_regime_classifier.adx_period": [10, 14, 20],
-        "analyst.market_regime_classifier.trend_scaling_factor": [50, 100, 150],
-        "analyst.market_regime_classifier.trend_threshold": [20, 25, 30],
-
-        # Analyst - Regime Predictive Ensembles
-        "analyst.regime_predictive_ensembles.min_confluence_confidence": [0.6, 0.7, 0.8],
-        "analyst.regime_predictive_ensembles.meta_learner_l1_reg": [0.01, 0.1, 0.5], # New
-        "analyst.regime_predictive_ensembles.meta_learner_l2_reg": [0.01, 0.1, 0.5], # New
-
-        # Analyst - Liquidation Risk Model
-        "analyst.liquidation_risk_model.volatility_impact": [0.3, 0.4, 0.5],
-        "analyst.liquidation_risk_model.order_book_depth_impact": [0.2, 0.3, 0.4],
-        "analyst.liquidation_risk_model.atr_to_std_factor": [2.0, 2.5, 3.0], # New
-        "analyst.liquidation_risk_model.ob_depth_range_pct": [0.003, 0.005, 0.007], # New
-        "analyst.liquidation_risk_model.liq_buffer_zone_pct": [0.0005, 0.001, 0.002], # New
-        "analyst.liquidation_risk_model.liq_buffer_weight": [1.0, 2.0, 3.0], # New
-        "analyst.liquidation_risk_model.ob_depth_scaling_factor": [5.0, 10.0, 15.0], # New
-        "analyst.liquidation_risk_model.max_safe_distance_pct": [0.03, 0.05, 0.07], # New
-
-        # Analyst - Market Health Analyzer (weights)
-        "analyst.market_health_analyzer.atr_weight": [0.2, 0.3, 0.4],
-        "analyst.market_health_analyzer.bollinger_weight": [0.2, 0.3, 0.4],
-        
-        # Tactician - Laddering
-        "tactician.laddering.initial_leverage": [20, 25, 30],
-        "tactician.laddering.min_lss_for_ladder": [60, 70, 80],
-        "tactician.laddering.ladder_step_leverage_increase": [3, 5, 7],
-        
-        # Strategist
-        "strategist.trading_range_atr_multiplier": [2.0, 3.0, 4.0],
-        "strategist.sr_relevance_threshold": [4.0, 5.0, 6.0],
-        "strategist.avwap_anchor_period": [30, 60, 90], # New
-
-        # Supervisor - Dynamic Risk Allocation
-        "supervisor.risk_allocation_lookback_days": [20, 30, 40],
-        "supervisor.max_capital_allocation_increase_pct": [0.75, 1.0, 1.25]
-    },
-    # Multiplier for defining the fine-tuning range around a coarse best parameter.
-    # E.g., if best is X, fine-tune range is [X * (1-FINE_TUNE_RANGES_MULTIPLIER), X * (1+FINE_TUNE_RANGES_MULTIPLIER)]
-    "FINE_TUNE_RANGES_MULTIPLIER": 0.15, # 15% range around the best coarse value
-    "FINE_TUNE_NUM_POINTS": 5, # Number of points to sample in the fine-tuning range
-
-    "INTEGER_PARAMS": [
-        "bollinger_bands.window", "bollinger_bands.num_std_dev", "atr.window",
-        "analyst.feature_engineering.wavelet_level", "analyst.feature_engineering.autoencoder_latent_dim",
-        "analyst.market_regime_classifier.kmeans_n_clusters", "analyst.market_regime_classifier.adx_period",
-        "analyst.market_regime_classifier.macd_fast_period", "analyst.market_regime_classifier.macd_slow_period",
-        "analyst.market_regime_classifier.macd_signal_period",
-        "analyst.liquidation_risk_model.lookback_periods_volatility",
-        "analyst.liquidation_risk_model.atr_period", # New
-        "analyst.market_health_analyzer.momentum_period",
-        "analyst.high_impact_candle_model.volume_sma_period", "analyst.high_impact_candle_model.atr_sma_period",
-        "tactician.laddering.initial_leverage", "tactician.laddering.ladder_step_leverage_increase",
-        "tactician.laddering.max_ladder_steps",
-        "strategist.ma_periods_for_bias", # Note: This is a list of integers, needs special handling
-        "strategist.avwap_anchor_period", # New
-        "supervisor.risk_allocation_lookback_days"
-    ],
-    # Groups of parameters that represent weights and should sum to 1 (or be normalized)
-    # Format: ("path.to.parent_dict", ["weight1_key", "weight2_key", ...])
-    "WEIGHT_PARAMS_GROUPS": [
-        ("analyst.regime_predictive_ensembles.ensemble_weights", ["lstm", "transformer", "statistical", "volume"]),
-        ("analyst.liquidation_risk_model", ["volatility_impact", "order_book_depth_impact", "position_impact"]),
-        ("analyst.market_health_analyzer", ["atr_weight", "bollinger_weight", "ma_cluster_weight", "momentum_weight", "obv_weight"]),
-        # Removed tactician.rl_agent.reward_weights as RL agent is removed
-    ]
-}
-
-# Emails config
-from emails_config import EMAIL_CONFIG, COMMAND_EMAIL_CONFIG
-
-# --- General Configuration ---
-SYMBOL = 'ETHUSDT'
-INTERVAL = '1m'
-LOOKBACK_YEARS = 2
-
-# --- Data Caching Configuration ---
-KLINES_FILENAME = f"{SYMBOL}_{INTERVAL}_{LOOKBACK_YEARS}y_klines.csv"
-AGG_TRADES_FILENAME = f"{SYMBOL}_{LOOKBACK_YEARS}y_aggtrades.csv"
-FUTURES_FILENAME = f"{SYMBOL}_futures_{LOOKBACK_YEARS}y_data.csv"
-PREPARED_DATA_FILENAME = f"{SYMBOL}_{INTERVAL}_{LOOKBACK_YEARS}y_prepared_data.csv"
-
-# --- Script Names ---
-DOWNLOADER_SCRIPT_NAME = "ares_data_downloader.py"
-PREPARER_SCRIPT_NAME = "ares_data_preparer.py"
-PIPELINE_SCRIPT_NAME = "src/ares_pipeline.py" # UPDATED PATH
-BACKTESTING_PIPELINE_SCRIPT_NAME = "src/backtesting_pipeline.py" # NEW PATH for backtesting
-PIPELINE_PID_FILE = "ares_pipeline.pid" # File to store the pipeline's PID
-RESTART_FLAG_FILE = "restart_pipeline.flag" # Flag file to signal pipeline restart
-
-# --- Portfolio & Risk Configuration ---
-INITIAL_EQUITY = 10000
-RISK_PER_TRADE_PCT = 0.01
-
-# --- Optimal Indicator Parameters ---
-# This dictionary now contains the WEIGHTS for the confidence score, which will be found by the optimizer.
-BEST_PARAMS = {
-    # --- Confidence Score Weights ---
-    'weight_trend': 0.4,       # Importance of the trend-following component
-    'weight_reversion': 0.3,   # Importance of the mean-reversion component at S/R levels
-    'weight_sentiment': 0.3,   # Importance of the futures market sentiment
-    
-    # --- Trade Execution Parameters ---
-    'trade_entry_threshold': 0.6, # Confidence score needed to enter a trade (e.g., 0.6 means 60% confidence)
-    'sl_atr_multiplier': 1.5,     # Stop loss distance in multiples of ATR
-    'take_profit_rr': 2.0,        # Risk/Reward ratio for setting the take profit
-    
-    # --- Underlying Indicator Settings (these are now considered more stable) ---
-    'adx_period': 20, 
-    'trend_threshold': 25,
-    'max_strength_threshold': 60, 
-    'atr_period': 14, 
-    'proximity_multiplier': 0.25,
-    'sma_period': 50, 
-    'volume_multiplier': 3, 
-    'volatility_multiplier': 2,
-    'zscore_threshold': 1.5,
-    'obv_lookback': 20,
-    'bband_length': 20,
-    'bband_std': 2.0,
-    'bband_squeeze_threshold': 0.01,
-    'scaling_factor': 100, 
-    'trend_strength_threshold': 25
-}
-
-# --- Optimization Configuration ---
-# Defines the parameter space for grid search and fine-tuning.
-# Keys are parameter paths (e.g., "analyst.market_regime_classifier.adx_period")
-# Values are lists of values for coarse grid, or ranges for fine-tuning.
-OPTIMIZATION_CONFIG = {
-    "COARSE_GRID_RANGES": {
-        # General Trading Parameters
-        "atr.stop_loss_multiplier": [1.0, 1.5, 2.0],
-        "atr.max_risk_per_trade_pct": [0.005, 0.01, 0.02],
-        "sr_proximity_pct": [0.003, 0.005, 0.007],
-        
-        # Analyst - Market Regime Classifier
-        "analyst.market_regime_classifier.adx_period": [10, 14, 20],
-        "analyst.market_regime_classifier.trend_scaling_factor": [50, 100, 150],
-        "analyst.market_regime_classifier.trend_threshold": [20, 25, 30],
-
-        # Analyst - Regime Predictive Ensembles
-        "analyst.regime_predictive_ensembles.min_confluence_confidence": [0.6, 0.7, 0.8],
-        "analyst.regime_predictive_ensembles.meta_learner_l1_reg": [0.01, 0.1, 0.5], # New
-        "analyst.regime_predictive_ensembles.meta_learner_l2_reg": [0.01, 0.1, 0.5], # New
-
-        # Analyst - Liquidation Risk Model
-        "analyst.liquidation_risk_model.volatility_impact": [0.3, 0.4, 0.5],
-        "analyst.liquidation_risk_model.order_book_depth_impact": [0.2, 0.3, 0.4],
-        "analyst.liquidation_risk_model.atr_to_std_factor": [2.0, 2.5, 3.0], # New
-        "analyst.liquidation_risk_model.ob_depth_range_pct": [0.003, 0.005, 0.007], # New
-        "analyst.liquidation_risk_model.liq_buffer_zone_pct": [0.0005, 0.001, 0.002], # New
-        "analyst.liquidation_risk_model.liq_buffer_weight": [1.0, 2.0, 3.0], # New
-        "analyst.liquidation_risk_model.ob_depth_scaling_factor": [5.0, 10.0, 15.0], # New
-        "analyst.liquidation_risk_model.max_safe_distance_pct": [0.03, 0.05, 0.07], # New
-
-        # Analyst - Market Health Analyzer (weights)
-        "analyst.market_health_analyzer.atr_weight": [0.2, 0.3, 0.4],
-        "analyst.market_health_analyzer.bollinger_weight": [0.2, 0.3, 0.4],
-        
-        # Tactician - Laddering
-        "tactician.laddering.initial_leverage": [20, 25, 30],
-        "tactician.laddering.min_lss_for_ladder": [60, 70, 80],
-        "tactician.laddering.ladder_step_leverage_increase": [3, 5, 7],
-        
-        # Strategist
-        "strategist.trading_range_atr_multiplier": [2.0, 3.0, 4.0],
-        "strategist.sr_relevance_threshold": [4.0, 5.0, 6.0],
-        "strategist.avwap_anchor_period": [30, 60, 90], # New
-
-        # Supervisor - Dynamic Risk Allocation
-        "supervisor.risk_allocation_lookback_days": [20, 30, 40],
-        "supervisor.max_capital_allocation_increase_pct": [0.75, 1.0, 1.25]
-    },
-    # Multiplier for defining the fine-tuning range around a coarse best parameter.
-    # E.g., if best is X, fine-tune range is [X * (1-FINE_TUNE_RANGES_MULTIPLIER), X * (1+FINE_TUNE_RANGES_MULTIPLIER)]
-    "FINE_TUNE_RANGES_MULTIPLIER": 0.15, # 15% range around the best coarse value
-    "FINE_TUNE_NUM_POINTS": 5, # Number of points to sample in the fine-tuning range
-
-    "INTEGER_PARAMS": [
-        "bollinger_bands.window", "bollinger_bands.num_std_dev", "atr.window",
-        "analyst.feature_engineering.wavelet_level", "analyst.feature_engineering.autoencoder_latent_dim",
-        "analyst.market_regime_classifier.kmeans_n_clusters", "analyst.market_regime_classifier.adx_period",
-        "analyst.market_regime_classifier.macd_fast_period", "analyst.market_regime_classifier.macd_slow_period",
-        "analyst.market_regime_classifier.macd_signal_period",
-        "analyst.liquidation_risk_model.lookback_periods_volatility",
-        "analyst.liquidation_risk_model.atr_period", # New
-        "analyst.market_health_analyzer.momentum_period",
-        "analyst.high_impact_candle_model.volume_sma_period", "analyst.high_impact_candle_model.atr_sma_period",
-        "tactician.laddering.initial_leverage", "tactician.laddering.ladder_step_leverage_increase",
-        "tactician.laddering.max_ladder_steps",
-        "strategist.ma_periods_for_bias", # Note: This is a list of integers, needs special handling
-        "strategist.avwap_anchor_period", # New
-        "supervisor.risk_allocation_lookback_days"
-    ],
-    # Groups of parameters that represent weights and should sum to 1 (or be normalized)
-    # Format: ("path.to.parent_dict", ["weight1_key", "weight2_key", ...])
-    "WEIGHT_PARAMS_GROUPS": [
-        ("analyst.regime_predictive_ensembles.ensemble_weights", ["lstm", "transformer", "statistical", "volume"]),
-        ("analyst.liquidation_risk_model", ["volatility_impact", "order_book_depth_impact", "position_impact"]),
-        ("analyst.market_health_analyzer", ["atr_weight", "bollinger_weight", "ma_cluster_weight", "momentum_weight", "obv_weight"]),
-        # Removed tactician.rl_agent.reward_weights as RL agent is removed
-    ]
-}
-
-# Emails config
-from emails_config import EMAIL_CONFIG, COMMAND_EMAIL_CONFIG
-
-# --- General Configuration ---
-SYMBOL = 'ETHUSDT'
-INTERVAL = '1m'
-LOOKBACK_YEARS = 2
-
-# --- Data Caching Configuration ---
-KLINES_FILENAME = f"{SYMBOL}_{INTERVAL}_{LOOKBACK_YEARS}y_klines.csv"
-AGG_TRADES_FILENAME = f"{SYMBOL}_{LOOKBACK_YEARS}y_aggtrades.csv"
-FUTURES_FILENAME = f"{SYMBOL}_futures_{LOOKBACK_YEARS}y_data.csv"
-PREPARED_DATA_FILENAME = f"{SYMBOL}_{INTERVAL}_{LOOKBACK_YEARS}y_prepared_data.csv"
-
-# --- Script Names ---
-DOWNLOADER_SCRIPT_NAME = "ares_data_downloader.py"
-PREPARER_SCRIPT_NAME = "ares_data_preparer.py"
-PIPELINE_SCRIPT_NAME = "src/ares_pipeline.py" # UPDATED PATH
-BACKTESTING_PIPELINE_SCRIPT_NAME = "src/backtesting_pipeline.py" # NEW PATH for backtesting
-PIPELINE_PID_FILE = "ares_pipeline.pid" # File to store the pipeline's PID
-RESTART_FLAG_FILE = "restart_pipeline.flag" # Flag file to signal pipeline restart
-
-# --- Portfolio & Risk Configuration ---
-INITIAL_EQUITY = 10000
-RISK_PER_TRADE_PCT = 0.01
-
-# --- Optimal Indicator Parameters ---
-# This dictionary now contains the WEIGHTS for the confidence score, which will be found by the optimizer.
-BEST_PARAMS = {
-    # --- Confidence Score Weights ---
-    'weight_trend': 0.4,       # Importance of the trend-following component
-    'weight_reversion': 0.3,   # Importance of the mean-reversion component at S/R levels
-    'weight_sentiment': 0.3,   # Importance of the futures market sentiment
-    
-    # --- Trade Execution Parameters ---
-    'trade_entry_threshold': 0.6, # Confidence score needed to enter a trade (e.g., 0.6 means 60% confidence)
-    'sl_atr_multiplier': 1.5,     # Stop loss distance in multiples of ATR
-    'take_profit_rr': 2.0,        # Risk/Reward ratio for setting the take profit
-    
-    # --- Underlying Indicator Settings (these are now considered more stable) ---
-    'adx_period': 20, 
-    'trend_threshold': 25,
-    'max_strength_threshold': 60, 
-    'atr_period': 14, 
-    'proximity_multiplier': 0.25,
-    'sma_period': 50, 
-    'volume_multiplier': 3, 
-    'volatility_multiplier': 2,
-    'zscore_threshold': 1.5,
-    'obv_lookback': 20,
-    'bband_length': 20,
-    'bband_std': 2.0,
-    'bband_squeeze_threshold': 0.01,
-    'scaling_factor': 100, 
-    'trend_strength_threshold': 25
-}
-
-# --- Optimization Configuration ---
-# Defines the parameter space for grid search and fine-tuning.
-# Keys are parameter paths (e.g., "analyst.market_regime_classifier.adx_period")
-# Values are lists of values for coarse grid, or ranges for fine-tuning.
-OPTIMIZATION_CONFIG = {
-    "COARSE_GRID_RANGES": {
-        # General Trading Parameters
-        "atr.stop_loss_multiplier": [1.0, 1.5, 2.0],
-        "atr.max_risk_per_trade_pct": [0.005, 0.01, 0.02],
-        "sr_proximity_pct": [0.003, 0.005, 0.007],
-        
-        # Analyst - Market Regime Classifier
-        "analyst.market_regime_classifier.adx_period": [10, 14, 20],
-        "analyst.market_regime_classifier.trend_scaling_factor": [50, 100, 150],
-        "analyst.market_regime_classifier.trend_threshold": [20, 25, 30],
-
-        # Analyst - Regime Predictive Ensembles
-        "analyst.regime_predictive_ensembles.min_confluence_confidence": [0.6, 0.7, 0.8],
-        "analyst.regime_predictive_ensembles.meta_learner_l1_reg": [0.01, 0.1, 0.5], # New
-        "analyst.regime_predictive_ensembles.meta_learner_l2_reg": [0.01, 0.1, 0.5], # New
-
-        # Analyst - Liquidation Risk Model
-        "analyst.liquidation_risk_model.volatility_impact": [0.3, 0.4, 0.5],
-        "analyst.liquidation_risk_model.order_book_depth_impact": [0.2, 0.3, 0.4],
-        "analyst.liquidation_risk_model.atr_to_std_factor": [2.0, 2.5, 3.0], # New
-        "analyst.liquidation_risk_model.ob_depth_range_pct": [0.003, 0.005, 0.007], # New
-        "analyst.liquidation_risk_model.liq_buffer_zone_pct": [0.0005, 0.001, 0.002], # New
-        "analyst.liquidation_risk_model.liq_buffer_weight": [1.0, 2.0, 3.0], # New
-        "analyst.liquidation_risk_model.ob_depth_scaling_factor": [5.0, 10.0, 15.0], # New
-        "analyst.liquidation_risk_model.max_safe_distance_pct": [0.03, 0.05, 0.07], # New
-
-        # Analyst - Market Health Analyzer (weights)
-        "analyst.market_health_analyzer.atr_weight": [0.2, 0.3, 0.4],
-        "analyst.market_health_analyzer.bollinger_weight": [0.2, 0.3, 0.4],
-        
-        # Tactician - Laddering
-        "tactician.laddering.initial_leverage": [20, 25, 30],
-        "tactician.laddering.min_lss_for_ladder": [60, 70, 80],
-        "tactician.laddering.ladder_step_leverage_increase": [3, 5, 7],
-        
-        # Strategist
-        "strategist.trading_range_atr_multiplier": [2.0, 3.0, 4.0],
-        "strategist.sr_relevance_threshold": [4.0, 5.0, 6.0],
-        "strategist.avwap_anchor_period": [30, 60, 90], # New
-
-        # Supervisor - Dynamic Risk Allocation
-        "supervisor.risk_allocation_lookback_days": [20, 30, 40],
-        "supervisor.max_capital_allocation_increase_pct": [0.75, 1.0, 1.25]
-    },
-    # Multiplier for defining the fine-tuning range around a coarse best parameter.
-    # E.g., if best is X, fine-tune range is [X * (1-FINE_TUNE_RANGES_MULTIPLIER), X * (1+FINE_TUNE_RANGES_MULTIPLIER)]
-    "FINE_TUNE_RANGES_MULTIPLIER": 0.15, # 15% range around the best coarse value
-    "FINE_TUNE_NUM_POINTS": 5, # Number of points to sample in the fine-tuning range
-
-    "INTEGER_PARAMS": [
-        "bollinger_bands.window", "bollinger_bands.num_std_dev", "atr.window",
-        "analyst.feature_engineering.wavelet_level", "analyst.feature_engineering.autoencoder_latent_dim",
-        "analyst.market_regime_classifier.kmeans_n_clusters", "analyst.market_regime_classifier.adx_period",
-        "analyst.market_regime_classifier.macd_fast_period", "analyst.market_regime_classifier.macd_slow_period",
-        "analyst.market_regime_classifier.macd_signal_period",
-        "analyst.liquidation_risk_model.lookback_periods_volatility",
-        "analyst.liquidation_risk_model.atr_period", # New
-        "analyst.market_health_analyzer.momentum_period",
-        "analyst.high_impact_candle_model.volume_sma_period", "analyst.high_impact_candle_model.atr_sma_period",
-        "tactician.laddering.initial_leverage", "tactician.laddering.ladder_step_leverage_increase",
-        "tactician.laddering.max_ladder_steps",
-        "strategist.ma_periods_for_bias", # Note: This is a list of integers, needs special handling
-        "strategist.avwap_anchor_period", # New
-        "supervisor.risk_allocation_lookback_days"
-    ],
-    # Groups of parameters that represent weights and should sum to 1 (or be normalized)
-    # Format: ("path.to.parent_dict", ["weight1_key", "weight2_key", ...])
-    "WEIGHT_PARAMS_GROUPS": [
-        ("analyst.regime_predictive_ensembles.ensemble_weights", ["lstm", "transformer", "statistical", "volume"]),
-        ("analyst.liquidation_risk_model", ["volatility_impact", "order_book_depth_impact", "position_impact"]),
-        ("analyst.market_health_analyzer", ["atr_weight", "bollinger_weight", "ma_cluster_weight", "momentum_weight", "obv_weight"]),
-        # Removed tactician.rl_agent.reward_weights as RL agent is removed
-    ]
-}
+# Expose top-level variables for backward compatibility if needed, but prefer CONFIG['KEY']
+SYMBOL = CONFIG['SYMBOL']
+INTERVAL = CONFIG['INTERVAL']
+LOOKBACK_YEARS = CONFIG['LOOKBACK_YEARS']
+KLINES_FILENAME = CONFIG['KLINES_FILENAME']
+AGG_TRADES_FILENAME = CONFIG['AGG_TRADES_FILENAME']
+FUTURES_FILENAME = CONFIG['FUTURES_FILENAME']
+PREPARED_DATA_FILENAME = CONFIG['PREPARED_DATA_FILENAME']
+DOWNLOADER_SCRIPT_NAME = CONFIG['DOWNLOADER_SCRIPT_NAME']
+PREPARER_SCRIPT_NAME = CONFIG['PREPARER_SCRIPT_NAME']
+PIPELINE_SCRIPT_NAME = CONFIG['PIPELINE_SCRIPT_NAME']
+BACKTESTING_PIPELINE_SCRIPT_NAME = CONFIG['BACKTESTING_PIPELINE_SCRIPT_NAME']
+PIPELINE_PID_FILE = CONFIG['PIPELINE_PID_FILE']
+RESTART_FLAG_FILE = CONFIG['RESTART_FLAG_FILE']
+INITIAL_EQUITY = CONFIG['INITIAL_EQUITY']
+RISK_PER_TRADE_PCT = CONFIG['RISK_PER_TRADE_PCT']
+BEST_PARAMS = CONFIG['BEST_PARAMS'] # BEST_PARAMS is now directly part of CONFIG

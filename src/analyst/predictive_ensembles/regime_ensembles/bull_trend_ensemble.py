@@ -244,22 +244,36 @@ class BullTrendEnsemble(BaseEnsemble):
             # Predict on the sequence data and map back to flat index
             lstm_probas = self.models["lstm"].predict(X_seq)
             # Assuming y_seq_encoded matches the order of X_seq, and we want prob of the target class
-            lstm_conf_values = [lstm_probas[i, y_seq_encoded[i]] for i in range(len(y_seq_encoded))]
-            meta_features_train['lstm_conf'] = pd.Series(lstm_conf_values, index=aligned_data.iloc[self.dl_config["sequence_length"]-1:].index)
+            if len(lstm_probas) == len(y_seq_encoded):
+                lstm_conf_values = [lstm_probas[i, y_seq_encoded[i]] for i in range(len(y_seq_encoded))]
+                meta_features_train['lstm_conf'] = pd.Series(lstm_conf_values, index=aligned_data.iloc[self.dl_config["sequence_length"]-1:].index)
+            else:
+                self.logger.warning("LSTM probas length mismatch with y_seq_encoded. Using random uniform for lstm_conf.")
+                meta_features_train['lstm_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
         else:
             meta_features_train['lstm_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
         if self.models["transformer"]:
             transformer_probas = self.models["transformer"].predict(X_seq)
-            transformer_conf_values = [transformer_probas[i, y_seq_encoded[i]] for i in range(len(y_seq_encoded))]
-            meta_features_train['transformer_conf'] = pd.Series(transformer_conf_values, index=aligned_data.iloc[self.dl_config["sequence_length"]-1:].index)
+            if len(transformer_probas) == len(y_seq_encoded):
+                transformer_conf_values = [transformer_probas[i, y_seq_encoded[i]] for i in range(len(y_seq_encoded))]
+                meta_features_train['transformer_conf'] = pd.Series(transformer_conf_values, index=aligned_data.iloc[self.dl_config["sequence_length"]-1:].index)
+            else:
+                self.logger.warning("Transformer probas length mismatch with y_seq_encoded. Using random uniform for transformer_conf.")
+                meta_features_train['transformer_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
         else:
             meta_features_train['transformer_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
+        # CHANGED: Pass GARCH volatility directly as a feature
         if self.models["garch"]:
-            # GARCH doesn't directly give classification proba. Use a proxy like inverse volatility.
-            # For training, this would be based on historical volatility.
-            meta_features_train['garch_volatility'] = np.random.uniform(0.001, 0.01, len(X_flat))
+            try:
+                # For training data, we can use the historical conditional volatility
+                historical_volatility = self.models["garch"].conditional_volatility
+                aligned_garch_vol = historical_volatility.reindex(aligned_data.index).fillna(method='ffill').fillna(0)
+                meta_features_train['garch_volatility'] = aligned_garch_vol
+            except Exception as e:
+                self.logger.error(f"Error getting historical GARCH volatility for meta-learner training: {e}")
+                meta_features_train['garch_volatility'] = np.random.uniform(0.001, 0.01, len(X_flat))
         else:
             meta_features_train['garch_volatility'] = np.random.uniform(0.001, 0.01, len(X_flat))
 
@@ -363,21 +377,18 @@ class BullTrendEnsemble(BaseEnsemble):
         else:
             individual_model_outputs['transformer_conf'] = 0.5
 
-        # GARCH Prediction (Volatility/Directional Signal)
+        # CHANGED: Pass GARCH volatility directly as a feature
         if self.models["garch"]:
             try:
                 # GARCH forecast typically provides conditional variance.
-                # For a directional signal, you'd need to interpret this or use conditional mean.
-                # For simplicity, we'll use volatility as inverse confidence.
                 forecast = self.models["garch"].forecast(horizon=1, method='simulation')
                 garch_volatility = forecast.variance.iloc[-1].values[0]
-                garch_conf = 1 - np.clip(garch_volatility * 10, 0, 1) # Higher volatility = lower confidence
-                individual_model_outputs['garch_conf'] = float(garch_conf)
+                individual_model_outputs['garch_volatility'] = float(garch_volatility)
             except Exception as e:
                 self.logger.error(f"Error forecasting with GARCH: {e}")
-                individual_model_outputs['garch_conf'] = 0.5 # Neutral
+                individual_model_outputs['garch_volatility'] = 0.005 # Default/neutral volatility
         else:
-            individual_model_outputs['garch_conf'] = 0.5 # Neutral if model not trained
+            individual_model_outputs['garch_volatility'] = 0.005 # Default/neutral volatility
 
         # LightGBM Prediction
         if self.models["lgbm"]:
@@ -391,12 +402,12 @@ class BullTrendEnsemble(BaseEnsemble):
                 # Get probability for the 'BULL_TREND' class
                 bull_idx = np.where(self.models["lgbm"].classes_ == 'BULL_TREND')[0]
                 lgbm_conf = lgbm_proba[bull_idx][0] if len(bull_idx) > 0 else np.max(lgbm_proba) # Fallback to max prob
-                individual_model_outputs['lgbm_conf'] = float(lgbm_conf)
+                individual_model_outputs['lgbm_proba'] = float(lgbm_conf)
             except Exception as e:
                 self.logger.error(f"Error predicting with LightGBM: {e}")
-                individual_model_outputs['lgbm_conf'] = 0.5 # Neutral
+                individual_model_outputs['lgbm_proba'] = 0.5 # Neutral
         else:
-            individual_model_outputs['lgbm_conf'] = 0.5 # Neutral if model not trained
+            individual_model_outputs['lgbm_proba'] = 0.5 # Neutral if model not trained
 
         # --- Incorporate Advanced Features ---
         # Ensure all necessary dataframes are passed to feature methods
@@ -404,7 +415,8 @@ class BullTrendEnsemble(BaseEnsemble):
         wyckoff_feats = self._get_wyckoff_features(klines_df, current_price)
         manipulation_feats = self._get_manipulation_features(order_book_data, current_price, agg_trades_df)
         order_flow_feats = self._get_order_flow_features(agg_trades_df, order_book_data, klines_df)
-        multi_timeframe_feats = self._get_multi_timeframe_features(klines_df, klines_df) # Assuming klines_df is both HTF/MTF for simplicity here
+        # Assuming klines_df is sufficient for both HTF/MTF for these conceptual features
+        multi_timeframe_feats = self._get_multi_timeframe_features(klines_df, klines_df) 
 
         # Add advanced features to individual_model_outputs for meta-learner
         # Ensure values are floats/ints for meta-learner input
@@ -438,9 +450,10 @@ class BullTrendEnsemble(BaseEnsemble):
         else:
             self.logger.warning(f"Meta-learner not available for {self.ensemble_name}. Averaging confidences.")
             # Fallback to simple weighted average if meta-learner is not available
+            # Note: GARCH volatility is not a confidence, so it's excluded from this average.
             total_weighted_confidence = sum(individual_model_outputs.get(m, 0.5) * self.ensemble_weights.get(m.replace('_conf', ''), 1.0) 
-                                            for m in ['lstm_conf', 'transformer_conf', 'garch_conf', 'lgbm_conf'])
-            total_weight = sum(self.ensemble_weights.get(m.replace('_conf', ''), 1.0) for m in ['lstm_conf', 'transformer_conf', 'garch_conf', 'lgbm_conf'])
+                                            for m in ['lstm_conf', 'transformer_conf', 'lgbm_proba'])
+            total_weight = sum(self.ensemble_weights.get(m.replace('_conf', ''), 1.0) for m in ['lstm_conf', 'transformer_conf', 'lgbm_proba'])
             
             if total_weight > 0:
                 final_confidence = total_weighted_confidence / total_weight

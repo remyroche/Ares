@@ -27,6 +27,8 @@ class FirestoreManager:
 
         self.logger = system_logger.getChild('FirestoreManager')
         self.config = config.get("firestore", {}) if config else {}
+        
+        # Use provided values, falling back to environment variables or defaults
         self.app_id = app_id if app_id else (os.environ.get('__app_id') or 'default-ares-app-id')
         self.firebase_config_str = firebase_config_str if firebase_config_str else os.environ.get('__firebase_config')
         self.initial_auth_token = initial_auth_token if initial_auth_token else os.environ.get('__initial_auth_token')
@@ -53,13 +55,9 @@ class FirestoreManager:
     def _initialize_firebase(self):
         """Initializes Firebase Admin SDK."""
         try:
-            # The Canvas environment typically provides credentials implicitly via GOOGLE_APPLICATION_CREDENTIALS
-            # or by configuring the default app.
-            # If firebase_config_str is a client-side config, it's not directly used by Admin SDK for auth,
-            # but it might contain project_id which is useful.
-            
             # Attempt to initialize without explicit credentials, relying on default environment setup
             # or if a service account JSON is available via GOOGLE_APPLICATION_CREDENTIALS env var.
+            # The firebase_config_str is typically for client-side SDK, not directly used by Admin SDK for auth.
             firebase_admin.initialize_app()
             self.logger.info("Firebase Admin SDK initialized successfully.")
 

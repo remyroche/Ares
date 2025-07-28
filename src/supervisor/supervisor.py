@@ -450,10 +450,17 @@ class Supervisor:
             win_rate = (len(wins) / total_trades * 100) if total_trades > 0 else 0.0
             net_pnl = df_trades['realized_pnl_usd'].sum()
 
-            # Max Drawdown (simplified for daily, would need equity curve for full)
-            # For a single day, if we only have daily net PnL, max drawdown is tricky.
-            max_drawdown = 0.0 # Placeholder for now, requires intraday equity curve
+            # Calculate Max Drawdown for the day's trades
+            # This requires building an equity curve from the trades
+            equity_curve_values = [self.get_current_allocated_capital()] # Start with allocated capital
+            for pnl in df_trades['realized_pnl_usd']:
+                equity_curve_values.append(equity_curve_values[-1] + pnl)
             
+            equity_series = pd.Series(equity_curve_values)
+            peak = equity_series.expanding(min_periods=1).max()
+            drawdown = (equity_series - peak) / peak
+            max_drawdown = -drawdown.min() * 100 if not drawdown.empty else 0.0 # Convert to positive percentage
+
             ending_capital = self.get_current_allocated_capital() + net_pnl # Very simplified for demo
 
             daily_summary = {
@@ -477,7 +484,8 @@ class Supervisor:
                     regime_net_pnl = regime_trades['realized_pnl_usd'].sum()
                     regime_avg_pnl_per_trade = regime_net_pnl / regime_total_trades if regime_total_trades > 0 else 0.0
                     
-                    regime_trade_duration = 0.0 # Placeholder, requires entry/exit timestamps
+                    # TradeDuration remains a placeholder as entry_timestamp is not available in trade_logs
+                    regime_trade_duration = 0.0 
 
                     strategy_breakdown[regime] = {
                         "TotalTrades": regime_total_trades,

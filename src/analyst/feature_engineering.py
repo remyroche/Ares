@@ -105,8 +105,6 @@ class FeatureEngineeringEngine:
         # Define the Autoencoder model
         input_layer = Input(shape=(input_dim,))
         encoder = Dense(latent_dim, activation="relu")(input_layer)
-        # CHANGED: Use 'linear' activation for decoder output when using StandardScaler,
-        # as StandardScaler can produce negative values.
         decoder = Dense(input_dim, activation="linear")(encoder) 
 
         self.autoencoder_model = Model(inputs=input_layer, outputs=decoder)
@@ -204,6 +202,59 @@ class FeatureEngineeringEngine:
             self.logger.error(f"Error during GBM feature selection: {e}", exc_info=True)
             return features_df.columns.tolist() # Fallback to all features on error
 
+    def _calculate_sr_interaction_types(self, klines_df: pd.DataFrame, sr_levels: list, proximity_multiplier: float) -> pd.DataFrame:
+        """
+        Calculates binary features indicating interaction with Support or Resistance levels.
+        :param klines_df: DataFrame with 'high', 'low', 'close', 'ATR' and DatetimeIndex.
+        :param sr_levels: List of S/R level dictionaries (from SRLevelAnalyzer).
+        :param proximity_multiplier: Multiplier for ATR to define proximity to S/R levels.
+        :return: DataFrame with 'Is_SR_Support_Interacting' and 'Is_SR_Resistance_Interacting' columns.
+        """
+        if klines_df.empty or sr_levels is None or not sr_levels:
+            return pd.DataFrame(0, index=klines_df.index, columns=['Is_SR_Support_Interacting', 'Is_SR_Resistance_Interacting'])
+
+        # Ensure ATR is present and filled
+        if 'ATR' not in klines_df.columns:
+            self.logger.warning("ATR not found in klines_df for S/R interaction type calculation. Skipping detailed S/R interaction features.")
+            return pd.DataFrame(0, index=klines_df.index, columns=['Is_SR_Support_Interacting', 'Is_SR_Resistance_Interacting'])
+        
+        klines_df['ATR_filled_for_sr'] = klines_df['ATR'].fillna(method='ffill').fillna(klines_df['ATR'].mean() if not klines_df['ATR'].empty else 0)
+        if klines_df['ATR_filled_for_sr'].empty:
+            klines_df['ATR_filled_for_sr'] = 0 # Fallback if ATR is all NaN or empty
+
+        is_support_interacting = pd.Series(False, index=klines_df.index)
+        is_resistance_interacting = pd.Series(False, index=klines_df.index)
+
+        for level_info in sr_levels:
+            level_price = level_info['level_price']
+            level_type = level_info['type']
+            
+            # Only consider relevant levels (e.g., Strong, Very Strong, Moderate)
+            if level_info["current_expectation"] not in ["Very Strong", "Strong", "Moderate"]:
+                continue
+
+            # Dynamic tolerance based on ATR for each candle
+            tolerance_series = klines_df['ATR_filled_for_sr'] * proximity_multiplier
+
+            # Check interaction for each row
+            # Price range for interaction: [level_price - tolerance, level_price + tolerance]
+            interaction_condition = (klines_df['low'] <= level_price + tolerance_series) & \
+                                    (klines_df['high'] >= level_price - tolerance_series)
+            
+            if level_type == "Support":
+                is_support_interacting = is_support_interacting | interaction_condition
+            elif level_type == "Resistance":
+                is_resistance_interacting = is_resistance_interacting | interaction_condition
+        
+        # Drop the temporary ATR column
+        klines_df.drop(columns=['ATR_filled_for_sr'], inplace=True, errors='ignore')
+
+        return pd.DataFrame({
+            'Is_SR_Support_Interacting': is_support_interacting.astype(int),
+            'Is_SR_Resistance_Interacting': is_resistance_interacting.astype(int)
+        }, index=klines_df.index)
+
+
     def generate_all_features(self, klines_df: pd.DataFrame, agg_trades_df: pd.DataFrame, futures_df: pd.DataFrame, sr_levels: list):
         """
         Orchestrates the generation of all raw and engineered features for the Analyst.
@@ -258,7 +309,9 @@ class FeatureEngineeringEngine:
             if not isinstance(agg_trades_df.index, pd.DatetimeIndex):
                 agg_trades_df.index = pd.to_datetime(agg_trades_df.index, unit='ms') # Assuming timestamp in ms if not parsed
             
-            volume_delta_resampled = agg_trades_df['delta'].resample('1min').sum().reindex(merged_df.index, fill_value=0)
+            # Use the interval from the main CONFIG
+            resample_interval = CONFIG['INTERVAL'] 
+            volume_delta_resampled = agg_trades_df['delta'].resample(resample_interval).sum().reindex(merged_df.index, fill_value=0)
             features_df['volume_delta'] = volume_delta_resampled
             # Calculate rolling mean and std for z-score
             features_df['volume_delta_mean_60'] = features_df['volume_delta'].rolling(window=60).mean()
@@ -272,20 +325,29 @@ class FeatureEngineeringEngine:
             features_df['delta_zscore'] = 0
 
         # S/R Interaction feature (using sr_analyzer logic)
-        if sr_levels and 'ATR' in features_df.columns:
-            proximity_multiplier = self.config.get("proximity_multiplier", 0.25) # From main config's BEST_PARAMS or analyst section
-            # Ensure ATR is not NaN for calculation
-            features_df['ATR_filled'] = features_df['ATR'].fillna(features_df['ATR'].mean() if not features_df['ATR'].empty else 0)
-            proximity_threshold_series = features_df['ATR_filled'] * proximity_multiplier
-            is_interacting = pd.Series(False, index=features_df.index)
-            for level_info in sr_levels:
-                level = level_info['level_price']
-                # Check interaction for each row
-                is_interacting = is_interacting | ((features_df['low'] <= level + proximity_threshold_series) & 
-                                                    (features_df['high'] >= level - proximity_threshold_series))
-            features_df['Is_SR_Interacting'] = is_interacting.astype(int)
-        else:
-            features_df['Is_SR_Interacting'] = 0
+        # The previous Is_Interacting is now replaced by type-specific interactions
+        # This will be handled by the new _calculate_sr_interaction_types method
+        # if sr_levels and 'ATR' in features_df.columns:
+        #     proximity_multiplier = self.config.get("proximity_multiplier", 0.25) 
+        #     features_df['ATR_filled'] = features_df['ATR'].fillna(features_df['ATR'].mean() if not features_df['ATR'].empty else 0)
+        #     proximity_threshold_series = features_df['ATR_filled'] * proximity_multiplier
+        #     is_interacting = pd.Series(False, index=features_df.index)
+        #     for level_info in sr_levels:
+        #         level = level_info['level_price']
+        #         is_interacting = is_interacting | ((features_df['low'] <= level + proximity_threshold_series) & 
+        #                                             (features_df['high'] >= level - proximity_threshold_series))
+        #     features_df['Is_SR_Interacting'] = is_interacting.astype(int)
+        # else:
+        #     features_df['Is_SR_Interacting'] = 0
+
+        # NEW: Add type-specific S/R interaction features
+        proximity_multiplier = self.config.get("proximity_multiplier", 0.25) # From analyst config
+        sr_interaction_types_df = self._calculate_sr_interaction_types(merged_df, sr_levels, proximity_multiplier)
+        features_df = features_df.merge(sr_interaction_types_df, left_index=True, right_index=True, how='left')
+        
+        # Ensure 'Is_SR_Interacting' is still present for other modules that might rely on it
+        features_df['Is_SR_Interacting'] = (features_df['Is_SR_Support_Interacting'] | features_df['Is_SR_Resistance_Interacting']).astype(int)
+
 
         features_df.fillna(0, inplace=True) # Fill any remaining NaNs after feature calculation
         self.logger.info("Feature generation complete.")

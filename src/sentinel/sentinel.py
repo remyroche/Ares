@@ -1,4 +1,40 @@
-ecipient email not configured. Skipping email alert.")
+# src/sentinel/sentinel.py
+import requests
+import time
+import os
+import sys
+# Import the main CONFIG dictionary
+from config import CONFIG, PIPELINE_PID_FILE # PIPELINE_PID_FILE is still needed for os.remove
+from utils.logger import system_logger
+from emails.ares_mailer import send_email
+
+class Sentinel:
+    """
+    The Sentinel module is responsible for continuous monitoring of the system's health,
+    API connectivity, and detecting unusual behavior or anomalies in model outputs/trade activity.
+    It acts as a fail-safe to prevent catastrophic errors.
+    """
+    def __init__(self, config=CONFIG):
+        self.config = config.get("sentinel", {})
+        self.global_config = config # Store global config to access other sections
+        self.logger = system_logger.getChild('Sentinel') # Child logger for Sentinel
+
+        self.consecutive_api_errors = 0
+        self.consecutive_model_errors = 0
+        self.max_consecutive_errors = self.config.get("max_consecutive_errors", 3)
+        self.alert_recipient_email = self.config.get("alert_recipient_email")
+
+        # Store previous states for deviation monitoring
+        self.previous_analyst_intelligence = {}
+        self.previous_strategist_params = {}
+        self.previous_tactician_decision = {}
+
+    def _send_alert(self, subject: str, body: str):
+        """Sends an email alert using the Ares Mailer."""
+        if self.alert_recipient_email and self.global_config['EMAIL_CONFIG'].get('enabled', False): # Use global config for email enabled
+            send_email(subject, body)
+        else:
+            self.logger.warning("Alert recipient email not configured or email sending disabled. Skipping email alert.")
 
     def _trigger_system_shutdown(self, reason: str):
         """Initiates a system-wide shutdown."""
@@ -14,8 +50,8 @@ ecipient email not configured. Skipping email alert.")
         # 4. Removing PID files.
         
         # For demonstration, we'll just exit the process.
-        if os.path.exists(PIPELINE_PID_FILE):
-            os.remove(PIPELINE_PID_FILE) # Clean up PID file
+        if os.path.exists(self.global_config['PIPELINE_PID_FILE']): # Access from CONFIG
+            os.remove(self.global_config['PIPELINE_PID_FILE']) # Clean up PID file
         sys.exit(1) # Exit with an error code
 
     def check_api_connectivity(self, api_endpoint: str = "https://fapi.binance.com/fapi/v1/ping"):
@@ -63,7 +99,8 @@ ecipient email not configured. Skipping email alert.")
         if self.previous_analyst_intelligence:
             prev_conf = self.previous_analyst_intelligence.get('directional_confidence_score', 0.0)
             curr_conf = current_analyst_intelligence.get('directional_confidence_score', 0.0)
-            if abs(curr_conf - prev_conf) > threshold * 100: # Assuming confidence is 0-100
+            # Assuming confidence is a proportion (0-1), so threshold is also a proportion
+            if abs(curr_conf - prev_conf) > threshold: 
                 deviation_detected = True
                 deviation_reason.append(f"Analyst confidence score jumped from {prev_conf:.2f} to {curr_conf:.2f}.")
         self.previous_analyst_intelligence = current_analyst_intelligence
@@ -74,7 +111,7 @@ ecipient email not configured. Skipping email alert.")
             curr_leverage_cap = current_strategist_params.get('Max_Allowable_Leverage_Cap', 0)
             if prev_leverage_cap > 0 and abs(curr_leverage_cap - prev_leverage_cap) / prev_leverage_cap > threshold:
                 deviation_detected = True
-                deviation_reason.append(f"Strategist leverage cap changed by >{threshold*100}% from {prev_leverage_cap} to {curr_leverage_cap}.")
+                deviation_reason.append(f"Strategist leverage cap changed by >{threshold*100:.0f}% from {prev_leverage_cap} to {curr_leverage_cap}.")
         self.previous_strategist_params = current_strategist_params
 
         # Tactician Decision Check (e.g., sudden change in action without strong reason)
@@ -82,8 +119,11 @@ ecipient email not configured. Skipping email alert.")
             prev_action = self.previous_tactician_decision.get('action')
             curr_action = current_tactician_decision.get('action')
             # Example: If previous was HOLD, and current is PLACE_ORDER with very low confidence, might be an anomaly
+            # Access min_lss_for_entry from CONFIG['tactician']['risk_management']
+            min_confidence_for_action = self.global_config['tactician']['risk_management'].get("min_lss_for_entry", 60) / 100.0 # Convert LSS to 0-1 range for confidence comparison
+            
             if prev_action == "HOLD" and curr_action == "PLACE_ORDER" and \
-               current_analyst_intelligence.get('directional_confidence_score', 0.0) < self.config.get("min_confidence_for_action", 0.6):
+               current_analyst_intelligence.get('directional_confidence_score', 0.0) < min_confidence_for_action:
                 deviation_detected = True
                 deviation_reason.append(f"Tactician placed order from HOLD with low confidence ({current_analyst_intelligence.get('directional_confidence_score',0.0):.2f}).")
         self.previous_tactician_decision = current_tactician_decision
@@ -107,10 +147,10 @@ ecipient email not configured. Skipping email alert.")
         if not latest_trade_data or average_trade_size == 0:
             return False
 
-        trade_size = latest_trade_data.get('quantity', 0) * latest_trade_data.get('entry_price', 0) # Notional value
+        trade_size = latest_trade_data.get('position_size', 0) * latest_trade_data.get('entry_price', 0) # Notional value
         unusual_multiplier = self.config.get("unusual_trade_volume_multiplier", 5.0)
 
-        if trade_size > average_trade_size * unusual_multiplier:
+        if average_trade_size > 0 and trade_size > average_trade_size * unusual_multiplier: # Added check for average_trade_size > 0
             reason = f"Unusually large trade detected: Notional value ${trade_size:,.2f} is >{unusual_multiplier}x average (${average_trade_size:,.2f})."
             self.logger.critical(reason)
             self._trigger_system_shutdown(reason)
@@ -153,12 +193,13 @@ if __name__ == "__main__":
     system_logger = utils.logger.system_logger
     system_logger.info("Starting Sentinel demo.")
 
-    sentinel = Sentinel()
+    # Pass the main CONFIG dictionary to Sentinel
+    sentinel = Sentinel(config=CONFIG)
 
     # Simulate inputs for Sentinel
     analyst_intel_1 = {
         "market_regime": "BULL_TREND",
-        "directional_confidence_score": 0.80,
+        "directional_confidence_score": 0.80, # Assuming 0-1 range
         "liquidation_safety_score": 85.0
     }
     strategist_params_1 = {
@@ -174,7 +215,7 @@ if __name__ == "__main__":
         "leverage": 50
     }
     latest_trade_data_1 = { # For unusual trade activity check
-        "quantity": 0.5,
+        "position_size": 0.5, # Changed from 'quantity' to 'position_size' for consistency
         "entry_price": 2000.0,
         "symbol": "ETHUSDT"
     }
@@ -213,4 +254,3 @@ if __name__ == "__main__":
 
     print("\nSentinel Module Demonstration Complete.")
     print(f"Check 'logs/ares_system.log' for detailed logs.")
-

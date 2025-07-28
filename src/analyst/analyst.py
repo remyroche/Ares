@@ -12,7 +12,7 @@ from config import CONFIG, KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAM
 from sr_analyzer import SRLevelAnalyzer # Assuming sr_analyzer.py is at the root or accessible
 from .feature_engineering import FeatureEngineeringEngine
 from .regime_classifier import MarketRegimeClassifier
-from .predictive_ensembles import RegimePredictiveEnsembles
+from .predictive_ensembles.ensemble_orchestrator import RegimePredictiveEnsembles # UPDATED IMPORT PATH
 from .liquidation_risk_model import ProbabilisticLiquidationRiskModel
 from .market_health_analyzer import GeneralMarketAnalystModule
 from .specialized_models import SpecializedModels
@@ -34,7 +34,7 @@ class Analyst:
         self.sr_analyzer = SRLevelAnalyzer(config["sr_analyzer"])
         self.feature_engine = FeatureEngineeringEngine(config)
         self.regime_classifier = MarketRegimeClassifier(config, self.sr_analyzer)
-        self.predictive_ensembles = RegimePredictiveEnsembles(config)
+        self.predictive_ensembles = RegimePredictiveEnsembles(config) # Uses the orchestrator
         self.liquidation_risk_model = ProbabilisticLiquidationRiskModel(config)
         self.market_health_analyzer = GeneralMarketAnalystModule(config)
         self.specialized_models = SpecializedModels(config)
@@ -115,6 +115,7 @@ class Analyst:
             self.regime_classifier.train_classifier(historical_features_for_training, self._historical_klines)
             await self.save_model_metadata("Analyst_RegimeClassifier_LGBM", "v1.0", {"accuracy": 0.9}, f"{self.model_storage_path}regime_classifier.pkl")
             
+            # Pass the historical_klines to ensembles for any internal feature generation
             self.predictive_ensembles.train_all_ensembles(historical_features_for_training, {}) # {} for historical_targets
             # Add more save_model_metadata calls for other ensemble models here
         else:

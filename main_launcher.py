@@ -1,83 +1,75 @@
-# main_launcher.py
-import subprocess
-import time
-import sys
-import os
-from src.tasks import run_trading_bot_instance
+import asyncio
+from loguru import logger
+import signal
 
-def start_service(command, name):
-    """Starts a background service in a new terminal window."""
-    print(f"Starting {name}...")
-    try:
-        # This command is OS-specific. This example is for macOS.
-        # For Linux, you might use 'gnome-terminal --' or 'xterm -e'.
-        # For Windows, you might use 'start cmd /c'.
-        if sys.platform == "darwin": # macOS
-            script = f'tell app "Terminal" to do script "{command}"'
-            subprocess.Popen(['osascript', '-e', script])
-        elif sys.platform.startswith("linux"):
-            # Try gnome-terminal first, then xterm
-            try:
-                subprocess.Popen(['gnome-terminal', '--', 'bash', '-c', f'{command}; exec bash'])
-            except FileNotFoundError:
-                subprocess.Popen(['xterm', '-e', f'{command}; exec bash'])
-        elif sys.platform == "win32":
-            subprocess.Popen(f'start cmd /k "{command}"', shell=True)
-        else:
-            print(f"Unsupported OS '{sys.platform}'. Please start {name} manually with command: {command}")
-            return False
-        print(f"{name} started in a new terminal.")
-        return True
-    except Exception as e:
-        print(f"Failed to start {name}. Please start it manually. Error: {e}")
-        print(f"Command: {command}")
-        return False
+from src.config import settings
+from src.supervisor.main import Supervisor
+from exchange.binance import exchange
 
-def main():
+class MainLauncher:
     """
-    Main entry point for launching the entire Ares live trading system.
-    Starts Redis, Celery workers, and dispatches trading bot tasks.
+    Main entry point for the Ares Trading Bot.
+    Initializes and runs the Supervisor in an asyncio event loop.
     """
-    print("--- Launching Ares Live Trading System ---")
+    def __init__(self):
+        self.supervisor = Supervisor()
+        self.main_task = None
 
-    # 1. Start Redis (if not already running)
-    # This is a simple check; a more robust solution would use `redis-cli ping`
-    try:
-        import redis
-        r = redis.Redis(host='localhost', port=6379)
-        r.ping()
-        print("Redis is already running.")
-    except (redis.exceptions.ConnectionError, ImportError):
-        print("Redis not found or not running. Attempting to start...")
-        start_service("redis-server", "Redis")
-        time.sleep(3) # Give Redis a moment to start
+    async def run(self):
+        """Initializes and starts the supervisor's main loop."""
+        logger.info("Initializing Ares Trading Bot...")
+        logger.info(f"Trading Mode: {settings.trading_mode}")
+        
+        # The main task that runs the bot's logic
+        self.main_task = asyncio.create_task(self.supervisor.start())
+        
+        await self.main_task
 
-    # 2. Start Celery Worker
-    celery_command = "celery -A src.tasks worker --loglevel=info"
-    start_service(celery_command, "Celery Worker")
-    time.sleep(5) # Give the worker a moment to initialize
+    def shutdown(self, signame):
+        """Gracefully shuts down the application."""
+        logger.warning(f"Received shutdown signal: {signame}. Shutting down...")
+        if self.main_task:
+            self.main_task.cancel()
+        
+        # Clean up other resources like the exchange session
+        asyncio.create_task(exchange.close())
+        
+        # Gather all remaining tasks and cancel them
+        tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        for task in tasks:
+            task.cancel()
+        
+        logger.info("Shutdown complete.")
 
-    # 3. Start Celery Beat for scheduled tasks (like monthly retraining)
-    celery_beat_command = "celery -A src.tasks beat --loglevel=info"
-    start_service(celery_beat_command, "Celery Beat Scheduler")
-    time.sleep(3)
-
-    # 4. Define the symbols and exchanges you want to trade
-    trading_pairs = [
-        {'symbol': 'BTCUSDT', 'exchange': 'binance'},
-        {'symbol': 'ETHUSDT', 'exchange': 'binance'},
-        # Add more pairs and exchanges here
-    ]
-
-    # 5. Dispatch a trading task for each pair
-    print("\nDispatching trading bot tasks...")
-    for pair in trading_pairs:
-        run_trading_bot_instance.delay(pair['symbol'], pair['exchange'])
-        print(f"  -> Dispatched task for {pair['symbol']} on {pair['exchange']}")
+async def main():
+    launcher = MainLauncher()
     
-    print("\n--- All services started and tasks dispatched. ---")
-    print("Monitor the Celery Worker and individual bot logs for real-time activity.")
-    print("You can close this launcher window.")
+    # Set up signal handlers for graceful shutdown
+    loop = asyncio.get_running_loop()
+    for signame in ('SIGINT', 'SIGTERM'):
+        loop.add_signal_handler(
+            getattr(signal, signame),
+            lambda signame=signame: launcher.shutdown(signame)
+        )
+
+    try:
+        await launcher.run()
+    except asyncio.CancelledError:
+        logger.info("Main launcher task cancelled.")
+    except Exception as e:
+        logger.critical(f"A critical error occurred in the main launcher: {e}")
 
 if __name__ == "__main__":
-    main()
+    # Configure logger
+    logger.add(
+        "logs/ares_bot_{time}.log",
+        rotation="1 day",
+        retention="7 days",
+        level=settings.log_level.upper(),
+        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}"
+    )
+    
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Application stopped by user.")

@@ -28,14 +28,29 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt # Install your project dependencies
-        pip install ruff mypy radon # Install Ruff, Mypy, and Radon
+        pip install ruff mypy radon black isortn vulture
 
-    - name: Run Ruff (Linting & Formatting Check)
+
+    - name: Run Ruff (Auto-fix & Report Unfixable Issues)
       run: |
-        # Check for linting errors and formatting issues without fixing them
-        # Ruff will exit with a non-zero code if issues are found, failing the job
+
+        black src/
+        isort src/
+        
+        echo "Attempting to auto-fix formatting issues with Ruff..."
+        ruff format . # Automatically fix formatting issues
+
+        echo "Attempting to auto-fix linting issues with Ruff..."
+        ruff check . --fix # Automatically fix linting issues
+
+        echo "Checking for any remaining unfixed Ruff issues..."
+        # This command will report any issues that couldn't be fixed automatically
+        # and will exit with a non-zero code if issues are found, failing the job.
         ruff check .
-        ruff format . --check # --check ensures it only checks, doesn't modify
+
+      - name: Dead code detection
+        run: vulture src/
+
 
     - name: Run Mypy (Static Type Checking)
       run: |
@@ -58,3 +73,4 @@ jobs:
         # Example of failing the build if complexity is too high or maintainability too low:
         # radon cc src/ --max-cc 10 --fail-on-error # Fails if any function has CC > 10
         # radon mi src/ --min-mi 70 --fail-on-error # Fails if any module has MI < 70
+

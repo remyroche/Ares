@@ -4,14 +4,20 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from lightgbm import LGBMClassifier
 
-# TensorFlow/Keras imports for Deep Learning models
-import tensorflow as tf
-from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import Dense, Dropout, Input
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.regularizers import l1_l2 # For L1/L2 regularization
-# For TabNet, we'll use Dense layers as a proxy
-# from pytorch_tabnet.tab_model import TabNetClassifier # Requires installation
+# Import TabNetClassifier
+try:
+    from pytorch_tabnet.tab_model import TabNetClassifier
+    TABNET_AVAILABLE = True
+except ImportError:
+    print("Warning: pytorch-tabnet not installed. Falling back to Dense layers for TabNet-like model.")
+    TABNET_AVAILABLE = False
+    # Fallback for TensorFlow/Keras imports if TabNet is not available
+    import tensorflow as tf
+    from tensorflow.keras.models import Sequential, load_model
+    from tensorflow.keras.layers import Dense, Dropout, Input
+    from tensorflow.keras.optimizers import Adam
+    from tensorflow.keras.regularizers import l1_l2 # For L1/L2 regularization
+
 
 from .base_ensemble import BaseEnsemble
 
@@ -24,17 +30,27 @@ class HighImpactCandleEnsemble(BaseEnsemble):
         super().__init__(config, ensemble_name)
         self.models = {
             "volume_imbalance": None, # LGBM model for volume imbalance features
-            "tabnet_proxy": None, # TabNet-like model using Dense layers
+            "tabnet": None, # TabNetClassifier model (or Dense layer proxy)
             "lgbm": None # LightGBM for general patterns
         }
         self.ensemble_weights = self.config.get("ensemble_weights", {
-            "volume_imbalance": 0.4, "tabnet_proxy": 0.3, "lgbm": 0.3
+            "volume_imbalance": 0.4, "tabnet": 0.3, "lgbm": 0.3
         })
         self.min_confluence_confidence = self.config.get("min_confluence_confidence", 0.7)
 
-        # DL model specific configurations
+        # TabNet/DL model specific configurations
         self.dl_config = {
-            "dense_units": 64, # Units for TabNet-like dense layers
+            "tabnet_n_d": self.config.get("tabnet_n_d", 64), # Dimension of the prediction layer (TabNet specific)
+            "tabnet_n_a": self.config.get("tabnet_n_a", 64), # Dimension of the attention layer (TabNet specific)
+            "tabnet_n_steps": self.config.get("tabnet_n_steps", 3), # Number of steps in the attention mechanism (TabNet specific)
+            "tabnet_gamma": self.config.get("tabnet_gamma", 1.3), # Gamma for attention (TabNet specific)
+            "tabnet_cat_emb_dim": self.config.get("tabnet_cat_emb_dim", 1), # Categorical embedding dimension (TabNet specific)
+            "tabnet_n_independent": self.config.get("tabnet_n_independent", 2), # Number of independent GLU layers in each GLU block (TabNet specific)
+            "tabnet_n_shared": self.config.get("tabnet_n_shared", 2), # Number of shared GLU layers in each GLU block (TabNet specific)
+            "tabnet_momentum": self.config.get("tabnet_momentum", 0.02), # Momentum for batch normalization (TabNet specific)
+            "tabnet_mask_type": self.config.get("tabnet_mask_type", "entmax"), # Mask type for attention (TabNet specific)
+            
+            "dense_units": 64, # Fallback units for Dense layers if TabNet not available
             "dropout_rate": 0.2,
             "learning_rate": 0.001,
             "epochs": 50,
@@ -65,10 +81,13 @@ class HighImpactCandleEnsemble(BaseEnsemble):
     def _calculate_volume_imbalance_features(self, klines_df: pd.DataFrame) -> pd.Series:
         """
         Calculates volume imbalance features for the most recent candle.
-        Requires 'volume' and 'taker_buy_base_asset_volume' (or similar aggressive buy/sell volume).
-        If taker buy/sell volume is not directly available, it's a heuristic.
+        Prioritizes actual taker buy/sell volumes from klines, falls back to heuristic.
+        
+        Expected klines_df columns: 'volume', 'taker_buy_base_asset_volume', 'taker_sell_base_asset_volume'
+        (or 'open', 'close' for heuristic fallback).
         """
         if klines_df.empty or len(klines_df) < 1:
+            self.logger.warning("Volume imbalance: Input klines_df is empty.")
             return pd.Series({
                 'volume_imbalance_ratio': 0.0,
                 'aggressive_buy_pct': 0.0,
@@ -79,14 +98,16 @@ class HighImpactCandleEnsemble(BaseEnsemble):
         current_candle = klines_df.iloc[-1]
         total_volume = current_candle['volume']
 
-        # Attempt to get taker buy/sell volume from klines if available (Binance klines have V and Q)
-        # 'V' is taker_buy_base_asset_volume, 'Q' is taker_buy_quote_asset_volume
-        # Assuming klines_df has 'taker_buy_base_asset_volume' or similar, otherwise approximate
-        
-        # If taker_buy_base_asset_volume is available directly:
-        if 'taker_buy_base_asset_volume' in current_candle and total_volume > 0:
+        # Prioritize explicit taker buy/sell volumes if available
+        if 'taker_buy_base_asset_volume' in current_candle and 'taker_sell_base_asset_volume' in current_candle:
             taker_buy_volume = current_candle['taker_buy_base_asset_volume']
-            taker_sell_volume = total_volume - taker_buy_volume # Approximate taker sell volume
+            taker_sell_volume = current_candle['taker_sell_base_asset_volume']
+            self.logger.debug("Using explicit taker buy/sell volumes for imbalance calculation.")
+        elif 'taker_buy_base_asset_volume' in current_candle and total_volume > 0:
+            # If only taker_buy is available, approximate taker_sell
+            taker_buy_volume = current_candle['taker_buy_base_asset_volume']
+            taker_sell_volume = total_volume - taker_buy_volume
+            self.logger.warning("Using taker_buy_base_asset_volume and approximating taker_sell_volume for imbalance.")
         else:
             # Fallback heuristic if detailed taker volume is not directly in klines_df
             # This is a very rough approximation based on candle body and total volume
@@ -96,7 +117,7 @@ class HighImpactCandleEnsemble(BaseEnsemble):
             else: # Red candle
                 taker_buy_volume = total_volume * 0.4
                 taker_sell_volume = total_volume * 0.6
-            self.logger.warning("Using heuristic for taker buy/sell volume. For accuracy, ensure 'taker_buy_base_asset_volume' is available in klines.")
+            self.logger.warning("Using heuristic for taker buy/sell volume. For accuracy, ensure 'taker_buy_base_asset_volume' and 'taker_sell_base_asset_volume' are available in klines.")
 
         if total_volume == 0:
             volume_imbalance_ratio = 0.0
@@ -129,7 +150,7 @@ class HighImpactCandleEnsemble(BaseEnsemble):
             self.logger.warning(f"No data to train {self.ensemble_name}. Skipping training.")
             return
 
-        # Prepare flat data for LGBM and TabNet-proxy
+        # Prepare flat data for TabNet/LGBM
         X_flat, y_flat = self._prepare_flat_data(historical_features, historical_targets)
 
         if X_flat.empty:
@@ -139,21 +160,15 @@ class HighImpactCandleEnsemble(BaseEnsemble):
         # Derive volume imbalance features for the historical data
         # This requires historical_features to contain 'open', 'close', 'volume', and potentially 'taker_buy_base_asset_volume'
         # Ensure that the columns required for _calculate_volume_imbalance_features are present in historical_features
-        required_cols_for_imbalance = ['open', 'close', 'volume', 'taker_buy_base_asset_volume']
-        # Check if 'taker_buy_base_asset_volume' is present. If not, _calculate_volume_imbalance_features will use heuristic.
+        # We need to pass the relevant klines columns for accurate imbalance calculation.
+        # Assuming historical_features contains these columns (e.g., from FeatureEngineering)
         
-        # Apply _calculate_volume_imbalance_features row-wise
-        # It's more efficient to apply this to the full DataFrame if possible, or vectorize.
-        # For now, keeping row-wise application for clarity but noting performance.
         historical_imbalance_features_list = []
         for idx, row in historical_features.iterrows():
             # Create a dummy DataFrame for the single row to pass to _calculate_volume_imbalance_features
+            # Ensure all necessary columns are present for _calculate_volume_imbalance_features
             single_row_df = pd.DataFrame([row.to_dict()])
             single_row_df.index = [idx]
-            # Ensure relevant columns are present in the single_row_df
-            for col in required_cols_for_imbalance:
-                if col not in single_row_df.columns:
-                    single_row_df[col] = 0.0 # Add missing columns with default
             historical_imbalance_features_list.append(self._calculate_volume_imbalance_features(single_row_df))
         
         historical_imbalance_features = pd.DataFrame(historical_imbalance_features_list, index=historical_features.index)
@@ -186,27 +201,55 @@ class HighImpactCandleEnsemble(BaseEnsemble):
             self.logger.error(f"Error training Volume Imbalance model: {e}")
             self.models["volume_imbalance"] = None
 
-        # TabNet-like Model (using Dense layers as a proxy)
-        self.logger.info("Training TabNet-like model...")
-        try:
-            model = Sequential([
-                Input(shape=(X_flat.shape[1],)),
-                Dense(self.dl_config["dense_units"], activation='relu',
-                      kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])),
-                Dropout(self.dl_config["dropout_rate"]),
-                Dense(self.dl_config["dense_units"] // 2, activation='relu',
-                      kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])),
-                Dropout(self.dl_config["dropout_rate"]),
-                Dense(len(unique_targets), activation='softmax',
-                      kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"]))
-            ])
-            model.compile(optimizer=Adam(learning_rate=self.dl_config["learning_rate"]), loss='sparse_categorical_crossentropy' if len(unique_targets) > 2 else 'binary_crossentropy', metrics=['accuracy'])
-            model.fit(X_flat, y_flat_encoded, epochs=self.dl_config["epochs"], batch_size=self.dl_config["batch_size"], verbose=0)
-            self.models["tabnet_proxy"] = model
-            self.logger.info("TabNet-like model trained.")
-        except Exception as e:
-            self.logger.error(f"Error training TabNet-like model: {e}")
-            self.models["tabnet_proxy"] = None
+        # TabNet Model (or Dense layer proxy if not available)
+        self.logger.info("Training TabNet model...")
+        if TABNET_AVAILABLE:
+            try:
+                # TabNetClassifier expects numpy arrays
+                self.models["tabnet"] = TabNetClassifier(
+                    n_d=self.dl_config["tabnet_n_d"],
+                    n_a=self.dl_config["tabnet_n_a"],
+                    n_steps=self.dl_config["tabnet_n_steps"],
+                    gamma=self.dl_config["tabnet_gamma"],
+                    cat_emb_dim=self.dl_config["tabnet_cat_emb_dim"],
+                    n_independent=self.dl_config["tabnet_n_independent"],
+                    n_shared=self.dl_config["tabnet_n_shared"],
+                    momentum=self.dl_config["tabnet_momentum"],
+                    mask_type=self.dl_config["tabnet_mask_type"],
+                    seed=42,
+                    verbose=0 # Suppress verbose output
+                )
+                self.models["tabnet"].fit(
+                    X_flat.values, y_flat_encoded,
+                    eval_set=[(X_flat.values, y_flat_encoded)], # Using training set as eval for simplicity
+                    max_epochs=self.dl_config["epochs"],
+                    batch_size=self.dl_config["batch_size"],
+                    drop_last=False # Keep all samples
+                )
+                self.logger.info("TabNet model trained.")
+            except Exception as e:
+                self.logger.error(f"Error training TabNet model: {e}")
+                self.models["tabnet"] = None
+        else: # Fallback to Keras Dense layers
+            try:
+                model = Sequential([
+                    Input(shape=(X_flat.shape[1],)),
+                    Dense(self.dl_config["dense_units"], activation='relu',
+                          kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])),
+                    Dropout(self.dl_config["dropout_rate"]),
+                    Dense(self.dl_config["dense_units"] // 2, activation='relu',
+                          kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])),
+                    Dropout(self.dl_config["dropout_rate"]),
+                    Dense(len(unique_targets), activation='softmax',
+                          kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"]))
+                ])
+                model.compile(optimizer=Adam(learning_rate=self.dl_config["learning_rate"]), loss='sparse_categorical_crossentropy' if len(unique_targets) > 2 else 'binary_crossentropy', metrics=['accuracy'])
+                model.fit(X_flat, y_flat_encoded, epochs=self.dl_config["epochs"], batch_size=self.dl_config["batch_size"], verbose=0)
+                self.models["tabnet"] = model
+                self.logger.info("TabNet-like (Dense layer) model trained.")
+            except Exception as e:
+                self.logger.error(f"Error training TabNet-like (Dense layer) model: {e}")
+                self.models["tabnet"] = None
 
         # LightGBM Model
         self.logger.info("Training LightGBM model...")
@@ -239,16 +282,20 @@ class HighImpactCandleEnsemble(BaseEnsemble):
         else:
             meta_features_train['volume_imbalance_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
         
-        if self.models["tabnet_proxy"]:
-            tabnet_probas = self.models["tabnet_proxy"].predict(X_flat)
+        if self.models["tabnet"]:
+            if TABNET_AVAILABLE:
+                tabnet_probas = self.models["tabnet"].predict_proba(X_flat.values)
+            else: # Keras Dense layer proxy
+                tabnet_probas = self.models["tabnet"].predict(X_flat)
+
             if len(tabnet_probas) == len(y_flat_encoded):
                 tabnet_conf_values = [tabnet_probas[i, y_flat_encoded[i]] for i in range(len(y_flat_encoded))]
-                meta_features_train['tabnet_proxy_proba'] = pd.Series(tabnet_conf_values, index=X_flat.index)
+                meta_features_train['tabnet_proba'] = pd.Series(tabnet_conf_values, index=X_flat.index)
             else:
-                self.logger.warning("TabNet proxy probas length mismatch with y_flat_encoded. Using random uniform for tabnet_proxy_proba.")
-                meta_features_train['tabnet_proxy_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
+                self.logger.warning("TabNet probas length mismatch with y_flat_encoded. Using random uniform for tabnet_proba.")
+                meta_features_train['tabnet_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
         else:
-            meta_features_train['tabnet_proxy_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
+            meta_features_train['tabnet_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
         if self.models["lgbm"]:
             lgbm_probas = self.models["lgbm"].predict_proba(X_flat)
@@ -323,16 +370,19 @@ class HighImpactCandleEnsemble(BaseEnsemble):
         else:
             individual_model_outputs['volume_imbalance_conf'] = np.random.uniform(0.5, 0.9)
 
-        # TabNet-like Prediction
-        if self.models["tabnet_proxy"]:
+        # TabNet Prediction
+        if self.models["tabnet"]:
             try:
-                tabnet_proba = self.models["tabnet_proxy"].predict(X_current_flat)[0]
-                individual_model_outputs['tabnet_proxy_proba'] = float(np.max(tabnet_proba))
+                if TABNET_AVAILABLE:
+                    tabnet_proba = self.models["tabnet"].predict_proba(X_current_flat.values)[0]
+                else: # Keras Dense layer proxy
+                    tabnet_proba = self.models["tabnet"].predict(X_current_flat)[0]
+                individual_model_outputs['tabnet_proba'] = float(np.max(tabnet_proba))
             except Exception as e:
-                self.logger.error(f"Error predicting with TabNet-like model: {e}")
-                individual_model_outputs['tabnet_proxy_proba'] = 0.5
+                self.logger.error(f"Error predicting with TabNet model: {e}")
+                individual_model_outputs['tabnet_proba'] = 0.5
         else:
-            individual_model_outputs['tabnet_proxy_proba'] = 0.5
+            individual_model_outputs['tabnet_proba'] = 0.5
 
         # LightGBM Prediction
         if self.models["lgbm"]:
@@ -376,8 +426,8 @@ class HighImpactCandleEnsemble(BaseEnsemble):
         else:
             self.logger.warning(f"Meta-learner not available for {self.ensemble_name}. Averaging confidences.")
             total_weighted_confidence = sum(individual_model_outputs.get(m, 0.5) * self.ensemble_weights.get(m.replace('_conf', '').replace('_proba', ''), 1.0) 
-                                            for m in ['volume_imbalance_conf', 'tabnet_proxy_proba', 'lgbm_proba'])
-            total_weight = sum(self.ensemble_weights.get(m.replace('_conf', '').replace('_proba', ''), 1.0) for m in ['volume_imbalance_conf', 'tabnet_proxy_proba', 'lgbm_proba'])
+                                            for m in ['volume_imbalance_conf', 'tabnet_proba', 'lgbm_proba'])
+            total_weight = sum(self.ensemble_weights.get(m.replace('_conf', '').replace('_proba', ''), 1.0) for m in ['volume_imbalance_conf', 'tabnet_proba', 'lgbm_proba'])
             
             if total_weight > 0:
                 final_confidence = total_weighted_confidence / total_weight
@@ -389,4 +439,3 @@ class HighImpactCandleEnsemble(BaseEnsemble):
 
         self.logger.info(f"Ensemble Result for {self.ensemble_name}: Prediction={final_prediction}, Confidence={final_confidence:.2f}")
         return {"prediction": final_prediction, "confidence": final_confidence}
-

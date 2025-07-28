@@ -4,10 +4,13 @@ import numpy as np
 import pywt # For Wavelet Transforms
 from sklearn.preprocessing import StandardScaler
 from lightgbm import LGBMClassifier # For GBM Feature Selection
+import os # For path manipulation
+import joblib # For saving/loading scikit-learn models and scalers
+
 # Suppress TensorFlow warnings for cleaner output in demo
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
 import tensorflow as tf
-from tensorflow.keras.models import Model
+from tensorflow.keras.models import Model, load_model # Import load_model
 from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras.optimizers import Adam
 from utils.logger import system_logger # Import the centralized logger
@@ -26,6 +29,12 @@ class FeatureEngineeringEngine:
         self.autoencoder_scaler = None
         self.gbm_selector_model = None # For GBM feature selection
         self.selected_features_names = None # Store names of selected features
+
+        self.model_storage_path = self.config.get("model_storage_path", "models/analyst/feature_engineering/")
+        os.makedirs(self.model_storage_path, exist_ok=True) # Ensure model storage path exists
+        self.autoencoder_model_path = os.path.join(self.model_storage_path, "autoencoder_model.h5")
+        self.autoencoder_scaler_path = os.path.join(self.model_storage_path, "autoencoder_scaler.joblib")
+
 
     def apply_wavelet_transforms(self, data: pd.Series, wavelet='db1', level=None):
         """
@@ -114,11 +123,39 @@ class FeatureEngineeringEngine:
         try:
             self.autoencoder_model.fit(scaled_data, scaled_data, epochs=10, batch_size=32, shuffle=True, verbose=0)
             self.logger.info("Autoencoder training completed.")
-            # Placeholder for saving the model
-            # self.autoencoder_model.save(f"{self.model_storage_path}autoencoder_model.h5")
+            
+            # Save the trained model and scaler
+            self.autoencoder_model.save(self.autoencoder_model_path)
+            joblib.dump(self.autoencoder_scaler, self.autoencoder_scaler_path)
+            self.logger.info(f"Autoencoder model saved to {self.autoencoder_model_path}")
+            self.logger.info(f"Autoencoder scaler saved to {self.autoencoder_scaler_path}")
+
         except Exception as e:
             self.logger.error(f"Error during Autoencoder training: {e}", exc_info=True)
             self.autoencoder_model = None # Invalidate model if training fails
+            self.autoencoder_scaler = None
+
+    def load_autoencoder(self):
+        """
+        Loads a trained Autoencoder model and its scaler.
+        :return: True if loaded successfully, False otherwise.
+        """
+        if os.path.exists(self.autoencoder_model_path) and os.path.exists(self.autoencoder_scaler_path):
+            try:
+                self.autoencoder_model = load_model(self.autoencoder_model_path)
+                self.autoencoder_scaler = joblib.load(self.autoencoder_scaler_path)
+                self.logger.info(f"Autoencoder model loaded from {self.autoencoder_model_path}")
+                self.logger.info(f"Autoencoder scaler loaded from {self.autoencoder_scaler_path}")
+                return True
+            except Exception as e:
+                self.logger.error(f"Error loading Autoencoder model or scaler: {e}", exc_info=True)
+                self.autoencoder_model = None
+                self.autoencoder_scaler = None
+                return False
+        else:
+            self.logger.warning("Autoencoder model or scaler files not found. Cannot load.")
+            return False
+
 
     def apply_autoencoders(self, data: pd.DataFrame):
         """
@@ -126,9 +163,11 @@ class FeatureEngineeringEngine:
         :param data: DataFrame of features to apply the autoencoder on.
         :return: Series of reconstruction errors.
         """
+        # Attempt to load the model if not already loaded
         if self.autoencoder_model is None or self.autoencoder_scaler is None:
-            self.logger.warning("Autoencoder model or scaler not trained. Skipping autoencoder features.")
-            return pd.Series(np.nan, index=data.index, name='autoencoder_reconstruction_error')
+            if not self.load_autoencoder():
+                self.logger.warning("Autoencoder model or scaler not trained/loaded. Skipping autoencoder features.")
+                return pd.Series(np.nan, index=data.index, name='autoencoder_reconstruction_error')
         
         if data.empty:
             self.logger.warning("Autoencoder application: Input data is empty.")
@@ -141,7 +180,18 @@ class FeatureEngineeringEngine:
             return pd.Series(np.nan, index=data.index, name='autoencoder_reconstruction_error')
 
         try:
-            scaled_data = self.autoencoder_scaler.transform(data_clean)
+            # Ensure the input data has the same columns as the data used for fitting the scaler
+            # This is crucial for StandardScaler to work correctly.
+            # If the scaler has 'feature_names_in_', use that to reindex.
+            if hasattr(self.autoencoder_scaler, 'feature_names_in_') and self.autoencoder_scaler.feature_names_in_ is not None:
+                data_clean_reindexed = data_clean.reindex(columns=self.autoencoder_scaler.feature_names_in_, fill_value=0)
+            else:
+                # Fallback if feature_names_in_ is not available (e.g., older scikit-learn versions)
+                # This assumes the order of columns in `data` is consistent.
+                self.logger.warning("Scaler does not have 'feature_names_in_'. Assuming consistent column order for autoencoder application.")
+                data_clean_reindexed = data_clean
+            
+            scaled_data = self.autoencoder_scaler.transform(data_clean_reindexed)
             reconstructions = self.autoencoder_model.predict(scaled_data, verbose=0)
             mse = np.mean(np.power(scaled_data - reconstructions, 2), axis=1)
             reconstruction_error = pd.Series(mse, index=data_clean.index, name='autoencoder_reconstruction_error')
@@ -324,23 +374,7 @@ class FeatureEngineeringEngine:
             features_df['volume_delta_std_60'] = 0
             features_df['delta_zscore'] = 0
 
-        # S/R Interaction feature (using sr_analyzer logic)
-        # The previous Is_Interacting is now replaced by type-specific interactions
-        # This will be handled by the new _calculate_sr_interaction_types method
-        # if sr_levels and 'ATR' in features_df.columns:
-        #     proximity_multiplier = self.config.get("proximity_multiplier", 0.25) 
-        #     features_df['ATR_filled'] = features_df['ATR'].fillna(features_df['ATR'].mean() if not features_df['ATR'].empty else 0)
-        #     proximity_threshold_series = features_df['ATR_filled'] * proximity_multiplier
-        #     is_interacting = pd.Series(False, index=features_df.index)
-        #     for level_info in sr_levels:
-        #         level = level_info['level_price']
-        #         is_interacting = is_interacting | ((features_df['low'] <= level + proximity_threshold_series) & 
-        #                                             (features_df['high'] >= level - proximity_threshold_series))
-        #     features_df['Is_SR_Interacting'] = is_interacting.astype(int)
-        # else:
-        #     features_df['Is_SR_Interacting'] = 0
-
-        # NEW: Add type-specific S/R interaction features
+        # Type-specific S/R interaction features
         proximity_multiplier = self.config.get("proximity_multiplier", 0.25) # From analyst config
         sr_interaction_types_df = self._calculate_sr_interaction_types(merged_df, sr_levels, proximity_multiplier)
         features_df = features_df.merge(sr_interaction_types_df, left_index=True, right_index=True, how='left')

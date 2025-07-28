@@ -1,0 +1,60 @@
+name: Code Quality Checks
+
+on:
+  push:
+    branches:
+      - main # Run on pushes to the main branch
+      - develop # Run on pushes to the develop branch
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  lint-and-typecheck:
+    runs-on: ubuntu-latest # Use a Linux runner
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4 # Action to checkout your repository code
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10' # Specify your Python version (match your requirements.txt)
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt # Install your project dependencies
+        pip install ruff mypy radon # Install Ruff, Mypy, and Radon
+
+    - name: Run Ruff (Linting & Formatting Check)
+      run: |
+        # Check for linting errors and formatting issues without fixing them
+        # Ruff will exit with a non-zero code if issues are found, failing the job
+        ruff check .
+        ruff format . --check # --check ensures it only checks, doesn't modify
+
+    - name: Run Mypy (Static Type Checking)
+      run: |
+        # Run MyPy on your source code
+        # --ignore-missing-imports is often useful for third-party libraries without type stubs
+        # Adjust paths based on your project structure (e.g., src/)
+        mypy src/ --ignore-missing-imports
+        # For stricter checks, you might use: mypy src/ --strict
+
+    - name: Run Radon (Code Complexity and Maintainability)
+      run: |
+        # Check cyclomatic complexity (cc) and maintainability index (mi)
+        # Radon will exit with a non-zero code if configured thresholds are exceeded.
+        # Default thresholds: A-B (good), C (average), D-F (bad).
+        # You can add --min=C to fail if any module is below C.
+        echo "Running Radon Cyclomatic Complexity check..."
+        radon cc src/ --total-average --no-color # --total-average for overall project average
+        echo "Running Radon Maintainability Index check..."
+        radon mi src/ --total-average --no-color # --total-average for overall project average
+        # Example of failing the build if complexity is too high or maintainability too low:
+        # radon cc src/ --max-cc 10 --fail-on-error # Fails if any function has CC > 10
+        # radon mi src/ --min-mi 70 --fail-on-error # Fails if any module has MI < 70

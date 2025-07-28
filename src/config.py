@@ -2,6 +2,51 @@
 
 from emails_config import EMAIL_CONFIG, COMMAND_EMAIL_CONFIG
 from datetime import datetime, timedelta
+import os
+from pydantic import BaseSettings, Field
+from typing import Literal
+from loguru import logger
+from dotenv import load_dotenv
+
+# Load .env file from the root directory
+dotenv_path = os.path.join(os.path.dirname(__file__), '..', '..', '.env')
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path)
+    logger.info(".env file loaded.")
+else:
+    logger.warning(".env file not found. Using environment variables.")
+
+class Settings(BaseSettings):
+    """
+    Manages application settings using Pydantic.
+    Loads from environment variables or a .env file.
+    """
+    # Application Settings
+    log_level: str = Field(default="INFO", env="LOG_LEVEL")
+    trading_mode: Literal["PAPER", "LIVE"] = Field(default="PAPER", env="TRADING_MODE")
+
+    # Binance API Credentials
+    binance_api_key: str | None = Field(default=None, env="BINANCE_API_KEY")
+    binance_api_secret: str | None = Field(default=None, env="BINANCE_API_SECRET")
+
+    # Firestore Credentials
+    google_application_credentials: str | None = Field(default=None, env="GOOGLE_APPLICATION_CREDENTIALS")
+    firestore_project_id: str | None = Field(default=None, env="FIRESTORE_PROJECT_ID")
+
+    class Config:
+        # This allows Pydantic to read from a .env file if you use pydantic-settings
+        # For this setup, we manually call load_dotenv.
+        case_sensitive = True
+
+# Instantiate the settings object to be imported by other modules
+try:
+    settings = Settings()
+    logger.info(f"Configuration loaded successfully. Trading Mode: {settings.trading_mode}")
+except Exception as e:
+    logger.error(f"Failed to load configuration: {e}")
+    # Provide default settings on failure to allow basic startup
+    settings = Settings()
+
 
 # --- General Configuration ---
 # All configurations are now consolidated into a single CONFIG dictionary.

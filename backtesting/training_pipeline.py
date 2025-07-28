@@ -92,21 +92,26 @@ class TrainingPipeline:
         self.logger.info("STAGE 4: Performing walk-forward validation on the last 3 months of data...")
         from backtesting.ares_data_preparer import calculate_and_label_regimes, get_sr_levels
         
+        # *** NEW: Inject fee configuration into the parameters for the backtest ***
+        params_with_fees = optimized_params.copy()
+        params_with_fees['fees'] = CONFIG.get('fees', {'taker': 0.0004, 'maker': 0.0002}) # Add fees to params
+        self.logger.info("Fee configuration included for backtesting.", extra=params_with_fees['fees'])
+
         wf_daily_df = wf_klines.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
         wf_sr_levels = get_sr_levels(wf_daily_df)
 
         wf_prepared_df = calculate_and_label_regimes(
-            wf_klines, wf_agg_trades, wf_futures, optimized_params, wf_sr_levels
+            wf_klines, wf_agg_trades, wf_futures, params_with_fees, wf_sr_levels
         )
 
-        wf_report = run_walk_forward_analysis(wf_prepared_df, optimized_params)
+        wf_report = run_walk_forward_analysis(wf_prepared_df, params_with_fees)
         report_lines.append("\n" + separator)
         report_lines.append("STAGE 4: Walk-Forward Validation Report")
         report_lines.append(wf_report)
 
         # --- STAGE 5: Monte Carlo Validation ---
         self.logger.info("STAGE 5: Performing Monte Carlo simulation on the walk-forward results...")
-        mc_curves, base_portfolio, mc_report = run_monte_carlo_simulation(wf_prepared_df, optimized_params)
+        mc_curves, base_portfolio, mc_report = run_monte_carlo_simulation(wf_prepared_df, params_with_fees)
         
         report_lines.append("\n" + separator)
         report_lines.append("STAGE 5: Monte Carlo Validation Report")

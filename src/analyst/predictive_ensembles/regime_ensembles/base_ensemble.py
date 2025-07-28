@@ -6,6 +6,7 @@ from sklearn.preprocessing import StandardScaler
 from lightgbm import LGBMClassifier # Using LightGBM for the meta-learner
 from sklearn.model_selection import cross_val_score, KFold # For conceptual cross-validation
 from src.utils.logger import system_logger
+from src.analyst.data_utils import calculate_volume_profile # Import for volume profile features
 
 class BaseEnsemble(ABC):
     """
@@ -107,8 +108,11 @@ class BaseEnsemble(ABC):
         # For this demo, we assume the keys in individual_model_predictions are consistent.
         
         try:
+            # Reindex to ensure feature order matches training order
+            meta_features_reindexed = meta_features_raw.reindex(columns=self.meta_learner_features, fill_value=0.0)
+            
             # Scale the input features using the fitted scaler
-            scaled_meta_features = self.scaler.transform(meta_features_raw)
+            scaled_meta_features = self.scaler.transform(meta_features_reindexed)
             
             # Get probability predictions from the meta-learner
             # predict_proba returns probabilities for each class
@@ -155,7 +159,7 @@ class BaseEnsemble(ABC):
             prev_lows_window = recent_klines['low'].iloc[-10:-1] # Look at recent lows
             
             # If current low breaks a recent support level AND closes significantly higher
-            if last_low < prev_lows_window.min() and \
+            if not prev_lows_window.empty and last_low < prev_lows_window.min() and \
                recent_klines['close'].iloc[-1] > recent_klines['open'].iloc[-1] and \
                recent_klines['volume'].iloc[-1] > avg_volume * 1.5: # Volume confirmation
                 is_spring = 1
@@ -167,7 +171,7 @@ class BaseEnsemble(ABC):
             prev_highs_window = recent_klines['high'].iloc[-10:-1] # Look at recent highs
 
             # If current high breaks a recent resistance level AND closes significantly lower
-            if last_high > prev_highs_window.max() and \
+            if not prev_highs_window.empty and last_high > prev_highs_window.max() and \
                recent_klines['close'].iloc[-1] < recent_klines['open'].iloc[-1] and \
                recent_klines['volume'].iloc[-1] > avg_volume * 1.5: # Volume confirmation
                 is_upthrust = 1
@@ -196,17 +200,17 @@ class BaseEnsemble(ABC):
         # Or, price making higher lows and higher highs within a range.
         # Heuristic: Recent price range is narrow, but volume is relatively high on upward moves.
         price_std = recent_klines['close'].std()
-        if price_std / current_price < 0.01 and recent_klines['volume'].iloc[-10:].mean() > avg_volume * 1.2:
+        if not np.isnan(price_std) and price_std / current_price < 0.01 and recent_klines['volume'].iloc[-10:].mean() > avg_volume * 1.2:
              # Check for subtle upward bias within the range (e.g., higher lows)
-             if recent_klines['low'].iloc[-5:].is_monotonic_increasing:
+             if len(recent_klines) >= 5 and recent_klines['low'].iloc[-5:].is_monotonic_increasing:
                  is_accumulation_phase = 1
 
         # Distribution: Sideways movement with increasing volume on dips and decreasing volume on rallies
         # Or, price making lower highs and lower lows within a range.
         # Heuristic: Recent price range is narrow, but volume is relatively high on downward moves.
-        if price_std / current_price < 0.01 and recent_klines['volume'].iloc[-10:].mean() > avg_volume * 1.2:
+        if not np.isnan(price_std) and price_std / current_price < 0.01 and recent_klines['volume'].iloc[-10:].mean() > avg_volume * 1.2:
              # Check for subtle downward bias within the range (e.g., lower highs)
-             if recent_klines['high'].iloc[-5:].is_monotonic_decreasing:
+             if len(recent_klines) >= 5 and recent_klines['high'].iloc[-5:].is_monotonic_decreasing:
                  is_distribution_phase = 1
 
         self.logger.debug(f"Wyckoff Features: Spring={is_spring}, Upthrust={is_upthrust}, SOS={is_sos}, SOW={is_sow}, Acc={is_accumulation_phase}, Dist={is_distribution_phase}")
@@ -258,10 +262,15 @@ class BaseEnsemble(ABC):
         is_liquidity_sweep = 0
         if not agg_trades_df.empty and len(agg_trades_df) > 1:
             last_trade = agg_trades_df.iloc[-1]
-            prev_trades_avg_qty = agg_trades_df['quantity'].iloc[:-1].mean()
+            # Ensure prev_trades_avg_qty calculation is robust
+            if len(agg_trades_df) > 1:
+                prev_trades_avg_qty = agg_trades_df['quantity'].iloc[:-1].mean()
+            else:
+                prev_trades_avg_qty = 0 # No previous trades
             
             # If current trade quantity is much larger than average AND price moved a lot
-            if last_trade['quantity'] > prev_trades_avg_qty * 5 and \
+            if prev_trades_avg_qty > 0 and last_trade['quantity'] > prev_trades_avg_qty * 5 and \
+               agg_trades_df['price'].iloc[-2] > 0 and \
                abs(last_trade['price'] - agg_trades_df['price'].iloc[-2]) / agg_trades_df['price'].iloc[-2] > 0.001: # 0.1% price move
                 is_liquidity_sweep = 1
 
@@ -285,29 +294,36 @@ class BaseEnsemble(ABC):
         True order flow requires tick-level data and full order book snapshots.
         """
         if agg_trades_df.empty or klines_df.empty:
-            return {"cvd_divergence": 0.0, "is_absorption": 0, "is_exhaustion": 0, "aggressive_buy_volume": 0, "aggressive_sell_volume": 0}
+            return {"cvd_value": 0.0, "cvd_divergence_score": 0.0, "is_absorption": 0, "is_exhaustion": 0, "aggressive_buy_volume": 0, "aggressive_sell_volume": 0}
 
         # --- Cumulative Volume Delta (CVD) ---
         # `signed_quantity` is already calculated in feature_engineering, but we can re-calculate for recent trades
-        # Assuming 'is_buyer_maker': True for passive buyer (taker sells), False for passive seller (taker buys)
         # Corrected: Binance 'm' (is_buyer_maker) means if the BUYER was the MAKER.
         # If m=True (buyer is maker), it's a sell order hitting a bid (price likely goes down). So signed_qty = -qty.
         # If m=False (seller is maker), it's a buy order hitting an ask (price likely goes up). So signed_qty = +qty.
-        agg_trades_df['signed_quantity'] = agg_trades_df['quantity'] * np.where(agg_trades_df['is_buyer_maker'], -1, 1)
         
-        # Consider recent trades for CVD
-        recent_trades = agg_trades_df.iloc[-min(len(agg_trades_df), 100):] # Last 100 trades
+        # Ensure 'is_buyer_maker' and 'quantity' columns exist
+        if 'is_buyer_maker' not in agg_trades_df.columns or 'quantity' not in agg_trades_df.columns:
+            self.logger.warning("Missing 'is_buyer_maker' or 'quantity' in agg_trades_df for order flow features.")
+            return {"cvd_value": 0.0, "cvd_divergence_score": 0.0, "is_absorption": 0, "is_exhaustion": 0, "aggressive_buy_volume": 0, "aggressive_sell_volume": 0}
+
+        agg_trades_df_copy = agg_trades_df.copy()
+        agg_trades_df_copy['signed_quantity'] = agg_trades_df_copy['quantity'] * np.where(agg_trades_df_copy['is_buyer_maker'], -1, 1)
+        
+        # Consider recent trades for CVD (e.g., last 100 trades or last 5 minutes)
+        recent_trades = agg_trades_df_copy.iloc[-min(len(agg_trades_df_copy), 100):] 
         cvd = recent_trades['signed_quantity'].sum()
         
         # --- CVD Divergence with Price (Heuristic) ---
         # Divergence: Price moves one way, but CVD moves opposite or stagnates.
-        price_change_recent = klines_df['close'].iloc[-1] - klines_df['close'].iloc[-min(len(klines_df), 10):].mean()
-        
         cvd_divergence_score = 0.0
-        if price_change_recent > 0 and cvd < 0: # Price up, but net selling
-            cvd_divergence_score = -1.0 # Bearish divergence
-        elif price_change_recent < 0 and cvd > 0: # Price down, but net buying
-            cvd_divergence_score = 1.0 # Bullish divergence
+        if len(klines_df) >= 10:
+            price_change_recent = klines_df['close'].iloc[-1] - klines_df['close'].iloc[-10:].mean()
+            
+            if price_change_recent > 0 and cvd < 0: # Price up, but net selling
+                cvd_divergence_score = -1.0 # Bearish divergence
+            elif price_change_recent < 0 and cvd > 0: # Price down, but net buying
+                cvd_divergence_score = 1.0 # Bullish divergence
 
         # --- Absorption and Exhaustion Patterns (Heuristic) ---
         # Absorption: Strong buying/selling pressure (high CVD) but price not moving much.
@@ -317,22 +333,24 @@ class BaseEnsemble(ABC):
         is_exhaustion = 0
 
         # Absorption heuristic: High CVD, low price volatility
-        if abs(cvd) > recent_trades['quantity'].sum() * 0.2: # Significant CVD
-            recent_price_volatility = klines_df['close'].iloc[-10:].std() / klines_df['close'].iloc[-1]
-            if recent_price_volatility < 0.001: # Very low volatility (e.g., 0.1%)
-                is_absorption = 1
+        if not recent_trades.empty and recent_trades['quantity'].sum() > 0:
+            if abs(cvd) / recent_trades['quantity'].sum() > 0.2: # Significant CVD relative to total volume
+                recent_price_volatility = klines_df['close'].iloc[-10:].std()
+                # Check if volatility is low relative to current price
+                if klines_df['close'].iloc[-1] > 0 and recent_price_volatility / klines_df['close'].iloc[-1] < 0.001: # Very low volatility (e.g., 0.1%)
+                    is_absorption = 1
         
         # Exhaustion heuristic: Price continues in a trend, but volume/CVD drops off
-        # Requires tracking previous CVD/volume.
         # For simplicity, if current candle is long but volume is low relative to average
-        current_candle_range = klines_df['high'].iloc[-1] - klines_df['low'].iloc[-1]
-        avg_candle_range = (klines_df['high'] - klines_df['low']).iloc[-50:-1].mean()
-        
-        if current_candle_range > avg_candle_range * 1.5: # Large candle
-            current_volume = klines_df['volume'].iloc[-1]
-            avg_volume_recent = klines_df['volume'].iloc[-50:-1].mean()
-            if current_volume < avg_volume_recent * 0.8: # But low volume
-                is_exhaustion = 1
+        if len(klines_df) >= 50: # Need enough history for average
+            current_candle_range = klines_df['high'].iloc[-1] - klines_df['low'].iloc[-1]
+            avg_candle_range = (klines_df['high'] - klines_df['low']).iloc[-50:-1].mean()
+            
+            if avg_candle_range > 0 and current_candle_range / avg_candle_range > 1.5: # Large candle (1.5x average size)
+                current_volume = klines_df['volume'].iloc[-1]
+                avg_volume_recent = klines_df['volume'].iloc[-50:-1].mean()
+                if avg_volume_recent > 0 and current_volume / avg_volume_recent < 0.8: # But low volume (less than 80% of average)
+                    is_exhaustion = 1
 
         # --- Aggressive Buy/Sell Volume (from Agg Trades) ---
         aggressive_buy_volume = recent_trades[recent_trades['signed_quantity'] > 0]['quantity'].sum()

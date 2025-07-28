@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 from src.config import CONFIG
 from src.utils.logger import system_logger
-from config import CONFIG
 
 class RiskAllocator:
     def __init__(self, config=CONFIG, portfolio_risk_pct=None):

@@ -5,14 +5,17 @@ import sys
 import time
 import os
 import signal # Import signal module for sending signals
-from config import COMMAND_EMAIL_CONFIG, RESTART_FLAG_FILE # Import the new configuration
+# Import the main CONFIG dictionary
+from config import CONFIG
 
 def write_restart_flag():
     """Writes a flag file to signal main.py to restart the pipeline."""
+    # Access RESTART_FLAG_FILE from the main CONFIG dictionary
+    restart_flag_file = CONFIG['RESTART_FLAG_FILE']
     try:
-        with open(RESTART_FLAG_FILE, 'w') as f:
+        with open(restart_flag_file, 'w') as f:
             f.write("RESTART")
-        print(f"Restart flag file '{RESTART_FLAG_FILE}' created.")
+        print(f"Restart flag file '{restart_flag_file}' created.")
     except Exception as e:
         print(f"Error writing restart flag file: {e}")
 
@@ -43,17 +46,20 @@ def execute_command(command):
 
 def check_emails():
     """Checks the configured email inbox for commands."""
-    if not COMMAND_EMAIL_CONFIG.get('enabled', False):
+    # Access COMMAND_EMAIL_CONFIG from the main CONFIG dictionary
+    command_email_config = CONFIG['COMMAND_EMAIL_CONFIG']
+
+    if not command_email_config.get('enabled', False):
         print("Email command listener is disabled in config.py. Skipping check.")
         return
 
     try:
-        mail = imaplib.IMAP4_SSL(COMMAND_EMAIL_CONFIG['imap_server'], COMMAND_EMAIL_CONFIG['imap_port'])
-        mail.login(COMMAND_EMAIL_CONFIG['email_address'], COMMAND_EMAIL_CONFIG['app_password'])
+        mail = imaplib.IMAP4_SSL(command_email_config['imap_server'], command_email_config['imap_port'])
+        mail.login(command_email_config['email_address'], command_email_config['app_password'])
         mail.select('inbox')
 
         # Search for unread emails from the allowed sender
-        status, email_ids = mail.search(None, 'UNSEEN', 'FROM', COMMAND_EMAIL_CONFIG['allowed_sender'])
+        status, email_ids = mail.search(None, 'UNSEEN', 'FROM', command_email_config['allowed_sender'])
         
         if status != 'OK':
             print(f"Error searching for emails: {status}")
@@ -114,13 +120,15 @@ def check_emails():
 def main_listener():
     """Main loop for the email command listener."""
     print("--- Ares Email Command Listener Starting ---")
-    print(f"Checking emails every {COMMAND_EMAIL_CONFIG.get('polling_interval_seconds', 120)} seconds.")
+    # Access polling_interval_seconds from the main CONFIG dictionary
+    polling_interval = CONFIG['COMMAND_EMAIL_CONFIG'].get('polling_interval_seconds', 120)
+    print(f"Checking emails every {polling_interval} seconds.")
     print("WARNING: Ensure COMMAND_EMAIL_CONFIG is correctly set up for security.")
     print("This listener now signals the main orchestrator for pipeline restarts.")
 
     while True:
         check_emails()
-        time.sleep(COMMAND_EMAIL_CONFIG.get('polling_interval_seconds', 120))
+        time.sleep(polling_interval)
 
 if __name__ == "__main__":
     main_listener()

@@ -7,3 +7,4 @@ python-binance
 pywt
 scikit-learn
 lightgbm
+websocket-client 

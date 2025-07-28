@@ -41,7 +41,10 @@ class SRZoneActionEnsemble(BaseEnsemble):
             "l1_reg_strength": self.config.get("meta_learner_l1_reg", 0.001),
             "l2_reg_strength": self.config.get("meta_learner_l2_reg", 0.001),
         }
-        self.expected_dl_features = ['close', 'volume', 'ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting']
+        # UPDATED: Added S/R interaction type features
+        self.expected_dl_features = ['close', 'volume', 'ADX', 'MACD_HIST', 'ATR', 'volume_delta', 
+                                     'autoencoder_reconstruction_error', 'Is_SR_Interacting',
+                                     'Is_SR_Support_Interacting', 'Is_SR_Resistance_Interacting']
         self.dl_target_map = {} # To store target label to integer mapping for DL models
         self.volume_profile_features_list = [] # To store feature names for volume_profile model
         self.order_flow_target_map = {} # To store target label to integer mapping for order flow model
@@ -193,10 +196,33 @@ class SRZoneActionEnsemble(BaseEnsemble):
         up_threshold = 0.002  
         down_threshold = -0.002 
 
-        simulated_of_target = pd.Series('HOLD', index=price_change_of.index)
-        simulated_of_target[price_change_of > up_threshold] = 'BREAKTHROUGH_UP'
-        simulated_of_target[price_change_of < down_threshold] = 'BREAKTHROUGH_DOWN'
+        simulated_of_target = pd.Series('HOLD_SR', index=price_change_of.index) # Default to HOLD_SR
         
+        # Determine labels based on S/R interaction type and price movement
+        # Ensure 'Is_SR_Support_Interacting' and 'Is_SR_Resistance_Interacting' are in historical_features
+        if 'Is_SR_Support_Interacting' in historical_features.columns and 'Is_SR_Resistance_Interacting' in historical_features.columns:
+            # Breakthrough Up through Resistance
+            breakthrough_up_cond = (price_change_of > up_threshold) & (historical_features['Is_SR_Resistance_Interacting'] == 1)
+            simulated_of_target[breakthrough_up_cond] = 'BREAKOUT_THROUGH_RESISTANCE'
+
+            # Breakdown Through Support
+            breakdown_down_cond = (price_change_of < down_threshold) & (historical_features['Is_SR_Support_Interacting'] == 1)
+            simulated_of_target[breakdown_down_cond] = 'BREAKDOWN_THROUGH_SUPPORT'
+
+            # Rejection from Resistance (price moves down after interacting with resistance)
+            rejection_resistance_cond = (price_change_of < -up_threshold) & (historical_features['Is_SR_Resistance_Interacting'] == 1)
+            simulated_of_target[rejection_resistance_cond] = 'REJECTION_FROM_RESISTANCE'
+
+            # Bounce off Support (price moves up after interacting with support)
+            bounce_support_cond = (price_change_of > -down_threshold) & (historical_features['Is_SR_Support_Interacting'] == 1)
+            simulated_of_target[bounce_support_cond] = 'BOUNCE_OFF_SUPPORT'
+        else:
+            self.logger.warning("S/R interaction type features not found in historical_features. Using simplified order flow targets.")
+            # Fallback to generic breakthrough/rejection if S/R types are not available
+            simulated_of_target[price_change_of > up_threshold] = 'BREAKTHROUGH_UP_GENERIC'
+            simulated_of_target[price_change_of < down_threshold] = 'BREAKTHROUGH_DOWN_GENERIC'
+
+
         # Align order flow features with simulated target
         aligned_of_data = order_flow_features_for_training.join(simulated_of_target.rename('of_target')).dropna()
         
@@ -261,11 +287,11 @@ class SRZoneActionEnsemble(BaseEnsemble):
             order_flow_score_values = []
             for i, proba_array in enumerate(order_flow_probas_hist):
                 predicted_class = self.models["order_flow"].classes_[np.argmax(proba_array)]
-                if predicted_class == 'BREAKTHROUGH_UP':
-                    order_flow_score_values.append(proba_array[self.order_flow_target_map['BREAKTHROUGH_UP']])
-                elif predicted_class == 'BREAKTHROUGH_DOWN':
-                    order_flow_score_values.append(-proba_array[self.order_flow_target_map['BREAKTHROUGH_DOWN']])
-                else: # HOLD
+                if predicted_class in ['BREAKOUT_THROUGH_RESISTANCE', 'BOUNCE_OFF_SUPPORT', 'BREAKTHROUGH_UP_GENERIC']:
+                    order_flow_score_values.append(proba_array[self.order_flow_target_map[predicted_class]])
+                elif predicted_class in ['BREAKDOWN_THROUGH_SUPPORT', 'REJECTION_FROM_RESISTANCE', 'BREAKTHROUGH_DOWN_GENERIC']:
+                    order_flow_score_values.append(-proba_array[self.order_flow_target_map[predicted_class]])
+                else: # HOLD_SR
                     order_flow_score_values.append(0.0) # Neutral score for HOLD
             
             # Align with X_flat index
@@ -290,7 +316,8 @@ class SRZoneActionEnsemble(BaseEnsemble):
                                                                       'is_liquidity_sweep', 'is_fake_breakout', 'is_large_bid_wall_near', 'is_large_ask_wall_near',
                                                                       'cvd_value', 'cvd_divergence_score', 'is_absorption', 'is_exhaustion',
                                                                       'aggressive_buy_volume', 'aggressive_sell_volume',
-                                                                      'htf_trend_bullish', 'mtf_trend_bullish']], how='inner').fillna(0)
+                                                                      'htf_trend_bullish', 'mtf_trend_bullish', # Existing features
+                                                                      'Is_SR_Support_Interacting', 'Is_SR_Resistance_Interacting']], how='inner').fillna(0) # NEW S/R features
 
         meta_features_train = meta_features_train.loc[y_flat.index].dropna()
         y_meta_train = y_flat.loc[meta_features_train.index]
@@ -359,11 +386,11 @@ class SRZoneActionEnsemble(BaseEnsemble):
                     predicted_class = self.models["order_flow"].classes_[predicted_class_idx]
                     
                     order_flow_score = 0.0
-                    if predicted_class == 'BREAKTHROUGH_UP':
-                        order_flow_score = order_flow_proba[self.order_flow_target_map['BREAKTHROUGH_UP']]
-                    elif predicted_class == 'BREAKTHROUGH_DOWN':
-                        order_flow_score = -order_flow_proba[self.order_flow_target_map['BREAKTHROUGH_DOWN']]
-                    # If 'HOLD', score remains 0.0
+                    if predicted_class in ['BREAKOUT_THROUGH_RESISTANCE', 'BOUNCE_OFF_SUPPORT', 'BREAKTHROUGH_UP_GENERIC']:
+                        order_flow_score = order_flow_proba[self.order_flow_target_map[predicted_class]]
+                    elif predicted_class in ['BREAKDOWN_THROUGH_SUPPORT', 'REJECTION_FROM_RESISTANCE', 'BREAKTHROUGH_DOWN_GENERIC']:
+                        order_flow_score = -order_flow_proba[self.order_flow_target_map[predicted_class]]
+                    # If 'HOLD_SR', score remains 0.0
                     
                     individual_model_outputs['order_flow_score'] = float(order_flow_score) 
                 else:
@@ -396,6 +423,11 @@ class SRZoneActionEnsemble(BaseEnsemble):
         individual_model_outputs.update({k: float(v) if isinstance(v, (int, float, np.number)) else 0.0 for k, v in manipulation_feats.items()})
         individual_model_outputs.update({k: float(v) if isinstance(v, (int, float, np.number)) else 0.0 for k, v in order_flow_feats.items()})
         individual_model_outputs.update({k: float(v) if isinstance(v, (int, float, np.number)) else 0.0 for k, v in multi_timeframe_feats.items()})
+        
+        # NEW: Add S/R interaction type features to individual_model_outputs
+        individual_model_outputs['Is_SR_Support_Interacting'] = float(current_features_row['Is_SR_Support_Interacting'].iloc[0])
+        individual_model_outputs['Is_SR_Resistance_Interacting'] = float(current_features_row['Is_SR_Resistance_Interacting'].iloc[0])
+
 
         # --- Confluence Model (Meta-Learner) ---
         final_prediction = "HOLD"

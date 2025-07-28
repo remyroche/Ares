@@ -1,0 +1,216 @@
+ecipient email not configured. Skipping email alert.")
+
+    def _trigger_system_shutdown(self, reason: str):
+        """Initiates a system-wide shutdown."""
+        self.logger.critical(f"SYSTEM SHUTDOWN TRIGGERED: {reason}")
+        alert_subject = f"Ares Critical Alert: System Shutdown - {reason}"
+        alert_body = f"The Ares trading system is initiating a shutdown due to: {reason}\n\nPlease investigate immediately."
+        self._send_alert(alert_subject, alert_body)
+        
+        # In a real system, this would involve:
+        # 1. Closing all open positions on the exchange.
+        # 2. Cancelling all open orders.
+        # 3. Gracefully shutting down all other modules (Analyst, Tactician, Strategist, Supervisor).
+        # 4. Removing PID files.
+        
+        # For demonstration, we'll just exit the process.
+        if os.path.exists(PIPELINE_PID_FILE):
+            os.remove(PIPELINE_PID_FILE) # Clean up PID file
+        sys.exit(1) # Exit with an error code
+
+    def check_api_connectivity(self, api_endpoint: str = "https://fapi.binance.com/fapi/v1/ping"):
+        """
+        Checks connectivity and latency to a given API endpoint.
+        :param api_endpoint: The URL to ping for connectivity.
+        :return: True if API is responsive within latency threshold, False otherwise.
+        """
+        self.logger.info(f"Checking API connectivity to {api_endpoint}...")
+        try:
+            start_time = time.time()
+            response = requests.get(api_endpoint, timeout=5) # 5-second timeout
+            latency_ms = (time.time() - start_time) * 1000
+            
+            if response.status_code == 200:
+                self.logger.info(f"API is reachable. Latency: {latency_ms:.2f} ms.")
+                if latency_ms > self.config.get("api_latency_threshold_ms", 500):
+                    self.logger.warning(f"API latency ({latency_ms:.2f} ms) exceeds threshold ({self.config['api_latency_threshold_ms']} ms).")
+                    self.consecutive_api_errors += 1
+                else:
+                    self.consecutive_api_errors = 0 # Reset counter on success
+                return True
+            else:
+                self.logger.error(f"API returned status code {response.status_code}.")
+                self.consecutive_api_errors += 1
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"API connectivity check failed: {e}")
+            self.consecutive_api_errors += 1
+        
+        if self.consecutive_api_errors >= self.max_consecutive_errors:
+            self._trigger_system_shutdown("Consecutive API connectivity failures.")
+        return False
+
+    def monitor_model_output_deviation(self, current_analyst_intelligence: dict, current_strategist_params: dict, current_tactician_decision: dict):
+        """
+        Monitors for unusual deviations in model outputs (e.g., confidence scores, parameters).
+        This is a simplified check; real deviation detection would use statistical methods.
+        """
+        self.logger.info("Monitoring model output deviation...")
+        deviation_detected = False
+        deviation_reason = []
+        threshold = self.config.get("model_output_deviation_threshold", 0.2) # 20% deviation
+
+        # Analyst Intelligence Check (e.g., directional confidence score)
+        if self.previous_analyst_intelligence:
+            prev_conf = self.previous_analyst_intelligence.get('directional_confidence_score', 0.0)
+            curr_conf = current_analyst_intelligence.get('directional_confidence_score', 0.0)
+            if abs(curr_conf - prev_conf) > threshold * 100: # Assuming confidence is 0-100
+                deviation_detected = True
+                deviation_reason.append(f"Analyst confidence score jumped from {prev_conf:.2f} to {curr_conf:.2f}.")
+        self.previous_analyst_intelligence = current_analyst_intelligence
+
+        # Strategist Parameters Check (e.g., max leverage cap)
+        if self.previous_strategist_params:
+            prev_leverage_cap = self.previous_strategist_params.get('Max_Allowable_Leverage_Cap', 0)
+            curr_leverage_cap = current_strategist_params.get('Max_Allowable_Leverage_Cap', 0)
+            if prev_leverage_cap > 0 and abs(curr_leverage_cap - prev_leverage_cap) / prev_leverage_cap > threshold:
+                deviation_detected = True
+                deviation_reason.append(f"Strategist leverage cap changed by >{threshold*100}% from {prev_leverage_cap} to {curr_leverage_cap}.")
+        self.previous_strategist_params = current_strategist_params
+
+        # Tactician Decision Check (e.g., sudden change in action without strong reason)
+        if self.previous_tactician_decision and current_tactician_decision:
+            prev_action = self.previous_tactician_decision.get('action')
+            curr_action = current_tactician_decision.get('action')
+            # Example: If previous was HOLD, and current is PLACE_ORDER with very low confidence, might be an anomaly
+            if prev_action == "HOLD" and curr_action == "PLACE_ORDER" and \
+               current_analyst_intelligence.get('directional_confidence_score', 0.0) < self.config.get("min_confidence_for_action", 0.6):
+                deviation_detected = True
+                deviation_reason.append(f"Tactician placed order from HOLD with low confidence ({current_analyst_intelligence.get('directional_confidence_score',0.0):.2f}).")
+        self.previous_tactician_decision = current_tactician_decision
+
+        if deviation_detected:
+            self.consecutive_model_errors += 1
+            self.logger.warning(f"Model output deviation detected: {'; '.join(deviation_reason)}")
+            if self.consecutive_model_errors >= self.max_consecutive_errors:
+                self._trigger_system_shutdown(f"Consecutive model output deviations: {'; '.join(deviation_reason)}")
+        else:
+            self.consecutive_model_errors = 0 # Reset counter on no deviation
+
+        return deviation_detected
+
+    def monitor_unusual_trade_activity(self, latest_trade_data: dict, average_trade_size: float):
+        """
+        Monitors for unusually large or frequent trades (e.g., if the system goes rogue).
+        :param latest_trade_data: Dictionary of the latest executed trade.
+        :param average_trade_size: The expected average trade size (e.g., from historical data).
+        """
+        if not latest_trade_data or average_trade_size == 0:
+            return False
+
+        trade_size = latest_trade_data.get('quantity', 0) * latest_trade_data.get('entry_price', 0) # Notional value
+        unusual_multiplier = self.config.get("unusual_trade_volume_multiplier", 5.0)
+
+        if trade_size > average_trade_size * unusual_multiplier:
+            reason = f"Unusually large trade detected: Notional value ${trade_size:,.2f} is >{unusual_multiplier}x average (${average_trade_size:,.2f})."
+            self.logger.critical(reason)
+            self._trigger_system_shutdown(reason)
+            return True
+        return False
+
+    def run_checks(self, current_analyst_intelligence: dict, current_strategist_params: dict, 
+                   current_tactician_decision: dict, latest_trade_data: dict = None, 
+                   average_trade_size: float = 0.0):
+        """
+        Runs all Sentinel checks.
+        This method should be called frequently within the main operational loop.
+        """
+        self.logger.info("Running Sentinel checks...")
+        
+        # 1. API Connectivity Check
+        self.check_api_connectivity()
+
+        # 2. Model Output Deviation Check
+        self.monitor_model_output_deviation(current_analyst_intelligence, current_strategist_params, current_tactician_decision)
+
+        # 3. Unusual Trade Activity Check (only if a trade occurred)
+        if latest_trade_data:
+            self.monitor_unusual_trade_activity(latest_trade_data, average_trade_size)
+
+        self.logger.info("Sentinel checks complete.")
+
+# --- Example Usage (Main execution block for demonstration) ---
+if __name__ == "__main__":
+    print("Running Sentinel Module Demonstration...")
+
+    # Create logs directory if it doesn't exist
+    os.makedirs("logs", exist_ok=True)
+
+    # Re-initialize logger to ensure it's fresh for demo if run multiple times
+    # (In a real system, logger is typically set up once at startup)
+    from importlib import reload
+    import utils.logger
+    reload(utils.logger)
+    system_logger = utils.logger.system_logger
+    system_logger.info("Starting Sentinel demo.")
+
+    sentinel = Sentinel()
+
+    # Simulate inputs for Sentinel
+    analyst_intel_1 = {
+        "market_regime": "BULL_TREND",
+        "directional_confidence_score": 0.80,
+        "liquidation_safety_score": 85.0
+    }
+    strategist_params_1 = {
+        "Trading_Range": {"low": 1900.0, "high": 2200.0},
+        "Max_Allowable_Leverage_Cap": 75,
+        "Positional_Bias": "LONG"
+    }
+    tactician_decision_1 = {
+        "action": "PLACE_ORDER",
+        "symbol": "ETHUSDT",
+        "direction": "LONG",
+        "quantity": 0.5,
+        "leverage": 50
+    }
+    latest_trade_data_1 = { # For unusual trade activity check
+        "quantity": 0.5,
+        "entry_price": 2000.0,
+        "symbol": "ETHUSDT"
+    }
+    average_expected_trade_size = 0.1 * 2000 # Example: $200 notional
+
+    print("\n--- Scenario 1: Normal Operation ---")
+    sentinel.run_checks(analyst_intel_1, strategist_params_1, tactician_decision_1, latest_trade_data_1, average_expected_trade_size)
+    time.sleep(1) # Simulate time passing
+
+    print("\n--- Scenario 2: API Latency Warning ---")
+    # Temporarily reduce threshold to trigger warning
+    sentinel.config["api_latency_threshold_ms"] = 10
+    sentinel.check_api_connectivity() # Will log a warning
+    sentinel.config["api_latency_threshold_ms"] = 500 # Reset for next checks
+    time.sleep(1)
+
+    print("\n--- Scenario 3: Model Output Deviation (Confidence Jump) ---")
+    analyst_intel_2 = analyst_intel_1.copy()
+    analyst_intel_2["directional_confidence_score"] = 0.10 # Sudden drop in confidence
+    sentinel.run_checks(analyst_intel_2, strategist_params_1, tactician_decision_1)
+    time.sleep(1)
+
+    print("\n--- Scenario 4: Consecutive Model Output Deviations (Triggering Shutdown) ---")
+    # Simulate multiple consecutive deviations
+    for i in range(sentinel.max_consecutive_errors):
+        print(f"  Attempt {i+1}/{sentinel.max_consecutive_errors} with deviation...")
+        analyst_intel_3 = analyst_intel_1.copy()
+        analyst_intel_3["directional_confidence_score"] = 0.05 + (i * 0.01) # Keep it low
+        # This call should trigger shutdown on the last iteration
+        try:
+            sentinel.run_checks(analyst_intel_3, strategist_params_1, tactician_decision_1)
+        except SystemExit as e:
+            print(f"Caught SystemExit: {e}. Sentinel triggered shutdown as expected.")
+            break # Exit loop as system would have shut down
+        time.sleep(0.5)
+
+    print("\nSentinel Module Demonstration Complete.")
+    print(f"Check 'logs/ares_system.log' for detailed logs.")
+

@@ -24,11 +24,21 @@ jobs:
       with:
         python-version: '3.9' # Changed Python version to 3.9
 
-    - name: Install dependencies
+    - name: Install TA-Lib C Library
+      run: |
+        # Download and install TA-Lib C library
+        # This is required for the Python ta-lib package to build successfully
+        wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz -O /tmp/ta-lib-0.4.0-src.tar.gz
+        tar -xzf /tmp/ta-lib-0.4.0-src.tar.gz -C /tmp
+        cd /tmp/ta-lib/
+        ./configure --prefix=/usr
+        make
+        sudo make install
+      # Add sudo to make install as it's installing system-wide
+
+    - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        # Removed the sed command as package compatibility might differ for Python 3.9.
-        # Let pip resolve the correct pandas-ta version from requirements.txt.
         pip install -r requirements.txt # Install your project dependencies
         # Install Ruff, Mypy, Radon, Black, Isort, Vulture
         pip install ruff mypy radon black isort vulture

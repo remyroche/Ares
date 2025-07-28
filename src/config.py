@@ -130,6 +130,23 @@ CONFIG = {
         "initial_allocated_capital_multiplier": 1.0, # Starting multiplier (1.0 = 100% of INITIAL_EQUITY)
         "daily_summary_log_filename": "reports/daily_summary_log.csv",
         "strategy_performance_log_filename": "reports/strategy_performance_log.csv"
+    },
+    # --- Sentinel Specific Configurations ---
+    "sentinel": {
+        "api_check_interval_seconds": 60, # How often to check API connectivity
+        "api_latency_threshold_ms": 500, # Max acceptable API response latency
+        "model_output_deviation_threshold": 0.2, # Max acceptable deviation in model output (e.g., confidence score)
+        "unusual_trade_volume_multiplier": 5.0, # Multiplier for detecting unusually large trades
+        "max_consecutive_errors": 3, # Max errors before triggering shutdown
+        "alert_recipient_email": "your_alert_email@example.com" # Email for critical alerts
+    },
+    # --- Logging Configuration ---
+    "logging": {
+        "log_level": "INFO", # DEBUG, INFO, WARNING, ERROR, CRITICAL
+        "log_file": "logs/ares_system.log",
+        "log_to_console": True,
+        "max_bytes": 10485760, # 10 MB
+        "backup_count": 5 # Keep 5 backup log files
     }
 }
 

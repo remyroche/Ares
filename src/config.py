@@ -11,6 +11,12 @@ CONFIG = {
     "INTERVAL": '1m',
     "LOOKBACK_YEARS": 2,
 
+    'fees': {
+        'taker': 0.0004,  # Standard fee for market orders (0.04%)
+        'maker': 0.0002,  # Standard fee for limit orders (0.02%)
+    },
+    
+
     # --- Script Names & Flags ---
     "DOWNLOADER_SCRIPT_NAME": "ares_data_downloader.py",
     "PREPARER_SCRIPT_NAME": "ares_data_preparer.py",

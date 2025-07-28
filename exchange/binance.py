@@ -1,4 +1,5 @@
 import time
+from binance.exceptions import BinanceAPIException, BinanceRequestException
 import requests
 import hmac
 import hashlib
@@ -21,55 +22,17 @@ logger = logging.getLogger(__name__)
 # Enable WebSocket tracing for debugging (optional)
 # enableTrace(True)
 
-class BinanceFuturesAPI:
-    # Base URLs are now accessed from CONFIG
-    # BASE_URL_MAINNET = "https://fapi.binance.com"
-    # WS_BASE_URL_MAINNET = "wss://fstream.binance.com"
-    # BASE_URL_TESTNET = "https://testnet.binancefuture.com"
-    # WS_BASE_URL_TESTNET = "wss://stream.binancefuture.com"
 
-    RATE_LIMIT_SLEEP = 1.1  # seconds
+# Example usage within the class
+# self.robust_api_call(self.client.create_order, symbol=symbol, ...)
 
-    def __init__(self, api_key, api_secret, testnet=True, symbol=None, interval=None, config=CONFIG): # Default config to global CONFIG
+class BinanceExchange:
+    def __init__(self, api_key, api_secret):
         self.API_KEY = api_key
         self.API_SECRET = api_secret
-        self.testnet = testnet
-        self.symbol = symbol if symbol else config['SYMBOL'] # Use provided symbol or from CONFIG
-        self.interval = interval if interval else config['INTERVAL'] # Use provided interval or from CONFIG
-        self.config = config # Use the global CONFIG dictionary
-
-        # Access base URLs from config
-        if self.testnet:
-            self.BASE_URL = self.config['live_trading'].get('testnet_rest_url', "https://testnet.binancefuture.com")
-            self.WS_BASE_URL = self.config['live_trading'].get('testnet_ws_url', "wss://stream.binancefuture.com")
-            logger.info("Using Binance Futures TESTNET environment.")
-        else:
-            self.BASE_URL = self.config['live_trading'].get('mainnet_rest_url', "https://fapi.binance.com")
-            self.WS_BASE_URL = self.config['live_trading'].get('mainnet_ws_url', "wss://fstream.binance.com")
-            logger.info("Using Binance Futures MAINNET environment.")
-
+        self.BASE_URL = "https://api.binance.com" # Or testnet URL
         self.session = requests.Session()
-        self.session.headers.update({"X-MBX-APIKEY": self.API_KEY})
-
-        retries = Retry(total=5, backoff_factor=1,
-                        status_forcelist=[429, 500, 502, 503, 504])
-        self.session.mount("https://", HTTPAdapter(max_retries=retries))
-
-        # WebSocket related attributes
-        self.ws_clients = {} # Stores WebSocketApp instances
-        self.ws_threads = {} # Stores WebSocket threads
-        self.listen_key = None # For user data stream
-        self.listen_key_keep_alive_thread = None # To manage the keep-alive thread
-
-        # Data buffers for WebSocket streams (using deque for efficient appends/pops)
-        self.kline_buffer = collections.deque(maxlen=1000) # Store last 1000 1m klines
-        self.agg_trade_buffer = collections.deque(maxlen=5000) # Store last 5000 agg trades
-        self.order_book_buffer = {'bids': [], 'asks': []} # Store latest order book snapshot
-        self.account_balance = {} # Store latest account balance
-        self.current_position = {} # Store latest position details
-
-        # Lock for thread-safe access to buffers
-        self.data_lock = threading.Lock()
+        self.session.headers.update({'X-MBX-APIKEY': self.API_KEY})
 
     def _sign_payload(self, payload):
         query_string = urlencode(payload)
@@ -148,6 +111,9 @@ class BinanceFuturesAPI:
                 return {"error": f"JSON decode error: {json_err}", "response_text": response.text}
         return {"error": f"Failed to complete public {endpoint} after multiple retries."}
 
+
+    
+        
     # --- REST API Functions ---
     def get_server_time(self):
         """Get server time to check API connectivity."""

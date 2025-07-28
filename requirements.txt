@@ -15,8 +15,8 @@ grpcio-status==1.62.2
 idna==3.7
 multidict==6.0.5
 numpy==1.21.6 # Pinned to an older version for ta-lib compilation compatibility on Python 3.9
-pandas==2.2.2
-pandas-ta==0.3.14b0 # Updated to the compatible version
+pandas==1.4.4 # Updated to be compatible with numpy==1.21.6
+pandas-ta==0.3.14b0
 protobuf==4.25.3
 pyasn1==0.6.0
 pyasn1-modules==0.4.0

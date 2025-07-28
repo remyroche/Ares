@@ -100,3 +100,4 @@ class SpecializedModels:
             return {"is_high_impact": True, "reason": reason}
         else:
             return {"is_high_impact": False, "reason": "No high-impact candle detected."}
+

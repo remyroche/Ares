@@ -1,12 +1,13 @@
-# src/supervisor/main.py
 import pandas as pd
 import datetime
 import os
 import asyncio
+from loguru import logger
 
-from src.config import CONFIG
-from src.utils.logger import system_logger
-from src.database.firestore_manager import FirestoreManager
+# Assuming a global config dictionary and logger are available
+# from src.config import settings # Using settings from our established config
+from src.config import settings
+from src.database.firestore_manager import db_manager
 from .performance_reporter import PerformanceReporter
 from .risk_allocator import RiskAllocator
 from .optimizer import Optimizer
@@ -18,16 +19,17 @@ class Supervisor:
     and manages capital allocation over long time horizons. It also handles enhanced
     performance reporting and A/B testing by orchestrating its sub-modules.
     """
-    def __init__(self, config=CONFIG, firestore_manager=None):
-        self.config = config.get("supervisor", {})
-        self.global_config = config
-        self.logger = system_logger.getChild('Supervisor')
+    def __init__(self):
+        # Using the global settings object for configuration
+        self.config = settings.supervisor_config if hasattr(settings, 'supervisor_config') else {}
+        self.logger = logger
         
         # Initialize sub-modules
-        self.reporter = PerformanceReporter(config, firestore_manager)
-        self.risk_allocator = RiskAllocator(config)
-        self.optimizer = Optimizer(config, firestore_manager)
-        self.ab_tester = ABTester(config, self.reporter)
+        # Pass the db_manager instance to components that need it
+        self.reporter = PerformanceReporter(settings, db_manager)
+        self.risk_allocator = RiskAllocator(settings)
+        self.optimizer = Optimizer(settings, db_manager)
+        self.ab_tester = ABTester(settings, self.reporter)
         
         # State for configurable retraining schedule
         self.retraining_schedule_config = self.config.get("retraining_schedule", {})
@@ -43,8 +45,8 @@ class Supervisor:
 
 
     async def orchestrate_supervision(self, current_date: datetime.date, total_equity: float, 
-                                daily_trade_logs: list, daily_pnl_per_regime: dict,
-                                historical_daily_pnl_data: pd.DataFrame):
+                                      daily_trade_logs: list, daily_pnl_per_regime: dict,
+                                      historical_daily_pnl_data: pd.DataFrame):
         """
         Main orchestration method for the Supervisor, called periodically (e.g., daily/weekly).
         """
@@ -71,15 +73,15 @@ class Supervisor:
 
         # 4. Configurable Retraining and Optimization Trigger
         if self.retraining_schedule_config.get("enabled", False) and self.next_retraining_date and current_date >= self.next_retraining_date:
-             self.logger.info(f"Scheduled retraining date reached. Kicking off training pipeline for {current_date.strftime('%Y-%m')}...")
-             # In a real system, this would trigger an external process, e.g., a Celery task or a script run.
-             # For demonstration, we log the action. A real implementation would use:
-             # os.system('python backtesting/training_pipeline.py &')
-             
-             # Schedule the next run
-             period_days = self.retraining_schedule_config.get("retraining_period_days", 30)
-             self.next_retraining_date = current_date + datetime.timedelta(days=period_days)
-             self.logger.info(f"Next retraining scheduled for: {self.next_retraining_date}")
+            self.logger.info(f"Scheduled retraining date reached. Kicking off training pipeline for {current_date.strftime('%Y-%m')}...")
+            # In a real system, this would trigger an external process, e.g., a Celery task or a script run.
+            # For demonstration, we log the action. A real implementation would use:
+            # os.system('python backtesting/training_pipeline.py &')
+            
+            # Schedule the next run
+            period_days = self.retraining_schedule_config.get("retraining_period_days", 30)
+            self.next_retraining_date = current_date + datetime.timedelta(days=period_days)
+            self.logger.info(f"Next retraining scheduled for: {self.next_retraining_date}")
 
         # 5. Global System Optimization (Meta-Learning) - Run periodically
         if current_date.day % self.config.get("meta_learning_frequency_days", 7) == 0:

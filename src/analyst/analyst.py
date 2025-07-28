@@ -5,6 +5,7 @@ import os
 import sys
 import datetime
 import json # For serializing dicts
+import asyncio # For async operations
 
 # Assume these are available in the same package or through sys.path
 from config import CONFIG, KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAME
@@ -18,6 +19,7 @@ from .specialized_models import SpecializedModels
 from .data_utils import load_klines_data, load_agg_trades_data, load_futures_data, simulate_order_book_data
 
 from database.firestore_manager import FirestoreManager # New import
+from utils.logger import system_logger # Centralized logger
 
 class Analyst:
     """
@@ -46,7 +48,7 @@ class Analyst:
         self.model_storage_path = self.config['analyst'].get("model_storage_path", "models/analyst/")
         os.makedirs(self.model_storage_path, exist_ok=True) # Ensure model storage path exists
 
-    def load_and_prepare_historical_data(self):
+    async def load_and_prepare_historical_data(self):
         """
         Loads historical data and performs initial preparation for Analyst's internal use.
         This should be called once at startup or periodically for retraining.
@@ -65,7 +67,7 @@ class Analyst:
             'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
         }).dropna()
         if not daily_df.empty:
-            daily_df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+            daily_df.rename(columns={'open': 'Open', 'high': 'low', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True) # Fix column names for SR Analyzer
             self._sr_levels = self.sr_analyzer.analyze(daily_df)
             self.logger.info(f"Analyst: Identified {len(self._sr_levels)} S/R levels from historical data.")
         else:
@@ -78,14 +80,43 @@ class Analyst:
         )
         if not historical_features_for_training.empty:
             # Train and save/load models
-            self.feature_engine.train_autoencoder(historical_features_for_training[['close', 'volume']].dropna())
-            self.regime_classifier.train_classifier(historical_features_for_training, self._historical_klines)
-            self.predictive_ensembles.train_all_ensembles(historical_features_for_training, {}) # {} for historical_targets
+            # Autoencoder training uses a subset of features
+            ae_train_df = historical_features_for_training[['close', 'volume']].dropna()
+            if not ae_train_df.empty:
+                self.feature_engine.train_autoencoder(ae_train_df)
+                await self.save_model_metadata("Analyst_FeatureEngineer_Autoencoder", "v1.0", {"loss": 0.01}, f"{self.model_storage_path}autoencoder_model.h5")
+            else:
+                self.logger.warning("Analyst: Not enough data for autoencoder training.")
+
+            # --- Demonstrate GBM Feature Selection ---
+            # Create a simulated target for demonstration purposes:
+            # E.g., 1 if price increased by more than 0.5% in the next 5 periods, 0 otherwise.
+            target_lookahead = 5
+            price_change = historical_features_for_training['close'].pct_change(target_lookahead).shift(-target_lookahead)
+            # Binary target: 1 for significant up move, 0 otherwise (can be refined)
+            simulated_target = (price_change > 0.005).astype(int)
+            simulated_target.name = 'price_up_target'
             
-            # Save model metadata after training
-            asyncio.run(self.save_model_metadata("Analyst_FeatureEngineer_Autoencoder", "v1.0", {"loss": 0.01}, f"{self.model_storage_path}autoencoder_model.h5"))
-            asyncio.run(self.save_model_metadata("Analyst_RegimeClassifier_LGBM", "v1.0", {"accuracy": 0.9}, f"{self.model_storage_path}regime_classifier.pkl"))
-            # Add more for other ensemble models
+            # Align features and target, drop NaNs
+            features_and_target = historical_features_for_training.join(simulated_target).dropna()
+            
+            if not features_and_target.empty and 'price_up_target' in features_and_target.columns:
+                X_for_gbm = features_and_target.drop(columns=['price_up_target'])
+                y_for_gbm = features_and_target['price_up_target']
+                
+                self.logger.info("Analyst: Running GBM Feature Selection demo...")
+                selected_features = self.feature_engine.select_features_with_gbm(X_for_gbm, y_for_gbm)
+                self.logger.info(f"Analyst: GBM Selected Features: {selected_features}")
+                # In a real system, you'd now use these selected_features for subsequent model training.
+            else:
+                self.logger.warning("Analyst: Not enough data for GBM feature selection demo after target creation.")
+            # --- End GBM Feature Selection Demo ---
+
+            self.regime_classifier.train_classifier(historical_features_for_training, self._historical_klines)
+            await self.save_model_metadata("Analyst_RegimeClassifier_LGBM", "v1.0", {"accuracy": 0.9}, f"{self.model_storage_path}regime_classifier.pkl")
+            
+            self.predictive_ensembles.train_all_ensembles(historical_features_for_training, {}) # {} for historical_targets
+            # Add more save_model_metadata calls for other ensemble models here
         else:
             self.logger.warning("Analyst: Not enough historical features for model training.")
 
@@ -97,6 +128,8 @@ class Analyst:
         Helper for simulation mode to get historical klines for feature generation.
         """
         if self._historical_klines is None or self._historical_klines.empty:
+            # Fallback to loading from file if not already loaded
+            self.logger.info("Analyst: Loading historical klines for simulation from file.")
             return load_klines_data(KLINES_FILENAME)
         return self._historical_klines
 
@@ -126,16 +159,14 @@ class Analyst:
         # Export to CSV
         try:
             with open(self.config['supervisor']['model_metadata_csv'], 'a') as f:
+                # Ensure the order matches the CSV header
                 f.write(f"{metadata['model_name']},{metadata['version']},{metadata['training_date']},"
-                        f"{json.dumps(metadata['performance_metrics'])},{metadata['file_path_reference']},"
-                        f"{metadata['config_snapshot']}\n")
+                        f"\"{json.dumps(metadata['performance_metrics'])}\"," # Quote JSON to handle commas
+                        f"{metadata['file_path_reference']},"
+                        f"\"{metadata['config_snapshot']}\"\n") # Quote JSON
             self.logger.info(f"Model metadata for {model_name} exported to CSV.")
         except Exception as e:
             self.logger.error(f"Error exporting model metadata for {model_name} to CSV: {e}")
-
-    # The rest of the Analyst class methods (get_intelligence, etc.) remain largely the same,
-    # as they already call the sub-modules. The sub-modules themselves are where the
-    # actual model training/loading logic would reside.
 
     def get_intelligence(self, current_klines_data: pd.DataFrame, current_agg_trades_data: pd.DataFrame, 
                          current_futures_data: pd.DataFrame, current_order_book_data: dict,
@@ -156,15 +187,24 @@ class Analyst:
 
         # 1. Feature Engineering
         # Combine current and historical data for feature generation
-        combined_klines = pd.concat([self._historical_klines.tail(2000), current_klines_data]).drop_duplicates().sort_index().last('2D')
-        combined_agg_trades = pd.concat([self._historical_agg_trades.tail(5000), current_agg_trades_data]).drop_duplicates().sort_index().last('2D')
-        combined_futures = pd.concat([self._historical_futures.tail(500), current_futures_data]).drop_duplicates().sort_index().last('2D')
+        # Ensure _historical_klines, _historical_agg_trades, _historical_futures are not None
+        hist_klines = self._historical_klines.tail(2000) if self._historical_klines is not None else pd.DataFrame()
+        hist_agg_trades = self._historical_agg_trades.tail(5000) if self._historical_agg_trades is not None else pd.DataFrame()
+        hist_futures = self._historical_futures.tail(500) if self._historical_futures is not None else pd.DataFrame()
+
+        combined_klines = pd.concat([hist_klines, current_klines_data]).drop_duplicates().sort_index().last('2D')
+        combined_agg_trades = pd.concat([hist_agg_trades, current_agg_trades_data]).drop_duplicates().sort_index().last('2D')
+        combined_futures = pd.concat([hist_futures, current_futures_data]).drop_duplicates().sort_index().last('2D')
 
         # Generate features using the feature engineering engine
         current_features = self.feature_engine.generate_all_features(
             combined_klines, combined_agg_trades, combined_futures, self._sr_levels
         )
-        intelligence['features'] = current_features.tail(1).to_dict('records')[0]
+        if not current_features.empty:
+            intelligence['features'] = current_features.tail(1).to_dict('records')[0]
+        else:
+            self.logger.warning("Analyst: No features generated. Returning empty intelligence.")
+            return {} # Return empty if no features
 
         # 2. Market Regime Classification
         regime, trend_strength, adx_value = self.regime_classifier.predict_regime(
@@ -201,7 +241,7 @@ class Analyst:
         sr_interaction_signal = self.specialized_models.get_sr_interaction_signal(
             current_klines_data['close'].iloc[-1], 
             self._sr_levels, 
-            current_features['ATR'].iloc[-1] if 'ATR' in current_features.columns else 0
+            intelligence['features'].get('ATR', 0) # Use ATR from generated features
         )
         intelligence['sr_interaction_signal'] = sr_interaction_signal
 
@@ -210,6 +250,3 @@ class Analyst:
 
         self.logger.info("--- Analyst: Intelligence Generation Complete ---")
         return intelligence
-
-# Example Usage (Main execution block for demonstration) - Removed to avoid re-running during pipeline startup
-# This block is now part of the main pipeline's initialization.

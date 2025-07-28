@@ -81,7 +81,10 @@ class Analyst:
         return None
 
 def run_backtest(df, params=BEST_PARAMS):
-    """Runs the full backtest using the new confidence score logic."""
+    """
+    Runs the full backtest using the new confidence score logic.
+    Improved exit logic to prioritize stop-loss if both SL/TP are hit within the same candle.
+    """
     portfolio = PortfolioManager(INITIAL_EQUITY)
     analyst = Analyst(params)
     position, entry_price, trade_info = 0, 0, {}
@@ -94,15 +97,38 @@ def run_backtest(df, params=BEST_PARAMS):
         if position != 0: # Check for exit
             sl, tp = trade_info['sl'], trade_info['tp']
             exit_price = 0
-            if position == 1 and (row['low'] <= sl or row['high'] >= tp):
-                exit_price = sl if row['low'] <= sl else tp
-            elif position == -1 and (row['high'] >= sl or row['low'] <= tp):
-                exit_price = sl if row['high'] >= sl else tp
-            if exit_price > 0:
+            
+            # Check for Stop Loss and Take Profit
+            if position == 1: # Long position
+                # Check if price went below Stop Loss
+                sl_hit = row['low'] <= sl
+                # Check if price went above Take Profit
+                tp_hit = row['high'] >= tp
+
+                if sl_hit:
+                    # If Stop Loss is hit, exit at Stop Loss price
+                    exit_price = sl
+                elif tp_hit:
+                    # If only Take Profit is hit, exit at Take Profit price
+                    exit_price = tp
+            elif position == -1: # Short position
+                # Check if price went above Stop Loss
+                sl_hit = row['high'] >= sl
+                # Check if price went below Take Profit
+                tp_hit = row['low'] <= tp
+
+                if sl_hit:
+                    # If Stop Loss is hit, exit at Stop Loss price
+                    exit_price = sl
+                elif tp_hit:
+                    # If only Take Profit is hit, exit at Take Profit price
+                    exit_price = tp
+
+            if exit_price > 0: # If an exit condition was met
                 pnl = (exit_price - entry_price) / entry_price if position == 1 else (entry_price - exit_price) / entry_price
                 portfolio.record(pnl, trade_info['source'])
-                position = 0
-                continue
+                position = 0 # Reset position after exit
+                continue # Move to next candle
 
         if position == 0: # Check for entry
             signal = analyst.get_signal(prev)

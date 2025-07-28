@@ -17,6 +17,9 @@ from src.exchange.binance import BinanceFuturesAPI
 from src.database.firestore_manager import FirestoreManager
 from src.utils.model_manager import ModelManager
 from src.analyst.data_utils import load_klines_data, simulate_order_book_data
+from src.utils.logger import system_logger
+from src.utils.state_manager import StateManager
+
 
 class AresPipeline:
     """
@@ -29,6 +32,7 @@ class AresPipeline:
         
         self.firestore_manager = FirestoreManager(config=self.config)
         self.model_manager = ModelManager(firestore_manager=self.firestore_manager)
+        self.state_manager = StateManager()
 
         # Modules are now accessed via the ModelManager for hot-swapping
         self.analyst = self.model_manager.analyst
@@ -204,7 +208,17 @@ class AresPipeline:
             self.analyst = self.model_manager.analyst
             self.strategist = self.model_manager.strategist
             self.tactician = self.model_manager.tactician
-            
+
+
+            # --- Check System State (RUNNING or PAUSED) ---
+            if not self.state_manager.is_running():
+                self.logger.warning("Trading is PAUSED. Closing open positions and skipping trade logic.")
+                if self.tactician.current_position["size"] > 0:
+                    # Create a decision to close the position
+                    close_decision = {"action": "POSITION_CLOSED", "details": {"reason": "System paused by Sentinel/User."}}
+                    await self._execute_trade_action(self.tactician, None, close_decision, self._get_real_time_market_data()[4])
+                continue # Skip the rest of the loop
+                
             # --- Main Loop Logic ---
             klines, agg_trades, futures, order_book, current_price, _, pos_notional, liq_price = self._get_real_time_market_data()
             if klines.empty:

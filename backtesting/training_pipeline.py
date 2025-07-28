@@ -138,5 +138,10 @@ def main():
     pipeline = TrainingPipeline()
     asyncio.run(pipeline.run())
 
+    analyst_output = analyst.run_analysis(current_data)
+    strategist = Strategist(long_threshold=0.7, short_threshold=0.7) # Can be optimized
+    strategic_bias = strategist.decide_strategy(analyst_output)
+    backtester.handle_signal(strategic_bias)
+
 if __name__ == "__main__":
     main()

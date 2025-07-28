@@ -84,7 +84,8 @@ CONFIG = {
             "atr_multiplier": 2.0,    # Multiplier for current ATR vs. average ATR
             "volume_sma_period": 20,
             "atr_sma_period": 20
-        }
+        },
+        "model_storage_path": "models/analyst/" # Local path for analyst models
     },
     # --- Tactician Specific Configurations ---
     "tactician": {
@@ -129,7 +130,9 @@ CONFIG = {
         "max_capital_allocation_decrease_pct": 0.75, # Max -75% of initial allocated capital (i.e., down to 0.25x)
         "initial_allocated_capital_multiplier": 1.0, # Starting multiplier (1.0 = 100% of INITIAL_EQUITY)
         "daily_summary_log_filename": "reports/daily_summary_log.csv",
-        "strategy_performance_log_filename": "reports/strategy_performance_log.csv"
+        "strategy_performance_log_filename": "reports/strategy_performance_log.csv",
+        "optimized_params_csv": "reports/optimized_params_history.csv", # CSV for optimized params
+        "model_metadata_csv": "reports/model_metadata_history.csv" # CSV for model metadata
     },
     # --- Sentinel Specific Configurations ---
     "sentinel": {
@@ -167,6 +170,16 @@ CONFIG = {
             "depth": f"{SYMBOL.lower()}@depth5@100ms", # 5-level order book, 100ms update speed
             "userData": True # Set to True to enable user data stream (requires API Key/Secret)
         }
+    },
+    # --- Firestore Configuration ---
+    "firestore": {
+        "enabled": False, # Set to True to enable Firestore integration
+        "trade_logs_collection": "trade_logs",
+        "optimized_params_collection": "optimized_params",
+        "model_metadata_collection": "model_metadata",
+        "system_config_collection": "system_config", # For storing overall CONFIG state if needed
+        "user_data_collection_path": "users", # Path for user-specific data
+        "public_data_collection_path": "public/data" # Path for public/shared data
     }
 }
 

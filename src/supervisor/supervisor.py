@@ -13,8 +13,8 @@ from skopt import gp_minimize
 from skopt.space import Real, Integer # For defining search space dimensions
 from skopt.utils import use_named_args # For using named arguments in objective function
 
-# Assume these are available in the same package or through sys.path
-from config import CONFIG, INITIAL_EQUITY, BEST_PARAMS # Import BEST_PARAMS
+# Import the main CONFIG dictionary
+from config import CONFIG
 from utils.logger import system_logger
 from database.firestore_manager import FirestoreManager # New import
 
@@ -30,10 +30,10 @@ class Supervisor:
     and manages capital allocation over long time horizons. It also handles enhanced
     performance reporting.
     """
-    def __init__(self, config=CONFIG, firestore_manager: FirestoreManager = None):
+    def __init__(self, config=CONFIG):
         self.config = config.get("supervisor", {})
         self.global_config = config # Store global config to access BEST_PARAMS etc.
-        self.initial_equity = INITIAL_EQUITY # Total capital available to the system
+        self.initial_equity = self.global_config['INITIAL_EQUITY'] # Access from CONFIG
         self.firestore_manager = firestore_manager
         self.logger = system_logger.getChild('Supervisor') # Child logger for Supervisor
         
@@ -164,12 +164,8 @@ class Supervisor:
         matching the structure expected by `calculate_and_label_regimes` and `run_backtest`.
         Also handles weight normalization and integer conversions.
         """
-        flat_params = self.global_config['BEST_PARAMS'].copy() # Start with a copy of default BEST_PARAMS
-
-        # Iterate through all parameters in OPTIMIZATION_CONFIG to ensure they are set
-        # This handles both coarse and fine-tuning parameters
-        # For skopt, we receive a flat list of values, so we need to map them back
-        # to the nested structure of BEST_PARAMS.
+        # Start with a deep copy of the current BEST_PARAMS from global_config
+        flat_params = copy.deepcopy(self.global_config['BEST_PARAMS']) 
 
         # The 'nested_params' here is actually a flat dict of param_path:value from skopt.
         # We need to apply these values to a copy of BEST_PARAMS.
@@ -248,7 +244,7 @@ class Supervisor:
         # Handle cases where metrics might be -inf or inf
         sharpe = metrics['Sharpe Ratio'] if np.isfinite(metrics['Sharpe Ratio']) else -1e9
         profit_factor = metrics['Profit Factor'] if np.isfinite(metrics['Profit Factor']) else -1e9
-        final_equity = metrics['Final Equity'] if np.isfinite(metrics['Final Equity']) else INITIAL_EQUITY
+        final_equity = metrics['Final Equity'] if np.isfinite(metrics['Final Equity']) else self.initial_equity # Use self.initial_equity
         max_drawdown = metrics['Max Drawdown (%)'] if np.isfinite(metrics['Max Drawdown (%)']) else 1e9
         win_rate = metrics['Win Rate (%)'] if np.isfinite(metrics['Win Rate (%)']) else 0.0
 
@@ -269,7 +265,7 @@ class Supervisor:
         composite_score = (
             w_sharpe * sharpe +
             w_profit_factor * normalized_profit_factor + # Use normalized profit factor
-            w_equity * (final_equity / INITIAL_EQUITY - 1) * 100 + # % return on initial equity
+            w_equity * (final_equity / self.initial_equity - 1) * 100 + # % return on initial equity, use self.initial_equity
             w_win_rate * win_rate - # Win rate directly
             w_drawdown * max_drawdown # Penalize drawdown
         )
@@ -322,6 +318,7 @@ class Supervisor:
         self.optimization_dimensions, self.optimization_param_names = self._define_optimization_dimensions()
         
         # Initial evaluation of current BEST_PARAMS
+        # Access BEST_PARAMS from global_config
         initial_params_values = [self._get_param_value_from_path(self.global_config['BEST_PARAMS'], name.split('.')) 
                                  for name in self.optimization_param_names]
         
@@ -706,14 +703,17 @@ if __name__ == "__main__":
     start_date = datetime.date(2024, 7, 25)
     num_days_to_simulate = 5
 
-    current_total_equity = INITIAL_EQUITY # Start with initial equity
+    current_total_equity = CONFIG['INITIAL_EQUITY'] # Start with initial equity from CONFIG
 
     # Create dummy data files for backtesting
-    from config import KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAME
+    # Access filenames from CONFIG
+    klines_filename = CONFIG['KLINES_FILENAME']
+    agg_trades_filename = CONFIG['AGG_TRADES_FILENAME']
+    futures_filename = CONFIG['FUTURES_FILENAME']
     from analyst.data_utils import create_dummy_data
-    create_dummy_data(KLINES_FILENAME, 'klines')
-    create_dummy_data(AGG_TRADES_FILENAME, 'agg_trades')
-    create_dummy_data(FUTURES_FILENAME, 'futures')
+    create_dummy_data(klines_filename, 'klines')
+    create_dummy_data(agg_trades_filename, 'agg_trades')
+    create_dummy_data(futures_filename, 'futures')
 
     async def run_demo():
         nonlocal current_total_equity
@@ -734,7 +734,7 @@ if __name__ == "__main__":
                 trade_log = {
                     "trade_id": f"T{sim_date.strftime('%Y%m%d')}-{_}",
                     "timestamp": sim_date.isoformat(),
-                    "asset": "ETHUSDT",
+                    "asset": CONFIG['SYMBOL'], # Access SYMBOL from CONFIG
                     "direction": np.random.choice(["LONG", "SHORT"]),
                     "market_state_at_entry": regime,
                     "entry_price": 2000 + np.random.rand() * 100,

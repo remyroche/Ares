@@ -42,128 +42,109 @@ class ProbabilisticLiquidationRiskModel:
         vol_config = self.config.get("volatility_impact", 0.4)
         lookback_period_vol = self.config.get("lookback_periods_volatility", 240) # e.g., 240 periods for hourly data (10 days)
 
+        probability_of_touch = 0.5 # Default neutral probability
+
         if len(historical_klines) < lookback_period_vol:
-            # Fallback to a neutral volatility assessment if not enough data
-            probability_of_touch = 0.5 # Assume 50% chance if data is insufficient
             reasons.append("Insufficient historical data for volatility assessment.")
         else:
             klines_for_vol = historical_klines['close'].tail(lookback_period_vol)
-            # Calculate daily (or per-period) returns for volatility
             returns = klines_for_vol.pct_change().dropna()
             
             if returns.empty or returns.std() == 0:
-                probability_of_touch = 0.5
                 reasons.append("Zero or no returns for volatility calculation.")
             else:
-                # Annualized volatility (assuming 'interval' is known, e.g., 1m, 1h)
-                # For simplicity, we'll use per-period std dev as a proxy for 'daily' vol
-                # A more precise model would scale to a relevant timeframe (e.g., daily volatility)
                 period_volatility = returns.std()
 
-                # Distance to liquidation price in standard deviations
-                price_diff = current_liquidation_price - current_price
-                
-                # For long position, price needs to go down. For short, price needs to go up.
-                # We are interested in the probability of reaching the liquidation price.
-                # Using a simplified Z-score approach with Normal CDF
-                # Z = (target_price - current_price) / (volatility * sqrt(time_horizon))
-                # Here, time_horizon is conceptual; we'll use a fixed 'risk horizon' for now.
-                
-                # A simple heuristic for 'distance in terms of volatility'
-                # How many standard deviations away is the liquidation price?
-                if period_volatility == 0:
-                    z_score = np.inf * np.sign(price_diff) # Avoid division by zero
+                # Calculate True Range and ATR
+                high_prices = historical_klines['high'].tail(lookback_period_vol)
+                low_prices = historical_klines['low'].tail(lookback_period_vol)
+                close_prices = historical_klines['close'].tail(lookback_period_vol)
+
+                high_low = high_prices - low_prices
+                high_prev_close = abs(high_prices - close_prices.shift(1))
+                low_prev_close = abs(low_prices - close_prices.shift(1))
+                true_range = pd.concat([high_low, high_prev_close, low_prev_close], axis=1).max(axis=1)
+                current_atr = true_range.ewm(span=self.config.get("atr_period", 14), adjust=False).mean().iloc[-1] if not true_range.empty else 0
+
+                if current_atr == 0:
+                    reasons.append("Current ATR is zero, volatility factor neutral.")
                 else:
-                    # Scale price difference by current price to get percentage difference
-                    # This makes it more comparable to percentage volatility
-                    normalized_price_diff = price_diff / current_price
-                    # We assume price follows a random walk with volatility 'period_volatility'
-                    # The number of 'steps' to reach liquidation is conceptual.
-                    # Let's consider the distance in terms of 'ATR multiples' or 'std dev multiples'
+                    # More sophisticated Z-score based on distance to liquidation and estimated volatility
+                    # The 'period_std_dev_proxy' is a conversion from ATR to a typical standard deviation
+                    period_std_dev_proxy = current_atr / self.config.get("atr_to_std_factor", 2.5) # Configurable factor
                     
-                    # Using ATR as a measure of recent range, and relating it to liquidation distance
-                    # ATR calculation from historical_klines
-                    high_prices = historical_klines['high'].tail(lookback_period_vol)
-                    low_prices = historical_klines['low'].tail(lookback_period_vol)
-                    close_prices = historical_klines['close'].tail(lookback_period_vol)
-
-                    high_low = high_prices - low_prices
-                    high_prev_close = abs(high_prices - close_prices.shift(1))
-                    low_prev_close = abs(low_prices - close_prices.shift(1))
-                    true_range = pd.concat([high_low, high_prev_close, low_prev_close], axis=1).max(axis=1)
-                    current_atr = true_range.ewm(span=self.config.get("atr_period", 14), adjust=False).mean().iloc[-1] if not true_range.empty else 0
-
-                    if current_atr == 0:
-                        probability_of_touch = 0.5 # Neutral
-                        reasons.append("Current ATR is zero, volatility factor neutral.")
+                    if period_std_dev_proxy == 0:
+                        reasons.append("Effective volatility is zero.")
                     else:
-                        distance_to_liq_abs = abs(current_price - current_liquidation_price)
-                        atr_multiples = distance_to_liq_abs / current_atr
+                        # Distance to liquidation price as a percentage of current price
+                        distance_pct = (current_liquidation_price - current_price) / current_price
                         
-                        # Map ATR multiples to probability of touch.
-                        # Higher ATR multiples mean lower probability of touch.
-                        # Using a sigmoid-like function or CDF to map:
-                        # e.g., 1 ATR away -> higher prob, 5 ATRs away -> very low prob.
-                        # Let's assume 3 ATRs is a significant distance.
-                        # Probability of touch = 1 - CDF(distance / ATR_scale)
-                        # We want P(price touches liq_price). This is complex.
-                        # A simpler approach: P(touch) is inversely related to distance in ATRs.
+                        # Z-score: How many standard deviations away is the liquidation price?
+                        # Assuming a normal distribution of *percentage returns* over a short period.
+                        # This is a simplification; actual price movements are not purely normal.
+                        z_score_liq = distance_pct / period_volatility # Using period_volatility from returns.std()
                         
-                        # Inverse relationship: closer = higher prob.
-                        # Example: 1 / (1 + exp(k * atr_multiples))
-                        # Or, directly use a scaled ATR multiple to influence a 'risk' score.
+                        # Adjust Z-score based on the direction of the trade
+                        if is_long: # Price needs to go down (negative deviation)
+                            probability_of_touch = norm.cdf(z_score_liq) # P(X <= liq_price)
+                        else: # Price needs to go up (positive deviation)
+                            probability_of_touch = 1 - norm.cdf(z_score_liq) # P(X >= liq_price)
                         
-                        # Let's use a normal CDF for a more probabilistic feel:
-                        # Z-score based on distance to liquidation and volatility (ATR as proxy for std dev)
-                        # Assume 1-period movement.
-                        # Z = (liquidation_price - current_price) / (current_atr * factor)
-                        # Factor to convert ATR to a "standard deviation equivalent" for a single step.
-                        # A common rule of thumb is that ATR is roughly 2x-3x the standard deviation of returns.
-                        # Let's say, 2.5. So, period_std_dev_proxy = current_atr / 2.5
-                        
-                        period_std_dev_proxy = current_atr / self.config.get("atr_to_std_factor", 2.5)
-                        if period_std_dev_proxy == 0:
-                            probability_of_touch = 0.5
-                            reasons.append("Effective volatility is zero.")
-                        else:
-                            z_score_liq = (current_liquidation_price - current_price) / period_std_dev_proxy
-                            
-                            if is_long: # Price needs to go down to liquidation
-                                probability_of_touch = norm.cdf(z_score_liq) # P(X <= liq_price)
-                            else: # Price needs to go up to liquidation
-                                probability_of_touch = 1 - norm.cdf(z_score_liq) # P(X >= liq_price)
-                            
-                            # Clip to ensure it's within [0, 1] due to approximations
-                            probability_of_touch = np.clip(probability_of_touch, 0.01, 0.99)
-                            reasons.append(f"Prob. of touching liq. price (volatility): {probability_of_touch:.2%}")
+                        # Clip to ensure it's within [0, 1] due to approximations
+                        probability_of_touch = np.clip(probability_of_touch, 0.001, 0.999) # Avoid 0 or 1
+                        reasons.append(f"Prob. of touching liq. price (volatility): {probability_of_touch:.2%}")
 
         # 2. Order Book Depth Factor (Slippage/Absorption probability)
         # How much volume is needed to push price to liquidation, and is it available?
         ob_config = self.config.get("order_book_depth_impact", 0.3)
-        ob_depth_lookahead_pct = self.config.get("order_book_depth_lookahead_pct", 0.01) # Look 1% away from current price
         
         bids = order_book_data.get('bids', [])
         asks = order_book_data.get('asks', [])
 
         order_book_resistance_score = 0.5 # Neutral by default (higher is more resistance to price move)
 
-        target_price_for_depth_analysis = current_liquidation_price # Focus on volume near liquidation
+        # Calculate total notional volume within a certain percentage range towards liquidation
+        depth_range_pct = self.config.get("ob_depth_range_pct", 0.005) # e.g., 0.5% range
         
-        if is_long: # Long position, looking for support (bids) below current price towards liquidation
-            # Sum notional value of bids between current price and liquidation price
-            relevant_depth_volume = sum(q * p for p, q in bids if p < current_price and p >= target_price_for_depth_analysis)
-        else: # Short position, looking for resistance (asks) above current price towards liquidation
-            # Sum notional value of asks between current price and liquidation price
-            relevant_depth_volume = sum(q * p for p, q in asks if p > current_price and p <= target_price_for_depth_analysis)
+        relevant_depth_volume = 0
+        if is_long: # Long position, looking for support (bids) below current price
+            lower_bound = current_price * (1 - depth_range_pct)
+            upper_bound = current_price # Up to current price
+            for p, q in bids:
+                if lower_bound <= p <= upper_bound:
+                    relevant_depth_volume += p * q
+        else: # Short position, looking for resistance (asks) above current price
+            lower_bound = current_price
+            upper_bound = current_price * (1 + depth_range_pct)
+            for p, q in asks:
+                if lower_bound <= p <= upper_bound:
+                    relevant_depth_volume += p * q
 
-        # Compare relevant depth volume to current position notional
-        # A higher ratio means more resistance from the order book, thus safer.
-        if current_position_notional > 0: # Ensure no division by zero
-            depth_ratio = relevant_depth_volume / abs(current_position_notional)
-            # Map ratio to a score (e.g., 0-1, where higher is better)
-            # If depth is 5x position, very strong resistance.
-            order_book_resistance_score = np.clip(depth_ratio / self.config.get("ob_depth_safety_multiplier", 5.0), 0, 1)
-            reasons.append(f"Order book resistance: {depth_ratio:.2f}x position notional.")
+        # Also consider volume directly at or very near liquidation price (if available in order book)
+        # This is a heuristic for 'liquidation buffer'
+        liquidation_buffer_volume = 0
+        buffer_zone_pct = self.config.get("liq_buffer_zone_pct", 0.001) # e.g., 0.1% around liq price
+        
+        if is_long:
+            for p, q in bids:
+                if (current_liquidation_price * (1 - buffer_zone_pct)) <= p <= (current_liquidation_price * (1 + buffer_zone_pct)):
+                    liquidation_buffer_volume += p * q
+        else:
+            for p, q in asks:
+                if (current_liquidation_price * (1 - buffer_zone_pct)) <= p <= (current_liquidation_price * (1 + buffer_zone_pct)):
+                    liquidation_buffer_volume += p * q
+
+        # Combine relevant depth with liquidation buffer volume
+        total_defensive_volume = relevant_depth_volume + liquidation_buffer_volume * self.config.get("liq_buffer_weight", 2.0) # Buffer volume weighted higher
+
+        # Compare total defensive volume to current position notional
+        if current_position_notional > 0:
+            depth_ratio = total_defensive_volume / abs(current_position_notional)
+            # Map depth_ratio to a score (e.g., 0-1, where higher is more resistance)
+            # Use a sigmoid or tanh function to map to a bounded score
+            # Example: score = tanh(depth_ratio / scaling_factor)
+            order_book_resistance_score = np.tanh(depth_ratio / self.config.get("ob_depth_scaling_factor", 10.0)) # Scale depth_ratio
+            reasons.append(f"Order book resistance: {depth_ratio:.2f}x position notional (score: {order_book_resistance_score:.2f}).")
         else:
             order_book_resistance_score = 0.5 # Neutral if no position or zero notional
             reasons.append("Order book depth not applicable or zero position notional.")
@@ -180,6 +161,7 @@ class ProbabilisticLiquidationRiskModel:
         else:
             normalized_distance_to_liq = abs(current_price - current_liquidation_price) / current_price
             # Scale this distance. E.g., if 5% away is max safety (score 1.0), 0% away is 0.0.
+            # Use a linear clip for simplicity, but could be non-linear.
             normalized_distance_to_liq = np.clip(normalized_distance_to_liq / self.config.get("max_safe_distance_pct", 0.05), 0, 1)
         
         position_health_score = normalized_distance_to_liq
@@ -205,3 +187,4 @@ class ProbabilisticLiquidationRiskModel:
         lss = np.clip(lss, 0, 100)
 
         return lss, " | ".join(reasons)
+

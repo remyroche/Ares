@@ -7,6 +7,7 @@ import time
 import os
 import signal
 from src.config import CONFIG
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 def write_flag_file(flag_file_path):
     """Writes a generic flag file."""
@@ -22,6 +23,8 @@ def check_emails():
     command_email_config = CONFIG['COMMAND_EMAIL_CONFIG']
     if not command_email_config.get('enabled', False):
         return
+
+    state_manager = StateManager()
 
     try:
         mail = imaplib.IMAP4_SSL(command_email_config['imap_server'], command_email_config['imap_port'])
@@ -40,12 +43,16 @@ def check_emails():
 
             print(f"Processing command email with subject: '{subject}'")
 
-            if "RESTART ARES BOT" in subject:
+            if subject == "RESTART ARES BOT":
                 write_flag_file(CONFIG['RESTART_FLAG_FILE'])
-            elif "PROMOTE CHALLENGER" in subject:
+            elif subject == "PROMOTE CHALLENGER":
                 write_flag_file(CONFIG['PROMOTE_CHALLENGER_FLAG_FILE'])
-            elif "GIT PULL" in subject:
+            elif subject == "GIT PULL":
                 subprocess.run("git pull", shell=True)
+            elif subject == "PAUSE TRADING":
+                state_manager.pause_trading()
+            elif subject == "RESUME TRADING":
+                state_manager.resume_trading()
             else:
                 print(f"Unknown command: '{subject}'")
 

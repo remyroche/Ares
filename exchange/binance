@@ -1,0 +1,206 @@
+import time
+import requests
+import hmac
+import hashlib
+import logging
+import threading
+import json
+from urllib.parse import urlencode
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+from websocket import WebSocketApp
+
+# Logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class BinanceFuturesAPI:
+    BASE_URL = "https://fapi.binance.com"
+    WS_BASE_URL = "wss://fstream.binance.com"
+    RATE_LIMIT_SLEEP = 1.1  # seconds
+
+    def __init__(self, api_key, api_secret, paper_trading=False):
+        self.API_KEY = api_key
+        self.API_SECRET = api_secret
+        self.paper_trading = paper_trading
+        self.session = requests.Session()
+        self.session.headers.update({"X-MBX-APIKEY": self.API_KEY})
+        self.positions = {}  # Paper trading positions
+
+        retries = Retry(total=5, backoff_factor=1,
+                        status_forcelist=[429, 500, 502, 503, 504])
+        self.session.mount("https://", HTTPAdapter(max_retries=retries))
+
+    def _sign_payload(self, payload):
+        query_string = urlencode(payload)
+        signature = hmac.new(self.API_SECRET.encode(), query_string.encode(), hashlib.sha256).hexdigest()
+        payload["signature"] = signature
+        return payload
+
+    def _send_signed_request(self, method, endpoint, payload={}):
+        if self.paper_trading:
+            logger.info(f"[PAPER] {method} {endpoint} {payload}")
+            return self._simulate_order(endpoint, payload)
+        try:
+            payload["timestamp"] = int(time.time() * 1000)
+            signed_payload = self._sign_payload(payload)
+            url = self.BASE_URL + endpoint
+            response = self.session.request(method, url, params=signed_payload)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Signed request failed: {e}")
+            time.sleep(self.RATE_LIMIT_SLEEP)
+            return {}
+
+    def _send_public_request(self, endpoint, payload={}):
+        try:
+            url = self.BASE_URL + endpoint
+            response = self.session.get(url, params=payload)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Public request failed: {e}")
+            time.sleep(self.RATE_LIMIT_SLEEP)
+            return {}
+
+    def _simulate_order(self, endpoint, payload):
+        symbol = payload.get("symbol")
+        side = payload.get("side")
+        quantity = float(payload.get("quantity", 0))
+        reduce_only = payload.get("reduceOnly", False)
+        if symbol not in self.positions:
+            self.positions[symbol] = 0.0
+        if reduce_only:
+            if side == "SELL":
+                self.positions[symbol] -= quantity
+            else:
+                self.positions[symbol] += quantity
+        else:
+            if side == "BUY":
+                self.positions[symbol] += quantity
+            else:
+                self.positions[symbol] -= quantity
+        logger.info(f"[PAPER] Position {symbol}: {self.positions[symbol]}")
+        return {"symbol": symbol, "position": self.positions[symbol]}
+
+    # --- Core Trading Functions ---
+    def get_position_status(self, symbol):
+        return self._send_signed_request("GET", "/fapi/v2/positionRisk", {"symbol": symbol.upper()})
+
+    def open_market_position(self, symbol, side, quantity, leverage):
+        self._send_signed_request("POST", "/fapi/v1/leverage", {
+            "symbol": symbol.upper(),
+            "leverage": leverage
+        })
+        return self._send_signed_request("POST", "/fapi/v1/order", {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": "MARKET",
+            "quantity": quantity
+        })
+
+    def close_position(self, symbol, side, quantity):
+        close_side = "SELL" if side.upper() == "BUY" else "BUY"
+        return self._send_signed_request("POST", "/fapi/v1/order", {
+            "symbol": symbol.upper(),
+            "side": close_side,
+            "type": "MARKET",
+            "quantity": quantity,
+            "reduceOnly": True
+        })
+
+    def open_limit_order(self, symbol, side, quantity, price):
+        return self._send_signed_request("POST", "/fapi/v1/order", {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": "LIMIT",
+            "quantity": quantity,
+            "price": price,
+            "timeInForce": "GTC"
+        })
+
+    def create_stop_loss_order(self, symbol, side, quantity, stop_price):
+        return self._send_signed_request("POST", "/fapi/v1/order", {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": "STOP_MARKET",
+            "stopPrice": stop_price,
+            "closePosition": True,
+            "timeInForce": "GTC",
+            "quantity": quantity
+        })
+
+    # --- Market Info ---
+    def get_liquidation_price(self, symbol):
+        position = self.get_position_status(symbol)
+        for pos in position:
+            if pos['symbol'] == symbol.upper():
+                return float(pos['liquidationPrice'])
+        return None
+
+    def get_ohlcv_data(self, symbol, interval="1m", limit=100):
+        return self._send_public_request("/fapi/v1/klines", {
+            "symbol": symbol.upper(),
+            "interval": interval,
+            "limit": limit
+        })
+
+    def get_price(self, symbol):
+        res = self._send_public_request("/fapi/v1/ticker/price", {"symbol": symbol.upper()})
+        return float(res["price"]) if "price" in res else None
+
+    def get_orderbook(self, symbol, limit=5):
+        return self._send_public_request("/fapi/v1/depth", {
+            "symbol": symbol.upper(),
+            "limit": limit
+        })
+
+    def get_100x_leverage_pairs(self):
+        exchange_info = self._send_public_request("/fapi/v1/exchangeInfo")
+        leverage_data = []
+
+        for symbol_info in exchange_info.get("symbols", []):
+            symbol = symbol_info["symbol"]
+            filters = {f["filterType"]: f for f in symbol_info.get("filters", [])}
+
+            if symbol_info.get("contractType") == "PERPETUAL":
+                try:
+                    leverage_brackets = self._send_signed_request("GET", "/fapi/v1/leverageBracket", {"symbol": symbol})
+                    brackets = leverage_brackets[0]["brackets"] if leverage_brackets else []
+                    max_leverage = max([int(b["initialLeverage"]) for b in brackets])
+
+                    if max_leverage >= 100:
+                        book = self.get_orderbook(symbol)
+                        liquidity = sum(float(bid[1]) for bid in book.get("bids", []))
+
+                        leverage_data.append({
+                            "symbol": symbol,
+                            "max_leverage": max_leverage,
+                            "liquidity": liquidity
+                        })
+                except Exception as e:
+                    logger.warning(f"Failed to evaluate {symbol}: {e}")
+        return leverage_data
+
+    # --- WebSocket Streaming ---
+    def start_price_stream(self, symbol, callback):
+        def on_message(ws, message):
+            data = json.loads(message)
+            price = float(data['c'])  # close price
+            callback(symbol, price)
+
+        def on_error(ws, error):
+            logger.error(f"WebSocket error: {error}")
+
+        def on_close(ws, close_status_code, close_msg):
+            logger.info(f"WebSocket closed for {symbol}")
+
+        def run():
+            stream_name = f"{symbol.lower()}@ticker"
+            url = f"{self.WS_BASE_URL}/ws/{stream_name}"
+            ws = WebSocketApp(url, on_message=on_message, on_error=on_error, on_close=on_close)
+            ws.run_forever()
+
+        threading.Thread(target=run).start()
+

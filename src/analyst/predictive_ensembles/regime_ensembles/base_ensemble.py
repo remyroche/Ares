@@ -22,6 +22,7 @@ class BaseEnsemble(ABC):
         self.scaler = StandardScaler() # Scaler for meta-learner features
         self.trained = False
         self.meta_learner_classes = [] # To store the classes learned by the meta-learner
+        self.meta_learner_features = [] # To store the ordered list of features for the meta-learner
 
     @abstractmethod
     def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: pd.Series):
@@ -54,6 +55,9 @@ class BaseEnsemble(ABC):
         # Ensure target labels are suitable for classification (e.g., encoded if not already)
         # For simplicity, assuming y_meta contains string labels like "BUY", "SELL", "HOLD"
         # LightGBM can handle string labels directly.
+
+        # Store the feature names for consistent prediction input later
+        self.meta_learner_features = X_meta.columns.tolist()
 
         # Scale features for the meta-learner
         scaled_X_meta = self.scaler.fit_transform(X_meta)
@@ -97,18 +101,13 @@ class BaseEnsemble(ABC):
 
         # Prepare features for the meta-learner.
         # This requires ensuring the input features match the training features (column order and names).
-        # `individual_model_predictions` is a dict like {'lstm_conf': 0.7, 'transformer_conf': 0.8, ...}
-        # We need to convert this into a DataFrame row with the correct columns.
+        # `individual_model_predictions` is a dict like {'lstm_conf': 0.7, 'transformer_conf': 0.8, 'garch_volatility': 0.001, ...}
         
         # Create a DataFrame from the input dictionary, ensuring it's a single row
         meta_features_raw = pd.DataFrame([individual_model_predictions])
         
-        # Ensure that meta_features_raw has the same columns as were used for training the scaler.
-        # This is critical. In a real system, you'd store the feature names from training.
-        # For this demo, we assume the keys in individual_model_predictions are consistent.
-        
         try:
-            # Reindex to ensure feature order matches training order
+            # Reindex to ensure feature order matches training order (stored in self.meta_learner_features)
             meta_features_reindexed = meta_features_raw.reindex(columns=self.meta_learner_features, fill_value=0.0)
             
             # Scale the input features using the fitted scaler
@@ -366,3 +365,33 @@ class BaseEnsemble(ABC):
             "aggressive_sell_volume": aggressive_sell_volume
         }
 
+    def _get_multi_timeframe_features(self, klines_df_htf: pd.DataFrame, klines_df_mtf: pd.DataFrame) -> dict:
+        """
+        Calculates multi-timeframe trend features.
+        :param klines_df_htf: Higher Timeframe klines data (e.g., Daily).
+        :param klines_df_mtf: Medium Timeframe klines data (e.g., Hourly).
+        :return: Dictionary with multi-timeframe trend features.
+        """
+        features = {
+            "htf_trend_bullish": 0,
+            "mtf_trend_bullish": 0
+        }
+
+        # Higher Timeframe Trend (e.g., using 50-period SMA on HTF)
+        if not klines_df_htf.empty and len(klines_df_htf) >= 50:
+            htf_sma_50 = klines_df_htf['close'].rolling(window=50).mean().iloc[-1]
+            if klines_df_htf['close'].iloc[-1] > htf_sma_50:
+                features["htf_trend_bullish"] = 1 # Price above SMA
+            elif klines_df_htf['close'].iloc[-1] < htf_sma_50:
+                features["htf_trend_bullish"] = -1 # Price below SMA
+        
+        # Medium Timeframe Trend (e.g., using 20-period SMA on MTF)
+        if not klines_df_mtf.empty and len(klines_df_mtf) >= 20:
+            mtf_sma_20 = klines_df_mtf['close'].rolling(window=20).mean().iloc[-1]
+            if klines_df_mtf['close'].iloc[-1] > mtf_sma_20:
+                features["mtf_trend_bullish"] = 1 # Price above SMA
+            elif klines_df_mtf['close'].iloc[-1] < mtf_sma_20:
+                features["mtf_trend_bullish"] = -1 # Price below SMA
+
+        self.logger.debug(f"Multi-Timeframe Features: HTF={features['htf_trend_bullish']}, MTF={features['mtf_trend_bullish']}")
+        return features

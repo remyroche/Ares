@@ -11,6 +11,9 @@ from requests.packages.urllib3.util.retry import Retry
 from websocket import WebSocketApp, enableTrace
 import collections # For deque
 
+# Import the main CONFIG dictionary
+from config import CONFIG
+
 # Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,29 +22,30 @@ logger = logging.getLogger(__name__)
 # enableTrace(True)
 
 class BinanceFuturesAPI:
-    # Base URLs
-    BASE_URL_MAINNET = "https://fapi.binance.com"
-    WS_BASE_URL_MAINNET = "wss://fstream.binance.com"
-    BASE_URL_TESTNET = "https://testnet.binancefuture.com"
-    WS_BASE_URL_TESTNET = "wss://stream.binancefuture.com"
+    # Base URLs are now accessed from CONFIG
+    # BASE_URL_MAINNET = "https://fapi.binance.com"
+    # WS_BASE_URL_MAINNET = "wss://fstream.binance.com"
+    # BASE_URL_TESTNET = "https://testnet.binancefuture.com"
+    # WS_BASE_URL_TESTNET = "wss://stream.binancefuture.com"
 
     RATE_LIMIT_SLEEP = 1.1  # seconds
 
-    def __init__(self, api_key, api_secret, testnet=True, symbol='ETHUSDT', interval='1m', config=None):
+    def __init__(self, api_key, api_secret, testnet=True, symbol=None, interval=None, config=CONFIG): # Default config to global CONFIG
         self.API_KEY = api_key
         self.API_SECRET = api_secret
         self.testnet = testnet
-        self.symbol = symbol
-        self.interval = interval
-        self.config = config if config else {} # For WebSocket stream names
+        self.symbol = symbol if symbol else config['SYMBOL'] # Use provided symbol or from CONFIG
+        self.interval = interval if interval else config['INTERVAL'] # Use provided interval or from CONFIG
+        self.config = config # Use the global CONFIG dictionary
 
+        # Access base URLs from config
         if self.testnet:
-            self.BASE_URL = self.BASE_URL_TESTNET
-            self.WS_BASE_URL = self.WS_BASE_URL_TESTNET
+            self.BASE_URL = self.config['live_trading'].get('testnet_rest_url', "https://testnet.binancefuture.com")
+            self.WS_BASE_URL = self.config['live_trading'].get('testnet_ws_url', "wss://stream.binancefuture.com")
             logger.info("Using Binance Futures TESTNET environment.")
         else:
-            self.BASE_URL = self.BASE_URL_MAINNET
-            self.WS_BASE_URL = self.WS_BASE_URL_MAINNET
+            self.BASE_URL = self.config['live_trading'].get('mainnet_rest_url', "https://fapi.binance.com")
+            self.WS_BASE_URL = self.config['live_trading'].get('mainnet_ws_url', "wss://fstream.binance.com")
             logger.info("Using Binance Futures MAINNET environment.")
 
         self.session = requests.Session()
@@ -55,6 +59,7 @@ class BinanceFuturesAPI:
         self.ws_clients = {} # Stores WebSocketApp instances
         self.ws_threads = {} # Stores WebSocket threads
         self.listen_key = None # For user data stream
+        self.listen_key_keep_alive_thread = None # To manage the keep-alive thread
 
         # Data buffers for WebSocket streams (using deque for efficient appends/pops)
         self.kline_buffer = collections.deque(maxlen=1000) # Store last 1000 1m klines
@@ -73,33 +78,75 @@ class BinanceFuturesAPI:
         return payload
 
     def _send_signed_request(self, method, endpoint, payload={}):
-        try:
-            payload["timestamp"] = int(time.time() * 1000)
-            signed_payload = self._sign_payload(payload)
-            url = self.BASE_URL + endpoint
-            
-            if method == "GET":
-                response = self.session.request(method, url, params=signed_payload)
-            else: # POST, PUT, DELETE
-                response = self.session.request(method, url, data=signed_payload) # Use data for POST/PUT/DELETE
-            
-            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Signed request failed ({method} {endpoint} {payload}): {e}")
-            time.sleep(self.RATE_LIMIT_SLEEP)
-            return {"error": str(e)} # Return error for handling
+        """
+        Sends a signed request to the Binance API.
+        Includes enhanced error handling and retries.
+        """
+        for attempt in range(CONFIG['live_trading'].get('max_retries', 3)): # Use max_retries from config
+            try:
+                payload["timestamp"] = int(time.time() * 1000)
+                signed_payload = self._sign_payload(payload)
+                url = self.BASE_URL + endpoint
+                
+                if method == "GET":
+                    response = self.session.request(method, url, params=signed_payload)
+                else: # POST, PUT, DELETE
+                    response = self.session.request(method, url, data=signed_payload) # Use data for POST/PUT/DELETE
+                
+                response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+                return response.json()
+            except requests.exceptions.HTTPError as http_err:
+                logger.error(f"HTTP error for {method} {endpoint}: {http_err} - Response: {http_err.response.text}")
+                if attempt < CONFIG['live_trading'].get('max_retries', 3) - 1 and http_err.response.status_code in [429, 500, 502, 503, 504]:
+                    retry_delay = CONFIG['live_trading'].get('retry_delay_seconds', 5) # Use retry_delay from config
+                    logger.warning(f"Retrying {method} {endpoint} in {retry_delay} seconds (attempt {attempt + 1})...")
+                    time.sleep(retry_delay)
+                else:
+                    return {"error": str(http_err), "code": http_err.response.status_code, "msg": http_err.response.text}
+            except requests.exceptions.RequestException as req_err:
+                logger.error(f"Request error for {method} {endpoint}: {req_err}")
+                if attempt < CONFIG['live_trading'].get('max_retries', 3) - 1:
+                    retry_delay = CONFIG['live_trading'].get('retry_delay_seconds', 5)
+                    logger.warning(f"Retrying {method} {endpoint} in {retry_delay} seconds (attempt {attempt + 1})...")
+                    time.sleep(retry_delay)
+                else:
+                    return {"error": str(req_err)}
+            except json.JSONDecodeError as json_err:
+                logger.error(f"JSON decode error for {method} {endpoint}: {json_err} - Response text: {response.text}")
+                return {"error": f"JSON decode error: {json_err}", "response_text": response.text}
+        return {"error": f"Failed to complete {method} {endpoint} after multiple retries."}
 
     def _send_public_request(self, endpoint, payload={}):
-        try:
-            url = self.BASE_URL + endpoint
-            response = self.session.get(url, params=payload)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Public request failed ({endpoint} {payload}): {e}")
-            time.sleep(self.RATE_LIMIT_SLEEP)
-            return {"error": str(e)}
+        """
+        Sends a public request to the Binance API.
+        Includes enhanced error handling and retries.
+        """
+        for attempt in range(CONFIG['live_trading'].get('max_retries', 3)): # Use max_retries from config
+            try:
+                url = self.BASE_URL + endpoint
+                response = self.session.get(url, params=payload)
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.HTTPError as http_err:
+                logger.error(f"HTTP error for public {endpoint}: {http_err} - Response: {http_err.response.text}")
+                if attempt < CONFIG['live_trading'].get('max_retries', 3) - 1 and http_err.response.status_code in [429, 500, 502, 503, 504]:
+                    retry_delay = CONFIG['live_trading'].get('retry_delay_seconds', 5)
+                    logger.warning(f"Retrying public {endpoint} in {retry_delay} seconds (attempt {attempt + 1})...")
+                    time.sleep(retry_delay)
+                else:
+                    return {"error": str(http_err), "code": http_err.response.status_code, "msg": http_err.response.text}
+            except requests.exceptions.RequestException as req_err:
+                logger.error(f"Request error for public {endpoint}: {req_err}")
+                if attempt < CONFIG['live_trading'].get('max_retries', 3) - 1:
+                    retry_delay = CONFIG['live_trading'].get('retry_delay_seconds', 5)
+                    logger.warning(f"Retrying public {endpoint} in {retry_delay} seconds (attempt {attempt + 1})...")
+                    time.sleep(retry_delay)
+                else:
+                    return {"error": str(req_err)}
+            except json.JSONDecodeError as json_err:
+                logger.error(f"JSON decode error for public {endpoint}: {json_err} - Response text: {response.text}")
+                return {"error": f"JSON decode error: {json_err}", "response_text": response.text}
+        return {"error": f"Failed to complete public {endpoint} after multiple retries."}
 
     # --- REST API Functions ---
     def get_server_time(self):
@@ -161,9 +208,27 @@ class BinanceFuturesAPI:
 
     def _on_close(self, ws, close_status_code, close_msg):
         logger.warning(f"WebSocket closed: {ws.url} - Status: {close_status_code}, Message: {close_msg}")
+        # Attempt to reconnect if closed unexpectedly
+        stream_name = next((name for name, client in self.ws_clients.items() if client == ws), None)
+        if stream_name:
+            logger.info(f"Attempting to restart WebSocket stream: {stream_name}")
+            # Remove old client and thread references
+            if stream_name in self.ws_clients:
+                del self.ws_clients[stream_name]
+            if stream_name in self.ws_threads:
+                del self.ws_threads[stream_name]
+            # Restart the stream
+            if stream_name == self.listen_key: # User data stream
+                self.start_user_data_stream()
+            else: # Public data stream
+                # Need to map stream_name back to its type (kline, aggTrade, depth)
+                # This is a bit complex, might need to store stream type in ws_clients dict
+                # For simplicity, if it's a public stream, try to restart all public streams
+                self.start_data_streams() # This will attempt to restart all public streams
 
     def _on_error(self, ws, error):
         logger.error(f"WebSocket error: {ws.url} - {error}")
+        # The _on_close handler will be called after an error, which can handle reconnection.
 
     def _on_message_kline(self, ws, message):
         data = json.loads(message)['k']
@@ -259,15 +324,18 @@ class BinanceFuturesAPI:
         
         # Kline Stream
         kline_stream_name = ws_config.get("kline", f"{self.symbol.lower()}@kline_{self.interval}")
-        self._start_websocket(kline_stream_name, self._on_message_kline)
+        if kline_stream_name not in self.ws_clients: # Prevent re-starting if already running
+            self._start_websocket(kline_stream_name, self._on_message_kline)
 
         # Aggregated Trade Stream
         agg_trade_stream_name = ws_config.get("aggTrade", f"{self.symbol.lower()}@aggTrade")
-        self._start_websocket(agg_trade_stream_name, self._on_message_agg_trade)
+        if agg_trade_stream_name not in self.ws_clients: # Prevent re-starting if already running
+            self._start_websocket(agg_trade_stream_name, self._on_message_agg_trade)
 
         # Order Book Depth Stream
         depth_stream_name = ws_config.get("depth", f"{self.symbol.lower()}@depth5@100ms")
-        self._start_websocket(depth_stream_name, self._on_message_depth)
+        if depth_stream_name not in self.ws_clients: # Prevent re-starting if already running
+            self._start_websocket(depth_stream_name, self._on_message_depth)
 
     def start_user_data_stream(self):
         """Starts the user data stream (requires listen key)."""
@@ -275,40 +343,71 @@ class BinanceFuturesAPI:
             logger.warning("API Key/Secret not provided. Cannot start user data stream.")
             return
 
+        # Stop existing keep-alive thread if it's running
+        if self.listen_key_keep_alive_thread and self.listen_key_keep_alive_thread.is_alive():
+            # No direct way to stop a thread, but we can signal it to stop
+            # For simplicity, we'll just let the old thread die and start a new one.
+            # A more robust solution would involve an Event object for graceful shutdown.
+            logger.info("Stopping existing listenKey keep-alive thread.")
+            # self.listen_key_keep_alive_thread.join(timeout=1) # Try to join briefly
+            self.listen_key_keep_alive_thread = None # Clear reference
+
         # Get listen key
         response = self._send_signed_request("POST", "/fapi/v1/listenKey")
         if "listenKey" in response:
             self.listen_key = response["listenKey"]
             logger.info(f"Obtained listenKey: {self.listen_key}")
             
-            # Start WebSocket
-            self._start_websocket(self.listen_key, self._on_message_user_data)
+            # Start WebSocket if not already running for this listen key
+            if self.listen_key not in self.ws_clients:
+                self._start_websocket(self.listen_key, self._on_message_user_data)
+            else:
+                logger.info(f"User data stream for listenKey {self.listen_key} already active.")
             
             # Keep listen key alive (ping every 30 minutes)
             def keep_alive():
                 while True:
                     time.sleep(1800) # 30 minutes
-                    self._send_signed_request("PUT", "/fapi/v1/listenKey")
-                    logger.info("listenKey kept alive.")
+                    response = self._send_signed_request("PUT", "/fapi/v1/listenKey")
+                    if "listenKey" in response or response.get('msg') == 'The listen key will be extended to 60 minutes.':
+                        logger.info("listenKey kept alive.")
+                    else:
+                        logger.error(f"Failed to keep listenKey alive: {response.get('msg', 'Unknown error')}. Attempting to re-obtain listenKey.")
+                        # If keep-alive fails, try to restart the user data stream entirely
+                        self.stop_all_streams() # Stop all streams to ensure clean state
+                        self.start_data_streams() # Restart public streams
+                        self.start_user_data_stream() # Re-obtain and restart user data stream
+                        break # Exit this thread, a new one will be created
             
-            keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
-            keep_alive_thread.start()
+            self.listen_key_keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
+            self.listen_key_keep_alive_thread.start()
         else:
             logger.error(f"Failed to obtain listenKey: {response.get('msg', 'Unknown error')}")
 
     def stop_all_streams(self):
         """Stops all active WebSocket connections."""
-        for stream_name, ws in self.ws_clients.items():
+        for stream_name, ws in list(self.ws_clients.items()): # Iterate over a copy
             logger.info(f"Stopping WebSocket stream: {stream_name}")
-            ws.close()
-        # Give threads time to finish
-        for stream_name, thread in self.ws_threads.items():
-            if thread.is_alive():
-                thread.join(timeout=5) # Wait up to 5 seconds
-                if thread.is_alive():
-                    logger.warning(f"WebSocket thread {stream_name} did not terminate gracefully.")
+            try:
+                ws.close()
+            except Exception as e:
+                logger.error(f"Error closing WebSocket {stream_name}: {e}")
+            finally:
+                if stream_name in self.ws_clients:
+                    del self.ws_clients[stream_name]
+                if stream_name in self.ws_threads:
+                    # Attempt to join the thread, though direct stopping is hard
+                    thread = self.ws_threads[stream_name]
+                    if thread.is_alive():
+                        thread.join(timeout=1) # Give it a moment
+                    del self.ws_threads[stream_name]
         self.ws_clients = {}
         self.ws_threads = {}
+        self.listen_key = None # Clear listen key on full stop
+        if self.listen_key_keep_alive_thread and self.listen_key_keep_alive_thread.is_alive():
+            # Signal the thread to stop if possible (e.g., via an Event object)
+            # For now, just clear the reference and let it eventually terminate
+            self.listen_key_keep_alive_thread = None 
         logger.info("All WebSocket streams stopped.")
 
     # --- Data Access Methods for Pipeline ---

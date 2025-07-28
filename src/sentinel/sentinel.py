@@ -7,6 +7,7 @@ import sys
 from config import CONFIG, PIPELINE_PID_FILE # PIPELINE_PID_FILE is still needed for os.remove
 from utils.logger import system_logger
 from emails.ares_mailer import send_email
+from src.utils.state_manager import StateManager
 
 class Sentinel:
     """
@@ -23,6 +24,8 @@ class Sentinel:
         self.consecutive_model_errors = 0
         self.max_consecutive_errors = self.config.get("max_consecutive_errors", 3)
         self.alert_recipient_email = self.config.get("alert_recipient_email")
+
+        self.state_manager = StateManager()
 
         # Store previous states for deviation monitoring
         self.previous_analyst_intelligence = {}
@@ -157,26 +160,54 @@ class Sentinel:
             return True
         return False
 
-    def run_checks(self, current_analyst_intelligence: dict, current_strategist_params: dict, 
-                   current_tactician_decision: dict, latest_trade_data: dict = None, 
-                   average_trade_size: float = 0.0):
+    def check_performance_thresholds(self, historical_pnl_data: pd.DataFrame):
+        """
+        Monitors key performance metrics (Sharpe Ratio, Drawdown) against thresholds.
+        If thresholds are breached, it pauses trading.
+        """
+        if historical_pnl_data.empty or len(historical_pnl_data) < self.config.get("performance_lookback_days", 30):
+            return # Not enough data to make a decision
+
+        self.logger.info("Checking performance thresholds...")
+        lookback_data = historical_pnl_data.tail(self.config.get("performance_lookback_days", 30))
+        
+        # Calculate Sharpe Ratio
+        daily_returns = lookback_data['NetPnL'] / self.global_config['INITIAL_EQUITY']
+        sharpe_ratio = (daily_returns.mean() / daily_returns.std()) * (252**0.5) if daily_returns.std() > 0 else 0
+
+        # Calculate Max Drawdown
+        equity_curve = (1 + daily_returns).cumprod()
+        peak = equity_curve.expanding(min_periods=1).max()
+        drawdown = (equity_curve - peak) / peak
+        max_drawdown = -drawdown.min() * 100
+
+        # Check against thresholds from config
+        min_sharpe_threshold = self.config.get("min_sharpe_ratio_threshold", 0.5)
+        max_drawdown_threshold = self.config.get("max_drawdown_threshold_pct", 20.0)
+
+        if sharpe_ratio < min_sharpe_threshold:
+            reason = f"Performance issue: Sharpe Ratio ({sharpe_ratio:.2f}) is below threshold ({min_sharpe_threshold})."
+            self.logger.critical(reason)
+            self._send_alert("Ares Critical Alert: Trading Paused Due to Low Sharpe Ratio", reason)
+            self.state_manager.pause_trading()
+
+        if max_drawdown > max_drawdown_threshold:
+            reason = f"Performance issue: Max Drawdown ({max_drawdown:.2f}%) has exceeded threshold ({max_drawdown_threshold}%)."
+            self.logger.critical(reason)
+            self._send_alert("Ares Critical Alert: Trading Paused Due to High Drawdown", reason)
+            self.state_manager.pause_trading()
+
+    def run_checks(self, historical_pnl_data: pd.DataFrame):
         """
         Runs all Sentinel checks.
-        This method should be called frequently within the main operational loop.
         """
         self.logger.info("Running Sentinel checks...")
         
-        # 1. API Connectivity Check
         self.check_api_connectivity()
-
-        # 2. Model Output Deviation Check
-        self.monitor_model_output_deviation(current_analyst_intelligence, current_strategist_params, current_tactician_decision)
-
-        # 3. Unusual Trade Activity Check (only if a trade occurred)
-        if latest_trade_data:
-            self.monitor_unusual_trade_activity(latest_trade_data, average_trade_size)
+        self.check_performance_thresholds(historical_pnl_data)
 
         self.logger.info("Sentinel checks complete.")
+
 
 # --- Example Usage (Main execution block for demonstration) ---
 if __name__ == "__main__":

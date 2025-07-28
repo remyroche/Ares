@@ -8,3 +8,5 @@ pywt
 scikit-learn
 lightgbm
 websocket-client 
+tensorflow-metal 
+tensorflow

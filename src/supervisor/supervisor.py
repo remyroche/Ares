@@ -5,11 +5,21 @@ import os
 import datetime
 import json # For handling nested dicts in logs if needed
 import asyncio # For async Firestore operations
+import uuid # For generating unique IDs for optimization runs
+import itertools # For generating parameter combinations in optimization
 
 # Assume these are available in the same package or through sys.path
 from config import CONFIG, INITIAL_EQUITY, BEST_PARAMS # Import BEST_PARAMS
 from utils.logger import system_logger
 from database.firestore_manager import FirestoreManager # New import
+
+# Import backtesting components (conceptual import for direct use in optimization)
+# In a real system, you'd likely have a dedicated backtesting service/module
+# that can be invoked with specific parameters.
+# For this demo, we'll simulate calling these functions.
+from backtesting.ares_data_preparer import load_raw_data, get_sr_levels, calculate_and_label_regimes
+from backtesting.ares_backtester import run_backtest, PortfolioManager
+
 
 class Supervisor:
     """
@@ -19,6 +29,7 @@ class Supervisor:
     """
     def __init__(self, config=CONFIG, firestore_manager: FirestoreManager = None):
         self.config = config.get("supervisor", {})
+        self.global_config = config # Store global config to access BEST_PARAMS etc.
         self.initial_equity = INITIAL_EQUITY # Total capital available to the system
         self.firestore_manager = firestore_manager
         self.logger = system_logger.getChild('Supervisor') # Child logger for Supervisor
@@ -68,63 +79,152 @@ class Supervisor:
                 f.write("ModelName,Version,TrainingDate,PerformanceMetrics,FilePathReference,ConfigSnapshot\n")
             self.logger.info(f"Created model metadata log: {self.model_metadata_csv}")
 
-    async def _implement_global_system_optimization(self):
+    def _evaluate_params_with_backtest(self, params: dict, klines_df, agg_trades_df, futures_df, sr_levels) -> float:
         """
-        Placeholder for Global System Optimization (Meta-Learning).
-        This would involve:
-        1. Defining a comprehensive search space for parameters across Analyst, Tactician, Strategist.
-        2. Setting up an objective function (e.g., Sharpe Ratio, Calmar Ratio from backtesting).
-        3. Running Bayesian Optimization or Genetic Algorithms on this search space.
-        4. Updating the `config.py` or an internal parameter store with the new optimal parameters.
-        5. Saving these new parameters to Firestore and CSV.
+        Evaluates a given set of parameters by running a backtest.
+        Returns a performance metric (e.g., Sharpe Ratio or final equity).
         """
-        self.logger.info("\nSupervisor: Running Global System Optimization (Meta-Learning) - Placeholder.")
-        # Simulate finding new best parameters
-        simulated_new_best_params = {
-            "atr.stop_loss_multiplier": round(np.random.uniform(1.0, 2.0), 2),
-            "analyst.market_regime_classifier.adx_period": np.random.randint(10, 20),
-            "tactician.laddering.initial_leverage": np.random.randint(20, 30),
-            "analyst.regime_predictive_ensembles.ensemble_weights": {
-                "lstm": round(np.random.uniform(0.2, 0.4), 2),
-                "transformer": round(np.random.uniform(0.2, 0.4), 2),
-                "statistical": round(np.random.uniform(0.1, 0.3), 2),
-                "volume": round(np.random.uniform(0.1, 0.3), 2)
-            }
-        }
-        # Ensure weights sum to 1 (simple normalization for demo)
-        total_weight = sum(simulated_new_best_params["analyst.regime_predictive_ensembles.ensemble_weights"].values())
-        if total_weight > 0:
-            for k in simulated_new_best_params["analyst.regime_predictive_ensembles.ensemble_weights"]:
-                simulated_new_best_params["analyst.regime_predictive_ensembles.ensemble_weights"][k] /= total_weight
+        self.logger.info("  Evaluating parameter set with backtest...")
+        try:
+            # Prepare data with the current parameter set
+            # Ensure 'trend_strength_threshold' is in params or handled by calculate_and_label_regimes
+            prepared_df = calculate_and_label_regimes(
+                klines_df.copy(), agg_trades_df.copy(), futures_df.copy(), params, sr_levels,
+                params.get('trend_strength_threshold', 25) # Fallback if not explicitly in params
+            )
+            
+            if prepared_df.empty:
+                self.logger.warning("    Prepared data is empty for this parameter set. Returning low score.")
+                return -np.inf # Return a very low score if no data
 
+            # Run backtest with the current parameter set
+            portfolio = run_backtest(prepared_df, params)
+            
+            # Use final equity as the performance metric for simplicity in this demo
+            # In a real system, you'd use Sharpe, Sortino, Calmar, etc.
+            performance_metric = portfolio.equity
+            self.logger.info(f"    Backtest finished. Final Equity: ${performance_metric:,.2f}")
+            return performance_metric
+        except Exception as e:
+            self.logger.error(f"  Error during backtest evaluation for params {params}: {e}", exc_info=True)
+            return -np.inf # Return a very low score on error
+
+    async def _implement_global_system_optimization(self, historical_pnl_data: pd.DataFrame, strategy_breakdown_data: dict):
+        """
+        Implements Global System Optimization (Meta-Learning) using a random search approach.
+        It integrates with the backtesting pipeline to tune parameters.
+        """
+        self.logger.info("\nSupervisor: Running Global System Optimization (Meta-Learning) using Random Search...")
+        
+        # Load raw data once for the optimization process
+        self.logger.info("  Loading raw data for optimization backtests...")
+        klines_df, agg_trades_df, futures_df = load_raw_data()
+        if klines_df is None or klines_df.empty:
+            self.logger.error("  Failed to load raw data for optimization. Skipping optimization.")
+            return
+
+        daily_df = klines_df.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
+        sr_levels = get_sr_levels(daily_df)
+        
+        # Define a concrete search space for key parameters
+        # This is a subset of parameters from CONFIG.BEST_PARAMS for demonstration
+        # In a real system, this would be more extensive and configurable.
+        search_space = {
+            "trade_entry_threshold": [0.5, 0.6, 0.7, 0.8],
+            "sl_atr_multiplier": [1.0, 1.5, 2.0, 2.5],
+            "take_profit_rr": [1.5, 2.0, 2.5, 3.0],
+            "adx_period": [10, 14, 20, 25],
+            "initial_leverage": [20, 25, 30, 40], # Corresponds to tactician.laddering.initial_leverage
+            "min_lss_for_ladder": [60, 65, 70, 75], # Corresponds to tactician.laddering.min_lss_for_ladder
+            "ladder_step_leverage_increase": [3, 5, 7, 10], # Corresponds to tactician.laddering.ladder_step_leverage_increase
+            "trend_strength_threshold": [20, 25, 30, 35] # For regime classifier
+        }
+
+        # Create a list of all possible parameter combinations
+        keys = search_space.keys()
+        values = search_space.values()
+        
+        # Generate all combinations (for small search spaces) or sample randomly (for large spaces)
+        # For this implementation, we'll iterate through a fixed number of random samples
+        num_random_samples = 20 # Number of parameter sets to test in each optimization run
+
+        current_best_params = self.global_config['BEST_PARAMS'].copy()
+        best_performance = self._evaluate_params_with_backtest(current_best_params, klines_df, agg_trades_df, futures_df, sr_levels)
+        self.logger.info(f"  Initial BEST_PARAMS performance: ${best_performance:,.2f}")
+
+        # Store the best parameters found during this optimization run
+        optimized_params_found = current_best_params.copy()
+        
+        self.logger.info(f"  Running {num_random_samples} random samples...")
+
+        for i in range(num_random_samples):
+            # Construct a random candidate parameter set
+            candidate_params = self.global_config['BEST_PARAMS'].copy() # Start with current best as base
+            
+            # Randomly select a few parameters to change for this candidate
+            params_to_change = np.random.choice(list(keys), size=min(len(keys), 3), replace=False) # Change 3 random params
+
+            for param_key in params_to_change:
+                # Get a random value from the defined range for this parameter
+                random_value = np.random.choice(search_space[param_key])
+                
+                # Update the nested parameter path in the candidate_params dictionary
+                parts = param_key.split('.')
+                temp_dict = candidate_params
+                for part in parts[:-1]:
+                    temp_dict = temp_dict.setdefault(part, {})
+                temp_dict[parts[-1]] = random_value
+
+            self.logger.info(f"  Evaluating candidate {i+1}/{num_random_samples}: {candidate_params}")
+            candidate_performance = self._evaluate_params_with_backtest(candidate_params, klines_df, agg_trades_df, futures_df, sr_levels)
+            
+            if candidate_performance > best_performance:
+                best_performance = candidate_performance
+                optimized_params_found = candidate_params.copy() # Update the best found
+                self.logger.info(f"  New best found! Performance: ${best_performance:,.2f}")
+
+        self.logger.info(f"  Optimization complete. Final best performance from random search: ${best_performance:,.2f}")
+        self.logger.info(f"  Final optimized parameters for this run: {optimized_params_found}")
+
+        # --- Feedback Loop from Regime-Specific Performance (Conceptual) ---
+        # A real meta-learning algorithm would use `strategy_breakdown_data` to inform
+        # its search. For example:
+        # - If 'BULL_TREND' regime performance is consistently poor, the optimizer might
+        #   focus on tuning parameters related to trend-following indicators or entry/exit
+        #   thresholds within that regime.
+        # - If 'SIDEWAYS_RANGE' performance is excellent, it might try to make the system
+        #   more aggressive in that regime by adjusting relevant parameters.
+        # This feedback would typically be integrated into the objective function or the
+        # proposal mechanism of the optimization algorithm.
+        self.logger.info(f"  (Conceptual) Meta-learning informed by regime performance: {strategy_breakdown_data}")
+
+        # Update CONFIG.BEST_PARAMS with the newly found optimal parameters
+        # This is a critical step for the pipeline to use the optimized parameters.
+        # Deep update ensures nested dictionaries are handled.
+        self._deep_update_dict(self.global_config['BEST_PARAMS'], optimized_params_found)
+        self.logger.info("  CONFIG.BEST_PARAMS updated with optimized values.")
 
         optimization_run_id = str(uuid.uuid4())
-        performance_metric = round(np.random.uniform(0.5, 2.0), 2) # Simulated Sharpe Ratio
         date_applied = datetime.datetime.now().isoformat()
-
-        # Update CONFIG.BEST_PARAMS (in a real system, this would be more robust)
-        # For this demo, we'll just log it.
-        self.logger.info(f"Simulated new best parameters found: {simulated_new_best_params}")
-        self.logger.info(f"Simulated performance metric: {performance_metric}")
 
         # Save to Firestore
         if self.firestore_manager and self.firestore_manager.firestore_enabled:
             params_doc = {
                 "timestamp": date_applied,
                 "optimization_run_id": optimization_run_id,
-                "performance_metric": performance_metric,
+                "performance_metric": best_performance,
                 "date_applied": date_applied,
-                "params": simulated_new_best_params # Store the actual parameters
+                "params": optimized_params_found # Store the actual parameters
             }
             # Save to a document with a unique ID and also update a 'latest' document
             await self.firestore_manager.set_document(
-                self.config['firestore']['optimized_params_collection'],
+                self.global_config['firestore']['optimized_params_collection'],
                 doc_id=optimization_run_id,
                 data=params_doc,
                 is_public=True
             )
             await self.firestore_manager.set_document(
-                self.config['firestore']['optimized_params_collection'],
+                self.global_config['firestore']['optimized_params_collection'],
                 doc_id='latest', # Update a special 'latest' document
                 data=params_doc,
                 is_public=True
@@ -134,10 +234,18 @@ class Supervisor:
         # Export to CSV
         try:
             with open(self.optimized_params_csv, 'a') as f:
-                f.write(f"{date_applied},{optimization_run_id},{performance_metric},{date_applied},{json.dumps(simulated_new_best_params)}\n")
+                f.write(f"{date_applied},{optimization_run_id},{best_performance},{date_applied},{json.dumps(optimized_params_found)}\n")
             self.logger.info("Optimized parameters exported to CSV.")
         except Exception as e:
             self.logger.error(f"Error exporting optimized parameters to CSV: {e}")
+
+    def _deep_update_dict(self, target_dict, source_dict):
+        """Recursively updates a dictionary."""
+        for key, value in source_dict.items():
+            if isinstance(value, dict) and key in target_dict and isinstance(target_dict[key], dict):
+                self._deep_update_dict(target_dict[key], value)
+            else:
+                target_dict[key] = value
 
     async def _calculate_dynamic_capital_allocation(self, historical_pnl_data: pd.DataFrame):
         """
@@ -279,7 +387,7 @@ class Supervisor:
             # Firestore
             if self.firestore_manager and self.firestore_manager.firestore_enabled:
                 await self.firestore_manager.set_document(
-                    self.config['firestore']['daily_summary_log_filename'].split('/')[-1].replace('.csv', ''), # Collection name
+                    self.global_config['firestore']['daily_summary_log_filename'].split('/')[-1].replace('.csv', ''), # Collection name
                     doc_id=daily_summary["Date"], # Use date as document ID
                     data=daily_summary,
                     is_public=False # Private per user
@@ -316,7 +424,7 @@ class Supervisor:
                         **metrics
                     }
                     await self.firestore_manager.add_document(
-                        self.config['firestore']['strategy_performance_log_filename'].split('/')[-1].replace('.csv', ''), # Collection name
+                        self.global_config['firestore']['strategy_performance_log_filename'].split('/')[-1].replace('.csv', ''), # Collection name
                         data=doc_data,
                         is_public=False # Private per user
                     )
@@ -359,7 +467,8 @@ class Supervisor:
 
         # 3. Global System Optimization (Meta-Learning) - Run periodically
         if current_date.day % self.config.get("meta_learning_frequency_days", 7) == 0:
-            await self._implement_global_system_optimization()
+            # Pass the detailed regime-specific performance for conceptual feedback
+            await self._implement_global_system_optimization(updated_historical_pnl, report["strategy_breakdown"])
         
         self.logger.info(f"--- Supervisor: Orchestration Complete for {current_date} ---")
         return {
@@ -375,6 +484,8 @@ if __name__ == "__main__":
     # Create dummy directories if they don't exist
     os.makedirs("reports", exist_ok=True)
     os.makedirs("logs", exist_ok=True) # For logger
+    os.makedirs("data_cache", exist_ok=True) # For backtesting data
+    os.makedirs("models/analyst", exist_ok=True) # For analyst models
 
     # Initialize logger for demo
     from importlib import reload
@@ -410,6 +521,13 @@ if __name__ == "__main__":
     num_days_to_simulate = 5
 
     current_total_equity = INITIAL_EQUITY # Start with initial equity
+
+    # Create dummy data files for backtesting
+    from config import KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAME
+    from analyst.data_utils import create_dummy_data
+    create_dummy_data(KLINES_FILENAME, 'klines')
+    create_dummy_data(AGG_TRADES_FILENAME, 'agg_trades')
+    create_dummy_data(FUTURES_FILENAME, 'futures')
 
     async def run_demo():
         nonlocal current_total_equity
@@ -468,4 +586,3 @@ if __name__ == "__main__":
         print(f"Check '{supervisor.daily_summary_log_filename}', '{supervisor.strategy_performance_log_filename}', '{supervisor.optimized_params_csv}', '{supervisor.model_metadata_csv}' for logs.")
 
     asyncio.run(run_demo())
-

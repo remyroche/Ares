@@ -27,6 +27,8 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        # Correcting pandas-ta version to 0.3.14b0 as per error log
+        sed -i 's/pandas-ta==0.3.14/pandas-ta==0.3.14b0/' requirements.txt
         pip install -r requirements.txt # Install your project dependencies
         # Install Ruff, Mypy, Radon, Black, Isort, Vulture
         pip install ruff mypy radon black isort vulture
@@ -76,4 +78,3 @@ jobs:
         # Example of failing the build if complexity is too high or maintainability too low:
         # radon cc src/ --max-cc 10 --fail-on-error # Fails if any function has CC > 10
         # radon mi src/ --min-mi 70 --fail-on-error # Fails if any module has MI < 70
-

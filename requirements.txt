@@ -10,3 +10,5 @@ lightgbm
 websocket-client 
 tensorflow-metal 
 tensorflow
+celery 
+redis

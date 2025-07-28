@@ -1,103 +1,82 @@
-import pandas as pd
-import datetime
-import os
 import asyncio
 from loguru import logger
 
-# Assuming a global config dictionary and logger are available
-# from src.config import settings # Using settings from our established config
 from src.config import settings
+from src.sentinel.sentinel import Sentinel
+from src.analyst.analyst import Analyst
+from src.strategist.strategist import Strategist
+from src.tactician.tactician import Tactician
+from src.paper_trader import PaperTrader
+from src.utils.state_manager import StateManager
 from src.database.firestore_manager import db_manager
-from .performance_reporter import PerformanceReporter
-from .risk_allocator import RiskAllocator
-from .optimizer import Optimizer
-from .ab_tester import ABTester
 
 class Supervisor:
     """
-    The Supervisor module (Meta-Learning Governor) optimizes the entire trading strategy
-    and manages capital allocation over long time horizons. It also handles enhanced
-    performance reporting and A/B testing by orchestrating its sub-modules.
+    The central, real-time orchestrator of the Ares Trading Bot.
+    It initializes, manages, and connects all the core components of the
+    trading pipeline, ensuring they run concurrently and communicate efficiently.
     """
     def __init__(self):
-        # Using the global settings object for configuration
-        self.config = settings.supervisor_config if hasattr(settings, 'supervisor_config') else {}
         self.logger = logger
+        self.state_manager = StateManager('ares_state.json')
+        self.state = self.state_manager.load_state()
         
-        # Initialize sub-modules
-        # Pass the db_manager instance to components that need it
-        self.reporter = PerformanceReporter(settings, db_manager)
-        self.risk_allocator = RiskAllocator(settings)
-        self.optimizer = Optimizer(settings, db_manager)
-        self.ab_tester = ABTester(settings, self.reporter)
+        # Initialize the core real-time components
+        self.sentinel = Sentinel()
+        self.analyst = Analyst()
+        self.strategist = Strategist(self.state)
         
-        # State for configurable retraining schedule
-        self.retraining_schedule_config = self.config.get("retraining_schedule", {})
-        self.next_retraining_date = None
-        if self.retraining_schedule_config.get("enabled", False):
-            try:
-                self.next_retraining_date = datetime.datetime.strptime(
-                    self.retraining_schedule_config.get("first_retraining_date"), "%Y-%m-%d"
-                ).date()
-            except (ValueError, TypeError):
-                self.logger.error("Invalid 'first_retraining_date' format in config. Please use YYYY-MM-DD. Disabling scheduled retraining.")
-                self.retraining_schedule_config["enabled"] = False
+        # Initialize the trader based on the configured mode
+        if settings.trading_mode == "PAPER":
+            self.trader = PaperTrader(self.state)
+            self.logger.info("Paper Trader initialized.")
+        else:
+            # Placeholder for a future live trading implementation
+            self.logger.error("Live trading mode is not fully implemented yet.")
+            raise NotImplementedError("Live trading not implemented.")
 
-
-    async def orchestrate_supervision(self, current_date: datetime.date, total_equity: float, 
-                                      daily_trade_logs: list, daily_pnl_per_regime: dict,
-                                      historical_daily_pnl_data: pd.DataFrame):
-        """
-        Main orchestration method for the Supervisor, called periodically (e.g., daily/weekly).
-        """
-        self.logger.info(f"\n--- Supervisor: Starting Orchestration for {current_date} ---")
-
-        # 1. A/B Testing Management
-        if self.ab_tester.ab_test_active and (datetime.datetime.now().date() - self.ab_tester.ab_test_start_date.date()).days >= 7:
-            await self.ab_tester.evaluate_and_conclude_ab_test(daily_trade_logs)
-
-        # 2. Dynamic Risk Allocation
-        today_net_pnl = sum(t.get('realized_pnl_usd', 0) for t in daily_trade_logs)
-        new_daily_pnl_row = pd.DataFrame([{'Date': current_date, 'NetPnL': today_net_pnl}])
-        if 'Date' in historical_daily_pnl_data.columns:
-            historical_daily_pnl_data['Date'] = pd.to_datetime(historical_daily_pnl_data['Date'])
+        self.tactician = Tactician(self.trader)
+        self.running = False
         
-        updated_historical_pnl = pd.concat([historical_daily_pnl_data, new_daily_pnl_row]).drop_duplicates(subset=['Date']).sort_values('Date')
-        
-        self.risk_allocator.calculate_dynamic_capital_allocation(updated_historical_pnl)
+        # Asynchronous queues for communication between components
+        self.market_data_queue = asyncio.Queue(maxsize=100)
+        self.analysis_queue = asyncio.Queue(maxsize=100)
+        self.signal_queue = asyncio.Queue(maxsize=50)
 
-        # 3. Performance Reporting
-        report = await self.reporter.generate_performance_report(daily_trade_logs, current_date, self.risk_allocator.get_current_allocated_capital())
-        await self.reporter.update_daily_summary_csv_and_firestore(report["daily_summary"])
-        await self.reporter.update_strategy_performance_log_and_firestore(current_date, report["strategy_breakdown"])
+    async def start(self):
+        """Starts all bot components and the main processing loop."""
+        self.logger.info("Supervisor starting all components...")
+        self.running = True
 
-        # 4. Configurable Retraining and Optimization Trigger
-        if self.retraining_schedule_config.get("enabled", False) and self.next_retraining_date and current_date >= self.next_retraining_date:
-            self.logger.info(f"Scheduled retraining date reached. Kicking off training pipeline for {current_date.strftime('%Y-%m')}...")
-            # In a real system, this would trigger an external process, e.g., a Celery task or a script run.
-            # For demonstration, we log the action. A real implementation would use:
-            # os.system('python backtesting/training_pipeline.py &')
+        # Initialize the database manager asynchronously
+        await db_manager.initialize()
+
+        # Create a list of all concurrent tasks to run
+        tasks = [
+            asyncio.create_task(self.sentinel.run(self.market_data_queue)),
+            asyncio.create_task(self.analyst.run(self.market_data_queue, self.analysis_queue)),
+            asyncio.create_task(self.strategist.run(self.analysis_queue, self.signal_queue)),
+            asyncio.create_task(self.tactician.run(self.signal_queue)),
+        ]
+
+        # If in paper trading mode, also run the simulation engine
+        if isinstance(self.trader, PaperTrader):
+            tasks.append(asyncio.create_task(self.trader.run_simulation()))
+
+        try:
+            # Run all component tasks concurrently
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError:
+            self.logger.info("Supervisor tasks cancelled. Beginning graceful shutdown...")
+        finally:
+            self.running = False
+            # Ensure all tasks are properly cancelled on exit
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            # Wait for all tasks to acknowledge cancellation
+            await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Schedule the next run
-            period_days = self.retraining_schedule_config.get("retraining_period_days", 30)
-            self.next_retraining_date = current_date + datetime.timedelta(days=period_days)
-            self.logger.info(f"Next retraining scheduled for: {self.next_retraining_date}")
-
-        # 5. Global System Optimization (Meta-Learning) - Run periodically
-        if current_date.day % self.config.get("meta_learning_frequency_days", 7) == 0:
-            await self.optimizer.implement_global_system_optimization(updated_historical_pnl, report["strategy_breakdown"])
-        
-        self.logger.info(f"--- Supervisor: Orchestration Complete for {current_date} ---")
-        return {
-            "allocated_capital": self.risk_allocator.get_current_allocated_capital(),
-            "daily_summary": report["daily_summary"],
-            "strategy_breakdown": report["strategy_breakdown"]
-        }
-
-    def start_ab_test(self, challenger_analyst, challenger_params):
-        """Public method to initiate an A/B test."""
-        self.ab_tester.start_ab_test(challenger_analyst, challenger_params, self.risk_allocator.get_current_allocated_capital())
-
-    def get_current_allocated_capital(self):
-        """Public method to get current capital from the risk allocator."""
-        return self.risk_allocator.get_current_allocated_capital()
+            # Save the final state of the bot
+            self.state_manager.save_state(self.state)
+            self.logger.info("All components have been shut down and state has been saved.")

@@ -174,18 +174,6 @@ class Optimizer:
 
         self.logger.info(f"  Starting Bayesian Optimization with {n_calls} calls...")
 
-        # Add the new dimensions for the strategist thresholds
-        self.optimization_dimensions.extend([
-            Real(0.55, 0.95, name='strategist.long_threshold'),
-            Real(0.55, 0.95, name='strategist.short_threshold')
-        ])
-        
-        # Also add the names to your list of parameter names
-        self.optimization_param_names.extend([
-            'strategist.long_threshold',
-            'strategist.short_threshold'
-        ])
-        
         res = gp_minimize(
             func=objective_with_feedback,
             dimensions=self.optimization_dimensions,

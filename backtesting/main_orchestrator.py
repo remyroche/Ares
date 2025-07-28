@@ -1,11 +1,12 @@
+# main_orchestrator.py
 import subprocess
 import time
 import os
 import sys
 import signal
-import argparse # Import argparse for command-line arguments
+import argparse
 # Import the main CONFIG dictionary
-from config import CONFIG
+from src.config import CONFIG
 
 def get_process_pid(pid_file):
     """Reads the PID from a specified PID file."""
@@ -84,9 +85,6 @@ def main():
 
     # Override CONFIG values based on command-line arguments for this run
     CONFIG['SYMBOL'] = args.symbol
-    # For exchange, we might need more complex logic if supporting multiple exchanges
-    # For now, assume 'binance' is the only supported exchange and its config is used.
-    # If other exchanges were supported, you'd load exchange-specific API keys/configs here.
     
     # Update filenames based on the new symbol
     CONFIG["KLINES_FILENAME"] = f"data_cache/{CONFIG['SYMBOL']}_{CONFIG['INTERVAL']}_{CONFIG['LOOKBACK_YEARS']}y_klines.csv"
@@ -114,44 +112,35 @@ def main():
     # --- Mode-specific execution ---
     if args.mode == 'backtest':
         print(f"Launching backtester for {args.symbol}...")
-        # The actual backtest logic is in backtesting/ares_backtester.py's main()
-        # We need to call it directly or through a subprocess.
-        # For simplicity, we'll call it directly here.
-        # Ensure that ares_backtester.py's main() can run standalone.
         try:
             from backtesting.ares_backtester import main as run_backtester_main
             run_backtester_main()
         except Exception as e:
             print(f"Error running backtester: {e}")
             sys.exit(1)
-        sys.exit(0) # Exit after backtest completes
+        sys.exit(0)
 
     elif args.mode == 'train':
         print(f"Launching ML/Fine-tuning pipeline for {args.symbol}...")
-        # This will be handled by a new training_pipeline.py script
-        # For now, it's a placeholder.
         try:
-            # Assuming a new script named 'training_pipeline.py' will be created
-            # and it will import CONFIG directly.
             from backtesting.training_pipeline import main as run_training_pipeline_main
-            run_training_pipeline_main() # This function will handle the training chain reaction
+            run_training_pipeline_main()
         except ImportError:
             print("ERROR: 'training_pipeline.py' not found. Please create it for 'train' mode.")
             sys.exit(1)
         except Exception as e:
             print(f"Error running training pipeline: {e}")
             sys.exit(1)
-        sys.exit(0) # Exit after training completes
+        sys.exit(0)
 
     elif args.mode == 'live':
+        # ... (live mode logic remains the same) ...
         print(f"Launching live trading bot for {args.symbol}...")
-        # Start the Email Command Listener
         listener_process = start_process("emails/email_command_listener.py", "Email Listener") 
         if listener_process is None:
             print("Failed to start Email Listener. Exiting.")
             sys.exit(1)
 
-        # Start the Ares Pipeline (which will now be multi-asset capable)
         pipeline_script_name = CONFIG['PIPELINE_SCRIPT_NAME'] # src/ares_pipeline.py
         pipeline_process = start_process(pipeline_script_name, "Ares Pipeline") 
         if pipeline_process is None:
@@ -161,7 +150,6 @@ def main():
 
         try:
             while True:
-                # Check if the pipeline process is still running
                 if not is_process_running(pipeline_process.pid):
                     print(f"Ares Pipeline (PID: {pipeline_process.pid}) has stopped unexpectedly.")
                     print("Attempting to restart Ares Pipeline...")
@@ -170,7 +158,6 @@ def main():
                         print("Failed to restart Ares Pipeline. Exiting orchestrator.")
                         break 
 
-                # Check for restart flag from email listener
                 if os.path.exists(restart_flag_file):
                     print(f"'{restart_flag_file}' detected. Initiating pipeline restart.")
                     current_pipeline_pid = get_process_pid(pipeline_pid_file) 
@@ -190,7 +177,7 @@ def main():
                         print("Failed to restart Ares Pipeline after flag. Exiting orchestrator.")
                         break 
                     
-                time.sleep(10) # Orchestrator checks every 10 seconds
+                time.sleep(10)
 
         except KeyboardInterrupt:
             print("\nCtrl+C detected. Shutting down orchestrator.")
@@ -215,3 +202,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

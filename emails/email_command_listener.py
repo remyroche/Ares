@@ -9,6 +9,18 @@ import signal
 from src.config import CONFIG
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+ALLOWED_COMMANDS = {
+    "STATUS": lambda: get_bot_status(),
+    "SHUTDOWN": lambda: shutdown_bot(),
+    "CANCEL_ALL": lambda: cancel_all_orders(),
+    "PAUSE TRADING",
+    "RESUME TRADING",
+    "GIT PULL",
+    "PROMOTE CHALLENGER",
+    "RESTART ARES BOT",
+}
+
+
 def write_flag_file(flag_file_path):
     """Writes a generic flag file."""
     try:
@@ -40,6 +52,11 @@ def check_emails():
             _, msg_data = mail.fetch(e_id, '(RFC822)')
             msg = email.message_from_bytes(msg_data[0][1])
             subject = msg['Subject'].upper()
+
+    
+            if not command in ALLOWED_COMMANDS:
+                print(f"SECURITY WARNING: Received unauthorized command '{email_body}'. Ignoring.")
+                continue
 
             print(f"Processing command email with subject: '{subject}'")
 

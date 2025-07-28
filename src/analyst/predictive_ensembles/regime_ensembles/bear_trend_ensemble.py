@@ -5,6 +5,7 @@ from lightgbm import LGBMClassifier
 import pandas_ta as ta
 from arch import arch_model
 import warnings
+from sklearn.model_selection import KFold
 
 # Suppress specific warnings from ARCH library
 warnings.filterwarnings("ignore", category=UserWarning, module="arch")
@@ -194,14 +195,22 @@ class BearTrendEnsemble(BaseEnsemble):
         # LightGBM Model
         self.logger.info("Training LightGBM model...")
         try:
-            self.models["lgbm"] = LGBMClassifier(
-                random_state=42, 
-                verbose=-1,
-                reg_alpha=self.dl_config["l1_reg_strength"],
-                reg_lambda=self.dl_config["l2_reg_strength"]
-            )
-            self.models["lgbm"].fit(X_flat, y_flat)
-            self.logger.info("LightGBM model trained.")
+            kf = KFold(n_splits=5, shuffle=True, random_state=42)
+            models = []
+            for fold, (train_index, val_index) in enumerate(kf.split(X_flat, y_flat)):
+                X_train, X_val = X_flat.iloc[train_index], X_flat.iloc[val_index]
+                y_train, y_val = y_flat.iloc[train_index], y_flat.iloc[val_index]
+
+                model = LGBMClassifier(
+                    random_state=42,
+                    verbose=-1,
+                    reg_alpha=self.dl_config["l1_reg_strength"],
+                    reg_lambda=self.dl_config["l2_reg_strength"]
+                )
+                model.fit(X_train, y_train, eval_set=[(X_val, y_val)])
+                models.append(model)
+            self.models["lgbm"] = models
+            self.logger.info("LightGBM model trained with 5-fold cross-validation.")
         except Exception as e:
             self.logger.error(f"Error training LightGBM model: {e}")
             self.models["lgbm"] = None
@@ -236,18 +245,7 @@ class BearTrendEnsemble(BaseEnsemble):
         # CHANGED: Pass GARCH volatility directly as a feature
         if self.models["garch"]:
             try:
-                # For training data, we can use the historical conditional volatility
-                # This is a simplification; a more rigorous approach would use out-of-sample
-                # predictions or a rolling forecast.
                 historical_volatility = self.models["garch"].conditional_volatility
-                # Align historical_volatility with the features_df index
-                # This might require resampling or reindexing
-                # For simplicity, let's take the last value of historical_volatility and replicate
-                # or use a rolling mean/std of returns as a proxy for historical volatility for meta-learner
-                
-                # A more robust way: align historical_volatility to the X_flat index
-                # This assumes historical_volatility has the same index as the original returns
-                # which aligns with aligned_data.
                 aligned_garch_vol = historical_volatility.reindex(aligned_data.index).fillna(method='ffill').fillna(0)
                 meta_features_train['garch_volatility'] = aligned_garch_vol
             except Exception as e:
@@ -257,16 +255,15 @@ class BearTrendEnsemble(BaseEnsemble):
             meta_features_train['garch_volatility'] = np.random.uniform(0.001, 0.01, len(X_flat))
 
         if self.models["lgbm"]:
-            lgbm_probas = self.models["lgbm"].predict_proba(X_flat)
-            lgbm_conf_values = [lgbm_probas[i, self.models["lgbm"].classes_.tolist().index(y_flat.iloc[i])] for i in range(len(y_flat))]
+            lgbm_probas_all_folds = [model.predict_proba(X_flat) for model in self.models["lgbm"]]
+            lgbm_probas = np.mean(lgbm_probas_all_folds, axis=0)
+            lgbm_classes = self.models["lgbm"][0].classes_
+            lgbm_conf_values = [lgbm_probas[i, np.where(lgbm_classes == y_flat.iloc[i])[0][0]] for i in range(len(y_flat))]
             meta_features_train['lgbm_proba'] = pd.Series(lgbm_conf_values, index=X_flat.index)
         else:
             meta_features_train['lgbm_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
         # Add advanced features to meta_features_train (aligning indices)
-        # These features should be calculated for the historical data as well
-        # For simplicity, we'll just join them, assuming they were generated consistently
-        # In a real system, you'd compute these for the training set.
         meta_features_train = meta_features_train.join(historical_features[['is_wyckoff_sos', 'is_wyckoff_sow', 'is_wyckoff_spring', 'is_wyckoff_upthrust',
                                                                       'is_accumulation_phase', 'is_distribution_phase',
                                                                       'is_liquidity_sweep', 'is_fake_breakout', 'is_large_bid_wall_near', 'is_large_ask_wall_near',
@@ -367,8 +364,9 @@ class BearTrendEnsemble(BaseEnsemble):
                 lgbm_features_list = ['ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting']
                 lgbm_features = current_features_row[lgbm_features_list].copy()
                 lgbm_features = lgbm_features.fillna(0)
-                lgbm_proba = self.models["lgbm"].predict_proba(lgbm_features)[0]
-                bear_idx = np.where(self.models["lgbm"].classes_ == 'BEAR_TREND')[0]
+                lgbm_probas_all_folds = [model.predict_proba(lgbm_features) for model in self.models["lgbm"]]
+                lgbm_proba = np.mean(lgbm_probas_all_folds, axis=0)[0]
+                bear_idx = np.where(self.models["lgbm"][0].classes_ == 'BEAR_TREND')[0]
                 lgbm_conf = lgbm_proba[bear_idx][0] if len(bear_idx) > 0 else np.max(lgbm_proba)
                 individual_model_outputs['lgbm_proba'] = float(lgbm_conf)
             except Exception as e:
@@ -378,16 +376,12 @@ class BearTrendEnsemble(BaseEnsemble):
             individual_model_outputs['lgbm_proba'] = 0.5
 
         # --- Incorporate Advanced Features ---
-        # Ensure klines_df and agg_trades_df are passed to feature methods with sufficient history
-        # (current_features already contains combined historical + current data)
         wyckoff_feats = self._get_wyckoff_features(klines_df, current_price)
         manipulation_feats = self._get_manipulation_features(order_book_data, current_price, agg_trades_df)
         order_flow_feats = self._get_order_flow_features(agg_trades_df, order_book_data, klines_df)
-        # Assuming klines_df is sufficient for both HTF/MTF for these conceptual features
         multi_timeframe_feats = self._get_multi_timeframe_features(klines_df, klines_df) 
 
         # Add advanced features to individual_model_outputs for meta-learner
-        # Ensure values are floats/ints for meta-learner input
         individual_model_outputs.update({k: float(v) if isinstance(v, (int, float, np.number)) else 0.0 for k, v in wyckoff_feats.items()})
         individual_model_outputs.update({k: float(v) if isinstance(v, (int, float, np.number)) else 0.0 for k, v in manipulation_feats.items()})
         individual_model_outputs.update({k: float(v) if isinstance(v, (int, float, np.number)) else 0.0 for k, v in order_flow_feats.items()})
@@ -417,7 +411,6 @@ class BearTrendEnsemble(BaseEnsemble):
         else:
             self.logger.warning(f"Meta-learner not available for {self.ensemble_name}. Averaging confidences.")
             # Fallback to simple weighted average if meta-learner is not available
-            # Note: GARCH volatility is not a confidence, so it's excluded from this average.
             total_weighted_confidence = sum(individual_model_outputs.get(m, 0.5) * self.ensemble_weights.get(m.replace('_conf', ''), 1.0) 
                                             for m in ['lstm_conf', 'transformer_conf', 'lgbm_proba'])
             total_weight = sum(self.ensemble_weights.get(m.replace('_conf', ''), 1.0) for m in ['lstm_conf', 'transformer_conf', 'lgbm_proba'])

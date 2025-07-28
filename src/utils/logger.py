@@ -2,54 +2,96 @@
 import logging
 import logging.handlers
 import os
-# Import the main CONFIG dictionary
-from config import CONFIG 
+import sys
+from pythonjsonlogger import jsonlogger
 
-def setup_logger(name='ares_system', config=None): # Changed default config to None
+# Assume CONFIG is imported from your project's config file.
+# This might need to be adjusted based on your exact import structure.
+# For example: from src.config import CONFIG
+try:
+    from src.config import CONFIG
+except ImportError:
+    # Provide a default config if the main one isn't available,
+    # which can happen when running scripts from different locations.
+    CONFIG = {'logging': {}}
+
+def setup_logging():
     """
-    Sets up a centralized logger for the Ares system.
-    Logs to console and a rotating file.
-    """
-    logger = logging.getLogger(name)
+    Configures the root logger for the entire application.
+    This should be called once at the very beginning of the application's entry point.
     
-    # Prevent adding multiple handlers if logger is already configured
-    if logger.handlers:
-        return logger
+    Features:
+    - Structured (JSON) formatting for all logs.
+    - Configurable log level from the main config file.
+    - Logs to both the console (for real-time feedback) and a rotating file.
+    - Log rotation to prevent log files from becoming too large.
+    - Centralized configuration.
+    """
+    # Get logging configuration or use sensible defaults
+    log_config = CONFIG.get('logging', {})
+    log_level = log_config.get('level', 'INFO').upper()
+    log_to_file = log_config.get('log_to_file', True)
+    log_directory = log_config.get('directory', 'logs')
+    log_filename = log_config.get('filename', 'ares.log')
+    
+    # Get the root logger. All other loggers in the application
+    # will inherit this configuration.
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    
+    # IMPORTANT: Clear any existing handlers to prevent duplicate log entries
+    if root_logger.hasHandlers():
+        root_logger.handlers.clear()
 
-    # Use the logging configuration from the main CONFIG dictionary
-    if config is None:
-        config = CONFIG['logging']
-
-    log_level_str = config.get("log_level", "INFO").upper()
-    log_level = getattr(logging, log_level_str, logging.INFO)
-    logger.setLevel(log_level)
-
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    # Console Handler
-    if config.get("log_to_console", True):
-        ch = logging.StreamHandler()
-        ch.setLevel(log_level)
-        ch.setFormatter(formatter)
-        logger.addHandler(ch)
-
-    # File Handler (Rotating)
-    log_file = config.get("log_file", "logs/ares_system.log")
-    log_dir = os.path.dirname(log_file)
-    if log_dir and not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-
-    fh = logging.handlers.RotatingFileHandler(
-        log_file,
-        maxBytes=config.get("max_bytes", 10485760), # 10 MB default
-        backupCount=config.get("backup_count", 5) # Keep 5 backup files
+    # Define a standard JSON format for logs.
+    # This includes standard log fields plus module and line number for easy debugging.
+    formatter = jsonlogger.JsonFormatter(
+        '%(asctime)s %(name)s %(levelname)s %(module)s %(funcName)s %(lineno)d %(message)s'
     )
-    fh.setLevel(log_level)
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
 
-    return logger
+    # --- Console Handler ---
+    # This handler prints logs to the standard output (your terminal).
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
 
-# Initialize the main system logger
-# Pass CONFIG['logging'] explicitly to ensure correct configuration is used
-system_logger = setup_logger(config=CONFIG['logging'])
+    # --- Rotating File Handler ---
+    # This handler writes logs to a file and automatically rotates the logs
+    # when they reach a certain size.
+    if log_to_file:
+        try:
+            os.makedirs(log_directory, exist_ok=True)
+            log_path = os.path.join(log_directory, log_filename)
+            
+            # Rotate logs when they reach 5MB. Keep the last 5 log files as backups.
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_path, maxBytes=5*1024*1024, backupCount=5
+            )
+            file_handler.setFormatter(formatter)
+            root_logger.addHandler(file_handler)
+        except Exception as e:
+            root_logger.error(f"Failed to configure file logging: {e}", exc_info=True)
+            
+    root_logger.info("Logging has been successfully configured.", extra={'config': log_config})
+
+# --- How to use the logger throughout your application ---
+
+# 1. At the very start of your application (e.g., in main_launcher.py), call the setup function once:
+#
+#    from src.utils.logger import setup_logging
+#    setup_logging()
+
+# 2. In any other module (e.g., strategist.py, analyst.py), get a logger instance for that specific module:
+#
+#    import logging
+#    logger = logging.getLogger(__name__)
+#
+#    logger.info("Strategist is making a decision.", extra={'current_bias': 'LONG'})
+#    logger.warning("Market volatility is unusually high.")
+#
+#    try:
+#        # some operation that might fail
+#        result = 1 / 0
+#    except Exception:
+#        # logger.exception automatically includes the full traceback in the log
+#        logger.exception("A critical error occurred during calculation.")

@@ -213,3 +213,72 @@ BEST_PARAMS = {
     'scaling_factor': 100, 
     'trend_strength_threshold': 25
 }
+
+# --- Optimization Configuration ---
+# Defines the parameter space for grid search and fine-tuning.
+# Keys are parameter paths (e.g., "analyst.market_regime_classifier.adx_period")
+# Values are lists of values for coarse grid, or ranges for fine-tuning.
+OPTIMIZATION_CONFIG = {
+    "COARSE_GRID_RANGES": {
+        # General Trading Parameters
+        "atr.stop_loss_multiplier": [1.0, 1.5, 2.0],
+        "atr.max_risk_per_trade_pct": [0.005, 0.01, 0.02],
+        "sr_proximity_pct": [0.003, 0.005, 0.007],
+        
+        # Analyst - Market Regime Classifier
+        "analyst.market_regime_classifier.adx_period": [10, 14, 20],
+        "analyst.market_regime_classifier.trend_scaling_factor": [50, 100, 150],
+        "analyst.market_regime_classifier.trend_threshold": [20, 25, 30],
+
+        # Analyst - Regime Predictive Ensembles
+        "analyst.regime_predictive_ensembles.min_confluence_confidence": [0.6, 0.7, 0.8],
+
+        # Analyst - Liquidation Risk Model
+        "analyst.liquidation_risk_model.volatility_impact": [0.3, 0.4, 0.5],
+        "analyst.liquidation_risk_model.order_book_depth_impact": [0.2, 0.3, 0.4],
+
+        # Analyst - Market Health Analyzer (weights)
+        "analyst.market_health_analyzer.atr_weight": [0.2, 0.3, 0.4],
+        "analyst.market_health_analyzer.bollinger_weight": [0.2, 0.3, 0.4],
+        
+        # Tactician - Laddering
+        "tactician.laddering.initial_leverage": [20, 25, 30],
+        "tactician.laddering.min_lss_for_ladder": [60, 70, 80],
+        "tactician.laddering.ladder_step_leverage_increase": [3, 5, 7],
+        
+        # Strategist
+        "strategist.trading_range_atr_multiplier": [2.0, 3.0, 4.0],
+        "strategist.sr_relevance_threshold": [4.0, 5.0, 6.0],
+
+        # Supervisor - Dynamic Risk Allocation
+        "supervisor.risk_allocation_lookback_days": [20, 30, 40],
+        "supervisor.max_capital_allocation_increase_pct": [0.75, 1.0, 1.25]
+    },
+    # Multiplier for defining the fine-tuning range around a coarse best parameter.
+    # E.g., if best is X, fine-tune range is [X * (1-FINE_TUNE_RANGES_MULTIPLIER), X * (1+FINE_TUNE_RANGES_MULTIPLIER)]
+    "FINE_TUNE_RANGES_MULTIPLIER": 0.15, # 15% range around the best coarse value
+    "FINE_TUNE_NUM_POINTS": 5, # Number of points to sample in the fine-tuning range
+
+    "INTEGER_PARAMS": [
+        "bollinger_bands.window", "bollinger_bands.num_std_dev", "atr.window",
+        "analyst.feature_engineering.wavelet_level", "analyst.feature_engineering.autoencoder_latent_dim",
+        "analyst.market_regime_classifier.kmeans_n_clusters", "analyst.market_regime_classifier.adx_period",
+        "analyst.market_regime_classifier.macd_fast_period", "analyst.market_regime_classifier.macd_slow_period",
+        "analyst.market_regime_classifier.macd_signal_period",
+        "analyst.liquidation_risk_model.lookback_periods_volatility",
+        "analyst.market_health_analyzer.momentum_period",
+        "analyst.high_impact_candle_model.volume_sma_period", "analyst.high_impact_candle_model.atr_sma_period",
+        "tactician.laddering.initial_leverage", "tactician.laddering.ladder_step_leverage_increase",
+        "tactician.laddering.max_ladder_steps",
+        "strategist.ma_periods_for_bias", # Note: This is a list of integers, needs special handling
+        "supervisor.risk_allocation_lookback_days"
+    ],
+    # Groups of parameters that represent weights and should sum to 1 (or be normalized)
+    # Format: ("path.to.parent_dict", ["weight1_key", "weight2_key", ...])
+    "WEIGHT_PARAMS_GROUPS": [
+        ("analyst.regime_predictive_ensembles.ensemble_weights", ["lstm", "transformer", "statistical", "volume"]),
+        ("analyst.liquidation_risk_model", ["volatility_impact", "order_book_depth_impact", "position_impact"]),
+        ("analyst.market_health_analyzer", ["atr_weight", "bollinger_weight", "ma_cluster_weight", "momentum_weight", "obv_weight"]),
+        ("tactician.rl_agent.reward_weights", ["pnl", "drawdown_penalty", "liquidation_penalty", "confidence_bonus"])
+    ]
+}

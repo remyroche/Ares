@@ -67,7 +67,7 @@ class Analyst:
             'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
         }).dropna()
         if not daily_df.empty:
-            daily_df.rename(columns={'open': 'Open', 'high': 'low', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True) # Fix column names for SR Analyzer
+            daily_df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True) 
             self._sr_levels = self.sr_analyzer.analyze(daily_df)
             self.logger.info(f"Analyst: Identified {len(self._sr_levels)} S/R levels from historical data.")
         else:

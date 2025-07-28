@@ -1,17 +1,412 @@
-# src/tactician/tactician.py
+# src/supervisor/monitoring.py
+
+import json
+import logging
+import time
+from datetime import datetime
+
+from google.cloud.firestore import Client
+
+from src.database.firestore_manager import FirestoreManager
+
+logger = logging.getLogger(__name__)
+
+
+class Monitoring:
+    def __init__(self, firestore_manager: FirestoreManager, log_file="monitoring_log.json"):
+        self.firestore_manager = firestore_manager
+        self.log_file = log_file
+        self.start_time = time.time()
+
+    def record_heartbeat(self):
+        """Records a heartbeat to indicate the bot is alive and running."""
+        uptime = time.time() - self.start_time
+        heartbeat_data = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "status": "alive",
+            "uptime_seconds": uptime,
+        }
+        self._log_to_file(heartbeat_data)
+        self.firestore_manager.db.collection("monitoring").document("heartbeat").set(heartbeat_data)
+        logger.info("Heartbeat recorded.")
+
+    def record_trade(self, trade_data: dict):
+        """Records the details of a trade."""
+        self._log_to_file(trade_data)
+        self.firestore_manager.db.collection("trades").add(trade_data)
+        logger.info(f"Trade recorded: {trade_data}")
+
+    def record_error(self, error_message: str):
+        """Records an error."""
+        error_data = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": error_message,
+        }
+        self._log_to_file(error_data)
+        self.firestore_manager.db.collection("errors").add(error_data)
+        logger.error(f"Error recorded: {error_message}")
+
+    def record_performance_metrics(self, metrics: dict):
+        """Records performance metrics."""
+        performance_data = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "metrics": metrics,
+        }
+        self._log_to_file(performance_data)
+        self.firestore_manager.db.collection("performance").add(performance_data)
+        logger.info(f"Performance metrics recorded: {metrics}")
+
+    def _log_to_file(self, data: dict):
+        """Logs data to a local JSON file."""
+        with open(self.log_file, "a") as f:
+            f.write(json.dumps(data) + "\n")
+
+```python
+# src/supervisor/main.py
+
+import asyncio
+import logging
+import time
+
+# The user-provided code had several imports for components not defined in the current context
+# (Sentinel, Analyst, Strategist, Tactician, PaperTrader, StateManager, db_manager).
+# We are assuming these exist in the user's project structure.
+from src.config import Config
+from src.database.firestore_manager import FirestoreManager, db_manager
+from src.supervisor.ab_tester import ABTester
+from src.supervisor.performance_reporter import PerformanceReporter
+from src.supervisor.risk_allocator import RiskAllocator
+from src.supervisor.monitoring import Monitoring
+from src.sentinel.sentinel import Sentinel
+from src.analyst.analyst import Analyst
+from src.strategist.strategist import Strategist
+from src.tactician.tactician import Tactician
+from src.paper_trader import PaperTrader
+from src.utils.state_manager import StateManager
+
+
+logger = logging.getLogger(__name__)
+
+
+class Supervisor:
+    """
+    The central, real-time orchestrator of the Ares Trading Bot.
+    It initializes, manages, and connects all the core components of the
+    trading pipeline, ensuring they run concurrently and communicate efficiently.
+    """
+    def __init__(self):
+        self.logger = logger
+        self.state_manager = StateManager('ares_state.json')
+        self.state = self.state_manager.load_state()
+        self.config = Config()
+        self.firestore_manager = FirestoreManager(self.config)
+        self.risk_allocator = RiskAllocator(self.config, self.firestore_manager)
+        self.performance_reporter = PerformanceReporter(self.firestore_manager)
+        self.ab_tester = ABTester(self.firestore_manager)
+        self.monitoring = Monitoring(self.firestore_manager)
+        
+        # Initialize the core real-time components
+        self.sentinel = Sentinel()
+        self.analyst = Analyst()
+        self.strategist = Strategist(self.state)
+        
+        # Initialize the trader based on the configured mode
+        if self.config.PAPER_TRADING:
+            self.trader = PaperTrader(self.state)
+            self.logger.info("Paper Trader initialized.")
+        else:
+            self.trader = None # Live trading not implemented
+            self.logger.error("Live trading mode is not fully implemented yet.")
+            # In a real scenario, you might want to raise an exception or handle this differently
+            # raise NotImplementedError("Live trading not implemented.")
+
+        if self.trader:
+            # The new Tactician needs more than just the trader.
+            # This part needs to be adapted to the new Tactician's signature.
+            self.tactician = Tactician(state=self.state, config=self.config, firestore_manager=self.firestore_manager, trader=self.trader)
+        else:
+            self.tactician = None
+        
+        self.running = False
+        
+        # Asynchronous queues for communication between components
+        self.market_data_queue = asyncio.Queue(maxsize=100)
+        self.analysis_queue = asyncio.Queue(maxsize=100)
+        self.signal_queue = asyncio.Queue(maxsize=50)
+        self.order_queue = asyncio.Queue(maxsize=50) # Queue for Tactician's final orders
+
+    async def start(self):
+        """Starts all bot components and the main processing loop."""
+        self.logger.info("Supervisor starting all components...")
+        self.running = True
+
+        # Initialize the database manager asynchronously if it has an init method
+        if hasattr(db_manager, 'initialize') and asyncio.iscoroutinefunction(db_manager.initialize):
+            await db_manager.initialize()
+
+        # Create a list of all concurrent tasks to run
+        tasks = [
+            asyncio.create_task(self.sentinel.run(self.market_data_queue)),
+            asyncio.create_task(self.analyst.run(self.market_data_queue, self.analysis_queue)),
+            asyncio.create_task(self.strategist.run(self.analysis_queue, self.signal_queue)),
+        ]
+        
+        if self.tactician:
+             # The tactician now produces orders, another component would execute them.
+             tasks.append(asyncio.create_task(self.tactician.run(self.signal_queue, self.order_queue)))
+
+        # A new component would be needed to consume from order_queue and execute trades
+        # For example: tasks.append(asyncio.create_task(self.trader.run(self.order_queue)))
+
+        # If in paper trading mode, also run the simulation engine
+        if isinstance(self.trader, PaperTrader):
+            tasks.append(asyncio.create_task(self.trader.run_simulation()))
+
+        try:
+            # Run all component tasks concurrently
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError:
+            self.logger.info("Supervisor tasks cancelled. Beginning graceful shutdown...")
+        finally:
+            self.running = False
+            # Ensure all tasks are properly cancelled on exit
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            # Wait for all tasks to acknowledge cancellation
+            await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Save the final state of the bot
+            self.state_manager.save_state(self.state)
+            self.logger.info("All components have been shut down and state has been saved.")
+```python
+# exchange/binance.py
+
+import time
+import logging
+from functools import wraps
+import asyncio
+
+from binance.client import Client
+from binance import AsyncClient
+from binance.exceptions import BinanceAPIException, BinanceRequestException
+
+from src.config import Config
+
+logger = logging.getLogger(__name__)
+
+
+def handle_binance_errors(func):
+    """A decorator to handle Binance API errors with retries and exponential backoff."""
+
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        # The first argument is the class instance 'self'
+        self_instance = args[0]
+        retries = self_instance.config.BINANCE_API_RETRIES
+        delay = 1
+        for i in range(retries):
+            try:
+                return await func(*args, **kwargs)
+            except (BinanceAPIException, BinanceRequestException) as e:
+                if e.status_code == 429:  # Rate limit exceeded
+                    logger.warning(f"Rate limit exceeded. Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                elif e.status_code >= 500:  # Server-side error
+                    logger.warning(f"Binance server error. Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                else:
+                    logger.error(f"Binance API error: {e}")
+                    raise
+            except Exception as e:
+                logger.error(f"An unexpected error occurred: {e}")
+                raise
+        raise Exception("Failed to execute Binance API call after several retries.")
+
+    return wrapper
+
+
+class BinanceExchange:
+    def __init__(self, config: Config):
+        self.config = config
+        self.client = None
+
+    async def initialize(self):
+        """Asynchronously initialize the Binance client."""
+        if self.config.PAPER_TRADING:
+            self.client = await AsyncClient.create(self.config.BINANCE_TESTNET_API_KEY, self.config.BINANCE_TESTNET_API_SECRET, tld='com', testnet=True)
+        else:
+            self.client = await AsyncClient.create(self.config.BINANCE_API_KEY, self.config.BINANCE_API_SECRET)
+        logger.info("Binance AsyncClient initialized.")
+
+    @handle_binance_errors
+    async def get_account_balance(self):
+        return await self.client.get_account()
+
+    @handle_binance_errors
+    async def get_klines(self, symbol, interval, limit):
+        return await self.client.get_klines(symbol=symbol, interval=interval, limit=limit)
+
+    @handle_binance_errors
+    async def create_order(self, symbol, side, type, quantity, price=None):
+        params = {
+            "symbol": symbol,
+            "side": side,
+            "type": type,
+            "quantity": quantity,
+        }
+        if price:
+            params["price"] = price
+            params["timeInForce"] = "GTC"
+
+        return await self.client.create_order(**params)
+
+    @handle_binance_errors
+    async def get_order_status(self, symbol, order_id):
+        return await self.client.get_order(symbol=symbol, orderId=order_id)
+
+    async def handle_partial_fill(self, order):
+        """Handles partially filled orders by creating a new order for the remaining amount."""
+        if order['status'] == 'PARTIALLY_FILLED':
+            logger.info(f"Order {order['orderId']} is partially filled. Executed quantity: {order['executedQty']}")
+            remaining_qty = float(order['origQty']) - float(order['executedQty'])
+            logger.info(f"Creating a new order for the remaining quantity: {remaining_qty}")
+            await self.create_order(
+                symbol=order['symbol'],
+                side=order['side'],
+                type=order['type'],
+                quantity=remaining_qty,
+                price=order['price']
+            )
+    
+    async def close(self):
+        if self.client:
+            await self.client.close_connection()
+            logger.info("Binance AsyncClient connection closed.")
+
+```python
+# backtesting/ares_backtester.py
+
 import pandas as pd
-import numpy as np
+
+
+class AresBacktester:
+    def __init__(self, strategy, data, initial_capital=10000, fee=0.001, slippage=0.0005):
+        self.strategy = strategy
+        self.data = data
+        self.initial_capital = initial_capital
+        self.fee = fee
+        self.slippage = slippage
+        self.positions = pd.DataFrame(index=data.index).fillna(0.0)
+        self.portfolio = pd.DataFrame(index=data.index).fillna(0.0)
+
+    def run(self):
+        self.portfolio['holdings'] = 0.0
+        self.portfolio['cash'] = self.initial_capital
+        self.portfolio['total'] = self.initial_capital
+        
+        # This part of the logic requires a 'signal' variable which is not defined
+        # in the current context. Assuming it comes from the strategy.
+        # signals = self.strategy.generate_signals(self.data) # Example
+        
+        # for i in range(len(self.data)):
+        #     signal = signals[i] # Example
+        #     # Apply fees and slippage to trades
+        #     if signal == 1:  # Buy
+        #         # Slippage
+        #         buy_price = self.data['close'][i] * (1 + self.slippage)
+        #         # Fee
+        #         cost = buy_price * 100 * (1 + self.fee)
+        #         self.portfolio.loc[self.data.index[i], 'cash'] -= cost
+        #         self.portfolio.loc[self.data.index[i], 'holdings'] += 100 * buy_price
+        #     elif signal == -1:  # Sell
+        #         # Slippage
+        #         sell_price = self.data['close'][i] * (1 - self.slippage)
+        #         # Fee
+        #         revenue = sell_price * 100 * (1 - self.fee)
+        #         self.portfolio.loc[self.data.index[i], 'cash'] += revenue
+        #         self.portfolio.loc[self.data.index[i], 'holdings'] -= 100 * sell_price
+
+        #     # ... (rest of the logic)
+
+        return self.portfolio
+
+```python
+# src/config.py
+
 import os
-import sys
-import datetime
-import json # For serializing dicts
-import asyncio # For async Firestore operations
+from dotenv import load_dotenv
 
-# Import the main CONFIG dictionary
-from config import CONFIG
+load_dotenv()
 
-from utils.logger import system_logger
-from database.firestore_manager import FirestoreManager # New import
+
+class Config:
+    # General
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+    SUPERVISOR_SLEEP_INTERVAL = int(os.getenv("SUPERVISOR_SLEEP_INTERVAL", 60))
+    SYMBOL = os.getenv("SYMBOL", "BTCUSDT")
+    INITIAL_EQUITY = float(os.getenv("INITIAL_EQUITY", 10000.0))
+
+    # Binance
+    BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
+    BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
+    BINANCE_TESTNET_API_KEY = os.getenv("BINANCE_TESTNET_API_KEY")
+    BINANCE_TESTNET_API_SECRET = os.getenv("BINANCE_TESTNET_API_SECRET")
+    BINANCE_API_RETRIES = int(os.getenv("BINANCE_API_RETRIES", 5))
+
+    # Trading
+    PAPER_TRADING = os.getenv("PAPER_TRADING", "False").lower() in ("true", "1", "t")
+    RISK_PER_TRADE_PCT = float(os.getenv("RISK_PER_TRADE_PCT", 0.01)) # 1% risk per trade
+
+    # Firestore
+    GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    FIRESTORE_PROJECT_ID = os.getenv("FIRESTORE_PROJECT_ID")
+
+    # Tactician default parameters (can be overridden by Supervisor)
+    BEST_PARAMS = {
+        "trade_entry_threshold": 0.7,
+        "sl_atr_multiplier": 1.5,
+        "take_profit_rr": 2.0,
+    }
+    
+    # General Trading default parameters
+    GENERAL_TRADING = {
+        "confidence_wrong_direction_thresholds": [0.5, 0.6]
+    }
+
+    # Tactician specific config
+    TACTICIAN_CONFIG = {
+        "laddering": {
+            "initial_leverage": 25,
+            "min_lss_for_ladder": 70,
+            "min_confidence_for_ladder": 0.75,
+            "ladder_step_leverage_increase": 5,
+            "max_ladder_steps": 3,
+        },
+        "risk_management": {
+            "min_lss_for_entry": 60,
+        }
+    }
+    
+    # Strategist specific config
+    STRATEGIST_CONFIG = {
+        "max_leverage_cap_default": 100
+    }
+
+
+```python
+# src/tactician/tactician.py
+
+import logging
+import asyncio
+
+from src.config import Config
+from src.database.firestore_manager import FirestoreManager
+
+logger = logging.getLogger(__name__)
+
 
 class Tactician:
     """
@@ -19,477 +414,262 @@ class Tactician:
     It uses a sophisticated rule-based system, with parameters optimized by the Supervisor,
     to manage individual orders and implement dynamic laddering.
     """
-    def __init__(self, config=CONFIG):
-        self.config = config.get("tactician", {})
-        self.global_config = config # Store global config to access BEST_PARAMS etc.
+
+    def __init__(self, state: dict, config: Config, firestore_manager: FirestoreManager, trader):
+        self.state = state
+        self.config = config
         self.firestore_manager = firestore_manager
+        self.trader = trader # The trader object (Paper or Live) for executing orders
+        self.logger = logging.getLogger(__name__)
+        self.current_position = self.state.get('current_position', self._get_default_position())
 
-        # Ensure logger is initialized, possibly from the main pipeline
-        self.logger = system_logger.getChild('Tactician') # Child logger for Tactician
-
-        self.current_position = {
-            "symbol": None,
-            "direction": None, # "LONG" or "SHORT"
-            "size": 0.0, # in units of asset
-            "entry_price": 0.0,
-            "unrealized_pnl": 0.0,
-            "current_leverage": 0,
-            "ladder_steps": 0, # How many additional orders have been placed
-            "stop_loss": None,
-            "take_profit": None,
-            "liquidation_price": 0.0, # Added for consistency with live data
-            "entry_confidence": 0.0, # Confidence at the time of initial entry
-            "entry_lss": 0.0 # LSS at the time of initial entry
-        }
-        self.trade_id_counter = 0 # Simple counter for trade IDs
-
-    def _calculate_position_size(self, capital: float, current_price: float, stop_loss_price: float, leverage: float):
-        """
-        Calculates position size based on risk per trade and stop loss distance.
-        This is a critical risk management function.
-        """
-        if stop_loss_price is None or current_price == stop_loss_price:
-            self.logger.warning("Cannot calculate position size: Stop loss is None or same as entry price.")
-            return 0.0, 0.0 # units, notional_value
-
-        # Access RISK_PER_TRADE_PCT from global_config
-        risk_per_trade_pct = self.global_config["RISK_PER_TRADE_PCT"] 
-        
-        max_risk_usd = capital * risk_per_trade_pct
-        stop_loss_distance_per_unit = abs(current_price - stop_loss_price)
-
-        if stop_loss_distance_per_unit == 0:
-            self.logger.warning("Stop loss distance is zero, cannot calculate position size.")
-            return 0.0, 0.0
-
-        units = max_risk_usd / stop_loss_distance_per_unit
-        notional_value = units * current_price
-        
-        required_margin = notional_value / leverage
-        if required_margin > capital:
-            # Adjust units down if required margin exceeds available capital
-            units = (capital * leverage) / current_price
-            notional_value = units * current_price
-            self.logger.info(f"Adjusted position size due to capital limits. New units: {units:.4f}, Notional: ${notional_value:.2f}")
-
-        return units, notional_value
-
-    def _determine_leverage(self, lss: float, max_allowable_leverage_cap: int):
-        """
-        Determines leverage based on Liquidation Safety Score (LSS) and Strategist's cap.
-        LSS is 0-100.
-        """
-        ladder_config = self.config.get("laddering", {})
-        initial_leverage = ladder_config.get("initial_leverage", 25)
-        
-        # Scale leverage linearly from initial_leverage to max_allowable_leverage_cap
-        # based on LSS. Assume LSS of 50 is base, 100 is max.
-        # This mapping can be optimized by Supervisor.
-        
-        # Example: LSS 0-50 maps to initial_leverage. LSS 50-100 scales from initial to max.
-        if lss <= 50:
-            scaled_leverage = initial_leverage
-        else:
-            # Scale from initial_leverage to max_allowable_leverage_cap over LSS range 50-100
-            scaled_leverage = initial_leverage + (lss - 50) / 50 * (max_allowable_leverage_cap - initial_leverage)
-
-        determined_leverage = max(initial_leverage, int(scaled_leverage))
-        determined_leverage = min(determined_leverage, max_allowable_leverage_cap)
-        
-        self.logger.info(f"Determined Leverage: LSS={lss:.2f}, Scaled={scaled_leverage:.2f}, Final={determined_leverage}x (Cap={max_allowable_leverage_cap}x)")
-        return determined_leverage
-
-    def _update_position(self, symbol, direction, size, entry_price, leverage, stop_loss, take_profit, entry_confidence, entry_lss):
-        """Internal method to update the Tactician's current position state."""
-        self.current_position = {
-            "symbol": symbol,
-            "direction": direction,
-            "size": size,
-            "entry_price": entry_price,
-            "unrealized_pnl": 0.0, # Will be updated externally by real-time data
-            "current_leverage": leverage,
-            "ladder_steps": 0,
-            "stop_loss": stop_loss,
-            "take_profit": take_profit,
-            "liquidation_price": 0.0, # Will be updated by pipeline from live data
-            "entry_confidence": entry_confidence, # Store actual entry confidence
-            "entry_lss": entry_lss # Store actual entry LSS
-        }
-        self.trade_id_counter += 1
-        self.logger.info(f"Position opened/updated: {direction} {size:.4f} {symbol} at {entry_price:.2f} with {leverage}x leverage. Conf: {entry_confidence:.2f}, LSS: {entry_lss:.2f}")
-
-    def _add_to_ladder(self, symbol, direction, current_price, additional_size, new_leverage, new_stop_loss, new_take_profit):
-        """Internal method to add to an existing laddered position."""
-        if self.current_position["size"] == 0: # Ensure there's an existing position to ladder onto
-            self.logger.warning("Cannot add to ladder: No existing position.")
-            return
-        if self.current_position["symbol"] != symbol or self.current_position["direction"] != direction:
-            self.logger.warning("Cannot add to ladder: Symbol or direction mismatch with existing position.")
-            return
-
-        total_notional_old = self.current_position["size"] * self.current_position["entry_price"]
-        total_notional_new = additional_size * current_price
-        new_total_size = self.current_position["size"] + additional_size
-        
-        # Calculate new average entry price
-        if new_total_size > 0:
-            new_avg_entry_price = (total_notional_old + total_notional_new) / new_total_size
-        else:
-            new_avg_entry_price = self.current_position["entry_price"] # Should not happen if additional_size > 0
-
-        self.current_position["size"] = new_total_size
-        self.current_position["entry_price"] = new_avg_entry_price
-        self.current_position["current_leverage"] = new_leverage # Update to the new, higher leverage
-        self.current_position["ladder_steps"] += 1
-        self.current_position["stop_loss"] = new_stop_loss # Update SL/TP for the combined position
-        self.current_position["take_profit"] = new_take_profit
-
-        self.logger.info(f"Laddered up: Added {additional_size:.4f} {symbol} at {current_price:.2f}. "
-              f"New total size: {self.current_position['size']:.4f}, Avg Entry: {self.current_position['entry_price']:.2f}, "
-              f"Leverage: {self.current_position['current_leverage']}x, Ladder Steps: {self.current_position['ladder_steps']}")
-
-    def _close_position(self, exit_price: float, exit_reason: str):
-        """Internal method to close the current position."""
-        if self.current_position["size"] == 0:
-            self.logger.info("No open position to close.")
-            return
-
-        pnl_pct = (exit_price - self.current_position["entry_price"]) / self.current_position["entry_price"] \
-                  if self.current_position["direction"] == "LONG" else \
-                  (self.current_position["entry_price"] - exit_price) / self.current_position["entry_price"]
-        
-        # Calculate simulated P&L in USD, considering leverage
-        # Notional value at entry: size * entry_price
-        # PnL = (exit_price - entry_price) * size * leverage (for long)
-        # PnL = (entry_price - exit_price) * size * leverage (for short)
-        notional_at_entry = self.current_position["size"] * self.current_position["entry_price"]
-        simulated_pnl_usd = pnl_pct * notional_at_entry * self.current_position["current_leverage"]
-
-
-        self.logger.info(f"Position closed: {self.current_position['direction']} {self.current_position['size']:.4f} {self.current_position['symbol']}. "
-              f"Entry: {self.current_position['entry_price']:.2f}, Exit: {exit_price:.2f}. "
-              f"P&L: {pnl_pct*100:.2f}% (${simulated_pnl_usd:.2f} approx). Reason: {exit_reason}")
-        
-        self.current_position = { # Reset position
+    def _get_default_position(self):
+        """Returns the default structure for an empty position."""
+        return {
             "symbol": None, "direction": None, "size": 0.0, "entry_price": 0.0,
             "unrealized_pnl": 0.0, "current_leverage": 0, "ladder_steps": 0,
             "stop_loss": None, "take_profit": None, "liquidation_price": 0.0,
             "entry_confidence": 0.0, "entry_lss": 0.0
         }
 
-    async def _determine_action_rules(self, state: dict):
+    async def run(self, signal_queue: asyncio.Queue, order_queue: asyncio.Queue):
+        """The main loop for the Tactician to process intelligence signals."""
+        self.logger.info("Tactician is running and waiting for intelligence signals...")
+        while True:
+            try:
+                # Wait for a combined intelligence package from the Strategist
+                intelligence_package = await signal_queue.get()
+                
+                # Decide on an action based on the intelligence
+                decision = self._determine_action(intelligence_package)
+                
+                # If a decision to act is made, put it on the order queue for execution
+                if decision and decision.get("action") not in ["HOLD", "UNKNOWN"]:
+                    self.logger.info(f"Tactician decided to act: {decision['action']}. Placing on order queue.")
+                    await order_queue.put(decision)
+                else:
+                    self.logger.info(f"Tactician decided to HOLD. Reason: {decision.get('reason', 'N/A')}")
+                
+                signal_queue.task_done()
+            except asyncio.CancelledError:
+                self.logger.info("Tactician run loop cancelled.")
+                break
+            except Exception as e:
+                self.logger.error(f"An error occurred in the Tactician run loop: {e}", exc_info=True)
+
+
+    def _determine_action(self, state: dict):
         """
-        Determines the trading action based on sophisticated rules and current market intelligence.
+        Determines the trading action based on rules and current market intelligence.
+        This is the main rule engine.
         """
         self.logger.info("Tactician: Determining action based on rule-based engine...")
-        
-        # Extract relevant state variables
-        # Access INITIAL_EQUITY and SYMBOL from global_config
-        current_equity = state.get("current_equity", self.global_config["INITIAL_EQUITY"]) 
-        current_price = state.get("current_price", 0.0)
-        current_atr = state.get("current_atr", 0.0)
-        
-        directional_prediction = state.get("directional_prediction", "HOLD")
-        directional_confidence = state.get("directional_confidence_score", 0.0)
-        lss = state.get("liquidation_safety_score", 0.0)
-        market_regime = state.get("market_regime", "UNKNOWN")
-        sr_interaction_signal = state.get("sr_interaction_signal")
-        high_impact_candle_signal = state.get("high_impact_candle_signal", {}).get("is_high_impact", False)
 
-        max_allowable_leverage_cap = state.get("Max_Allowable_Leverage_Cap", self.global_config["strategist"].get("max_leverage_cap_default", 100))
-        trading_range = state.get("Trading_Range", {"low": 0.0, "high": float('inf')})
-        positional_bias = state.get("Positional_Bias", "NEUTRAL")
+        # If a position is open, first check for exit or management actions
+        if self.current_position.get("size", 0) > 0:
+            # Check for exit conditions (TP/SL, reversal, etc.)
+            exit_decision = self._check_exit_conditions(state)
+            if exit_decision:
+                self._close_position(state['current_price'], exit_decision['reason'])
+                return exit_decision
 
-        # Get parameters from BEST_PARAMS (optimized by Supervisor)
-        # Access BEST_PARAMS from global_config
-        trade_entry_threshold = self.global_config["BEST_PARAMS"]["trade_entry_threshold"]
-        sl_atr_multiplier = self.global_config["BEST_PARAMS"]["sl_atr_multiplier"]
-        take_profit_rr = self.global_config["BEST_PARAMS"]["take_profit_rr"]
-        
-        min_lss_for_ladder = self.config["laddering"].get("min_lss_for_ladder", 70)
-        min_confidence_for_ladder = self.config["laddering"].get("min_confidence_for_ladder", 0.75)
-        ladder_step_leverage_increase = self.config["laddering"].get("ladder_step_leverage_increase", 5)
-        max_ladder_steps = self.config["laddering"].get("max_ladder_steps", 3)
-        
-        # Confidence thresholds for closing a position (e.g., if confidence drops significantly)
-        # Access from global_config['general_trading']
-        confidence_reversal_threshold = self.global_config["general_trading"]["confidence_wrong_direction_thresholds"][1] 
-
-        # --- Rule 1: Manage Existing Position (Exit Conditions) ---
-        if self.current_position["size"] != 0:
-            # Check for Take Profit or Stop Loss
-            # Ensure stop_loss and take_profit are not None before comparison
-            if self.current_position["stop_loss"] is not None and self.current_position["take_profit"] is not None:
-                if self.current_position["direction"] == "LONG":
-                    if current_price >= self.current_position["take_profit"]:
-                        return {"action": "POSITION_CLOSED", "reason": "Take Profit Hit."}
-                    elif current_price <= self.current_position["stop_loss"]:
-                        return {"action": "POSITION_CLOSED", "reason": "Stop Loss Hit."}
-                elif self.current_position["direction"] == "SHORT":
-                    if current_price <= self.current_position["take_profit"]: # Price must go down for short TP
-                        return {"action": "POSITION_CLOSED", "reason": "Take Profit Hit."}
-                    elif current_price >= self.current_position["stop_loss"]: # Price must go up for short SL
-                        return {"action": "POSITION_CLOSED", "reason": "Stop Loss Hit."}
-
-            # Check for significant confidence reversal or LSS deterioration
-            # Compare current confidence to entry confidence for reversal
-            # Use absolute change for confidence reversal, and check against the threshold directly
-            # The directional_prediction must also contradict the current position
-            if (self.current_position["direction"] == "LONG" and directional_prediction == "SELL" and directional_confidence >= confidence_reversal_threshold) or \
-               (self.current_position["direction"] == "SHORT" and directional_prediction == "BUY" and directional_confidence >= confidence_reversal_threshold):
-                 return {"action": "POSITION_CLOSED", "reason": f"Directional reversal ({directional_prediction} signal) with confidence {directional_confidence:.2f}."}
+            # Check for laddering conditions (add to profitable position)
+            ladder_decision = self._check_laddering_conditions(state)
+            if ladder_decision:
+                self._add_to_ladder(state['current_price'], ladder_decision)
+                return ladder_decision
             
-            # If LSS drops significantly below entry LSS or a critical threshold
-            if lss < self.current_position["entry_lss"] * 0.8 and lss < 50: # LSS dropped 20% and is below 50
-                return {"action": "POSITION_CLOSED", "reason": f"Liquidation Safety Score deteriorated (LSS: {lss:.2f})."}
-
-            # Close if market regime becomes highly unfavorable and position is open
-            if (self.current_position["direction"] == "LONG" and market_regime == "BEAR_TREND") or \
-               (self.current_position["direction"] == "SHORT" and market_regime == "BULL_TREND"):
-                # Only close if not already profitable or if confidence is low
-                if (self.current_position["unrealized_pnl"] < 0) or (directional_confidence < self.global_config["BEST_PARAMS"]["trade_entry_threshold"] * 0.8): # Close if unprofitable or confidence drops significantly
-                    return {"action": "POSITION_CLOSED", "reason": f"Market regime shift to {market_regime} and unfavorable position."}
-            
-            # --- Dynamic Stop-Loss/Take-Profit Adjustment ---
-            # If position is profitable, trail the stop loss
-            is_profitable = (self.current_position["direction"] == "LONG" and current_price > self.current_position["entry_price"]) or \
-                            (self.current_position["direction"] == "SHORT" and current_price < self.current_position["entry_price"])
-            
-            if is_profitable and current_atr > 0:
-                new_stop_loss = None
-                if self.current_position["direction"] == "LONG":
-                    # New SL should be (current_price - ATR_multiplier * ATR) but not lower than current SL
-                    potential_new_sl = current_price - (current_atr * sl_atr_multiplier)
-                    if self.current_position["stop_loss"] is None or potential_new_sl > self.current_position["stop_loss"]:
-                        new_stop_loss = potential_new_sl
-                elif self.current_position["direction"] == "SHORT":
-                    # New SL should be (current_price + ATR_multiplier * ATR) but not higher than current SL
-                    potential_new_sl = current_price + (current_atr * sl_atr_multiplier)
-                    if self.current_position["stop_loss"] is None or potential_new_sl < self.current_position["stop_loss"]:
-                        new_stop_loss = potential_new_sl
-                
-                if new_stop_loss is not None and new_stop_loss != self.current_position["stop_loss"]: # Only update if SL actually changed
-                    self.logger.info(f"Trailing Stop Loss: Old SL {self.current_position['stop_loss']:.2f}, New SL {new_stop_loss:.2f}")
-                    self.current_position["stop_loss"] = new_stop_loss
-                    # In a live system, this would translate to an "AMEND_ORDER" or "MOVE_STOP_LOSS" action.
-                    # For now, we return HOLD, but the pipeline would need to send the amendment.
-                    # We can add a specific action type for this if needed for the pipeline to act.
-                    # For this pass, we'll assume internal state update is sufficient for simulation.
-            
-            # --- Rule 2: Laddering Up (Add to Position) ---
-            # Conditions for laddering:
-            # 1. Position is currently profitable (unrealized PnL > 0).
-            # 2. Directional confidence has increased (or is very high) AND LSS has increased (or is very high).
-            # 3. Max ladder steps not reached.
-            # 4. Price is still within Strategist's trading range.
-            
-            # Re-check is_profitable as it might have been updated by trailing SL logic
-            is_profitable = (self.current_position["direction"] == "LONG" and current_price > self.current_position["entry_price"]) or \
-                            (self.current_position["direction"] == "SHORT" and current_price < self.current_position["entry_price"])
-            
-            # Check if confidence increased AND LSS increased OR both are very high
-            confidence_increased = directional_confidence > self.current_position["entry_confidence"] + 0.1 # 10% increase
-            lss_increased = lss > self.current_position["entry_lss"] + 10 # 10 point increase in LSS
-
-            can_ladder = is_profitable and \
-                         (confidence_increased or directional_confidence >= min_confidence_for_ladder) and \
-                         (lss_increased or lss >= min_lss_for_ladder) and \
-                         (self.current_position["ladder_steps"] < max_ladder_steps) and \
-                         (trading_range["low"] < current_price < trading_range["high"])
-            
-            if can_ladder and current_atr > 0:
-                new_leverage = min(self.current_position["current_leverage"] + ladder_step_leverage_increase, max_allowable_leverage_cap)
-                
-                # Calculate new SL/TP for the combined position based on current price
-                if self.current_position["direction"] == "LONG":
-                    new_stop_loss_ladder = current_price - (current_atr * sl_atr_multiplier)
-                    new_take_profit_ladder = current_price + (current_atr * sl_atr_multiplier * take_profit_rr)
-                else: # SHORT
-                    new_stop_loss_ladder = current_price + (current_atr * sl_atr_multiplier)
-                    new_take_profit_ladder = current_price - (current_atr * sl_atr_multiplier * take_profit_rr)
-
-                # Calculate additional units based on the new risk profile and leverage
-                additional_units, _ = self._calculate_position_size(current_equity, current_price, new_stop_loss_ladder, new_leverage)
-                
-                if additional_units > 0:
-                    return {
-                        "action": "ADD_TO_LADDER",
-                        "symbol": self.global_config['SYMBOL'], # Access SYMBOL from global_config
-                        "direction": self.current_position["direction"],
-                        "order_type": "MARKET", # Laddering usually market orders
-                        "quantity": additional_units,
-                        "leverage": new_leverage,
-                        "stop_loss": new_stop_loss_ladder,
-                        "take_profit": new_take_profit_ladder,
-                        "reason": f"Laddering up: Profit, Confidence increased ({directional_confidence:.2f}), LSS increased ({lss:.2f})."
-                    }
-            
-            # If position is open but no action, then HOLD
             return {"action": "HOLD", "reason": "Position open, no laddering or exit conditions met."}
 
-        # --- Rule 3: Initial Entry (No Open Position) ---
+        # If no position is open, check for entry conditions
+        entry_decision = self._check_entry_conditions(state)
+        if entry_decision:
+            self._update_position(state['current_price'], entry_decision)
+            return entry_decision
+
+        return {"action": "HOLD", "reason": "No entry conditions met."}
+
+    def _check_exit_conditions(self, state: dict) -> dict | None:
+        """Checks all rules for exiting an existing position."""
+        pos = self.current_position
+        price = state['current_price']
         
-        # Check if within trading range
-        if not (trading_range["low"] < current_price < trading_range["high"]):
-            return {"action": "HOLD", "reason": "Price outside Strategist's trading range."}
+        # Rule: Take Profit or Stop Loss Hit
+        if pos['direction'] == "LONG":
+            if price >= pos['take_profit']: return {"action": "CLOSE_POSITION", "reason": "Take Profit Hit."}
+            if price <= pos['stop_loss']: return {"action": "CLOSE_POSITION", "reason": "Stop Loss Hit."}
+        elif pos['direction'] == "SHORT":
+            if price <= pos['take_profit']: return {"action": "CLOSE_POSITION", "reason": "Take Profit Hit."}
+            if price >= pos['stop_loss']: return {"action": "CLOSE_POSITION", "reason": "Stop Loss Hit."}
 
-        # Check positional bias
-        if positional_bias != "NEUTRAL" and \
-           ((positional_bias == "LONG" and directional_prediction == "SELL") or \
-            (positional_bias == "SHORT" and directional_prediction == "BUY")):
-            return {"action": "HOLD", "reason": f"Directional prediction ({directional_prediction}) contradicts Strategist's bias ({positional_bias})."}
+        # Rule: Confidence Reversal
+        conf_rev_thresh = self.config.GENERAL_TRADING["confidence_wrong_direction_thresholds"][1]
+        if (pos['direction'] == "LONG" and state['directional_prediction'] == "SELL" and state['directional_confidence_score'] >= conf_rev_thresh) or \
+           (pos['direction'] == "SHORT" and state['directional_prediction'] == "BUY" and state['directional_confidence_score'] >= conf_rev_thresh):
+            return {"action": "CLOSE_POSITION", "reason": f"Directional reversal signal with confidence {state['directional_confidence_score']:.2f}."}
 
-        # Entry conditions:
-        # 1. Strong directional signal (BUY/SELL)
-        # 2. High directional confidence
-        # 3. High Liquidation Safety Score (LSS)
-        # 4. Not an SR_ZONE_ACTION (unless it's a confirmed breakout signal)
-        # 5. Not a High-Impact Candle that signals reversal (unless it's a confirmed follow-through)
+        # Rule: LSS Deterioration
+        if state['liquidation_safety_score'] < pos['entry_lss'] * 0.8 and state['liquidation_safety_score'] < 50:
+            return {"action": "CLOSE_POSITION", "reason": f"Liquidation Safety Score deteriorated to {state['liquidation_safety_score']:.2f}."}
+
+        return None # No exit conditions met
+
+    def _check_laddering_conditions(self, state: dict) -> dict | None:
+        """Checks all rules for adding to an existing profitable position."""
+        pos = self.current_position
+        price = state['current_price']
         
-        can_enter = False
-        reason = "No entry signal."
-
-        if directional_prediction == "BUY" and directional_confidence >= trade_entry_threshold and lss >= self.config["risk_management"].get("min_lss_for_entry", 60):
-            if market_regime == "SR_ZONE_ACTION":
-                # Only enter SR_ZONE_ACTION if it's a "BREAKTHROUGH_UP" signal from ensemble
-                if state.get("directional_prediction") == "BREAKTHROUGH_UP": # Assuming ensemble provides specific breakout signals
-                    can_enter = True
-                    reason = "Breakthrough UP from S/R zone."
-                else:
-                    reason = "SR_ZONE_ACTION, not a confirmed breakthrough."
-            elif high_impact_candle_signal and state.get("directional_prediction") != "FOLLOW_THROUGH_UP": # Assuming ensemble provides follow-through signals
-                reason = "High-impact candle detected, but not confirmed follow-through."
-            elif market_regime == "BULL_TREND" or market_regime == "SIDEWAYS_RANGE":
-                can_enter = True
-                reason = f"Strong BUY signal in {market_regime}."
-            else:
-                reason = f"Unfavorable market regime ({market_regime}) for BUY."
-
-        elif directional_prediction == "SELL" and directional_confidence >= trade_entry_threshold and lss >= self.config["risk_management"].get("min_lss_for_entry", 60):
-            if market_regime == "SR_ZONE_ACTION":
-                # Only enter SR_ZONE_ACTION if it's a "BREAKTHROUGH_DOWN" signal from ensemble
-                if state.get("directional_prediction") == "BREAKTHROUGH_DOWN": # Assuming ensemble provides specific breakout signals
-                    can_enter = True
-                    reason = "Breakthrough DOWN from S/R zone."
-                else:
-                    reason = "SR_ZONE_ACTION, not a confirmed breakthrough."
-            elif high_impact_candle_signal and state.get("directional_prediction") != "FOLLOW_THROUGH_DOWN": # Assuming ensemble provides follow-through signals
-                reason = "High-impact candle detected, but not confirmed follow-through."
-            elif market_regime == "BEAR_TREND" or market_regime == "SIDEWAYS_RANGE":
-                can_enter = True
-                reason = f"Strong SELL signal in {market_regime}."
-            else:
-                reason = f"Unfavorable market regime ({market_regime}) for SELL."
-
-        if can_enter and current_atr > 0 and current_equity > 0:
-            leverage = self._determine_leverage(lss, max_allowable_leverage_cap)
-            
-            if leverage > 0:
-                # Calculate SL/TP
-                if directional_prediction == "BUY":
-                    stop_loss = current_price - (current_atr * sl_atr_multiplier)
-                    take_profit = current_price + (current_atr * sl_atr_multiplier * take_profit_rr)
-                else: # SELL
-                    stop_loss = current_price + (current_atr * sl_atr_multiplier)
-                    take_profit = current_price - (current_atr * sl_atr_multiplier * take_profit_rr)
-
-                units, _ = self._calculate_position_size(current_equity, current_price, stop_loss, leverage)
-                
-                if units > 0:
-                    return {
-                        "action": "PLACE_ORDER",
-                        "symbol": self.global_config['SYMBOL'], # Access SYMBOL from global_config
-                        "direction": "LONG" if directional_prediction == "BUY" else "SHORT",
-                        "order_type": "MARKET", # Initial entry usually market order
-                        "quantity": units,
-                        "leverage": leverage,
-                        "stop_loss": stop_loss,
-                        "take_profit": take_profit,
-                        "reason": reason,
-                        "entry_confidence": directional_confidence, # Pass confidence to pipeline
-                        "entry_lss": lss # Pass LSS to pipeline
-                    }
-                else:
-                    return {"action": "HOLD", "reason": "Calculated position size is zero."}
-            else:
-                return {"action": "HOLD", "reason": "Determined leverage is zero."}
+        is_profitable = (pos["direction"] == "LONG" and price > pos["entry_price"]) or \
+                        (pos["direction"] == "SHORT" and price < pos["entry_price"])
         
-        return {"action": "HOLD", "reason": reason} # Default to HOLD if no conditions met
+        if not is_profitable:
+            return None
 
-    async def process_intelligence(self, analyst_intelligence: dict, strategist_params: dict, current_market_data: dict):
-        """
-        Receives intelligence from the Analyst and parameters from the Strategist,
-        then decides on a trading action using rule-based logic.
-        :param analyst_intelligence: Dictionary of insights from the Analyst.
-        :param strategist_params: Dictionary of macro parameters from the Strategist.
-        :param current_market_data: Dictionary of real-time market data (e.g., current price, ATR, current_equity).
-        """
-        self.logger.info("\n--- Tactician: Processing Intelligence ---")
+        # Laddering configuration
+        ladder_cfg = self.config.TACTICIAN_CONFIG['laddering']
+        max_steps = ladder_cfg['max_ladder_steps']
+        min_conf = ladder_cfg['min_confidence_for_ladder']
+        min_lss = ladder_cfg['min_lss_for_ladder']
 
-        # Combine inputs into a single state representation for the rule engine
-        state = {
-            "current_position_size": self.current_position["size"],
-            "current_position_direction": self.current_position["direction"],
-            "current_position_entry_price": self.current_position["entry_price"],
-            "current_position_leverage": self.current_position["current_leverage"],
-            "current_position_ladder_steps": self.current_position["ladder_steps"],
-            "current_position_unrealized_pnl": self.current_position["unrealized_pnl"], # For profitability check
-            "current_position_entry_confidence": self.current_position["entry_confidence"],
-            "current_position_entry_lss": self.current_position["entry_lss"],
-            **current_market_data, # Includes current_price, current_atr, current_equity
-            **analyst_intelligence,
-            **strategist_params
+        # Rule: Check if laddering is viable
+        confidence_increased = state['directional_confidence_score'] > pos['entry_confidence'] + 0.1
+        lss_increased = state['liquidation_safety_score'] > pos['entry_lss'] + 10
+        
+        can_ladder = (confidence_increased or state['directional_confidence_score'] >= min_conf) and \
+                     (lss_increased or state['liquidation_safety_score'] >= min_lss) and \
+                     (pos['ladder_steps'] < max_steps)
+
+        if not can_ladder:
+            return None
+        
+        # Calculate new order details
+        new_leverage = min(pos["current_leverage"] + ladder_cfg['ladder_step_leverage_increase'], state['Max_Allowable_Leverage_Cap'])
+        sl_atr_mult = self.config.BEST_PARAMS['sl_atr_multiplier']
+        tp_rr = self.config.BEST_PARAMS['take_profit_rr']
+
+        if pos["direction"] == "LONG":
+            new_sl = price - (state['current_atr'] * sl_atr_mult)
+            new_tp = price + (state['current_atr'] * sl_atr_mult * tp_rr)
+        else: # SHORT
+            new_sl = price + (state['current_atr'] * sl_atr_mult)
+            new_tp = price - (state['current_atr'] * sl_atr_mult * tp_rr)
+        
+        additional_units, _ = self._calculate_position_size(state['current_equity'], price, new_sl, new_leverage)
+
+        if additional_units > 0:
+            return {
+                "action": "ADD_TO_POSITION", "symbol": self.config.SYMBOL, "direction": pos["direction"],
+                "order_type": "MARKET", "quantity": additional_units, "leverage": new_leverage,
+                "stop_loss": new_sl, "take_profit": new_tp,
+                "reason": f"Laddering up: Confidence {state['directional_confidence_score']:.2f}, LSS {state['liquidation_safety_score']:.2f}."
+            }
+        return None
+
+
+    def _check_entry_conditions(self, state: dict) -> dict | None:
+        """Checks all rules for opening a new position."""
+        price = state['current_price']
+        pred = state['directional_prediction']
+        conf = state['directional_confidence_score']
+        lss = state['liquidation_safety_score']
+        
+        # Rule: Confidence and LSS thresholds
+        if conf < self.config.BEST_PARAMS['trade_entry_threshold'] or lss < self.config.TACTICIAN_CONFIG['risk_management']['min_lss_for_entry']:
+            return None
+
+        # Rule: Check against positional bias
+        bias = state.get("Positional_Bias", "NEUTRAL")
+        if (bias == "LONG" and pred == "SELL") or (bias == "SHORT" and pred == "BUY"):
+            return None
+
+        # Calculate order details
+        leverage = self._determine_leverage(lss, state['Max_Allowable_Leverage_Cap'])
+        sl_atr_mult = self.config.BEST_PARAMS['sl_atr_multiplier']
+        tp_rr = self.config.BEST_PARAMS['take_profit_rr']
+
+        if pred == "BUY":
+            direction = "LONG"
+            stop_loss = price - (state['current_atr'] * sl_atr_mult)
+            take_profit = price + (state['current_atr'] * sl_atr_mult * tp_rr)
+        elif pred == "SELL":
+            direction = "SHORT"
+            stop_loss = price + (state['current_atr'] * sl_atr_mult)
+            take_profit = price - (state['current_atr'] * sl_atr_mult * tp_rr)
+        else:
+            return None # HOLD signal
+
+        units, _ = self._calculate_position_size(state['current_equity'], price, stop_loss, leverage)
+
+        if units > 0:
+            return {
+                "action": "PLACE_ORDER", "symbol": self.config.SYMBOL, "direction": direction,
+                "order_type": "MARKET", "quantity": units, "leverage": leverage,
+                "stop_loss": stop_loss, "take_profit": take_profit,
+                "reason": f"New entry signal: {direction} with confidence {conf:.2f} and LSS {lss:.2f}.",
+                "entry_confidence": conf, "entry_lss": lss
+            }
+        return None
+
+    def _calculate_position_size(self, capital: float, current_price: float, stop_loss_price: float, leverage: float):
+        """Calculates position size based on risk per trade and stop loss distance."""
+        if stop_loss_price is None or current_price == stop_loss_price:
+            return 0.0, 0.0
+
+        risk_per_trade_pct = self.config.RISK_PER_TRADE_PCT
+        max_risk_usd = capital * risk_per_trade_pct
+        stop_loss_distance = abs(current_price - stop_loss_price)
+
+        if stop_loss_distance == 0: return 0.0, 0.0
+
+        units = max_risk_usd / stop_loss_distance
+        notional_value = units * current_price
+        required_margin = notional_value / leverage
+
+        if required_margin > capital:
+            units = (capital * leverage) / current_price
+            notional_value = units * current_price
+            self.logger.info(f"Adjusted position size due to capital limits. New units: {units:.4f}")
+
+        return units, notional_value
+
+    def _determine_leverage(self, lss: float, max_leverage_cap: int):
+        """Determines leverage based on Liquidation Safety Score (LSS)."""
+        initial_leverage = self.config.TACTICIAN_CONFIG['laddering']['initial_leverage']
+        if lss <= 50:
+            scaled_leverage = initial_leverage
+        else:
+            scaled_leverage = initial_leverage + (lss - 50) / 50 * (max_leverage_cap - initial_leverage)
+        
+        return min(max(initial_leverage, int(scaled_leverage)), max_leverage_cap)
+
+    def _update_position(self, entry_price, decision):
+        """Updates the internal state for a new position."""
+        self.current_position = {
+            "symbol": decision["symbol"], "direction": decision["direction"], "size": decision["quantity"],
+            "entry_price": entry_price, "current_leverage": decision["leverage"],
+            "stop_loss": decision["stop_loss"], "take_profit": decision["take_profit"],
+            "entry_confidence": decision["entry_confidence"], "entry_lss": decision["entry_lss"],
+            "ladder_steps": 0, "unrealized_pnl": 0.0, "liquidation_price": 0.0
         }
+        self.logger.info(f"Position opened: {self.current_position}")
 
-        # Get action from the rule-based engine
-        decision = await self._determine_action_rules(state)
+    def _add_to_ladder(self, current_price, decision):
+        """Updates the internal state when adding to a position."""
+        pos = self.current_position
+        additional_size = decision['quantity']
+        total_notional_old = pos["size"] * pos["entry_price"]
+        total_notional_new = additional_size * current_price
+        new_total_size = pos["size"] + additional_size
 
-        action = decision["action"]
-        reason = decision.get("reason", "No specific reason.")
+        pos["entry_price"] = (total_notional_old + total_notional_new) / new_total_size
+        pos["size"] = new_total_size
+        pos["current_leverage"] = decision["leverage"]
+        pos["stop_loss"] = decision["stop_loss"]
+        pos["take_profit"] = decision["take_profit"]
+        pos["ladder_steps"] += 1
+        self.logger.info(f"Position laddered: {self.current_position}")
 
-        self.logger.info(f"Tactician Decision: {action} - {reason}")
-
-        # Execute the decided action
-        if action == "PLACE_ORDER":
-            symbol = decision["symbol"]
-            direction = decision["direction"]
-            order_type = decision["order_type"]
-            quantity = decision["quantity"]
-            leverage = decision["leverage"]
-            stop_loss = decision["stop_loss"]
-            take_profit = decision["take_profit"]
-            entry_confidence = decision["entry_confidence"] # Retrieve from decision
-            entry_lss = decision["entry_lss"] # Retrieve from decision
-
-            self.logger.info(f"Executing PLACE_ORDER: {direction} {quantity:.4f} {symbol} at current price ({current_market_data['current_price']:.2f}) with {leverage}x leverage. SL: {stop_loss:.2f}, TP: {take_profit:.2f}")
-            # Update internal position state immediately upon "order placed" decision
-            self._update_position(symbol, direction, quantity, current_market_data['current_price'], leverage, stop_loss, take_profit, entry_confidence, entry_lss)
-            return {"action": "ORDER_PLACED", "details": decision}
-
-        elif action == "ADD_TO_LADDER":
-            symbol = decision["symbol"]
-            direction = decision["direction"]
-            quantity = decision["quantity"]
-            leverage = decision["leverage"]
-            stop_loss = decision["stop_loss"]
-            take_profit = decision["take_profit"]
-
-            self.logger.info(f"Executing ADD_TO_LADDER: Add {quantity:.4f} {symbol} at current price ({current_market_data['current_price']:.2f}) with {leverage}x leverage. New SL: {stop_loss:.2f}, New TP: {take_profit:.2f}")
-            # Update internal position state immediately upon "ladder updated" decision
-            self._add_to_ladder(symbol, direction, current_market_data['current_price'], quantity, leverage, stop_loss, take_profit)
-            return {"action": "LADDER_UPDATED", "details": decision}
-
-        elif action == "POSITION_CLOSED":
-            self.logger.info(f"Executing CLOSE_POSITION ({reason}) at {current_market_data['current_price']:.2f}")
-            # _close_position will be called by the pipeline after confirming live close
-            return {"action": "POSITION_CLOSED", "reason": reason, "current_price": current_market_data['current_price']}
-
-        elif action == "CANCEL_ORDER":
-            self.logger.info("Executing CANCEL_ORDER (Placeholder: No active orders to cancel in this demo).")
-            return {"action": "ORDER_CANCELLED", "details": decision}
-
-        elif action == "HOLD":
-            self.logger.info("Executing HOLD: No action taken.")
-            return {"action": "HOLD", "details": decision}
-        
-        return {"action": "UNKNOWN", "details": decision}
+    def _close_position(self, exit_price, reason):
+        """Resets the internal state when a position is closed."""
+        self.logger.info(f"Position closed at {exit_price}. Reason: {reason}")
+        self.current_position = self._get_default_position()

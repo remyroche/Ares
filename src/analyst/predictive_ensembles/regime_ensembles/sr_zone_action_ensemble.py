@@ -161,7 +161,7 @@ class SRZoneActionEnsemble(BaseEnsemble):
 
         unique_targets = np.unique(y_flat)
         self.dl_target_map = {label: i for i, label in enumerate(unique_targets)}
-        y_flat_encoded = np.array([self.dl_target_map[label] for label in y_flat])
+        y_flat_encoded = np.array([self.dl_target_map[label] for label in y_flat]) # F841 warning is expected here if TabNet is not used
 
         # --- Train Individual Models ---
 
@@ -282,7 +282,8 @@ class SRZoneActionEnsemble(BaseEnsemble):
         
         if self.models["order_flow"]:
             # Predict probabilities for historical order flow features
-            order_flow_probas_hist = self.models["order_flow"].predict_proba(X_of)
+            aligned_X_of = X_of.loc[X_flat.index].fillna(0) # Align X_of with X_flat index
+            order_flow_probas_hist = self.models["order_flow"].predict_proba(aligned_X_of)
             # Map probabilities to a single directional score for meta-learner
             order_flow_score_values = []
             for i, proba_array in enumerate(order_flow_probas_hist):

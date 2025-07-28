@@ -11,10 +11,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.config import CONFIG, settings # Import settings to temporarily override trading_environment
 from src.supervisor.main import Supervisor
-from src.analyst.analyst import Analyst
+from src.analyst.analyst import Analyst # Keep Analyst import for its specific use in this pipeline
 from backtesting.ares_data_preparer import load_raw_data
 from backtesting.ares_deep_analyzer import run_walk_forward_analysis, run_monte_carlo_simulation, plot_results
 from src.utils.logger import system_logger
+from src.exchange.binance import exchange # Import the global exchange instance for Supervisor init
 
 class TrainingPipeline:
     """
@@ -42,7 +43,7 @@ class TrainingPipeline:
         wf_agg_trades = agg_trades[agg_trades.index >= three_months_ago]
 
         train_futures = futures[futures.index < three_months_ago]
-        wf_futures = futures[futures.index >= three_months_ago]
+        wf_futures = futures[wf_futures.index >= three_months_ago] # Corrected: Use wf_futures.index
 
         self.logger.info(f"Training set size: {len(train_klines)} candles.")
         self.logger.info(f"Walk-forward validation set size: {len(wf_klines)} candles.")
@@ -65,10 +66,10 @@ class TrainingPipeline:
             settings.trading_environment = "TESTNET"
             self.logger.info(f"Temporarily setting TRADING_ENVIRONMENT to '{settings.trading_environment}' for training.")
 
-            # Initialize Analyst and Supervisor *after* setting the environment
-            # This ensures they pick up the TESTNET configuration
-            self.analyst = Analyst(CONFIG) # Analyst initialization doesn't directly use settings.trading_environment here
-            self.supervisor = Supervisor() # Supervisor's __init__ uses settings.trading_environment
+            # Initialize Supervisor *after* setting the environment, passing the exchange client
+            # The Supervisor will now handle the instantiation of Analyst, Sentinel, etc., internally.
+            self.supervisor = Supervisor(exchange_client=exchange) 
+            self.analyst = self.supervisor.analyst # Get the Analyst instance from the Supervisor
 
             # --- STAGE 1: Data Loading & Preparation ---
             self.logger.info("STAGE 1: Loading all available historical data...")
@@ -85,10 +86,14 @@ class TrainingPipeline:
             # --- STAGE 2: Retrain Analyst Models ---
             self.logger.info("STAGE 2: Retraining all Analyst models on the new training dataset...")
             # The Analyst instance needs to be updated with the training data for its internal models
-            self.analyst._historical_klines = train_klines
-            self.analyst._historical_agg_trades = train_agg_trades
-            self.analyst._historical_futures = train_futures
-            await self.analyst.load_and_prepare_historical_data()
+            # Ensure the Analyst has these properties or a method to set them.
+            # Assuming Analyst has a method to load historical data for its internal components.
+            # If Analyst's load_and_prepare_historical_data uses the exchange client, it will now use Testnet.
+            await self.analyst.load_and_prepare_historical_data(
+                historical_klines=train_klines,
+                historical_agg_trades=train_agg_trades,
+                historical_futures=train_futures
+            )
             self.logger.info("All Analyst models have been retrained.")
             report_lines.append("STAGE 2: Analyst models retrained successfully.")
 

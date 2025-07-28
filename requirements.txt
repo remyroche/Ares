@@ -1,14 +1,24 @@
+# Core
 pandas
-pandas-ta
 numpy
 scipy
-plotly
-python-binance
-pywt
+loguru
+pydantic
+python-dotenv
+google-cloud-firestore
+
+# Async
+aiohttp
+websockets
+aiosignal
+
+# Machine Learning & Analysis
 scikit-learn
+xgboost
 lightgbm
-websocket-client 
-tensorflow-metal 
-tensorflow
-celery 
-redis
+ta
+statsmodels
+
+# Backtesting & Optimization
+vectorbt
+optuna

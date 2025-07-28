@@ -8,8 +8,7 @@ import sys
 # Import centralized data loading functions
 from src.analyst.data_utils import load_klines_data, load_agg_trades_data, load_futures_data
 from config import (
-    KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAME, PREPARED_DATA_FILENAME, 
-    BEST_PARAMS, DOWNLOADER_SCRIPT_NAME, INTERVAL
+    CONFIG # Import the main CONFIG dictionary
 )
 
 # --- DEBUGGING FLAG ---
@@ -18,23 +17,30 @@ DEBUG_MODE = True
 def load_raw_data():
     """Loads raw data, now including futures data."""
     print("--- Step 1: Loading Raw Data ---")
-    required_files = [KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAME]
+    # Access filenames from CONFIG
+    klines_filename = CONFIG['KLINES_FILENAME']
+    agg_trades_filename = CONFIG['AGG_TRADES_FILENAME']
+    futures_filename = CONFIG['FUTURES_FILENAME']
+    prepared_data_filename = CONFIG['PREPARED_DATA_FILENAME']
+    downloader_script_name = CONFIG['DOWNLOADER_SCRIPT_NAME']
+    
+    required_files = [klines_filename, agg_trades_filename, futures_filename]
     missing_files = [f for f in required_files if not os.path.exists(f)]
     
     if missing_files:
         print(f"Missing raw data files: {', '.join(missing_files)}")
-        print(f"Calling downloader script: '{DOWNLOADER_SCRIPT_NAME}'...")
+        print(f"Calling downloader script: '{downloader_script_name}'...")
         try:
-            subprocess.run([sys.executable, DOWNLOADER_SCRIPT_NAME], check=True)
+            subprocess.run([sys.executable, downloader_script_name], check=True)
         except (FileNotFoundError, subprocess.CalledProcessError) as e:
             print(f"ERROR during download: {e}")
             sys.exit(1)
             
     try:
         # Use the centralized data loading functions
-        klines_df = load_klines_data(KLINES_FILENAME)
-        agg_trades_df = load_agg_trades_data(AGG_TRADES_FILENAME)
-        futures_df = load_futures_data(FUTURES_FILENAME)
+        klines_df = load_klines_data(klines_filename)
+        agg_trades_df = load_agg_trades_data(agg_trades_filename)
+        futures_df = load_futures_data(futures_filename)
         
         # Duplicated index handling is now done within the centralized load functions,
         # but keeping these lines for robustness in case data source is not perfectly clean.
@@ -102,8 +108,10 @@ def calculate_features_and_score(klines_df, agg_trades_df, futures_df, params, s
                                             (klines_df['high'] >= level - proximity_threshold))
     klines_df['Is_Interacting'] = is_interacting.astype(int) # Convert boolean to 0/1
 
+    # Access INTERVAL from CONFIG
+    resample_interval = CONFIG['INTERVAL']
     agg_trades_df['delta'] = agg_trades_df['quantity'] * np.where(agg_trades_df['is_buyer_maker'], -1, 1)
-    klines_df['volume_delta'] = agg_trades_df['delta'].resample(INTERVAL).sum().fillna(0)
+    klines_df['volume_delta'] = agg_trades_df['delta'].resample(resample_interval).sum().fillna(0)
     delta_mean = klines_df['volume_delta'].rolling(window=60).mean()
     delta_std = klines_df['volume_delta'].rolling(window=60).std()
     klines_df['delta_zscore'] = ((klines_df['volume_delta'] - delta_mean) / delta_std.replace(0, np.nan)).fillna(0)
@@ -166,6 +174,52 @@ def calculate_and_label_regimes(klines_df, agg_trades_df, futures_df, params, sr
         print("ADX not found in prepared_df. Skipping 'Is_Strong_Trend' labeling.")
         prepared_df['Is_Strong_Trend'] = 0 # Default to no strong trend if ADX is missing
 
+    # NEW: Add the market regime classification from Analyst's MarketRegimeClassifier
+    from src.analyst.regime_classifier import MarketRegimeClassifier
+    from src.analyst.sr_analyzer import SRLevelAnalyzer # Needed for classifier init
+
+    # Initialize SRLevelAnalyzer for the classifier
+    sr_analyzer_instance = SRLevelAnalyzer(CONFIG["sr_analyzer"])
+    # Initialize MarketRegimeClassifier with the global CONFIG and SRLevelAnalyzer
+    regime_classifier_instance = MarketRegimeClassifier(CONFIG, sr_analyzer_instance)
+    
+    # Attempt to load the pre-trained classifier model
+    print("Attempting to load pre-trained Market Regime Classifier model...")
+    if not regime_classifier_instance.load_model():
+        print("Pre-trained model not found or failed to load. Training a new Market Regime Classifier.")
+        # Train the classifier (using pseudo-labeling on the prepared_df itself)
+        regime_classifier_instance.train_classifier(prepared_df.copy(), prepared_df.copy())
+    else:
+        print("Pre-trained Market Regime Classifier model loaded successfully.")
+    
+    # Predict regimes for the prepared_df
+    # We need to iterate or apply the prediction row-wise, or ensure the classifier can take a DataFrame
+    # For simplicity, let's predict for each row.
+    
+    # Ensure prepared_df has all features required by predict_regime
+    # (ADX, MACD_HIST, ATR, volume_delta, autoencoder_reconstruction_error, Is_SR_Interacting)
+    # These should already be in prepared_df from calculate_features_and_score
+    
+    # Create a list to store predicted regimes
+    predicted_regimes = []
+    # Loop through the DataFrame to get regime for each row
+    # This loop can be slow for very large DataFrames. Vectorization or batching preferred for performance.
+    for idx in prepared_df.index:
+        current_features_row = prepared_df.loc[[idx]] # Pass as DataFrame
+        current_klines_row = prepared_df.loc[[idx]] # Pass as DataFrame (simplified klines for this row)
+        
+        # Ensure 'close' and 'ATR' are available in current_klines_row
+        if 'close' not in current_klines_row.columns:
+            current_klines_row['close'] = current_features_row['close']
+        if 'ATR' not in current_klines_row.columns:
+            current_klines_row['ATR'] = current_features_row['ATR']
+
+        regime, _, _ = regime_classifier_instance.predict_regime(current_features_row, current_klines_row, sr_levels)
+        predicted_regimes.append(regime)
+    
+    prepared_df['Market_Regime_Label'] = predicted_regimes
+    print("Market regime labeling complete and added to prepared data.\n")
+
     print("Regime labeling and feature calculation complete.\n")
     return prepared_df
 
@@ -174,23 +228,32 @@ if __name__ == "__main__":
     # Ensure dummy data files exist for backtesting
     # Moved create_dummy_data to src/analyst/data_utils.py
     from src.analyst.data_utils import create_dummy_data
-    from config import KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAME
+    
+    # Access filenames from CONFIG
+    klines_filename = CONFIG['KLINES_FILENAME']
+    agg_trades_filename = CONFIG['AGG_TRADES_FILENAME']
+    futures_filename = CONFIG['FUTURES_FILENAME']
+    prepared_data_filename = CONFIG['PREPARED_DATA_FILENAME']
 
-    create_dummy_data(KLINES_FILENAME, 'klines')
-    create_dummy_data(AGG_TRADES_FILENAME, 'agg_trades')
-    create_dummy_data(FUTURES_FILENAME, 'futures')
+    create_dummy_data(klines_filename, 'klines')
+    create_dummy_data(agg_trades_filename, 'agg_trades')
+    create_dummy_data(futures_filename, 'futures')
 
     klines_df, agg_trades_df, futures_df = load_raw_data()
     if klines_df is None: sys.exit(1)
-    daily_df = klines_df.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
-    sr_levels = get_sr_levels(daily_df)
+    
+    # For SRLevelAnalyzer, it expects 'Open', 'High', 'Low', 'Close', 'Volume'
+    daily_df_for_sr = klines_df.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna()
+    daily_df_for_sr.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+    sr_levels = get_sr_levels(daily_df_for_sr)
     
     # When running standalone, use BEST_PARAMS from config.py
-    # Ensure BEST_PARAMS has 'trend_strength_threshold' or provide a default
-    if 'trend_strength_threshold' not in BEST_PARAMS:
-        BEST_PARAMS['trend_strength_threshold'] = 25 # Default value if not in BEST_PARAMS
+    # Access BEST_PARAMS from CONFIG
+    best_params = CONFIG['BEST_PARAMS']
+    if 'trend_strength_threshold' not in best_params:
+        best_params['trend_strength_threshold'] = 25 # Default value if not in BEST_PARAMS
 
     # Pass all necessary arguments to calculate_and_label_regimes
-    prepared_df = calculate_and_label_regimes(klines_df, agg_trades_df, futures_df, BEST_PARAMS, sr_levels, BEST_PARAMS['trend_strength_threshold'])
-    prepared_df.to_csv(PREPARED_DATA_FILENAME)
-    print(f"--- Final Prepared Data Saved to '{PREPARED_DATA_FILENAME}' ---")
+    prepared_df = calculate_and_label_regimes(klines_df, agg_trades_df, futures_df, best_params, sr_levels, best_params['trend_strength_threshold'])
+    prepared_df.to_csv(prepared_data_filename)
+    print(f"--- Final Prepared Data Saved to '{prepared_data_filename}' ---")

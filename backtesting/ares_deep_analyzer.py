@@ -3,9 +3,8 @@ import numpy as np
 import os
 import copy
 import random
-from config import (
-    INITIAL_EQUITY, BEST_PARAMS # Removed TREND_STRENGTH_THRESHOLD
-)
+# Import the main CONFIG dictionary
+from config import CONFIG
 from ares_data_preparer import load_raw_data, calculate_and_label_regimes, get_sr_levels
 from ares_backtester import run_backtest, PortfolioManager
 import plotly.graph_objects as go
@@ -21,6 +20,8 @@ MC_SIMULATIONS = 1000 # Number of simulations to run
 CONFIDENCE_LEVEL = 0.95 # For reporting confidence intervals
 
 def calculate_detailed_metrics(portfolio, num_days):
+    # Access INITIAL_EQUITY from CONFIG
+    initial_equity = CONFIG['INITIAL_EQUITY']
     if not portfolio.trades:
         return {
             'Final Equity': portfolio.equity, 'Total Trades': 0, 'Sharpe Ratio': 0,
@@ -28,8 +29,8 @@ def calculate_detailed_metrics(portfolio, num_days):
             'Win Rate (%)': 0, 'Profit Factor': 0
         }
     trade_df = pd.DataFrame(portfolio.trades)
-    trade_df['pnl'] = trade_df['pnl_pct'] * INITIAL_EQUITY
-    equity_series = pd.Series([INITIAL_EQUITY] + [t['equity'] for t in portfolio.trades])
+    trade_df['pnl'] = trade_df['pnl_pct'] * initial_equity # Use initial_equity from CONFIG
+    equity_series = pd.Series([initial_equity] + [t['equity'] for t in portfolio.trades])
     daily_returns = equity_series.pct_change().dropna()
     sharpe_ratio = (daily_returns.mean() / daily_returns.std()) * np.sqrt(365) if daily_returns.std() != 0 else 0
     negative_returns = daily_returns[daily_returns < 0] if not daily_returns[daily_returns < 0].empty else pd.Series([0])
@@ -50,7 +51,7 @@ def calculate_detailed_metrics(portfolio, num_days):
         'Win Rate (%)': win_rate, 'Profit Factor': profit_factor
     }
 
-def run_walk_forward_analysis(full_df, params=BEST_PARAMS):
+def run_walk_forward_analysis(full_df, params=None): # Changed default to None
     """Performs a walk-forward analysis on the dataset."""
     report_lines = []
     separator = "="*80
@@ -96,7 +97,7 @@ def run_walk_forward_analysis(full_df, params=BEST_PARAMS):
     print("\n".join(report_lines))
     return "\n".join(report_lines)
 
-def run_monte_carlo_simulation(full_df, params=BEST_PARAMS):
+def run_monte_carlo_simulation(full_df, params=None): # Changed default to None
     """Runs a Monte Carlo simulation on the full backtest results."""
     report_lines = []
     separator = "="*80
@@ -121,9 +122,12 @@ def run_monte_carlo_simulation(full_df, params=BEST_PARAMS):
     final_equities = []
     all_simulated_curves = []
 
+    # Access INITIAL_EQUITY from CONFIG
+    initial_equity = CONFIG['INITIAL_EQUITY']
+
     for _ in range(MC_SIMULATIONS):
         random.shuffle(trade_pnls)
-        equity = INITIAL_EQUITY
+        equity = initial_equity # Use initial_equity from CONFIG
         equity_curve = [equity]
         for pnl in trade_pnls:
             equity *= (1 + pnl)
@@ -147,6 +151,9 @@ def plot_results(mc_curves, base_portfolio):
     """Creates an interactive plot of the Monte Carlo simulation and drawdown."""
     if not mc_curves: return
 
+    # Access INITIAL_EQUITY from CONFIG
+    initial_equity = CONFIG['INITIAL_EQUITY']
+
     fig = make_subplots(
         rows=2, cols=1,
         shared_xaxes=True,
@@ -163,7 +170,7 @@ def plot_results(mc_curves, base_portfolio):
         ), row=1, col=1)
 
     # Plot original equity curve
-    original_curve = [INITIAL_EQUITY] + [t['equity'] for t in base_portfolio.trades]
+    original_curve = [initial_equity] + [t['equity'] for t in base_portfolio.trades] # Use initial_equity from CONFIG
     fig.add_trace(go.Scatter(
         x=list(range(len(original_curve))), y=original_curve,
         mode='lines', line=dict(color='blue', width=3),
@@ -204,17 +211,19 @@ def main():
     
     print("\nPreparing full dataset using BEST_PARAMS from config.py...")
     # Ensure BEST_PARAMS has 'trend_strength_threshold' or provide a default
-    if 'trend_strength_threshold' not in BEST_PARAMS:
-        BEST_PARAMS['trend_strength_threshold'] = 25 # Default value if not in BEST_PARAMS
+    # Access BEST_PARAMS from CONFIG
+    best_params = CONFIG['BEST_PARAMS']
+    if 'trend_strength_threshold' not in best_params:
+        best_params['trend_strength_threshold'] = 25 # Default value if not in BEST_PARAMS
 
-    # Pass futures_df, BEST_PARAMS, and sr_levels to calculate_and_label_regimes
-    prepared_df = calculate_and_label_regimes(klines_df, agg_trades_df, futures_df, BEST_PARAMS, sr_levels, BEST_PARAMS['trend_strength_threshold'])
+    # Pass futures_df, best_params, and sr_levels to calculate_and_label_regimes
+    prepared_df = calculate_and_label_regimes(klines_df, agg_trades_df, futures_df, best_params, sr_levels, best_params['trend_strength_threshold'])
     
     # 1. Run Walk-Forward Analysis
-    run_walk_forward_analysis(prepared_df, BEST_PARAMS) # Pass BEST_PARAMS
+    run_walk_forward_analysis(prepared_df, best_params) # Pass best_params
     
     # 2. Run Monte Carlo Simulation
-    mc_curves, base_portfolio, mc_report = run_monte_carlo_simulation(prepared_df, BEST_PARAMS) # Pass BEST_PARAMS
+    mc_curves, base_portfolio, mc_report = run_monte_carlo_simulation(prepared_df, best_params) # Pass best_params
     
     # 3. Plot the results
     plot_results(mc_curves, base_portfolio)

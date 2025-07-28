@@ -5,6 +5,8 @@ from scipy.signal import find_peaks
 import os
 import subprocess
 import sys
+# Import centralized data loading functions
+from src.analyst.data_utils import load_klines_data, load_agg_trades_data, load_futures_data
 from config import (
     KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAME, PREPARED_DATA_FILENAME, 
     BEST_PARAMS, DOWNLOADER_SCRIPT_NAME, INTERVAL
@@ -29,10 +31,13 @@ def load_raw_data():
             sys.exit(1)
             
     try:
-        klines_df = pd.read_csv(KLINES_FILENAME, index_col='open_time', parse_dates=True)
-        agg_trades_df = pd.read_csv(AGG_TRADES_FILENAME, index_col='timestamp', parse_dates=True)
-        futures_df = pd.read_csv(FUTURES_FILENAME, index_col='timestamp', parse_dates=True)
+        # Use the centralized data loading functions
+        klines_df = load_klines_data(KLINES_FILENAME)
+        agg_trades_df = load_agg_trades_data(AGG_TRADES_FILENAME)
+        futures_df = load_futures_data(FUTURES_FILENAME)
         
+        # Duplicated index handling is now done within the centralized load functions,
+        # but keeping these lines for robustness in case data source is not perfectly clean.
         klines_df = klines_df[~klines_df.index.duplicated(keep='first')]
         agg_trades_df = agg_trades_df[~agg_trades_df.index.duplicated(keep='first')]
         
@@ -166,6 +171,15 @@ def calculate_and_label_regimes(klines_df, agg_trades_df, futures_df, params, sr
 
 
 if __name__ == "__main__":
+    # Ensure dummy data files exist for backtesting
+    # Moved create_dummy_data to src/analyst/data_utils.py
+    from src.analyst.data_utils import create_dummy_data
+    from config import KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAME
+
+    create_dummy_data(KLINES_FILENAME, 'klines')
+    create_dummy_data(AGG_TRADES_FILENAME, 'agg_trades')
+    create_dummy_data(FUTURES_FILENAME, 'futures')
+
     klines_df, agg_trades_df, futures_df = load_raw_data()
     if klines_df is None: sys.exit(1)
     daily_df = klines_df.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})

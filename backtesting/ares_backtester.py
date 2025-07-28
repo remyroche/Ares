@@ -4,34 +4,35 @@ import os
 import subprocess
 import sys
 import traceback
-from config import (
-    INITIAL_EQUITY, 
-    PREPARED_DATA_FILENAME, PREPARER_SCRIPT_NAME,
-    BEST_PARAMS
-)
+# Import the main CONFIG dictionary
+from config import CONFIG
 from ares_mailer import send_email # Import the email function
 
 def load_prepared_data():
     """Loads prepared data. If the file is missing, calls the preparer script."""
     print("--- Step 1: Loading Prepared Data ---")
-    if not os.path.exists(PREPARED_DATA_FILENAME):
-        print(f"Prepared data file '{PREPARED_DATA_FILENAME}' not found.")
-        print(f"Calling data preparer script: '{PREPARER_SCRIPT_NAME}'...")
+    # Access config values through the CONFIG dictionary
+    prepared_data_filename = CONFIG['PREPARED_DATA_FILENAME']
+    preparer_script_name = CONFIG['PREPARER_SCRIPT_NAME']
+
+    if not os.path.exists(prepared_data_filename):
+        print(f"Prepared data file '{prepared_data_filename}' not found.")
+        print(f"Calling data preparer script: '{preparer_script_name}'...")
         try:
-            subprocess.run([sys.executable, PREPARER_SCRIPT_NAME], check=True)
+            subprocess.run([sys.executable, preparer_script_name], check=True)
             print("Data preparer script finished.")
         except FileNotFoundError:
-            print(f"ERROR: The script '{PREPARER_SCRIPT_NAME}' was not found.")
+            print(f"ERROR: The script '{preparer_script_name}' was not found.")
             sys.exit(1)
         except subprocess.CalledProcessError as e:
             print(f"ERROR: The data preparer script failed with an error: {e}")
             sys.exit(1)
     try:
-        df = pd.read_csv(PREPARED_DATA_FILENAME, index_col='open_time', parse_dates=True)
+        df = pd.read_csv(prepared_data_filename, index_col='open_time', parse_dates=True)
         print(f"Loaded {len(df)} labeled candles.\n")
         return df
     except FileNotFoundError:
-        print(f"ERROR: Prepared data file '{PREPARED_DATA_FILENAME}' still not found. Exiting.")
+        print(f"ERROR: Prepared data file '{prepared_data_filename}' still not found. Exiting.")
         sys.exit(1)
 
 class PortfolioManager:
@@ -80,12 +81,16 @@ class Analyst:
             
         return None
 
-def run_backtest(df, params=BEST_PARAMS):
+def run_backtest(df, params=None): # Changed default to None, will use CONFIG['BEST_PARAMS']
     """
     Runs the full backtest using the new confidence score logic.
     Improved exit logic to prioritize stop-loss if both SL/TP are hit within the same candle.
     """
-    portfolio = PortfolioManager(INITIAL_EQUITY)
+    # Use BEST_PARAMS from the main CONFIG
+    if params is None:
+        params = CONFIG['BEST_PARAMS']
+
+    portfolio = PortfolioManager(CONFIG['INITIAL_EQUITY'])
     analyst = Analyst(params)
     position, entry_price, trade_info = 0, 0, {}
     
@@ -152,7 +157,8 @@ def main():
     
     try:
         prepared_df = load_prepared_data()
-        portfolio = run_backtest(prepared_df)
+        # Pass CONFIG['BEST_PARAMS'] explicitly to run_backtest
+        portfolio = run_backtest(prepared_df, CONFIG['BEST_PARAMS'])
 
         report_lines = []
         separator = "="*80

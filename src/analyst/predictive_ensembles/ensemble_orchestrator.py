@@ -1,6 +1,7 @@
 # src/analyst/predictive_ensembles/ensemble_orchestrator.py
 import pandas as pd
 import numpy as np
+import os # For path manipulation
 from src.utils.logger import system_logger
 
 # Import individual ensemble classes
@@ -21,12 +22,15 @@ class RegimePredictiveEnsembles:
         
         # Initialize all possible ensemble instances
         self.ensembles = {
-            "BULL_TREND": BullTrendEnsemble(self.config, "BULL_TREND"),
-            "BEAR_TREND": BearTrendEnsemble(self.config, "BEAR_TREND"),
-            "SIDEWAYS_RANGE": SidewaysRangeEnsemble(self.config, "SIDEWAYS_RANGE"),
-            "SR_ZONE_ACTION": SRZoneActionEnsemble(self.config, "SR_ZONE_ACTION"),
-            "HIGH_IMPACT_CANDLE": HighImpactCandleEnsemble(self.config, "HIGH_IMPACT_CANDLE")
+            "BULL_TREND": BullTrendEnsemble(config, "BULL_TREND"), # Pass full config for sub-ensembles
+            "BEAR_TREND": BearTrendEnsemble(config, "BEAR_TREND"),
+            "SIDEWAYS_RANGE": SidewaysRangeEnsemble(config, "SIDEWAYS_RANGE"),
+            "SR_ZONE_ACTION": SRZoneActionEnsemble(config, "SR_ZONE_ACTION"),
+            "HIGH_IMPACT_CANDLE": HighImpactCandleEnsemble(config, "HIGH_IMPACT_CANDLE")
         }
+        self.model_storage_path = config['analyst'].get("model_storage_path", "models/analyst/") + "ensembles/"
+        os.makedirs(self.model_storage_path, exist_ok=True) # Ensure ensemble model storage path exists
+
 
     def train_all_ensembles(self, historical_features: pd.DataFrame, historical_targets: dict):
         """
@@ -43,49 +47,49 @@ class RegimePredictiveEnsembles:
                 historical_features[col] = 0 # Add missing columns with default 0
 
         for regime, ensemble_instance in self.ensembles.items():
-            self.logger.info(f"--- Orchestrator: Training ensemble for {regime} regime ---")
-            # In a real scenario, you'd filter historical_features and historical_targets
-            # based on the regime for training each specific ensemble.
-            # For this placeholder, we'll pass the full historical_features and a dummy target.
+            self.logger.info(f"--- Orchestrator: Processing ensemble for {regime} regime ---")
             
-            # Simulate a target for each regime for training purposes
-            # This would be derived from actual historical price movements relative to the regime
-            simulated_target = pd.Series(0, index=historical_features.index) # Default target
-            if regime == "BULL_TREND":
-                # Example: target is 1 if price increased by > X% in next Y periods, 0 otherwise
-                simulated_target = (historical_features['close'].pct_change(5).shift(-5) > 0.005).astype(int)
-            elif regime == "BEAR_TREND":
-                simulated_target = (historical_features['close'].pct_change(5).shift(-5) < -0.005).astype(int)
-            elif regime == "SIDEWAYS_RANGE":
-                simulated_target = ((historical_features['close'].pct_change(5).shift(-5).abs() < 0.002) & 
-                                    (historical_features['close'].pct_change(5).shift(-5).abs() > 0.0001)).astype(int) # Small, non-zero change
-            elif regime == "SR_ZONE_ACTION":
-                # For SR_ZONE_ACTION, use the more nuanced targets defined in the ensemble itself
-                # This requires the ensemble to generate its own targets or for them to be passed in historical_targets
-                # For now, we'll use a generic target to allow training to proceed, and rely on the ensemble's internal target logic.
-                # A more robust system would have historical_targets pre-labeled for each regime.
-                target_lookahead_sr = 2
-                price_change_sr = historical_features['close'].pct_change(target_lookahead_sr).shift(-target_lookahead_sr)
-                up_threshold_sr = 0.002
-                down_threshold_sr = -0.002
-                
-                simulated_target_sr = pd.Series('HOLD_SR', index=price_change_sr.index)
-                simulated_target_sr[price_change_sr > up_threshold_sr] = 'BREAKTHROUGH_UP_GENERIC'
-                simulated_target_sr[price_change_sr < down_threshold_sr] = 'BREAKTHROUGH_DOWN_GENERIC'
-                simulated_target = simulated_target_sr # Use this for SR_ZONE_ACTION
-            elif regime == "HIGH_IMPACT_CANDLE":
-                simulated_target = (historical_features['close'].pct_change(1).shift(-1).abs() > 0.005).astype(int) # Follow through or reversal
-
-            # Drop NaNs from target and align with features
-            aligned_features = historical_features.loc[simulated_target.dropna().index]
-            aligned_target = simulated_target.dropna()
-
-            if not aligned_features.empty and not aligned_target.empty:
-                ensemble_instance.train_ensemble(aligned_features, aligned_target)
+            # Attempt to load the ensemble model first
+            ensemble_model_path = os.path.join(self.model_storage_path, f"{regime.lower()}_ensemble.joblib")
+            if ensemble_instance.load_model(ensemble_model_path):
+                self.logger.info(f"Pre-trained {regime} ensemble model loaded successfully.")
             else:
-                self.logger.warning(f"Orchestrator: Insufficient aligned data for training {regime} ensemble. Skipping.")
+                self.logger.warning(f"Pre-trained {regime} ensemble model not found or failed to load. Training a new model.")
+                
+                # Simulate a target for each regime for training purposes
+                simulated_target = pd.Series(0, index=historical_features.index) # Default target
+                if regime == "BULL_TREND":
+                    simulated_target = (historical_features['close'].pct_change(5).shift(-5) > 0.005).astype(int)
+                elif regime == "BEAR_TREND":
+                    simulated_target = (historical_features['close'].pct_change(5).shift(-5) < -0.005).astype(int)
+                elif regime == "SIDEWAYS_RANGE":
+                    simulated_target = ((historical_features['close'].pct_change(5).shift(-5).abs() < 0.002) & 
+                                        (historical_features['close'].pct_change(5).shift(-5).abs() > 0.0001)).astype(int)
+                elif regime == "SR_ZONE_ACTION":
+                    target_lookahead_sr = 2
+                    price_change_sr = historical_features['close'].pct_change(target_lookahead_sr).shift(-target_lookahead_sr)
+                    up_threshold_sr = 0.002
+                    down_threshold_sr = -0.002
+                    
+                    simulated_target_sr = pd.Series('HOLD_SR', index=price_change_sr.index)
+                    simulated_target_sr[price_change_sr > up_threshold_sr] = 'BREAKTHROUGH_UP_GENERIC'
+                    simulated_target_sr[price_change_sr < down_threshold_sr] = 'BREAKTHROUGH_DOWN_GENERIC'
+                    simulated_target = simulated_target_sr
+                elif regime == "HIGH_IMPACT_CANDLE":
+                    simulated_target = (historical_features['close'].pct_change(1).shift(-1).abs() > 0.005).astype(int)
 
-        self.logger.info("Orchestrator: Regime-Specific Predictive Ensembles training complete (Placeholders).")
+                # Drop NaNs from target and align with features
+                aligned_features = historical_features.loc[simulated_target.dropna().index]
+                aligned_target = simulated_target.dropna()
+
+                if not aligned_features.empty and not aligned_target.empty:
+                    ensemble_instance.train_ensemble(aligned_features, aligned_target)
+                    if ensemble_instance.trained: # Only save if training was successful
+                        ensemble_instance.save_model(ensemble_model_path)
+                else:
+                    self.logger.warning(f"Orchestrator: Insufficient aligned data for training {regime} ensemble. Skipping.")
+
+        self.logger.info("Orchestrator: Regime-Specific Predictive Ensembles training/loading complete.")
 
     def get_ensemble_prediction(self, regime: str, current_features: pd.DataFrame, 
                                 klines_df: pd.DataFrame, agg_trades_df: pd.DataFrame, 
@@ -102,8 +106,11 @@ class RegimePredictiveEnsembles:
         
         # Ensure the ensemble is trained before attempting to get a prediction
         if not ensemble_instance.trained:
-            self.logger.warning(f"Orchestrator: Ensemble for {regime} is not trained. Cannot get prediction. Returning HOLD.")
-            return {"prediction": "HOLD", "confidence": 0.0}
+            self.logger.warning(f"Orchestrator: Ensemble for {regime} is not trained. Attempting to load for prediction.")
+            ensemble_model_path = os.path.join(self.model_storage_path, f"{regime.lower()}_ensemble.joblib")
+            if not ensemble_instance.load_model(ensemble_model_path):
+                self.logger.error(f"Ensemble for {regime} is not trained and failed to load. Returning HOLD.")
+                return {"prediction": "HOLD", "confidence": 0.0}
 
 
         self.logger.info(f"Orchestrator: Getting prediction from {regime} ensemble.")

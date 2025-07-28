@@ -18,7 +18,8 @@ CONFIG = {
     "BACKTESTING_PIPELINE_SCRIPT_NAME": "src/backtesting_pipeline.py",
     "PIPELINE_PID_FILE": "ares_pipeline.pid",
     "RESTART_FLAG_FILE": "restart_pipeline.flag",
-    "PROMOTE_CHALLENGER_FLAG_FILE": "promote_challenger.flag", # <-- ADD THIS LINE
+    "PROMOTE_CHALLENGER_FLAG_FILE": "promote_challenger.flag",
+    "STATE_FILE": "ares_state.json", 
         
     # --- Data Caching Configuration ---
     # Filenames are now generated dynamically based on SYMBOL, INTERVAL, LOOKBACK_YEARS
@@ -210,7 +211,10 @@ CONFIG = {
         "model_output_deviation_threshold": 0.2, # Max acceptable deviation in model output (e.g., confidence score)
         "unusual_trade_volume_multiplier": 5.0, # Multiplier for detecting unusually large trades
         "max_consecutive_errors": 3, # Max errors before triggering shutdown
-        "alert_recipient_email": "your_alert_email@example.com" # Email for critical alerts
+        "performance_lookback_days": 30,
+        "min_sharpe_ratio_threshold": 0.5,
+        "max_drawdown_threshold_pct": 20.0,
+        "alert_recipient_email": "cryptoalias.rp@proton.me" # Email for critical alerts
     },
     # --- Logging Configuration ---
     "logging": {

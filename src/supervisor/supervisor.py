@@ -109,12 +109,88 @@ class Supervisor:
             self.logger.error(f"  Error during backtest evaluation for params {params}: {e}", exc_info=True)
             return -np.inf # Return a very low score on error
 
+    def _get_param_value_from_path(self, base_dict, path_parts):
+        """Helper to get a nested parameter value from a dictionary using a list of path parts."""
+        current = base_dict
+        for part in path_parts:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return None # Path not found
+        return current
+
+    def _set_param_value_at_path(self, base_dict, path_parts, value):
+        """Helper to set a nested parameter value in a dictionary using a list of path parts."""
+        current = base_dict
+        for i, part in enumerate(path_parts):
+            if i == len(path_parts) - 1:
+                current[part] = value
+            else:
+                if part not in current or not isinstance(current[part], dict):
+                    current[part] = {}
+                current = current[part]
+
+    def _create_flat_params_dict(self, nested_params: dict) -> dict:
+        """
+        Converts a nested parameter dictionary (from optimization) into a flat dictionary
+        matching the structure expected by `calculate_and_label_regimes` and `run_backtest`.
+        Also handles weight normalization and integer conversions.
+        """
+        flat_params = self.global_config['BEST_PARAMS'].copy() # Start with a copy of default BEST_PARAMS
+
+        # Iterate through all parameters in OPTIMIZATION_CONFIG to ensure they are set
+        # This handles both coarse and fine-tuning parameters
+        all_opt_params = {}
+        all_opt_params.update(self.global_config['OPTIMIZATION_CONFIG']['COARSE_GRID_RANGES'])
+        # If fine-tuning, ranges are dynamically created, so we rely on nested_params having them.
+
+        for param_path in all_opt_params.keys():
+            parts = param_path.split('.')
+            value = self._get_param_value_from_path(nested_params, parts)
+            
+            if value is not None:
+                self._set_param_value_at_path(flat_params, parts, value)
+            else:
+                # If a parameter path from OPTIMIZATION_CONFIG is not in nested_params,
+                # ensure it defaults to its value in BEST_PARAMS
+                default_value = self._get_param_value_from_path(self.global_config['BEST_PARAMS'], parts)
+                if default_value is not None:
+                    self._set_param_value_at_path(flat_params, parts, default_value)
+
+
+        # Handle INTEGER_PARAMS
+        for param_path in self.global_config['OPTIMIZATION_CONFIG']['INTEGER_PARAMS']:
+            parts = param_path.split('.')
+            current_value = self._get_param_value_from_path(flat_params, parts)
+            if current_value is not None:
+                self._set_param_value_at_path(flat_params, parts, int(round(current_value)))
+
+        # Handle WEIGHT_PARAMS_GROUPS normalization
+        for group_path, keys in self.global_config['OPTIMIZATION_CONFIG']['WEIGHT_PARAMS_GROUPS']:
+            parts = group_path.split('.')
+            weights_dict = self._get_param_value_from_path(flat_params, parts)
+            
+            if weights_dict and isinstance(weights_dict, dict):
+                total_weight = sum(weights_dict.get(k, 0) for k in keys)
+                if total_weight > 0:
+                    for k in keys:
+                        self._set_param_value_at_path(weights_dict, [k], weights_dict.get(k, 0) / total_weight)
+                else: # If all weights are zero, distribute evenly
+                    num_keys = len(keys)
+                    if num_keys > 0:
+                        for k in keys:
+                            self._set_param_value_at_path(weights_dict, [k], 1.0 / num_keys)
+
+        return flat_params
+
+
     async def _implement_global_system_optimization(self, historical_pnl_data: pd.DataFrame, strategy_breakdown_data: dict):
         """
-        Implements Global System Optimization (Meta-Learning) using a random search approach.
-        It integrates with the backtesting pipeline to tune parameters.
+        Implements Global System Optimization (Meta-Learning).
+        This method integrates with the backtesting pipeline to tune parameters
+        using a two-stage approach: Coarse Grid Search followed by Fine-Tuning (Random Search).
         """
-        self.logger.info("\nSupervisor: Running Global System Optimization (Meta-Learning) using Random Search...")
+        self.logger.info("\nSupervisor: Running Global System Optimization (Meta-Learning) - Two-Stage Optimization...")
         
         # Load raw data once for the optimization process
         self.logger.info("  Loading raw data for optimization backtests...")
@@ -126,65 +202,93 @@ class Supervisor:
         daily_df = klines_df.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
         sr_levels = get_sr_levels(daily_df)
         
-        # Define a concrete search space for key parameters
-        # This is a subset of parameters from CONFIG.BEST_PARAMS for demonstration
-        # In a real system, this would be more extensive and configurable.
-        search_space = {
-            "trade_entry_threshold": [0.5, 0.6, 0.7, 0.8],
-            "sl_atr_multiplier": [1.0, 1.5, 2.0, 2.5],
-            "take_profit_rr": [1.5, 2.0, 2.5, 3.0],
-            "adx_period": [10, 14, 20, 25],
-            "initial_leverage": [20, 25, 30, 40], # Corresponds to tactician.laddering.initial_leverage
-            "min_lss_for_ladder": [60, 65, 70, 75], # Corresponds to tactician.laddering.min_lss_for_ladder
-            "ladder_step_leverage_increase": [3, 5, 7, 10], # Corresponds to tactician.laddering.ladder_step_leverage_increase
-            "trend_strength_threshold": [20, 25, 30, 35] # For regime classifier
-        }
+        best_overall_params = self.global_config['BEST_PARAMS'].copy()
+        best_overall_performance = -np.inf # Initialize with a very low score
 
-        # Create a list of all possible parameter combinations
-        keys = search_space.keys()
-        values = search_space.values()
+        # --- Stage 1: Coarse Grid Search ---
+        self.logger.info("\n--- Stage 1: Coarse Grid Search ---")
+        coarse_grid_ranges = self.global_config['OPTIMIZATION_CONFIG']['COARSE_GRID_RANGES']
         
-        # Generate all combinations (for small search spaces) or sample randomly (for large spaces)
-        # For this implementation, we'll iterate through a fixed number of random samples
-        num_random_samples = 20 # Number of parameter sets to test in each optimization run
-
-        current_best_params = self.global_config['BEST_PARAMS'].copy()
-        best_performance = self._evaluate_params_with_backtest(current_best_params, klines_df, agg_trades_df, futures_df, sr_levels)
-        self.logger.info(f"  Initial BEST_PARAMS performance: ${best_performance:,.2f}")
-
-        # Store the best parameters found during this optimization run
-        optimized_params_found = current_best_params.copy()
+        # Generate all combinations for coarse grid
+        keys = coarse_grid_ranges.keys()
+        values = coarse_grid_ranges.values()
         
-        self.logger.info(f"  Running {num_random_samples} random samples...")
+        coarse_param_combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
+        self.logger.info(f"  Evaluating {len(coarse_param_combinations)} coarse parameter combinations.")
 
-        for i in range(num_random_samples):
-            # Construct a random candidate parameter set
-            candidate_params = self.global_config['BEST_PARAMS'].copy() # Start with current best as base
+        for i, coarse_candidate_nested in enumerate(coarse_param_combinations):
+            # Transform nested candidate to flat params for backtesting
+            flat_candidate_params = self._create_flat_params_dict(coarse_candidate_nested)
             
-            # Randomly select a few parameters to change for this candidate
-            params_to_change = np.random.choice(list(keys), size=min(len(keys), 3), replace=False) # Change 3 random params
+            self.logger.info(f"  [Coarse {i+1}/{len(coarse_param_combinations)}] Testing: {flat_candidate_params}")
+            candidate_performance = self._evaluate_params_with_backtest(flat_candidate_params, klines_df, agg_trades_df, futures_df, sr_levels)
+            
+            if candidate_performance > best_overall_performance:
+                best_overall_performance = candidate_performance
+                best_overall_params = flat_candidate_params.copy() # Store the flat best params
+                self.logger.info(f"    New best coarse found! Performance: ${best_overall_performance:,.2f}")
+        
+        self.logger.info(f"\n--- Stage 1 Complete. Best Coarse Performance: ${best_overall_performance:,.2f} ---")
+        self.logger.info(f"  Best Coarse Params: {best_overall_params}")
 
-            for param_key in params_to_change:
-                # Get a random value from the defined range for this parameter
-                random_value = np.random.choice(search_space[param_key])
+        # --- Stage 2: Fine-Tuning (Random Search around best coarse) ---
+        self.logger.info("\n--- Stage 2: Fine-Tuning (Random Search) ---")
+        fine_tune_multiplier = self.global_config['OPTIMIZATION_CONFIG']['FINE_TUNE_RANGES_MULTIPLIER']
+        num_fine_tune_samples = self.global_config['OPTIMIZATION_CONFIG']['FINE_TUNE_NUM_POINTS']
+
+        if best_overall_performance <= INITIAL_EQUITY:
+            self.logger.warning("  Best coarse performance not profitable. Skipping fine-tuning.")
+        else:
+            self.logger.info(f"  Running {num_fine_tune_samples} random samples for fine-tuning around best coarse params.")
+            
+            for i in range(num_fine_tune_samples):
+                fine_tune_candidate_nested = {}
                 
-                # Update the nested parameter path in the candidate_params dictionary
-                parts = param_key.split('.')
-                temp_dict = candidate_params
-                for part in parts[:-1]:
-                    temp_dict = temp_dict.setdefault(part, {})
-                temp_dict[parts[-1]] = random_value
+                # Perturb each parameter that was in the coarse grid
+                for param_path, coarse_values in coarse_grid_ranges.items():
+                    current_best_val = self._get_param_value_from_path(best_overall_params, param_path.split('.'))
+                    
+                    if current_best_val is None: # Fallback if param not found in best_overall_params
+                        current_best_val = np.mean(coarse_values)
 
-            self.logger.info(f"  Evaluating candidate {i+1}/{num_random_samples}: {candidate_params}")
-            candidate_performance = self._evaluate_params_with_backtest(candidate_params, klines_df, agg_trades_df, futures_df, sr_levels)
-            
-            if candidate_performance > best_performance:
-                best_performance = candidate_performance
-                optimized_params_found = candidate_params.copy() # Update the best found
-                self.logger.info(f"  New best found! Performance: ${best_performance:,.2f}")
+                    # Define fine-tune range around current_best_val
+                    if isinstance(current_best_val, (int, float)):
+                        variation = abs(current_best_val * fine_tune_multiplier)
+                        low_bound = current_best_val - variation
+                        high_bound = current_best_val + variation
+                        
+                        # Ensure bounds are reasonable
+                        if len(coarse_values) > 0:
+                            low_bound = max(low_bound, min(coarse_values))
+                            high_bound = min(high_bound, max(coarse_values))
 
-        self.logger.info(f"  Optimization complete. Final best performance from random search: ${best_performance:,.2f}")
-        self.logger.info(f"  Final optimized parameters for this run: {optimized_params_found}")
+                        if low_bound == high_bound: # Avoid division by zero in uniform
+                            fine_tuned_val = low_bound
+                        else:
+                            fine_tuned_val = np.random.uniform(low_bound, high_bound)
+                        
+                        if param_path in self.global_config['OPTIMIZATION_CONFIG']['INTEGER_PARAMS']:
+                            fine_tuned_val = int(round(fine_tuned_val))
+                        else:
+                            fine_tuned_val = round(fine_tuned_val, 4) # Round floats for consistency
+
+                        self._set_param_value_at_path(fine_tune_candidate_nested, param_path.split('.'), fine_tuned_val)
+                    # Handle weight groups here if they were part of coarse grid and need specific perturbation
+                    # For now, assuming simple numerical parameters.
+
+                # Transform nested candidate to flat params for backtesting
+                flat_candidate_params = self._create_flat_params_dict(fine_tune_candidate_nested)
+                
+                self.logger.info(f"  [Fine-Tune {i+1}/{num_fine_tune_samples}] Testing: {flat_candidate_params}")
+                candidate_performance = self._evaluate_params_with_backtest(flat_candidate_params, klines_df, agg_trades_df, futures_df, sr_levels)
+                
+                if candidate_performance > best_overall_performance:
+                    best_overall_performance = candidate_performance
+                    best_overall_params = flat_candidate_params.copy()
+                    self.logger.info(f"    New best fine-tuned found! Performance: ${best_overall_performance:,.2f}")
+
+        self.logger.info(f"\n--- Optimization Complete. Final Best Performance: ${best_overall_performance:,.2f} ---")
+        self.logger.info(f"  Final Optimized Parameters: {best_overall_params}")
 
         # --- Feedback Loop from Regime-Specific Performance (Conceptual) ---
         # A real meta-learning algorithm would use `strategy_breakdown_data` to inform
@@ -201,7 +305,7 @@ class Supervisor:
         # Update CONFIG.BEST_PARAMS with the newly found optimal parameters
         # This is a critical step for the pipeline to use the optimized parameters.
         # Deep update ensures nested dictionaries are handled.
-        self._deep_update_dict(self.global_config['BEST_PARAMS'], optimized_params_found)
+        self._deep_update_dict(self.global_config['BEST_PARAMS'], best_overall_params)
         self.logger.info("  CONFIG.BEST_PARAMS updated with optimized values.")
 
         optimization_run_id = str(uuid.uuid4())
@@ -212,9 +316,9 @@ class Supervisor:
             params_doc = {
                 "timestamp": date_applied,
                 "optimization_run_id": optimization_run_id,
-                "performance_metric": best_performance,
+                "performance_metric": best_overall_performance,
                 "date_applied": date_applied,
-                "params": optimized_params_found # Store the actual parameters
+                "params": best_overall_params # Store the actual parameters
             }
             # Save to a document with a unique ID and also update a 'latest' document
             await self.firestore_manager.set_document(
@@ -234,7 +338,7 @@ class Supervisor:
         # Export to CSV
         try:
             with open(self.optimized_params_csv, 'a') as f:
-                f.write(f"{date_applied},{optimization_run_id},{best_performance},{date_applied},{json.dumps(optimized_params_found)}\n")
+                f.write(f"{date_applied},{optimization_run_id},{best_overall_performance},{date_applied},{json.dumps(best_overall_params)}\n")
             self.logger.info("Optimized parameters exported to CSV.")
         except Exception as e:
             self.logger.error(f"Error exporting optimized parameters to CSV: {e}")

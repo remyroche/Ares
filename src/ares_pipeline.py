@@ -1,3 +1,4 @@
+# src/ares_pipeline.py
 import time
 import datetime
 import os
@@ -5,6 +6,7 @@ import sys
 import signal # For graceful shutdown
 import pandas as pd
 import numpy as np # For simulating data
+import asyncio # For running async Firestore operations
 
 # Import core configuration and utilities
 from config import CONFIG, PIPELINE_PID_FILE, RESTART_FLAG_FILE, INITIAL_EQUITY, SYMBOL, INTERVAL
@@ -21,6 +23,9 @@ from sentinel.sentinel import Sentinel
 # Import Binance client (now enhanced for live data)
 from exchange.binance import BinanceFuturesAPI # Assuming exchange/binance.py is now in root or accessible
 
+# Import Firestore Manager
+from database.firestore_manager import FirestoreManager # New import
+
 class AresPipeline:
     """
     The main orchestration class for Project Ares.
@@ -30,6 +35,14 @@ class AresPipeline:
         self.config = config
         self.logger = system_logger.getChild('AresPipeline') # Child logger for pipeline
         
+        # Initialize Firestore Manager
+        self.firestore_manager = FirestoreManager(
+            config=self.config,
+            app_id=os.environ.get('__app_id'), # Passed by Canvas environment
+            firebase_config_str=os.environ.get('__firebase_config'), # Passed by Canvas environment
+            initial_auth_token=os.environ.get('__initial_auth_token') # Passed by Canvas environment
+        )
+
         # Initialize Binance Client for live data and trading
         live_config = self.config.get("live_trading", {})
         self.live_trading_enabled = live_config.get("enabled", False)
@@ -42,11 +55,11 @@ class AresPipeline:
             config=self.config # Pass full config for WebSocket streams
         )
 
-        # Initialize all core modules
-        self.analyst = Analyst(config)
-        self.strategist = Strategist(config)
-        self.tactician = Tactician(config)
-        self.supervisor = Supervisor(config)
+        # Initialize all core modules, passing FirestoreManager where needed
+        self.analyst = Analyst(config, firestore_manager=self.firestore_manager)
+        self.strategist = Strategist(config) # Strategist doesn't directly use Firestore for now
+        self.tactician = Tactician(config, firestore_manager=self.firestore_manager)
+        self.supervisor = Supervisor(config, firestore_manager=self.firestore_manager)
         self.sentinel = Sentinel(config)
 
         # Internal state variables
@@ -59,10 +72,10 @@ class AresPipeline:
         self.last_supervisor_update_time = datetime.datetime.min
         self.last_sentinel_check_time = datetime.datetime.min
 
-        # Load historical data for Analyst and Strategist once at startup
-        self._initial_setup()
+        # Load initial system state and historical data
+        asyncio.run(self._initial_setup()) # Run async setup
 
-    def _initial_setup(self):
+    async def _initial_setup(self):
         """Performs initial setup, including connecting to Binance and loading historical data."""
         self.logger.info("AresPipeline: Initializing system setup...")
 
@@ -74,7 +87,7 @@ class AresPipeline:
                 self.binance_client.start_user_data_stream()
             
             # Give some time for initial WebSocket data to populate buffers
-            time.sleep(5) 
+            await asyncio.sleep(5) 
             
             # Fetch initial account balance and position
             account_balance = self.binance_client.get_latest_account_balance()
@@ -120,22 +133,56 @@ class AresPipeline:
         if not self.strategist.load_historical_data_htf():
             self.logger.error("Strategist failed to load HTF data. Macro analysis might be limited.")
         
-        # Load any existing daily summary log for supervisor's historical PnL
-        if os.path.exists(self.supervisor.daily_summary_log_filename):
+        # Load historical daily P&L from Firestore first, then CSV as fallback
+        if self.firestore_manager.firestore_enabled:
+            firestore_pnl_data = await self.firestore_manager.get_collection(
+                self.config['supervisor']['daily_summary_log_filename'].split('/')[-1].replace('.csv', ''), # Collection name
+                is_public=False # Assuming daily summary is private per user
+            )
+            if firestore_pnl_data:
+                # Convert Firestore docs to DataFrame, handling potential missing fields
+                df_pnl = pd.DataFrame(firestore_pnl_data)
+                if 'Date' in df_pnl.columns and 'NetPnL' in df_pnl.columns:
+                    df_pnl['Date'] = pd.to_datetime(df_pnl['Date'])
+                    self.historical_daily_pnl_data = df_pnl[['Date', 'NetPnL']].sort_values('Date').reset_index(drop=True)
+                    self.logger.info(f"Loaded {len(self.historical_daily_pnl_data)} historical daily P&L records from Firestore.")
+                else:
+                    self.logger.warning("Firestore daily P&L data missing 'Date' or 'NetPnL' columns.")
+            else:
+                self.logger.info("No historical daily P&L data found in Firestore. Checking CSV.")
+
+        if self.historical_daily_pnl_data.empty and os.path.exists(self.supervisor.daily_summary_log_filename):
             try:
-                # Read only relevant columns to avoid issues with older formats
                 self.historical_daily_pnl_data = pd.read_csv(
                     self.supervisor.daily_summary_log_filename, 
                     parse_dates=['Date']
-                )[['Date', 'NetPnL']].set_index('Date').reset_index() # Ensure Date is index then reset for consistency
-                self.logger.info(f"Loaded {len(self.historical_daily_pnl_data)} historical daily P&L records for Supervisor.")
+                )[['Date', 'NetPnL']].set_index('Date').reset_index()
+                self.logger.info(f"Loaded {len(self.historical_daily_pnl_data)} historical daily P&L records from CSV.")
             except Exception as e:
-                self.logger.error(f"Error loading historical daily P&L data: {e}")
+                self.logger.error(f"Error loading historical daily P&L data from CSV: {e}")
                 self.historical_daily_pnl_data = pd.DataFrame(columns=['Date', 'NetPnL'])
 
+        # Load last known BEST_PARAMS from Firestore
+        if self.firestore_manager.firestore_enabled:
+            last_params_doc = await self.firestore_manager.get_document(
+                self.config['firestore']['optimized_params_collection'],
+                doc_id='latest', # Assuming 'latest' document stores current best params
+                is_public=True # Optimized params might be public
+            )
+            if last_params_doc and 'params' in last_params_doc:
+                self.logger.info("Loaded latest optimized parameters from Firestore.")
+                # Update CONFIG.BEST_PARAMS with loaded values
+                # This requires a helper function to deep update a dictionary
+                self._deep_update_dict(self.config['BEST_PARAMS'], last_params_doc['params'])
+                self.logger.info(f"Updated CONFIG.BEST_PARAMS with Firestore values: {self.config['BEST_PARAMS']}")
+            else:
+                self.logger.info("No latest optimized parameters found in Firestore. Using default BEST_PARAMS.")
+
         # Initialize strategist params once at startup
-        # Use initial data to set strategist params, even if it's simulated.
-        initial_klines_for_strategist = self.binance_client.get_latest_klines(num_klines=500) if self.live_trading_enabled else load_klines_data(KLINES_FILENAME).tail(500)
+        initial_klines_for_strategist = self.binance_client.get_latest_klines(num_klines=500) if self.live_trading_enabled else pd.DataFrame()
+        if initial_klines_for_strategist.empty: # Fallback if live data not ready or not enabled
+            initial_klines_for_strategist = load_klines_data(CONFIG['KLINES_FILENAME']).tail(500)
+
         initial_price_for_strategist = initial_klines_for_strategist['close'].iloc[-1] if not initial_klines_for_strategist.empty else 0.0
 
         if initial_price_for_strategist != 0.0:
@@ -157,79 +204,91 @@ class AresPipeline:
 
         self.logger.info("AresPipeline: Initial setup complete.")
 
+    def _deep_update_dict(self, target_dict, source_dict):
+        """Recursively updates a dictionary."""
+        for key, value in source_dict.items():
+            if isinstance(value, dict) and key in target_dict and isinstance(target_dict[key], dict):
+                self._deep_update_dict(target_dict[key], value)
+            else:
+                target_dict[key] = value
 
     def _get_real_time_market_data(self):
         """
-        Fetches real-time market data from the Binance client's buffers.
+        Fetches real-time market data from the Binance client's buffers (live) or CSVs (simulated).
         """
-        if self.live_trading_enabled:
-            klines = self.binance_client.get_latest_klines(num_klines=500) # Get enough for indicators
-            agg_trades = self.binance_client.get_latest_agg_trades(num_trades=1000)
-            order_book = self.binance_client.get_latest_order_book()
-            
-            # Get latest account and position info from client's user data buffer
-            account_balance = self.binance_client.get_latest_account_balance()
-            current_position_live = self.binance_client.get_latest_position(SYMBOL)
+        self.logger.debug("Fetching real-time market data...")
+        try:
+            if self.live_trading_enabled:
+                klines = self.binance_client.get_latest_klines(num_klines=500) # Get enough for indicators
+                agg_trades = self.binance_client.get_latest_agg_trades(num_trades=1000)
+                order_book = self.binance_client.get_latest_order_book()
+                
+                # Get latest account and position info from client's user data buffer
+                account_balance = self.binance_client.get_latest_account_balance()
+                current_position_live = self.binance_client.get_latest_position(SYMBOL)
 
-            current_price = klines['close'].iloc[-1] if not klines.empty else 0.0
-            current_volume = klines['volume'].iloc[-1] if not klines.empty else 0.0
-            # ATR needs to be calculated by Analyst's feature engine, not directly from klines here
-            current_atr = 0.0 # Will be populated by Analyst
+                current_price = klines['close'].iloc[-1] if not klines.empty else 0.0
+                current_volume = klines['volume'].iloc[-1] if not klines.empty else 0.0
+                # ATR will be calculated by Analyst's feature engine
+                current_atr = 0.0 
 
-            pos_notional = 0.0
-            liq_price = 0.0
+                pos_notional = 0.0
+                liq_price = 0.0
 
-            if current_position_live and current_position_live.get('positionAmt', 0) != 0:
-                pos_notional = abs(current_position_live['positionAmt']) * current_price
-                liq_price = current_position_live['liquidationPrice']
-                # Update Tactician's internal position state with live data
-                self.tactician.current_position.update({
-                    "unrealized_pnl": current_position_live['unrealizedPnl'],
-                    "liquidation_price": liq_price # Add liq price to tactician's state
-                })
-            
-            # Update current equity from live balance
-            if 'USDT' in account_balance:
-                self.current_equity = account_balance['USDT']['free'] + account_balance['USDT']['locked']
-            
-            # Futures data (funding rate, open interest) will be derived from klines or separate stream
-            # For now, we'll use the klines df for funding rate if available, otherwise simulate.
-            futures_data = pd.DataFrame([{'fundingRate': 0.0, 'openInterest': 0.0}]) # Placeholder
-            if 'fundingRate' in klines.columns: # If klines has funding rate (unlikely directly)
-                 futures_data['fundingRate'] = klines['fundingRate'].iloc[-1]
-            if 'openInterest' in klines.columns: # If klines has open interest
-                 futures_data['openInterest'] = klines['openInterest'].iloc[-1]
-            
-            # Ensure futures_data has an index for merging later
-            futures_data.index = [klines.index[-1]] if not klines.empty else [pd.Timestamp.now()]
-            futures_data.index.name = 'timestamp'
-
-
-            return klines, agg_trades, futures_data, order_book, current_price, current_atr, pos_notional, liq_price
-        else:
-            # Simulated data for non-live mode
-            # Load from CSVs as before
-            klines = load_klines_data(CONFIG['KLINES_FILENAME']).tail(500)
-            agg_trades = load_agg_trades_data(CONFIG['AGG_TRADES_FILENAME']).tail(1000)
-            futures = load_futures_data(CONFIG['FUTURES_FILENAME']).tail(1)
-            
-            current_price = klines['close'].iloc[-1] if not klines.empty else 0.0
-            current_volume = klines['volume'].iloc[-1] if not klines.empty else 0.0
-            current_order_book = simulate_order_book_data(current_price)
-
-            current_atr = klines['ATR'].iloc[-1] if 'ATR' in klines.columns else 0.0 # Analyst will add this
-            
-            # Simulate position for non-live mode
-            pos_notional = self.tactician.current_position["size"] * self.tactician.current_position["entry_price"] if self.tactician.current_position["size"] != 0 else 0.0
-            liq_price = self.tactician.current_position["entry_price"] * (1 - 0.05 * np.sign(self.tactician.current_position["size"])) if self.tactician.current_position["size"] != 0 else 0.0 # Dummy liq price
-
-            return klines, agg_trades, futures, current_order_book, current_price, current_atr, pos_notional, liq_price
+                if current_position_live and current_position_live.get('positionAmt', 0) != 0:
+                    pos_notional = abs(current_position_live['positionAmt']) * current_price
+                    liq_price = current_position_live['liquidationPrice']
+                    # Update Tactician's internal position state with live data
+                    self.tactician.current_position.update({
+                        "unrealized_pnl": current_position_live['unrealizedPnl'],
+                        "liquidation_price": liq_price # Add liq price to tactician's state
+                    })
+                
+                # Update current equity from live balance
+                if 'USDT' in account_balance:
+                    self.current_equity = account_balance['USDT']['free'] + account_balance['USDT']['locked']
+                
+                # Futures data (funding rate, open interest) will be derived from klines or separate stream
+                # For now, we'll use the klines df for funding rate if available, otherwise simulate.
+                futures_data = pd.DataFrame([{'fundingRate': 0.0, 'openInterest': 0.0}]) # Placeholder
+                if 'fundingRate' in klines.columns: # If klines has funding rate (unlikely directly)
+                     futures_data['fundingRate'] = klines['fundingRate'].iloc[-1]
+                if 'openInterest' in klines.columns: # If klines has open interest
+                     futures_data['openInterest'] = klines['openInterest'].iloc[-1]
+                
+                # Ensure futures_data has an index for merging later
+                futures_data.index = [klines.index[-1]] if not klines.empty else [pd.Timestamp.now()]
+                futures_data.index.name = 'timestamp'
 
 
-    def _update_system_state_from_trade(self, trade_action_result: dict, current_price: float):
+                return klines, agg_trades, futures_data, order_book, current_price, current_atr, pos_notional, liq_price
+            else:
+                # Simulated data for non-live mode
+                # Load from CSVs as before
+                klines = self.analyst.load_and_prepare_historical_data_for_sim().tail(500) # Use Analyst's internal data for consistency
+                agg_trades = self.analyst._historical_agg_trades.tail(1000) if self.analyst._historical_agg_trades is not None else pd.DataFrame()
+                futures = self.analyst._historical_futures.tail(1) if self.analyst._historical_futures is not None else pd.DataFrame()
+                
+                current_price = klines['close'].iloc[-1] if not klines.empty else 0.0
+                current_volume = klines['volume'].iloc[-1] if not klines.empty else 0.0
+                current_order_book = simulate_order_book_data(current_price)
+
+                current_atr = klines['ATR'].iloc[-1] if 'ATR' in klines.columns else 0.0 # Analyst will add this
+                
+                # Simulate position for non-live mode
+                pos_notional = self.tactician.current_position["size"] * self.tactician.current_position["entry_price"] if self.tactician.current_position["size"] != 0 else 0.0
+                liq_price = self.tactician.current_position["entry_price"] * (1 - 0.05 * np.sign(self.tactician.current_position["size"])) if self.tactician.current_position["size"] != 0 else 0.0 # Dummy liq price
+
+                return klines, agg_trades, futures, current_order_book, current_price, current_atr, pos_notional, liq_price
+        except Exception as e:
+            self.logger.error(f"Error fetching real-time market data: {e}", exc_info=True)
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), {}, 0.0, 0.0, 0.0, 0.0
+
+
+    async def _update_system_state_from_trade(self, trade_action_result: dict, current_price: float):
         """
         Updates the pipeline's internal state (equity, trade logs) based on a Tactician's trade action.
-        Also interacts with the live exchange for order execution.
+        Also interacts with the live exchange for order execution and saves to Firestore.
         :param trade_action_result: The dictionary returned by Tactician.process_intelligence.
         :param current_price: The current market price at the time of action.
         """
@@ -241,7 +300,7 @@ class AresPipeline:
         if action_type == "ORDER_PLACED":
             if self.live_trading_enabled:
                 try:
-                    order_response = self.binance_client.place_order(
+                    order_response = await self.binance_client.place_order(
                         symbol=symbol,
                         side=details["direction"],
                         type=details["order_type"],
@@ -253,7 +312,6 @@ class AresPipeline:
                     if order_response and "orderId" in order_response:
                         self.logger.info(f"Live order placed: {order_response['orderId']} - {order_response['status']}")
                         # Update Tactician's internal position with actual entry price from response
-                        # For MARKET orders, actual entry price might be different.
                         self.tactician._update_position(
                             symbol=symbol,
                             direction=details["direction"],
@@ -284,9 +342,7 @@ class AresPipeline:
         elif action_type == "LADDER_UPDATED":
             if self.live_trading_enabled:
                 try:
-                    # For laddering, you'd place a new order. Binance doesn't have a direct "add to position" API.
-                    # It's another PLACE_ORDER with the same direction.
-                    order_response = self.binance_client.place_order(
+                    order_response = await self.binance_client.place_order(
                         symbol=symbol,
                         side=details["direction"],
                         type=details["order_type"], # Usually MARKET
@@ -297,7 +353,6 @@ class AresPipeline:
                     )
                     if order_response and "orderId" in order_response:
                         self.logger.info(f"Live ladder order placed: {order_response['orderId']} - {order_response['status']}")
-                        # Update Tactician's internal position with new average entry, size, leverage
                         self.tactician._add_to_ladder(
                             symbol=symbol,
                             direction=details["direction"],
@@ -328,14 +383,12 @@ class AresPipeline:
         elif action_type == "POSITION_CLOSED":
             if self.live_trading_enabled:
                 try:
-                    # Close the position by placing a market order with reduceOnly=True
-                    # Determine side to close: if current position is LONG, need SELL; if SHORT, need BUY
-                    current_live_pos = self.binance_client.get_latest_position(symbol)
+                    current_live_pos = await self.binance_client.get_latest_position(symbol) # Ensure latest live pos
                     if current_live_pos and current_live_pos.get('positionAmt', 0) != 0:
                         close_side = "SELL" if current_live_pos['positionAmt'] > 0 else "BUY"
                         close_quantity = abs(current_live_pos['positionAmt'])
                         
-                        order_response = self.binance_client.place_order(
+                        order_response = await self.binance_client.place_order(
                             symbol=symbol,
                             side=close_side,
                             type="MARKET",
@@ -344,10 +397,8 @@ class AresPipeline:
                         )
                         if order_response and "orderId" in order_response:
                             self.logger.info(f"Live position close order placed: {order_response['orderId']} - {order_response['status']}")
-                            # Update Tactician's internal position (reset)
                             self.tactician._close_position(current_price, details.get("reason", "Live Close"))
-                            # Log trade details
-                            self._log_completed_trade(symbol, current_live_pos, current_price, details.get("reason", "Live Close"))
+                            await self._log_completed_trade(symbol, current_live_pos, current_price, details.get("reason", "Live Close"))
                         else:
                             self.logger.error(f"Failed to place live close order: {order_response}")
                             send_email("Ares Live Trading Error: Close Order Failed", f"Failed to close position: {order_response}")
@@ -358,15 +409,13 @@ class AresPipeline:
                     send_email("Ares Live Trading Critical Error", f"Exception closing position: {e}")
             else: # Simulation mode
                 self.logger.info(f"Simulating CLOSE_POSITION: {details.get('reason', 'Unknown')} at {current_price:.2f}")
-                # Log trade details before Tactician resets its position
-                self._log_completed_trade(symbol, self.tactician.current_position, current_price, details.get("reason", "Simulated Close"))
+                await self._log_completed_trade(symbol, self.tactician.current_position, current_price, details.get("reason", "Simulated Close"))
                 self.tactician._close_position(current_price, details.get("reason", "Simulated Close"))
         
         elif action_type == "ORDER_CANCELLED":
             if self.live_trading_enabled:
                 try:
-                    # Assuming details contain order_id or orig_client_order_id
-                    order_response = self.binance_client.cancel_order(
+                    order_response = await self.binance_client.cancel_order(
                         symbol=symbol,
                         order_id=details.get("order_id"),
                         orig_client_order_id=details.get("orig_client_order_id")
@@ -385,9 +434,9 @@ class AresPipeline:
         elif action_type == "HOLD":
             self.logger.info("Tactician decided to HOLD.")
 
-    def _log_completed_trade(self, symbol: str, closed_position_info: dict, exit_price: float, exit_reason: str):
+    async def _log_completed_trade(self, symbol: str, closed_position_info: dict, exit_price: float, exit_reason: str):
         """
-        Logs a completed trade to the daily trade logs.
+        Logs a completed trade to the daily trade logs and saves to Firestore.
         This is called when a position is closed.
         """
         if closed_position_info["size"] == 0:
@@ -400,37 +449,49 @@ class AresPipeline:
                            (closed_position_info["entry_price"] - exit_price)
             simulated_pnl = pnl_per_unit * closed_position_info["size"] * closed_position_info["current_leverage"]
         
+        # Get market state at entry (simplified for now)
+        market_state_at_entry = self.analyst.get_intelligence(
+            self.binance_client.get_latest_klines(num_klines=500), # Use live klines for this
+            self.binance_client.get_latest_agg_trades(num_trades=1000),
+            pd.DataFrame([{'fundingRate': 0.0, 'openInterest': 0.0}], index=[pd.Timestamp.now()], columns=['fundingRate', 'openInterest']), # Dummy futures
+            self.binance_client.get_latest_order_book(),
+            0, 0 # No open position for this call
+        )['market_regime']
+
         trade_log_entry = {
-            "Trade ID": self.tactician.trade_id_counter, # Use the counter for the trade that just completed
-            "Entry/Exit Timestamps": datetime.datetime.now().isoformat(),
-            "Asset": symbol,
-            "Direction": closed_position_info["direction"],
-            "Market State at Entry": self.analyst.get_intelligence( # Re-run analyst for state at entry (approx)
-                self.binance_client.get_latest_klines(num_klines=500), # Use live klines for this
-                self.binance_client.get_latest_agg_trades(num_trades=1000),
-                pd.DataFrame([{'fundingRate': 0.0, 'openInterest': 0.0}], index=[pd.Timestamp.now()], columns=['fundingRate', 'openInterest']), # Dummy futures
-                self.binance_client.get_latest_order_book(),
-                0, 0 # No open position for this call
-            )['market_regime'],
-            "Entry Price": closed_position_info["entry_price"],
-            "Exit Price": exit_price,
-            "Position Size": closed_position_info["size"],
-            "Leverage Used": closed_position_info["current_leverage"],
-            "Confidence Score & LSS at Entry": {"conf": 0.0, "lss": 0.0}, # Placeholder, would need to store at entry
-            "Fees Paid": abs(simulated_pnl) * 0.0005, # Simulate fees
-            "Funding Rate Paid/Received": 0.0, # Placeholder
-            "Realized P&L ($)": simulated_pnl,
-            "Exit Reason": exit_reason
+            "trade_id": str(self.tactician.trade_id_counter), # Use the counter for the trade that just completed
+            "timestamp": datetime.datetime.now().isoformat(),
+            "asset": symbol,
+            "direction": closed_position_info["direction"],
+            "market_state_at_entry": market_state_at_entry,
+            "entry_price": closed_position_info["entry_price"],
+            "exit_price": exit_price,
+            "position_size": closed_position_info["size"],
+            "leverage_used": closed_position_info["current_leverage"],
+            "confidence_score_at_entry": 0.0, # Placeholder, would need to store at entry
+            "lss_at_entry": 0.0, # Placeholder, would need to store at entry
+            "fees_paid": abs(simulated_pnl) * 0.0005, # Simulate fees
+            "funding_rate_pnl": 0.0, # Placeholder
+            "realized_pnl_usd": simulated_pnl,
+            "exit_reason": exit_reason
         }
         self.trade_logs_today.append(trade_log_entry)
         self.current_equity += simulated_pnl # Update overall equity
 
         # Aggregate P&L by regime for Supervisor
-        regime = trade_log_entry['Market State at Entry']
+        regime = trade_log_entry['market_state_at_entry']
         if regime not in self.daily_pnl_per_regime:
             self.daily_pnl_per_regime[regime] = 0.0
         self.daily_pnl_per_regime[regime] += simulated_pnl
         self.logger.info(f"Trade logged. Equity updated to ${self.current_equity:,.2f}. P&L: ${simulated_pnl:,.2f}")
+
+        # Save to Firestore
+        if self.firestore_manager.firestore_enabled:
+            await self.firestore_manager.add_document(
+                self.config['firestore']['trade_logs_collection'],
+                trade_log_entry,
+                is_public=False # Trade logs are private per user
+            )
 
 
     def _handle_graceful_shutdown(self, signum, frame):
@@ -453,7 +514,7 @@ class AresPipeline:
         """Writes the current process ID to a file."""
         try:
             with open(PIPELINE_PID_FILE, 'w') as f:
-                f.write(str(os.getpid()))
+                f.write(f"{os.getpid()}")
             self.logger.info(f"PID {os.getpid()} written to {PIPELINE_PID_FILE}")
         except Exception as e:
             self.logger.error(f"Error writing PID file: {e}")
@@ -467,9 +528,9 @@ class AresPipeline:
         except Exception as e:
             self.logger.error(f"Error removing PID file: {e}")
 
-    def run(self):
+    async def run_async(self):
         """
-        Starts the main real-time operational loop of the Ares system.
+        Starts the main real-time operational loop of the Ares system (async version).
         """
         self.logger.info("--- Ares Pipeline Starting ---")
         self._write_pid_file()
@@ -502,18 +563,13 @@ class AresPipeline:
                 self.logger.info(f"\n--- Pipeline Loop: {current_time.strftime('%Y-%m-%d %H:%M:%S')} ---")
 
                 # 1. Fetch Real-Time Market Data
-                klines, agg_trades, futures, order_book, current_price, current_atr, pos_notional, liq_price = self._get_real_time_market_data()
+                klines, agg_trades, futures, order_book, current_price, current_atr, pos_notional, liq_price = await self._get_real_time_market_data()
                 
                 if klines.empty or current_price == 0.0:
                     self.logger.warning("Skipping current loop iteration due to missing or invalid market data.")
-                    time.sleep(loop_interval)
+                    await asyncio.sleep(loop_interval)
                     continue
                 
-                # Ensure ATR is calculated by Analyst's feature engine and available for Tactician
-                # This requires a slight re-architecture if Analyst's feature_engine is not exposed
-                # For now, we'll assume Analyst's get_intelligence will return a comprehensive 'features' dict
-                # including ATR, and Tactician will pick it from there.
-                # Here, we'll just pass the current_price and current_atr (if available from klines)
                 current_market_data_for_tactician = {
                     "current_price": current_price,
                     "current_volume": klines['volume'].iloc[-1],
@@ -523,7 +579,6 @@ class AresPipeline:
                 # 2. Strategist Update (e.g., daily)
                 if (current_time - self.last_strategist_update_time).total_seconds() >= strategist_update_interval:
                     self.logger.info("Triggering Strategist update...")
-                    # Get market health from Analyst for Strategist
                     market_health_for_strategist = self.analyst.market_health_analyzer.get_market_health_score(klines)
                     self.strategist_params = self.strategist.get_strategist_parameters(
                         analyst_market_health_score=market_health_for_strategist,
@@ -535,26 +590,22 @@ class AresPipeline:
                 analyst_intelligence = self.analyst.get_intelligence(
                     klines, agg_trades, futures, order_book, pos_notional, liq_price
                 )
-                # Update current_atr in market_data for Tactician using Analyst's calculated ATR
                 if 'ATR' in analyst_intelligence.get('features', {}):
                     current_market_data_for_tactician['current_atr'] = analyst_intelligence['features']['ATR']
 
 
                 # 4. Tactician Decision
-                tactician_decision_result = self.tactician.process_intelligence(
+                tactician_decision_result = await self.tactician.process_intelligence(
                     analyst_intelligence, self.strategist_params, current_market_data_for_tactician
                 )
                 
                 # Update pipeline state and execute live trades based on Tactician's action
-                self._update_system_state_from_trade(tactician_decision_result, current_price)
+                await self._update_system_state_from_trade(tactician_decision_result, current_price)
 
                 # 5. Supervisor Update (e.g., daily at end of day)
-                # This needs to be triggered at a specific time (e.g., 00:00 UTC) or after a full day of data.
-                # For this demo, we'll trigger it if a new day starts based on loop's current_date.
-                # Or, if enough time has passed since last update.
                 if (current_time - self.last_supervisor_update_time).total_seconds() >= supervisor_update_interval:
                     self.logger.info(f"Triggering Supervisor daily update for {self.last_supervisor_update_time.date()}...")
-                    supervisor_output = self.supervisor.orchestrate_supervision(
+                    supervisor_output = await self.supervisor.orchestrate_supervision(
                         current_date=self.last_supervisor_update_time.date(), # Report for the *previous* day
                         total_equity=self.current_equity,
                         daily_trade_logs=self.trade_logs_today,
@@ -563,29 +614,27 @@ class AresPipeline:
                     )
                     # Update historical P&L for next supervisor run
                     new_daily_pnl_entry = pd.DataFrame([{'Date': self.last_supervisor_update_time.date(), 'NetPnL': supervisor_output['daily_summary']['NetPnL']}])
-                    new_daily_pnl_entry['Date'] = pd.to_datetime(new_daily_pnl_entry['Date']) # Ensure datetime type
+                    new_daily_pnl_entry['Date'] = pd.to_datetime(new_daily_pnl_entry['Date'])
                     
-                    # Use pd.concat for robustness and drop duplicates by date
                     self.historical_daily_pnl_data = pd.concat([self.historical_daily_pnl_data, new_daily_pnl_entry]) \
                                                         .drop_duplicates(subset=['Date']) \
                                                         .sort_values('Date') \
-                                                        .reset_index(drop=True) # Reset index after concat
+                                                        .reset_index(drop=True)
                     
-                    self.current_equity = supervisor_output["allocated_capital"] # Supervisor updates equity
-                    self.trade_logs_today = [] # Reset trade logs for new day
-                    self.daily_pnl_per_regime = {} # Reset daily P&L by regime
-                    self.last_supervisor_update_time = current_time # Update last supervisor run time
+                    self.current_equity = supervisor_output["allocated_capital"]
+                    self.trade_logs_today = []
+                    self.daily_pnl_per_regime = {}
+                    self.last_supervisor_update_time = current_time
                 
                 # 6. Sentinel Checks
                 if (current_time - self.last_sentinel_check_time).total_seconds() >= sentinel_check_interval:
                     self.logger.info("Triggering Sentinel checks...")
-                    # Pass the latest states of the modules to Sentinel
                     self.sentinel.run_checks(
                         current_analyst_intelligence=analyst_intelligence,
                         current_strategist_params=self.strategist_params,
-                        current_tactician_decision=tactician_decision_result, # Pass the raw decision result
-                        latest_trade_data=self.trade_logs_today[-1] if self.trade_logs_today else None, # Pass last trade if any
-                        average_trade_size=self.supervisor.get_current_allocated_capital() * self.config['tactician']['risk_management']['risk_per_trade_pct'] # Example average trade size
+                        current_tactician_decision=tactician_decision_result,
+                        latest_trade_data=self.trade_logs_today[-1] if self.trade_logs_today else None,
+                        average_trade_size=self.supervisor.get_current_allocated_capital() * self.config['tactician']['risk_management']['risk_per_trade_pct']
                     )
                     self.last_sentinel_check_time = current_time
 
@@ -593,7 +642,7 @@ class AresPipeline:
                 self.logger.info(f"Allocated Capital: ${self.supervisor.get_current_allocated_capital():,.2f}")
                 self.logger.info(f"Current Position: {self.tactician.current_position['direction']} {self.tactician.current_position['size']:.4f} {self.tactician.current_position['symbol'] if self.tactician.current_position['symbol'] else ''} @ {self.tactician.current_position['entry_price']:.2f}x{self.tactician.current_position['current_leverage']}")
                 
-                time.sleep(loop_interval)
+                await asyncio.sleep(loop_interval)
 
         except KeyboardInterrupt:
             self.logger.info("KeyboardInterrupt detected. Exiting pipeline.")
@@ -612,6 +661,8 @@ if __name__ == "__main__":
     # Ensure logs and reports directories exist
     os.makedirs("logs", exist_ok=True)
     os.makedirs("reports", exist_ok=True)
+    os.makedirs("models/analyst", exist_ok=True) # For analyst model storage
+    os.makedirs("models/tactician", exist_ok=True) # For tactician model storage
 
     # Initialize logger
     from importlib import reload
@@ -620,4 +671,4 @@ if __name__ == "__main__":
     system_logger = utils.logger.system_logger
 
     pipeline = AresPipeline()
-    pipeline.run()
+    asyncio.run(pipeline.run_async()) # Run the async main loop

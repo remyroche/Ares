@@ -7,11 +7,43 @@ from typing import Any, Dict, List
 from loguru import logger
 import websockets
 import time
+import logging
+from functools import wraps
 
-# Assuming src.config is in the python path
-# In a real project structure, you might need to adjust python path
-# or use relative imports if the structure allows.
-from src.config import settings
+import binance
+from binance.client import Client
+from binance.exceptions import BinanceAPIException, BinanceRequestException
+
+from src.config import Config, settings
+
+def handle_binance_errors(func):
+    """A decorator to handle Binance API errors with retries and exponential backoff."""
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        retries = 5
+        delay = 1
+        for i in range(retries):
+            try:
+                return func(*args, **kwargs)
+            except (BinanceAPIException, BinanceRequestException) as e:
+                if e.status_code == 429:  # Rate limit exceeded
+                    logger.warning(f"Rate limit exceeded. Retrying in {delay} seconds...")
+                    time.sleep(delay)
+                    delay *= 2  # Exponential backoff
+                elif e.status_code >= 500:  # Server-side error
+                    logger.warning(f"Binance server error. Retrying in {delay} seconds...")
+                    time.sleep(delay)
+                    delay *= 2
+                else:
+                    logger.error(f"Binance API error: {e}")
+                    raise
+            except Exception as e:
+                logger.error(f"An unexpected error occurred: {e}")
+                raise
+        raise Exception("Failed to execute Binance API call after several retries.")
+
+    return wrapper
 
 class BinanceExchange:
     """
@@ -26,10 +58,12 @@ class BinanceExchange:
         self._api_secret = api_secret.encode('utf-8') if api_secret else None
         self._session = aiohttp.ClientSession(base_url=self.BASE_URL)
 
+    @handle_binance_errors
     def _get_timestamp(self) -> int:
         """Returns the current timestamp in milliseconds."""
         return int(time.time() * 1000)
 
+    @handle_binance_errors
     async def _generate_signature(self, data: Dict[str, Any]) -> str:
         """Generates a HMAC SHA256 signature for signed requests."""
         if not self._api_secret:
@@ -37,6 +71,7 @@ class BinanceExchange:
         query_string = '&'.join([f"{k}={v}" for k, v in data.items() if v is not None])
         return hmac.new(self._api_secret, query_string.encode('utf-8'), hashlib.sha256).hexdigest()
 
+    @handle_binance_errors
     async def _request(self, method: str, endpoint: str, params: Dict[str, Any] = None, signed: bool = False, max_retries: int = 3):
         """
         Makes an asynchronous HTTP request to the Binance API with retry logic.
@@ -80,25 +115,44 @@ class BinanceExchange:
         endpoint = "/fapi/v1/klines"
         params = {"symbol": symbol, "interval": interval, "limit": limit}
         return await self._request("GET", endpoint, params)
-
-    async def place_order(self, symbol: str, side: str, order_type: str, quantity: float, price: float = None, stop_price: float = None, time_in_force: str = "GTC", reduce_only: bool = False):
-        """Places a new order."""
-        endpoint = "/fapi/v1/order"
+    @handle_binance_errors
+    def create_order(self, symbol, side, type, quantity, price=None):
         params = {
-            "symbol": symbol.upper(),
-            "side": side.upper(),
-            "type": order_type.upper(),
+            "symbol": symbol,
+            "side": side,
+            "type": type,
             "quantity": quantity,
-            "newOrderRespType": "RESULT"
         }
-        if price: params["price"] = price
-        if stop_price: params["stopPrice"] = stop_price
-        if order_type.upper() in ["LIMIT", "STOP", "TAKE_PROFIT"]:
-            params["timeInForce"] = time_in_force
-        if reduce_only: params["reduceOnly"] = "true"
+        if price:
+            params["price"] = price
+            params["timeInForce"] = "GTC"  # Good 'Til Canceled for limit orders
+
+        return self.client.create_order(**params)
+
+    @handle_binance_errors
+    def get_order_status(self, symbol, order_id):
+        return self.client.get_order(symbol=symbol, orderId=order_id)
+
+    def handle_partial_fill(self, order):
+        """Handles partially filled orders."""
+        if order['status'] == 'PARTIALLY_FILLED':
+            logger.info(f"Order {order['orderId']} is partially filled. Executed quantity: {order['executedQty']}")
+            # Option 1: Cancel the remaining order
+            # self.client.cancel_order(symbol=order['symbol'], orderId=order['orderId'])
+            # logger.info(f"Canceled the remaining part of order {order['orderId']}.")
+
+            # Option 2: Create a new order for the remaining amount (less aggressive)
+            remaining_qty = float(order['origQty']) - float(order['executedQty'])
+            logger.info(f"Creating a new order for the remaining quantity: {remaining_qty}")
+            # You might want to adjust the price for the new order
+            self.create_order(
+                symbol=order['symbol'],
+                side=order['side'],
+                type=order['type'],
+                quantity=remaining_qty,
+                price=order['price']
+            )
             
-        return await self._request("POST", endpoint, params, signed=True)
-    
     async def cancel_order(self, symbol: str, order_id: int = None, orig_client_order_id: str = None):
         """Cancel an open order."""
         endpoint = "/fapi/v1/order"

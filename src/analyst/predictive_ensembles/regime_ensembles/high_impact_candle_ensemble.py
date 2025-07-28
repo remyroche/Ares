@@ -138,9 +138,25 @@ class HighImpactCandleEnsemble(BaseEnsemble):
 
         # Derive volume imbalance features for the historical data
         # This requires historical_features to contain 'open', 'close', 'volume', and potentially 'taker_buy_base_asset_volume'
-        historical_imbalance_features = historical_features.apply(lambda row: self._calculate_volume_imbalance_features(
-            historical_features.loc[[row.name]] # Pass single row as DataFrame
-        ), axis=1)
+        # Ensure that the columns required for _calculate_volume_imbalance_features are present in historical_features
+        required_cols_for_imbalance = ['open', 'close', 'volume', 'taker_buy_base_asset_volume']
+        # Check if 'taker_buy_base_asset_volume' is present. If not, _calculate_volume_imbalance_features will use heuristic.
+        
+        # Apply _calculate_volume_imbalance_features row-wise
+        # It's more efficient to apply this to the full DataFrame if possible, or vectorize.
+        # For now, keeping row-wise application for clarity but noting performance.
+        historical_imbalance_features_list = []
+        for idx, row in historical_features.iterrows():
+            # Create a dummy DataFrame for the single row to pass to _calculate_volume_imbalance_features
+            single_row_df = pd.DataFrame([row.to_dict()])
+            single_row_df.index = [idx]
+            # Ensure relevant columns are present in the single_row_df
+            for col in required_cols_for_imbalance:
+                if col not in single_row_df.columns:
+                    single_row_df[col] = 0.0 # Add missing columns with default
+            historical_imbalance_features_list.append(self._calculate_volume_imbalance_features(single_row_df))
+        
+        historical_imbalance_features = pd.DataFrame(historical_imbalance_features_list, index=historical_features.index)
         
         # Align historical_imbalance_features with X_flat and y_flat
         historical_imbalance_features = historical_imbalance_features.loc[X_flat.index].fillna(0)
@@ -213,22 +229,35 @@ class HighImpactCandleEnsemble(BaseEnsemble):
         # Populate meta_features_train with actual (or simulated) predictions/confidences
         if self.models["volume_imbalance"]:
             imbalance_probas = self.models["volume_imbalance"].predict_proba(historical_imbalance_features)
-            imbalance_conf_values = [imbalance_probas[i, self.models["volume_imbalance"].classes_.tolist().index(y_flat.iloc[i])] for i in range(len(y_flat))]
-            meta_features_train['volume_imbalance_conf'] = pd.Series(imbalance_conf_values, index=X_flat.index)
+            # Ensure imbalance_probas length matches y_flat length
+            if len(imbalance_probas) == len(y_flat):
+                imbalance_conf_values = [imbalance_probas[i, self.models["volume_imbalance"].classes_.tolist().index(y_flat.iloc[i])] for i in range(len(y_flat))]
+                meta_features_train['volume_imbalance_conf'] = pd.Series(imbalance_conf_values, index=X_flat.index)
+            else:
+                self.logger.warning("Volume Imbalance probas length mismatch with y_flat. Using random uniform for volume_imbalance_conf.")
+                meta_features_train['volume_imbalance_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
         else:
             meta_features_train['volume_imbalance_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
         
         if self.models["tabnet_proxy"]:
             tabnet_probas = self.models["tabnet_proxy"].predict(X_flat)
-            tabnet_conf_values = [tabnet_probas[i, y_flat_encoded[i]] for i in range(len(y_flat_encoded))]
-            meta_features_train['tabnet_proxy_proba'] = pd.Series(tabnet_conf_values, index=X_flat.index)
+            if len(tabnet_probas) == len(y_flat_encoded):
+                tabnet_conf_values = [tabnet_probas[i, y_flat_encoded[i]] for i in range(len(y_flat_encoded))]
+                meta_features_train['tabnet_proxy_proba'] = pd.Series(tabnet_conf_values, index=X_flat.index)
+            else:
+                self.logger.warning("TabNet proxy probas length mismatch with y_flat_encoded. Using random uniform for tabnet_proxy_proba.")
+                meta_features_train['tabnet_proxy_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
         else:
             meta_features_train['tabnet_proxy_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
         if self.models["lgbm"]:
             lgbm_probas = self.models["lgbm"].predict_proba(X_flat)
-            lgbm_conf_values = [lgbm_probas[i, self.models["lgbm"].classes_.tolist().index(y_flat.iloc[i])] for i in range(len(y_flat))]
-            meta_features_train['lgbm_proba'] = pd.Series(lgbm_conf_values, index=X_flat.index)
+            if len(lgbm_probas) == len(y_flat):
+                lgbm_conf_values = [lgbm_probas[i, self.models["lgbm"].classes_.tolist().index(y_flat.iloc[i])] for i in range(len(y_flat))]
+                meta_features_train['lgbm_proba'] = pd.Series(lgbm_conf_values, index=X_flat.index)
+            else:
+                self.logger.warning("LGBM probas length mismatch with y_flat. Using random uniform for lgbm_proba.")
+                meta_features_train['lgbm_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
         else:
             meta_features_train['lgbm_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
@@ -281,6 +310,7 @@ class HighImpactCandleEnsemble(BaseEnsemble):
         if self.models["volume_imbalance"]:
             try:
                 # Derive current volume imbalance features
+                # Ensure klines_df passed has the required columns for _calculate_volume_imbalance_features
                 current_imbalance_features = self._calculate_volume_imbalance_features(klines_df.tail(1)) # Pass only current candle
                 # Ensure feature order for prediction is same as training
                 current_imbalance_features_reindexed = current_imbalance_features.reindex(self.volume_imbalance_features_list, fill_value=0.0).to_frame().T
@@ -359,4 +389,3 @@ class HighImpactCandleEnsemble(BaseEnsemble):
 
         self.logger.info(f"Ensemble Result for {self.ensemble_name}: Prediction={final_prediction}, Confidence={final_confidence:.2f}")
         return {"prediction": final_prediction, "confidence": final_confidence}
-

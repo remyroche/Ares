@@ -120,9 +120,11 @@ class AresPipeline:
             self.logger.info("Live trading is DISABLED. Using simulated data for pipeline operation.")
             # Ensure dummy data files exist for simulation
             from analyst.data_utils import create_dummy_data
+            # Assuming KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAME are defined in config
+            from config import KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAME
             create_dummy_data(KLINES_FILENAME, 'klines')
             create_dummy_data(AGG_TRADES_FILENAME, 'agg_trades')
-            create_dummy_data(CONFIG['FUTURES_FILENAME'], 'futures') # Use CONFIG['FUTURES_FILENAME']
+            create_dummy_data(FUTURES_FILENAME, 'futures') # Use CONFIG['FUTURES_FILENAME']
 
         # Load and prepare historical data for Analyst and Strategist (from CSVs for now)
         # This is still done from CSVs as fetching full history via REST is slow and for training.
@@ -181,6 +183,7 @@ class AresPipeline:
         # Initialize strategist params once at startup
         initial_klines_for_strategist = self.binance_client.get_latest_klines(num_klines=500) if self.live_trading_enabled else pd.DataFrame()
         if initial_klines_for_strategist.empty: # Fallback if live data not ready or not enabled
+            from analyst.data_utils import load_klines_data # Import here to avoid circular
             initial_klines_for_strategist = load_klines_data(CONFIG['KLINES_FILENAME']).tail(500)
 
         initial_price_for_strategist = initial_klines_for_strategist['close'].iloc[-1] if not initial_klines_for_strategist.empty else 0.0
@@ -271,6 +274,7 @@ class AresPipeline:
                 
                 current_price = klines['close'].iloc[-1] if not klines.empty else 0.0
                 current_volume = klines['volume'].iloc[-1] if not klines.empty else 0.0
+                from analyst.data_utils import simulate_order_book_data # Import here to avoid circular
                 current_order_book = simulate_order_book_data(current_price)
 
                 current_atr = klines['ATR'].iloc[-1] if 'ATR' in klines.columns else 0.0 # Analyst will add this
@@ -450,13 +454,25 @@ class AresPipeline:
             simulated_pnl = pnl_per_unit * closed_position_info["size"] * closed_position_info["current_leverage"]
         
         # Get market state at entry (simplified for now)
-        market_state_at_entry = self.analyst.get_intelligence(
-            self.binance_client.get_latest_klines(num_klines=500), # Use live klines for this
-            self.binance_client.get_latest_agg_trades(num_trades=1000),
-            pd.DataFrame([{'fundingRate': 0.0, 'openInterest': 0.0}], index=[pd.Timestamp.now()], columns=['fundingRate', 'openInterest']), # Dummy futures
-            self.binance_client.get_latest_order_book(),
-            0, 0 # No open position for this call
-        )['market_regime']
+        # This requires storing market state at entry time in the position info
+        # For now, we'll use current market state as a proxy for the log
+        # In a real system, you'd save the analyst_intelligence at the time of entry.
+        market_state_at_entry = "UNKNOWN" 
+        if self.analyst: # If analyst is available (it is in pipeline)
+            # This is a bit of a hack for logging, ideally stored at entry
+            # Get intelligence from the latest data available in binance_client
+            try:
+                latest_klines = self.binance_client.get_latest_klines(num_klines=500)
+                latest_agg_trades = self.binance_client.get_latest_agg_trades(num_trades=1000)
+                latest_futures = pd.DataFrame([{'fundingRate': 0.0, 'openInterest': 0.0}], index=[pd.Timestamp.now()], columns=['fundingRate', 'openInterest'])
+                latest_order_book = self.binance_client.get_latest_order_book()
+                temp_analyst_intel = self.analyst.get_intelligence(
+                    latest_klines, latest_agg_trades, latest_futures, latest_order_book, 0, 0
+                )
+                market_state_at_entry = temp_analyst_intel.get('market_regime', 'UNKNOWN')
+            except Exception as e:
+                self.logger.warning(f"Could not get market state at entry for trade log: {e}")
+
 
         trade_log_entry = {
             "trade_id": str(self.tactician.trade_id_counter), # Use the counter for the trade that just completed
@@ -573,7 +589,8 @@ class AresPipeline:
                 current_market_data_for_tactician = {
                     "current_price": current_price,
                     "current_volume": klines['volume'].iloc[-1],
-                    "current_atr": current_atr # This will be updated by Analyst's features
+                    "current_atr": current_atr, # This will be updated by Analyst's features
+                    "current_equity": self.current_equity # Pass current equity to Tactician
                 }
 
                 # 2. Strategist Update (e.g., daily)
@@ -648,7 +665,7 @@ class AresPipeline:
             self.logger.info("KeyboardInterrupt detected. Exiting pipeline.")
         except Exception as e:
             self.logger.critical(f"An unhandled error occurred in the main pipeline loop: {e}", exc_info=True)
-            self._send_alert("Ares Critical Error: Unhandled Pipeline Exception", f"An unhandled exception occurred:\n\n{e}\n\n{sys.exc_info()}")
+            send_email("Ares Critical Error: Unhandled Pipeline Exception", f"An unhandled exception occurred:\n\n{e}\n\n{sys.exc_info()}")
         finally:
             self.logger.info("--- Ares Pipeline Shutting Down ---")
             self._remove_pid_file()

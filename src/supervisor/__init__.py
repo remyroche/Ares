@@ -1,8 +1,17 @@
 # src/supervisor/__init__.py
 # This file makes the 'supervisor' directory a Python package.
 
+from .ab_tester import ABTester
 from .main import Supervisor
+from .optimizer import Optimizer
 from .performance_reporter import PerformanceReporter
 from .risk_allocator import RiskAllocator
-from .optimizer import Optimizer
-from .ab_tester import ABTester
+
+# Define __all__ to explicitly export these modules/classes
+__all__ = [
+    "ABTester",
+    "Supervisor",
+    "Optimizer",
+    "PerformanceReporter",
+    "RiskAllocator",
+]

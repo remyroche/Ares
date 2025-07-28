@@ -17,6 +17,8 @@ class Strategist:
     and positional bias, now incorporating Volume Profile and VWAP.
     """
     def __init__(self, config=CONFIG):
+        self.long_threshold = long_threshold if long_threshold is not None else CONFIG['strategist'].get('long_threshold', 0.7)
+        self.short_threshold = short_threshold if short_threshold is not None else CONFIG['strategist'].get('short_threshold', 0.7)
         self.config = config.get("strategist", {})
         self.global_config = config # Store global config to access other sections like BEST_PARAMS
         self.sr_analyzer = SRLevelAnalyzer(config["sr_analyzer"]) # Reuse S/R Analyzer
@@ -29,13 +31,6 @@ class Strategist:
     def decide_strategy(self, analysis_output):
         """
         Translates analyst probabilities into a clear strategic bias.
-        
-        Args:
-            analysis_output (dict): A dictionary from the Analyst, e.g.,
-                                    {'regime': 'BullTrend', 'prediction': [0.2, 0.8]}
-        
-        Returns:
-            str: "LONG", "SHORT", or "NEUTRAL"
         """
         prediction = analysis_output.get('prediction')
         if not prediction or len(prediction) < 2:

@@ -65,6 +65,66 @@ class SidewaysRangeEnsemble(BaseEnsemble):
         else:
             return features, None
 
+    def _get_clustering_features(self, klines_df: pd.DataFrame) -> dict:
+        """
+        Conceptual clustering features for sideways markets.
+        In a real scenario, this would involve applying a clustering algorithm
+        (e.g., KMeans, DBSCAN) to price features (e.g., normalized price, volatility).
+        For now, it's a proxy for detecting distinct price behaviors within a range.
+        """
+        if klines_df.empty or len(klines_df) < 50: # Need enough data for clustering
+            return {"cluster_affinity_score": 0.5, "is_tight_cluster": 0}
+
+        # Simplified: Use standard deviation of recent prices as a proxy for 'tightness'
+        recent_prices = klines_df['close'].iloc[-50:]
+        price_std_dev = recent_prices.std()
+        avg_price = recent_prices.mean()
+
+        if avg_price == 0: # Avoid division by zero
+            return {"cluster_affinity_score": 0.5, "is_tight_cluster": 0}
+
+        # Normalize std dev relative to price
+        normalized_std_dev = price_std_dev / avg_price
+
+        # A lower normalized std dev implies a tighter cluster
+        # Map this to a score where lower std dev means higher affinity/score
+        cluster_affinity_score = 1 - np.clip(normalized_std_dev * 10, 0, 1) # Scale and clip
+        is_tight_cluster = 1 if normalized_std_dev < 0.005 else 0 # e.g., less than 0.5% std dev
+
+        self.logger.debug(f"Clustering Features: Affinity={cluster_affinity_score:.2f}, Tight={is_tight_cluster}")
+        return {"cluster_affinity_score": cluster_affinity_score, "is_tight_cluster": is_tight_cluster}
+
+    def _get_bb_squeeze_features(self, klines_df: pd.DataFrame) -> dict:
+        """
+        Calculates Bollinger Band Squeeze features.
+        A squeeze indicates low volatility, often preceding a breakout.
+        """
+        bb_length = self.config.get("bollinger_bands", {}).get("window", 20)
+        bb_std_dev = self.config.get("bollinger_bands", {}).get("num_std_dev", 2)
+        bb_squeeze_threshold = self.config.get("bband_squeeze_threshold", 0.01)
+
+        if klines_df.empty or len(klines_df) < bb_length:
+            return {"bb_width_norm": 0.0, "is_bb_squeeze": 0}
+
+        bb = klines_df.ta.bbands(length=bb_length, std=bb_std_dev, append=False)
+        
+        # Ensure Bollinger Band columns exist
+        upper_band_col = f'BBU_{bb_length}_{bb_std_dev:.1f}'
+        lower_band_col = f'BBL_{bb_length}_{bb_std_dev:.1f}'
+
+        if upper_band_col not in bb.columns or lower_band_col not in bb.columns:
+            self.logger.warning("Bollinger Bands columns not found. Skipping BB squeeze features.")
+            return {"bb_width_norm": 0.0, "is_bb_squeeze": 0}
+
+        bb_width = (bb[upper_band_col].iloc[-1] - bb[lower_band_col].iloc[-1])
+        current_close = klines_df['close'].iloc[-1]
+
+        bb_width_norm = bb_width / current_close if current_close > 0 else 0.0
+        is_bb_squeeze = 1 if bb_width_norm < bb_squeeze_threshold else 0
+
+        self.logger.debug(f"BB Squeeze Features: Width Norm={bb_width_norm:.4f}, Squeeze={is_bb_squeeze}")
+        return {"bb_width_norm": bb_width_norm, "is_bb_squeeze": is_bb_squeeze}
+
     def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: pd.Series):
         """
         Trains the individual models and the meta-learner for the SIDEWAYS_RANGE ensemble.
@@ -88,17 +148,60 @@ class SidewaysRangeEnsemble(BaseEnsemble):
 
         # --- Train Individual Models ---
 
-        # Clustering Model (Conceptual Training)
-        self.logger.info("Training Clustering model (Conceptual)...")
-        self.models["clustering"] = True # Simulate trained model
+        # Clustering Model (KMeans)
+        self.logger.info("Training Clustering model (KMeans)...")
+        clustering_features_for_training = historical_features[['close', 'volume', 'ATR']].dropna()
+        if not clustering_features_for_training.empty and len(clustering_features_for_training) >= self.config.get("kmeans_n_clusters", 3):
+            try:
+                self.models["clustering"] = KMeans(n_clusters=self.config.get("kmeans_n_clusters", 3), random_state=42, n_init=10) # n_init for robustness
+                self.models["clustering"].fit(clustering_features_for_training)
+                self.logger.info("KMeans Clustering model trained.")
+            except Exception as e:
+                self.logger.error(f"Error training KMeans Clustering model: {e}")
+                self.models["clustering"] = None
+        else:
+            self.logger.warning("Insufficient data or invalid cluster count for KMeans training. Skipping.")
+            self.models["clustering"] = None
 
         # BB Squeeze Model (Rule-based or simple ML)
         self.logger.info("Training BB Squeeze model (Conceptual/Rule-based)...")
+        # No explicit training needed for rule-based, just a placeholder for existence
         self.models["bb_squeeze"] = True # Simulate trained model
 
-        # Order Flow Model (Conceptual Training)
-        self.logger.info("Training Order Flow model (Conceptual)...")
-        self.models["order_flow"] = True # Simulate trained model
+        # Order Flow Model (LightGBM Classifier)
+        self.logger.info("Training Order Flow model (LGBMClassifier)...")
+        # Ensure historical_features contains order flow features
+        order_flow_features_for_training = historical_features[['cvd_value', 'cvd_divergence_score', 'is_absorption', 'is_exhaustion', 'aggressive_buy_volume', 'aggressive_sell_volume']].dropna()
+        
+        # Simulate a target for order flow model based on short-term price movement
+        # Example: 1 if price moves up by 0.1% in next 2 periods, -1 if down by 0.1%, 0 otherwise
+        target_lookahead_of = 2
+        price_change_of = historical_features['close'].pct_change(target_lookahead_of).shift(-target_lookahead_of)
+        # Simplified target: 1 for up, 0 for down/sideways
+        simulated_of_target = (price_change_of > 0.001).astype(int) 
+        
+        # Align order flow features with simulated target
+        aligned_of_data = order_flow_features_for_training.join(simulated_of_target.rename('of_target')).dropna()
+        
+        if not aligned_of_data.empty:
+            X_of = aligned_of_data.drop(columns=['of_target'])
+            y_of = aligned_of_data['of_target']
+            try:
+                self.models["order_flow"] = LGBMClassifier(
+                    random_state=42, 
+                    verbose=-1,
+                    reg_alpha=self.dl_config["l1_reg_strength"],
+                    reg_lambda=self.dl_config["l2_reg_strength"]
+                )
+                self.models["order_flow"].fit(X_of, y_of)
+                self.logger.info("Order Flow model trained.")
+            except Exception as e:
+                self.logger.error(f"Error training Order Flow model: {e}")
+                self.models["order_flow"] = None
+        else:
+            self.logger.warning("Insufficient aligned data for Order Flow model training. Skipping.")
+            self.models["order_flow"] = None
+
 
         # TabNet-like Model (using Dense layers as a proxy)
         self.logger.info("Training TabNet-like model...")
@@ -141,21 +244,51 @@ class SidewaysRangeEnsemble(BaseEnsemble):
         meta_features_train = pd.DataFrame(index=X_flat.index)
         
         # Populate meta_features_train with actual (or simulated) predictions/confidences
-        meta_features_train['clustering_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
-        meta_features_train['bb_squeeze_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
-        meta_features_train['order_flow_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
+        if self.models["clustering"]:
+            # Predict cluster labels for historical data
+            historical_clustering_input = historical_features[['close', 'volume', 'ATR']].dropna()
+            if not historical_clustering_input.empty:
+                historical_cluster_labels = self.models["clustering"].predict(historical_clustering_input)
+                meta_features_train['cluster_label'] = pd.Series(historical_cluster_labels, index=historical_clustering_input.index).reindex(X_flat.index).fillna(-1) # Use -1 for unclustered
+            else:
+                meta_features_train['cluster_label'] = -1 # Default if no clustering data
+        else:
+            meta_features_train['cluster_label'] = -1 # Default if no clustering model
+
+        historical_bb_squeeze_features_list = []
+        for idx, row in historical_features.iterrows():
+            historical_bb_squeeze_features_list.append(self._get_bb_squeeze_features(historical_features.loc[:idx]))
+        historical_bb_squeeze_features = pd.DataFrame(historical_bb_squeeze_features_list, index=historical_features.index).loc[X_flat.index].fillna(0)
+        meta_features_train = meta_features_train.join(historical_bb_squeeze_features, how='left')
         
+        if self.models["order_flow"]:
+            order_flow_probas = self.models["order_flow"].predict_proba(X_of) # Use X_of from above
+            # Assuming a binary classification (0 or 1), take probability of class 1
+            order_flow_conf_values = [order_flow_probas[i, self.models["order_flow"].classes_.tolist().index(y_of.iloc[i])] for i in range(len(y_of))]
+            meta_features_train['order_flow_proba'] = pd.Series(order_flow_conf_values, index=X_of.index).reindex(X_flat.index).fillna(0.5)
+        else:
+            meta_features_train['order_flow_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
+
+
         if self.models["tabnet_proxy"]:
             tabnet_probas = self.models["tabnet_proxy"].predict(X_flat)
-            tabnet_conf_values = [tabnet_probas[i, y_flat_encoded[i]] for i in range(len(y_flat_encoded))]
-            meta_features_train['tabnet_proxy_proba'] = pd.Series(tabnet_conf_values, index=X_flat.index)
+            if len(tabnet_probas) == len(y_flat_encoded):
+                tabnet_conf_values = [tabnet_probas[i, y_flat_encoded[i]] for i in range(len(y_flat_encoded))]
+                meta_features_train['tabnet_proxy_proba'] = pd.Series(tabnet_conf_values, index=X_flat.index)
+            else:
+                self.logger.warning("TabNet proxy probas length mismatch with y_flat_encoded. Using random uniform for tabnet_proxy_proba.")
+                meta_features_train['tabnet_proxy_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
         else:
             meta_features_train['tabnet_proxy_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
         if self.models["lgbm"]:
             lgbm_probas = self.models["lgbm"].predict_proba(X_flat)
-            lgbm_conf_values = [lgbm_probas[i, self.models["lgbm"].classes_.tolist().index(y_flat.iloc[i])] for i in range(len(y_flat))]
-            meta_features_train['lgbm_proba'] = pd.Series(lgbm_conf_values, index=X_flat.index)
+            if len(lgbm_probas) == len(y_flat):
+                lgbm_conf_values = [lgbm_probas[i, self.models["lgbm"].classes_.tolist().index(y_flat.iloc[i])] for i in range(len(y_flat))]
+                meta_features_train['lgbm_proba'] = pd.Series(lgbm_conf_values, index=X_flat.index)
+            else:
+                self.logger.warning("LGBM probas length mismatch with y_flat. Using random uniform for lgbm_proba.")
+                meta_features_train['lgbm_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
         else:
             meta_features_train['lgbm_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
@@ -204,34 +337,49 @@ class SidewaysRangeEnsemble(BaseEnsemble):
 
         individual_model_outputs = {}
 
-        # Clustering Prediction (Conceptual)
-        individual_model_outputs['clustering_conf'] = np.random.uniform(0.5, 0.9)
+        # Clustering Prediction
+        if self.models["clustering"]:
+            try:
+                clustering_input = current_features_row[['close', 'volume', 'ATR']].dropna()
+                if not clustering_input.empty:
+                    current_cluster_label = self.models["clustering"].predict(clustering_input)[0]
+                    individual_model_outputs['cluster_label'] = float(current_cluster_label)
+                else:
+                    individual_model_outputs['cluster_label'] = -1.0
+            except Exception as e:
+                self.logger.error(f"Error predicting with KMeans Clustering: {e}")
+                individual_model_outputs['cluster_label'] = -1.0 # Default to -1 if prediction fails
+        else:
+            individual_model_outputs['cluster_label'] = -1.0 # Default if no clustering model
+
 
         # BB Squeeze Prediction (Conceptual/Rule-based)
-        bb_length = self.config.get("bollinger_bands", {}).get("window", 20)
-        bb_std_dev = self.config.get("bollinger_bands", {}).get("num_std_dev", 2)
-        bb_squeeze_threshold = self.config.get("bband_squeeze_threshold", 0.01)
+        current_bb_squeeze_features = self._get_bb_squeeze_features(klines_df)
+        individual_model_outputs['bb_width_norm'] = float(current_bb_squeeze_features['bb_width_norm'])
+        individual_model_outputs['is_bb_squeeze'] = float(current_bb_squeeze_features['is_bb_squeeze'])
 
-        if len(klines_df) >= bb_length:
-            bb = klines_df.ta.bbands(length=bb_length, std=bb_std_dev, append=False)
-            bb_width = (bb[f'BBU_{bb_length}_{bb_std_dev:.1f}'].iloc[-1] - bb[f'BBL_{bb_length}_{bb_std_dev:.1f}'].iloc[-1])
-            bb_width_norm = bb_width / klines_df['close'].iloc[-1] if klines_df['close'].iloc[-1] > 0 else 0
-            
-            if bb_width_norm < bb_squeeze_threshold:
-                individual_model_outputs['bb_squeeze_conf'] = 0.8
-            else:
-                individual_model_outputs['bb_squeeze_conf'] = 0.5
+        # Order Flow Prediction
+        if self.models["order_flow"]:
+            try:
+                order_flow_input = current_features_row[['cvd_value', 'cvd_divergence_score', 'is_absorption', 'is_exhaustion', 'aggressive_buy_volume', 'aggressive_sell_volume']].dropna()
+                if not order_flow_input.empty:
+                    order_flow_proba = self.models["order_flow"].predict_proba(order_flow_input)[0]
+                    # Assuming binary classification for simplicity, take probability of positive class (index 1)
+                    individual_model_outputs['order_flow_proba'] = float(order_flow_proba[1]) 
+                else:
+                    individual_model_outputs['order_flow_proba'] = 0.5
+            except Exception as e:
+                self.logger.error(f"Error predicting with Order Flow model: {e}")
+                individual_model_outputs['order_flow_proba'] = 0.5
         else:
-            individual_model_outputs['bb_squeeze_conf'] = 0.5
+            individual_model_outputs['order_flow_proba'] = 0.5
 
-        # Order Flow Prediction (Conceptual)
-        individual_model_outputs['order_flow_conf'] = np.random.uniform(0.5, 0.9)
 
         # TabNet-like Prediction
         if self.models["tabnet_proxy"]:
             try:
                 tabnet_proba = self.models["tabnet_proxy"].predict(X_current_flat)[0]
-                individual_model_outputs['tabnet_proxy_proba'] = np.max(tabnet_proba)
+                individual_model_outputs['tabnet_proxy_proba'] = float(np.max(tabnet_proba))
             except Exception as e:
                 self.logger.error(f"Error predicting with TabNet-like model: {e}")
                 individual_model_outputs['tabnet_proxy_proba'] = 0.5
@@ -243,7 +391,7 @@ class SidewaysRangeEnsemble(BaseEnsemble):
             try:
                 lgbm_features = X_current_flat.copy()
                 lgbm_proba = self.models["lgbm"].predict_proba(lgbm_features)[0]
-                individual_model_outputs['lgbm_proba'] = np.max(lgbm_proba)
+                individual_model_outputs['lgbm_proba'] = float(np.max(lgbm_proba))
             except Exception as e:
                 self.logger.error(f"Error predicting with LightGBM: {e}")
                 individual_model_outputs['lgbm_proba'] = 0.5
@@ -279,18 +427,18 @@ class SidewaysRangeEnsemble(BaseEnsemble):
                 final_confidence = 0.0
         else:
             self.logger.warning(f"Meta-learner not available for {self.ensemble_name}. Averaging confidences.")
-            total_weighted_confidence = sum(individual_model_outputs.get(m, 0.5) * self.ensemble_weights.get(m.replace('_conf', '').replace('_proba', ''), 1.0) 
-                                            for m in ['clustering_conf', 'bb_squeeze_conf', 'order_flow_conf', 'tabnet_proxy_proba', 'lgbm_proba'])
-            total_weight = sum(self.ensemble_weights.get(m.replace('_conf', '').replace('_proba', ''), 1.0) for m in ['clustering_conf', 'bb_squeeze_conf', 'order_flow_conf', 'tabnet_proxy_proba', 'lgbm_proba'])
+            # Adjust weights for the new features (cluster_label, order_flow_proba)
+            # Note: cluster_label is a categorical feature, not a confidence score for averaging.
+            # It should be treated as a direct input to the meta-learner.
+            # For fallback averaging, we can only average actual confidence-like scores.
             
-            if total_weight > 0:
-                final_confidence = total_weighted_confidence / total_weight
-            
-            if final_confidence > self.min_confluence_confidence:
-                final_prediction = np.random.choice(["MEAN_REVERT", "BREAKOUT_UP", "BREAKOUT_DOWN"])
-            else:
-                final_prediction = "HOLD"
+            # This fallback averaging is less meaningful now with diverse features.
+            # It's better to rely on the meta-learner. If meta-learner is not trained,
+            # the ensemble should ideally return a neutral prediction.
+            self.logger.warning("Fallback averaging is less meaningful with implemented models. Returning HOLD.")
+            final_prediction = "HOLD"
+            final_confidence = 0.0
+
 
         self.logger.info(f"Ensemble Result for {self.ensemble_name}: Prediction={final_prediction}, Confidence={final_confidence:.2f}")
         return {"prediction": final_prediction, "confidence": final_confidence}
-

@@ -4,11 +4,12 @@ import sys
 import datetime
 import json
 import asyncio
+import pandas as pd # Import pandas for pd.DataFrame() for the optimizer call
 
 # Ensure the source directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.config import CONFIG
+from src.config import CONFIG, settings # Import settings to temporarily override trading_environment
 from src.supervisor.main import Supervisor
 from src.analyst.analyst import Analyst
 from backtesting.ares_data_preparer import load_raw_data
@@ -21,9 +22,9 @@ class TrainingPipeline:
     """
     def __init__(self):
         self.logger = system_logger.getChild('TrainingPipeline')
-        # We need both Analyst and Supervisor instances for their respective roles
-        self.analyst = Analyst(CONFIG)
-        self.supervisor = Supervisor(CONFIG)
+        # Analyst and Supervisor instances will be initialized in run() after setting environment
+        self.analyst = None
+        self.supervisor = None
 
     def get_training_and_walkforward_data(self, klines, agg_trades, futures):
         """
@@ -51,91 +52,111 @@ class TrainingPipeline:
     async def run(self):
         """
         Executes the full training and validation pipeline.
+        Automatically switches to TESTNET environment for the duration of the run.
         """
         self.logger.info("--- Starting Ares Training & Validation Pipeline ---")
         report_lines = ["Ares Training Pipeline Report"]
         separator = "="*80
         report_lines.append(separator)
 
-        # --- STAGE 1: Data Loading & Preparation ---
-        self.logger.info("STAGE 1: Loading all available historical data...")
-        all_klines, all_agg_trades, all_futures = load_raw_data()
-        if all_klines.empty:
-            self.logger.error("Failed to load data. Halting pipeline.")
-            return
+        original_trading_environment = settings.trading_environment
+        try:
+            # Force TRADING_ENVIRONMENT to TESTNET for the duration of the training pipeline
+            settings.trading_environment = "TESTNET"
+            self.logger.info(f"Temporarily setting TRADING_ENVIRONMENT to '{settings.trading_environment}' for training.")
 
-        (train_klines, train_agg_trades, train_futures), \
-        (wf_klines, wf_agg_trades, wf_futures) = self.get_training_and_walkforward_data(
-            all_klines, all_agg_trades, all_futures
-        )
+            # Initialize Analyst and Supervisor *after* setting the environment
+            # This ensures they pick up the TESTNET configuration
+            self.analyst = Analyst(CONFIG) # Analyst initialization doesn't directly use settings.trading_environment here
+            self.supervisor = Supervisor() # Supervisor's __init__ uses settings.trading_environment
 
-        # --- STAGE 2: Retrain Analyst Models ---
-        self.logger.info("STAGE 2: Retraining all Analyst models on the new training dataset...")
-        self.analyst._historical_klines = train_klines
-        self.analyst._historical_agg_trades = train_agg_trades
-        self.analyst._historical_futures = train_futures
-        await self.analyst.load_and_prepare_historical_data()
-        self.logger.info("All Analyst models have been retrained.")
-        report_lines.append("STAGE 2: Analyst models retrained successfully.")
+            # --- STAGE 1: Data Loading & Preparation ---
+            self.logger.info("STAGE 1: Loading all available historical data...")
+            all_klines, all_agg_trades, all_futures = load_raw_data()
+            if all_klines.empty:
+                self.logger.error("Failed to load data. Halting pipeline.")
+                return
 
-        # --- STAGE 3: Hyperparameter Optimization (Governor) ---
-        self.logger.info("STAGE 3: Running hyperparameter optimization on the new models...")
-        # Use the optimizer from the supervisor instance to run the global optimization
-        await self.supervisor.optimizer.implement_global_system_optimization(pd.DataFrame(), {})
-        
-        optimized_params = CONFIG['BEST_PARAMS']
-        report_lines.append("STAGE 3: Hyperparameter optimization complete.")
-        report_lines.append("Optimized Parameters:")
-        report_lines.append(json.dumps(optimized_params, indent=2))
+            (train_klines, train_agg_trades, train_futures), \
+            (wf_klines, wf_agg_trades, wf_futures) = self.get_training_and_walkforward_data(
+                all_klines, all_agg_trades, all_futures
+            )
 
-        # --- STAGE 4: Walk-Forward Validation ---
-        self.logger.info("STAGE 4: Performing walk-forward validation on the last 3 months of data...")
-        from backtesting.ares_data_preparer import calculate_and_label_regimes, get_sr_levels
-        
-        # *** NEW: Inject fee configuration into the parameters for the backtest ***
-        params_with_fees = optimized_params.copy()
-        params_with_fees['fees'] = CONFIG.get('fees', {'taker': 0.0004, 'maker': 0.0002}) # Add fees to params
-        self.logger.info("Fee configuration included for backtesting.", extra=params_with_fees['fees'])
+            # --- STAGE 2: Retrain Analyst Models ---
+            self.logger.info("STAGE 2: Retraining all Analyst models on the new training dataset...")
+            # The Analyst instance needs to be updated with the training data for its internal models
+            self.analyst._historical_klines = train_klines
+            self.analyst._historical_agg_trades = train_agg_trades
+            self.analyst._historical_futures = train_futures
+            await self.analyst.load_and_prepare_historical_data()
+            self.logger.info("All Analyst models have been retrained.")
+            report_lines.append("STAGE 2: Analyst models retrained successfully.")
 
-        wf_daily_df = wf_klines.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
-        wf_sr_levels = get_sr_levels(wf_daily_df)
+            # --- STAGE 3: Hyperparameter Optimization (Governor) ---
+            self.logger.info("STAGE 3: Running hyperparameter optimization on the new models...")
+            # Use the optimizer from the supervisor instance to run the global optimization
+            # Note: historical_pnl_data and strategy_breakdown_data are passed as empty DataFrames/dicts
+            # as they are typically generated by the live system, not during offline optimization.
+            await self.supervisor.optimizer.implement_global_system_optimization(pd.DataFrame(), {})
+            
+            optimized_params = CONFIG['BEST_PARAMS']
+            report_lines.append("STAGE 3: Hyperparameter optimization complete.")
+            report_lines.append("Optimized Parameters:")
+            report_lines.append(json.dumps(optimized_params, indent=2))
 
-        wf_prepared_df = calculate_and_label_regimes(
-            wf_klines, wf_agg_trades, wf_futures, params_with_fees, wf_sr_levels
-        )
+            # --- STAGE 4: Walk-Forward Validation ---
+            self.logger.info("STAGE 4: Performing walk-forward validation on the last 3 months of data...")
+            from backtesting.ares_data_preparer import calculate_and_label_regimes, get_sr_levels
+            
+            # *** NEW: Inject fee configuration into the parameters for the backtest ***
+            params_with_fees = optimized_params.copy()
+            params_with_fees['fees'] = CONFIG.get('fees', {'taker': 0.0004, 'maker': 0.0002}) # Add fees to params
+            self.logger.info("Fee configuration included for backtesting.", extra=params_with_fees['fees'])
 
-        wf_report = run_walk_forward_analysis(wf_prepared_df, params_with_fees)
-        report_lines.append("\n" + separator)
-        report_lines.append("STAGE 4: Walk-Forward Validation Report")
-        report_lines.append(wf_report)
+            wf_daily_df = wf_klines.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
+            wf_sr_levels = get_sr_levels(wf_daily_df)
 
-        # --- STAGE 5: Monte Carlo Validation ---
-        self.logger.info("STAGE 5: Performing Monte Carlo simulation on the walk-forward results...")
-        mc_curves, base_portfolio, mc_report = run_monte_carlo_simulation(wf_prepared_df, params_with_fees)
-        
-        report_lines.append("\n" + separator)
-        report_lines.append("STAGE 5: Monte Carlo Validation Report")
-        report_lines.append(mc_report)
+            wf_prepared_df = calculate_and_label_regimes(
+                wf_klines, wf_agg_trades, wf_futures, params_with_fees, wf_sr_levels
+            )
 
-        # --- STAGE 6: Final Reporting and Model Saving ---
-        self.logger.info("STAGE 6: Generating final report and saving challenger model...")
-        final_report = "\n".join(report_lines)
-        print(final_report)
+            wf_report = run_walk_forward_analysis(wf_prepared_df, params_with_fees)
+            report_lines.append("\n" + separator)
+            report_lines.append("STAGE 4: Walk-Forward Validation Report")
+            report_lines.append(wf_report)
 
-        report_filename = f"reports/training_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-        with open(report_filename, 'w') as f:
-            f.write(final_report)
-        self.logger.info(f"Full training report saved to {report_filename}")
+            # --- STAGE 5: Monte Carlo Validation ---
+            self.logger.info("STAGE 5: Performing Monte Carlo simulation on the walk-forward results...")
+            mc_curves, base_portfolio, mc_report = run_monte_carlo_simulation(wf_prepared_df, params_with_fees)
+            
+            report_lines.append("\n" + separator)
+            report_lines.append("STAGE 5: Monte Carlo Validation Report")
+            report_lines.append(mc_report)
 
-        challenger_model_dir = "models/challenger"
-        os.makedirs(challenger_model_dir, exist_ok=True)
-        with open(os.path.join(challenger_model_dir, "optimized_params.json"), 'w') as f:
-            json.dump(optimized_params, f, indent=2)
-        self.logger.info(f"Challenger model parameters saved to {challenger_model_dir}")
-        
-        plot_results(mc_curves, base_portfolio)
+            # --- STAGE 6: Final Reporting and Model Saving ---
+            self.logger.info("STAGE 6: Generating final report and saving challenger model...")
+            final_report = "\n".join(report_lines)
+            print(final_report)
 
-        self.logger.info("--- Ares Training & Validation Pipeline Finished ---")
+            report_filename = f"reports/training_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            with open(report_filename, 'w') as f:
+                f.write(final_report)
+            self.logger.info(f"Full training report saved to {report_filename}")
+
+            challenger_model_dir = "models/challenger"
+            os.makedirs(challenger_model_dir, exist_ok=True)
+            with open(os.path.join(challenger_model_dir, "optimized_params.json"), 'w') as f:
+                json.dump(optimized_params, f, indent=2)
+            self.logger.info(f"Challenger model parameters saved to {challenger_model_dir}")
+            
+            plot_results(mc_curves, base_portfolio)
+
+            self.logger.info("--- Ares Training & Validation Pipeline Finished ---")
+
+        finally:
+            # Restore the original trading environment
+            settings.trading_environment = original_trading_environment
+            self.logger.info(f"Restored TRADING_ENVIRONMENT to '{settings.trading_environment}'.")
 
 
 def main():

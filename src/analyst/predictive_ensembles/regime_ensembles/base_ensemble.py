@@ -2,8 +2,9 @@
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
-from sklearn.linear_model import LogisticRegression # Example meta-learner
 from sklearn.preprocessing import StandardScaler
+from lightgbm import LGBMClassifier # Using LightGBM for the meta-learner
+from sklearn.model_selection import cross_val_score, KFold # For conceptual cross-validation
 from src.utils.logger import system_logger
 
 class BaseEnsemble(ABC):
@@ -19,6 +20,7 @@ class BaseEnsemble(ABC):
         self.meta_learner = None # Model to combine individual predictions
         self.scaler = StandardScaler() # Scaler for meta-learner features
         self.trained = False
+        self.meta_learner_classes = [] # To store the classes learned by the meta-learner
 
     @abstractmethod
     def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: pd.Series):
@@ -39,74 +41,92 @@ class BaseEnsemble(ABC):
 
     def _train_meta_learner(self, X_meta: pd.DataFrame, y_meta: pd.Series):
         """
-        Trains the meta-learner (confluence model) for this ensemble.
-        This is a placeholder for actual training.
+        Trains the meta-learner (confluence model) for this ensemble using LightGBM.
+        Includes conceptual notes on cross-validation and regularization.
         """
-        self.logger.info(f"Training meta-learner for {self.ensemble_name} (Placeholder)...")
+        self.logger.info(f"Training meta-learner for {self.ensemble_name} using LightGBM...")
         if X_meta.empty or y_meta.empty:
             self.logger.warning(f"Meta-learner training: Input data is empty for {self.ensemble_name}. Skipping.")
+            self.trained = False
             return
+
+        # Ensure target labels are suitable for classification (e.g., encoded if not already)
+        # For simplicity, assuming y_meta contains string labels like "BUY", "SELL", "HOLD"
+        # LightGBM can handle string labels directly.
 
         # Scale features for the meta-learner
         scaled_X_meta = self.scaler.fit_transform(X_meta)
 
-        # Example: Logistic Regression as a simple meta-learner
         try:
-            self.meta_learner = LogisticRegression(random_state=42, solver='liblinear')
+            # LightGBM Classifier with regularization parameters
+            # L1 (reg_alpha) and L2 (reg_lambda) regularization help prevent overfitting.
+            self.meta_learner = LGBMClassifier(
+                random_state=42, 
+                verbose=-1, # Suppress verbose output during training
+                reg_alpha=self.config.get("meta_learner_l1_reg", 0.1), # L1 regularization
+                reg_lambda=self.config.get("meta_learner_l2_reg", 0.1) # L2 regularization
+            )
+            
+            # Conceptual Cross-Validation:
+            # In a real system, you would perform cross-validation here to get a more robust
+            # estimate of the meta-learner's performance and to tune its hyperparameters.
+            # For example:
+            # kf = KFold(n_splits=5, shuffle=True, random_state=42)
+            # cv_scores = cross_val_score(self.meta_learner, scaled_X_meta, y_meta, cv=kf, scoring='accuracy')
+            # self.logger.info(f"Meta-learner CV Accuracy: {np.mean(cv_scores):.4f} +/- {np.std(cv_scores):.4f}")
+            
             self.meta_learner.fit(scaled_X_meta, y_meta)
-            self.logger.info(f"Meta-learner for {self.ensemble_name} trained (Placeholder).")
+            self.meta_learner_classes = self.meta_learner.classes_ # Store learned classes
+            self.logger.info(f"Meta-learner for {self.ensemble_name} trained. Learned classes: {self.meta_learner_classes}")
             self.trained = True
         except Exception as e:
             self.logger.error(f"Error training meta-learner for {self.ensemble_name}: {e}")
-            self.meta_learner = None # Invalidate if training fails
+            self.meta_learner = None # Invalidate model if training fails
+            self.trained = False
 
     def _get_meta_prediction(self, individual_model_predictions: dict) -> tuple[str, float]:
         """
-        Combines individual model predictions using the meta-learner.
-        Returns the final prediction and confidence score.
+        Combines individual model predictions using the trained LightGBM meta-learner.
+        Returns the final prediction (e.g., "BUY", "SELL", "HOLD") and its confidence score.
         """
         if not self.trained or self.meta_learner is None:
             self.logger.warning(f"Meta-learner for {self.ensemble_name} not trained. Returning default HOLD.")
             return "HOLD", 0.0
 
-        # Prepare features for the meta-learner
-        # This assumes individual_model_predictions contains confidence scores for each model
-        # e.g., {'lstm_conf': 0.7, 'transformer_conf': 0.8, ...}
+        # Prepare features for the meta-learner.
+        # This requires ensuring the input features match the training features (column order and names).
+        # `individual_model_predictions` is a dict like {'lstm_conf': 0.7, 'transformer_conf': 0.8, ...}
+        # We need to convert this into a DataFrame row with the correct columns.
         
-        # For demonstration, let's create a feature vector from confidences
-        # A more robust meta-learner would also take raw predictions or transformed predictions
-        meta_features = pd.DataFrame([individual_model_predictions])
+        # Create a DataFrame from the input dictionary, ensuring it's a single row
+        meta_features_raw = pd.DataFrame([individual_model_predictions])
         
-        # Ensure feature order consistency if using a scaler trained on specific columns
-        # For simplicity, we'll just use the values directly if not all models are present
+        # Ensure that meta_features_raw has the same columns as were used for training the scaler.
+        # If any expected feature is missing, fill with a default (e.g., 0.5 for confidence).
+        # This requires knowing the exact feature names used in training.
+        # For simplicity, we'll assume `individual_model_predictions` contains all necessary keys
+        # and that the scaler was fitted on a DataFrame with these keys as columns.
         
-        # Example: If meta_learner was trained on ['lstm_conf', 'transformer_conf']
-        # You'd need to ensure meta_features has these columns.
-        
-        # For this base class, we'll assume a simple average of confidences for now
-        # A real meta-learner would use the trained self.meta_learner.predict_proba
-        
-        # Placeholder for actual meta-learner prediction
-        # scaled_meta_features = self.scaler.transform(meta_features)
-        # final_proba = self.meta_learner.predict_proba(scaled_meta_features)[0]
-        # final_prediction_idx = np.argmax(final_proba)
-        # final_prediction = self.meta_learner.classes_[final_prediction_idx]
-        # final_confidence = final_proba[final_prediction_idx]
+        try:
+            # Scale the input features using the fitted scaler
+            scaled_meta_features = self.scaler.transform(meta_features_raw)
+            
+            # Get probability predictions from the meta-learner
+            # predict_proba returns probabilities for each class
+            probabilities = self.meta_learner.predict_proba(scaled_meta_features)[0]
+            
+            # Get the predicted class (e.g., "BUY", "SELL", "HOLD")
+            predicted_class_idx = np.argmax(probabilities)
+            final_prediction = self.meta_learner_classes[predicted_class_idx]
+            final_confidence = probabilities[predicted_class_idx]
 
-        # Simplified meta-prediction for placeholder
-        confidences = [v for k, v in individual_model_predictions.items() if '_conf' in k]
-        if not confidences:
-            return "HOLD", 0.0
+            self.logger.debug(f"Meta-learner raw predictions: {probabilities}, Final Pred: {final_prediction}, Conf: {final_confidence:.2f}")
+            
+            return final_prediction, final_confidence
 
-        avg_confidence = np.mean(confidences)
-        
-        # Simple rule: if average confidence is high, try to infer direction
-        # This would be replaced by the meta-learner's actual output
-        if avg_confidence > self.config.get("min_confluence_confidence", 0.7):
-            # In a real scenario, the meta-learner would output the final prediction (e.g., BUY/SELL/HOLD)
-            # For now, we'll just return a generic "ACTION" if confidence is high
-            return "ACTION", avg_confidence
-        return "HOLD", avg_confidence
+        except Exception as e:
+            self.logger.error(f"Error during meta-learner prediction for {self.ensemble_name}: {e}")
+            return "HOLD", 0.0 # Fallback on error
 
     # --- Common Feature Extraction Methods (can be overridden by specific ensembles) ---
 
@@ -206,7 +226,7 @@ class BaseEnsemble(ABC):
         # Let's assume 'is_buyer_maker': True for taker-sell (price goes down), False for taker-buy (price goes up)
         # Binance agg trades 'm' field: True if buyer is maker, False if seller is maker.
         # If buyer is maker (m=True), it's a sell order hitting a bid. So delta is negative.
-        # If seller is maker (m=False), it's a buy order hitting an ask. So delta is positive.
+        # If m is False (seller is maker), it's a buy order hitting an ask. So delta is positive.
         
         # Corrected delta calculation based on Binance 'm' field:
         # If m is True (buyer is maker), it's a sell trade, price likely went down, so quantity is negative for delta.
@@ -261,4 +281,3 @@ class BaseEnsemble(ABC):
             "htf_trend_bullish": htf_trend_bullish,
             "mtf_trend_bullish": mtf_trend_bullish
         }
-

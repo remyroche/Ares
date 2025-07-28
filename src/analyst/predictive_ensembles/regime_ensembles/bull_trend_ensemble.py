@@ -6,6 +6,9 @@ from lightgbm import LGBMClassifier
 import pandas_ta as ta
 from arch import arch_model # For GARCH model
 import warnings
+from sklearn.model_selection import KFold
+from backtesting.ares_deep_analyzer import run_monte_carlo_simulation, plot_results
+
 
 # Suppress specific warnings from ARCH library
 warnings.filterwarnings("ignore", category=UserWarning, module="arch")
@@ -131,68 +134,52 @@ class BullTrendEnsemble(BaseEnsemble):
 
         # --- Train Individual Models ---
 
-        # LSTM Model
-        self.logger.info("Training LSTM model...")
+        # LSTM Model with L1-L2 Regularization
+        self.logger.info("Training LSTM model with L1-L2 Regularization...")
         try:
             model = Sequential([
-                LSTM(self.dl_config["lstm_units"], return_sequences=True, 
+                LSTM(self.dl_config["lstm_units"], return_sequences=True,
                      kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"]),
                      input_shape=(X_seq.shape[1], X_seq.shape[2])),
                 Dropout(self.dl_config["dropout_rate"]),
-                LSTM(self.dl_config["lstm_units"] // 2, 
+                LSTM(self.dl_config["lstm_units"] // 2,
                      kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])),
                 Dropout(self.dl_config["dropout_rate"]),
-                Dense(len(unique_targets), activation='softmax', # Output classes
+                Dense(len(unique_targets), activation='softmax',
                       kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"]))
             ])
-            model.compile(optimizer=Adam(learning_rate=self.dl_config["learning_rate"]), 
-                          loss='sparse_categorical_crossentropy' if len(unique_targets) > 2 else 'binary_crossentropy', 
+            model.compile(optimizer=Adam(learning_rate=self.dl_config["learning_rate"]),
+                          loss='sparse_categorical_crossentropy' if len(unique_targets) > 2 else 'binary_crossentropy',
                           metrics=['accuracy'])
-            
-            # Conceptual Early Stopping & Cross-Validation
-            # early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
-            # For rigorous cross-validation, you'd wrap this training in a KFold loop:
-            # kf = KFold(n_splits=5, shuffle=True, random_state=42)
-            # for train_idx, val_idx in kf.split(X_seq):
-            #     X_train, X_val = X_seq[train_idx], X_seq[val_idx]
-            #     y_train, y_val = y_seq_encoded[train_idx], y_seq_encoded[val_idx]
-            #     model.fit(X_train, y_train, epochs=self.dl_config["epochs"], batch_size=self.dl_config["batch_size"], 
-            #               validation_data=(X_val, y_val), callbacks=[early_stopping], verbose=0)
-            
             model.fit(X_seq, y_seq_encoded, epochs=self.dl_config["epochs"], batch_size=self.dl_config["batch_size"], verbose=0)
             self.models["lstm"] = model
             self.logger.info("LSTM model trained.")
-            # model.save(f"models/{self.ensemble_name}_lstm_model.h5") # Conceptual saving
         except Exception as e:
             self.logger.error(f"Error training LSTM model: {e}")
             self.models["lstm"] = None
 
-        # Transformer Model (Simplified using Attention layers for tabular sequences)
-        self.logger.info("Training Transformer-like model...")
+        # Transformer Model with L1-L2 Regularization
+        self.logger.info("Training Transformer-like model with L1-L2 Regularization...")
         try:
             inputs = Input(shape=(X_seq.shape[1], X_seq.shape[2]))
-            # Simplified Transformer block: MultiHeadSelfAttention + LayerNormalization + Dense
-            attn_output = MultiHeadSelfAttention(num_heads=self.dl_config["transformer_heads"], 
+            attn_output = MultiHeadSelfAttention(num_heads=self.dl_config["transformer_heads"],
                                                  key_dim=self.dl_config["transformer_key_dim"])(inputs, inputs)
-            norm1 = LayerNormalization(epsilon=1e-6)(inputs + attn_output) # Residual connection + normalization
-            ffn_output = Dense(X_seq.shape[2], activation="relu", 
+            norm1 = LayerNormalization(epsilon=1e-6)(inputs + attn_output)
+            ffn_output = Dense(X_seq.shape[2], activation="relu",
                                kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])) (norm1)
-            norm2 = LayerNormalization(epsilon=1e-6)(norm1 + ffn_output) # Another residual + normalization
-            
-            # Flatten the sequence output for classification
+            norm2 = LayerNormalization(epsilon=1e-6)(norm1 + ffn_output)
+
             flattened_output = tf.keras.layers.Flatten()(norm2)
-            outputs = Dense(len(unique_targets), activation='softmax', 
+            outputs = Dense(len(unique_targets), activation='softmax',
                             kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])) (flattened_output)
-            
+
             model = tf.keras.Model(inputs=inputs, outputs=outputs)
-            model.compile(optimizer=Adam(learning_rate=self.dl_config["learning_rate"]), 
-                          loss='sparse_categorical_crossentropy' if len(unique_targets) > 2 else 'binary_crossentropy', 
+            model.compile(optimizer=Adam(learning_rate=self.dl_config["learning_rate"]),
+                          loss='sparse_categorical_crossentropy' if len(unique_targets) > 2 else 'binary_crossentropy',
                           metrics=['accuracy'])
-            
             model.fit(X_seq, y_seq_encoded, epochs=self.dl_config["epochs"], batch_size=self.dl_config["batch_size"], verbose=0)
             self.models["transformer"] = model
             self.logger.info("Transformer-like model trained.")
-            # model.save(f"models/{self.ensemble_name}_transformer_model.h5") # Conceptual saving
         except Exception as e:
             self.logger.error(f"Error training Transformer-like model: {e}")
             self.models["transformer"] = None
@@ -200,7 +187,7 @@ class BullTrendEnsemble(BaseEnsemble):
         # GARCH Model
         self.logger.info("Training GARCH model...")
         returns = aligned_data['close'].pct_change().dropna()
-        if len(returns) > 100: # GARCH needs sufficient data
+        if len(returns) > 100:
             try:
                 garch_model = arch_model(returns, vol='Garch', p=1, q=1, mean='AR', lags=1, dist='normal', rescale=True)
                 self.models["garch"] = garch_model.fit(disp='off')
@@ -212,38 +199,39 @@ class BullTrendEnsemble(BaseEnsemble):
             self.logger.warning("Insufficient data for GARCH model training. Skipping.")
             self.models["garch"] = None
 
-        # LightGBM Model
-        self.logger.info("Training LightGBM model...")
+        # LightGBM Model with Cross-Validation and L1-L2 Regularization
+        self.logger.info("Training LightGBM model with Cross-Validation and L1-L2 Regularization...")
         try:
-            self.models["lgbm"] = LGBMClassifier(
-                random_state=42, 
-                verbose=-1,
-                reg_alpha=self.dl_config["l1_reg_strength"], # L1 regularization
-                reg_lambda=self.dl_config["l2_reg_strength"]  # L2 regularization
-            )
-            # For LGBM, y_flat is already the string labels
-            self.models["lgbm"].fit(X_flat, y_flat) 
-            self.logger.info("LightGBM model trained.")
+            kf = KFold(n_splits=5, shuffle=True, random_state=42)
+            oof_preds = np.zeros(len(X_flat))
+            models = []
+
+            for fold, (train_index, val_index) in enumerate(kf.split(X_flat, y_flat)):
+                X_train, X_val = X_flat.iloc[train_index], X_flat.iloc[val_index]
+                y_train, y_val = y_flat.iloc[train_index], y_flat.iloc[val_index]
+
+                model = LGBMClassifier(
+                    random_state=42,
+                    verbose=-1,
+                    reg_alpha=self.dl_config["l1_reg_strength"],  # L1 regularization
+                    reg_lambda=self.dl_config["l2_reg_strength"]   # L2 regularization
+                )
+                model.fit(X_train, y_train,
+                          eval_set=[(X_val, y_val)])
+                # oof_preds[val_index] = model.predict_proba(X_val)[:, 1] # Assuming binary classification for simplicity
+                models.append(model)
+            self.models["lgbm"] = models  # Store all fold models
+            self.logger.info("LightGBM model trained with 5-fold cross-validation.")
         except Exception as e:
             self.logger.error(f"Error training LightGBM model: {e}")
             self.models["lgbm"] = None
 
+
         # --- Train Meta-Learner ---
-        # Collect predictions/confidences from individual models on the training data
-        # This part assumes that individual models can generate predictions on the training set.
-        # In a real system, you'd perform K-Fold cross-validation on the *entire ensemble*
-        # to generate out-of-fold predictions for the meta-learner to prevent leakage.
-        
-        # For this implementation, we'll simulate these meta-features, but in a real system,
-        # you'd use the actual model.predict_proba results from each model on X_flat or X_seq.
-        meta_features_train = pd.DataFrame(index=X_flat.index) 
-        
-        # Populate meta_features_train with actual (or simulated) predictions/confidences
-        # Ensure consistency with the features expected by _get_meta_prediction
+        meta_features_train = pd.DataFrame(index=X_flat.index)
+
         if self.models["lstm"]:
-            # Predict on the sequence data and map back to flat index
             lstm_probas = self.models["lstm"].predict(X_seq)
-            # Assuming y_seq_encoded matches the order of X_seq, and we want prob of the target class
             if len(lstm_probas) == len(y_seq_encoded):
                 lstm_conf_values = [lstm_probas[i, y_seq_encoded[i]] for i in range(len(y_seq_encoded))]
                 meta_features_train['lstm_conf'] = pd.Series(lstm_conf_values, index=aligned_data.iloc[self.dl_config["sequence_length"]-1:].index)
@@ -264,10 +252,8 @@ class BullTrendEnsemble(BaseEnsemble):
         else:
             meta_features_train['transformer_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
-        # CHANGED: Pass GARCH volatility directly as a feature
         if self.models["garch"]:
             try:
-                # For training data, we can use the historical conditional volatility
                 historical_volatility = self.models["garch"].conditional_volatility
                 aligned_garch_vol = historical_volatility.reindex(aligned_data.index).fillna(method='ffill').fillna(0)
                 meta_features_train['garch_volatility'] = aligned_garch_vol
@@ -278,17 +264,19 @@ class BullTrendEnsemble(BaseEnsemble):
             meta_features_train['garch_volatility'] = np.random.uniform(0.001, 0.01, len(X_flat))
 
         if self.models["lgbm"]:
-            lgbm_probas = self.models["lgbm"].predict_proba(X_flat)
-            # Get probability of the actual target class for each sample
-            lgbm_conf_values = [lgbm_probas[i, self.models["lgbm"].classes_.tolist().index(y_flat.iloc[i])] for i in range(len(y_flat))]
+            # Average predictions from all fold models for the meta-feature
+            lgbm_probas_all_folds = [model.predict_proba(X_flat) for model in self.models["lgbm"]]
+            lgbm_probas = np.mean(lgbm_probas_all_folds, axis=0)
+
+            # Get the classes from the first fold model
+            lgbm_classes = self.models["lgbm"][0].classes_
+
+            lgbm_conf_values = [lgbm_probas[i, np.where(lgbm_classes == y_flat.iloc[i])[0][0]] for i in range(len(y_flat))]
             meta_features_train['lgbm_proba'] = pd.Series(lgbm_conf_values, index=X_flat.index)
+
         else:
             meta_features_train['lgbm_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
-        # Add advanced features to meta_features_train (aligning indices)
-        # These features should be calculated for the historical data as well
-        # For simplicity, we'll just join them, assuming they were generated consistently
-        # In a real system, you'd compute these for the training set.
         meta_features_train = meta_features_train.join(aligned_data[['is_wyckoff_sos', 'is_wyckoff_sow', 'is_wyckoff_spring', 'is_wyckoff_upthrust',
                                                                       'is_accumulation_phase', 'is_distribution_phase',
                                                                       'is_liquidity_sweep', 'is_fake_breakout', 'is_large_bid_wall_near', 'is_large_ask_wall_near',
@@ -297,7 +285,7 @@ class BullTrendEnsemble(BaseEnsemble):
                                                                       'htf_trend_bullish', 'mtf_trend_bullish']], how='inner').fillna(0)
 
 
-        meta_features_train = meta_features_train.loc[y_flat.index].dropna() # Re-align after adding advanced features
+        meta_features_train = meta_features_train.loc[y_flat.index].dropna()
         y_meta_train = y_flat.loc[meta_features_train.index]
 
         if meta_features_train.empty:
@@ -305,11 +293,20 @@ class BullTrendEnsemble(BaseEnsemble):
             self.trained = False
             return
 
-        # Store the feature names for consistent prediction input later
         self.meta_learner_features = meta_features_train.columns.tolist()
 
         self._train_meta_learner(meta_features_train, y_meta_train)
         self.trained = True
+
+        # --- Monte Carlo Simulation for the trained model ---
+        self.logger.info("Running Monte Carlo simulation for the newly trained model...")
+        from backtesting.ares_backtester import run_backtest
+        from config import CONFIG
+        mc_curves, base_portfolio, mc_report = run_monte_carlo_simulation(aligned_data, CONFIG['BEST_PARAMS'])
+        self.logger.info(mc_report)
+
+        # Plot the results
+        plot_results(mc_curves, base_portfolio)
 
     def get_prediction(self, current_features: pd.DataFrame, 
                        klines_df: pd.DataFrame, agg_trades_df: pd.DataFrame, 
@@ -393,14 +390,11 @@ class BullTrendEnsemble(BaseEnsemble):
         # LightGBM Prediction
         if self.models["lgbm"]:
             try:
-                # Ensure feature order for prediction is same as training
-                lgbm_features_list = ['ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting']
-                lgbm_features = current_features_row[lgbm_features_list].copy()
-                lgbm_features = lgbm_features.fillna(0) # Fill NaNs for prediction
-                
-                lgbm_proba = self.models["lgbm"].predict_proba(lgbm_features)[0]
+                # Average predictions from all fold models
+                lgbm_probas_all_folds = [model.predict_proba(X_flat) for model in self.models["lgbm"]]
+                lgbm_proba = np.mean(lgbm_probas_all_folds, axis=0)[0]
                 # Get probability for the 'BULL_TREND' class
-                bull_idx = np.where(self.models["lgbm"].classes_ == 'BULL_TREND')[0]
+                bull_idx = np.where(self.models["lgbm"][0].classes_ == 'BULL_TREND')[0]
                 lgbm_conf = lgbm_proba[bull_idx][0] if len(bull_idx) > 0 else np.max(lgbm_proba) # Fallback to max prob
                 individual_model_outputs['lgbm_proba'] = float(lgbm_conf)
             except Exception as e:

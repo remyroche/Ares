@@ -1,14 +1,29 @@
+
+# backtesting/ares_deep_analyzer.py
 import pandas as pd
 import numpy as np
 import os
 import copy
 import random
+import logging
+
 # Import the main CONFIG dictionary
-from config import CONFIG
-from ares_data_preparer import load_raw_data, calculate_and_label_regimes, get_sr_levels
-from ares_backtester import run_backtest, PortfolioManager
+try:
+    from src.config import CONFIG
+except ImportError:
+    # Provide a default config if the main one isn't available
+    CONFIG = {
+        'INITIAL_EQUITY': 10000.0,
+        'BEST_PARAMS': {'trend_strength_threshold': 25},
+        'fees': {'taker': 0.0004, 'maker': 0.0002}
+    }
+
+from backtesting.ares_data_preparer import load_raw_data, calculate_and_label_regimes, get_sr_levels
+from backtesting.ares_backtester import run_backtest, PortfolioManager
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+
+logger = logging.getLogger(__name__)
 
 # --- Analysis Configuration ---
 # Walk-Forward Analysis Settings
@@ -32,19 +47,37 @@ def calculate_detailed_metrics(portfolio, num_days):
     trade_df['pnl'] = trade_df['pnl_pct'] * initial_equity # Use initial_equity from CONFIG
     equity_series = pd.Series([initial_equity] + [t['equity'] for t in portfolio.trades])
     daily_returns = equity_series.pct_change().dropna()
-    sharpe_ratio = (daily_returns.mean() / daily_returns.std()) * np.sqrt(365) if daily_returns.std() != 0 else 0
-    negative_returns = daily_returns[daily_returns < 0] if not daily_returns[daily_returns < 0].empty else pd.Series([0])
-    sortino_ratio = (daily_returns.mean() / negative_returns.std()) * np.sqrt(365) if negative_returns.std() != 0 else 0
+    
+    # Handle cases with no variance in returns
+    if daily_returns.std() == 0:
+        return {
+            'Final Equity': portfolio.equity, 'Total Trades': len(trade_df), 'Sharpe Ratio': 0,
+            'Sortino Ratio': 0, 'Max Drawdown (%)': 0, 'Calmar Ratio': 0,
+            'Win Rate (%)': (len(trade_df[trade_df['pnl'] > 0]) / len(trade_df) * 100) if len(trade_df) > 0 else 0,
+            'Profit Factor': np.inf if trade_df[trade_df['pnl'] > 0]['pnl'].sum() > 0 and trade_df[trade_df['pnl'] < 0]['pnl'].sum() == 0 else 0
+        }
+
+    sharpe_ratio = (daily_returns.mean() / daily_returns.std()) * np.sqrt(365)
+    
+    negative_returns = daily_returns[daily_returns < 0]
+    downside_std = negative_returns.std() if not negative_returns.empty else 0
+    sortino_ratio = (daily_returns.mean() / downside_std) * np.sqrt(365) if downside_std != 0 else 0
+    
     peak = equity_series.expanding(min_periods=1).max()
     drawdown = (equity_series - peak) / peak
     max_drawdown = -drawdown.min() * 100
-    calmar_ratio = (daily_returns.mean() * 365) / (max_drawdown / 100) if max_drawdown != 0 else 0
+    
+    annual_return = daily_returns.mean() * 365
+    calmar_ratio = annual_return / (max_drawdown / 100) if max_drawdown != 0 else 0
+    
     wins = trade_df[trade_df['pnl'] > 0]
     losses = trade_df[trade_df['pnl'] < 0]
     win_rate = len(wins) / len(trade_df) * 100 if len(trade_df) > 0 else 0
+    
     gross_profit = wins['pnl'].sum()
     gross_loss = abs(losses['pnl'].sum())
     profit_factor = gross_profit / gross_loss if gross_loss != 0 else np.inf
+    
     return {
         'Final Equity': portfolio.equity, 'Total Trades': len(trade_df), 'Sharpe Ratio': sharpe_ratio,
         'Sortino Ratio': sortino_ratio, 'Max Drawdown (%)': max_drawdown, 'Calmar Ratio': calmar_ratio,
@@ -60,8 +93,13 @@ def run_walk_forward_analysis(full_df, params=None): # Changed default to None
     
     total_months = (full_df.index.max() - full_df.index.min()).days / 30.44
     step_size = TESTING_MONTHS
-    num_windows = int((total_months - TRAINING_MONTHS) / step_size)
+    num_windows = int((total_months - TRAINING_MONTHS) / step_size) if total_months > TRAINING_MONTHS else 0
     
+    if num_windows == 0:
+        report_lines.append(f"Not enough data for a single walk-forward window. Need more than {TRAINING_MONTHS} months.")
+        logger.warning(report_lines[-1])
+        return "\n".join(report_lines)
+
     report_lines.append(f"Dataset covers ~{total_months:.1f} months.")
     report_lines.append(f"Running {num_windows} walk-forward windows...")
     
@@ -149,7 +187,9 @@ def run_monte_carlo_simulation(full_df, params=None): # Changed default to None
 
 def plot_results(mc_curves, base_portfolio):
     """Creates an interactive plot of the Monte Carlo simulation and drawdown."""
-    if not mc_curves: return
+    if not mc_curves or base_portfolio is None:
+        logger.warning("No data to plot for deep analysis.")
+        return
 
     # Access INITIAL_EQUITY from CONFIG
     initial_equity = CONFIG['INITIAL_EQUITY']
@@ -170,7 +210,7 @@ def plot_results(mc_curves, base_portfolio):
         ), row=1, col=1)
 
     # Plot original equity curve
-    original_curve = [initial_equity] + [t['equity'] for t in base_portfolio.trades] # Use initial_equity from CONFIG
+    original_curve = [initial_equity] + [t['equity'] for t in base_portfolio.trades]
     fig.add_trace(go.Scatter(
         x=list(range(len(original_curve))), y=original_curve,
         mode='lines', line=dict(color='blue', width=3),
@@ -192,7 +232,7 @@ def plot_results(mc_curves, base_portfolio):
         title_text='Strategy Deep Analysis',
         yaxis_title_text='Equity ($)',
         yaxis2_title_text='Drawdown (%)',
-        xaxis2_title_text='Number of Trades',\
+        xaxis2_title_text='Number of Trades',
         height=800
     )
     fig.show()
@@ -204,15 +244,16 @@ def main():
     
     # Load and prepare data once using BEST_PARAMS from config
     klines_df, agg_trades_df, futures_df = load_raw_data() # Load futures_df here
-    if klines_df is None: return
+    if klines_df is None or klines_df.empty:
+        logger.error("Failed to load data. Halting deep analysis.")
+        return
 
     daily_df = klines_df.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
     sr_levels = get_sr_levels(daily_df)
     
     print("\nPreparing full dataset using BEST_PARAMS from config.py...")
-    # Ensure BEST_PARAMS has 'trend_strength_threshold' or provide a default
     # Access BEST_PARAMS from CONFIG
-    best_params = CONFIG['BEST_PARAMS']
+    best_params = CONFIG.get('BEST_PARAMS', {})
     if 'trend_strength_threshold' not in best_params:
         best_params['trend_strength_threshold'] = 25 # Default value if not in BEST_PARAMS
 

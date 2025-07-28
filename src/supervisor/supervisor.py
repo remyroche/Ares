@@ -13,12 +13,10 @@ from config import CONFIG, INITIAL_EQUITY, BEST_PARAMS # Import BEST_PARAMS
 from utils.logger import system_logger
 from database.firestore_manager import FirestoreManager # New import
 
-# Import backtesting components (conceptual import for direct use in optimization)
-# In a real system, you'd likely have a dedicated backtesting service/module
-# that can be invoked with specific parameters.
-# For this demo, we'll simulate calling these functions.
+# Import backtesting components
 from backtesting.ares_data_preparer import load_raw_data, get_sr_levels, calculate_and_label_regimes
 from backtesting.ares_backtester import run_backtest, PortfolioManager
+from backtesting.ares_deep_analyzer import calculate_detailed_metrics # Import for detailed metrics
 
 
 class Supervisor:
@@ -79,35 +77,37 @@ class Supervisor:
                 f.write("ModelName,Version,TrainingDate,PerformanceMetrics,FilePathReference,ConfigSnapshot\n")
             self.logger.info(f"Created model metadata log: {self.model_metadata_csv}")
 
-    def _evaluate_params_with_backtest(self, params: dict, klines_df, agg_trades_df, futures_df, sr_levels) -> float:
+    def _evaluate_params_with_backtest(self, params: dict, klines_df, agg_trades_df, futures_df, sr_levels) -> dict:
         """
         Evaluates a given set of parameters by running a backtest.
-        Returns a performance metric (e.g., Sharpe Ratio or final equity).
+        Returns a dictionary of performance metrics including Final Equity, Sharpe Ratio, and Max Drawdown.
         """
         self.logger.info("  Evaluating parameter set with backtest...")
         try:
             # Prepare data with the current parameter set
-            # Ensure 'trend_strength_threshold' is in params or handled by calculate_and_label_regimes
             prepared_df = calculate_and_label_regimes(
                 klines_df.copy(), agg_trades_df.copy(), futures_df.copy(), params, sr_levels,
                 params.get('trend_strength_threshold', 25) # Fallback if not explicitly in params
             )
             
             if prepared_df.empty:
-                self.logger.warning("    Prepared data is empty for this parameter set. Returning low score.")
-                return -np.inf # Return a very low score if no data
+                self.logger.warning("    Prepared data is empty for this parameter set. Returning low scores.")
+                return {'Final Equity': -np.inf, 'Sharpe Ratio': -np.inf, 'Max Drawdown (%)': np.inf}
 
             # Run backtest with the current parameter set
             portfolio = run_backtest(prepared_df, params)
             
-            # Use final equity as the performance metric for simplicity in this demo
-            # In a real system, you'd use Sharpe, Sortino, Calmar, etc.
-            performance_metric = portfolio.equity
-            self.logger.info(f"    Backtest finished. Final Equity: ${performance_metric:,.2f}")
-            return performance_metric
+            # Calculate detailed metrics
+            num_days = (prepared_df.index.max() - prepared_df.index.min()).days if not prepared_df.empty else 0
+            detailed_metrics = calculate_detailed_metrics(portfolio, num_days)
+            
+            self.logger.info(f"    Backtest finished. Final Equity: ${detailed_metrics['Final Equity']:,.2f}, "
+                             f"Sharpe: {detailed_metrics['Sharpe Ratio']:.2f}, "
+                             f"Max Drawdown: {detailed_metrics['Max Drawdown (%)']:.2f}%")
+            return detailed_metrics
         except Exception as e:
             self.logger.error(f"  Error during backtest evaluation for params {params}: {e}", exc_info=True)
-            return -np.inf # Return a very low score on error
+            return {'Final Equity': -np.inf, 'Sharpe Ratio': -np.inf, 'Max Drawdown (%)': np.inf}
 
     def _get_param_value_from_path(self, base_dict, path_parts):
         """Helper to get a nested parameter value from a dictionary using a list of path parts."""
@@ -203,7 +203,9 @@ class Supervisor:
         sr_levels = get_sr_levels(daily_df)
         
         best_overall_params = self.global_config['BEST_PARAMS'].copy()
-        best_overall_performance = -np.inf # Initialize with a very low score
+        # Initialize best performance with a dictionary of metrics
+        best_overall_performance = self._evaluate_params_with_backtest(best_overall_params, klines_df, agg_trades_df, futures_df, sr_levels)
+        self.logger.info(f"  Initial BEST_PARAMS performance: {best_overall_performance}")
 
         # --- Stage 1: Coarse Grid Search ---
         self.logger.info("\n--- Stage 1: Coarse Grid Search ---")
@@ -223,12 +225,19 @@ class Supervisor:
             self.logger.info(f"  [Coarse {i+1}/{len(coarse_param_combinations)}] Testing: {flat_candidate_params}")
             candidate_performance = self._evaluate_params_with_backtest(flat_candidate_params, klines_df, agg_trades_df, futures_df, sr_levels)
             
-            if candidate_performance > best_overall_performance:
-                best_overall_performance = candidate_performance
+            # Compare performance: Prioritize Sharpe Ratio, then Final Equity, then minimize Max Drawdown
+            if (candidate_performance['Sharpe Ratio'] > best_overall_performance['Sharpe Ratio']) or \
+               (candidate_performance['Sharpe Ratio'] == best_overall_performance['Sharpe Ratio'] and \
+                candidate_performance['Final Equity'] > best_overall_performance['Final Equity']) or \
+               (candidate_performance['Sharpe Ratio'] == best_overall_performance['Sharpe Ratio'] and \
+                candidate_performance['Final Equity'] == best_overall_performance['Final Equity'] and \
+                candidate_performance['Max Drawdown (%)'] < best_overall_performance['Max Drawdown (%)']):
+                
+                best_overall_performance = candidate_performance.copy() # Store the dictionary of metrics
                 best_overall_params = flat_candidate_params.copy() # Store the flat best params
-                self.logger.info(f"    New best coarse found! Performance: ${best_overall_performance:,.2f}")
+                self.logger.info(f"    New best coarse found! Performance: {best_overall_performance}")
         
-        self.logger.info(f"\n--- Stage 1 Complete. Best Coarse Performance: ${best_overall_performance:,.2f} ---")
+        self.logger.info(f"\n--- Stage 1 Complete. Best Coarse Performance: {best_overall_performance} ---")
         self.logger.info(f"  Best Coarse Params: {best_overall_params}")
 
         # --- Stage 2: Fine-Tuning (Random Search around best coarse) ---
@@ -236,7 +245,8 @@ class Supervisor:
         fine_tune_multiplier = self.global_config['OPTIMIZATION_CONFIG']['FINE_TUNE_RANGES_MULTIPLIER']
         num_fine_tune_samples = self.global_config['OPTIMIZATION_CONFIG']['FINE_TUNE_NUM_POINTS']
 
-        if best_overall_performance <= INITIAL_EQUITY:
+        # Only proceed to fine-tuning if coarse search yielded profitable results
+        if best_overall_performance['Final Equity'] <= INITIAL_EQUITY:
             self.logger.warning("  Best coarse performance not profitable. Skipping fine-tuning.")
         else:
             self.logger.info(f"  Running {num_fine_tune_samples} random samples for fine-tuning around best coarse params.")
@@ -282,12 +292,19 @@ class Supervisor:
                 self.logger.info(f"  [Fine-Tune {i+1}/{num_fine_tune_samples}] Testing: {flat_candidate_params}")
                 candidate_performance = self._evaluate_params_with_backtest(flat_candidate_params, klines_df, agg_trades_df, futures_df, sr_levels)
                 
-                if candidate_performance > best_overall_performance:
-                    best_overall_performance = candidate_performance
+                # Compare performance: Prioritize Sharpe Ratio, then Final Equity, then minimize Max Drawdown
+                if (candidate_performance['Sharpe Ratio'] > best_overall_performance['Sharpe Ratio']) or \
+                   (candidate_performance['Sharpe Ratio'] == best_overall_performance['Sharpe Ratio'] and \
+                    candidate_performance['Final Equity'] > best_overall_performance['Final Equity']) or \
+                   (candidate_performance['Sharpe Ratio'] == best_overall_performance['Sharpe Ratio'] and \
+                    candidate_performance['Final Equity'] == best_overall_performance['Final Equity'] and \
+                    candidate_performance['Max Drawdown (%)'] < best_overall_performance['Max Drawdown (%)']):
+                    
+                    best_overall_performance = candidate_performance.copy()
                     best_overall_params = flat_candidate_params.copy()
-                    self.logger.info(f"    New best fine-tuned found! Performance: ${best_overall_performance:,.2f}")
+                    self.logger.info(f"    New best fine-tuned found! Performance: {best_overall_performance}")
 
-        self.logger.info(f"\n--- Optimization Complete. Final Best Performance: ${best_overall_performance:,.2f} ---")
+        self.logger.info(f"\n--- Optimization Complete. Final Best Performance: {best_overall_performance} ---")
         self.logger.info(f"  Final Optimized Parameters: {best_overall_params}")
 
         # --- Feedback Loop from Regime-Specific Performance (Conceptual) ---
@@ -316,7 +333,7 @@ class Supervisor:
             params_doc = {
                 "timestamp": date_applied,
                 "optimization_run_id": optimization_run_id,
-                "performance_metric": best_overall_performance,
+                "performance_metrics": best_overall_performance, # Store the dictionary of metrics
                 "date_applied": date_applied,
                 "params": best_overall_params # Store the actual parameters
             }
@@ -337,8 +354,10 @@ class Supervisor:
 
         # Export to CSV
         try:
+            # Prepare performance metrics for CSV: convert dict to JSON string
+            performance_metrics_str = json.dumps(best_overall_performance)
             with open(self.optimized_params_csv, 'a') as f:
-                f.write(f"{date_applied},{optimization_run_id},{best_overall_performance},{date_applied},{json.dumps(best_overall_params)}\n")
+                f.write(f"{date_applied},{optimization_run_id},{performance_metrics_str},{date_applied},{json.dumps(best_overall_params)}\n")
             self.logger.info("Optimized parameters exported to CSV.")
         except Exception as e:
             self.logger.error(f"Error exporting optimized parameters to CSV: {e}")
@@ -544,7 +563,7 @@ class Supervisor:
         Main orchestration method for the Supervisor, called periodically (e.g., daily/weekly).
         :param current_date: The current date of the supervision cycle.
         :param total_equity: The current total equity of the trading system.
-        :param daily_trade_logs: List of all trades completed on the current day.
+        :param daily_trade_logs: List of dictionaries, each representing a completed trade.
         :param daily_pnl_per_regime: Dictionary of P&L attributed to each regime for the current day.
         :param historical_daily_pnl_data: DataFrame of historical daily P&L for dynamic allocation.
         """

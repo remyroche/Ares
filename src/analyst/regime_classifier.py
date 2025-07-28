@@ -144,9 +144,14 @@ class MarketRegimeClassifier:
         """
         if not self.trained:
             print("Warning: Classifier not trained. Returning default regime.")
-            return "UNKNOWN", 0.0, 0.0 # Regime, Trend Strength, ADX
+            # Calculate Trend Strength Score even if not trained for fallback
+            trend_strength, current_adx = self.calculate_trend_strength(current_klines)
+            return "UNKNOWN", trend_strength, current_adx # Regime, Trend Strength, ADX
 
-        # Check for SR_ZONE_ACTION first
+        # Calculate Trend Strength Score and ADX first, as it's needed regardless of regime
+        trend_strength, current_adx = self.calculate_trend_strength(current_klines)
+
+        # Check for SR_ZONE_ACTION
         current_price = current_klines['close'].iloc[-1]
         current_atr = current_klines['ATR'].iloc[-1] if 'ATR' in current_klines.columns else 0
         proximity_multiplier = self.config.get("proximity_multiplier", 0.25) # From main config's analyst section
@@ -163,8 +168,8 @@ class MarketRegimeClassifier:
         
         if is_sr_interacting:
             print("Detected SR_ZONE_ACTION.")
-            # For SR_ZONE_ACTION, trend strength is less relevant, return 0.0 for now
-            return "SR_ZONE_ACTION", 0.0, 0.0 
+            # For SR_ZONE_ACTION, return the regime but still provide trend strength and ADX
+            return "SR_ZONE_ACTION", trend_strength, current_adx 
 
         # If not SR_ZONE_ACTION, proceed with LightGBM classification
         # Ensure features for prediction match those used for training
@@ -174,7 +179,8 @@ class MarketRegimeClassifier:
         macd_hist_col = [col for col in current_features.columns if 'MACDh_' in col]
         if not macd_hist_col:
             print("MACD Histogram column not found in current_features. Cannot predict regime.")
-            return "UNKNOWN", 0.0, 0.0
+            return "UNKNOWN", trend_strength, current_adx # Return calculated trend strength and ADX
+
         macd_hist_col = macd_hist_col[0]
 
         required_features = ['ADX', macd_hist_col, 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting']
@@ -187,13 +193,10 @@ class MarketRegimeClassifier:
 
         if features_for_prediction_df.empty:
             print("Insufficient features for regime prediction after filtering and dropping NaNs.")
-            return "UNKNOWN", 0.0, 0.0
+            return "UNKNOWN", trend_strength, current_adx # Return calculated trend strength and ADX
 
         scaled_features = self.scaler.transform(features_for_prediction_df.tail(1)) # Predict for the latest data point
         predicted_regime = self.lgbm_classifier.predict(scaled_features)[0]
-
-        # Calculate Trend Strength Score
-        trend_strength, current_adx = self.calculate_trend_strength(current_klines)
 
         print(f"Predicted Regime: {predicted_regime}, Trend Strength: {trend_strength:.2f}, ADX: {current_adx:.2f}")
         return predicted_regime, trend_strength, current_adx

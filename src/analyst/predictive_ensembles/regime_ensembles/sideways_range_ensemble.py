@@ -2,18 +2,25 @@
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.cluster import KMeans # For conceptual clustering in sideways
+from sklearn.cluster import KMeans # For clustering in sideways
 from lightgbm import LGBMClassifier
 import pandas_ta as ta
+import joblib # For saving/loading models
 
-# TensorFlow/Keras imports for Deep Learning models
-import tensorflow as tf
-from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import Dense, Dropout, Input
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.regularizers import l1_l2 # For L1/L2 regularization
-# For TabNet, we'll use Dense layers as a proxy
-# from pytorch_tabnet.tab_model import TabNetClassifier # Requires installation
+# Import TabNetClassifier
+try:
+    from pytorch_tabnet.tab_model import TabNetClassifier
+    TABNET_AVAILABLE = True
+except ImportError:
+    print("Warning: pytorch-tabnet not installed. Falling back to Dense layers for TabNet-like model.")
+    TABNET_AVAILABLE = False
+    # Fallback for TensorFlow/Keras imports if TabNet is not available
+    import tensorflow as tf
+    from tensorflow.keras.models import Sequential, load_model
+    from tensorflow.keras.layers import Dense, Dropout, Input
+    from tensorflow.keras.optimizers import Adam
+    from tensorflow.keras.regularizers import l1_l2 # For L1/L2 regularization
+
 
 from .base_ensemble import BaseEnsemble
 
@@ -25,29 +32,41 @@ class SidewaysRangeEnsemble(BaseEnsemble):
     def __init__(self, config: dict, ensemble_name: str):
         super().__init__(config, ensemble_name)
         self.models = {
-            "clustering": None, # Conceptual clustering model
-            "bb_squeeze": None, # Bollinger Band Squeeze model (rule-based or simple ML)
+            "clustering": None, # KMeans clustering model
+            "bb_squeeze": None, # ML-enhanced Bollinger Band Squeeze model (LGBM)
             "order_flow": None, # Order flow analysis model (conceptual)
-            "tabnet_proxy": None, # TabNet-like model using Dense layers
+            "tabnet": None, # TabNetClassifier model (or Dense layer proxy)
             "lgbm": None # LightGBM for general patterns
         }
         self.ensemble_weights = self.config.get("ensemble_weights", {
-            "clustering": 0.2, "bb_squeeze": 0.2, "order_flow": 0.2, "tabnet_proxy": 0.2, "lgbm": 0.2
+            "clustering": 0.2, "bb_squeeze": 0.2, "order_flow": 0.2, "tabnet": 0.2, "lgbm": 0.2
         })
         self.min_confluence_confidence = self.config.get("min_confluence_confidence", 0.7)
 
-        # DL model specific configurations
+        # TabNet/DL model specific configurations
         self.dl_config = {
-            "dense_units": 64, # Units for TabNet-like dense layers
+            "tabnet_n_d": self.config.get("tabnet_n_d", 64), # Dimension of the prediction layer (TabNet specific)
+            "tabnet_n_a": self.config.get("tabnet_n_a", 64), # Dimension of the attention layer (TabNet specific)
+            "tabnet_n_steps": self.config.get("tabnet_n_steps", 3), # Number of steps in the attention mechanism (TabNet specific)
+            "tabnet_gamma": self.config.get("tabnet_gamma", 1.3), # Gamma for attention (TabNet specific)
+            "tabnet_cat_emb_dim": self.config.get("tabnet_cat_emb_dim", 1), # Categorical embedding dimension (TabNet specific)
+            "tabnet_n_independent": self.config.get("tabnet_n_independent", 2), # Number of independent GLU layers in each GLU block (TabNet specific)
+            "tabnet_n_shared": self.config.get("tabnet_n_shared", 2), # Number of shared GLU layers in each GLU block (TabNet specific)
+            "tabnet_momentum": self.config.get("tabnet_momentum", 0.02), # Momentum for batch normalization (TabNet specific)
+            "tabnet_mask_type": self.config.get("tabnet_mask_type", "entmax"), # Mask type for attention (TabNet specific)
+            
+            "dense_units": 64, # Fallback units for Dense layers if TabNet not available
             "dropout_rate": 0.2,
             "learning_rate": 0.001,
             "epochs": 50,
             "batch_size": 32,
             "l1_reg_strength": self.config.get("meta_learner_l1_reg", 0.001),
             "l2_reg_strength": self.config.get("meta_learner_l2_reg", 0.001),
+            "kmeans_n_clusters": self.config.get("kmeans_n_clusters", 3), # Number of clusters for KMeans
         }
         self.expected_dl_features = ['close', 'volume', 'ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting']
         self.dl_target_map = {} # To store target label to integer mapping for DL models
+        self.bb_squeeze_features_list = [] # To store feature names for bb_squeeze model
 
     def _prepare_flat_data(self, df: pd.DataFrame, target_series: pd.Series = None):
         """
@@ -65,74 +84,99 @@ class SidewaysRangeEnsemble(BaseEnsemble):
         else:
             return features, None
 
-    def _get_clustering_features(self, klines_df: pd.DataFrame) -> dict:
+    def _get_clustering_features(self, klines_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Conceptual clustering features for sideways markets.
-        In a real scenario, this would involve applying a clustering algorithm
-        (e.g., KMeans, DBSCAN) to price features (e.g., normalized price, volatility).
-        For now, it's a proxy for detecting distinct price behaviors within a range.
+        Generates features for clustering, indicative of market tightness and range.
+        These features will be used by the KMeans model.
         """
-        if klines_df.empty or len(klines_df) < 50: # Need enough data for clustering
-            return {"cluster_affinity_score": 0.5, "is_tight_cluster": 0}
+        if klines_df.empty or len(klines_df) < 50: # Need enough data for meaningful features
+            self.logger.warning("Insufficient data for clustering features. Returning empty DataFrame.")
+            return pd.DataFrame()
 
-        # Simplified: Use standard deviation of recent prices as a proxy for 'tightness'
         recent_prices = klines_df['close'].iloc[-50:]
-        price_std_dev = recent_prices.std()
-        avg_price = recent_prices.mean()
+        recent_volumes = klines_df['volume'].iloc[-50:]
+        
+        features = pd.DataFrame(index=klines_df.index)
 
-        if avg_price == 0: # Avoid division by zero
-            return {"cluster_affinity_score": 0.5, "is_tight_cluster": 0}
+        # Volatility measures
+        features['rolling_std_dev_10'] = recent_prices.rolling(window=10).std()
+        features['rolling_std_dev_30'] = recent_prices.rolling(window=30).std()
+        
+        # Price range measures
+        features['price_range_10'] = (recent_prices.max() - recent_prices.min()) / recent_prices.mean() if recent_prices.mean() > 0 else 0
+        features['price_range_30'] = (recent_prices.max() - recent_prices.min()) / recent_prices.mean() if recent_prices.mean() > 0 else 0
 
-        # Normalize std dev relative to price
-        normalized_std_dev = price_std_dev / avg_price
+        # Volume consistency
+        features['volume_std_dev_10'] = recent_volumes.rolling(window=10).std()
+        features['volume_mean_10'] = recent_volumes.rolling(window=10).mean()
 
-        # A lower normalized std dev implies a tighter cluster
-        # Map this to a score where lower std dev means higher affinity/score
-        cluster_affinity_score = 1 - np.clip(normalized_std_dev * 10, 0, 1) # Scale and clip
-        is_tight_cluster = 1 if normalized_std_dev < 0.005 else 0 # e.g., less than 0.5% std dev
+        features.fillna(0, inplace=True) # Fill NaNs from rolling windows
+        
+        # Return only the last row of features for the current candle
+        return features.tail(1)
 
-        self.logger.debug(f"Clustering Features: Affinity={cluster_affinity_score:.2f}, Tight={is_tight_cluster}")
-        return {"cluster_affinity_score": cluster_affinity_score, "is_tight_cluster": is_tight_cluster}
 
-    def _get_bb_squeeze_features(self, klines_df: pd.DataFrame) -> dict:
+    def _get_bb_squeeze_features(self, klines_df: pd.DataFrame) -> pd.DataFrame:
         """
         Calculates Bollinger Band Squeeze features.
         A squeeze indicates low volatility, often preceding a breakout.
+        Returns a DataFrame of features for the BB Squeeze model.
         """
         bb_length = self.config.get("bollinger_bands", {}).get("window", 20)
         bb_std_dev = self.config.get("bollinger_bands", {}).get("num_std_dev", 2)
-        bb_squeeze_threshold = self.config.get("bband_squeeze_threshold", 0.01)
-
+        
         if klines_df.empty or len(klines_df) < bb_length:
-            return {"bb_width_norm": 0.0, "is_bb_squeeze": 0}
+            self.logger.warning("Insufficient data for BB squeeze features. Returning empty DataFrame.")
+            return pd.DataFrame()
 
         bb = klines_df.ta.bbands(length=bb_length, std=bb_std_dev, append=False)
         
         # Ensure Bollinger Band columns exist
         upper_band_col = f'BBU_{bb_length}_{bb_std_dev:.1f}'
         lower_band_col = f'BBL_{bb_length}_{bb_std_dev:.1f}'
+        mid_band_col = f'BBM_{bb_length}_{bb_std_dev:.1f}'
 
-        if upper_band_col not in bb.columns or lower_band_col not in bb.columns:
+        if upper_band_col not in bb.columns or lower_band_col not in bb.columns or mid_band_col not in bb.columns:
             self.logger.warning("Bollinger Bands columns not found. Skipping BB squeeze features.")
-            return {"bb_width_norm": 0.0, "is_bb_squeeze": 0}
+            return pd.DataFrame()
 
-        bb_width = (bb[upper_band_col].iloc[-1] - bb[lower_band_col].iloc[-1])
-        current_close = klines_df['close'].iloc[-1]
+        features = pd.DataFrame(index=klines_df.index)
+        features['bb_width'] = (bb[upper_band_col] - bb[lower_band_col])
+        features['bb_percent_b'] = bb[f'BBP_{bb_length}_{bb_std_dev:.1f}']
+        features['bb_band_ratio'] = features['bb_width'] / bb[mid_band_col] if bb[mid_band_col].iloc[-1] > 0 else 0
+        
+        # Keltner Channels (often used in conjunction with BB for squeeze)
+        # Assuming ATR is already calculated in klines_df or can be derived
+        kc_length = self.config.get("keltner_channels", {}).get("window", 20)
+        kc_multiplier = self.config.get("keltner_channels", {}).get("multiplier", 2)
 
-        bb_width_norm = bb_width / current_close if current_close > 0 else 0.0
-        is_bb_squeeze = 1 if bb_width_norm < bb_squeeze_threshold else 0
+        if 'ATR' not in klines_df.columns:
+            klines_df.ta.atr(length=kc_length, append=True, col_names=('ATR'))
+        
+        kc = klines_df.ta.kc(length=kc_length, scalar=kc_multiplier, append=False)
+        upper_kc_col = f'KCU_{kc_length}_{kc_multiplier:.1f}'
+        lower_kc_col = f'KCL_{kc_length}_{kc_multiplier:.1f}'
 
-        self.logger.debug(f"BB Squeeze Features: Width Norm={bb_width_norm:.4f}, Squeeze={is_bb_squeeze}")
-        return {"bb_width_norm": bb_width_norm, "is_bb_squeeze": is_bb_squeeze}
+        if upper_kc_col in kc.columns and lower_kc_col in kc.columns:
+            features['kc_width'] = (kc[upper_kc_col] - kc[lower_kc_col])
+            features['squeeze_indicator'] = (features['bb_width'] / features['kc_width']) if features['kc_width'].iloc[-1] > 0 else 0
+            features['is_squeeze'] = (features['squeeze_indicator'] < self.config.get("bband_squeeze_threshold", 0.8)).astype(int) # Squeeze when BB inside KC
+        else:
+            features['kc_width'] = 0
+            features['squeeze_indicator'] = 0
+            features['is_squeeze'] = 0
+        
+        features.fillna(0, inplace=True)
+        return features.tail(1) # Return only the last row of features
 
-    def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: pd.Series):
+    def train_ensemble(self, historical_features: pd.DataFrame, historical_klines: pd.DataFrame, historical_targets: pd.Series):
         """
         Trains the individual models and the meta-learner for the SIDEWAYS_RANGE ensemble.
         `historical_targets` could be 'MEAN_REVERT', 'BREAKOUT_UP', 'BREAKOUT_DOWN'.
         """
         self.logger.info(f"Training {self.ensemble_name} ensemble models...")
 
-        if historical_features.empty or historical_targets.empty:
+        if historical_features.empty or historical_targets.empty or historical_klines.empty:
             self.logger.warning(f"No data to train {self.ensemble_name}. Skipping training.")
             return
 
@@ -150,33 +194,90 @@ class SidewaysRangeEnsemble(BaseEnsemble):
 
         # Clustering Model (KMeans)
         self.logger.info("Training Clustering model (KMeans)...")
-        clustering_features_for_training = historical_features[['close', 'volume', 'ATR']].dropna()
-        if not clustering_features_for_training.empty and len(clustering_features_for_training) >= self.config.get("kmeans_n_clusters", 3):
-            try:
-                self.models["clustering"] = KMeans(n_clusters=self.config.get("kmeans_n_clusters", 3), random_state=42, n_init=10) # n_init for robustness
-                self.models["clustering"].fit(clustering_features_for_training)
-                self.logger.info("KMeans Clustering model trained.")
-            except Exception as e:
-                self.logger.error(f"Error training KMeans Clustering model: {e}")
-                self.models["clustering"] = None
-        else:
-            self.logger.warning("Insufficient data or invalid cluster count for KMeans training. Skipping.")
-            self.models["clustering"] = None
+        # Generate clustering features for historical data
+        historical_clustering_features_list = []
+        for idx, row in historical_klines.iterrows(): # Use historical_klines to derive these features
+            # Pass a window of klines ending at current index for rolling features
+            window_klines = historical_klines.loc[:idx].tail(50) # Ensure enough data for _get_clustering_features
+            if not window_klines.empty and len(window_klines) >= 50:
+                historical_clustering_features_list.append(self._get_clustering_features(window_klines).iloc[0])
+            else:
+                historical_clustering_features_list.append(pd.Series(0.0, index=['rolling_std_dev_10', 'rolling_std_dev_30', 'price_range_10', 'price_range_30', 'volume_std_dev_10', 'volume_mean_10']))
 
-        # BB Squeeze Model (Rule-based or simple ML)
-        self.logger.info("Training BB Squeeze model (Conceptual/Rule-based)...")
-        # No explicit training needed for rule-based, just a placeholder for existence
-        self.models["bb_squeeze"] = True # Simulate trained model
+        historical_clustering_features = pd.DataFrame(historical_clustering_features_list, index=historical_klines.index)
+        historical_clustering_features = historical_clustering_features.loc[X_flat.index].fillna(0) # Align with X_flat
+
+        if not historical_clustering_features.empty and len(historical_clustering_features) >= self.dl_config["kmeans_n_clusters"]:
+            try:
+                self.kmeans_model = KMeans(n_clusters=self.dl_config["kmeans_n_clusters"], random_state=42, n_init=10)
+                cluster_labels = self.kmeans_model.fit_predict(historical_clustering_features)
+                X_flat['cluster_label'] = pd.Series(cluster_labels, index=X_flat.index) # Add cluster label as feature to X_flat
+                self.logger.info(f"KMeans Clustering model trained with {self.dl_config['kmeans_n_clusters']} clusters.")
+            except Exception as e:
+                self.logger.error(f"Error training KMeans Clustering model: {e}. Skipping cluster feature.", exc_info=True)
+                X_flat['cluster_label'] = -1 # Default to a neutral/unknown cluster
+        else:
+            self.logger.warning(f"Not enough data ({len(historical_clustering_features)} samples) to train KMeans with {self.dl_config['kmeans_n_clusters']} clusters. Skipping cluster feature.")
+            X_flat['cluster_label'] = -1
+
+
+        # BB Squeeze Model (LGBM Classifier)
+        self.logger.info("Training BB Squeeze model (LGBM)...")
+        # Derive BB Squeeze features for historical data
+        historical_bb_squeeze_features_list = []
+        for idx, row in historical_klines.iterrows(): # Use historical_klines to derive these features
+            window_klines = historical_klines.loc[:idx].tail(max(self.config.get("bollinger_bands", {}).get("window", 20), self.config.get("keltner_channels", {}).get("window", 20)))
+            if not window_klines.empty and len(window_klines) >= max(self.config.get("bollinger_bands", {}).get("window", 20), self.config.get("keltner_channels", {}).get("window", 20)):
+                historical_bb_squeeze_features_list.append(self._get_bb_squeeze_features(window_klines).iloc[0])
+            else:
+                historical_bb_squeeze_features_list.append(pd.Series(0.0, index=['bb_width', 'bb_percent_b', 'bb_band_ratio', 'kc_width', 'squeeze_indicator', 'is_squeeze']))
+
+        historical_bb_squeeze_features = pd.DataFrame(historical_bb_squeeze_features_list, index=historical_klines.index)
+        historical_bb_squeeze_features = historical_bb_squeeze_features.loc[X_flat.index].fillna(0) # Align with X_flat
+        
+        # Define a target for BB Squeeze model (e.g., breakout vs mean-reversion)
+        # This is a pseudo-labeling for training the BB Squeeze model
+        target_lookahead_bb = self.config.get("bb_squeeze_target_lookahead", 5) # Look 5 periods ahead
+        price_change_bb = historical_klines['close'].pct_change(target_lookahead_bb).shift(-target_lookahead_bb)
+        
+        # Example target: 'BREAKOUT_UP', 'BREAKOUT_DOWN', 'MEAN_REVERT'
+        bb_squeeze_target = pd.Series('MEAN_REVERT', index=price_change_bb.index)
+        bb_squeeze_target[price_change_bb > self.config.get("bb_squeeze_breakout_threshold", 0.005)] = 'BREAKOUT_UP'
+        bb_squeeze_target[price_change_bb < -self.config.get("bb_squeeze_breakout_threshold", 0.005)] = 'BREAKOUT_DOWN'
+        
+        aligned_bb_squeeze_data = historical_bb_squeeze_features.join(bb_squeeze_target.rename('bb_target')).dropna()
+
+        if not aligned_bb_squeeze_data.empty:
+            X_bb_squeeze = aligned_bb_squeeze_data.drop(columns=['bb_target'])
+            y_bb_squeeze = aligned_bb_squeeze_data['bb_target']
+            self.bb_squeeze_features_list = X_bb_squeeze.columns.tolist() # Store feature names
+
+            try:
+                self.models["bb_squeeze"] = LGBMClassifier(
+                    random_state=42, 
+                    verbose=-1,
+                    reg_alpha=self.dl_config["l1_reg_strength"],
+                    reg_lambda=self.dl_config["l2_reg_strength"]
+                )
+                self.models["bb_squeeze"].fit(X_bb_squeeze, y_bb_squeeze)
+                self.logger.info("BB Squeeze model trained.")
+            except Exception as e:
+                self.logger.error(f"Error training BB Squeeze model: {e}")
+                self.models["bb_squeeze"] = None
+        else:
+            self.logger.warning("Insufficient aligned data for BB Squeeze model training. Skipping.")
+            self.models["bb_squeeze"] = None
+
 
         # Order Flow Model (LightGBM Classifier)
         self.logger.info("Training Order Flow model (LGBMClassifier)...")
         # Ensure historical_features contains order flow features
-        order_flow_features_for_training = historical_features[['cvd_value', 'cvd_divergence_score', 'is_absorption', 'is_exhaustion', 'aggressive_buy_volume', 'aggressive_sell_volume']].dropna()
+        order_flow_features_for_training = historical_features[['cvd_value', 'cvd_divergence_score', 'is_absorption', 'is_exhaustion', 'aggressive_buy_volume', 'aggressive_sell_volume', 'order_book_imbalance', 'aggressive_volume_ratio', 'recent_volume_spike']].dropna()
         
         # Simulate a target for order flow model based on short-term price movement
         # Example: 1 if price moves up by 0.1% in next 2 periods, -1 if down by 0.1%, 0 otherwise
         target_lookahead_of = 2
-        price_change_of = historical_features['close'].pct_change(target_lookahead_of).shift(-target_lookahead_of)
+        price_change_of = historical_klines['close'].pct_change(target_lookahead_of).shift(-target_lookahead_of)
         # Simplified target: 1 for up, 0 for down/sideways
         simulated_of_target = (price_change_of > 0.001).astype(int) 
         
@@ -203,27 +304,55 @@ class SidewaysRangeEnsemble(BaseEnsemble):
             self.models["order_flow"] = None
 
 
-        # TabNet-like Model (using Dense layers as a proxy)
-        self.logger.info("Training TabNet-like model...")
-        try:
-            model = Sequential([
-                Input(shape=(X_flat.shape[1],)),
-                Dense(self.dl_config["dense_units"], activation='relu',
-                      kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])),
-                Dropout(self.dl_config["dropout_rate"]),
-                Dense(self.dl_config["dense_units"] // 2, activation='relu',
-                      kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])),
-                Dropout(self.dl_config["dropout_rate"]),
-                Dense(len(unique_targets), activation='softmax',
-                      kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"]))
-            ])
-            model.compile(optimizer=Adam(learning_rate=self.dl_config["learning_rate"]), loss='sparse_categorical_crossentropy' if len(unique_targets) > 2 else 'binary_crossentropy', metrics=['accuracy'])
-            model.fit(X_flat, y_flat_encoded, epochs=self.dl_config["epochs"], batch_size=self.dl_config["batch_size"], verbose=0)
-            self.models["tabnet_proxy"] = model
-            self.logger.info("TabNet-like model trained.")
-        except Exception as e:
-            self.logger.error(f"Error training TabNet-like model: {e}")
-            self.models["tabnet_proxy"] = None
+        # TabNet Model (or Dense layer proxy if not available)
+        self.logger.info("Training TabNet model...")
+        if TABNET_AVAILABLE:
+            try:
+                # TabNetClassifier expects numpy arrays
+                self.models["tabnet"] = TabNetClassifier(
+                    n_d=self.dl_config["tabnet_n_d"],
+                    n_a=self.dl_config["tabnet_n_a"],
+                    n_steps=self.dl_config["tabnet_n_steps"],
+                    gamma=self.dl_config["tabnet_gamma"],
+                    cat_emb_dim=self.dl_config["tabnet_cat_emb_dim"],
+                    n_independent=self.dl_config["tabnet_n_independent"],
+                    n_shared=self.dl_config["tabnet_n_shared"],
+                    momentum=self.dl_config["tabnet_momentum"],
+                    mask_type=self.dl_config["tabnet_mask_type"],
+                    seed=42,
+                    verbose=0 # Suppress verbose output
+                )
+                self.models["tabnet"].fit(
+                    X_flat.values, y_flat_encoded,
+                    eval_set=[(X_flat.values, y_flat_encoded)], # Using training set as eval for simplicity
+                    max_epochs=self.dl_config["epochs"],
+                    batch_size=self.dl_config["batch_size"],
+                    drop_last=False # Keep all samples
+                )
+                self.logger.info("TabNet model trained.")
+            except Exception as e:
+                self.logger.error(f"Error training TabNet model: {e}")
+                self.models["tabnet"] = None
+        else: # Fallback to Keras Dense layers
+            try:
+                model = Sequential([
+                    Input(shape=(X_flat.shape[1],)),
+                    Dense(self.dl_config["dense_units"], activation='relu',
+                          kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])),
+                    Dropout(self.dl_config["dropout_rate"]),
+                    Dense(self.dl_config["dense_units"] // 2, activation='relu',
+                          kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])),
+                    Dropout(self.dl_config["dropout_rate"]),
+                    Dense(len(unique_targets), activation='softmax',
+                          kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"]))
+                ])
+                model.compile(optimizer=Adam(learning_rate=self.dl_config["learning_rate"]), loss='sparse_categorical_crossentropy' if len(unique_targets) > 2 else 'binary_crossentropy', metrics=['accuracy'])
+                model.fit(X_flat, y_flat_encoded, epochs=self.dl_config["epochs"], batch_size=self.dl_config["batch_size"], verbose=0)
+                self.models["tabnet"] = model
+                self.logger.info("TabNet-like (Dense layer) model trained.")
+            except Exception as e:
+                self.logger.error(f"Error training TabNet-like (Dense layer) model: {e}")
+                self.models["tabnet"] = None
 
         # LightGBM Model
         self.logger.info("Training LightGBM model...")
@@ -246,20 +375,31 @@ class SidewaysRangeEnsemble(BaseEnsemble):
         # Populate meta_features_train with actual (or simulated) predictions/confidences
         if self.models["clustering"]:
             # Predict cluster labels for historical data
-            historical_clustering_input = historical_features[['close', 'volume', 'ATR']].dropna()
-            if not historical_clustering_input.empty:
-                historical_cluster_labels = self.models["clustering"].predict(historical_clustering_input)
-                meta_features_train['cluster_label'] = pd.Series(historical_cluster_labels, index=historical_clustering_input.index).reindex(X_flat.index).fillna(-1) # Use -1 for unclustered
+            # Ensure historical_clustering_features is aligned with X_flat
+            aligned_historical_clustering_features = historical_clustering_features.loc[X_flat.index].fillna(0)
+            if not aligned_historical_clustering_features.empty:
+                historical_cluster_labels = self.kmeans_model.predict(aligned_historical_clustering_features)
+                meta_features_train['cluster_label'] = pd.Series(historical_cluster_labels, index=X_flat.index)
             else:
                 meta_features_train['cluster_label'] = -1 # Default if no clustering data
         else:
             meta_features_train['cluster_label'] = -1 # Default if no clustering model
 
-        historical_bb_squeeze_features_list = []
-        for idx, row in historical_features.iterrows():
-            historical_bb_squeeze_features_list.append(self._get_bb_squeeze_features(historical_features.loc[:idx]))
-        historical_bb_squeeze_features = pd.DataFrame(historical_bb_squeeze_features_list, index=historical_features.index).loc[X_flat.index].fillna(0)
-        meta_features_train = meta_features_train.join(historical_bb_squeeze_features, how='left')
+        if self.models["bb_squeeze"]:
+            # Predict probabilities for historical BB Squeeze features
+            aligned_historical_bb_squeeze_features = historical_bb_squeeze_features.loc[X_flat.index].fillna(0)
+            if not aligned_historical_bb_squeeze_features.empty:
+                bb_squeeze_probas = self.models["bb_squeeze"].predict_proba(aligned_historical_bb_squeeze_features)
+                # Assuming a multi-class target, take the probability of the predicted class
+                bb_squeeze_conf_values = []
+                for i, proba_array in enumerate(bb_squeeze_probas):
+                    predicted_class_idx = np.argmax(proba_array)
+                    bb_squeeze_conf_values.append(proba_array[predicted_class_idx])
+                meta_features_train['bb_squeeze_conf'] = pd.Series(bb_squeeze_conf_values, index=X_flat.index)
+            else:
+                meta_features_train['bb_squeeze_conf'] = 0.5 # Default neutral
+        else:
+            meta_features_train['bb_squeeze_conf'] = 0.5 # Default neutral
         
         if self.models["order_flow"]:
             order_flow_probas = self.models["order_flow"].predict_proba(X_of) # Use X_of from above
@@ -270,16 +410,20 @@ class SidewaysRangeEnsemble(BaseEnsemble):
             meta_features_train['order_flow_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
 
-        if self.models["tabnet_proxy"]:
-            tabnet_probas = self.models["tabnet_proxy"].predict(X_flat)
+        if self.models["tabnet"]:
+            if TABNET_AVAILABLE:
+                tabnet_probas = self.models["tabnet"].predict_proba(X_flat.values)
+            else: # Keras Dense layer proxy
+                tabnet_probas = self.models["tabnet"].predict(X_flat)
+
             if len(tabnet_probas) == len(y_flat_encoded):
                 tabnet_conf_values = [tabnet_probas[i, y_flat_encoded[i]] for i in range(len(y_flat_encoded))]
-                meta_features_train['tabnet_proxy_proba'] = pd.Series(tabnet_conf_values, index=X_flat.index)
+                meta_features_train['tabnet_proba'] = pd.Series(tabnet_conf_values, index=X_flat.index)
             else:
-                self.logger.warning("TabNet proxy probas length mismatch with y_flat_encoded. Using random uniform for tabnet_proxy_proba.")
-                meta_features_train['tabnet_proxy_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
+                self.logger.warning("TabNet probas length mismatch with y_flat_encoded. Using random uniform for tabnet_proba.")
+                meta_features_train['tabnet_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
         else:
-            meta_features_train['tabnet_proxy_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
+            meta_features_train['tabnet_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
         if self.models["lgbm"]:
             lgbm_probas = self.models["lgbm"].predict_proba(X_flat)
@@ -337,15 +481,16 @@ class SidewaysRangeEnsemble(BaseEnsemble):
 
         individual_model_outputs = {}
 
-        # Clustering Prediction
+        # Clustering Prediction (KMeans)
         if self.models["clustering"]:
             try:
-                clustering_input = current_features_row[['close', 'volume', 'ATR']].dropna()
-                if not clustering_input.empty:
-                    current_cluster_label = self.models["clustering"].predict(clustering_input)[0]
+                # Get clustering features for the current kline
+                current_clustering_features = self._get_clustering_features(klines_df)
+                if not current_clustering_features.empty:
+                    current_cluster_label = self.kmeans_model.predict(current_clustering_features)[0]
                     individual_model_outputs['cluster_label'] = float(current_cluster_label)
                 else:
-                    individual_model_outputs['cluster_label'] = -1.0
+                    individual_model_outputs['cluster_label'] = -1.0 # Default if no clustering features
             except Exception as e:
                 self.logger.error(f"Error predicting with KMeans Clustering: {e}")
                 individual_model_outputs['cluster_label'] = -1.0 # Default to -1 if prediction fails
@@ -353,15 +498,30 @@ class SidewaysRangeEnsemble(BaseEnsemble):
             individual_model_outputs['cluster_label'] = -1.0 # Default if no clustering model
 
 
-        # BB Squeeze Prediction (Conceptual/Rule-based)
-        current_bb_squeeze_features = self._get_bb_squeeze_features(klines_df)
-        individual_model_outputs['bb_width_norm'] = float(current_bb_squeeze_features['bb_width_norm'])
-        individual_model_outputs['is_bb_squeeze'] = float(current_bb_squeeze_features['is_bb_squeeze'])
+        # BB Squeeze Prediction (LGBM Classifier)
+        if self.models["bb_squeeze"]:
+            try:
+                # Derive current BB Squeeze features
+                current_bb_squeeze_features = self._get_bb_squeeze_features(klines_df)
+                if not current_bb_squeeze_features.empty:
+                    # Ensure feature order for prediction is same as training
+                    current_bb_squeeze_features_reindexed = current_bb_squeeze_features.reindex(self.bb_squeeze_features_list, fill_value=0.0)
+                    bb_squeeze_proba = self.models["bb_squeeze"].predict_proba(current_bb_squeeze_features_reindexed)[0]
+                    # Get confidence of the predicted class
+                    individual_model_outputs['bb_squeeze_conf'] = float(np.max(bb_squeeze_proba))
+                else:
+                    individual_model_outputs['bb_squeeze_conf'] = 0.5 # Default neutral
+            except Exception as e:
+                self.logger.error(f"Error predicting with BB Squeeze model: {e}")
+                individual_model_outputs['bb_squeeze_conf'] = 0.5
+        else:
+            individual_model_outputs['bb_squeeze_conf'] = 0.5
+
 
         # Order Flow Prediction
         if self.models["order_flow"]:
             try:
-                order_flow_input = current_features_row[['cvd_value', 'cvd_divergence_score', 'is_absorption', 'is_exhaustion', 'aggressive_buy_volume', 'aggressive_sell_volume']].dropna()
+                order_flow_input = current_features_row[['cvd_value', 'cvd_divergence_score', 'is_absorption', 'is_exhaustion', 'aggressive_buy_volume', 'aggressive_sell_volume', 'order_book_imbalance', 'aggressive_volume_ratio', 'recent_volume_spike']].dropna()
                 if not order_flow_input.empty:
                     order_flow_proba = self.models["order_flow"].predict_proba(order_flow_input)[0]
                     # Assuming binary classification for simplicity, take probability of positive class (index 1)
@@ -375,16 +535,19 @@ class SidewaysRangeEnsemble(BaseEnsemble):
             individual_model_outputs['order_flow_proba'] = 0.5
 
 
-        # TabNet-like Prediction
-        if self.models["tabnet_proxy"]:
+        # TabNet Prediction
+        if self.models["tabnet"]:
             try:
-                tabnet_proba = self.models["tabnet_proxy"].predict(X_current_flat)[0]
-                individual_model_outputs['tabnet_proxy_proba'] = float(np.max(tabnet_proba))
+                if TABNET_AVAILABLE:
+                    tabnet_proba = self.models["tabnet"].predict_proba(X_current_flat.values)[0]
+                else: # Keras Dense layer proxy
+                    tabnet_proba = self.models["tabnet"].predict(X_current_flat)[0]
+                individual_model_outputs['tabnet_proba'] = float(np.max(tabnet_proba))
             except Exception as e:
-                self.logger.error(f"Error predicting with TabNet-like model: {e}")
-                individual_model_outputs['tabnet_proxy_proba'] = 0.5
+                self.logger.error(f"Error predicting with TabNet model: {e}")
+                individual_model_outputs['tabnet_proba'] = 0.5
         else:
-            individual_model_outputs['tabnet_proxy_proba'] = 0.5
+            individual_model_outputs['tabnet_proba'] = 0.5
 
         # LightGBM Prediction
         if self.models["lgbm"]:

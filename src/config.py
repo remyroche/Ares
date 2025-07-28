@@ -264,7 +264,10 @@ CONFIG = {
             "atr.stop_loss_multiplier": [1.0, 1.5, 2.0],
             "atr.max_risk_per_trade_pct": [0.005, 0.01, 0.02],
             "general_trading.sr_proximity_pct": [0.003, 0.005, 0.007], # Updated path
-            
+            "strategist.long_threshold": [0.55, 0.95],
+            "strategist.short_threshold": [0.55, 0.95],
+            "risk_allocator.portfolio_risk_pct": [0.005, 0.03] # Search between 0.5% and 5% risk
+                
             # Analyst - Market Regime Classifier
             "analyst.market_regime_classifier.adx_period": [10, 14, 20],
             "analyst.market_regime_classifier.trend_scaling_factor": [50, 100, 150],

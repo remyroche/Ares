@@ -105,7 +105,9 @@ class FeatureEngineeringEngine:
         # Define the Autoencoder model
         input_layer = Input(shape=(input_dim,))
         encoder = Dense(latent_dim, activation="relu")(input_layer)
-        decoder = Dense(input_dim, activation="sigmoid")(encoder) # Sigmoid for normalized data (0-1 range)
+        # CHANGED: Use 'linear' activation for decoder output when using StandardScaler,
+        # as StandardScaler can produce negative values.
+        decoder = Dense(input_dim, activation="linear")(encoder) 
 
         self.autoencoder_model = Model(inputs=input_layer, outputs=decoder)
         self.autoencoder_model.compile(optimizer=Adam(learning_rate=0.001), loss='mse')

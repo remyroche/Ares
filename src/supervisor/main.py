@@ -17,7 +17,8 @@ from src.strategist.strategist import Strategist
 from src.tactician.tactician import Tactician
 from src.paper_trader import PaperTrader # Import PaperTrader for paper trading mode
 from src.utils.state_manager import StateManager
-from src.exchange.binance import exchange # Import the global BinanceExchange instance for live trading
+# No need to import src.exchange.binance.exchange here directly, it's passed in
+
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class Supervisor:
     It initializes, manages, and connects all the core components of the
     trading pipeline, ensuring they run concurrently and communicate efficiently.
     """
-    def __init__(self):
+    def __init__(self, exchange_client: Any): # Accept the exchange client from main.py
         self.logger = logger
         self.state_manager = StateManager('ares_state.json') # Initialize StateManager with its file path
         self.state = self.state_manager.get_state() # Use get_state() to load current state
@@ -43,33 +44,36 @@ class Supervisor:
         self.ab_tester = ABTester(self.config, self.performance_reporter)
         self.monitoring = Monitoring(self.firestore_manager)
         
-        # Initialize the core real-time components, passing the global exchange instance and state manager
-        self.sentinel = Sentinel(exchange, self.state_manager)
-        self.analyst = Analyst(exchange, self.state_manager)
-        self.strategist = Strategist(self.state_manager)
-        
-        # Initialize the trader based on the configured trading environment
+        # Determine the actual trading client (PaperTrader or live exchange_client)
         if settings.trading_environment == "PAPER":
-            # In paper trading mode, `self.trader` is an instance of PaperTrader
             self.trader = PaperTrader(initial_equity=settings.initial_equity)
             self.logger.info("Paper Trader initialized for simulation.")
-            # The tactician interacts with the PaperTrader as its exchange client
-            self.tactician = Tactician(self.trader, self.state_manager)
         elif settings.trading_environment == "LIVE":
-            # In live trading mode, `self.trader` is the global BinanceExchange instance
-            self.trader = exchange
+            self.trader = exchange_client # Use the live exchange client passed from main
             self.logger.info("Live Trader (BinanceExchange) initialized for live operations.")
-            # The tactician interacts with the real BinanceExchange client
-            self.tactician = Tactician(self.trader, self.state_manager)
         else:
             self.trader = None
-            self.tactician = None
             self.logger.error(f"Unknown trading environment: '{settings.trading_environment}'. Trading will be disabled.")
+            raise ValueError(f"Invalid TRADING_ENVIRONMENT: {settings.trading_environment}") # Halt if invalid
+
+        # Initialize the core real-time components, passing the selected trader and state manager
+        if self.trader:
+            self.sentinel = Sentinel(self.trader, self.state_manager)
+            self.analyst = Analyst(self.trader, self.state_manager)
+            self.strategist = Strategist(self.state_manager) # Strategist doesn't need exchange client directly
+            self.tactician = Tactician(self.trader, self.state_manager) # Tactician needs the trading client
+        else:
+            # If trader is None due to invalid environment, set all components to None
+            self.sentinel = None
+            self.analyst = None
+            self.strategist = None
+            self.tactician = None
+            self.logger.critical("Core trading components not initialized due to invalid trading environment.")
             
         self.running = False
         
         # Asynchronous queues for communication between components.
-        # Note: In the current architecture (e.g., src/main.py and src/ares_pipeline.py),
+        # Note: In the current architecture (e.g., src/ares_pipeline.py),
         # inter-module communication primarily happens via the StateManager.
         # These queues might be remnants of a different design or for future expansion.
         self.market_data_queue = asyncio.Queue(maxsize=100)
@@ -89,19 +93,21 @@ class Supervisor:
             await db_manager.initialize()
 
         # Create a list of all concurrent tasks for the main modules
-        tasks = [
-            asyncio.create_task(self.sentinel.start(), name="Sentinel_Task"),
-            asyncio.create_task(self.analyst.start(), name="Analyst_Task"),
-            asyncio.create_task(self.strategist.start(), name="Strategist_Task"),
-        ]
-        
-        # Only add tactician task if it was successfully initialized
-        if self.tactician:
-             tasks.append(asyncio.create_task(self.tactician.start(), name="Tactician_Task"))
-
-        # If in paper trading mode, also run the simulation engine
-        if isinstance(self.trader, PaperTrader):
-            tasks.append(asyncio.create_task(self.trader.run_simulation(), name="PaperTrader_Simulation_Task"))
+        tasks = []
+        if self.trader and self.sentinel and self.analyst and self.strategist and self.tactician:
+            tasks.extend([
+                asyncio.create_task(self.sentinel.start(), name="Sentinel_Task"),
+                asyncio.create_task(self.analyst.start(), name="Analyst_Task"),
+                asyncio.create_task(self.strategist.start(), name="Strategist_Task"),
+                asyncio.create_task(self.tactician.start(), name="Tactician_Task")
+            ])
+            # If in paper trading mode, also run the simulation engine
+            if isinstance(self.trader, PaperTrader):
+                tasks.append(asyncio.create_task(self.trader.run_simulation(), name="PaperTrader_Simulation_Task"))
+        else:
+            self.logger.error("Cannot start supervisor: Core trading components are not initialized.")
+            self.running = False
+            return # Exit early if components are not ready
 
         try:
             # Run all component tasks concurrently
@@ -117,6 +123,8 @@ class Supervisor:
             # Wait for all tasks to acknowledge cancellation
             await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Save the final state of the bot
+            # Perform final cleanup actions
+            if self.trader and hasattr(self.trader, 'close'):
+                await self.trader.close() # Close the exchange client (real or paper)
             self.state_manager.save_state() # Call save_state without arguments
             self.logger.info("All components have been shut down and state has been saved.")

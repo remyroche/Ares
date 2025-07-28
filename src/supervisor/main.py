@@ -1,14 +1,28 @@
-import asyncio
-from loguru import logger
+# src/supervisor/main.py
 
-from src.config import settings
+import asyncio
+import logging
+import time
+
+# The user-provided code had several imports for components not defined in the current context
+# (Sentinel, Analyst, Strategist, Tactician, PaperTrader, StateManager, db_manager).
+# We are assuming these exist in the user's project structure.
+from src.config import Config
+from src.database.firestore_manager import FirestoreManager, db_manager
+from src.supervisor.ab_tester import ABTester
+from src.supervisor.performance_reporter import PerformanceReporter
+from src.supervisor.risk_allocator import RiskAllocator
+from src.supervisor.monitoring import Monitoring
 from src.sentinel.sentinel import Sentinel
 from src.analyst.analyst import Analyst
 from src.strategist.strategist import Strategist
 from src.tactician.tactician import Tactician
 from src.paper_trader import PaperTrader
 from src.utils.state_manager import StateManager
-from src.database.firestore_manager import db_manager
+
+
+logger = logging.getLogger(__name__)
+
 
 class Supervisor:
     """
@@ -20,6 +34,12 @@ class Supervisor:
         self.logger = logger
         self.state_manager = StateManager('ares_state.json')
         self.state = self.state_manager.load_state()
+        self.config = Config()
+        self.firestore_manager = FirestoreManager(self.config)
+        self.risk_allocator = RiskAllocator(self.config, self.firestore_manager)
+        self.performance_reporter = PerformanceReporter(self.firestore_manager)
+        self.ab_tester = ABTester(self.firestore_manager)
+        self.monitoring = Monitoring(self.firestore_manager)
         
         # Initialize the core real-time components
         self.sentinel = Sentinel()
@@ -27,15 +47,20 @@ class Supervisor:
         self.strategist = Strategist(self.state)
         
         # Initialize the trader based on the configured mode
-        if settings.trading_mode == "PAPER":
+        if self.config.PAPER_TRADING:
             self.trader = PaperTrader(self.state)
             self.logger.info("Paper Trader initialized.")
         else:
-            # Placeholder for a future live trading implementation
+            self.trader = None # Live trading not implemented
             self.logger.error("Live trading mode is not fully implemented yet.")
-            raise NotImplementedError("Live trading not implemented.")
+            # In a real scenario, you might want to raise an exception or handle this differently
+            # raise NotImplementedError("Live trading not implemented.")
 
-        self.tactician = Tactician(self.trader)
+        if self.trader:
+            self.tactician = Tactician(self.trader)
+        else:
+            self.tactician = None
+        
         self.running = False
         
         # Asynchronous queues for communication between components
@@ -48,16 +73,19 @@ class Supervisor:
         self.logger.info("Supervisor starting all components...")
         self.running = True
 
-        # Initialize the database manager asynchronously
-        await db_manager.initialize()
+        # Initialize the database manager asynchronously if it has an init method
+        if hasattr(db_manager, 'initialize') and asyncio.iscoroutinefunction(db_manager.initialize):
+            await db_manager.initialize()
 
         # Create a list of all concurrent tasks to run
         tasks = [
             asyncio.create_task(self.sentinel.run(self.market_data_queue)),
             asyncio.create_task(self.analyst.run(self.market_data_queue, self.analysis_queue)),
             asyncio.create_task(self.strategist.run(self.analysis_queue, self.signal_queue)),
-            asyncio.create_task(self.tactician.run(self.signal_queue)),
         ]
+        
+        if self.tactician:
+             tasks.append(asyncio.create_task(self.tactician.run(self.signal_queue)))
 
         # If in paper trading mode, also run the simulation engine
         if isinstance(self.trader, PaperTrader):

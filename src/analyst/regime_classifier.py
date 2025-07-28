@@ -1,7 +1,7 @@
 # src/analyst/regime_classifier.py
 import pandas as pd
 import numpy as np
-from sklearn.cluster import KMeans # Placeholder for Wasserstein k-Means
+from sklearn.cluster import KMeans # Using standard KMeans for clustering on features
 from sklearn.preprocessing import StandardScaler
 from lightgbm import LGBMClassifier # For real-time classification
 import pandas_ta as ta
@@ -17,16 +17,20 @@ class MarketRegimeClassifier:
     Classifies the current market into one of four primary states:
     BULL_TREND, BEAR_TREND, SIDEWAYS_RANGE, or SR_ZONE_ACTION.
     Also provides a Trend Strength Score.
+
+    This enhanced version adds more advanced statistical and time-series derived features
+    to improve the LightGBM classifier's ability to distinguish regimes.
+    It also uses KMeans clustering on these features, with cluster labels serving as
+    additional input for the LightGBM.
     """
     def __init__(self, config, sr_analyzer: SRLevelAnalyzer):
         self.config = config.get("analyst", {}).get("market_regime_classifier", {})
         self.sr_analyzer = sr_analyzer
-        self.kmeans_model = None # Placeholder for Wasserstein k-Means
+        self.kmeans_model = None # KMeans model for feature-based clustering
         self.lgbm_classifier = None
         self.scaler = None
         self.logger = system_logger.getChild('MarketRegimeClassifier') # Child logger for classifier
 
-        # The regime_map is now more conceptual, as LGBM will predict string labels
         self.regime_map = {
             "BULL_TREND": "BULL_TREND",
             "BEAR_TREND": "BEAR_TREND",
@@ -80,6 +84,46 @@ class MarketRegimeClassifier:
         final_trend_strength = direction_score * momentum_score
         return final_trend_strength, current_adx
 
+    def _calculate_advanced_features(self, klines_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calculates additional statistical and time-series derived features for regime classification.
+        """
+        if klines_df.empty or len(klines_df) < 50: # Need sufficient history for rolling features
+            self.logger.warning("Insufficient data for advanced feature calculation. Returning empty DataFrame.")
+            return pd.DataFrame(index=klines_df.index)
+
+        features = pd.DataFrame(index=klines_df.index)
+        
+        # Ensure 'close' is numeric
+        klines_df['close'] = pd.to_numeric(klines_df['close'], errors='coerce')
+        klines_df['volume'] = pd.to_numeric(klines_df['volume'], errors='coerce')
+
+        # Rolling Returns and Volatility
+        features['log_returns'] = np.log(klines_df['close'] / klines_df['close'].shift(1))
+        features['volatility_20'] = features['log_returns'].rolling(window=20).std() * np.sqrt(252) # Annualized daily vol
+        features['volatility_50'] = features['log_returns'].rolling(window=50).std() * np.sqrt(252)
+
+        # Statistical Moments of Returns
+        features['skewness_20'] = features['log_returns'].rolling(window=20).skew()
+        features['kurtosis_20'] = features['log_returns'].rolling(window=20).kurt()
+
+        # Price Action Features (e.g., average candle body/wick size)
+        features['candle_body'] = abs(klines_df['open'] - klines_df['close'])
+        features['candle_range'] = klines_df['high'] - klines_df['low']
+        
+        # Avoid division by zero for normalization
+        features['avg_body_size_20'] = (features['candle_body'].rolling(window=20).mean() / klines_df['close']).fillna(0)
+        features['avg_range_size_20'] = (features['candle_range'].rolling(window=20).mean() / klines_df['close']).fillna(0)
+
+        # Volume-based features
+        features['volume_ma_20'] = klines_df['volume'].rolling(window=20).mean()
+        features['volume_change'] = (klines_df['volume'] - features['volume_ma_20']) / features['volume_ma_20'].replace(0, np.nan)
+        
+        # Clean up NaNs from rolling windows
+        features.fillna(0, inplace=True)
+        
+        return features
+
     def train_classifier(self, historical_features: pd.DataFrame, historical_klines: pd.DataFrame):
         """
         Trains the Market Regime Classifier using a pseudo-labeling approach.
@@ -91,8 +135,11 @@ class MarketRegimeClassifier:
             self.logger.warning("No historical features or klines to train classifier.")
             return
 
-        # Ensure klines and features are aligned by index
-        combined_data = historical_klines.join(historical_features, how='inner').dropna()
+        # Calculate advanced features from historical klines
+        advanced_features = self._calculate_advanced_features(historical_klines.copy())
+        
+        # Merge all features
+        combined_data = historical_klines.join(historical_features, how='inner').join(advanced_features, how='inner').dropna()
 
         if combined_data.empty:
             self.logger.warning("Insufficient aligned data for training classifier after dropping NaNs.")
@@ -103,7 +150,6 @@ class MarketRegimeClassifier:
         combined_data['SMA_50'] = combined_data['close'].rolling(window=50).mean()
 
         # 2. Use ADX from features for trend strength
-        # ADX is already in historical_features, so it's in combined_data
         adx_col = 'ADX'
 
         # 3. Use MACD Histogram from features for short-term momentum
@@ -132,9 +178,18 @@ class MarketRegimeClassifier:
                          (combined_data['close'] < combined_data['SMA_50'])
         combined_data.loc[bear_condition, 'simulated_label'] = "BEAR_TREND"
 
-        # Features for LightGBM training
-        # Use a consistent set of features that are generally available and relevant
-        features_for_lgbm = combined_data[['ADX', macd_hist_col, 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting']].dropna()
+        # Features for LightGBM training (include new advanced features)
+        # Ensure all necessary columns are present before slicing
+        required_features_for_lgbm = [
+            'ADX', macd_hist_col, 'ATR', 'volume_delta', 'autoencoder_reconstruction_error',
+            'Is_SR_Interacting', 'log_returns', 'volatility_20', 'skewness_20',
+            'kurtosis_20', 'avg_body_size_20', 'avg_range_size_20', 'volume_change'
+        ]
+        
+        # Filter to only existing columns to avoid KeyError if some features are missing
+        actual_features_for_lgbm = [col for col in required_features_for_lgbm if col in combined_data.columns]
+        
+        features_for_lgbm = combined_data[actual_features_for_lgbm].dropna()
         labels_for_lgbm = combined_data.loc[features_for_lgbm.index, 'simulated_label']
 
         if features_for_lgbm.empty or labels_for_lgbm.empty:
@@ -144,11 +199,29 @@ class MarketRegimeClassifier:
         self.scaler = StandardScaler()
         scaled_features = self.scaler.fit_transform(features_for_lgbm)
 
+        # --- Train KMeans Clustering Model ---
+        # Use KMeans on a subset of scaled features to identify underlying market clusters
+        # These cluster labels will then be used as an additional feature for the LightGBM
+        n_clusters = self.config.get("kmeans_n_clusters", 4) # Configurable number of clusters
+        if scaled_features.shape[0] >= n_clusters:
+            try:
+                self.kmeans_model = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                cluster_labels = self.kmeans_model.fit_predict(scaled_features)
+                features_for_lgbm['cluster_label'] = pd.Series(cluster_labels, index=features_for_lgbm.index)
+                self.logger.info(f"KMeans clustering trained with {n_clusters} clusters.")
+            except Exception as e:
+                self.logger.error(f"Error training KMeans clustering: {e}. Skipping cluster feature.", exc_info=True)
+                features_for_lgbm['cluster_label'] = -1 # Default to a neutral/unknown cluster
+        else:
+            self.logger.warning(f"Not enough data ({scaled_features.shape[0]} samples) to train KMeans with {n_clusters} clusters. Skipping cluster feature.")
+            features_for_lgbm['cluster_label'] = -1
+
+
         # Train LightGBM classifier on pseudo-labels
         self.lgbm_classifier = LGBMClassifier(random_state=42, verbose=-1) # verbose=-1 suppresses training output
-        self.lgbm_classifier.fit(scaled_features, labels_for_lgbm)
+        self.lgbm_classifier.fit(features_for_lgbm, labels_for_lgbm) # Pass DataFrame directly
         self.trained = True
-        self.logger.info("Market Regime Classifier training completed with pseudo-labeling.")
+        self.logger.info("Market Regime Classifier training completed with pseudo-labeling and advanced features.")
         self.save_model() # Save the model after training
 
     def predict_regime(self, current_features: pd.DataFrame, current_klines: pd.DataFrame, sr_levels: list):
@@ -215,13 +288,99 @@ class MarketRegimeClassifier:
 
         macd_hist_col = macd_hist_col[0]
 
-        required_features = ['ADX', macd_hist_col, 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting']
+        # Calculate advanced features for current data
+        current_advanced_features = self._calculate_advanced_features(current_klines.copy())
         
-        # Filter current_features to only include the required columns and handle potential missing ones
-        features_for_prediction_df = current_features[required_features].copy()
+        # Merge all current features
+        # Ensure current_features has all expected columns from feature_engineering
+        # before merging with advanced_features
         
-        # Fill any NaNs that might appear in the latest features before scaling
-        features_for_prediction_df.fillna(0, inplace=True) # Or use a more sophisticated imputation
+        # Create a combined DataFrame for prediction input, ensuring all expected features are present
+        # This is crucial because the scaler and LGBM expect the same feature set as during training.
+        
+        # First, ensure basic features are in current_features_row (from Analyst's feature_engineering)
+        # Then, add advanced features to it.
+        
+        # Ensure current_features is a copy to avoid modifying original
+        combined_current_features = current_features.copy()
+        
+        # Merge advanced features, handling potential index mismatches (e.g., if current_klines is shorter)
+        # Use `reindex` and `fillna` to ensure consistency.
+        combined_current_features = combined_current_features.merge(
+            current_advanced_features, left_index=True, right_index=True, how='left', suffixes=('', '_adv')
+        )
+        
+        # Filter to only existing columns to avoid KeyError if some features are missing
+        required_features_for_lgbm = [
+            'ADX', macd_hist_col, 'ATR', 'volume_delta', 'autoencoder_reconstruction_error',
+            'Is_SR_Interacting', 'log_returns', 'volatility_20', 'skewness_20',
+            'kurtosis_20', 'avg_body_size_20', 'avg_range_size_20', 'volume_change'
+        ]
+
+        # Add 'cluster_label' if KMeans was trained
+        if self.kmeans_model:
+            required_features_for_lgbm.append('cluster_label')
+
+        # Filter to only existing columns in combined_current_features
+        actual_features_for_lgbm = [col for col in required_features_for_lgbm if col in combined_current_features.columns]
+        
+        features_for_prediction_df = combined_current_features[actual_features_for_lgbm].dropna()
+        
+        # Predict cluster label for current features if KMeans was trained
+        if self.kmeans_model and 'cluster_label' in features_for_prediction_df.columns:
+            # Predict cluster for the current data point
+            # Need to ensure the input to kmeans_model.predict is scaled the same way it was trained
+            # For simplicity, we'll assume `scaled_features` from training was the full set.
+            # Here, we need to scale the features *before* predicting the cluster.
+            # This requires careful handling of the scaler if not all features are used for clustering.
+            
+            # For robustness, we re-scale the relevant features for clustering prediction
+            # assuming the scaler was fitted on the full set of features used for LGBM.
+            
+            # Create a temporary DataFrame for scaling and clustering
+            temp_features_for_clustering = features_for_prediction_df.drop(columns=['cluster_label'], errors='ignore').copy()
+            
+            # Ensure the feature columns for scaling match what was used during training
+            # This is critical. The scaler's columns are implicitly defined by `features_for_lgbm` during training.
+            # We need to re-align `temp_features_for_clustering` to `self.scaler.feature_names_in_` if available,
+            # or to the columns of `features_for_lgbm` from training.
+            
+            # A simpler, more robust approach is to predict the cluster on the *unscaled* features
+            # if the KMeans model was trained on unscaled features, or ensure the scaler is applied
+            # consistently before KMeans prediction.
+            
+            # For now, assuming KMeans was trained on the same `features_for_lgbm` columns,
+            # we will predict the cluster on the unscaled version of those features.
+            # If KMeans was trained on `scaled_features`, this part needs adjustment.
+            
+            # Let's assume KMeans was trained on `scaled_features` which were derived from `features_for_lgbm`.
+            # So, for prediction, we need to scale `temp_features_for_clustering` using `self.scaler`.
+            
+            if not temp_features_for_clustering.empty:
+                try:
+                    # Ensure the columns match the scaler's expected input
+                    # This is a common point of failure if feature sets change.
+                    # A robust solution would involve storing feature names used for scaler fitting.
+                    
+                    # For now, let's assume `temp_features_for_clustering` has the same columns as `features_for_lgbm`
+                    # (excluding 'cluster_label') from the training phase.
+                    
+                    # Get the columns that were used to fit the scaler
+                    scaler_fitted_cols = self.scaler.feature_names_in_ if hasattr(self.scaler, 'feature_names_in_') else actual_features_for_lgbm # Fallback
+                    
+                    # Reindex current features to match scaler's input order
+                    current_scaled_input_for_kmeans = self.scaler.transform(
+                        temp_features_for_clustering.reindex(columns=scaler_fitted_cols, fill_value=0).tail(1)
+                    )
+                    
+                    predicted_cluster = self.kmeans_model.predict(current_scaled_input_for_kmeans)[0]
+                    features_for_prediction_df.loc[features_for_prediction_df.index[-1], 'cluster_label'] = predicted_cluster
+                except Exception as e:
+                    self.logger.error(f"Error predicting cluster for current features: {e}. Setting cluster_label to -1.", exc_info=True)
+                    features_for_prediction_df.loc[features_for_prediction_df.index[-1], 'cluster_label'] = -1
+            else:
+                features_for_prediction_df.loc[features_for_prediction_df.index[-1], 'cluster_label'] = -1
+
 
         if features_for_prediction_df.empty:
             self.logger.warning("Insufficient features for regime prediction after filtering and dropping NaNs.")
@@ -232,18 +391,30 @@ class MarketRegimeClassifier:
             self.logger.error("Scaler not fitted. Cannot predict regime. Returning UNKNOWN.")
             return "UNKNOWN", trend_strength, current_adx
 
-        scaled_features = self.scaler.transform(features_for_prediction_df.tail(1)) # Predict for the latest data point
-        predicted_regime = self.lgbm_classifier.predict(scaled_features)[0]
+        # Scale the final features for LGBM prediction
+        # Use `reindex` to ensure column order matches training, and `fillna` for robustness
+        lgbm_input_cols = self.lgbm_classifier.feature_name_ if hasattr(self.lgbm_classifier, 'feature_name_') else actual_features_for_lgbm
+        if 'cluster_label' in lgbm_input_cols and 'cluster_label' not in features_for_prediction_df.columns:
+            features_for_prediction_df['cluster_label'] = -1 # Add if missing for prediction consistency
+
+        # Reindex the prediction DataFrame to match the training feature order
+        features_for_prediction_reindexed = features_for_prediction_df.reindex(columns=lgbm_input_cols, fill_value=0).tail(1)
+        
+        scaled_features_for_lgbm = self.scaler.transform(features_for_prediction_reindexed)
+        predicted_regime = self.lgbm_classifier.predict(scaled_features_for_lgbm)[0]
 
         self.logger.info(f"Predicted Regime: {predicted_regime}, Trend Strength: {trend_strength:.2f}, ADX: {current_adx:.2f}")
         return predicted_regime, trend_strength, current_adx
 
     def save_model(self):
-        """Saves the trained LGBM classifier and scaler using joblib."""
+        """Saves the trained LGBM classifier, scaler, and KMeans model using joblib."""
         try:
             model_data = {
                 'lgbm_classifier': self.lgbm_classifier,
-                'scaler': self.scaler
+                'scaler': self.scaler,
+                'kmeans_model': self.kmeans_model, # Save KMeans model
+                'lgbm_feature_names': self.lgbm_classifier.feature_name_ if hasattr(self.lgbm_classifier, 'feature_name_') else None,
+                'scaler_feature_names': self.scaler.feature_names_in_ if hasattr(self.scaler, 'feature_names_in_') else None
             }
             joblib.dump(model_data, self.model_path)
             self.logger.info(f"Market Regime Classifier model saved to {self.model_path}")
@@ -251,7 +422,7 @@ class MarketRegimeClassifier:
             self.logger.error(f"Error saving Market Regime Classifier model: {e}", exc_info=True)
 
     def load_model(self):
-        """Loads the trained LGBM classifier and scaler from file."""
+        """Loads the trained LGBM classifier, scaler, and KMeans model from file."""
         if not os.path.exists(self.model_path):
             self.logger.warning(f"Market Regime Classifier model file not found at {self.model_path}. Cannot load.")
             self.trained = False
@@ -260,6 +431,14 @@ class MarketRegimeClassifier:
             model_data = joblib.load(self.model_path)
             self.lgbm_classifier = model_data['lgbm_classifier']
             self.scaler = model_data['scaler']
+            self.kmeans_model = model_data.get('kmeans_model') # Load KMeans model
+            
+            # Restore feature names if saved (for robust reindexing)
+            if 'lgbm_feature_names' in model_data and model_data['lgbm_feature_names'] is not None:
+                self.lgbm_classifier.feature_name_ = model_data['lgbm_feature_names']
+            if 'scaler_feature_names' in model_data and model_data['scaler_feature_names'] is not None:
+                self.scaler.feature_names_in_ = model_data['scaler_feature_names']
+
             self.trained = True
             self.logger.info(f"Market Regime Classifier model loaded from {self.model_path}")
             return True
@@ -296,7 +475,7 @@ if __name__ == "__main__":
 
     # Simulate SR levels (normally from SRLevelAnalyzer)
     from src.analyst.sr_analyzer import SRLevelAnalyzer
-    sr_analyzer_demo = SRLevelAnalyzer(CONFIG["sr_analyzer"])
+    sr_analyzer_demo = SRLevelAnalyzer(CONFIG["analyst"]["sr_analyzer"])
     daily_df_for_sr = klines_df.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna()
     daily_df_for_sr.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
     sr_levels_demo = sr_analyzer_demo.analyze(daily_df_for_sr)

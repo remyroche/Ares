@@ -11,20 +11,21 @@ CONFIG = {
     "INTERVAL": '1m',
     "LOOKBACK_YEARS": 2,
 
-    # --- Data Caching Configuration ---
-    # Filenames are now generated dynamically based on SYMBOL, INTERVAL, LOOKBACK_YEARS
-    "KLINES_FILENAME": '', # Will be set dynamically below
-    "AGG_TRADES_FILENAME": '', # Will be set dynamically below
-    "FUTURES_FILENAME": '', # Will be set dynamically below
-    "PREPARED_DATA_FILENAME": '', # Will be set dynamically below
-
-    # --- Script Names ---
+    # --- Script Names & Flags ---
     "DOWNLOADER_SCRIPT_NAME": "ares_data_downloader.py",
     "PREPARER_SCRIPT_NAME": "ares_data_preparer.py",
     "PIPELINE_SCRIPT_NAME": "src/ares_pipeline.py",
     "BACKTESTING_PIPELINE_SCRIPT_NAME": "src/backtesting_pipeline.py",
     "PIPELINE_PID_FILE": "ares_pipeline.pid",
     "RESTART_FLAG_FILE": "restart_pipeline.flag",
+    "PROMOTE_CHALLENGER_FLAG_FILE": "promote_challenger.flag", # <-- ADD THIS LINE
+        
+    # --- Data Caching Configuration ---
+    # Filenames are now generated dynamically based on SYMBOL, INTERVAL, LOOKBACK_YEARS
+    "KLINES_FILENAME": '', # Will be set dynamically below
+    "AGG_TRADES_FILENAME": '', # Will be set dynamically below
+    "FUTURES_FILENAME": '', # Will be set dynamically below
+    "PREPARED_DATA_FILENAME": '', # Will be set dynamically below
 
     # --- Portfolio & Risk Configuration ---
     "INITIAL_EQUITY": 10000,

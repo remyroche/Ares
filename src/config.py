@@ -220,7 +220,9 @@ CONFIG = {
     "logging": {
         "log_level": "INFO", # DEBUG, INFO, WARNING, ERROR, CRITICAL
         "log_file": "logs/ares_system.log",
-        "log_to_console": True,
+        'log_to_file': True,  # Set to False to only log to the console
+        'directory': 'logs',  # The folder where log files will be stored
+        'filename': 'ares.log'  # The name of the log file        "log_to_console": True,
         "max_bytes": 10485760, # 10 MB
         "backup_count": 5 # Keep 5 backup log files
     },

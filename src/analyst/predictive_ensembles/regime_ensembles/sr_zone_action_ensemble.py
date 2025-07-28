@@ -296,7 +296,7 @@ class SRZoneActionEnsemble(BaseEnsemble):
                     order_flow_score_values.append(0.0) # Neutral score for HOLD
             
             # Align with X_flat index
-            meta_features_train['order_flow_score'] = pd.Series(order_flow_score_values, index=X_of.index).reindex(X_flat.index).fillna(0.0)
+            meta_features_train['order_flow_score'] = pd.Series(order_flow_score_values, index=aligned_X_of.index).reindex(X_flat.index).fillna(0.0)
         else:
             meta_features_train['order_flow_score'] = np.random.uniform(-0.5, 0.5, len(X_flat)) # Random directional score
 

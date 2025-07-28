@@ -1,17 +1,20 @@
 import asyncio
 import pandas as pd
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from src.exchange.binance import BinanceExchange
 from src.utils.logger import logger
 from src.config import settings
-from src.utils.state_manager import StateManager
-from src.analyst.feature_engineering import FeatureEngineering
-from src.analyst.regime_classifier import RegimeClassifier
-from src.analyst.sr_analyzer import SRAnalyzer
+from src.utiload_and_prepare_historical_data
+ls.state_manager import StateManager
+from src.analyst.feature_engineering import FeatureEngineeringEngine # Corrected import name
+from src.analyst.regime_classifier import MarketRegimeClassifier
+from src.analyst.sr_analyzer import SRLevelAnalyzer
 from src.analyst.technical_analyzer import TechnicalAnalyzer
-from src.analyst.market_health_analyzer import MarketHealthAnalyzer
-from src.analyst.liquidation_risk_model import LiquidationRiskModel
+from src.analyst.market_health_analyzer import GeneralMarketAnalystModule
+from src.analyst.liquidation_risk_model import ProbabilisticLiquidationRiskModel # Corrected import name
+from src.analyst.predictive_ensembles.ensemble_orchestrator import RegimePredictiveEnsembles # Corrected import name
+
 
 class Analyst:
     """
@@ -35,13 +38,20 @@ class Analyst:
         self.timeframe = settings.timeframe
         self.last_kline_open_time = None
 
+        # Internal storage for historical data, used during training pipeline
+        self._historical_klines = pd.DataFrame()
+        self._historical_agg_trades = pd.DataFrame()
+        self._historical_futures = pd.DataFrame()
+
         # Instantiate all sub-analyzer components
-        self.feature_engineering = FeatureEngineering()
-        self.regime_classifier = RegimeClassifier()
-        self.sr_analyzer = SRAnalyzer()
-        self.technical_analyzer = TechnicalAnalyzer()
-        self.market_health_analyzer = MarketHealthAnalyzer()
-        self.liquidation_risk_model = LiquidationRiskModel()
+        self.feature_engineering = FeatureEngineeringEngine(settings.CONFIG) # Pass CONFIG for sub-component init
+        self.sr_analyzer = SRLevelAnalyzer(settings.CONFIG["analyst"]["sr_analyzer"]) # Pass relevant config
+        self.regime_classifier = MarketRegimeClassifier(settings.CONFIG, self.sr_analyzer) # Pass CONFIG and sr_analyzer
+        self.technical_analyzer = TechnicalAnalyzer(settings.CONFIG["analyst"]["technical_analyzer"]) # Pass relevant config
+        self.market_health_analyzer = GeneralMarketAnalystModule(settings.CONFIG) # Pass CONFIG
+        self.liquidation_risk_model = ProbabilisticLiquidationRiskModel(settings.CONFIG) # Pass CONFIG
+        self.predictive_ensembles = RegimePredictiveEnsembles(settings.CONFIG) # Pass CONFIG
+
         self.logger.info("Analyst and all sub-analyzers initialized.")
 
     async def start(self):
@@ -74,50 +84,201 @@ class Analyst:
                 # Wait before retrying to prevent rapid failure loops
                 await asyncio.sleep(10)
 
+    async def load_and_prepare_historical_data(
+        self, 
+        historical_klines: Optional[pd.DataFrame] = None,
+        historical_agg_trades: Optional[pd.DataFrame] = None,
+        historical_futures: Optional[pd.DataFrame] = None
+    ) -> bool:
+        """
+        Loads historical data from the exchange or uses provided dataframes (for backtesting/training).
+        Then, it prepares this data by generating features and training/loading models.
+        """
+        self.logger.info("Loading and preparing historical data for Analyst components...")
+
+        if historical_klines is not None and historical_agg_trades is not None and historical_futures is not None:
+            # Use provided dataframes (e.g., from TrainingPipeline)
+            self._historical_klines = historical_klines
+            self._historical_agg_trades = historical_agg_trades
+            self._historical_futures = historical_futures
+            self.logger.info("Using historical data provided externally.")
+        else:
+            # Fetch data from exchange (for live/paper trading startup)
+            self.logger.info("Fetching historical data from exchange for live/paper trading.")
+            try:
+                # Fetch more data for comprehensive historical analysis (e.g., 5000 candles)
+                self._historical_klines = pd.DataFrame(await self.exchange.get_klines(self.trade_symbol, self.timeframe, limit=5000))
+                self._historical_klines['timestamp'] = pd.to_datetime(self._historical_klines['timestamp'], unit='ms')
+                self._historical_klines.set_index('timestamp', inplace=True)
+                self._historical_klines.columns = ['open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore']
+                for col in ['open', 'high', 'low', 'close', 'volume']: # Ensure numeric
+                    self._historical_klines[col] = pd.to_numeric(self._historical_klines[col])
+
+                # For agg trades and futures, assume similar fetching or data availability
+                # This part would need actual implementation in BinanceExchange to fetch historical agg trades/futures
+                # For now, using placeholders or relying on pre-downloaded data by backtesting.
+                self.logger.warning("Historical agg trades and futures data fetching from live exchange is a placeholder.")
+                # self._historical_agg_trades = await self.exchange.get_historical_agg_trades(...)
+                # self._historical_futures = await self.exchange.get_historical_futures_data(...)
+                
+                # Fallback to dummy or empty DFs if not fetched
+                if self._historical_agg_trades.empty:
+                    self.logger.warning("Historical agg trades data is empty. Using dummy for now.")
+                    self._historical_agg_trades = pd.DataFrame(columns=['timestamp', 'price', 'quantity', 'is_buyer_maker'])
+                if self._historical_futures.empty:
+                    self.logger.warning("Historical futures data is empty. Using dummy for now.")
+                    self._historical_futures = pd.DataFrame(columns=['timestamp', 'fundingRate', 'openInterest'])
+
+            except Exception as e:
+                self.logger.error(f"Failed to fetch historical data from exchange: {e}", exc_info=True)
+                return False
+
+        if self._historical_klines.empty:
+            self.logger.error("No historical klines data available for preparation.")
+            return False
+
+        # Prepare data for S/R analysis (daily aggregated)
+        daily_df_for_sr = self._historical_klines.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna()
+        daily_df_for_sr.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+        sr_levels = self.sr_analyzer.analyze(daily_df_for_sr)
+        self.state_manager.set_state("sr_levels", sr_levels) # Save SR levels to state manager
+
+        # Generate all features for historical data
+        historical_features_df = self.feature_engineering.generate_all_features(
+            self._historical_klines, self._historical_agg_trades, self._historical_futures, sr_levels
+        )
+        if historical_features_df.empty:
+            self.logger.error("Failed to generate historical features.")
+            return False
+
+        # Train/Load Market Regime Classifier
+        self.regime_classifier.train_classifier(historical_features_df.copy(), self._historical_klines.copy())
+
+        # Train/Load Predictive Ensembles
+        # The ensembles expect historical_features and historical_targets (which are pseudo-labeled)
+        # For training, we need to generate pseudo-targets for each regime.
+        # This is simplified here; in a full training pipeline, targets would be derived.
+        self.logger.info("Training/Loading Predictive Ensembles...")
+        # For simplicity, passing empty dict for historical_targets for now, as actual targets are complex.
+        # The ensemble orchestrator has its own simulated target generation for training.
+        self.predictive_ensembles.train_all_ensembles(historical_features_df.copy(), {}) 
+
+        self.logger.info("Historical data preparation and model training/loading complete.")
+        return True
+
     async def run_analysis_pipeline(self):
         """
         Executes the full sequence of analysis tasks.
         """
         self.logger.info("--- Starting Analysis Pipeline ---")
         try:
-            # 1. Fetch necessary historical data
-            klines = await self.exchange.get_klines(self.trade_symbol, self.timeframe, limit=500)
-            if not klines:
-                self.logger.error("Could not fetch historical klines. Aborting analysis cycle.")
+            # 1. Fetch necessary historical data (for features that need lookback)
+            # Use exchange's real-time data attributes for current context
+            klines = pd.DataFrame(self.exchange.kline_data, index=[0]) # Get latest kline
+            klines = self.exchange.get_latest_klines(num_klines=500) # Get recent klines as DataFrame
+            
+            if klines.empty:
+                self.logger.error("Could not fetch latest klines. Aborting analysis cycle.")
                 return
 
-            df = pd.DataFrame(klines, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            for col in ['open', 'high', 'low', 'close', 'volume']:
-                df[col] = pd.to_numeric(df[col])
+            # Ensure klines DataFrame has correct columns and types
+            klines.columns = ['open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore']
+            klines['open_time'] = pd.to_datetime(klines['open_time'], unit='ms')
+            klines.set_index('open_time', inplace=True)
+            for col in ['open', 'high', 'low', 'close', 'volume', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']:
+                 if col in klines.columns: # Check if column exists before converting
+                    klines[col] = pd.to_numeric(klines[col], errors='coerce')
+
 
             # 2. Get real-time data from the exchange client's state
             order_book = self.exchange.order_book
-            recent_trades = self.exchange.recent_trades
+            recent_trades = self.exchange.recent_trades # This is a list of dicts
+            
+            # Convert recent_trades to DataFrame for feature engineering if needed
+            agg_trades_df = pd.DataFrame(recent_trades)
+            if not agg_trades_df.empty:
+                agg_trades_df['timestamp'] = pd.to_datetime(agg_trades_df['T'], unit='ms') # 'T' is trade time in agg trades
+                agg_trades_df.set_index('timestamp', inplace=True)
+                agg_trades_df.rename(columns={'p': 'price', 'q': 'quantity', 'm': 'is_buyer_maker'}, inplace=True)
+                for col in ['price', 'quantity']:
+                    agg_trades_df[col] = pd.to_numeric(agg_trades_df[col], errors='coerce')
+            else:
+                agg_trades_df = pd.DataFrame(columns=['timestamp', 'price', 'quantity', 'is_buyer_maker'])
+
+            # Futures data is not typically a real-time stream like klines/trades/orderbook.
+            # It's usually fetched periodically or from historical data.
+            # For live analysis, we might use the last available historical futures data or fetch a small amount.
+            # For now, use the last known historical futures data or an empty DF.
+            futures_df = self._historical_futures.tail(100) # Use a recent window of historical futures data
 
             # 3. Run all analysis components in sequence
-            df_features = self.feature_engineering.add_features(df.copy())
-            market_regime = self.regime_classifier.classify(df_features)
-            sr_levels = self.sr_analyzer.analyze(df_features)
-            technical_signals = self.technical_analyzer.analyze(df_features)
-            market_health = self.market_health_analyzer.analyze(order_book, recent_trades)
-            liquidation_risk = self.liquidation_risk_model.calculate(df_features, sr_levels)
+            # Need to ensure ATR is calculated on klines before passing to feature_engineering
+            klines.ta.atr(length=settings.CONFIG['BEST_PARAMS']['atr_period'], append=True, col_names=('ATR'))
+            
+            df_features = self.feature_engineering.generate_all_features(klines.copy(), agg_trades_df.copy(), futures_df.copy(), self.state_manager.get_state("sr_levels", []))
+            
+            if df_features.empty:
+                self.logger.error("Feature generation resulted in empty DataFrame. Aborting analysis cycle.")
+                return
+
+            # Ensure 'ATR' is in df_features before passing to other modules if they rely on it
+            if 'ATR' not in df_features.columns and 'ATR' in klines.columns:
+                df_features['ATR'] = klines['ATR'] # Copy ATR from klines to features
+
+            # Get latest price and order book for liquidation risk and technical analysis
+            current_price = klines['close'].iloc[-1]
+            
+            # The SRLevelAnalyzer needs a daily DF for its analysis, not real-time klines.
+            # It should ideally be run less frequently or its output cached.
+            # For real-time analysis, we use the pre-calculated sr_levels from state_manager.
+            sr_levels_from_state = self.state_manager.get_state("sr_levels", [])
+
+            market_regime, trend_strength, adx = self.regime_classifier.predict_regime(df_features.copy(), klines.copy(), sr_levels_from_state)
+            technical_signals = self.technical_analyzer.analyze(klines.copy()) # Technical analyzer uses klines
+            market_health_score = self.market_health_analyzer.get_market_health_score(klines.copy()) # Market health uses klines
+
+            # Liquidation risk needs current position info, which comes from exchange/tactician
+            current_position_risk = await self.exchange.get_position_risk(self.trade_symbol)
+            current_position_notional = 0.0
+            current_liquidation_price = 0.0
+            if current_position_risk and len(current_position_risk) > 0:
+                pos = current_position_risk[0]
+                current_position_notional = float(pos.get('positionAmt', 0)) * current_price
+                current_liquidation_price = float(pos.get('liquidationPrice', 0))
+
+            liquidation_risk_score, lss_reasons = self.liquidation_risk_model.calculate_lss(
+                current_price, current_position_notional, current_liquidation_price, klines.copy(), order_book
+            )
+
+            # Get ensemble prediction for the current regime
+            ensemble_prediction_result = self.predictive_ensembles.get_ensemble_prediction(
+                regime=market_regime,
+                current_features=df_features.copy(), # Pass current features for ensemble
+                klines_df=klines.copy(),
+                agg_trades_df=agg_trades_df.copy(),
+                order_book_data=order_book,
+                current_price=current_price
+            )
 
             # 4. Consolidate intelligence
             analyst_intelligence = {
                 "timestamp": int(time.time() * 1000),
                 "market_regime": market_regime,
-                "support_resistance": sr_levels,
+                "trend_strength": trend_strength,
+                "adx": adx,
+                "support_resistance": sr_levels_from_state, # Use pre-calculated SR levels
                 "technical_signals": technical_signals,
-                "market_health": market_health,
-                "liquidation_risk_score": liquidation_risk,
-                # Simple directional confidence for demonstration
-                "directional_confidence_score": self._calculate_confidence(technical_signals, market_regime)
+                "market_health_score": market_health_score,
+                "liquidation_risk_score": liquidation_risk_score,
+                "liquidation_risk_reasons": lss_reasons,
+                "ensemble_prediction": ensemble_prediction_result["prediction"],
+                "ensemble_confidence": ensemble_prediction_result["confidence"],
+                "directional_confidence_score": ensemble_prediction_result["confidence"] # Use ensemble confidence as overall directional confidence
             }
 
             # 5. Save the final intelligence packet to the StateManager
             self.state_manager.set_state("analyst_intelligence", analyst_intelligence)
-            self.logger.info(f"Analysis complete. Intelligence package updated. Regime: {market_regime}")
+            self.logger.info(f"Analysis complete. Intelligence package updated. Regime: {market_regime}, Ensemble Pred: {ensemble_prediction_result['prediction']}, Conf: {ensemble_prediction_result['confidence']:.2f}")
             self.logger.debug(f"Analyst Intelligence: {analyst_intelligence}")
 
         except Exception as e:
@@ -125,23 +286,9 @@ class Analyst:
 
     def _calculate_confidence(self, signals: Dict, regime: str) -> float:
         """
-        A simple heuristic to generate a directional confidence score.
-        This should be replaced with a more sophisticated model.
+        This method is now largely superseded by the ensemble's confidence.
+        Keeping for legacy or minor adjustments if needed.
         """
-        score = 0.5  # Neutral baseline
-        if "BULL" in regime:
-            score += 0.2
-        elif "BEAR" in regime:
-            score -= 0.2
-        
-        if signals.get('rsi_signal') == 'buy':
-            score += 0.1
-        elif signals.get('rsi_signal') == 'sell':
-            score -= 0.1
-
-        if signals.get('macd_signal') == 'buy':
-            score += 0.1
-        elif signals.get('macd_signal') == 'sell':
-            score -= 0.1
-            
-        return max(0, min(1, round(score, 2))) # Clamp between 0 and 1
+        # The ensemble_prediction_result already provides a confidence score.
+        # This method might be deprecated or repurposed.
+        return signals.get('ensemble_confidence', 0.5) # Fallback to 0.5 if not found

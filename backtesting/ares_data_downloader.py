@@ -3,7 +3,8 @@ from binance.client import Client
 from datetime import datetime, timedelta
 import os
 import time
-from config import SYMBOL, LOOKBACK_YEARS, INTERVAL, KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAME
+# Import the main CONFIG dictionary
+from config import CONFIG
 from ares_mailer import send_email
 
 # --- Configuration ---
@@ -177,13 +178,13 @@ def download_futures_data(symbol, years_back, filename):
     )
 
     funding_df = pd.DataFrame()
+    oi_df = pd.DataFrame()
     if funding_rates:
         funding_df = pd.DataFrame(funding_rates)
         funding_df['timestamp'] = pd.to_datetime(funding_df['fundingTime'], unit='ms')
         funding_df.set_index('timestamp', inplace=True)
         funding_df['fundingRate'] = pd.to_numeric(funding_df['fundingRate'])
 
-    oi_df = pd.DataFrame()
     if open_interest:
         oi_df = pd.DataFrame(open_interest)
         oi_df['timestamp'] = pd.to_datetime(oi_df['timestamp'], unit='ms')
@@ -191,6 +192,7 @@ def download_futures_data(symbol, years_back, filename):
         oi_df['openInterest'] = pd.to_numeric(oi_df['sumOpenInterest'])
     
     if not funding_df.empty or not oi_df.empty:
+        # Merge funding_df and oi_df, forward-filling to align timestamps
         futures_df = pd.concat([funding_df.get('fundingRate'), oi_df.get('openInterest')], axis=1).ffill()
         futures_df.to_csv(filename)
         print(f"Futures data download complete and saved to {filename}.\n")
@@ -203,13 +205,21 @@ def main():
     if not os.path.exists(CACHE_DIR):
         os.makedirs(CACHE_DIR)
 
-    # Generate monthly periods for klines and daily for agg trades
-    monthly_periods = get_monthly_periods(LOOKBACK_YEARS)
-    daily_periods = get_daily_periods(LOOKBACK_YEARS)
+    # Access config values through the CONFIG dictionary
+    symbol = CONFIG['SYMBOL']
+    interval = CONFIG['INTERVAL']
+    lookback_years = CONFIG['LOOKBACK_YEARS']
+    klines_filename = CONFIG['KLINES_FILENAME']
+    agg_trades_filename = CONFIG['AGG_TRADES_FILENAME']
+    futures_filename = CONFIG['FUTURES_FILENAME']
 
-    download_klines_data(SYMBOL, INTERVAL, monthly_periods, KLINES_FILENAME)
-    download_agg_trades_data(SYMBOL, daily_periods, AGG_TRADES_FILENAME)
-    download_futures_data(SYMBOL, LOOKBACK_YEARS, FUTURES_FILENAME)
+    # Generate monthly periods for klines and daily for agg trades
+    monthly_periods = get_monthly_periods(lookback_years)
+    daily_periods = get_daily_periods(lookback_years)
+
+    download_klines_data(symbol, interval, monthly_periods, klines_filename)
+    download_agg_trades_data(symbol, daily_periods, agg_trades_filename)
+    download_futures_data(symbol, lookback_years, futures_filename)
     
     print("\nAll data has been downloaded and cached locally.")
 

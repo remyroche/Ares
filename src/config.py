@@ -120,6 +120,16 @@ CONFIG = {
         "trading_range_atr_multiplier": 3.0, # Multiplier for ATR to define range from recent price
         "max_leverage_cap_default": 100, # Default max leverage cap
         "sr_relevance_threshold": 5.0 # Minimum strength score for S/R levels to be considered by Strategist
+    },
+    # --- Supervisor Specific Configurations ---
+    "supervisor": {
+        "meta_learning_frequency_days": 7, # How often to run meta-learning optimization
+        "risk_allocation_lookback_days": 30, # Days to look back for performance for dynamic capital allocation
+        "max_capital_allocation_increase_pct": 1.0, # Max +100% of initial allocated capital (i.e., up to 2x)
+        "max_capital_allocation_decrease_pct": 0.75, # Max -75% of initial allocated capital (i.e., down to 0.25x)
+        "initial_allocated_capital_multiplier": 1.0, # Starting multiplier (1.0 = 100% of INITIAL_EQUITY)
+        "daily_summary_log_filename": "reports/daily_summary_log.csv",
+        "strategy_performance_log_filename": "reports/strategy_performance_log.csv"
     }
 }
 

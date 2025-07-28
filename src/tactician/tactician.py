@@ -34,6 +34,11 @@ class Tactician:
         self.logger.info("Tactician started. Waiting for new strategist parameters...")
         while True:
             try:
+                # Check if trading is paused by the Supervisor
+                if self.state_manager.get_state("is_trading_paused", False):
+                    await asyncio.sleep(10) # Sleep longer if paused
+                    continue
+
                 strategist_params = self.state_manager.get_state("strategist_params")
                 
                 if strategist_params and strategist_params.get("timestamp") != self.last_strategist_timestamp:
@@ -136,11 +141,14 @@ class Tactician:
     def _calculate_position_size(self, current_price: float, stop_loss_price: float, leverage: int) -> float:
         """Calculates position size based on risk per trade and stop loss distance."""
         capital = self.state_manager.get_state("account_equity", settings.get("initial_equity", 10000))
-        risk_per_trade_pct = self.config.get("risk_per_trade_pct", 0.01) # 1% risk
+        risk_per_trade_pct = self.config.get("risk_per_trade_pct", 0.01)
+        
+        # Apply the global risk multiplier from the Supervisor
+        risk_multiplier = self.state_manager.get_state("global_risk_multiplier", 1.0)
         
         if current_price == stop_loss_price: return 0.0
 
-        max_risk_usd = capital * risk_per_trade_pct
+        max_risk_usd = capital * risk_per_trade_pct * risk_multiplier
         stop_loss_distance = abs(current_price - stop_loss_price)
         if stop_loss_distance == 0: return 0.0
 
@@ -152,7 +160,7 @@ class Tactician:
             self.logger.warning(f"Required margin ({required_margin:.2f}) exceeds capital ({capital:.2f}). Reducing size.")
             units = (capital * leverage) / current_price
         
-        return round(units, 3) # Return rounded to 3 decimal places for crypto
+        return round(units, 3)
 
     def _determine_leverage(self, lss: float, max_leverage_cap: int) -> int:
         """Determines leverage based on Liquidation Safety Score (LSS)."""
@@ -160,7 +168,6 @@ class Tactician:
         if lss <= 50:
             scaled_leverage = initial_leverage
         else:
-            # Scale leverage from initial_leverage up to max_leverage_cap as LSS goes from 50 to 100
             scaled_leverage = initial_leverage + ((lss - 50) / 50) * (max_leverage_cap - initial_leverage)
         
         return min(max(initial_leverage, int(scaled_leverage)), max_leverage_cap)
@@ -169,9 +176,6 @@ class Tactician:
         """Executes the logic to open a new position."""
         self.logger.info(f"Executing OPEN for {decision['direction']} position: Qty={decision['quantity']:.3f}, SL={decision['stop_loss']:.2f}, TP={decision['take_profit']:.2f}")
         try:
-            # Here you would set leverage on the exchange before placing the order
-            # await self.exchange.set_leverage(self.trade_symbol, decision['leverage'])
-            
             order = await self.exchange.create_order(
                 symbol=self.trade_symbol,
                 side="BUY" if decision['direction'] == "LONG" else "SELL",
@@ -213,4 +217,3 @@ class Tactician:
 
         except Exception as e:
             self.logger.error(f"Failed to execute close order: {e}", exc_info=True)
-

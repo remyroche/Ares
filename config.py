@@ -112,6 +112,14 @@ CONFIG = {
             "risk_per_trade_pct": 0.01 # Max 1% of capital risked per trade (from overall config)
         },
         "order_types": ["MARKET", "LIMIT"] # Supported order types for the Tactician
+    },
+    # --- Strategist Specific Configurations ---
+    "strategist": {
+        "timeframe": "1D", # Timeframe for macro analysis (e.g., "4H", "1D")
+        "ma_periods_for_bias": [50, 200], # Moving average periods for positional bias
+        "trading_range_atr_multiplier": 3.0, # Multiplier for ATR to define range from recent price
+        "max_leverage_cap_default": 100, # Default max leverage cap
+        "sr_relevance_threshold": 5.0 # Minimum strength score for S/R levels to be considered by Strategist
     }
 }
 

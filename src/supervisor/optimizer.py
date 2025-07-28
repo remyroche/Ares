@@ -125,10 +125,16 @@ class Optimizer:
         self.optimization_param_names = param_names
 
     def _objective_function(self, params_list, strategy_breakdown_data_ref):
+        """
+        The core function for Bayesian optimization. It runs a backtest with a given
+        set of parameters and returns a composite performance score to be minimized.
+        """
         candidate_opt_params = dict(zip(self.optimization_param_names, params_list))
         full_candidate_params = self._create_full_params_dict(candidate_opt_params)
 
         self.logger.info(f"  Evaluating candidate: {full_candidate_params}")
+        
+        # This method should run a full backtest and return a dictionary of metrics
         metrics = self._evaluate_params_with_backtest(full_candidate_params)
 
         sharpe = metrics.get('Sharpe Ratio', -1e9)
@@ -137,10 +143,13 @@ class Optimizer:
         max_drawdown = metrics.get('Max Drawdown (%)', 1e9)
         win_rate = metrics.get('Win Rate (%)', 0.0)
 
+        # Weights for the different components of the score
         w_sharpe, w_profit_factor, w_equity, w_drawdown, w_win_rate = 0.5, 0.2, 0.2, 0.1, 0.1
         
+        # Normalize profit factor to prevent extreme values from dominating
         normalized_profit_factor = np.log1p(profit_factor) if profit_factor > 0 else 0
         
+        # Calculate the composite score
         composite_score = (
             w_sharpe * sharpe +
             w_profit_factor * normalized_profit_factor +
@@ -149,6 +158,9 @@ class Optimizer:
             w_drawdown * max_drawdown
         )
         
+        self.logger.info(f"Candidate score: {composite_score:.4f}")
+
+        # gp_minimize seeks to minimize the function, so we return the negative of our composite score.
         return -composite_score
 
     async def implement_global_system_optimization(self, historical_pnl_data: pd.DataFrame, strategy_breakdown_data: dict):

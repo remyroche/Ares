@@ -184,53 +184,6 @@ if __name__ == "__main__":
     # You might need to run ares_data_downloader.py and ares_data_preparer.py first
     # For this demo, we'll try to load them, but they might be empty if not run.
     
-    # Simulate historical data for training if files don't exist or are empty
-    def create_dummy_data(filename, data_type='klines'):
-        if not os.path.exists(filename) or os.path.getsize(filename) == 0:
-            print(f"Creating dummy {data_type} data for {filename}...")
-            dates = pd.date_range(start='2024-01-01', periods=500, freq='1min')
-            if data_type == 'klines':
-                dummy_df = pd.DataFrame({
-                    'open': np.random.rand(500) * 100 + 2000,
-                    'high': np.random.rand(500) * 100 + 2050,
-                    'low': np.random.rand(500) * 100 + 1950,
-                    'close': np.random.rand(500) * 100 + 2000,
-                    'volume': np.random.rand(500) * 1000 + 100,
-                    'close_time': dates.astype(np.int64) // 10**6,
-                    'quote_asset_volume': np.random.rand(500) * 100000 + 10000,
-                    'number_of_trades': np.random.randint(100, 1000, 500),
-                    'taker_buy_base_asset_volume': np.random.rand(500) * 500 + 50,
-                    'taker_buy_quote_asset_volume': np.random.rand(500) * 50000 + 5000,
-                    'ignore': 0
-                }, index=dates)
-                dummy_df.index.name = 'open_time'
-            elif data_type == 'agg_trades':
-                dummy_df = pd.DataFrame({
-                    'price': np.random.rand(500) * 100 + 2000,
-                    'quantity': np.random.rand(500) * 10 + 1,
-                    'is_buyer_maker': np.random.choice([True, False], 500),
-                    'a': range(500), # Aggregate trade ID
-                    'T': dates.astype(np.int64) // 10**6
-                }, index=dates)
-                dummy_df.index.name = 'timestamp'
-            elif data_type == 'futures':
-                dummy_df = pd.DataFrame({
-                    'fundingRate': np.random.rand(500) * 0.001 - 0.0005, # -0.05% to +0.05%
-                    'openInterest': np.random.rand(500) * 1000000 + 100000,
-                    'fundingTime': dates.astype(np.int64) // 10**6,
-                    'timestamp': dates.astype(np.int64) // 10**6
-                }, index=dates)
-                dummy_df.index.name = 'timestamp'
-            
-            dummy_df.to_csv(filename)
-            print(f"Dummy data saved to {filename}")
-            return True
-        return False
-
-    create_dummy_data(KLINES_FILENAME, 'klines')
-    create_dummy_data(AGG_TRADES_FILENAME, 'agg_trades')
-    create_dummy_data(FUTURES_FILENAME, 'futures')
-
     analyst = Analyst()
 
     # Step 1: Load and prepare historical data (including training models)

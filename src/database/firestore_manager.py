@@ -218,3 +218,4 @@ class FirestoreManager:
         except Exception as e:
             self.logger.error(f"Error deleting document {doc_id} from {collection_name}: {e}", exc_info=True)
             return False
+

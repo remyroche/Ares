@@ -1,348 +1,128 @@
-# src/strategist/strategist.py
-import pandas as pd
-import numpy as np
-import pandas_ta as ta
-import os
-import sys
+import asyncio
+import time
+from typing import Dict, Any
 
-# Import the main CONFIG dictionary
-from config import CONFIG
-from sr_analyzer import SRLevelAnalyzer # Assuming sr_analyzer.py is at the root or accessible
-from analyst.data_utils import load_klines_data, calculate_volume_profile # UPDATED: Import calculate_volume_profile
+from src.utils.logger import logger
+from src.config import settings
+from src.utils.state_manager import StateManager
 
 class Strategist:
     """
-    The Strategist module defines the macro "playing field" for the current trading session.
-    It operates on longer timeframes to establish overall trading range, leverage cap,
-    and positional bias, now incorporating Volume Profile and VWAP.
+    The Strategist translates the Analyst's rich intelligence into a high-level trading plan.
+    It now uses detailed technical analysis (VWAP, MAs, etc.) to formulate its strategy.
     """
-    def __init__(self, config=CONFIG):
-        self.long_threshold = long_threshold if long_threshold is not None else CONFIG['strategist'].get('long_threshold', 0.7)
-        self.short_threshold = short_threshold if short_threshold is not None else CONFIG['strategist'].get('short_threshold', 0.7)
-        self.config = config.get("strategist", {})
-        self.global_config = config # Store global config to access other sections like BEST_PARAMS
-        self.sr_analyzer = SRLevelAnalyzer(config["sr_analyzer"]) # Reuse S/R Analyzer
-        self._historical_klines_htf = None # To store higher timeframe data
 
-    def __init__(self, long_threshold=0.7, short_threshold=0.7):
-        self.long_threshold = long_threshold
-        self.short_threshold = short_threshold
+    def __init__(self, state_manager: StateManager):
+        self.state_manager = state_manager
+        self.logger = logger.getChild('Strategist')
+        self.config = settings.get("strategist", {})
+        self.last_analyst_timestamp = None
+        self.logger.info("Strategist initialized.")
 
-    def decide_strategy(self, analysis_output):
+    async def start(self):
         """
-        Translates analyst probabilities into a clear strategic bias.
+        Starts the main strategist loop, waiting for new intelligence from the Analyst.
         """
-        prediction = analysis_output.get('prediction')
-        if not prediction or len(prediction) < 2:
-            return "NEUTRAL"
+        self.logger.info("Strategist started. Waiting for new analyst intelligence...")
+        while True:
+            try:
+                analyst_intelligence = self.state_manager.get_state("analyst_intelligence")
+                
+                if analyst_intelligence and analyst_intelligence.get("timestamp") != self.last_analyst_timestamp:
+                    self.last_analyst_timestamp = analyst_intelligence.get("timestamp")
+                    self.logger.info("New analyst intelligence detected. Running strategy formulation.")
+                    await self.formulate_strategy(analyst_intelligence)
+                
+                await asyncio.sleep(1)
 
-        prob_down, prob_up = prediction[0], prediction[1]
+            except asyncio.CancelledError:
+                self.logger.info("Strategist task cancelled.")
+                break
+            except Exception as e:
+                self.logger.error(f"An error occurred in the Strategist loop: {e}", exc_info=True)
+                await asyncio.sleep(10)
 
-        if prob_up > self.long_threshold:
-            return "LONG"
-        elif prob_down > self.short_threshold:
-            return "SHORT"
-        else:
-            return "NEUTRAL"
+    async def formulate_strategy(self, analyst_intelligence: Dict[str, Any]):
+        """
+        Formulates the high-level strategy based on the Analyst's detailed findings.
+        """
+        self.logger.info("--- Starting Strategy Formulation ---")
+        try:
+            # Extract rich data from the analyst's packet
+            market_regime = analyst_intelligence.get("market_regime", "UNCERTAIN")
+            liquidation_risk = analyst_intelligence.get("liquidation_risk_score", 100)
+            confidence = analyst_intelligence.get("directional_confidence_score", 0.5)
+            tech_analysis = analyst_intelligence.get("technical_analysis", {})
+
+            # Determine positional bias using new detailed data
+            positional_bias = self._determine_positional_bias(market_regime, tech_analysis)
+
+            # Determine leverage cap based on risk and confidence
+            leverage_cap = self._determine_leverage_cap(liquidation_risk, confidence)
             
-    def load_historical_data_htf(self):
-        """
-        Loads historical k-line data and resamples it to the Strategist's higher timeframe.
-        """
-        # Access KLINES_FILENAME from CONFIG
-        klines_filename = self.global_config['KLINES_FILENAME']
-        
-        print(f"Strategist: Loading historical k-lines for {self.config['timeframe']} analysis...")
-        raw_klines = load_klines_data(klines_filename)
-        if raw_klines.empty:
-            print("Strategist: Failed to load raw k-lines data. Cannot perform macro analysis.")
-            return False
+            # Determine max notional trade size
+            max_notional_size = self._determine_max_notional_size(market_regime)
 
-        # Resample to higher timeframe
-        # Ensure column names are correct for resampling
-        raw_klines.columns = [col.lower() for col in raw_klines.columns] # Ensure lowercase for consistency
-        
-        # Aggregate to the specified higher timeframe
-        self._historical_klines_htf = raw_klines.resample(self.config['timeframe']).agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna()
+            strategist_params = {
+                "timestamp": int(time.time() * 1000),
+                "positional_bias": positional_bias,
+                "max_allowable_leverage": leverage_cap,
+                "max_notional_trade_size": max_notional_size,
+                "source_analyst_timestamp": self.last_analyst_timestamp
+            }
 
-        # Rename columns for SRLevelAnalyzer compatibility and general use
-        self._historical_klines_htf.rename(columns={
-            'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'
-        }, inplace=True)
+            self.state_manager.set_state("strategist_params", strategist_params)
+            self.logger.info(f"Strategy formulated. Bias: {positional_bias}, Leverage Cap: {leverage_cap}x")
+            self.logger.debug(f"Strategist Params: {strategist_params}")
 
-        if self._historical_klines_htf.empty:
-            print(f"Strategist: No data after resampling to {self.config['timeframe']}.")
-            return False
-        
-        print(f"Strategist: Loaded {len(self._historical_klines_htf)} {self.config['timeframe']} candles.")
-        return True
+        except Exception as e:
+            self.logger.error(f"Error during strategy formulation: {e}", exc_info=True)
 
-    def _calculate_vwap(self, klines_df: pd.DataFrame) -> float:
-        """
-        Calculates the Volume-Weighted Average Price (VWAP) for the given DataFrame.
-        """
-        if klines_df.empty:
-            return np.nan
+    def _determine_positional_bias(self, market_regime: str, tech_analysis: Dict) -> str:
+        """Determines the trading bias using a combination of regime and technicals."""
         
-        # Calculate typical price (High + Low + Close) / 3
-        typical_price = (klines_df['High'] + klines_df['Low'] + klines_df['Close']) / 3
-        
-        # Calculate cumulative (Typical Price * Volume) and cumulative Volume
-        tp_volume = typical_price * klines_df['Volume']
-        
-        # Ensure that the sum of volume is not zero to avoid division by zero
-        if klines_df['Volume'].sum() == 0:
-            return np.nan
+        # Bias from regime
+        regime_bias_map = self.config.get("regime_to_bias_map", {"BULL_TREND": "LONG", "BEAR_TREND": "SHORT"})
+        regime_bias = regime_bias_map.get(market_regime, "NEUTRAL")
 
-        vwap = tp_volume.sum() / klines_df['Volume'].sum()
-        return vwap
-
-    def _calculate_anchored_vwap(self, klines_df: pd.DataFrame, anchor_index: pd.Timestamp) -> float:
-        """
-        Calculates the Anchored VWAP from a specific anchor point (timestamp).
-        """
-        if klines_df.empty or anchor_index not in klines_df.index:
-            return np.nan
-        
-        anchored_df = klines_df.loc[anchor_index:]
-        return self._calculate_vwap(anchored_df)
-
-    def _analyze_positional_bias(self, klines_htf: pd.DataFrame, current_price: float):
-        """
-        Determines the overall positional bias (LONG, SHORT, NEUTRAL) based on HTF MAs, VWAP, and Volume Profile.
-        """
-        if klines_htf.empty or len(klines_htf) < max(self.config['ma_periods_for_bias']):
-            print("Strategist: Insufficient HTF data for positional bias analysis.")
-            return "NEUTRAL"
-
-        close_prices = klines_htf['Close']
-        ma_periods = self.config['ma_periods_for_bias']
-        
-        # Calculate MAs
-        ma_values = {}
-        for period in ma_periods:
-            ma_values[period] = close_prices.rolling(window=period).mean().iloc[-1]
-        
-        # Simple bias logic: if shorter MA > longer MA, bullish; else bearish.
-        # For multiple MAs, check alignment.
+        # Bias from technicals
         ma_bias = "NEUTRAL"
-        if len(ma_periods) >= 2:
-            is_bullish_alignment = all(ma_values[ma_periods[i]] > ma_values[ma_periods[i+1]] for i in range(len(ma_periods) - 1))
-            is_bearish_alignment = all(ma_values[ma_periods[i]] < ma_values[ma_periods[i+1]] for i in range(len(ma_periods) - 1))
-
-            if is_bullish_alignment and close_prices.iloc[-1] > ma_values[min(ma_periods)]:
-                ma_bias = "LONG"
-            elif is_bearish_alignment and close_prices.iloc[-1] < ma_values[min(ma_periods)]:
-                ma_bias = "SHORT"
-        
-        print(f"Strategist: MA-based bias: {ma_bias}")
-
-        # --- Integrate VWAP for bias ---
-        current_vwap = self._calculate_vwap(klines_htf)
         vwap_bias = "NEUTRAL"
-        if not np.isnan(current_vwap):
-            if current_price > current_vwap:
-                vwap_bias = "LONG" # Price above VWAP suggests bullish bias
-            elif current_price < current_vwap:
-                vwap_bias = "SHORT" # Price below VWAP suggests bearish bias
-        print(f"Strategist: VWAP-based bias: {vwap_bias} (Current VWAP: {current_vwap:.2f})")
-
-        # --- Integrate Anchored VWAP for institutional sentiment ---
-        # Find a significant anchor point (e.g., highest high or lowest low in last X periods)
-        # For simplicity, let's anchor to the highest high or lowest low in the last 60 periods
-        anchor_period = self.config.get("avwap_anchor_period", 60)
-        recent_klines = klines_htf.tail(anchor_period)
         
-        avwap_bias = "NEUTRAL"
-        if not recent_klines.empty:
-            high_idx = recent_klines['High'].idxmax()
-            low_idx = recent_klines['Low'].idxmin()
+        mas = tech_analysis.get('moving_averages', {})
+        if mas.get('sma_9', 0) > mas.get('sma_50', 0): ma_bias = "LONG"
+        elif mas.get('sma_9', 0) < mas.get('sma_50', 0): ma_bias = "SHORT"
 
-            avwap_from_high = self._calculate_anchored_vwap(klines_htf, high_idx)
-            avwap_from_low = self._calculate_anchored_vwap(klines_htf, low_idx)
+        price_to_vwap = tech_analysis.get('price_to_vwap_ratio', 1.0)
+        if price_to_vwap > 1.005: # Price >0.5% above VWAP
+            vwap_bias = "LONG"
+        elif price_to_vwap < 0.995: # Price >0.5% below VWAP
+            vwap_bias = "SHORT"
 
-            if not np.isnan(avwap_from_high) and current_price < avwap_from_high:
-                # Price below AVWAP from a swing high suggests bearish sentiment
-                avwap_bias = "SHORT"
-            elif not np.isnan(avwap_from_low) and current_price > avwap_from_low:
-                # Price above AVWAP from a swing low suggests bullish sentiment
-                avwap_bias = "LONG"
-        print(f"Strategist: Anchored VWAP bias: {avwap_bias}")
-
-        # --- Combine biases ---
-        # Simple majority vote or hierarchical decision
-        biases = [ma_bias, vwap_bias, avwap_bias]
+        # Combine biases (simple voting)
+        biases = [regime_bias, ma_bias, vwap_bias]
         long_votes = biases.count("LONG")
         short_votes = biases.count("SHORT")
 
         if long_votes > short_votes:
-            final_bias = "LONG"
-        elif short_votes > long_votes:
-            final_bias = "SHORT"
-        else:
-            final_bias = "NEUTRAL" # Fallback if no clear majority or ties
-
-        print(f"Strategist: Positional Bias: {final_bias} (Combined from MA, VWAP, AVWAP)")
-        return final_bias
-
-    def _determine_trading_range(self, klines_htf: pd.DataFrame, current_price: float):
-        """
-        Determines the operational trading range based on recent price action,
-        significant S/R levels, and Volume Profile levels.
-        """
-        if klines_htf.empty:
-            print("Strategist: Insufficient HTF data for trading range determination.")
-            return {"low": 0.0, "high": float('inf')}
-
-        # 1. Use SRLevelAnalyzer to get significant S/R levels
-        sr_levels = self.sr_analyzer.analyze(klines_htf)
-        relevant_sr_levels = [
-            level for level in sr_levels 
-            if level['strength_score'] >= self.config.get('sr_relevance_threshold', 5.0)
-        ]
+            return "LONG"
+        if short_votes > long_votes:
+            return "SHORT"
         
-        # 2. Calculate Volume Profile levels
-        volume_profile_data = calculate_volume_profile(klines_htf) # UPDATED: Call from data_utils
-        poc = volume_profile_data["poc"]
-        hvn_levels = volume_profile_data["hvn_levels"]
-        lvn_levels = volume_profile_data["lvn_levels"]
+        return "NEUTRAL"
 
-        # Combine all relevant levels (S/R, HVNs, POC)
-        all_relevant_levels = []
-        for level in relevant_sr_levels:
-            all_relevant_levels.append(level['level_price'])
-        if not np.isnan(poc):
-            all_relevant_levels.append(poc)
-        all_relevant_levels.extend(hvn_levels)
-        # LVNs can also act as temporary support/resistance, but might be less strong for range definition
-        # all_relevant_levels.extend(lvn_levels) # Optional: include LVNs
+    def _determine_leverage_cap(self, liquidation_risk: float, confidence: float) -> int:
+        """Calculates an appropriate leverage cap."""
+        base_leverage = self.config.get("base_leverage", 10)
+        risk_factor = 1 - (liquidation_risk / 100)
+        confidence_factor = 0.8 + (confidence * 0.4)
+        leverage = base_leverage * risk_factor * confidence_factor
+        return int(max(1, min(self.config.get("max_leverage_limit", 25), leverage)))
 
-        all_relevant_levels = sorted(list(set(all_relevant_levels))) # Remove duplicates and sort
-
-        # Find the closest relevant support below and resistance above current price
-        support_below = None
-        resistance_above = None
-
-        for level_price in all_relevant_levels:
-            if level_price < current_price:
-                support_below = level_price
-            elif level_price > current_price:
-                resistance_above = level_price
-                break # Found the first resistance above, stop
-
-        # Fallback to ATR-based range if no clear S/R or Volume Profile levels
-        if support_below is None or resistance_above is None or support_below >= resistance_above:
-            # Calculate ATR on the higher timeframe
-            # Access atr.window from CONFIG
-            atr_period = self.global_config['atr'].get("window", 14) 
-            atr_htf = klines_htf.ta.atr(length=atr_period, append=False).iloc[-1] 
-            atr_multiplier = self.config.get("trading_range_atr_multiplier", 3.0)
-            
-            range_low = current_price - (atr_htf * atr_multiplier)
-            range_high = current_price + (atr_htf * atr_multiplier)
-            print(f"Strategist: Using ATR-based range: [{range_low:.2f}, {range_high:.2f}] (No significant S/R/VP found)")
-            return {"low": range_low, "high": range_high}
-        
-        print(f"Strategist: Trading Range: [{support_below:.2f}, {resistance_above:.2f}] (Based on S/R and Volume Profile levels)")
-        return {"low": support_below, "high": resistance_above}
-
-    def _set_max_leverage_cap(self, market_health_score: float):
-        """
-        Sets the absolute maximum leverage cap based on overall market health.
-        """
-        default_cap = self.config.get("max_leverage_cap_default", 100)
-        
-        # Example logic: Lower market health means lower max leverage
-        # Scale cap from 25x to default_cap (e.g., 100x) based on health score (0-100)
-        min_cap = 25 # Minimum leverage even in poor market health
-        
-        # Linear scaling: (market_health_score / 100) * (default_cap - min_cap) + min_cap
-        scaled_cap = (market_health_score / 100.0) * (default_cap - min_cap) + min_cap
-        
-        final_cap = min(default_cap, max(min_cap, int(scaled_cap)))
-        print(f"Strategist: Max Allowable Leverage Cap: {final_cap}x (Market Health: {market_health_score:.2f})")
-        return final_cap
-
-    def get_strategist_parameters(self, analyst_market_health_score: float, current_price: float):
-        """
-        Generates the macro parameters for the Tactician.
-        This method should be called periodically (e.g., daily).
-        :param analyst_market_health_score: The overall market health score from the Analyst.
-        :param current_price: The current market price.
-        :return: A dictionary with 'Trading_Range', 'Max_Allowable_Leverage_Cap', 'Positional_Bias'.
-        """
-        print("\n--- Strategist: Generating Macro Parameters ---")
-
-        if self._historical_klines_htf is None:
-            if not self.load_historical_data_htf():
-                print("Strategist: Failed to load HTF data. Returning default parameters.")
-                return {
-                    "Trading_Range": {"low": 0.0, "high": float('inf')},
-                    "Max_Allowable_Leverage_Cap": self.config.get("max_leverage_cap_default", 100),
-                    "Positional_Bias": "NEUTRAL"
-                }
-
-        # 1. Positional Bias
-        positional_bias = self._analyze_positional_bias(self._historical_klines_htf, current_price)
-
-        # 2. Trading Range
-        trading_range = self._determine_trading_range(self._historical_klines_htf, current_price)
-
-        # 3. Max Allowable Leverage Cap
-        max_leverage_cap = self._set_max_leverage_cap(analyst_market_health_score)
-
-        strategist_output = {
-            "Trading_Range": trading_range,
-            "Max_Allowable_Leverage_Cap": max_leverage_cap,
-            "Positional_Bias": positional_bias
-        }
-        print("--- Strategist: Macro Parameters Generated ---")
-        return strategist_output
-
-# --- Example Usage (Main execution block for demonstration) ---
-if __name__ == "__main__":
-    print("Running Strategist Module Demonstration...")
-
-    # Create dummy klines data exists for loading
-    from analyst.data_utils import create_dummy_data
-    # Access KLINES_FILENAME from CONFIG
-    klines_filename = CONFIG['KLINES_FILENAME']
-    create_dummy_data(klines_filename, 'klines')
-
-    strategist = Strategist(config=CONFIG) # Pass CONFIG to Strategist
-
-    # Step 1: Load historical data (resampled to HTF)
-    if not strategist.load_historical_data_htf():
-        print("Strategist: Initial HTF data load failed. Exiting demo.")
-        sys.exit(1)
-
-    # Simulate Analyst's market health score and current price
-    simulated_market_health = 75.0 # Good market health
-    simulated_current_price = 2050.0
-
-    # Step 2: Get Strategist parameters
-    strategist_params = strategist.get_strategist_parameters(
-        analyst_market_health_score=simulated_market_health,
-        current_price=simulated_current_price
-    )
-
-    print("\n--- Final Strategist Parameters ---")
-    for key, value in strategist_params.items():
-        print(f"{key}: {value}")
-
-    print("\n--- Scenario 2: Lower Market Health ---")
-    simulated_market_health_low = 30.0 # Poor market health
-    strategist_params_low_health = strategist.get_strategist_parameters(
-        analyst_market_health_score=simulated_market_health_low,
-        current_price=simulated_current_price
-    )
-    for key, value in strategist_params_low_health.items():
-        print(f"{key}: {value}")
-
-    print("\nStrategist Module Demonstration Complete.")
+    def _determine_max_notional_size(self, market_regime: str) -> float:
+        """Determines the maximum notional size for a single trade."""
+        base_size = self.config.get("base_notional_trade_size", 5000)
+        size_multiplier = self.config.get("regime_size_multipliers", {
+            "BULL_TREND": 1.0, "BEAR_TREND": 1.0, "SIDEWAYS_RANGE": 0.5
+        })
+        return base_size * size_multiplier.get(market_regime, 0.25)

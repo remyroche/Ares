@@ -22,6 +22,34 @@ class Strategist:
         self.sr_analyzer = SRLevelAnalyzer(config["sr_analyzer"]) # Reuse S/R Analyzer
         self._historical_klines_htf = None # To store higher timeframe data
 
+    def __init__(self, long_threshold=0.7, short_threshold=0.7):
+        self.long_threshold = long_threshold
+        self.short_threshold = short_threshold
+
+    def decide_strategy(self, analysis_output):
+        """
+        Translates analyst probabilities into a clear strategic bias.
+        
+        Args:
+            analysis_output (dict): A dictionary from the Analyst, e.g.,
+                                    {'regime': 'BullTrend', 'prediction': [0.2, 0.8]}
+        
+        Returns:
+            str: "LONG", "SHORT", or "NEUTRAL"
+        """
+        prediction = analysis_output.get('prediction')
+        if not prediction or len(prediction) < 2:
+            return "NEUTRAL"
+
+        prob_down, prob_up = prediction[0], prediction[1]
+
+        if prob_up > self.long_threshold:
+            return "LONG"
+        elif prob_down > self.short_threshold:
+            return "SHORT"
+        else:
+            return "NEUTRAL"
+            
     def load_historical_data_htf(self):
         """
         Loads historical k-line data and resamples it to the Strategist's higher timeframe.

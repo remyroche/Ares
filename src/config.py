@@ -186,7 +186,7 @@ CONFIG = {
     },
     # --- Supervisor Specific Configurations ---
     "supervisor": {
-        "meta_learning_frequency_days": 7, # How often to run meta-learning optimization
+        "meta_learning_frequency_days": 30, # How often to run meta-learning optimization
         "retraining_schedule": {
             "enabled": True,
             "first_retraining_date": (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'), # 30 days after the bot launch

@@ -2,9 +2,10 @@
 import logging
 import logging.handlers
 import os
-from config import CONFIG # Import the main CONFIG dictionary
+# Import the main CONFIG dictionary
+from config import CONFIG 
 
-def setup_logger(name='ares_system', config=CONFIG['logging']):
+def setup_logger(name='ares_system', config=None): # Changed default config to None
     """
     Sets up a centralized logger for the Ares system.
     Logs to console and a rotating file.
@@ -14,6 +15,10 @@ def setup_logger(name='ares_system', config=CONFIG['logging']):
     # Prevent adding multiple handlers if logger is already configured
     if logger.handlers:
         return logger
+
+    # Use the logging configuration from the main CONFIG dictionary
+    if config is None:
+        config = CONFIG['logging']
 
     log_level_str = config.get("log_level", "INFO").upper()
     log_level = getattr(logging, log_level_str, logging.INFO)
@@ -46,4 +51,5 @@ def setup_logger(name='ares_system', config=CONFIG['logging']):
     return logger
 
 # Initialize the main system logger
-system_logger = setup_logger()
+# Pass CONFIG['logging'] explicitly to ensure correct configuration is used
+system_logger = setup_logger(config=CONFIG['logging'])

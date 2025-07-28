@@ -4,6 +4,7 @@ Project Ares is an advanced AI-driven trading system designed for the BTC/USDT p
 Core Philosophy & Architectural Principles
 
 Ares operates on a principle of hierarchical control, where higher-level modules define the strategic boundaries and lower-level modules handle real-time tactical execution. AI-driven order placement is central, with position size scaling with directional confidence and leverage adapting to assessed safety from liquidation. The system is built for continuous optimization through meta-learning, ensuring adaptability to evolving market dynamics.
+
 System Architecture: A Multi-Level Hierarchy
 
 The system is structured as a robust hierarchy, with each level governing the one below it:
@@ -12,11 +13,11 @@ The system is structured as a robust hierarchy, with each level governing the on
 
     Level 1: The Strategist (Macro Range Controller): Defines the "playing field" for the current trading session. It operates on longer timeframes (4-hour, 1-day) to establish the overall trading range, set the maximum allowable leverage cap, and determine a positional bias (long, short, or neutral).
 
-    Level 2: The Tactician (RL Order Manager): The real-time, high-frequency "brain" of the system. This Reinforcement Learning (RL) agent decides when, where, and how to place each individual order, strategically building positions by "laddering" into trades with increasing leverage and size as confidence and liquidation safety improve.
+    Level 2: The Tactician (RL Order Manager): The real-time, high-frequency "brain" of the system. This  agent decides when, where, and how to place each individual order, strategically building positions by "laddering" into trades with increasing leverage and size as confidence and liquidation safety improve.
 
     Level 3: The Analyst (Real-Time Intelligence): Provides the critical, context-aware predictions needed for intelligent order placement. It incorporates advanced feature engineering (Wavelet Transforms, Autoencoders), classifies the current market into specific regimes (BULL_TREND, BEAR_TREND, SIDEWAYS_RANGE, SR_ZONE_ACTION), and uses regime-specific predictive ensembles (LSTMs, Transformers, GBMs) to generate directional confidence scores and a Probabilistic Liquidation Risk Model (LSS).
 
-System-Wide Module: The Sentinel (Anomaly Detection): A persistent safety layer that continuously monitors the entire system for abnormal behavior, such as API issues, unusual model outputs, or rogue trade activity, triggering alerts or system shutdowns if critical anomalies are detected.
+    System-Wide Module: The Sentinel (Anomaly Detection): A persistent safety layer that continuously monitors the entire system for abnormal behavior, such as API issues, unusual model outputs, or rogue trade activity, triggering alerts or system shutdowns if critical anomalies are detected.
 
 Operational Flow: Building a Confidence-Scaled Ladder
 

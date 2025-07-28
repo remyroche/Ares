@@ -1,12 +1,12 @@
 import asyncio
 import pandas as pd
 from typing import Dict, Any, Optional
+from datetime import datetime, timedelta
 
 from src.exchange.binance import BinanceExchange
 from src.utils.logger import logger
 from src.config import settings
-from src.utiload_and_prepare_historical_data
-ls.state_manager import StateManager
+from src.utils.state_manager import StateManager
 from src.analyst.feature_engineering import FeatureEngineeringEngine # Corrected import name
 from src.analyst.regime_classifier import MarketRegimeClassifier
 from src.analyst.sr_analyzer import SRLevelAnalyzer
@@ -106,28 +106,62 @@ class Analyst:
             # Fetch data from exchange (for live/paper trading startup)
             self.logger.info("Fetching historical data from exchange for live/paper trading.")
             try:
-                # Fetch more data for comprehensive historical analysis (e.g., 5000 candles)
-                self._historical_klines = pd.DataFrame(await self.exchange.get_klines(self.trade_symbol, self.timeframe, limit=5000))
-                self._historical_klines['timestamp'] = pd.to_datetime(self._historical_klines['timestamp'], unit='ms')
-                self._historical_klines.set_index('timestamp', inplace=True)
-                self._historical_klines.columns = ['open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore']
-                for col in ['open', 'high', 'low', 'close', 'volume']: # Ensure numeric
-                    self._historical_klines[col] = pd.to_numeric(self._historical_klines[col])
+                # Define lookback period for historical data (e.g., 30 days for live analysis startup)
+                lookback_days = settings.CONFIG.get("analyst_historical_data_lookback_days", 30)
+                end_time_ms = self.exchange._get_timestamp()
+                start_time_ms = end_time_ms - int(timedelta(days=lookback_days).total_seconds() * 1000)
 
-                # For agg trades and futures, assume similar fetching or data availability
-                # This part would need actual implementation in BinanceExchange to fetch historical agg trades/futures
-                # For now, using placeholders or relying on pre-downloaded data by backtesting.
-                self.logger.warning("Historical agg trades and futures data fetching from live exchange is a placeholder.")
-                # self._historical_agg_trades = await self.exchange.get_historical_agg_trades(...)
-                # self._historical_futures = await self.exchange.get_historical_futures_data(...)
-                
-                # Fallback to dummy or empty DFs if not fetched
-                if self._historical_agg_trades.empty:
-                    self.logger.warning("Historical agg trades data is empty. Using dummy for now.")
-                    self._historical_agg_trades = pd.DataFrame(columns=['timestamp', 'price', 'quantity', 'is_buyer_maker'])
-                if self._historical_futures.empty:
-                    self.logger.warning("Historical futures data is empty. Using dummy for now.")
-                    self._historical_futures = pd.DataFrame(columns=['timestamp', 'fundingRate', 'openInterest'])
+                # Fetch klines
+                klines_raw = await self.exchange.get_klines(self.trade_symbol, self.timeframe, limit=5000) # Max limit for klines
+                if klines_raw:
+                    self._historical_klines = pd.DataFrame(klines_raw)
+                    self._historical_klines['open_time'] = pd.to_datetime(self._historical_klines['open_time'], unit='ms')
+                    self._historical_klines.set_index('open_time', inplace=True)
+                    self._historical_klines.columns = ['open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore']
+                    for col in ['open', 'high', 'low', 'close', 'volume', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']:
+                        if col in self._historical_klines.columns:
+                            self._historical_klines[col] = pd.to_numeric(self._historical_klines[col], errors='coerce')
+                else:
+                    self.logger.warning("Failed to fetch historical klines from exchange.")
+                    self._historical_klines = pd.DataFrame()
+
+                # Fetch historical aggregated trades
+                agg_trades_raw = await self.exchange.get_historical_agg_trades(self.trade_symbol, start_time_ms, end_time_ms)
+                if agg_trades_raw:
+                    self._historical_agg_trades = pd.DataFrame(agg_trades_raw)
+                    self._historical_agg_trades['timestamp'] = pd.to_datetime(self._historical_agg_trades['T'], unit='ms')
+                    self._historical_agg_trades.set_index('timestamp', inplace=True)
+                    self._historical_agg_trades.rename(columns={'p': 'price', 'q': 'quantity', 'm': 'is_buyer_maker'}, inplace=True)
+                    for col in ['price', 'quantity']:
+                        self._historical_agg_trades[col] = pd.to_numeric(self._historical_agg_trades[col], errors='coerce')
+                else:
+                    self.logger.warning("Failed to fetch historical aggregated trades from exchange.")
+                    self._historical_agg_trades = pd.DataFrame()
+
+                # Fetch historical futures data (funding rates, open interest)
+                futures_raw = await self.exchange.get_historical_futures_data(self.trade_symbol, start_time_ms, end_time_ms)
+                if futures_raw:
+                    # Combine funding rates and open interest into a single DataFrame
+                    funding_df = pd.DataFrame(futures_raw.get('funding_rates', []))
+                    if not funding_df.empty:
+                        funding_df['timestamp'] = pd.to_datetime(funding_df['fundingTime'], unit='ms')
+                        funding_df.set_index('timestamp', inplace=True)
+                        funding_df['fundingRate'] = pd.to_numeric(funding_df['fundingRate'], errors='coerce')
+                        funding_df = funding_df[['fundingRate']]
+                    
+                    oi_df = pd.DataFrame(futures_raw.get('open_interest', []))
+                    if not oi_df.empty:
+                        oi_df['timestamp'] = pd.to_datetime(oi_df['timestamp'], unit='ms')
+                        oi_df.set_index('timestamp', inplace=True)
+                        oi_df['openInterest'] = pd.to_numeric(oi_df['sumOpenInterest'], errors='coerce')
+                        oi_df = oi_df[['openInterest']]
+
+                    # Merge funding rates and open interest, forward-filling to align
+                    self._historical_futures = pd.concat([funding_df, oi_df], axis=1).ffill().bfill()
+                    self._historical_futures.dropna(inplace=True) # Drop rows that are still all NaN
+                else:
+                    self.logger.warning("Failed to fetch historical futures data from exchange.")
+                    self._historical_futures = pd.DataFrame()
 
             except Exception as e:
                 self.logger.error(f"Failed to fetch historical data from exchange: {e}", exc_info=True)
@@ -174,20 +208,33 @@ class Analyst:
         try:
             # 1. Fetch necessary historical data (for features that need lookback)
             # Use exchange's real-time data attributes for current context
-            klines = pd.DataFrame(self.exchange.kline_data, index=[0]) # Get latest kline
-            klines = self.exchange.get_latest_klines(num_klines=500) # Get recent klines as DataFrame
-            
+            # get_latest_klines is a method that fetches historical klines, not real-time stream data.
+            # The real-time kline data is in self.exchange.kline_data (a dict).
+            # For analysis pipeline, we need a recent window of klines as a DataFrame.
+            klines = self.exchange.get_latest_klines(num_klines=500) # This needs to be implemented in BinanceExchange to return a DataFrame
+
+            # Corrected: If get_latest_klines is not implemented to return DataFrame,
+            # we need to build it from raw kline data or fetch it here.
+            # Assuming get_latest_klines is a helper that fetches and formats.
+            # If not, this line would need to be:
+            # klines_raw = await self.exchange.get_klines(self.trade_symbol, self.timeframe, limit=500)
+            # klines = pd.DataFrame(klines_raw)
+            # ... and then proper DataFrame formatting as done in load_and_prepare_historical_data
+
             if klines.empty:
                 self.logger.error("Could not fetch latest klines. Aborting analysis cycle.")
                 return
 
-            # Ensure klines DataFrame has correct columns and types
-            klines.columns = ['open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore']
-            klines['open_time'] = pd.to_datetime(klines['open_time'], unit='ms')
-            klines.set_index('open_time', inplace=True)
-            for col in ['open', 'high', 'low', 'close', 'volume', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']:
-                 if col in klines.columns: # Check if column exists before converting
-                    klines[col] = pd.to_numeric(klines[col], errors='coerce')
+            # Ensure klines DataFrame has correct columns and types (assuming get_latest_klines returns raw data)
+            # This block might be redundant if get_latest_klines already returns a formatted DataFrame.
+            # It's safer to ensure consistency.
+            if not isinstance(klines.index, pd.DatetimeIndex):
+                klines['open_time'] = pd.to_datetime(klines['open_time'], unit='ms')
+                klines.set_index('open_time', inplace=True)
+                klines.columns = ['open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore']
+                for col in ['open', 'high', 'low', 'close', 'volume', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']:
+                     if col in klines.columns: # Check if column exists before converting
+                        klines[col] = pd.to_numeric(klines[col], errors='coerce')
 
 
             # 2. Get real-time data from the exchange client's state

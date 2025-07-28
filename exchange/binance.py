@@ -5,6 +5,7 @@ import hashlib
 import time
 from typing import Any, Dict, List, Callable
 from functools import wraps
+from datetime import datetime, timedelta
 
 import aiohttp
 import websockets
@@ -185,6 +186,89 @@ class BinanceExchange:
                 logger.info(f"Cancelled order {order_id} for {order_symbol}: {cancel_response}")
         except Exception as e:
             logger.error(f"Error cancelling all orders: {e}", exc_info=True)
+
+    async def get_historical_agg_trades(self, symbol: str, start_time_ms: int, end_time_ms: int, limit: int = 1000) -> List[Dict[str, Any]]:
+        """
+        Fetches historical aggregated trades for a symbol within a time range.
+        Binance API limits: max 1000 trades per request.
+        """
+        endpoint = "/fapi/v1/aggTrades"
+        all_trades = []
+        current_start_time = start_time_ms
+
+        while current_start_time < end_time_ms:
+            params = {
+                "symbol": symbol.upper(),
+                "startTime": current_start_time,
+                "endTime": end_time_ms,
+                "limit": limit
+            }
+            trades = await self._request("GET", endpoint, params)
+            if not trades:
+                break
+            all_trades.extend(trades)
+            # Update current_start_time to avoid fetching same trades again
+            current_start_time = trades[-1]['T'] + 1 # 'T' is the trade time in milliseconds
+
+            if len(trades) < limit: # If fewer than limit trades, likely reached end of data for the period
+                break
+            
+            # Add a small delay to avoid hitting rate limits too aggressively
+            await asyncio.sleep(0.1) 
+        
+        return all_trades
+
+    async def get_historical_futures_data(self, symbol: str, start_time_ms: int, end_time_ms: int) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Fetches historical futures-specific data (funding rates, open interest).
+        Note: Binance API limits for these endpoints are different (e.g., funding rate max 3 months, OI max 500 points).
+        This implementation will fetch data up to the limits and rely on the caller to handle time ranges.
+        """
+        funding_rates = []
+        open_interest = []
+
+        # Fetch Funding Rates
+        # Max 1000 records per request, typically 3 months history available
+        fr_endpoint = "/fapi/v1/fundingRate"
+        current_fr_start = start_time_ms
+        while current_fr_start < end_time_ms:
+            params = {
+                "symbol": symbol.upper(),
+                "startTime": current_fr_start,
+                "endTime": end_time_ms,
+                "limit": 1000 # Max limit
+            }
+            rates = await self._request("GET", fr_endpoint, params)
+            if not rates:
+                break
+            funding_rates.extend(rates)
+            current_fr_start = rates[-1]['fundingTime'] + 1 # 'fundingTime' is timestamp
+            await asyncio.sleep(0.1)
+
+        # Fetch Open Interest History
+        # Max 500 records per request for '5m' period.
+        oi_endpoint = "/fapi/v1/openInterestHist"
+        # Open interest history is often less granular than klines, typically '5m' or '1h' periods.
+        # We'll fetch a fixed amount and rely on the Analyst to handle its lookback.
+        # Fetching from `start_time_ms` might not work if it's too far back for the chosen period.
+        # For robustness, let's fetch a recent fixed number of data points.
+        
+        # A more robust approach would be to iterate by fixed periods (e.g., daily chunks)
+        # However, for simplicity given the API limits, we'll fetch a recent chunk.
+        
+        # Let's fetch the last 500 records for '5m' period, which covers ~41 hours.
+        # If the Analyst needs more, it should handle incremental fetching or use pre-downloaded data.
+        oi_params = {
+            "symbol": symbol.upper(),
+            "period": "5m", # Common period for OI history
+            "limit": 500 # Max limit for OI history
+        }
+        oi_data = await self._request("GET", oi_endpoint, oi_params)
+        if oi_data:
+            open_interest.extend(oi_data)
+        
+        return {"funding_rates": funding_rates, "open_interest": open_interest}
+
 
     # --- WebSocket Handlers ---
     async def _websocket_handler(self, url: str, callback: Callable, name: str):

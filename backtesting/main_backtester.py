@@ -3,7 +3,8 @@ import time
 import os
 import sys
 import signal
-from config import PIPELINE_SCRIPT_NAME, EMAIL_CONFIG, COMMAND_EMAIL_CONFIG, PIPELINE_PID_FILE, RESTART_FLAG_FILE
+# Import the main CONFIG dictionary
+from config import CONFIG
 
 def get_process_pid(pid_file):
     """Reads the PID from a specified PID file."""
@@ -71,20 +72,26 @@ def start_process(script_name, name="process"): # Removed log_prefix parameter
 def main():
     print("--- Ares Main Orchestrator Starting ---")
 
+    # Access PID and flag files from CONFIG
+    pipeline_pid_file = CONFIG['PIPELINE_PID_FILE']
+    restart_flag_file = CONFIG['RESTART_FLAG_FILE']
+    pipeline_script_name = CONFIG['PIPELINE_SCRIPT_NAME']
+
     # Clean up any old PID or flag files
-    if os.path.exists(PIPELINE_PID_FILE):
-        os.remove(PIPELINE_PID_FILE)
-    if os.path.exists(RESTART_FLAG_FILE):
-        os.remove(RESTART_FLAG_FILE)
+    if os.path.exists(pipeline_pid_file):
+        os.remove(pipeline_pid_file)
+    if os.path.exists(restart_flag_file):
+        os.remove(restart_flag_file)
 
     # Start the Email Command Listener
-    listener_process = start_process("email_command_listener.py", "Email Listener") # No log_prefix
+    # The email_command_listener.py script is in the 'emails' directory
+    listener_process = start_process("emails/email_command_listener.py", "Email Listener") 
     if listener_process is None:
         print("Failed to start Email Listener. Exiting.")
         sys.exit(1)
 
     # Start the Ares Pipeline
-    pipeline_process = start_process(PIPELINE_SCRIPT_NAME, "Ares Pipeline") # No log_prefix
+    pipeline_process = start_process(pipeline_script_name, "Ares Pipeline") 
     if pipeline_process is None:
         print("Failed to start Ares Pipeline. Exiting.")
         # Attempt to terminate listener if pipeline failed to start
@@ -98,16 +105,16 @@ def main():
                 print(f"Ares Pipeline (PID: {pipeline_process.pid}) has stopped unexpectedly.")
                 # Attempt to restart it
                 print("Attempting to restart Ares Pipeline...")
-                pipeline_process = start_process(PIPELINE_SCRIPT_NAME, "Ares Pipeline")
+                pipeline_process = start_process(pipeline_script_name, "Ares Pipeline")
                 if pipeline_process is None:
                     print("Failed to restart Ares Pipeline. Exiting orchestrator.")
                     break # Exit the main loop
 
             # Check for restart flag from email listener
-            if os.path.exists(RESTART_FLAG_FILE):
-                print(f"'{RESTART_FLAG_FILE}' detected. Initiating pipeline restart.")
+            if os.path.exists(restart_flag_file):
+                print(f"'{restart_flag_file}' detected. Initiating pipeline restart.")
                 # Terminate current pipeline process
-                current_pipeline_pid = get_process_pid(PIPELINE_PID_FILE) # Get PID from file for robustness
+                current_pipeline_pid = get_process_pid(pipeline_pid_file) # Get PID from file for robustness
                 if current_pipeline_pid and is_process_running(current_pipeline_pid):
                     terminate_process(current_pipeline_pid, "Ares Pipeline")
                 else:
@@ -115,13 +122,13 @@ def main():
 
                 # Remove the flag file immediately to avoid re-triggering
                 try:
-                    os.remove(RESTART_FLAG_FILE)
-                    print(f"'{RESTART_FLAG_FILE}' removed.")
+                    os.remove(restart_flag_file)
+                    print(f"'{restart_flag_file}' removed.")
                 except Exception as e:
                     print(f"Error removing restart flag file: {e}")
 
                 # Start a new pipeline process
-                pipeline_process = start_process(PIPELINE_SCRIPT_NAME, "Ares Pipeline")
+                pipeline_process = start_process(pipeline_script_name, "Ares Pipeline")
                 if pipeline_process is None:
                     print("Failed to restart Ares Pipeline after flag. Exiting orchestrator.")
                     break # Exit the main loop
@@ -141,10 +148,10 @@ def main():
             terminate_process(pipeline_process.pid, "Ares Pipeline")
         
         # Clean up PID and flag files
-        if os.path.exists(PIPELINE_PID_FILE):
-            os.remove(PIPELINE_PID_FILE)
-        if os.path.exists(RESTART_FLAG_FILE):
-            os.remove(RESTART_FLAG_FILE)
+        if os.path.exists(pipeline_pid_file):
+            os.remove(pipeline_pid_file)
+        if os.path.exists(restart_flag_file):
+            os.remove(restart_flag_file)
         print("All processes terminated and cleanup complete.")
 
 if __name__ == "__main__":

@@ -132,60 +132,108 @@ class BaseEnsemble(ABC):
     def _get_wyckoff_features(self, klines_df: pd.DataFrame, current_price: float) -> dict:
         """
         Rule-based approximation for Wyckoff pattern features.
-        This is a simplified example; real Wyckoff detection is complex.
+        Detects Springs, Upthrusts, Signs of Strength/Weakness, and conceptual phases.
         """
-        if klines_df.empty or len(klines_df) < 50: # Need sufficient history
-            return {"is_wyckoff_sos": 0, "is_wyckoff_sow": 0, "is_wyckoff_spring": 0, "is_wyckoff_upthrust": 0}
+        if klines_df.empty or len(klines_df) < 100: # Need sufficient history for patterns
+            return {
+                "is_wyckoff_sos": 0, "is_wyckoff_sow": 0, 
+                "is_wyckoff_spring": 0, "is_wyckoff_upthrust": 0,
+                "is_accumulation_phase": 0, "is_distribution_phase": 0
+            }
 
-        recent_klines = klines_df.iloc[-50:] # Look at last 50 candles
-        price_range = recent_klines['high'].max() - recent_klines['low'].min()
+        recent_klines = klines_df.iloc[-100:] # Look at last 100 candles for broader patterns
         avg_volume = recent_klines['volume'].mean()
 
-        # Simplified Spring/Upthrust (false breakout below/above a range)
+        # --- Springs and Upthrusts (False Breakouts with Volume) ---
         is_spring = 0
         is_upthrust = 0
 
-        # Check for a recent low breaking previous support, then quickly recovering
-        if len(recent_klines) > 2 and recent_klines['low'].iloc[-1] < recent_klines['low'].iloc[-2] and \
-           recent_klines['close'].iloc[-1] > recent_klines['low'].iloc[-2]:
-            is_spring = 1 # Price dipped below previous low and closed above it
+        # Spring: Price dips below a previous low (support) but quickly recovers with volume
+        # Check for a new low that is immediately rejected
+        if len(recent_klines) >= 3:
+            last_low = recent_klines['low'].iloc[-1]
+            prev_lows_window = recent_klines['low'].iloc[-10:-1] # Look at recent lows
+            
+            # If current low breaks a recent support level AND closes significantly higher
+            if last_low < prev_lows_window.min() and \
+               recent_klines['close'].iloc[-1] > recent_klines['open'].iloc[-1] and \
+               recent_klines['volume'].iloc[-1] > avg_volume * 1.5: # Volume confirmation
+                is_spring = 1
 
-        # Check for a recent high breaking previous resistance, then quickly falling
-        if len(recent_klines) > 2 and recent_klines['high'].iloc[-1] > recent_klines['high'].iloc[-2] and \
-           recent_klines['close'].iloc[-1] < recent_klines['high'].iloc[-2]:
-            is_upthrust = 1 # Price poked above previous high and closed below it
+        # Upthrust: Price pokes above a previous high (resistance) but quickly falls with volume
+        # Check for a new high that is immediately rejected
+        if len(recent_klines) >= 3:
+            last_high = recent_klines['high'].iloc[-1]
+            prev_highs_window = recent_klines['high'].iloc[-10:-1] # Look at recent highs
 
-        # Simplified Sign of Strength/Weakness (strong move with volume)
+            # If current high breaks a recent resistance level AND closes significantly lower
+            if last_high > prev_highs_window.max() and \
+               recent_klines['close'].iloc[-1] < recent_klines['open'].iloc[-1] and \
+               recent_klines['volume'].iloc[-1] > avg_volume * 1.5: # Volume confirmation
+                is_upthrust = 1
+
+        # --- Signs of Strength (SOS) and Signs of Weakness (SOW) ---
         is_sos = 0
         is_sow = 0
+        
+        # SOS: Strong upward move on high volume
         if recent_klines['close'].iloc[-1] > recent_klines['open'].iloc[-1] * 1.02 and \
-           recent_klines['volume'].iloc[-1] > avg_volume * 1.5: # 2% up move with 1.5x avg volume
+           recent_klines['volume'].iloc[-1] > avg_volume * 2.0: # 2% up move with 2x avg volume
             is_sos = 1
+        # SOW: Strong downward move on high volume
         elif recent_klines['close'].iloc[-1] < recent_klines['open'].iloc[-1] * 0.98 and \
-             recent_klines['volume'].iloc[-1] > avg_volume * 1.5: # 2% down move with 1.5x avg volume
+             recent_klines['volume'].iloc[-1] > avg_volume * 2.0: # 2% down move with 2x avg volume
             is_sow = 1
 
-        self.logger.debug(f"Wyckoff Features: Spring={is_spring}, Upthrust={is_upthrust}, SOS={is_sos}, SOW={is_sow}")
+        # --- Conceptual Phases (Accumulation/Distribution) ---
+        # True detection of Wyckoff phases requires complex pattern recognition over longer periods,
+        # often involving visual inspection and subjective judgment.
+        # Here, we provide very simplified heuristics.
+        is_accumulation_phase = 0
+        is_distribution_phase = 0
+
+        # Accumulation: Sideways movement with increasing volume on rallies and decreasing volume on dips
+        # Or, price making higher lows and higher highs within a range.
+        # Heuristic: Recent price range is narrow, but volume is relatively high on upward moves.
+        price_std = recent_klines['close'].std()
+        if price_std / current_price < 0.01 and recent_klines['volume'].iloc[-10:].mean() > avg_volume * 1.2:
+             # Check for subtle upward bias within the range (e.g., higher lows)
+             if recent_klines['low'].iloc[-5:].is_monotonic_increasing:
+                 is_accumulation_phase = 1
+
+        # Distribution: Sideways movement with increasing volume on dips and decreasing volume on rallies
+        # Or, price making lower highs and lower lows within a range.
+        # Heuristic: Recent price range is narrow, but volume is relatively high on downward moves.
+        if price_std / current_price < 0.01 and recent_klines['volume'].iloc[-10:].mean() > avg_volume * 1.2:
+             # Check for subtle downward bias within the range (e.g., lower highs)
+             if recent_klines['high'].iloc[-5:].is_monotonic_decreasing:
+                 is_distribution_phase = 1
+
+        self.logger.debug(f"Wyckoff Features: Spring={is_spring}, Upthrust={is_upthrust}, SOS={is_sos}, SOW={is_sow}, Acc={is_accumulation_phase}, Dist={is_distribution_phase}")
         return {
             "is_wyckoff_sos": is_sos,
             "is_wyckoff_sow": is_sow,
             "is_wyckoff_spring": is_spring,
-            "is_wyckoff_upthrust": is_upthrust
+            "is_wyckoff_upthrust": is_upthrust,
+            "is_accumulation_phase": is_accumulation_phase,
+            "is_distribution_phase": is_distribution_phase
         }
 
-    def _get_manipulation_features(self, order_book_data: dict, current_price: float) -> dict:
+    def _get_manipulation_features(self, order_book_data: dict, current_price: float, agg_trades_df: pd.DataFrame) -> dict:
         """
         Heuristic approximation for detecting market manipulation features.
-        Requires real-time order book snapshots.
+        This is highly limited by the available data (top-5 order book, aggregated trades).
+        True manipulation detection requires Level 2/3 data and real-time order event tracking.
         """
         bids = order_book_data.get('bids', [])
         asks = order_book_data.get('asks', [])
 
-        # Example: Detecting large order cancellations (spoofing approximation)
-        # This would require tracking order book changes over time, which is not feasible with static snapshot.
+        # --- Spoofing/Layering Heuristic (Conceptual) ---
+        # This requires tracking changes in order book depth over time.
+        # With only a single snapshot, we can only look for large, static walls.
+        # For true spoofing, you need to see large orders appear and disappear rapidly without execution.
         # Placeholder for conceptual logic:
-        # If a large bid/ask wall appears near price and then quickly disappears without being filled,
-        # it could be spoofing. This needs historical order book data.
+        # if large_wall_appeared_and_disappeared_rapidly: is_spoofing = 1
 
         # Simplified: Check for unusually large single orders near current price (potential 'iceberg' or 'wall')
         large_order_threshold_usd = self.config.get("order_book", {}).get("large_order_threshold_usd", 100000)
@@ -203,81 +251,100 @@ class BaseEnsemble(ABC):
                     is_large_ask_wall_near = 1
                     break
         
-        self.logger.debug(f"Manipulation Features: Large Bid Wall={is_large_bid_wall_near}, Large Ask Wall={is_large_ask_wall_near}")
+        # --- Liquidity Sweeping Heuristic ---
+        # Liquidity sweep: Rapid consumption of a large block of orders in the order book.
+        # This is hard to detect with aggregated trades and limited depth.
+        # Heuristic: A very large single aggregated trade that moves price significantly.
+        is_liquidity_sweep = 0
+        if not agg_trades_df.empty and len(agg_trades_df) > 1:
+            last_trade = agg_trades_df.iloc[-1]
+            prev_trades_avg_qty = agg_trades_df['quantity'].iloc[:-1].mean()
+            
+            # If current trade quantity is much larger than average AND price moved a lot
+            if last_trade['quantity'] > prev_trades_avg_qty * 5 and \
+               abs(last_trade['price'] - agg_trades_df['price'].iloc[-2]) / agg_trades_df['price'].iloc[-2] > 0.001: # 0.1% price move
+                is_liquidity_sweep = 1
+
+        # --- Fake Breakout Heuristic ---
+        # This is more about price action, but can be influenced by manipulation.
+        # Already conceptually covered in Wyckoff (Upthrust/Spring).
+        is_fake_breakout = 0 # Re-using Wyckoff logic for now, or could add specific logic here.
+
+        self.logger.debug(f"Manipulation Features: Large Bid Wall={is_large_bid_wall_near}, Large Ask Wall={is_large_ask_wall_near}, Liquidity Sweep={is_liquidity_sweep}")
         return {
-            "is_liquidity_sweep": 0, # Requires tracking rapid changes
-            "is_fake_breakout": 0,   # Requires tracking price action after breaking a level
+            "is_liquidity_sweep": is_liquidity_sweep,
+            "is_fake_breakout": is_fake_breakout,   # Placeholder, could integrate with Wyckoff
             "is_large_bid_wall_near": is_large_bid_wall_near,
             "is_large_ask_wall_near": is_large_ask_wall_near
         }
 
-    def _get_order_flow_features(self, agg_trades_df: pd.DataFrame, order_book_data: dict) -> dict:
+    def _get_order_flow_features(self, agg_trades_df: pd.DataFrame, order_book_data: dict, klines_df: pd.DataFrame) -> dict:
         """
-        Conceptual implementation for Order Flow and Market Microstructure features.
-        Approximates CVD and detects absorption/exhaustion from aggregated trades.
+        Advanced heuristic implementation for Order Flow and Market Microstructure features.
+        Highly limited by data granularity (aggregated trades, top-5 order book).
+        True order flow requires tick-level data and full order book snapshots.
         """
-        if agg_trades_df.empty:
-            return {"cvd_divergence": 0.0, "is_absorption": 0, "is_exhaustion": 0}
+        if agg_trades_df.empty or klines_df.empty:
+            return {"cvd_divergence": 0.0, "is_absorption": 0, "is_exhaustion": 0, "aggressive_buy_volume": 0, "aggressive_sell_volume": 0}
 
-        # Calculate Cumulative Volume Delta (CVD)
-        # Assuming 'is_buyer_maker' is True for seller-initiated (taker buy) and False for buyer-initiated (taker sell)
-        # Or, more commonly, True means buyer is the maker (passive order), so taker is seller.
-        # Let's assume 'is_buyer_maker': True for taker-sell (price goes down), False for taker-buy (price goes up)
-        # Binance agg trades 'm' field: True if buyer is maker, False if seller is maker.
-        # If buyer is maker (m=True), it's a sell order hitting a bid. So delta is negative.
-        # If m is False (seller is maker), it's a buy order hitting an ask. So delta is positive.
-        
-        # Corrected delta calculation based on Binance 'm' field:
-        # If m is True (buyer is maker), it's a sell trade, price likely went down, so quantity is negative for delta.
-        # If m is False (seller is maker), it's a buy trade, price likely went up, so quantity is positive for delta.
+        # --- Cumulative Volume Delta (CVD) ---
+        # `signed_quantity` is already calculated in feature_engineering, but we can re-calculate for recent trades
+        # Assuming 'is_buyer_maker': True for passive buyer (taker sells), False for passive seller (taker buys)
+        # Corrected: Binance 'm' (is_buyer_maker) means if the BUYER was the MAKER.
+        # If m=True (buyer is maker), it's a sell order hitting a bid (price likely goes down). So signed_qty = -qty.
+        # If m=False (seller is maker), it's a buy order hitting an ask (price likely goes up). So signed_qty = +qty.
         agg_trades_df['signed_quantity'] = agg_trades_df['quantity'] * np.where(agg_trades_df['is_buyer_maker'], -1, 1)
         
-        # Sum signed quantities over a recent period to get a proxy for CVD
-        cvd = agg_trades_df['signed_quantity'].sum()
+        # Consider recent trades for CVD
+        recent_trades = agg_trades_df.iloc[-min(len(agg_trades_df), 100):] # Last 100 trades
+        cvd = recent_trades['signed_quantity'].sum()
         
-        # Simple Absorption/Exhaustion detection
-        # Absorption: Price not moving much despite strong directional volume (CVD)
-        # Exhaustion: Price moving strongly but CVD is slowing or reversing
+        # --- CVD Divergence with Price (Heuristic) ---
+        # Divergence: Price moves one way, but CVD moves opposite or stagnates.
+        price_change_recent = klines_df['close'].iloc[-1] - klines_df['close'].iloc[-min(len(klines_df), 10):].mean()
+        
+        cvd_divergence_score = 0.0
+        if price_change_recent > 0 and cvd < 0: # Price up, but net selling
+            cvd_divergence_score = -1.0 # Bearish divergence
+        elif price_change_recent < 0 and cvd > 0: # Price down, but net buying
+            cvd_divergence_score = 1.0 # Bullish divergence
+
+        # --- Absorption and Exhaustion Patterns (Heuristic) ---
+        # Absorption: Strong buying/selling pressure (high CVD) but price not moving much.
+        # Exhaustion: Price moving strongly but CVD or volume is decreasing.
         
         is_absorption = 0
         is_exhaustion = 0
-        
-        if len(agg_trades_df) > 10: # Need enough trades for meaningful analysis
-            recent_price_change = agg_trades_df['price'].iloc[-1] - agg_trades_df['price'].iloc[0]
-            
-            # If large CVD but small price change: absorption
-            if abs(cvd) > agg_trades_df['quantity'].sum() * 0.1 and abs(recent_price_change) < (agg_trades_df['price'].mean() * 0.001): # 0.1% price change
-                if cvd > 0: # Bullish CVD but no price up means absorption of buys
-                    is_absorption = 1
-                elif cvd < 0: # Bearish CVD but no price down means absorption of sells
-                    is_absorption = 1
-            
-            # Exhaustion (conceptual): Price moves, but CVD indicates less interest or reversal
-            # This is harder to approximate without tracking CVD over time.
-            # For now, a placeholder.
-            
-        self.logger.debug(f"Order Flow Features: CVD={cvd:.2f}, Absorption={is_absorption}, Exhaustion={is_exhaustion}")
-        return {
-            "cvd_divergence": cvd, # Can be divergence with price
-            "is_absorption": is_absorption,
-            "is_exhaustion": is_exhaustion
-        }
 
-    def _get_multi_timeframe_features(self, klines_df_htf: pd.DataFrame, klines_df_mtf: pd.DataFrame) -> dict:
-        """
-        Placeholder for multi-timeframe analysis features.
-        Assumes klines_df_htf is higher timeframe and klines_df_mtf is medium/lower timeframe.
-        """
-        # Example: HTF trend direction, alignment of MAs across timeframes.
-        # This requires actual data from different timeframes.
-        # For a demo, we'll simulate.
+        # Absorption heuristic: High CVD, low price volatility
+        if abs(cvd) > recent_trades['quantity'].sum() * 0.2: # Significant CVD
+            recent_price_volatility = klines_df['close'].iloc[-10:].std() / klines_df['close'].iloc[-1]
+            if recent_price_volatility < 0.001: # Very low volatility (e.g., 0.1%)
+                is_absorption = 1
         
-        htf_trend_bullish = np.random.choice([0, 1])
-        mtf_trend_bullish = np.random.choice([0, 1])
+        # Exhaustion heuristic: Price continues in a trend, but volume/CVD drops off
+        # Requires tracking previous CVD/volume.
+        # For simplicity, if current candle is long but volume is low relative to average
+        current_candle_range = klines_df['high'].iloc[-1] - klines_df['low'].iloc[-1]
+        avg_candle_range = (klines_df['high'] - klines_df['low']).iloc[-50:-1].mean()
         
-        self.logger.debug(f"Multi-Timeframe Features: HTF Bullish={htf_trend_bullish}, MTF Bullish={mtf_trend_bullish}")
+        if current_candle_range > avg_candle_range * 1.5: # Large candle
+            current_volume = klines_df['volume'].iloc[-1]
+            avg_volume_recent = klines_df['volume'].iloc[-50:-1].mean()
+            if current_volume < avg_volume_recent * 0.8: # But low volume
+                is_exhaustion = 1
+
+        # --- Aggressive Buy/Sell Volume (from Agg Trades) ---
+        aggressive_buy_volume = recent_trades[recent_trades['signed_quantity'] > 0]['quantity'].sum()
+        aggressive_sell_volume = recent_trades[recent_trades['signed_quantity'] < 0]['quantity'].sum()
+        
+        self.logger.debug(f"Order Flow Features: CVD={cvd:.2f}, CVD Divergence={cvd_divergence_score:.2f}, Absorption={is_absorption}, Exhaustion={is_exhaustion}, AggBuy={aggressive_buy_volume:.2f}, AggSell={aggressive_sell_volume:.2f}")
         return {
-            "htf_trend_bullish": htf_trend_bullish,
-            "mtf_trend_bullish": mtf_trend_bullish
+            "cvd_value": cvd, # Raw CVD
+            "cvd_divergence_score": cvd_divergence_score, 
+            "is_absorption": is_absorption,
+            "is_exhaustion": is_exhaustion,
+            "aggressive_buy_volume": aggressive_buy_volume,
+            "aggressive_sell_volume": aggressive_sell_volume
         }
 

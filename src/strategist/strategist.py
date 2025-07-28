@@ -5,8 +5,8 @@ import pandas_ta as ta
 import os
 import sys
 
-# Assume these are available in the same package or through sys.path
-from config import CONFIG, KLINES_FILENAME
+# Import the main CONFIG dictionary
+from config import CONFIG
 from sr_analyzer import SRLevelAnalyzer # Assuming sr_analyzer.py is at the root or accessible
 from analyst.data_utils import load_klines_data, calculate_volume_profile # UPDATED: Import calculate_volume_profile
 
@@ -18,6 +18,7 @@ class Strategist:
     """
     def __init__(self, config=CONFIG):
         self.config = config.get("strategist", {})
+        self.global_config = config # Store global config to access other sections like BEST_PARAMS
         self.sr_analyzer = SRLevelAnalyzer(config["sr_analyzer"]) # Reuse S/R Analyzer
         self._historical_klines_htf = None # To store higher timeframe data
 
@@ -25,8 +26,11 @@ class Strategist:
         """
         Loads historical k-line data and resamples it to the Strategist's higher timeframe.
         """
+        # Access KLINES_FILENAME from CONFIG
+        klines_filename = self.global_config['KLINES_FILENAME']
+        
         print(f"Strategist: Loading historical k-lines for {self.config['timeframe']} analysis...")
-        raw_klines = load_klines_data(KLINES_FILENAME)
+        raw_klines = load_klines_data(klines_filename)
         if raw_klines.empty:
             print("Strategist: Failed to load raw k-lines data. Cannot perform macro analysis.")
             return False
@@ -212,7 +216,9 @@ class Strategist:
         # Fallback to ATR-based range if no clear S/R or Volume Profile levels
         if support_below is None or resistance_above is None or support_below >= resistance_above:
             # Calculate ATR on the higher timeframe
-            atr_htf = klines_htf.ta.atr(length=self.config.get("atr_period", 14), append=False).iloc[-1] # Use ATR period from main config
+            # Access atr.window from CONFIG
+            atr_period = self.global_config['atr'].get("window", 14) 
+            atr_htf = klines_htf.ta.atr(length=atr_period, append=False).iloc[-1] 
             atr_multiplier = self.config.get("trading_range_atr_multiplier", 3.0)
             
             range_low = current_price - (atr_htf * atr_multiplier)
@@ -280,13 +286,13 @@ class Strategist:
 if __name__ == "__main__":
     print("Running Strategist Module Demonstration...")
 
-    # Ensure dummy klines data exists for loading
+    # Create dummy klines data exists for loading
     from analyst.data_utils import create_dummy_data
-    # Assuming KLINES_FILENAME is defined in config.py
-    from config import KLINES_FILENAME
-    create_dummy_data(KLINES_FILENAME, 'klines')
+    # Access KLINES_FILENAME from CONFIG
+    klines_filename = CONFIG['KLINES_FILENAME']
+    create_dummy_data(klines_filename, 'klines')
 
-    strategist = Strategist()
+    strategist = Strategist(config=CONFIG) # Pass CONFIG to Strategist
 
     # Step 1: Load historical data (resampled to HTF)
     if not strategist.load_historical_data_htf():
@@ -317,4 +323,3 @@ if __name__ == "__main__":
         print(f"{key}: {value}")
 
     print("\nStrategist Module Demonstration Complete.")
-

@@ -10,7 +10,7 @@ import asyncio
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.config import CONFIG
-from src.supervisor.supervisor import Supervisor
+from src.supervisor.main import Supervisor
 from src.analyst.analyst import Analyst
 from backtesting.ares_data_preparer import load_raw_data
 from backtesting.ares_deep_analyzer import run_walk_forward_analysis, run_monte_carlo_simulation, plot_results
@@ -22,8 +22,9 @@ class TrainingPipeline:
     """
     def __init__(self):
         self.logger = system_logger.getChild('TrainingPipeline')
-        self.analyst = Analyst(CONFIG) # Used for model training
-        self.supervisor = Supervisor(CONFIG) # Used for optimization
+        # We need both Analyst and Supervisor instances for their respective roles
+        self.analyst = Analyst(CONFIG)
+        self.supervisor = Supervisor(CONFIG)
 
     def get_training_and_walkforward_data(self, klines, agg_trades, futures):
         """
@@ -71,7 +72,6 @@ class TrainingPipeline:
 
         # --- STAGE 2: Retrain Analyst Models ---
         self.logger.info("STAGE 2: Retraining all Analyst models on the new training dataset...")
-        # The analyst's setup method will handle the training of all sub-models
         self.analyst._historical_klines = train_klines
         self.analyst._historical_agg_trades = train_agg_trades
         self.analyst._historical_futures = train_futures
@@ -80,22 +80,17 @@ class TrainingPipeline:
         report_lines.append("STAGE 2: Analyst models retrained successfully.")
 
         # --- STAGE 3: Hyperparameter Optimization (Governor) ---
-        self.logger.info("STAGE 3: Running hyperparameter optimization using the Supervisor...")
-        # The supervisor's optimization method uses its own internal data loading,
-        # but it should be configured to use the same date ranges as the training set.
-        # For this example, we assume it correctly uses the full training history.
-        await self.supervisor._implement_global_system_optimization(pd.DataFrame(), {}) # Pass empty df/dict as it's for backtesting
+        self.logger.info("STAGE 3: Running hyperparameter optimization on the new models...")
+        # Use the optimizer from the supervisor instance to run the global optimization
+        await self.supervisor.optimizer.implement_global_system_optimization(pd.DataFrame(), {})
         
         optimized_params = CONFIG['BEST_PARAMS']
         report_lines.append("STAGE 3: Hyperparameter optimization complete.")
         report_lines.append("Optimized Parameters:")
         report_lines.append(json.dumps(optimized_params, indent=2))
 
-
         # --- STAGE 4: Walk-Forward Validation ---
         self.logger.info("STAGE 4: Performing walk-forward validation on the last 3 months of data...")
-        # The walk-forward analysis function from the deep analyzer can be used here
-        # It needs the prepared dataframe for the walk-forward period
         from backtesting.ares_data_preparer import calculate_and_label_regimes, get_sr_levels
         
         wf_daily_df = wf_klines.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
@@ -123,24 +118,17 @@ class TrainingPipeline:
         final_report = "\n".join(report_lines)
         print(final_report)
 
-        # Save the report to a file
         report_filename = f"reports/training_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         with open(report_filename, 'w') as f:
             f.write(final_report)
         self.logger.info(f"Full training report saved to {report_filename}")
 
-        # Save the newly trained models and parameters as the "challenger"
-        # This involves saving the model files from the Analyst and the optimized_params
-        # A versioning system would be ideal here.
         challenger_model_dir = "models/challenger"
         os.makedirs(challenger_model_dir, exist_ok=True)
-        # You would now copy the trained model files (e.g., from 'models/analyst') to 'models/challenger'
-        # and save the `optimized_params` to a json file in that directory.
         with open(os.path.join(challenger_model_dir, "optimized_params.json"), 'w') as f:
             json.dump(optimized_params, f, indent=2)
         self.logger.info(f"Challenger model parameters saved to {challenger_model_dir}")
         
-        # Plot Monte Carlo results
         plot_results(mc_curves, base_portfolio)
 
         self.logger.info("--- Ares Training & Validation Pipeline Finished ---")

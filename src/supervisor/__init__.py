@@ -1,5 +1,8 @@
 # src/supervisor/__init__.py
 # This file makes the 'supervisor' directory a Python package.
 
-# You can import sub-modules here for easier access, e.g.:
-# from .supervisor import Supervisor
+from .main import Supervisor
+from .performance_reporter import PerformanceReporter
+from .risk_allocator import RiskAllocator
+from .optimizer import Optimizer
+from .ab_tester import ABTester

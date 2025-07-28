@@ -154,6 +154,19 @@ CONFIG = {
         "strategist_update_interval_minutes": 1440, # 24 hours (daily update)
         "supervisor_update_interval_minutes": 1440, # 24 hours (daily update)
         "sentinel_check_interval_seconds": 30 # How often Sentinel runs its checks
+    },
+    # --- Live Trading Specific Configurations ---
+    "live_trading": {
+        "enabled": False, # Set to True to enable live trading (USE WITH EXTREME CAUTION)
+        "testnet": True, # Set to True to use Binance Testnet
+        "api_key": "YOUR_BINANCE_API_KEY", # !!! REPLACE WITH YOUR ACTUAL API KEY !!!
+        "api_secret": "YOUR_BINANCE_API_SECRET", # !!! REPLACE WITH YOUR ACTUAL API SECRET !!!
+        "websocket_streams": {
+            "kline": f"{SYMBOL.lower()}@kline_{INTERVAL}",
+            "aggTrade": f"{SYMBOL.lower()}@aggTrade",
+            "depth": f"{SYMBOL.lower()}@depth5@100ms", # 5-level order book, 100ms update speed
+            "userData": True # Set to True to enable user data stream (requires API Key/Secret)
+        }
     }
 }
 

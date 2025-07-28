@@ -60,6 +60,7 @@ class BaseEnsemble(ABC):
         try:
             # LightGBM Classifier with regularization parameters
             # L1 (reg_alpha) and L2 (reg_lambda) regularization help prevent overfitting.
+            # These values would typically be part of the config or tuned via hyperparameter optimization.
             self.meta_learner = LGBMClassifier(
                 random_state=42, 
                 verbose=-1, # Suppress verbose output during training
@@ -102,10 +103,8 @@ class BaseEnsemble(ABC):
         meta_features_raw = pd.DataFrame([individual_model_predictions])
         
         # Ensure that meta_features_raw has the same columns as were used for training the scaler.
-        # If any expected feature is missing, fill with a default (e.g., 0.5 for confidence).
-        # This requires knowing the exact feature names used in training.
-        # For simplicity, we'll assume `individual_model_predictions` contains all necessary keys
-        # and that the scaler was fitted on a DataFrame with these keys as columns.
+        # This is critical. In a real system, you'd store the feature names from training.
+        # For this demo, we assume the keys in individual_model_predictions are consistent.
         
         try:
             # Scale the input features using the fitted scaler
@@ -281,3 +280,4 @@ class BaseEnsemble(ABC):
             "htf_trend_bullish": htf_trend_bullish,
             "mtf_trend_bullish": mtf_trend_bullish
         }
+

@@ -3,6 +3,7 @@ import time
 import os
 import sys
 import signal
+import argparse # Import argparse for command-line arguments
 # Import the main CONFIG dictionary
 from config import CONFIG
 
@@ -70,89 +71,147 @@ def start_process(script_name, name="process"): # Removed log_prefix parameter
         return None
 
 def main():
-    print("--- Ares Main Orchestrator Starting ---")
+    parser = argparse.ArgumentParser(description="Ares Main Orchestrator for Backtesting or Live Trading.")
+    parser.add_argument('--symbol', type=str, default=CONFIG['SYMBOL'],
+                        help=f"Trading symbol (e.g., ETHUSDT). Default: {CONFIG['SYMBOL']}")
+    parser.add_argument('--exchange', type=str, default='binance',
+                        help="Exchange to use (e.g., binance). Default: binance")
+    parser.add_argument('--mode', type=str, default='backtest',
+                        choices=['backtest', 'train', 'live'],
+                        help="Operation mode: 'backtest', 'train' (ML/optimization), or 'live' (trading bot). Default: backtest")
+    
+    args = parser.parse_args()
 
-    # Access PID and flag files from CONFIG
-    pipeline_pid_file = CONFIG['PIPELINE_PID_FILE']
-    restart_flag_file = CONFIG['RESTART_FLAG_FILE']
-    pipeline_script_name = CONFIG['PIPELINE_SCRIPT_NAME']
+    # Override CONFIG values based on command-line arguments for this run
+    CONFIG['SYMBOL'] = args.symbol
+    # For exchange, we might need more complex logic if supporting multiple exchanges
+    # For now, assume 'binance' is the only supported exchange and its config is used.
+    # If other exchanges were supported, you'd load exchange-specific API keys/configs here.
+    
+    # Update filenames based on the new symbol
+    CONFIG["KLINES_FILENAME"] = f"data_cache/{CONFIG['SYMBOL']}_{CONFIG['INTERVAL']}_{CONFIG['LOOKBACK_YEARS']}y_klines.csv"
+    CONFIG["AGG_TRADES_FILENAME"] = f"data_cache/{CONFIG['SYMBOL']}_{CONFIG['LOOKBACK_YEARS']}y_aggtrades.csv"
+    CONFIG["FUTURES_FILENAME"] = f"data_cache/{CONFIG['SYMBOL']}_futures_{CONFIG['LOOKBACK_YEARS']}y_data.csv"
+    CONFIG["PREPARED_DATA_FILENAME"] = f"data_cache/{CONFIG['SYMBOL']}_{CONFIG['INTERVAL']}_{CONFIG['LOOKBACK_YEARS']}y_prepared_data.csv"
+    
+    # Update WebSocket stream names in live_trading config
+    CONFIG["live_trading"]["websocket_streams"]["kline"] = f"{CONFIG['SYMBOL'].lower()}@kline_{CONFIG['INTERVAL']}"
+    CONFIG["live_trading"]["websocket_streams"]["aggTrade"] = f"{CONFIG['SYMBOL'].lower()}@aggTrade"
+    CONFIG["live_trading"]["websocket_streams"]["depth"] = f"{CONFIG['SYMBOL'].lower()}@depth5@100ms"
+
+
+    print(f"--- Ares Main Orchestrator Starting in '{args.mode}' mode for {args.symbol} on {args.exchange} ---")
 
     # Clean up any old PID or flag files
+    pipeline_pid_file = CONFIG['PIPELINE_PID_FILE']
+    restart_flag_file = CONFIG['RESTART_FLAG_FILE']
+    
     if os.path.exists(pipeline_pid_file):
         os.remove(pipeline_pid_file)
     if os.path.exists(restart_flag_file):
         os.remove(restart_flag_file)
 
-    # Start the Email Command Listener
-    # The email_command_listener.py script is in the 'emails' directory
-    listener_process = start_process("emails/email_command_listener.py", "Email Listener") 
-    if listener_process is None:
-        print("Failed to start Email Listener. Exiting.")
-        sys.exit(1)
+    # --- Mode-specific execution ---
+    if args.mode == 'backtest':
+        print(f"Launching backtester for {args.symbol}...")
+        # The actual backtest logic is in backtesting/ares_backtester.py's main()
+        # We need to call it directly or through a subprocess.
+        # For simplicity, we'll call it directly here.
+        # Ensure that ares_backtester.py's main() can run standalone.
+        try:
+            from backtesting.ares_backtester import main as run_backtester_main
+            run_backtester_main()
+        except Exception as e:
+            print(f"Error running backtester: {e}")
+            sys.exit(1)
+        sys.exit(0) # Exit after backtest completes
 
-    # Start the Ares Pipeline
-    pipeline_process = start_process(pipeline_script_name, "Ares Pipeline") 
-    if pipeline_process is None:
-        print("Failed to start Ares Pipeline. Exiting.")
-        # Attempt to terminate listener if pipeline failed to start
-        terminate_process(listener_process.pid, "Email Listener")
-        sys.exit(1)
+    elif args.mode == 'train':
+        print(f"Launching ML/Fine-tuning pipeline for {args.symbol}...")
+        # This will be handled by a new training_pipeline.py script
+        # For now, it's a placeholder.
+        try:
+            # Assuming a new script named 'training_pipeline.py' will be created
+            # and it will import CONFIG directly.
+            from backtesting.training_pipeline import main as run_training_pipeline_main
+            run_training_pipeline_main() # This function will handle the training chain reaction
+        except ImportError:
+            print("ERROR: 'training_pipeline.py' not found. Please create it for 'train' mode.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error running training pipeline: {e}")
+            sys.exit(1)
+        sys.exit(0) # Exit after training completes
 
-    try:
-        while True:
-            # Check if the pipeline process is still running
-            if not is_process_running(pipeline_process.pid):
-                print(f"Ares Pipeline (PID: {pipeline_process.pid}) has stopped unexpectedly.")
-                # Attempt to restart it
-                print("Attempting to restart Ares Pipeline...")
-                pipeline_process = start_process(pipeline_script_name, "Ares Pipeline")
-                if pipeline_process is None:
-                    print("Failed to restart Ares Pipeline. Exiting orchestrator.")
-                    break # Exit the main loop
+    elif args.mode == 'live':
+        print(f"Launching live trading bot for {args.symbol}...")
+        # Start the Email Command Listener
+        listener_process = start_process("emails/email_command_listener.py", "Email Listener") 
+        if listener_process is None:
+            print("Failed to start Email Listener. Exiting.")
+            sys.exit(1)
 
-            # Check for restart flag from email listener
-            if os.path.exists(restart_flag_file):
-                print(f"'{restart_flag_file}' detected. Initiating pipeline restart.")
-                # Terminate current pipeline process
-                current_pipeline_pid = get_process_pid(pipeline_pid_file) # Get PID from file for robustness
-                if current_pipeline_pid and is_process_running(current_pipeline_pid):
-                    terminate_process(current_pipeline_pid, "Ares Pipeline")
-                else:
-                    print("No active pipeline process found via PID file to stop. Proceeding with restart.")
-
-                # Remove the flag file immediately to avoid re-triggering
-                try:
-                    os.remove(restart_flag_file)
-                    print(f"'{restart_flag_file}' removed.")
-                except Exception as e:
-                    print(f"Error removing restart flag file: {e}")
-
-                # Start a new pipeline process
-                pipeline_process = start_process(pipeline_script_name, "Ares Pipeline")
-                if pipeline_process is None:
-                    print("Failed to restart Ares Pipeline after flag. Exiting orchestrator.")
-                    break # Exit the main loop
-                
-            time.sleep(10) # Orchestrator checks every 10 seconds
-
-    except KeyboardInterrupt:
-        print("\nCtrl+C detected. Shutting down orchestrator.")
-    except Exception as e:
-        print(f"An unexpected error occurred in orchestrator: {e}")
-    finally:
-        print("--- Orchestrator Shutting Down ---")
-        # Terminate child processes
-        if listener_process and is_process_running(listener_process.pid):
+        # Start the Ares Pipeline (which will now be multi-asset capable)
+        pipeline_script_name = CONFIG['PIPELINE_SCRIPT_NAME'] # src/ares_pipeline.py
+        pipeline_process = start_process(pipeline_script_name, "Ares Pipeline") 
+        if pipeline_process is None:
+            print("Failed to start Ares Pipeline. Exiting.")
             terminate_process(listener_process.pid, "Email Listener")
-        if pipeline_process and is_process_running(pipeline_process.pid):
-            terminate_process(pipeline_process.pid, "Ares Pipeline")
-        
-        # Clean up PID and flag files
-        if os.path.exists(pipeline_pid_file):
-            os.remove(pipeline_pid_file)
-        if os.path.exists(restart_flag_file):
-            os.remove(restart_flag_file)
-        print("All processes terminated and cleanup complete.")
+            sys.exit(1)
+
+        try:
+            while True:
+                # Check if the pipeline process is still running
+                if not is_process_running(pipeline_process.pid):
+                    print(f"Ares Pipeline (PID: {pipeline_process.pid}) has stopped unexpectedly.")
+                    print("Attempting to restart Ares Pipeline...")
+                    pipeline_process = start_process(pipeline_script_name, "Ares Pipeline")
+                    if pipeline_process is None:
+                        print("Failed to restart Ares Pipeline. Exiting orchestrator.")
+                        break 
+
+                # Check for restart flag from email listener
+                if os.path.exists(restart_flag_file):
+                    print(f"'{restart_flag_file}' detected. Initiating pipeline restart.")
+                    current_pipeline_pid = get_process_pid(pipeline_pid_file) 
+                    if current_pipeline_pid and is_process_running(current_pipeline_pid):
+                        terminate_process(current_pipeline_pid, "Ares Pipeline")
+                    else:
+                        print("No active pipeline process found via PID file to stop. Proceeding with restart.")
+
+                    try:
+                        os.remove(restart_flag_file)
+                        print(f"'{restart_flag_file}' removed.")
+                    except Exception as e:
+                        print(f"Error removing restart flag file: {e}")
+
+                    pipeline_process = start_process(pipeline_script_name, "Ares Pipeline")
+                    if pipeline_process is None:
+                        print("Failed to restart Ares Pipeline after flag. Exiting orchestrator.")
+                        break 
+                    
+                time.sleep(10) # Orchestrator checks every 10 seconds
+
+        except KeyboardInterrupt:
+            print("\nCtrl+C detected. Shutting down orchestrator.")
+        except Exception as e:
+            print(f"An unexpected error occurred in orchestrator: {e}")
+        finally:
+            print("--- Orchestrator Shutting Down ---")
+            if listener_process and is_process_running(listener_process.pid):
+                terminate_process(listener_process.pid, "Email Listener")
+            if pipeline_process and is_process_running(pipeline_process.pid):
+                terminate_process(pipeline_process.pid, "Ares Pipeline")
+            
+            if os.path.exists(pipeline_pid_file):
+                os.remove(pipeline_pid_file)
+            if os.path.exists(restart_flag_file):
+                os.remove(restart_flag_file)
+            print("All processes terminated and cleanup complete.")
+    else:
+        print(f"ERROR: Unknown mode '{args.mode}'. Please choose 'backtest', 'train', or 'live'.")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

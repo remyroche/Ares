@@ -389,3 +389,4 @@ class HighImpactCandleEnsemble(BaseEnsemble):
 
         self.logger.info(f"Ensemble Result for {self.ensemble_name}: Prediction={final_prediction}, Confidence={final_confidence:.2f}")
         return {"prediction": final_prediction, "confidence": final_confidence}
+

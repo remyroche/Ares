@@ -44,6 +44,7 @@ class SRZoneActionEnsemble(BaseEnsemble):
         self.expected_dl_features = ['close', 'volume', 'ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting']
         self.dl_target_map = {} # To store target label to integer mapping for DL models
         self.volume_profile_features_list = [] # To store feature names for volume_profile model
+        self.order_flow_target_map = {} # To store target label to integer mapping for order flow model
 
     def _prepare_flat_data(self, df: pd.DataFrame, target_series: pd.Series = None):
         """
@@ -99,7 +100,7 @@ class SRZoneActionEnsemble(BaseEnsemble):
         
         # Volume at current price bin (conceptual, requires finding the bin for current_price)
         # For this, we'd need the bins from calculate_volume_profile.
-        # For simplicity, let's approximate or use a placeholder.
+        # For now, a rough estimate:
         current_price_vol_bin = 0.0
         if not volume_in_bins.empty and current_price > 0:
             # Find the bin that current_price falls into
@@ -138,10 +139,15 @@ class SRZoneActionEnsemble(BaseEnsemble):
             return
 
         # Derive volume profile features for the historical data
-        historical_vp_features = historical_features.apply(lambda row: self._derive_volume_profile_features(
-            historical_features.loc[:row.name], # Pass historical klines up to current row
-            row['close'] # Current price for that row
-        ), axis=1)
+        historical_vp_features_list = []
+        for idx, row in historical_features.iterrows():
+            # Pass historical klines up to current row for volume profile calculation
+            # This is computationally intensive; in practice, you might pre-calculate or use a rolling window.
+            historical_vp_features_list.append(self._derive_volume_profile_features(
+                historical_features.loc[:idx], 
+                row['close'] 
+            ))
+        historical_vp_features = pd.DataFrame(historical_vp_features_list, index=historical_features.index)
         
         # Align historical_vp_features with X_flat and y_flat
         historical_vp_features = historical_vp_features.loc[X_flat.index].fillna(0)
@@ -171,9 +177,51 @@ class SRZoneActionEnsemble(BaseEnsemble):
             self.logger.error(f"Error training Volume Profile model: {e}")
             self.models["volume_profile"] = None
 
-        # Order Flow Model (Conceptual Training)
-        self.logger.info("Training Order Flow model (Conceptual)...")
-        self.models["order_flow"] = True # Simulate trained model
+        # Order Flow Model (LightGBM Classifier)
+        self.logger.info("Training Order Flow model (LGBMClassifier)...")
+        # Ensure historical_features contains order flow features
+        order_flow_features_for_training = historical_features[['cvd_value', 'cvd_divergence_score', 'is_absorption', 'is_exhaustion', 'aggressive_buy_volume', 'aggressive_sell_volume']].dropna()
+        
+        # Refined: Simulate a multi-class target for order flow model based on price action after order flow
+        # 1. Price moves significantly UP (BREAKTHROUGH_UP)
+        # 2. Price moves significantly DOWN (BREAKTHROUGH_DOWN)
+        # 3. Price stays relatively flat (HOLD / REJECTION)
+        target_lookahead_of = 2 # Look 2 periods ahead for outcome
+        price_change_of = historical_features['close'].pct_change(target_lookahead_of).shift(-target_lookahead_of)
+        
+        # Define thresholds for significant movement (e.g., 0.2%)
+        up_threshold = 0.002  
+        down_threshold = -0.002 
+
+        simulated_of_target = pd.Series('HOLD', index=price_change_of.index)
+        simulated_of_target[price_change_of > up_threshold] = 'BREAKTHROUGH_UP'
+        simulated_of_target[price_change_of < down_threshold] = 'BREAKTHROUGH_DOWN'
+        
+        # Align order flow features with simulated target
+        aligned_of_data = order_flow_features_for_training.join(simulated_of_target.rename('of_target')).dropna()
+        
+        if not aligned_of_data.empty:
+            X_of = aligned_of_data.drop(columns=['of_target'])
+            y_of = aligned_of_data['of_target']
+            
+            # Store target mapping for prediction
+            self.order_flow_target_map = {label: i for i, label in enumerate(np.unique(y_of))}
+
+            try:
+                self.models["order_flow"] = LGBMClassifier(
+                    random_state=42, 
+                    verbose=-1,
+                    reg_alpha=self.dl_config["l1_reg_strength"],
+                    reg_lambda=self.dl_config["l2_reg_strength"]
+                )
+                self.models["order_flow"].fit(X_of, y_of)
+                self.logger.info("Order Flow model trained.")
+            except Exception as e:
+                self.logger.error(f"Error training Order Flow model: {e}")
+                self.models["order_flow"] = None
+        else:
+            self.logger.warning("Insufficient aligned data for Order Flow model training. Skipping.")
+            self.models["order_flow"] = None
 
         # LightGBM Model
         self.logger.info("Training LightGBM model...")
@@ -196,17 +244,43 @@ class SRZoneActionEnsemble(BaseEnsemble):
         # Populate meta_features_train with actual (or simulated) predictions/confidences
         if self.models["volume_profile"]:
             vp_probas = self.models["volume_profile"].predict_proba(historical_vp_features)
-            vp_conf_values = [vp_probas[i, self.models["volume_profile"].classes_.tolist().index(y_flat.iloc[i])] for i in range(len(y_flat))]
-            meta_features_train['volume_profile_conf'] = pd.Series(vp_conf_values, index=X_flat.index)
+            # Ensure vp_probas length matches y_flat length
+            if len(vp_probas) == len(y_flat):
+                vp_conf_values = [vp_probas[i, self.models["volume_profile"].classes_.tolist().index(y_flat.iloc[i])] for i in range(len(y_flat))]
+                meta_features_train['volume_profile_conf'] = pd.Series(vp_conf_values, index=X_flat.index)
+            else:
+                self.logger.warning("Volume Profile probas length mismatch with y_flat. Using random uniform for volume_profile_conf.")
+                meta_features_train['volume_profile_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
         else:
             meta_features_train['volume_profile_conf'] = np.random.uniform(0.5, 0.9, len(X_flat))
         
-        meta_features_train['order_flow_conf'] = np.random.uniform(0.5, 0.9, len(X_flat)) # Still conceptual for order flow
-        
+        if self.models["order_flow"]:
+            # Predict probabilities for historical order flow features
+            order_flow_probas_hist = self.models["order_flow"].predict_proba(X_of)
+            # Map probabilities to a single directional score for meta-learner
+            order_flow_score_values = []
+            for i, proba_array in enumerate(order_flow_probas_hist):
+                predicted_class = self.models["order_flow"].classes_[np.argmax(proba_array)]
+                if predicted_class == 'BREAKTHROUGH_UP':
+                    order_flow_score_values.append(proba_array[self.order_flow_target_map['BREAKTHROUGH_UP']])
+                elif predicted_class == 'BREAKTHROUGH_DOWN':
+                    order_flow_score_values.append(-proba_array[self.order_flow_target_map['BREAKTHROUGH_DOWN']])
+                else: # HOLD
+                    order_flow_score_values.append(0.0) # Neutral score for HOLD
+            
+            # Align with X_flat index
+            meta_features_train['order_flow_score'] = pd.Series(order_flow_score_values, index=X_of.index).reindex(X_flat.index).fillna(0.0)
+        else:
+            meta_features_train['order_flow_score'] = np.random.uniform(-0.5, 0.5, len(X_flat)) # Random directional score
+
         if self.models["lgbm"]:
             lgbm_probas = self.models["lgbm"].predict_proba(X_flat)
-            lgbm_conf_values = [lgbm_probas[i, self.models["lgbm"].classes_.tolist().index(y_flat.iloc[i])] for i in range(len(y_flat))]
-            meta_features_train['lgbm_proba'] = pd.Series(lgbm_conf_values, index=X_flat.index)
+            if len(lgbm_probas) == len(y_flat):
+                lgbm_conf_values = [lgbm_probas[i, self.models["lgbm"].classes_.tolist().index(y_flat.iloc[i])] for i in range(len(y_flat))]
+                meta_features_train['lgbm_proba'] = pd.Series(lgbm_conf_values, index=X_flat.index)
+            else:
+                self.logger.warning("LGBM probas length mismatch with y_flat. Using random uniform for lgbm_proba.")
+                meta_features_train['lgbm_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
         else:
             meta_features_train['lgbm_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
@@ -274,8 +348,31 @@ class SRZoneActionEnsemble(BaseEnsemble):
             individual_model_outputs['volume_profile_conf'] = np.random.uniform(0.5, 0.9)
 
 
-        # Order Flow Prediction (Conceptual)
-        individual_model_outputs['order_flow_conf'] = np.random.uniform(0.5, 0.9)
+        # Order Flow Prediction
+        if self.models["order_flow"]:
+            try:
+                order_flow_input = current_features_row[['cvd_value', 'cvd_divergence_score', 'is_absorption', 'is_exhaustion', 'aggressive_buy_volume', 'aggressive_sell_volume']].dropna()
+                if not order_flow_input.empty:
+                    order_flow_proba = self.models["order_flow"].predict_proba(order_flow_input)[0]
+                    # Convert multi-class probabilities to a single directional score
+                    predicted_class_idx = np.argmax(order_flow_proba)
+                    predicted_class = self.models["order_flow"].classes_[predicted_class_idx]
+                    
+                    order_flow_score = 0.0
+                    if predicted_class == 'BREAKTHROUGH_UP':
+                        order_flow_score = order_flow_proba[self.order_flow_target_map['BREAKTHROUGH_UP']]
+                    elif predicted_class == 'BREAKTHROUGH_DOWN':
+                        order_flow_score = -order_flow_proba[self.order_flow_target_map['BREAKTHROUGH_DOWN']]
+                    # If 'HOLD', score remains 0.0
+                    
+                    individual_model_outputs['order_flow_score'] = float(order_flow_score) 
+                else:
+                    individual_model_outputs['order_flow_score'] = 0.0 # Neutral if no input
+            except Exception as e:
+                self.logger.error(f"Error predicting with Order Flow model: {e}")
+                individual_model_outputs['order_flow_score'] = 0.0 # Neutral on error
+        else:
+            individual_model_outputs['order_flow_score'] = 0.0 # Default neutral score
 
         # LightGBM Prediction
         if self.models["lgbm"]:
@@ -318,20 +415,12 @@ class SRZoneActionEnsemble(BaseEnsemble):
                 final_confidence = 0.0
         else:
             self.logger.warning(f"Meta-learner not available for {self.ensemble_name}. Averaging confidences.")
-            total_weighted_confidence = sum(individual_model_outputs.get(m, 0.5) * self.ensemble_weights.get(m.replace('_conf', '').replace('_proba', ''), 1.0) 
-                                            for m in ['volume_profile_conf', 'order_flow_conf', 'lgbm_proba'])
-            total_weight = sum(self.ensemble_weights.get(m.replace('_conf', '').replace('_proba', ''), 1.0) for m in ['volume_profile_conf', 'order_flow_conf', 'lgbm_proba'])
-            
-            if total_weight > 0:
-                final_confidence = total_weighted_confidence / total_weight
-            
-            if final_confidence > self.min_confluence_confidence:
-                # For SR_ZONE_ACTION, predict based on a combination of factors, e.g., if volume profile indicates rejection
-                # This would be more nuanced based on actual model output.
-                final_prediction = np.random.choice(["REJECTION", "BREAKTHROUGH_UP", "BREAKTHROUGH_DOWN"])
-            else:
-                final_prediction = "HOLD"
+            # This fallback averaging is less meaningful now with diverse features like 'order_flow_score'.
+            # It's better to rely on the meta-learner. If meta-learner is not trained,
+            # the ensemble should ideally return a neutral prediction.
+            self.logger.warning("Fallback averaging is less meaningful with implemented models. Returning HOLD.")
+            final_prediction = "HOLD"
+            final_confidence = 0.0
 
         self.logger.info(f"Ensemble Result for {self.ensemble_name}: Prediction={final_prediction}, Confidence={final_confidence:.2f}")
         return {"prediction": final_prediction, "confidence": final_confidence}
-

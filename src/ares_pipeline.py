@@ -9,7 +9,7 @@ import numpy as np # For simulating data
 import asyncio # For running async Firestore operations
 
 # Import core configuration and utilities
-from config import CONFIG, PIPELINE_PID_FILE, RESTART_FLAG_FILE, INITIAL_EQUITY, SYMBOL, INTERVAL
+from config import CONFIG # Import the main CONFIG dictionary
 from utils.logger import system_logger # Centralized logger
 from emails.ares_mailer import send_email # For pipeline alerts
 
@@ -50,8 +50,8 @@ class AresPipeline:
             api_key=live_config.get("api_key"),
             api_secret=live_config.get("api_secret"),
             testnet=live_config.get("testnet", True),
-            symbol=SYMBOL,
-            interval=INTERVAL,
+            symbol=self.config['SYMBOL'], # Access from CONFIG
+            interval=self.config['INTERVAL'], # Access from CONFIG
             config=self.config # Pass full config for WebSocket streams
         )
 
@@ -63,7 +63,7 @@ class AresPipeline:
         self.sentinel = Sentinel(config)
 
         # Internal state variables
-        self.current_equity = INITIAL_EQUITY # This will be updated by live balance if live trading
+        self.current_equity = self.config['INITIAL_EQUITY'] # Access from CONFIG
         self.trade_logs_today = [] # List of completed trades for the current day
         self.daily_pnl_per_regime = {} # P&L aggregated by regime for the current day
         self.historical_daily_pnl_data = pd.DataFrame(columns=['Date', 'NetPnL']) # For Supervisor's allocation
@@ -96,13 +96,13 @@ class AresPipeline:
                 self.logger.info(f"Initial live equity from Binance: ${self.current_equity:,.2f}")
             else:
                 self.logger.warning("Could not fetch USDT balance from live account. Using initial equity from config.")
-                self.current_equity = INITIAL_EQUITY # Fallback
+                self.current_equity = self.config['INITIAL_EQUITY'] # Fallback
 
             # Update Tactician's initial position based on live data
-            live_position = self.binance_client.get_latest_position(SYMBOL)
+            live_position = self.binance_client.get_latest_position(self.config['SYMBOL']) # Access SYMBOL from CONFIG
             if live_position and live_position.get('positionAmt', 0) != 0:
                 self.tactician.current_position = {
-                    "symbol": SYMBOL,
+                    "symbol": self.config['SYMBOL'], # Access SYMBOL from CONFIG
                     "direction": "LONG" if live_position['positionAmt'] > 0 else "SHORT",
                     "size": abs(live_position['positionAmt']),
                     "entry_price": live_position['entryPrice'],
@@ -120,11 +120,10 @@ class AresPipeline:
             self.logger.info("Live trading is DISABLED. Using simulated data for pipeline operation.")
             # Ensure dummy data files exist for simulation
             from analyst.data_utils import create_dummy_data
-            # Assuming KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAME are defined in config
-            from config import KLINES_FILENAME, AGG_TRADES_FILENAME, FUTURES_FILENAME
-            create_dummy_data(KLINES_FILENAME, 'klines')
-            create_dummy_data(AGG_TRADES_FILENAME, 'agg_trades')
-            create_dummy_data(FUTURES_FILENAME, 'futures') # Use CONFIG['FUTURES_FILENAME']
+            # Access filenames from CONFIG
+            create_dummy_data(self.config['KLINES_FILENAME'], 'klines')
+            create_dummy_data(self.config['AGG_TRADES_FILENAME'], 'agg_trades')
+            create_dummy_data(self.config['FUTURES_FILENAME'], 'futures')
 
         # Load and prepare historical data for Analyst and Strategist (from CSVs for now)
         # This is still done from CSVs as fetching full history via REST is slow and for training.
@@ -184,7 +183,7 @@ class AresPipeline:
         initial_klines_for_strategist = self.binance_client.get_latest_klines(num_klines=500) if self.live_trading_enabled else pd.DataFrame()
         if initial_klines_for_strategist.empty: # Fallback if live data not ready or not enabled
             from analyst.data_utils import load_klines_data # Import here to avoid circular
-            initial_klines_for_strategist = load_klines_data(CONFIG['KLINES_FILENAME']).tail(500)
+            initial_klines_for_strategist = load_klines_data(self.config['KLINES_FILENAME']).tail(500) # Access from CONFIG
 
         initial_price_for_strategist = initial_klines_for_strategist['close'].iloc[-1] if not initial_klines_for_strategist.empty else 0.0
 
@@ -228,7 +227,7 @@ class AresPipeline:
                 
                 # Get latest account and position info from client's user data buffer
                 account_balance = self.binance_client.get_latest_account_balance()
-                current_position_live = self.binance_client.get_latest_position(SYMBOL)
+                current_position_live = self.binance_client.get_latest_position(self.config['SYMBOL']) # Access SYMBOL from CONFIG
 
                 current_price = klines['close'].iloc[-1] if not klines.empty else 0.0
                 current_volume = klines['volume'].iloc[-1] if not klines.empty else 0.0
@@ -299,7 +298,7 @@ class AresPipeline:
         action_type = trade_action_result.get("action")
         details = trade_action_result.get("details", {})
         
-        symbol = details.get("symbol", SYMBOL) # Default to SYMBOL from config
+        symbol = details.get("symbol", self.config['SYMBOL']) # Default to SYMBOL from CONFIG
 
         if action_type == "ORDER_PLACED":
             if self.live_trading_enabled:
@@ -323,7 +322,9 @@ class AresPipeline:
                             entry_price=float(order_response.get("avgPrice", current_price)), # Use avgPrice if available
                             leverage=details["leverage"],
                             stop_loss=details.get("stop_loss"),
-                            take_profit=details.get("take_profit")
+                            take_profit=details.get("take_profit"),
+                            entry_confidence=details.get("entry_confidence", 0.0), # Pass through
+                            entry_lss=details.get("entry_lss", 0.0) # Pass through
                         )
                     else:
                         self.logger.error(f"Failed to place live order: {order_response}")
@@ -340,7 +341,9 @@ class AresPipeline:
                     entry_price=current_price,
                     leverage=details["leverage"],
                     stop_loss=details.get("stop_loss"),
-                    take_profit=details.get("take_profit")
+                    take_profit=details.get("take_profit"),
+                    entry_confidence=details.get("entry_confidence", 0.0), # Pass through
+                    entry_lss=details.get("entry_lss", 0.0) # Pass through
                 )
 
         elif action_type == "LADDER_UPDATED":
@@ -413,7 +416,9 @@ class AresPipeline:
                     send_email("Ares Live Trading Critical Error", f"Exception closing position: {e}")
             else: # Simulation mode
                 self.logger.info(f"Simulating CLOSE_POSITION: {details.get('reason', 'Unknown')} at {current_price:.2f}")
-                await self._log_completed_trade(symbol, self.tactician.current_position, current_price, details.get("reason", "Simulated Close"))
+                # Pass the tactician's current_position to _log_completed_trade before it's reset
+                position_to_log = self.tactician.current_position.copy()
+                await self._log_completed_trade(symbol, position_to_log, current_price, details.get("reason", "Simulated Close"))
                 self.tactician._close_position(current_price, details.get("reason", "Simulated Close"))
         
         elif action_type == "ORDER_CANCELLED":
@@ -451,7 +456,8 @@ class AresPipeline:
         if closed_position_info["entry_price"] != 0:
             pnl_per_unit = (exit_price - closed_position_info["entry_price"]) if closed_position_info["direction"] == "LONG" else \
                            (closed_position_info["entry_price"] - exit_price)
-            simulated_pnl = pnl_per_unit * closed_position_info["size"] * closed_position_info["current_leverage"]
+            # Ensure leverage is used in PnL calculation for logging
+            simulated_pnl = pnl_per_unit * closed_position_info["size"] * closed_position_info.get("current_leverage", 1)
         
         # Get market state at entry (simplified for now)
         # This requires storing market state at entry time in the position info
@@ -464,7 +470,13 @@ class AresPipeline:
             try:
                 latest_klines = self.binance_client.get_latest_klines(num_klines=500)
                 latest_agg_trades = self.binance_client.get_latest_agg_trades(num_trades=1000)
+                # Ensure futures data is retrieved correctly
                 latest_futures = pd.DataFrame([{'fundingRate': 0.0, 'openInterest': 0.0}], index=[pd.Timestamp.now()], columns=['fundingRate', 'openInterest'])
+                if 'fundingRate' in latest_klines.columns:
+                    latest_futures['fundingRate'] = latest_klines['fundingRate'].iloc[-1]
+                if 'openInterest' in latest_klines.columns:
+                    latest_futures['openInterest'] = latest_klines['openInterest'].iloc[-1]
+
                 latest_order_book = self.binance_client.get_latest_order_book()
                 temp_analyst_intel = self.analyst.get_intelligence(
                     latest_klines, latest_agg_trades, latest_futures, latest_order_book, 0, 0
@@ -483,11 +495,11 @@ class AresPipeline:
             "entry_price": closed_position_info["entry_price"],
             "exit_price": exit_price,
             "position_size": closed_position_info["size"],
-            "leverage_used": closed_position_info["current_leverage"],
-            "confidence_score_at_entry": 0.0, # Placeholder, would need to store at entry
-            "lss_at_entry": 0.0, # Placeholder, would need to store at entry
-            "fees_paid": abs(simulated_pnl) * 0.0005, # Simulate fees
-            "funding_rate_pnl": 0.0, # Placeholder
+            "leverage_used": closed_position_info.get("current_leverage", 1), # Use .get with default
+            "confidence_score_at_entry": closed_position_info.get("entry_confidence", 0.0), # Use actual entry confidence
+            "lss_at_entry": closed_position_info.get("entry_lss", 0.0), # Use actual entry LSS
+            "fees_paid": abs(simulated_pnl) * self.config['RISK_PER_TRADE_PCT'] * 0.05, # Simulate fees based on risk per trade
+            "funding_rate_pnl": 0.0, # Placeholder, would need to track funding rates over trade duration
             "realized_pnl_usd": simulated_pnl,
             "exit_reason": exit_reason
         }
@@ -529,18 +541,18 @@ class AresPipeline:
     def _write_pid_file(self):
         """Writes the current process ID to a file."""
         try:
-            with open(PIPELINE_PID_FILE, 'w') as f:
+            with open(self.config['PIPELINE_PID_FILE'], 'w') as f: # Access from CONFIG
                 f.write(f"{os.getpid()}")
-            self.logger.info(f"PID {os.getpid()} written to {PIPELINE_PID_FILE}")
+            self.logger.info(f"PID {os.getpid()} written to {self.config['PIPELINE_PID_FILE']}")
         except Exception as e:
             self.logger.error(f"Error writing PID file: {e}")
 
     def _remove_pid_file(self):
         """Removes the PID file."""
         try:
-            if os.path.exists(PIPELINE_PID_FILE):
-                os.remove(PIPELINE_PID_FILE)
-                self.logger.info(f"PID file {PIPELINE_PID_FILE} removed.")
+            if os.path.exists(self.config['PIPELINE_PID_FILE']): # Access from CONFIG
+                os.remove(self.config['PIPELINE_PID_FILE'])
+                self.logger.info(f"PID file {self.config['PIPELINE_PID_FILE']} removed.")
         except Exception as e:
             self.logger.error(f"Error removing PID file: {e}")
 
@@ -579,7 +591,7 @@ class AresPipeline:
                 self.logger.info(f"\n--- Pipeline Loop: {current_time.strftime('%Y-%m-%d %H:%M:%S')} ---")
 
                 # 1. Fetch Real-Time Market Data
-                klines, agg_trades, futures, order_book, current_price, current_atr, pos_notional, liq_price = await self._get_real_time_market_data()
+                klines, agg_trades, futures, order_book, current_price, current_atr, pos_notional, liq_price = self._get_real_time_market_data()
                 
                 if klines.empty or current_price == 0.0:
                     self.logger.warning("Skipping current loop iteration due to missing or invalid market data.")
@@ -651,7 +663,7 @@ class AresPipeline:
                         current_strategist_params=self.strategist_params,
                         current_tactician_decision=tactician_decision_result,
                         latest_trade_data=self.trade_logs_today[-1] if self.trade_logs_today else None,
-                        average_trade_size=self.supervisor.get_current_allocated_capital() * self.config['tactician']['risk_management']['risk_per_trade_pct']
+                        average_trade_size=self.supervisor.get_current_allocated_capital() * self.config['RISK_PER_TRADE_PCT'] # Access from CONFIG
                     )
                     self.last_sentinel_check_time = current_time
 

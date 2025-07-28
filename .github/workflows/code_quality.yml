@@ -28,12 +28,16 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt # Install your project dependencies
-        pip install ruff mypy radon black isortn vulture
+        # Install Ruff, Mypy, Radon, Black, Isort, Vulture
+        pip install ruff mypy radon black isort vulture
 
     - name: Run Ruff (Auto-fix & Report Unfixable Issues)
       run: |
-
+        # It's generally recommended to let Ruff handle formatting (which includes isort-like sorting)
+        # However, if you explicitly want to run Black and Isort separately first:
+        echo "Running Black for formatting..."
         black src/
+        echo "Running Isort for import sorting..."
         isort src/
         
         echo "Attempting to auto-fix formatting issues with Ruff..."
@@ -47,8 +51,8 @@ jobs:
         # and will exit with a non-zero code if issues are found, failing the job.
         ruff check .
 
-      - name: Dead code detection
-        run: vulture src/
+    - name: Dead code detection
+      run: vulture src/ # Corrected indentation for this step
 
 
     - name: Run Mypy (Static Type Checking)

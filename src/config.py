@@ -1,7 +1,7 @@
 # config.py
 
-# Emails config (Assuming emails_config.py exists and is correctly structured)
 from emails_config import EMAIL_CONFIG, COMMAND_EMAIL_CONFIG
+from datetime import datetime, timedelta
 
 # --- General Configuration ---
 # All configurations are now consolidated into a single CONFIG dictionary.
@@ -187,6 +187,11 @@ CONFIG = {
     # --- Supervisor Specific Configurations ---
     "supervisor": {
         "meta_learning_frequency_days": 7, # How often to run meta-learning optimization
+        "retraining_schedule": {
+            "enabled": True,
+            "first_retraining_date": (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'), # 30 days after the bot launch
+            "retraining_period_days": 30 # Run every 30 days after the first date
+        },
         "risk_allocation_lookback_days": 30, # Days to look back for performance for dynamic capital allocation
         "max_capital_allocation_increase_pct": 1.0, # Max +100% of initial allocated capital (i.e., up to 2x)
         "max_capital_allocation_decrease_pct": 0.75, # Max -75% of initial allocated capital (i.e., down to 0.25x)

@@ -125,6 +125,67 @@ class BinanceExchange:
         params = {"symbol": symbol.upper()} if symbol else {}
         return await self._request("GET", endpoint, params, signed=True)
 
+    async def get_open_orders(self, symbol: str = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves all open orders for a given symbol or all symbols.
+        """
+        endpoint = "/fapi/v1/openOrders"
+        params = {"symbol": symbol.upper()} if symbol else {}
+        return await self._request("GET", endpoint, params, signed=True)
+
+    async def close_all_positions(self, symbol: str = None):
+        """
+        Closes all open positions for a given symbol or all symbols.
+        This will place market orders to close positions.
+        """
+        logger.warning(f"Attempting to close all open positions for {symbol if symbol else 'all symbols'}...")
+        try:
+            positions = await self.get_position_risk(symbol)
+            for position in positions:
+                # Ensure positionAmt is not zero and is a float
+                position_amount = float(position.get('positionAmt', 0))
+                if position_amount != 0:
+                    current_symbol = position['symbol']
+                    # Determine side to close the position
+                    # If positionAmt > 0, it's a long position, so we need to SELL to close.
+                    # If positionAmt < 0, it's a short position, so we need to BUY to close.
+                    side = "SELL" if position_amount > 0 else "BUY"
+                    quantity = abs(position_amount)
+
+                    logger.info(f"Closing {side} position for {current_symbol} with quantity {quantity}...")
+                    # Place a MARKET order to close the position
+                    order_response = await self.create_order(
+                        symbol=current_symbol,
+                        side=side,
+                        order_type="MARKET",
+                        quantity=quantity
+                    )
+                    logger.info(f"Closed position for {current_symbol}: {order_response}")
+                else:
+                    logger.debug(f"No open position for {position.get('symbol', 'N/A')}.")
+        except Exception as e:
+            logger.error(f"Error closing all positions: {e}", exc_info=True)
+
+    async def cancel_all_orders(self, symbol: str = None):
+        """
+        Cancels all open orders for a given symbol or all symbols.
+        """
+        logger.warning(f"Attempting to cancel all open orders for {symbol if symbol else 'all symbols'}...")
+        try:
+            open_orders = await self.get_open_orders(symbol)
+            if not open_orders:
+                logger.info(f"No open orders found for {symbol if symbol else 'all symbols'}.")
+                return
+
+            for order in open_orders:
+                order_id = order['orderId']
+                order_symbol = order['symbol']
+                logger.info(f"Cancelling order {order_id} for {order_symbol}...")
+                cancel_response = await self.cancel_order(order_symbol, order_id)
+                logger.info(f"Cancelled order {order_id} for {order_symbol}: {cancel_response}")
+        except Exception as e:
+            logger.error(f"Error cancelling all orders: {e}", exc_info=True)
+
     # --- WebSocket Handlers ---
     async def _websocket_handler(self, url: str, callback: Callable, name: str):
         """Generic WebSocket handler with reconnection logic."""
@@ -239,4 +300,3 @@ try:
 except Exception as e:
     logger.critical(f"Failed to instantiate BinanceExchange: {e}")
     exchange = None
-

@@ -147,6 +147,13 @@ CONFIG = {
         "log_to_console": True,
         "max_bytes": 10485760, # 10 MB
         "backup_count": 5 # Keep 5 backup log files
+    },
+    # --- Pipeline Specific Configurations ---
+    "pipeline": {
+        "loop_interval_seconds": 10, # How often the main loop runs (e.g., check for new candle)
+        "strategist_update_interval_minutes": 1440, # 24 hours (daily update)
+        "supervisor_update_interval_minutes": 1440, # 24 hours (daily update)
+        "sentinel_check_interval_seconds": 30 # How often Sentinel runs its checks
     }
 }
 
@@ -167,7 +174,8 @@ PREPARED_DATA_FILENAME = f"{SYMBOL}_{INTERVAL}_{LOOKBACK_YEARS}y_prepared_data.c
 # --- Script Names ---
 DOWNLOADER_SCRIPT_NAME = "ares_data_downloader.py"
 PREPARER_SCRIPT_NAME = "ares_data_preparer.py"
-PIPELINE_SCRIPT_NAME = "ares_pipeline.py" # Added for clarity in listener
+PIPELINE_SCRIPT_NAME = "src/ares_pipeline.py" # UPDATED PATH
+BACKTESTING_PIPELINE_SCRIPT_NAME = "src/backtesting_pipeline.py" # NEW PATH for backtesting
 PIPELINE_PID_FILE = "ares_pipeline.pid" # File to store the pipeline's PID
 RESTART_FLAG_FILE = "restart_pipeline.flag" # Flag file to signal pipeline restart
 

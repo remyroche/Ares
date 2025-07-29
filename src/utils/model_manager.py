@@ -1,6 +1,8 @@
 import os
 import json
 import copy
+from typing import Optional
+
 from src.config import CONFIG
 from src.utils.logger import system_logger
 from src.analyst.analyst import Analyst

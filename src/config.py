@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
     trading_environment: Literal["LIVE", "TESTNET", "PAPER"] = Field(default="TESTNET", env="TRADING_ENVIRONMENT")
     initial_equity: float = Field(default=10000.0, env="INITIAL_EQUITY")
+    trade_symbol: str = Field(default="BTCUSDT", env="TRADE_SYMBOL")
+    timeframe: str = Field(default="15m", env="TIMEFRAME")
+
 
     # --- Binance Credentials (loaded from .env) ---
     binance_live_api_key: Optional[str] = Field(default=None, env="BINANCE_LIVE_API_KEY")
@@ -86,8 +89,8 @@ except Exception as e:
 
 CONFIG: Dict[str, Any] = {
     # --- General System & Trading Parameters ---
-    "trading_symbol": "BTCUSDT",
-    "trading_interval": "15m",
+    "trading_symbol": settings.trade_symbol,
+    "trading_interval": settings.timeframe,
     "initial_equity": settings.initial_equity,
     "taker_fee": 0.0004,
     "maker_fee": 0.0002,
@@ -247,4 +250,3 @@ CONFIG["klines_filename"] = f"data_cache/{CONFIG['trading_symbol']}_{CONFIG['tra
 CONFIG["agg_trades_filename"] = f"data_cache/{CONFIG['trading_symbol']}_{CONFIG['lookback_years']}y_aggtrades.csv"
 CONFIG["futures_filename"] = f"data_cache/{CONFIG['trading_symbol']}_futures_{CONFIG['lookback_years']}y_data.csv"
 CONFIG["prepared_data_filename"] = f"data_cache/{CONFIG['trading_symbol']}_{CONFIG['trading_interval']}_{CONFIG['lookback_years']}y_prepared_data.csv"
-

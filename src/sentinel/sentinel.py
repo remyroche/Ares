@@ -2,18 +2,17 @@ import asyncio
 import sys
 import os
 import time
-import datetime
-import json
 import pandas as pd
-import logging
+from typing import Dict, Any, Optional # Ensure Optional is imported
+import datetime # Added import for datetime
+import json # Added import for json
+import logging # Added import for logging module
 
-from typing import Dict, Any
-from src.exchange.binance import BinanceExchange
-from src.utils.logger import logger
+from src.exchange.binance import exchange
+from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
 from src.config import settings, CONFIG # Import CONFIG for alert thresholds
 from src.utils.state_manager import StateManager
 from src.emails.ares_mailer import AresMailer # Import the AresMailer class
-
 
 class Sentinel:
     """
@@ -53,19 +52,17 @@ class Sentinel:
         self.trade_symbol = settings.trade_symbol
         self.timeframe = settings.timeframe
         
-        # Initialize AresMailer for sending alerts
+        # Initialize AresMailer for sending error reports
         self.ares_mailer = AresMailer(config=self.global_config)
 
         self.consecutive_api_errors = 0
         self.consecutive_model_errors = 0
         self.max_consecutive_errors = self.config.get("max_consecutive_errors", 3)
 
-        # Store previous states for deviation monitoring
-        self.previous_analyst_intelligence = {}
-        self.previous_strategist_params = {}
-        self.previous_tactician_decision = {}
-        self.previous_trading_paused_state = self.state_manager.get_state("is_trading_paused", False)
-        self.previous_kill_switch_state = self.state_manager.is_kill_switch_active()
+        # Store previous states for deviation monitoring - Fixed: Added explicit type annotations
+        self.previous_analyst_intelligence: Dict[str, Any] = {}
+        self.previous_strategist_params: Dict[str, Any] = {}
+        self.previous_tactician_decision: Dict[str, Any] = {}
 
     async def start(self):
         """
@@ -94,8 +91,11 @@ class Sentinel:
         event_type = data.get('e')
         if event_type == 'ORDER_TRADE_UPDATE':
             order_data = data.get('o')
-            self.logger.info(f"Received order update: {order_data}")
-            await self.monitor_unusual_trade_activity(order_data)
+            # Fixed: Ensure order_data is a dict before passing
+            if isinstance(order_data, dict):
+                await self.monitor_unusual_trade_activity(order_data)
+            else:
+                self.logger.warning(f"Received non-dict order_data: {order_data}")
         elif event_type == 'ACCOUNT_UPDATE':
             self.logger.info(f"Received account update: {data}")
         else:
@@ -107,6 +107,11 @@ class Sentinel:
         """
         check_interval = self.config.get("check_interval_seconds", 60)
         self.logger.info(f"Monitoring loop started. Checks will run every {check_interval} seconds.")
+        # Initialize previous_trading_paused_state and previous_kill_switch_state here
+        # to ensure they are set before the first check.
+        self.previous_trading_paused_state = self.state_manager.get_state("is_trading_paused", False)
+        self.previous_kill_switch_state = self.state_manager.is_kill_switch_active()
+
         while True:
             await asyncio.sleep(check_interval)
             self.logger.info("Running periodic Sentinel checks...")
@@ -127,7 +132,7 @@ class Sentinel:
             await self._monitor_liquidation_risk()
             await self._monitor_system_state_changes()
 
-    async def _dispatch_alert(self, alert_type: str, severity: str, message: str, context_data: Dict[str, Any] = None):
+    async def _dispatch_alert(self, alert_type: str, severity: str, message: str, context_data: Optional[Dict[str, Any]] = None): # Fixed: Optional for context_data
         """
         Centralized method to dispatch alerts.
         Formats the alert and sends it via the AresMailer.
@@ -245,13 +250,9 @@ class Sentinel:
         
         # Check for filled orders
         if order_data.get('X') in ['FILLED', 'PARTIALLY_FILLED']:
-            trade_size_notional = float(order_data.get('L', 0)) # 'L' is last filled quantity
-            current_price = float(order_data.get('L', 0)) # Use last filled price 'L'
-            # Assuming 'L' is last trade quantity and 'p' is price from order_data
-            # Binance order updates have 'p' as last price, 'q' as quantity, 'L' as last quantity.
-            # Let's assume 'p' is the executed price and 'q' is the executed quantity for simplicity here.
-            executed_qty = float(order_data.get('q', 0))
-            executed_price = float(order_data.get('p', 0))
+            # Binance order updates have 'L' for last filled quantity and 'p' for last filled price
+            executed_qty = float(order_data.get('L', 0)) # 'L' is last filled quantity
+            executed_price = float(order_data.get('p', 0)) # 'p' is last filled price
             trade_size_notional = executed_qty * executed_price
 
             unusual_multiplier = self.config.get("unusual_trade_volume_multiplier", 10.0)
@@ -264,7 +265,6 @@ class Sentinel:
                     "symbol": order_data.get('s'),
                     "order_id": order_data.get('i'),
                     "executed_qty": executed_qty,
-                    "current_price": current_price,
                     "executed_price": executed_price,
                     "trade_notional": trade_size_notional,
                     "max_allowed_notional": max_notional_allowed

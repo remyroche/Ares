@@ -1,10 +1,11 @@
 import asyncio
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from src.utils.logger import logger
 from src.config import settings
 from src.utils.state_manager import StateManager
+from src.exchange.binance import BinanceExchange # Import if needed for type hinting
 
 class Strategist:
     """
@@ -12,7 +13,9 @@ class Strategist:
     It now uses detailed technical analysis (VWAP, MAs, etc.) to formulate its strategy.
     """
 
-    def __init__(self, state_manager: StateManager):
+    def __init__(self, exchange_client: Optional[BinanceExchange] = None, state_manager: Optional[StateManager] = None):
+        # Allow exchange_client and state_manager to be optional for ModelManager instantiation
+        self.exchange = exchange_client
         self.state_manager = state_manager
         self.logger = logger.getChild('Strategist')
         self.config = settings.get("strategist", {})
@@ -23,6 +26,10 @@ class Strategist:
         """
         Starts the main strategist loop, waiting for new intelligence from the Analyst.
         """
+        if self.state_manager is None:
+            self.logger.error("Strategist cannot start: StateManager not provided.")
+            return
+
         self.logger.info("Strategist started. Waiting for new analyst intelligence...")
         while True:
             try:
@@ -48,11 +55,10 @@ class Strategist:
         """
         self.logger.info("--- Starting Strategy Formulation ---")
         try:
-            # Extract rich data from the analyst's packet
             market_regime = analyst_intelligence.get("market_regime", "UNCERTAIN")
             liquidation_risk = analyst_intelligence.get("liquidation_risk_score", 100)
             confidence = analyst_intelligence.get("directional_confidence_score", 0.5)
-            tech_analysis = analyst_intelligence.get("technical_analysis", {})
+            tech_analysis = analyst_intelligence.get("technical_signals", {}) # Corrected key
 
             # Determine positional bias using new detailed data
             positional_bias = self._determine_positional_bias(market_regime, tech_analysis)
@@ -71,7 +77,8 @@ class Strategist:
                 "source_analyst_timestamp": self.last_analyst_timestamp
             }
 
-            self.state_manager.set_state("strategist_params", strategist_params)
+            if self.state_manager: # Only set state if state_manager is available
+                self.state_manager.set_state("strategist_params", strategist_params)
             self.logger.info(f"Strategy formulated. Bias: {positional_bias}, Leverage Cap: {leverage_cap}x")
             self.logger.debug(f"Strategist Params: {strategist_params}")
 
@@ -81,11 +88,9 @@ class Strategist:
     def _determine_positional_bias(self, market_regime: str, tech_analysis: Dict) -> str:
         """Determines the trading bias using a combination of regime and technicals."""
         
-        # Bias from regime
         regime_bias_map = self.config.get("regime_to_bias_map", {"BULL_TREND": "LONG", "BEAR_TREND": "SHORT"})
         regime_bias = regime_bias_map.get(market_regime, "NEUTRAL")
 
-        # Bias from technicals
         ma_bias = "NEUTRAL"
         vwap_bias = "NEUTRAL"
         
@@ -94,12 +99,11 @@ class Strategist:
         elif mas.get('sma_9', 0) < mas.get('sma_50', 0): ma_bias = "SHORT"
 
         price_to_vwap = tech_analysis.get('price_to_vwap_ratio', 1.0)
-        if price_to_vwap > 1.005: # Price >0.5% above VWAP
+        if price_to_vwap > 1.005:
             vwap_bias = "LONG"
-        elif price_to_vwap < 0.995: # Price >0.5% below VWAP
+        elif price_to_vwap < 0.995:
             vwap_bias = "SHORT"
 
-        # Combine biases (simple voting)
         biases = [regime_bias, ma_bias, vwap_bias]
         long_votes = biases.count("LONG")
         short_votes = biases.count("SHORT")

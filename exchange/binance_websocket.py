@@ -4,6 +4,7 @@ import threading
 import time
 from collections import deque
 from websocket import WebSocketApp
+import pandas as pd
 
 class BinanceWebsocketClient:
     """

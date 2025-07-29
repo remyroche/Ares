@@ -5,6 +5,7 @@ import time
 import subprocess
 import os
 import sys
+import pandas as pd # Added import for pandas
 
 # Ensure the source directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))

@@ -20,7 +20,6 @@ def create_pnl_aware_loss(pnl_multiplier=0.1, liquidation_penalty=2.0, reward_bo
         # --- Unpack the ground truth tensor ---
         # The first `num_classes` elements are the one-hot encoded true label
         y_true_labels = y_true[:, :-2]
-        num_classes = tf.shape(y_true_labels)[1]
         
         # The last two elements are the financial outcomes
         reward_potential = y_true[:, -2]
@@ -33,9 +32,6 @@ def create_pnl_aware_loss(pnl_multiplier=0.1, liquidation_penalty=2.0, reward_bo
         # --- 2. Financial (PnL) Loss Component ---
         # Get the model's confidence in the correct prediction
         true_class_probs = K.sum(y_true_labels * y_pred, axis=-1)
-        
-        # Get the model's confidence in its highest-probability (potentially wrong) prediction
-        predicted_class_probs = K.max(y_pred, axis=-1)
         
         # Identify when the model's prediction is wrong
         is_wrong = 1.0 - K.cast(K.equal(K.argmax(y_true_labels), K.argmax(y_pred)), dtype='float32')

@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     """
     # --- Top-Level Environment-Specific Settings ---
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
-    trading_environment: Literal["LIVE", "TESTNET", "PAPER"] = Field(default="TESTNET", env="TRADING_ENVIRONMENT") # Added PAPER
-    initial_equity: float = Field(default=10000.0, env="INITIAL_EQUITY") # Added initial equity to settings
+    trading_environment: Literal["LIVE", "TESTNET", "PAPER"] = Field(default="TESTNET", env="TRADING_ENVIRONMENT")
+    initial_equity: float = Field(default=10000.0, env="INITIAL_EQUITY")
 
     # --- Binance Credentials (loaded from .env) ---
     binance_live_api_key: Optional[str] = Field(default=None, env="BINANCE_LIVE_API_KEY")
@@ -88,35 +88,53 @@ CONFIG: Dict[str, Any] = {
     # --- General System & Trading Parameters ---
     "trading_symbol": "BTCUSDT",
     "trading_interval": "15m",
-    "initial_equity": settings.initial_equity, # Use initial_equity from settings
+    "initial_equity": settings.initial_equity,
     "taker_fee": 0.0004,
     "maker_fee": 0.0002,
     "state_file": "ares_state.json",
+    "lookback_years": 2,
 
-    # --- Risk Management (Global Portfolio Level) ---
-    "risk_management": {
-        "global_max_allocated_capital_usd": 50000,  # Total max capital to be deployed across all pairs
-        "max_allocation_per_pair_usd": 5000,      # Max capital for a single trading pair/bot
-        "pause_trading_drawdown_pct": 0.20,         # Global drawdown level to pause all trading
-    },
-    
+    # --- Data Caching Configuration (filenames are set dynamically below) ---
+    "klines_filename": "",
+    "agg_trades_filename": "",
+    "futures_filename": "",
+    "prepared_data_filename": "",
+
+    # --- Script Names ---
+    "downloader_script_name": "backtesting/ares_data_downloader.py",
+    "preparer_script_name": "backtesting/ares_data_preparer.py",
+    "pipeline_script_name": "src/ares_pipeline.py",
+    "pipeline_pid_file": "ares_pipeline.pid",
+    "restart_flag_file": "restart_pipeline.flag",
+
     # --- Firestore Configuration ---
     "firestore": {
         "enabled": settings.firestore_project_id is not None,
         "project_id": settings.firestore_project_id,
         "optimized_params_collection": "ares_optimized_params",
-        "live_metrics_collection": "ares_live_metrics", # New collection for live metrics
-        "alerts_collection": "ares_alerts" # New collection for alerts
+        "live_metrics_collection": "ares_live_metrics",
+        "alerts_collection": "ares_alerts"
     },
 
     # --- Email Configuration ---
-    "email": {
+    "email_config": {
         "enabled": settings.email_sender_address is not None and settings.email_recipient_address is not None,
-        "sender_address": settings.email_sender_address,
-        "sender_password": settings.email_sender_password, # App password for Gmail or similar
-        "recipient_address": settings.email_recipient_address,
-        "smtp_server": "smtp.gmail.com", # Example for Gmail
-        "smtp_port": 587 # Example for Gmail
+        "sender_email": settings.email_sender_address,
+        "app_password": settings.email_sender_password,
+        "recipient_email": settings.email_recipient_address,
+        "smtp_server": "smtp.gmail.com",
+        "smtp_port": 587
+    },
+    
+    # --- Command Email Listener Configuration ---
+    "command_email_config": {
+        "enabled": True,
+        "imap_server": "imap.gmail.com",
+        "imap_port": 993,
+        "email_address": settings.email_sender_address,
+        "app_password": settings.email_sender_password,
+        "allowed_sender": settings.email_recipient_address,
+        "polling_interval_seconds": 60,
     },
 
     # --- Analyst Component ---
@@ -158,29 +176,27 @@ CONFIG: Dict[str, Any] = {
         "min_lss_for_entry": 60,
     },
     
-    # --- Supervisor Component (New and Updated) ---
+    # --- Supervisor Component ---
     "supervisor": {
-        "check_interval_seconds": 300, # How often the supervisor runs its checks (5 minutes)
-        "pause_trading_drawdown_pct": 0.20, # Drawdown percentage to pause all trading (20%)
-        "risk_reduction_drawdown_pct": 0.10, # Drawdown percentage to reduce risk (10%)
-        # Performance Monitoring specific settings
-        "decay_threshold_profit_factor": 0.80, # Live Profit Factor < 80% of Backtested Profit Factor
-        "decay_threshold_sharpe_ratio": 0.70, # Live Sharpe Ratio < 70% of Backtested Sharpe Ratio
-        "decay_threshold_max_drawdown_multiplier": 1.50, # Live Max Drawdown > 150% of Backtested Max Drawdown
-        "min_trades_for_monitoring": 50, # Minimum number of trades before starting decay monitoring
-        "retrain_interval_days": 30 # Duration in days between system retraining checks
+        "check_interval_seconds": 300,
+        "risk_reduction_drawdown_pct": 0.10,
+        "decay_threshold_profit_factor": 0.80,
+        "decay_threshold_sharpe_ratio": 0.70,
+        "decay_threshold_max_drawdown_multiplier": 1.50,
+        "min_trades_for_monitoring": 50,
+        "retrain_interval_days": 30
+    },
+
+    # --- Risk Management (Global Portfolio Level) ---
+    "risk_management": {
+        "global_max_allocated_capital_usd": 50000,
+        "max_allocation_per_pair_usd": 5000,
+        "pause_trading_drawdown_pct": 0.20,
     },
 
     # --- Backtesting & Optimization ---
-    # This section integrates the Optuna-based optimization configuration.
     "backtesting": {
-        "data": {
-            "klines_path": "data/historical_klines.csv",
-            "symbol": "BTCUSDT",
-            "interval": "15m",
-            "start_date": "2023-01-01",
-            "end_date": "2024-01-01",
-        },
+        "fee_rate": 0.0005,
         "optimization": {
             "enabled": True,
             "n_trials": 100,
@@ -188,19 +204,47 @@ CONFIG: Dict[str, Any] = {
             "storage": "sqlite:///ares_optimization.db",
             "direction": "maximize",
             "objective_metric": "Sharpe Ratio",
-            "params": {
-                "atr_period": {"type": "int", "low": 10, "high": 30},
-                "atr_multiplier_tp": {"type": "float", "low": 1.0, "high": 5.0},
-                "atr_multiplier_sl": {"type": "float", "low": 0.5, "high": 3.0},
-                "trailing_sl_enabled": {"type": "categorical", "choices": [True, False]},
-                "atr_multiplier_tsl": {
-                    "type": "float", "low": 1.0, "high": 4.0, "condition": ("trailing_sl_enabled", "==", True)
-                }
-            }
         },
         "results": {
             "best_params_file": "models/best_strategy_params.json",
             "report_file": "backtests/performance_report.txt"
         }
+    },
+
+    # --- Optimal Indicator Parameters (To be updated by the optimizer) ---
+    "best_params": {
+        # --- Confidence Score Weights ---
+        'weight_trend': 0.4,
+        'weight_reversion': 0.3,
+        'weight_sentiment': 0.3,
+        
+        # --- Trade Execution Parameters ---
+        'trade_entry_threshold': 0.6,
+        'sl_atr_multiplier': 1.5,
+        'take_profit_rr': 2.0,
+        
+        # --- Underlying Indicator Settings ---
+        'adx_period': 20, 
+        'trend_threshold': 25,
+        'max_strength_threshold': 60, 
+        'atr_period': 14, 
+        'proximity_multiplier': 0.25,
+        'sma_period': 50, 
+        'volume_multiplier': 3, 
+        'volatility_multiplier': 2,
+        'zscore_threshold': 1.5,
+        'obv_lookback': 20,
+        'bband_length': 20,
+        'bband_std': 2.0,
+        'bband_squeeze_threshold': 0.01,
+        'scaling_factor': 100, 
+        'trend_strength_threshold': 25
     }
 }
+
+# --- Dynamically set filenames based on other config values ---
+CONFIG["klines_filename"] = f"data_cache/{CONFIG['trading_symbol']}_{CONFIG['trading_interval']}_{CONFIG['lookback_years']}y_klines.csv"
+CONFIG["agg_trades_filename"] = f"data_cache/{CONFIG['trading_symbol']}_{CONFIG['lookback_years']}y_aggtrades.csv"
+CONFIG["futures_filename"] = f"data_cache/{CONFIG['trading_symbol']}_futures_{CONFIG['lookback_years']}y_data.csv"
+CONFIG["prepared_data_filename"] = f"data_cache/{CONFIG['trading_symbol']}_{CONFIG['trading_interval']}_{CONFIG['lookback_years']}y_prepared_data.csv"
+

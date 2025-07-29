@@ -28,11 +28,10 @@ class TrainingPipeline:
 
     async def run(self):
         """
-        ## CHANGE: Re-architected the pipeline to use a robust walk-forward validation process.
-        ## Instead of a single train/test split, this method now uses TimeSeriesSplit
-        ## to create multiple chronological folds. In each fold, the models are retrained
-        ## and re-optimized on past data and then validated on unseen future data,
-        ## providing a much more accurate measure of performance.
+        Instead of a single train/test split, this method now uses TimeSeriesSplit
+        to create multiple chronological folds. In each fold, the models are retrained
+        and re-optimized on past data and then validated on unseen future data,
+        providing a much more accurate measure of performance.
         """
         self.logger.info("--- Starting Ares Training & Validation Pipeline ---")
         report_lines = ["Ares Training Pipeline Report"]

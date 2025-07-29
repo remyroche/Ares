@@ -63,6 +63,23 @@ class Supervisor:
         self.performance_monitor = PerformanceMonitor(config=settings, firestore_manager=self.firestore_manager)
         self.strategist = Strategist(self.global_config)
 
+        self.scheduler = AsyncIOScheduler()
+
+    def start_background_tasks(self):
+        """
+        This method starts a background scheduler that will trigger the
+        run_daily_tasks method every 24 hours, ensuring that model weights
+        are periodically and automatically adjusted.
+        """
+        self.scheduler.add_job(self.run_daily_tasks, 'interval', days=1, id='daily_tasks_job')
+        self.scheduler.start()
+        self.logger.info("Supervisor background task scheduler started.")
+
+    def stop_background_tasks(self):
+        """Stops the background scheduler gracefully."""
+        self.logger.info("Stopping Supervisor background task scheduler.")
+        self.scheduler.shutdown()
+
     def load_data(self):
         """Loads historical data for backtesting and analysis."""
         try:

@@ -5,6 +5,8 @@ import os
 import sys
 import signal
 import argparse
+import asyncio # Import asyncio for running async training pipeline
+
 # Import the main CONFIG dictionary
 from src.config import CONFIG
 
@@ -78,8 +80,8 @@ def main():
     parser.add_argument('--exchange', type=str, default='binance',
                         help="Exchange to use (e.g., binance). Default: binance")
     parser.add_argument('--mode', type=str, default='backtest',
-                        choices=['backtest', 'train', 'live'],
-                        help="Operation mode: 'backtest', 'train' (ML/optimization), or 'live' (trading bot). Default: backtest")
+                        choices=['backtest', 'train', 'live', 'full_backtest'], # Added 'full_backtest' mode
+                        help="Operation mode: 'backtest', 'train' (ML/optimization), 'live' (trading bot), or 'full_backtest' (train then backtest). Default: backtest")
     
     args = parser.parse_args()
 
@@ -124,7 +126,8 @@ def main():
         print(f"Launching ML/Fine-tuning pipeline for {args.symbol}...")
         try:
             from backtesting.training_pipeline import main as run_training_pipeline_main
-            run_training_pipeline_main()
+            # training_pipeline.main() uses asyncio.run(), so we call it directly
+            run_training_pipeline_main() 
         except ImportError:
             print("ERROR: 'training_pipeline.py' not found. Please create it for 'train' mode.")
             sys.exit(1)
@@ -132,6 +135,35 @@ def main():
             print(f"Error running training pipeline: {e}")
             sys.exit(1)
         sys.exit(0)
+
+    elif args.mode == 'full_backtest':
+        print(f"--- Running Full Backtest Workflow: Train then Backtest for {args.symbol} ---")
+        
+        # Step 1: Run the Training Pipeline
+        print(f"Step 1/2: Launching ML/Fine-tuning pipeline for {args.symbol}...")
+        try:
+            from backtesting.training_pipeline import main as run_training_pipeline_main
+            # training_pipeline.main() uses asyncio.run(), so we call it directly
+            run_training_pipeline_main()
+            print(f"Step 1/2: Training pipeline completed successfully for {args.symbol}.")
+        except ImportError:
+            print("ERROR: 'training_pipeline.py' not found. Cannot run full_backtest.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error during training pipeline in full_backtest mode: {e}")
+            sys.exit(1)
+
+        # Step 2: Run the Backtester
+        print(f"Step 2/2: Launching backtester for {args.symbol} with newly trained models...")
+        try:
+            from backtesting.ares_backtester import main as run_backtester_main
+            run_backtester_main()
+            print(f"Step 2/2: Backtester completed successfully for {args.symbol}.")
+        except Exception as e:
+            print(f"Error running backtester in full_backtest mode: {e}")
+            sys.exit(1)
+        sys.exit(0)
+
 
     elif args.mode == 'live':
         # ... (live mode logic remains the same) ...
@@ -196,10 +228,9 @@ def main():
                 os.remove(restart_flag_file)
             print("All processes terminated and cleanup complete.")
     else:
-        print(f"ERROR: Unknown mode '{args.mode}'. Please choose 'backtest', 'train', or 'live'.")
+        print(f"ERROR: Unknown mode '{args.mode}'. Please choose 'backtest', 'train', 'live', or 'full_backtest'.")
         sys.exit(1)
 
 
 if __name__ == "__main__":
     main()
-

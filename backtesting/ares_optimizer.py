@@ -5,20 +5,20 @@ import os
 import copy
 import traceback
 # Import the main CONFIG dictionary
-from config import CONFIG
-from ares_data_preparer import load_raw_data, calculate_features_and_score, get_sr_levels 
-from ares_backtester import run_backtest 
-from ares_mailer import send_email
+from src.config import CONFIG
+from backtesting.ares_data_preparer import load_raw_data, calculate_features_and_score, get_sr_levels 
+from backtesting.ares_backtester import run_backtest 
+from emails.ares_mailer import send_email
 
 # --- Efficient Optimization Configuration ---
 
 # The Coarse Grid is now expanded to test both weights AND key indicator values.
 # Access OPTIMIZATION_CONFIG from CONFIG
-COARSE_PARAM_GRID = CONFIG['OPTIMIZATION_CONFIG']['COARSE_GRID_RANGES']
+COARSE_PARAM_GRID = CONFIG['backtesting']['optimization']['params']
 
-NUM_TUNING_POINTS = CONFIG['OPTIMIZATION_CONFIG']['FINE_TUNE_NUM_POINTS']
-TUNING_PERCENTAGE = CONFIG['OPTIMIZATION_CONFIG']['FINE_TUNE_RANGES_MULTIPLIER']
-INTEGER_PARAMS = CONFIG['OPTIMIZATION_CONFIG']['INTEGER_PARAMS']
+NUM_TUNING_POINTS = CONFIG.get('fine_tune_num_points', 10)
+TUNING_PERCENTAGE = CONFIG.get('fine_tune_ranges_multiplier', 0.2)
+INTEGER_PARAMS = CONFIG.get('integer_params', ['adx_period', 'atr_period', 'sma_period'])
 
 TOP_N_RESULTS = 5 # This can be moved to CONFIG if desired
 
@@ -37,11 +37,16 @@ def run_grid_search_stage(param_grid, klines_df, agg_trades_df, futures_df, sr_l
     def flatten_dict(d, parent_key=''):
         for k, v in d.items():
             new_key = f"{parent_key}.{k}" if parent_key else k
-            if isinstance(v, dict):
+            if isinstance(v, dict) and 'type' in v: # It's a parameter definition
+                 flat_param_paths.append(new_key)
+                 if v['type'] == 'int':
+                     flat_param_values.append(np.linspace(v['low'], v['high'], 5, dtype=int)) # 5 steps for coarse grid
+                 elif v['type'] == 'float':
+                     flat_param_values.append(np.linspace(v['low'], v['high'], 5))
+                 elif v['type'] == 'categorical':
+                     flat_param_values.append(v['choices'])
+            elif isinstance(v, dict):
                 flatten_dict(v, new_key)
-            else:
-                flat_param_paths.append(new_key)
-                flat_param_values.append(v)
 
     flatten_dict(param_grid)
 
@@ -57,40 +62,10 @@ def run_grid_search_stage(param_grid, klines_df, agg_trades_df, futures_df, sr_l
         print(f"\n[{i+1}/{len(param_combinations)}] Testing: {flat_params_combo}")
         
         # Convert flat_params_combo back to nested structure for calculate_features_and_score
-        current_params = {}
+        current_params = copy.deepcopy(CONFIG['best_params'])
         for path, value in flat_params_combo.items():
-            parts = path.split('.')
-            d = current_params
-            for j, p in enumerate(parts):
-                if j == len(parts) - 1:
-                    d[p] = value
-                else:
-                    if p not in d:
-                        d[p] = {}
-                    d = d[p]
+            set_param_value_at_path(current_params, path.split('.'), value)
         
-        # Apply integer conversion for relevant parameters
-        for param_path in INTEGER_PARAMS:
-            parts = param_path.split('.')
-            val = get_param_value_from_path(current_params, parts)
-            if val is not None:
-                set_param_value_at_path(current_params, parts, int(round(val)))
-
-        # Handle weight normalization for relevant groups
-        for group_path, weight_keys in CONFIG['OPTIMIZATION_CONFIG']['WEIGHT_PARAMS_GROUPS']:
-            parts = group_path.split('.')
-            weights_dict = get_param_value_from_path(current_params, parts)
-            if weights_dict and isinstance(weights_dict, dict):
-                total_weight = sum(weights_dict.get(k, 0) for k in weight_keys)
-                if total_weight > 0:
-                    for k in weight_keys:
-                        set_param_value_at_path(weights_dict, [k], weights_dict.get(k, 0) / total_weight)
-                else: # If all weights are zero, distribute evenly
-                    num_keys = len(weight_keys)
-                    if num_keys > 0:
-                        for k in weight_keys:
-                            set_param_value_at_path(weights_dict, [k], 1.0 / num_keys)
-
         # Pass sr_levels to calculate_features_and_score
         prepared_df = calculate_features_and_score(
             klines_df.copy(), agg_trades_df.copy(), futures_df.copy(), current_params, sr_levels
@@ -114,18 +89,16 @@ def run_coordinate_descent_stage(best_params, klines_df, agg_trades_df, futures_
     
     current_best_params = copy.deepcopy(best_params)
     
-    # Iterate through each parameter that was in the coarse grid
-    # We need to iterate through the flattened structure of COARSE_PARAM_GRID
     all_param_paths = []
     def collect_paths(d, parent_key=''):
         for k, v in d.items():
             new_key = f"{parent_key}.{k}" if parent_key else k
-            if isinstance(v, dict):
-                collect_paths(v, new_key)
-            else:
+            if isinstance(v, dict) and 'type' in v:
                 all_param_paths.append(new_key)
+            elif isinstance(v, dict):
+                collect_paths(v, new_key)
     
-    collect_paths(CONFIG['OPTIMIZATION_CONFIG']['COARSE_GRID_RANGES'])
+    collect_paths(CONFIG['backtesting']['optimization']['params'])
 
     for param_to_tune in all_param_paths:
         print(f"\n--- Tuning Parameter: '{param_to_tune}' ---")
@@ -151,37 +124,14 @@ def run_coordinate_descent_stage(best_params, klines_df, agg_trades_df, futures_
         best_value_for_param = None
 
         for value in tuning_values:
-            test_params = copy.deepcopy(current_best_params) # Deep copy to avoid modifying in loop
+            test_params = copy.deepcopy(current_best_params)
             set_param_value_at_path(test_params, parts, value)
 
-            # Apply integer conversion for relevant parameters in test_params
-            for p_path in INTEGER_PARAMS:
-                p_parts = p_path.split('.')
-                val = get_param_value_from_path(test_params, p_parts)
-                if val is not None:
-                    set_param_value_at_path(test_params, p_parts, int(round(val)))
-
-            # Handle weight normalization for relevant groups in test_params
-            for group_path, weight_keys in CONFIG['OPTIMIZATION_CONFIG']['WEIGHT_PARAMS_GROUPS']:
-                gp_parts = group_path.split('.')
-                weights_dict = get_param_value_from_path(test_params, gp_parts)
-                if weights_dict and isinstance(weights_dict, dict):
-                    total_weight = sum(weights_dict.get(k, 0) for k in weight_keys)
-                    if total_weight > 0:
-                        for k in weight_keys:
-                            set_param_value_at_path(weights_dict, [k], weights_dict.get(k, 0) / total_weight)
-                    else:
-                        num_keys = len(weight_keys)
-                        if num_keys > 0:
-                            for k in weight_keys:
-                                set_param_value_at_path(weights_dict, [k], 1.0 / num_keys)
-
-            # Pass sr_levels to calculate_features_and_score
             prepared_df = calculate_features_and_score(
                 klines_df.copy(), agg_trades_df.copy(), futures_df.copy(), test_params, sr_levels
             )
             
-            portfolio_result = run_backtest(prepared_df, test_params) # Pass test_params to backtest
+            portfolio_result = run_backtest(prepared_df, test_params)
             
             print(f"  Value: {value:<10} -> Equity: ${portfolio_result.equity:,.2f}")
 
@@ -194,11 +144,10 @@ def run_coordinate_descent_stage(best_params, klines_df, agg_trades_df, futures_
             set_param_value_at_path(current_best_params, parts, best_value_for_param)
 
     print("\n--- Running Final Backtest with Tuned Parameters ---")
-    # Pass sr_levels to calculate_features_and_score
     prepared_df = calculate_features_and_score(
         klines_df.copy(), agg_trades_df.copy(), futures_df.copy(), current_best_params, sr_levels
     )
-    final_portfolio = run_backtest(prepared_df, current_best_params) # Pass current_best_params
+    final_portfolio = run_backtest(prepared_df, current_best_params)
 
     return [{'params': current_best_params, 'portfolio': final_portfolio}]
 
@@ -225,7 +174,7 @@ def format_report_to_string(final_results):
         for source, metrics in sorted_report:
             report_lines.append(f"{source:<25} | {metrics['num_trades']:>12} | {metrics['sharpe']:>15.2f} | {metrics['avg_profit_pct']:>20.2f}%")
     report_lines.append("\n" + separator)
-    report_lines.append("RECOMMENDATION: Update the BEST_PARAMS dictionary in config.py with the final tuned values.")
+    report_lines.append("RECOMMENDATION: Update the best_params dictionary in config.py with the final tuned values.")
     report_lines.append(separator)
     return "\n".join(report_lines)
 
@@ -249,7 +198,7 @@ def set_param_value_at_path(base_dict, path_parts, value):
         else:
             if part not in current or not isinstance(current[part], dict):
                 current[part] = {}
-            current = current[p]
+            current = current[part] # CORRECTED: Changed 'p' to 'part'
 
 # This main block is now for running the optimizer as a standalone script
 if __name__ == "__main__":
@@ -261,11 +210,9 @@ if __name__ == "__main__":
         daily_df = klines_df.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
         sr_levels = get_sr_levels(daily_df)
         
-        # Pass CONFIG['BEST_PARAMS'] as the initial parameters for coarse search
-        coarse_results = run_grid_search_stage(CONFIG['OPTIMIZATION_CONFIG']['COARSE_GRID_RANGES'], klines_df, agg_trades_df, futures_df, sr_levels, "Stage 1: Coarse Grid Search")
+        coarse_results = run_grid_search_stage(COARSE_PARAM_GRID, klines_df, agg_trades_df, futures_df, sr_levels, "Stage 1: Coarse Grid Search")
         
-        # Access INITIAL_EQUITY from CONFIG
-        initial_equity = CONFIG['INITIAL_EQUITY']
+        initial_equity = CONFIG['initial_equity']
 
         if not coarse_results or coarse_results[0]['portfolio'].equity <= initial_equity:
             print("\nCoarse search did not yield any profitable results. Exiting.")
@@ -275,7 +222,6 @@ if __name__ == "__main__":
             best_coarse_params = coarse_results[0]['params']
             print(f"\nBest result from Coarse Search: ${coarse_results[0]['portfolio'].equity:,.2f}")
             print(f"Best Coarse Params: {best_coarse_params}")
-            # Pass futures_df to the optimization stages
             final_results = run_coordinate_descent_stage(best_coarse_params, klines_df, agg_trades_df, futures_df, sr_levels)
             report_string = format_report_to_string(final_results)
             print("\n" + report_string)

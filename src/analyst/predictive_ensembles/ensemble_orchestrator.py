@@ -98,7 +98,7 @@ class RegimePredictiveEnsembles:
 
         if not ensemble:
             self.logger.warning(f"No ensemble defined for regime: {regime}.")
-            return {"prediction": "HOLD", "confidence": 0.0, "regime": regime, "base_predictions": {}}
+            return {"prediction": "HOLD", "confidence": 0.0, "regime": regime, "base_predictions": {}, "ensemble_weights": {}}
 
         # For live prediction, we need to load the *final* trained model if not already loaded
         if not ensemble.trained:
@@ -106,7 +106,7 @@ class RegimePredictiveEnsembles:
             final_model_file_name = os.path.join(self.model_storage_dir, f"final_{regime.lower()}_ensemble.joblib")
             if not ensemble.load_model(final_model_file_name):
                  self.logger.error(f"Failed to load final model for {regime}. Cannot make prediction.")
-                 return {"prediction": "HOLD", "confidence": 0.0, "regime": regime, "base_predictions": {}}
+                 return {"prediction": "HOLD", "confidence": 0.0, "regime": regime, "base_predictions": {}, "ensemble_weights": {}}
 
         final_prediction_output = ensemble.get_prediction(current_features, **kwargs)
         
@@ -114,11 +114,15 @@ class RegimePredictiveEnsembles:
         if hasattr(ensemble, '_get_meta_features'):
              base_predictions = ensemble._get_meta_features(current_features, is_live=True, **kwargs)
 
+        # Include the ensemble's current weights in the output
+        current_ensemble_weights = ensemble.ensemble_weights if hasattr(ensemble, 'ensemble_weights') else {}
+
         return {
             "prediction": final_prediction_output.get("prediction", "HOLD"),
             "confidence": final_prediction_output.get("confidence", 0.0),
             "regime": regime,
             "base_predictions": base_predictions,
+            "ensemble_weights": current_ensemble_weights, # Added ensemble weights here
         }
 
     def get_current_regime(self, current_features: pd.DataFrame) -> str:
@@ -160,4 +164,3 @@ class RegimePredictiveEnsembles:
     def get_current_weights(self) -> dict:
         """Returns the current weights of all ensembles."""
         return {regime: ens.ensemble_weights for regime, ens in self.regime_ensembles.items()}
-

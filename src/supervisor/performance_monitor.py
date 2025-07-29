@@ -3,6 +3,7 @@ import numpy as np
 import json
 import datetime
 import logging
+import asyncio
 from typing import Union # Added import for Union
 
 from src.config import CONFIG

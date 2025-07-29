@@ -6,6 +6,7 @@ from sklearn.preprocessing import StandardScaler
 from lightgbm import LGBMClassifier # For GBM Feature Selection
 import os # For path manipulation
 import joblib # For saving/loading scikit-learn models and scalers
+from src.config import CONFIG
 
 # Suppress TensorFlow warnings for cleaner output in demo
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 

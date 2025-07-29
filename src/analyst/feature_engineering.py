@@ -1,310 +1,29 @@
-# src/analyst/feature_engineering.py
-import pandas as pd
+import logging
+import os
+import joblib
 import numpy as np
-import pywt # For Wavelet Transforms
-from sklearn.preprocessing import StandardScaler
-from lightgbm import LGBMClassifier # For GBM Feature Selection
-import os # For path manipulation
-import joblib # For saving/loading scikit-learn models and scalers
-from src.config import CONFIG
-
-# Suppress TensorFlow warnings for cleaner output in demo
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
+import pandas as pd
+import pandas_ta as ta
+import pywt
 import tensorflow as tf
-from tensorflow.keras.models import Model, load_model # Import load_model
-from tensorflow.keras.layers import Input, Dense
-from tensorflow.keras.optimizers import Adam
-from utils.logger import system_logger # Import the centralized logger
-
+from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.layers import Dense, Input
+from tensorflow.keras.models import Model, load_model
+from src.utils.logger import system_logger
 
 class FeatureEngineeringEngine:
     """
-    Handles advanced feature generation including Wavelet Transforms and Autoencoders.
-    Also provides functionality for GBM-based feature selection.
+    Provides a richer feature set for all downstream models.
     """
     def __init__(self, config):
         self.config = config.get("analyst", {}).get("feature_engineering", {})
         self.logger = system_logger.getChild('FeatureEngineeringEngine')
-
-        self.autoencoder_model = None 
+        self.autoencoder_model = None
         self.autoencoder_scaler = None
-        self.gbm_selector_model = None # For GBM feature selection
-        self.selected_features_names = None # Store names of selected features
-
         self.model_storage_path = self.config.get("model_storage_path", "models/analyst/feature_engineering/")
-        os.makedirs(self.model_storage_path, exist_ok=True) # Ensure model storage path exists
+        os.makedirs(self.model_storage_path, exist_ok=True)
         self.autoencoder_model_path = os.path.join(self.model_storage_path, "autoencoder_model.h5")
         self.autoencoder_scaler_path = os.path.join(self.model_storage_path, "autoencoder_scaler.joblib")
-
-
-    def apply_wavelet_transforms(self, data: pd.Series, wavelet='db1', level=None):
-        """
-        Applies Discrete Wavelet Transform (DWT) to denoise data and extract multi-scale features.
-        :param data: pandas Series of price data.
-        :param wavelet: Type of wavelet to use (e.g., 'db1', 'haar').
-        :param level: Decomposition level. If None, uses config value.
-        :return: DataFrame with original and wavelet-transformed features.
-        """
-        if data.empty:
-            self.logger.warning("Wavelet transform: Input data is empty.")
-            return pd.DataFrame(index=data.index)
-
-        level = level if level is not None else self.config.get("wavelet_level", 3)
-        
-        data_clean = data.dropna().values
-
-        # PyWavelets requires input length to be a multiple of 2^level
-        # Pad data if necessary
-        if len(data_clean) == 0:
-            self.logger.warning("Wavelet transform: No clean data points after dropping NaNs.")
-            return pd.DataFrame(index=data.index)
-
-        min_len_for_level = 2 ** level
-        if len(data_clean) < min_len_for_level:
-            self.logger.warning(f"Wavelet transform: Not enough data points ({len(data_clean)}) for level {level}. Minimum required: {min_len_for_level}. Skipping wavelet transform.")
-            return pd.DataFrame(index=data.index)
-
-        # Pad to the nearest power of 2 if not already
-        original_len = len(data_clean)
-        pad_len = int(2**np.ceil(np.log2(original_len)))
-        if original_len < pad_len:
-            data_padded = np.pad(data_clean, (0, pad_len - original_len), 'edge')
-        else:
-            data_padded = data_clean
-
-        coeffs = pywt.wavedec(data_padded, wavelet, level=level)
-        
-        features = pd.DataFrame(index=data.index)
-        features[f'original_{data.name}'] = data # Add original data
-
-        # Reconstruct components for features
-        # Approximation coefficients (low frequency, trend)
-        approx_coeff = coeffs[0]
-        approx_reconstructed = pywt.waverec([approx_coeff] + [None] * level, wavelet)[:original_len]
-        features[f'{data.name}_wavelet_approx'] = pd.Series(approx_reconstructed, index=data.dropna().index)
-
-        # Detail coefficients (high frequency, noise/details)
-        for i, detail_coeff in enumerate(coeffs[1:]):
-            detail_reconstructed = pywt.waverec([None] * (i + 1) + [detail_coeff] + [None] * (level - i -1), wavelet)[:original_len]
-            features[f'{data.name}_wavelet_detail_{i+1}'] = pd.Series(detail_reconstructed, index=data.dropna().index)
-        
-        self.logger.info(f"Applied Wavelet Transforms (wavelet={wavelet}, level={level}). Generated {len(features.columns)} features.")
-        return features.reindex(data.index)
-
-    def train_autoencoder(self, data: pd.DataFrame):
-        """
-        Trains an Autoencoder model for unsupervised feature learning.
-        The reconstruction error can be used as a feature for anomaly detection.
-        :param data: DataFrame of features to train the autoencoder on.
-        """
-        if data.empty:
-            self.logger.warning("Autoencoder training: Input data is empty. Skipping training.")
-            self.autoencoder_model = None
-            self.autoencoder_scaler = None
-            return
-
-        self.logger.info(f"Autoencoder training: Input data shape {data.shape}...")
-        
-        # Scale data before training
-        self.autoencoder_scaler = StandardScaler()
-        scaled_data = self.autoencoder_scaler.fit_transform(data.dropna())
-
-        input_dim = scaled_data.shape[1]
-        latent_dim = self.config.get("autoencoder_latent_dim", 16)
-
-        # Define the Autoencoder model
-        input_layer = Input(shape=(input_dim,))
-        encoder = Dense(latent_dim, activation="relu")(input_layer)
-        decoder = Dense(input_dim, activation="linear")(encoder) 
-
-        self.autoencoder_model = Model(inputs=input_layer, outputs=decoder)
-        self.autoencoder_model.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
-
-        # Train the model
-        try:
-            self.autoencoder_model.fit(scaled_data, scaled_data, epochs=10, batch_size=32, shuffle=True, verbose=0)
-            self.logger.info("Autoencoder training completed.")
-            
-            # Save the trained model and scaler
-            self.autoencoder_model.save(self.autoencoder_model_path)
-            joblib.dump(self.autoencoder_scaler, self.autoencoder_scaler_path)
-            self.logger.info(f"Autoencoder model saved to {self.autoencoder_model_path}")
-            self.logger.info(f"Autoencoder scaler saved to {self.autoencoder_scaler_path}")
-
-        except Exception as e:
-            self.logger.error(f"Error during Autoencoder training: {e}", exc_info=True)
-            self.autoencoder_model = None # Invalidate model if training fails
-            self.autoencoder_scaler = None
-
-    def load_autoencoder(self):
-        """
-        Loads a trained Autoencoder model and its scaler.
-        :return: True if loaded successfully, False otherwise.
-        """
-        if os.path.exists(self.autoencoder_model_path) and os.path.exists(self.autoencoder_scaler_path):
-            try:
-                self.autoencoder_model = load_model(self.autoencoder_model_path)
-                self.autoencoder_scaler = joblib.load(self.autoencoder_scaler_path)
-                self.logger.info(f"Autoencoder model loaded from {self.autoencoder_model_path}")
-                self.logger.info(f"Autoencoder scaler loaded from {self.autoencoder_scaler_path}")
-                return True
-            except Exception as e:
-                self.logger.error(f"Error loading Autoencoder model or scaler: {e}", exc_info=True)
-                self.autoencoder_model = None
-                self.autoencoder_scaler = None
-                return False
-        else:
-            self.logger.warning("Autoencoder model or scaler files not found. Cannot load.")
-            return False
-
-
-    def apply_autoencoders(self, data: pd.DataFrame):
-        """
-        Applies a trained Autoencoder to data to extract reconstruction error as a feature.
-        :param data: DataFrame of features to apply the autoencoder on.
-        :return: Series of reconstruction errors.
-        """
-        # Attempt to load the model if not already loaded
-        if self.autoencoder_model is None or self.autoencoder_scaler is None:
-            if not self.load_autoencoder():
-                self.logger.warning("Autoencoder model or scaler not trained/loaded. Skipping autoencoder features.")
-                return pd.Series(np.nan, index=data.index, name='autoencoder_reconstruction_error')
-        
-        if data.empty:
-            self.logger.warning("Autoencoder application: Input data is empty.")
-            return pd.Series(np.nan, index=data.index, name='autoencoder_reconstruction_error')
-
-        # Ensure data columns match training data for scaler
-        data_clean = data.dropna()
-        if data_clean.empty:
-            self.logger.warning("Autoencoder application: No clean data points after dropping NaNs.")
-            return pd.Series(np.nan, index=data.index, name='autoencoder_reconstruction_error')
-
-        try:
-            # Ensure the input data has the same columns as the data used for fitting the scaler
-            # This is crucial for StandardScaler to work correctly.
-            # If the scaler has 'feature_names_in_', use that to reindex.
-            if hasattr(self.autoencoder_scaler, 'feature_names_in_') and self.autoencoder_scaler.feature_names_in_ is not None:
-                data_clean_reindexed = data_clean.reindex(columns=self.autoencoder_scaler.feature_names_in_, fill_value=0)
-            else:
-                # Fallback if feature_names_in_ is not available (e.g., older scikit-learn versions)
-                # This assumes the order of columns in `data` is consistent.
-                self.logger.warning("Scaler does not have 'feature_names_in_'. Assuming consistent column order for autoencoder application.")
-                data_clean_reindexed = data_clean
-            
-            scaled_data = self.autoencoder_scaler.transform(data_clean_reindexed)
-            reconstructions = self.autoencoder_model.predict(scaled_data, verbose=0)
-            mse = np.mean(np.power(scaled_data - reconstructions, 2), axis=1)
-            reconstruction_error = pd.Series(mse, index=data_clean.index, name='autoencoder_reconstruction_error')
-            self.logger.info(f"Applied Autoencoder. Generated {len(reconstruction_error)} reconstruction error features.")
-            return reconstruction_error.reindex(data.index)
-        except Exception as e:
-            self.logger.error(f"Error applying Autoencoder: {e}", exc_info=True)
-            return pd.Series(np.nan, index=data.index, name='autoencoder_reconstruction_error')
-
-
-    def select_features_with_gbm(self, features_df: pd.DataFrame, target_series: pd.Series):
-        """
-        Performs feature selection using LightGBM feature importances.
-        :param features_df: DataFrame of features.
-        :param target_series: Series of the target variable (must align with features_df index).
-        :return: List of selected feature names.
-        """
-        if features_df.empty or target_series.empty:
-            self.logger.warning("GBM feature selection: Input features or target is empty. Skipping selection.")
-            return features_df.columns.tolist() # Return all features if cannot select
-
-        # Align features and target
-        aligned_df = features_df.join(target_series.rename('target')).dropna()
-        if aligned_df.empty:
-            self.logger.warning("GBM feature selection: No aligned data after dropping NaNs. Skipping selection.")
-            return features_df.columns.tolist()
-
-        X = aligned_df.drop(columns=['target'])
-        y = aligned_df['target']
-
-        if X.empty or y.empty:
-            self.logger.warning("GBM feature selection: X or y is empty after alignment. Skipping selection.")
-            return features_df.columns.tolist()
-
-        self.logger.info(f"GBM feature selection: Training on {X.shape[1]} features and {len(y)} samples...")
-
-        try:
-            # Train a LightGBM classifier
-            self.gbm_selector_model = LGBMClassifier(random_state=42, n_estimators=100, learning_rate=0.1, verbose=-1) # verbose=-1 suppresses training output
-            self.gbm_selector_model.fit(X, y)
-
-            # Get feature importances
-            feature_importances = pd.Series(self.gbm_selector_model.feature_importances_, index=X.columns)
-            
-            # Select features based on threshold
-            threshold = self.config.get("gbm_feature_threshold", 0.01)
-            selected_features = feature_importances[feature_importances > threshold].index.tolist()
-
-            if not selected_features:
-                self.logger.warning(f"No features met the GBM importance threshold ({threshold}). Returning all features.")
-                selected_features = features_df.columns.tolist()
-            else:
-                self.logger.info(f"GBM feature selection completed. Selected {len(selected_features)} features.")
-            
-            self.selected_features_names = selected_features
-            return selected_features
-        except Exception as e:
-            self.logger.error(f"Error during GBM feature selection: {e}", exc_info=True)
-            return features_df.columns.tolist() # Fallback to all features on error
-
-    def _calculate_sr_interaction_types(self, klines_df: pd.DataFrame, sr_levels: list, proximity_multiplier: float) -> pd.DataFrame:
-        """
-        Calculates binary features indicating interaction with Support or Resistance levels.
-        :param klines_df: DataFrame with 'high', 'low', 'close', 'ATR' and DatetimeIndex.
-        :param sr_levels: List of S/R level dictionaries (from SRLevelAnalyzer).
-        :param proximity_multiplier: Multiplier for ATR to define proximity to S/R levels.
-        :return: DataFrame with 'Is_SR_Support_Interacting' and 'Is_SR_Resistance_Interacting' columns.
-        """
-        if klines_df.empty or sr_levels is None or not sr_levels:
-            return pd.DataFrame(0, index=klines_df.index, columns=['Is_SR_Support_Interacting', 'Is_SR_Resistance_Interacting'])
-
-        # Ensure ATR is present and filled
-        if 'ATR' not in klines_df.columns:
-            self.logger.warning("ATR not found in klines_df for S/R interaction type calculation. Skipping detailed S/R interaction features.")
-            return pd.DataFrame(0, index=klines_df.index, columns=['Is_SR_Support_Interacting', 'Is_SR_Resistance_Interacting'])
-        
-        klines_df['ATR_filled_for_sr'] = klines_df['ATR'].fillna(method='ffill').fillna(klines_df['ATR'].mean() if not klines_df['ATR'].empty else 0)
-        if klines_df['ATR_filled_for_sr'].empty:
-            klines_df['ATR_filled_for_sr'] = 0 # Fallback if ATR is all NaN or empty
-
-        is_support_interacting = pd.Series(False, index=klines_df.index)
-        is_resistance_interacting = pd.Series(False, index=klines_df.index)
-
-        for level_info in sr_levels:
-            level_price = level_info['level_price']
-            level_type = level_info['type']
-            
-            # Only consider relevant levels (e.g., Strong, Very Strong, Moderate)
-            if level_info["current_expectation"] not in ["Very Strong", "Strong", "Moderate"]:
-                continue
-
-            # Dynamic tolerance based on ATR for each candle
-            tolerance_series = klines_df['ATR_filled_for_sr'] * proximity_multiplier
-
-            # Check interaction for each row
-            # Price range for interaction: [level_price - tolerance, level_price + tolerance]
-            interaction_condition = (klines_df['low'] <= level_price + tolerance_series) & \
-                                    (klines_df['high'] >= level_price - tolerance_series)
-            
-            if level_type == "Support":
-                is_support_interacting = is_support_interacting | interaction_condition
-            elif level_type == "Resistance":
-                is_resistance_interacting = is_resistance_interacting | interaction_condition
-        
-        # Drop the temporary ATR column
-        klines_df.drop(columns=['ATR_filled_for_sr'], inplace=True, errors='ignore')
-
-        return pd.DataFrame({
-            'Is_SR_Support_Interacting': is_support_interacting.astype(int),
-            'Is_SR_Resistance_Interacting': is_resistance_interacting.astype(int)
-        }, index=klines_df.index)
-
 
     def generate_all_features(self, klines_df: pd.DataFrame, agg_trades_df: pd.DataFrame, futures_df: pd.DataFrame, sr_levels: list):
         """
@@ -315,75 +34,149 @@ class FeatureEngineeringEngine:
             return pd.DataFrame()
 
         self.logger.info("Generating all features...")
-        # Merge klines with futures data
-        merged_df = pd.merge_asof(klines_df.sort_index(), futures_df.sort_index(), 
-                                  left_index=True, right_index=True, direction='backward')
-        merged_df.fillna(method='ffill', inplace=True)
-        merged_df.fillna(0, inplace=True) # Fill any remaining NaNs, e.g., from start of data
+        # Merge klines with futures data first
+        features_df = pd.merge_asof(klines_df.sort_index(), futures_df.sort_index(), left_index=True, right_index=True, direction='backward').fillna(method='ffill').fillna(0)
 
-        features_df = pd.DataFrame(index=merged_df.index)
-        features_df['open'] = merged_df['open']
-        features_df['high'] = merged_df['high']
-        features_df['low'] = merged_df['low']
-        features_df['close'] = merged_df['close']
-        features_df['volume'] = merged_df['volume']
-        features_df['openInterest'] = merged_df['openInterest']
-        features_df['fundingRate'] = merged_df['fundingRate']
-
-        # Add basic TA indicators (using pandas_ta)
-        features_df.ta.adx(length=self.config.get("adx_period", 14), append=True, col_names=('ADX', 'DMP', 'DMN'))
-        macd = features_df.ta.macd(append=False, fast=self.config.get("macd_fast_period", 12), 
-                                  slow=self.config.get("macd_slow_period", 26), 
-                                  signal=self.config.get("macd_signal_period", 9))
-        macd_hist_col = f'MACDh_{self.config.get("macd_fast_period", 12)}_{self.config.get("macd_slow_period", 26)}_{self.config.get("macd_signal_period", 9)}'
-        features_df['MACD_HIST'] = macd[macd_hist_col] if macd_hist_col in macd.columns else 0
-        features_df.ta.atr(length=self.config.get("atr_period", 14), append=True, col_names=('ATR'))
+        # 1. Standard Technical Indicators
+        self._calculate_technical_indicators(features_df)
         
-        # Wavelet Transforms on 'close' price
-        close_wavelet_features = self.apply_wavelet_transforms(merged_df['close'], level=self.config.get("wavelet_level", 3))
-        if not close_wavelet_features.empty:
-            features_df = features_df.merge(close_wavelet_features, left_index=True, right_index=True, how='left')
+        # 2. Advanced Volume & Volatility Indicators
+        self._calculate_volume_volatility_indicators(features_df, agg_trades_df)
 
-        # Autoencoder features (reconstruction error)
-        # Autoencoder is trained on a subset of features (e.g., price, volume)
-        # Ensure the data passed to apply_autoencoders has the same columns as used for training
-        ae_input_data = features_df[['close', 'volume']].copy()
-        autoencoder_features = self.apply_autoencoders(ae_input_data)
-        if not autoencoder_features.empty:
-            features_df = features_df.merge(autoencoder_features.to_frame(), left_index=True, right_index=True, how='left')
+        # 3. Wavelet Transforms
+        wavelet_features = self.apply_wavelet_transforms(features_df['close'])
+        features_df = features_df.join(wavelet_features, how='left')
 
-        # Volume Delta from agg_trades_df
-        if not agg_trades_df.empty:
-            agg_trades_df['delta'] = agg_trades_df['quantity'] * np.where(agg_trades_df['is_buyer_maker'], -1, 1)
-            # Resample delta to klines interval (assuming 1m for now, adjust based on INTERVAL)
-            # Ensure agg_trades_df index is datetime for resampling
-            if not isinstance(agg_trades_df.index, pd.DatetimeIndex):
-                agg_trades_df.index = pd.to_datetime(agg_trades_df.index, unit='ms') # Assuming timestamp in ms if not parsed
-            
-            # Use the interval from the main CONFIG
-            resample_interval = CONFIG['INTERVAL'] 
-            volume_delta_resampled = agg_trades_df['delta'].resample(resample_interval).sum().reindex(merged_df.index, fill_value=0)
-            features_df['volume_delta'] = volume_delta_resampled
-            # Calculate rolling mean and std for z-score
-            features_df['volume_delta_mean_60'] = features_df['volume_delta'].rolling(window=60).mean()
-            features_df['volume_delta_std_60'] = features_df['volume_delta'].rolling(window=60).std()
-            features_df['delta_zscore'] = ((features_df['volume_delta'] - features_df['volume_delta_mean_60']) / 
-                                           features_df['volume_delta_std_60'].replace(0, np.nan)).fillna(0)
-        else:
-            features_df['volume_delta'] = 0
-            features_df['volume_delta_mean_60'] = 0
-            features_df['volume_delta_std_60'] = 0
-            features_df['delta_zscore'] = 0
-
-        # Type-specific S/R interaction features
-        proximity_multiplier = self.config.get("proximity_multiplier", 0.25) # From analyst config
-        sr_interaction_types_df = self._calculate_sr_interaction_types(merged_df, sr_levels, proximity_multiplier)
-        features_df = features_df.merge(sr_interaction_types_df, left_index=True, right_index=True, how='left')
-        
-        # Ensure 'Is_SR_Interacting' is still present for other modules that might rely on it
+        # 4. S/R Interaction Features
+        sr_interaction_features = self._calculate_sr_interaction_types(features_df, sr_levels, self.config.get("proximity_multiplier", 0.25))
+        features_df = features_df.join(sr_interaction_features, how='left')
         features_df['Is_SR_Interacting'] = (features_df['Is_SR_Support_Interacting'] | features_df['Is_SR_Resistance_Interacting']).astype(int)
 
+        features_df = features_df.fillna(method='ffill').fillna(0)
 
-        features_df.fillna(0, inplace=True) # Fill any remaining NaNs after feature calculation
+        # 5. Autoencoder features
+        autoencoder_input_features = [col for col in features_df.columns if col not in ['open', 'high', 'low', 'close', 'original_close'] and 'wavelet' not in col]
+        autoencoder_features = self.apply_autoencoders(features_df[autoencoder_input_features])
+        features_df = features_df.join(autoencoder_features.to_frame(), how='left')
+
+        features_df.fillna(0, inplace=True)
         self.logger.info("Feature generation complete.")
         return features_df
+
+    def _calculate_technical_indicators(self, df: pd.DataFrame):
+        df.ta.adx(length=self.config.get("adx_period", 14), append=True, col_names=('ADX', 'DMP', 'DMN'))
+        df.ta.macd(append=True, fast=self.config.get("macd_fast_period", 12), slow=self.config.get("macd_slow_period", 26), signal=self.config.get("macd_signal_period", 9), col_names=('MACD', 'MACD_HIST', 'MACD_SIGNAL'))
+        df.ta.rsi(length=self.config.get("rsi_period", 14), append=True, col_names=('rsi',))
+        df.ta.stoch(length=self.config.get("stoch_period", 14), append=True, col_names=('stoch_k', 'stoch_d'))
+        df.ta.bbands(length=self.config.get("bb_period", 20), append=True, col_names=('bb_lower', 'bb_mid', 'bb_upper', 'bb_bandwidth', 'bb_percent'))
+        df['ATR'] = df.ta.atr(length=self.config.get("atr_period", 14))
+
+    def _calculate_volume_volatility_indicators(self, df: pd.DataFrame, agg_trades_df: pd.DataFrame):
+        self.logger.info("Calculating advanced volume and volatility indicators...")
+        # On-Balance Volume (OBV)
+        df.ta.obv(append=True, col_names=('OBV',))
+        
+        # Chaikin Money Flow (CMF)
+        df.ta.cmf(length=self.config.get("cmf_period", 20), append=True, col_names=('CMF',))
+
+        # Keltner Channels
+        df.ta.kc(length=self.config.get("kc_period", 20), append=True, col_names=('KC_lower', 'KC_mid', 'KC_upper'))
+
+        # VWAP requires tick-level data, so we calculate it from agg_trades
+        if not agg_trades_df.empty:
+            agg_trades_df['price_x_quantity'] = agg_trades_df['price'] * agg_trades_df['quantity']
+            # Resample to the kline interval
+            resample_interval = self.config.get('resample_interval', '1T') # Default to 1 minute
+            vwap_data = agg_trades_df.resample(resample_interval).agg({
+                'price_x_quantity': 'sum',
+                'quantity': 'sum'
+            }).dropna()
+            vwap_data['VWAP'] = vwap_data['price_x_quantity'] / vwap_data['quantity']
+            df['VWAP'] = vwap_data['VWAP'].reindex(df.index, method='ffill')
+            df['price_vs_vwap'] = (df['close'] - df['VWAP']) / df['VWAP'] # Feature: Price distance from VWAP
+
+            # Volume Delta
+            agg_trades_df['delta'] = agg_trades_df['quantity'] * np.where(agg_trades_df['is_buyer_maker'], -1, 1)
+            df['volume_delta'] = agg_trades_df['delta'].resample(resample_interval).sum().reindex(df.index, fill_value=0)
+        else:
+            df['VWAP'] = df['close'] # Fallback if no agg trades
+            df['price_vs_vwap'] = 0
+            df['volume_delta'] = 0
+
+    def apply_wavelet_transforms(self, data: pd.Series, wavelet='db1', level=3):
+        if data.empty: return pd.DataFrame(index=data.index)
+        data_clean = data.dropna().values
+        if len(data_clean) < 2**level: return pd.DataFrame(index=data.index)
+        coeffs = pywt.wavedec(data_clean, wavelet, level=level)
+        approx_reconstructed = pywt.waverec([coeffs[0]] + [None] * level, wavelet)[:len(data_clean)]
+        features = pd.DataFrame({f'{data.name}_wavelet_approx': approx_reconstructed}, index=data.dropna().index)
+        for i, detail_coeff in enumerate(coeffs[1:]):
+            detail_reconstructed = pywt.waverec([None] * (i + 1) + [detail_coeff] + [None] * (level - i - 1), wavelet)[:len(data_clean)]
+            features[f'{data.name}_wavelet_detail_{i+1}'] = detail_reconstructed
+        return features.reindex(data.index)
+
+    def _calculate_sr_interaction_types(self, df: pd.DataFrame, sr_levels: list, proximity_multiplier: float) -> pd.DataFrame:
+        df['Is_SR_Support_Interacting'] = 0
+        df['Is_SR_Resistance_Interacting'] = 0
+        if not sr_levels:
+            df['Is_SR_Interacting'] = 0
+            return df[['Is_SR_Support_Interacting', 'Is_SR_Resistance_Interacting', 'Is_SR_Interacting']]
+        df['ATR_filled'] = df['ATR'].fillna(method='ffill').fillna(0)
+        is_support_interacting = pd.Series(False, index=df.index)
+        is_resistance_interacting = pd.Series(False, index=df.index)
+        for level_info in sr_levels:
+            level_price = level_info['level_price']
+            atr_based_tolerance = df['ATR_filled'] * proximity_multiplier
+            min_tolerance = df['close'] * 0.01
+            max_tolerance = df['close'] * 0.02
+            tolerance = np.clip(atr_based_tolerance, min_tolerance, max_tolerance)
+            interaction_condition = (df['low'] <= level_price + tolerance) & (df['high'] >= level_price - tolerance)
+            if level_info['type'] == "Support": is_support_interacting = is_support_interacting | interaction_condition
+            elif level_info['type'] == "Resistance": is_resistance_interacting = is_resistance_interacting | interaction_condition
+        df['Is_SR_Support_Interacting'] = is_support_interacting.astype(int)
+        df['Is_SR_Resistance_Interacting'] = is_resistance_interacting.astype(int)
+        df['Is_SR_Interacting'] = (df['Is_SR_Support_Interacting'] | df['Is_SR_Resistance_Interacting'])
+        df.drop(columns=['ATR_filled'], inplace=True, errors='ignore')
+        return df[['Is_SR_Support_Interacting', 'Is_SR_Resistance_Interacting', 'Is_SR_Interacting']]
+
+    def train_autoencoder(self, data: pd.DataFrame):
+        self.logger.info(f"Autoencoder training: Input data shape {data.shape}...")
+        self.autoencoder_scaler = StandardScaler()
+        scaled_data = self.autoencoder_scaler.fit_transform(data.dropna())
+        input_dim = scaled_data.shape[1]
+        latent_dim = self.config.get("autoencoder_latent_dim", 16)
+        input_layer = Input(shape=(input_dim,))
+        encoder = Dense(latent_dim, activation="relu")(input_layer)
+        decoder = Dense(input_dim, activation="linear")(encoder)
+        self.autoencoder_model = Model(inputs=input_layer, outputs=decoder)
+        self.autoencoder_model.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
+        self.autoencoder_model.fit(scaled_data, scaled_data, epochs=10, batch_size=32, shuffle=True, verbose=0)
+        self.autoencoder_model.save(self.autoencoder_model_path)
+        joblib.dump(self.autoencoder_scaler, self.autoencoder_scaler_path)
+
+    def apply_autoencoders(self, data: pd.DataFrame):
+        if self.autoencoder_model is None:
+            if not self.load_autoencoder():
+                return pd.Series(np.nan, index=data.index, name='autoencoder_reconstruction_error')
+        try:
+            if hasattr(self.autoencoder_scaler, 'feature_names_in_'):
+                data_reindexed = data.reindex(columns=self.autoencoder_scaler.feature_names_in_, fill_value=0)
+            else:
+                data_reindexed = data
+            scaled_data = self.autoencoder_scaler.transform(data_reindexed)
+            reconstructions = self.autoencoder_model.predict(scaled_data, verbose=0)
+            mse = np.mean(np.power(scaled_data - reconstructions, 2), axis=1)
+            return pd.Series(mse, index=data.index, name='autoencoder_reconstruction_error')
+        except Exception as e:
+            self.logger.error(f"Error applying Autoencoder: {e}")
+            return pd.Series(np.nan, index=data.index, name='autoencoder_reconstruction_error')
+
+    def load_autoencoder(self):
+        if os.path.exists(self.autoencoder_model_path) and os.path.exists(self.autoencoder_scaler_path):
+            try:
+                self.autoencoder_model = load_model(self.autoencoder_model_path)
+                self.autoencoder_scaler = joblib.load(self.autoencoder_scaler_path)
+                return True
+            except Exception as e:
+                self.logger.error(f"Error loading Autoencoder: {e}")
+        return False

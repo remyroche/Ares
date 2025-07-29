@@ -122,7 +122,8 @@ class Analyst:
                     self._historical_klines = pd.DataFrame(klines_raw)
                     self._historical_klines['open_time'] = pd.to_datetime(self._historical_klines['open_time'], unit='ms')
                     self._historical_klines.set_index('open_time', inplace=True)
-                    self._historical_klines.columns = ['open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore']
+                    klines_column_names = ['open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore']
+                    self._historical_klines.columns = klines_column_names[:len(self._historical_klines.columns)] # Ensure column count matches data
                     for col in ['open', 'high', 'low', 'close', 'volume', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']:
                         if col in self._historical_klines.columns:
                             self._historical_klines[col] = pd.to_numeric(self._historical_klines[col], errors='coerce')
@@ -191,25 +192,20 @@ class Analyst:
             self.logger.info(f"Loading Market Regime Classifier for fold {fold_id} from {regime_classifier_model_path}...")
             if not self.regime_classifier.load_model(model_path=regime_classifier_model_path):
                 self.logger.warning(f"Failed to load classifier for fold {fold_id}. Retraining.")
-                self.regime_classifier.train_classifier(historical_features_df.copy(), self._historical_klines.copy())
-                self.regime_classifier.save_model(model_path=regime_classifier_model_path)
+                self.regime_classifier.train_classifier(historical_features_df.copy(), self._historical_klines.copy(), model_path=regime_classifier_model_path)
         else:
             self.logger.info(f"Training Market Regime Classifier for fold {fold_id}...")
-            self.regime_classifier.train_classifier(historical_features_df.copy(), self._historical_klines.copy())
-            if regime_classifier_model_path:
-                self.regime_classifier.save_model(model_path=regime_classifier_model_path)
+            self.regime_classifier.train_classifier(historical_features_df.copy(), self._historical_klines.copy(), model_path=regime_classifier_model_path)
 
 
         # --- Train/Load Predictive Ensembles ---
         ensemble_model_path_prefix = os.path.join(self.model_checkpoint_dir, f"{CONFIG['ENSEMBLE_MODEL_PREFIX']}{fold_id}_") if fold_id is not None else None
         
         self.logger.info(f"Training/Loading Predictive Ensembles for fold {fold_id}...")
-        # The ensemble orchestrator needs to handle its own model saving/loading per ensemble type
-        # We pass the prefix, and it will append the ensemble name.
         self.predictive_ensembles.train_all_models(
             asset=self.trade_symbol, 
-            prepared_data=historical_features_df.copy(), # Ensembles will derive targets internally if needed
-            model_path_prefix=ensemble_model_path_prefix # Pass prefix for saving/loading
+            prepared_data=historical_features_df.copy(),
+            model_path_prefix=ensemble_model_path_prefix
         )
 
         self.logger.info(f"Historical data preparation and model training/loading complete for fold {fold_id}.")
@@ -229,7 +225,8 @@ class Analyst:
             klines = pd.DataFrame(klines_raw_data)
             klines['open_time'] = pd.to_datetime(klines['open_time'], unit='ms')
             klines.set_index('open_time', inplace=True)
-            klines.columns = ['open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore']
+            klines_column_names = ['open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore']
+            klines.columns = klines_column_names[:len(klines.columns)] # Ensure column count matches data
             for col in ['open', 'high', 'low', 'close', 'volume', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']:
                 if col in klines.columns:
                     klines[col] = pd.to_numeric(klines[col], errors='coerce')
@@ -257,14 +254,13 @@ class Analyst:
                 self.logger.error("Feature generation resulted in empty DataFrame. Aborting analysis cycle.")
                 return
 
+            # Ensure ATR from klines is also in df_features if not already there
             if 'ATR' not in df_features.columns and 'ATR' in klines.columns:
                 df_features['ATR'] = klines['ATR']
 
             current_price = klines['close'].iloc[-1]
             sr_levels_from_state = self.state_manager.get_state("sr_levels", [])
 
-            # For live prediction, we need to load the *final* trained models (fold_id="final")
-            # We'll pass fold_id=None to indicate "live" and let the components load their default/final models
             market_regime, trend_strength, adx = self.regime_classifier.predict_regime(df_features.copy(), klines.copy(), sr_levels_from_state)
             technical_signals = self.technical_analyzer.analyze(klines.copy())
             market_health_score = self.market_health_analyzer.get_market_health_score(klines.copy())
@@ -281,7 +277,7 @@ class Analyst:
                 current_price, current_position_notional, current_liquidation_price, klines.copy(), order_book
             )
 
-            ensemble_prediction_result = self.predictive_ensembles.get_all_predictions( # Changed from get_ensemble_prediction
+            ensemble_prediction_result = self.predictive_ensembles.get_all_predictions(
                 asset=self.trade_symbol, 
                 current_features=df_features.copy(),
                 klines_df=klines.copy(),
@@ -296,14 +292,20 @@ class Analyst:
                 "trend_strength": trend_strength,
                 "adx": adx,
                 "support_resistance": sr_levels_from_state,
-                "technical_signals": technical_signals,
+                "technical_signals": technical_signals, # Keep the full technical_signals dict for now, if needed elsewhere
                 "market_health_score": market_health_score,
                 "liquidation_risk_score": liquidation_risk_score,
                 "liquidation_risk_reasons": lss_reasons,
                 "ensemble_prediction": ensemble_prediction_result["prediction"],
                 "ensemble_confidence": ensemble_prediction_result["confidence"],
-                "directional_confidence_score": ensemble_prediction_result["confidence"]
+                "directional_confidence_score": ensemble_prediction_result["confidence"],
+                "base_model_predictions": ensemble_prediction_result.get("base_predictions", {}),
+                "ensemble_weights": ensemble_prediction_result.get("ensemble_weights", {})
             }
+
+            # --- Add granular technical indicator values to analyst_intelligence (only current_price and market_health_volatility_component as requested) ---
+            analyst_intelligence['current_price'] = technical_signals.get('current_price')
+            analyst_intelligence['market_health_volatility_component'] = market_health_score # This is the overall market health score
 
             self.state_manager.set_state("analyst_intelligence", analyst_intelligence)
             self.logger.info(f"Analysis complete. Intelligence package updated. Regime: {market_regime}, Ensemble Pred: {ensemble_prediction_result['prediction']}, Conf: {ensemble_prediction_result['confidence']:.2f}")
@@ -314,3 +316,4 @@ class Analyst:
 
     def _calculate_confidence(self, signals: Dict, regime: str) -> float:
         return signals.get('ensemble_confidence', 0.5)
+

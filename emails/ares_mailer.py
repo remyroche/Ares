@@ -1,45 +1,38 @@
+import logging
 import smtplib
 from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from config import CONFIG
 
-def send_email(subject, body):
-    """Sends an email with the specified subject and body."""
-    # Access EMAIL_CONFIG from the main CONFIG dictionary
-    email_config = CONFIG['EMAIL_CONFIG']
+class AresMailer:
+    """
+    This class handles sending email alerts for critical system events,
+    such as large drawdowns, errors, or kill switch activation.
+    """
+    def __init__(self, config):
+        self.config = config.get("emails", {})
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.smtp_server = self.config.get("smtp_server")
+        self.smtp_port = self.config.get("smtp_port")
+        self.smtp_user = self.config.get("smtp_user")
+        self.smtp_password = self.config.get("smtp_password")
+        self.recipients = self.config.get("recipients", [])
 
-    if not email_config.get('enabled', False):
-        print("Email notifications are disabled in config.py. Skipping.")
-        return
+    def send_alert(self, subject: str, body: str):
+        if not all([self.smtp_server, self.smtp_port, self.smtp_user, self.smtp_password, self.recipients]):
+            self.logger.error("Email configuration is incomplete. Cannot send alert.")
+            return
 
-    # Basic validation to ensure all required fields are present
-    required_keys = ['smtp_server', 'smtp_port', 'sender_email', 'app_password', 'recipient_email']
-    if not all(email_config.get(key) for key in required_keys):
-        print("Email configuration is incomplete in config.py. Skipping email.")
-        return
+        msg = MIMEText(body)
+        msg['Subject'] = f"[ARES ALERT] {subject}"
+        msg['From'] = self.smtp_user
+        msg['To'] = ', '.join(self.recipients)
 
-    print(f"Sending email notification to {email_config['recipient_email']}...")
+        try:
+            self.logger.info(f"Sending alert: {subject}")
+            with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port) as server:
+                server.login(self.smtp_user, self.smtp_password)
+                server.sendmail(self.smtp_user, self.recipients, msg.as_string())
+            self.logger.info("Alert sent successfully.")
+        except Exception as e:
+            self.logger.error(f"Failed to send email alert: {e}", exc_info=True)
 
-    try:
-        # Set up the message object
-        message = MIMEMultipart()
-        message['From'] = email_config['sender_email']
-        message['To'] = email_config['recipient_email']
-        message['Subject'] = subject
-        
-        # Attach the body as HTML. Using <pre> tags helps preserve the formatting
-        # of the console output, making the email much more readable.
-        html_body = f"<html><body><pre style='font-family: monospace; font-size: 12px;'>{body}</pre></body></html>"
-        message.attach(MIMEText(html_body, 'html'))
-
-        # Connect to the SMTP server and send the email
-        with smtplib.SMTP(email_config['smtp_server'], email_config['smtp_port']) as server:
-            server.starttls()  # Secure the connection
-            server.login(email_config['sender_email'], email_config['app_password'])
-            text = message.as_string()
-            server.sendmail(email_config['sender_email'], email_config['recipient_email'], text)
-        
-        print("Email sent successfully.")
-    except Exception as e:
-        print(f"Failed to send email. Error: {e}")
 

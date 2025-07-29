@@ -2,6 +2,7 @@ import asyncio
 import pandas as pd
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
+import time
 
 from src.exchange.binance import BinanceExchange
 from src.utils.logger import logger

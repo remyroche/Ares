@@ -192,7 +192,6 @@ class PerformanceReporter:
             if self.db_manager: # Fixed: Use db_manager
                 collection_name = "strategy_performance_logs" # Use a fixed collection name
                 for regime, metrics in strategy_breakdown.items():
-                    doc_id = f"{current_date.isoformat()}_{regime}"
                     doc_data = {"date": current_date.isoformat(), "regime": regime, **metrics}
                     # Use add_document as it's a log, not a single document that gets updated by ID
                     await self.db_manager.add_document( 

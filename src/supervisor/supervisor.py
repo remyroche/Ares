@@ -304,7 +304,7 @@ class Supervisor:
             leverage=strategy_config.get("leverage", 1),
             fee_rate=self.global_config.get('backtesting', {}).get('fee_rate', 0.0005)
         )
-        initial_report = backtester.run()
+        backtester.run()
         trades = backtester.trades
         
         if not trades:

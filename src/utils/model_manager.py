@@ -69,20 +69,26 @@ class ModelManager:
         self.logger.info(f"'{model_version}' model set and modules are now loaded.")
         return True # Indicate successful loading
 
-    def promote_challenger_to_champion(self):
+    def promote_challenger_to_champion(self) -> bool: # Fixed: Added return type hint
         """
         Performs the hot-swap. Loads the 'challenger' models and replaces the
         live 'champion' instances without a restart.
         """
         self.logger.critical("--- HOT-SWAP: Promoting Challenger model to Champion ---")
         try:
-            # When promoting, we need to ensure the performance_reporter is passed through
-            # This requires a slight adjustment to how promote_challenger_to_champion is called
-            # or how the ModelManager gets the performance_reporter.
-            # For simplicity, we'll assume the live system will re-instantiate Tactician
-            # with the correct reporter if a hot-swap happens.
-            # For now, this method will just load the models.
-            if self.load_models(model_version="challenger", performance_reporter=self.performance_reporter): # Pass reporter
+            # Load the challenger models and parameters using the existing load_models method
+            # Ensure performance_reporter is passed through if available
+            if self.load_models(model_version="challenger", performance_reporter=self.performance_reporter): 
+                # After loading, the new instances are now in self.analyst, self.strategist, self.tactician.
+                # The main pipeline (AresPipeline) holds a reference to this ModelManager instance,
+                # so it will automatically start using these new module instances on its next loop.
+                
+                # Remove the promotion flag file after successful hot-swap
+                promote_flag_file = CONFIG.get("PROMOTE_CHALLENGER_FLAG_FILE")
+                if promote_flag_file and os.path.exists(promote_flag_file):
+                    os.remove(promote_flag_file)
+                    self.logger.info(f"Removed promotion flag file: {promote_flag_file}")
+
                 self.logger.critical("--- HOT-SWAP COMPLETE: System is now running on the new model. ---")
                 return True
             else:

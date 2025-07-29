@@ -10,7 +10,7 @@ from skopt.space import Real, Integer
 from skopt.utils import dump, load # Import dump and load for checkpointing
 from functools import partial
 import os # Import os for file existence checks
-from typing import Optional, Union, Any
+from typing import Optional, Union, Any, Dict
 
 from src.config import CONFIG
 from src.utils.logger import system_logger as logger

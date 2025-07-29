@@ -70,9 +70,6 @@ class ProbabilisticLiquidationRiskModel:
             if current_atr == 0:
                 reasons.append("Current ATR is zero, volatility factor neutral.")
             else:
-                # Distance to liquidation price as a percentage of current price
-                distance_to_liq_abs = abs(current_price - current_liquidation_price)
-                
                 # Convert ATR to a proxy for standard deviation of price movement
                 # This factor is crucial and should be tuned.
                 atr_to_std_factor = self.config.get("atr_to_std_factor", 2.5) 

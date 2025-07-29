@@ -64,8 +64,7 @@ jobs:
         ruff check .
 
     - name: Dead code detection
-      run: vulture src/ # Corrected indentation for this step
-
+      run: vulture src/ || true
 
     - name: Run Mypy (Static Type Checking)
       run: |

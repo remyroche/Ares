@@ -16,8 +16,10 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 class BaseEnsemble:
     """
-    This base class uses Principal Component Analysis (PCA) to transform the
-    meta-features into a smaller set of powerful, uncorrelated components.
+    ## CHANGE: Centralized feature management for a unified approach.
+    ## This base class now defines a master list of all available features. All child
+    ## ensembles will use this full feature set by default, allowing the PCA and
+    ## meta-learner to perform data-driven feature selection without human bias.
     """
 
     def __init__(self, config: dict, ensemble_name: str):
@@ -31,24 +33,35 @@ class BaseEnsemble:
         self.meta_feature_scaler = StandardScaler()
         self.best_meta_params = {}
         self.label_encoder = LabelEncoder()
-        self.n_pca_components = self.config.get("n_pca_components", 10)
+        self.n_pca_components = self.config.get("n_pca_components", 15)
+
+        # --- Unified Feature Lists ---
+        self.sequence_features = [
+            "close", "volume", "ADX", "MACD_HIST", "ATR", "volume_delta",
+            "autoencoder_reconstruction_error", "oi_roc", "funding_rate"
+        ]
+        self.flat_features = [
+            "ADX", "MACD_HIST", "ATR", "volume_delta", "rsi", "stoch_k",
+            "autoencoder_reconstruction_error", "oi_roc", "funding_rate", 
+            "total_liquidations", "liquidation_ratio", "bb_bandwidth", "position_in_range"
+        ]
 
     def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: pd.Series):
-        """
-        Main orchestration method for the entire training pipeline.
-        """
+        # (Implementation remains the same as before, but now uses the unified feature lists)
         self.logger.info(f"Starting full training pipeline for {self.ensemble_name}...")
         if historical_features.empty: return
+
+        # Ensure all possible features are present
+        for col in self.sequence_features + self.flat_features:
+            if col not in historical_features.columns:
+                historical_features[col] = 0.0
 
         aligned_data = historical_features.join(historical_targets.rename("target")).dropna()
         if aligned_data.empty: return
 
         y_encoded = self.label_encoder.fit_transform(aligned_data["target"])
 
-        # 1. Train Base Models
         self._train_base_models(aligned_data, y_encoded)
-
-        # 2. Generate Meta-Features
         meta_features_train = self._get_meta_features(aligned_data, is_live=False)
         
         aligned_meta = meta_features_train.join(pd.Series(y_encoded, index=aligned_data.index, name="target")).dropna()
@@ -57,47 +70,35 @@ class BaseEnsemble:
 
         if X_meta_train.empty: return
             
-        # 3. Scale and Apply PCA Transformation
         self.logger.info("Applying PCA to meta-features...")
         X_meta_scaled = self.meta_feature_scaler.fit_transform(X_meta_train)
-        
-        # Ensure n_components is not greater than the number of features
         n_components = min(self.n_pca_components, X_meta_scaled.shape[1])
         self.pca = PCA(n_components=n_components)
         X_meta_pca = self.pca.fit_transform(X_meta_scaled)
-        self.logger.info(f"PCA transformed {X_meta_scaled.shape[1]} features into {self.pca.n_components_} components.")
         
         X_meta_pca_df = pd.DataFrame(X_meta_pca, index=X_meta_train.index)
 
-        # 4. Hyperparameter Tuning on PCA components
-        self.logger.info("Tuning hyperparameters for meta-learner on PCA components...")
+        self.logger.info("Tuning hyperparameters for meta-learner...")
         self.best_meta_params = self._tune_meta_learner_hyperparameters(X_meta_pca_df, y_meta_train)
-
-        # 5. Train Final Meta-Learner
         self._train_meta_learner(X_meta_pca_df, y_meta_train, self.best_meta_params)
         self.trained = True
         self.logger.info(f"Training pipeline for {self.ensemble_name} complete.")
 
     def get_prediction(self, current_features: pd.DataFrame, **kwargs) -> dict:
-        """
-        Generates a prediction using the fully trained ensemble with PCA.
-        """
         if not self.trained:
             return {"prediction": "HOLD", "confidence": 0.0}
 
         meta_features = self._get_meta_features(current_features, is_live=True, **kwargs)
         
-        # Create a DataFrame with the same columns as during training
         meta_input_df = pd.DataFrame([meta_features], columns=self.meta_feature_scaler.feature_names_in_)
-        
-        # Scale and transform using the fitted scaler and PCA
         meta_input_scaled = self.meta_feature_scaler.transform(meta_input_df)
         meta_input_pca = self.pca.transform(meta_input_scaled)
         
         return self._get_meta_prediction(meta_input_pca)
 
+    # ... (Other helper methods like _tune_meta_learner_hyperparameters, etc. remain the same)
+
     def _tune_meta_learner_hyperparameters(self, X, y):
-        # (Implementation remains the same as before)
         def objective(trial):
             params = {
                 'objective': 'multiclass', 'metric': 'multi_logloss',
@@ -107,7 +108,6 @@ class BaseEnsemble:
             }
             cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
             scores = []
-            # Optuna works with numpy arrays
             X_np, y_np = X.values, y
             for train_idx, val_idx in cv.split(X_np, y_np):
                 X_train, X_val = X_np[train_idx], X_np[val_idx]
@@ -133,13 +133,10 @@ class BaseEnsemble:
         
         proba = self.meta_learner.predict_proba(meta_input_pca)[0]
         idx = np.argmax(proba)
-        
         prediction_label = self.label_encoder.inverse_transform([idx])[0]
         confidence = proba[idx]
-        
         return {"prediction": prediction_label, "confidence": confidence}
 
-    # --- Abstract methods to be implemented by child classes ---
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
         raise NotImplementedError("Child classes must implement _train_base_models.")
 

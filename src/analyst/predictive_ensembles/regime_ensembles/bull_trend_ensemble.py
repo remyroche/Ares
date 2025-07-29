@@ -264,19 +264,25 @@ class BullTrendEnsemble(BaseEnsemble):
             meta_features_train['garch_volatility'] = np.random.uniform(0.001, 0.01, len(X_flat))
 
         if self.models["lgbm"]:
-            # Average predictions from all fold models for the meta-feature
-            # Prepare flat data for non-DL models (LGBM)
-            X_flat_features_list = ['ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting']
-            X_flat = current_features_row[X_flat_features_list].copy() # Define X_flat here
-            X_flat = X_flat.fillna(0) # Fill NaNs for LGBM
-            lgbm_probas = np.mean(lgbm_probas_all_folds, axis=0)
-
-            # Get the classes from the first fold model
+            # Calculate predictions for the training data (X_flat) using all LGBM fold models
+            lgbm_probas_all_folds_train = [model.predict_proba(X_flat) for model in self.models["lgbm"]]
+            # Average the probabilities across folds
+            lgbm_probas_train_avg = np.mean(lgbm_probas_all_folds_train, axis=0)
+            
+            # Get the classes from the first fold model to map probabilities to target classes
             lgbm_classes = self.models["lgbm"][0].classes_
 
-            lgbm_conf_values = [lgbm_probas[i, np.where(lgbm_classes == y_flat.iloc[i])[0][0]] for i in range(len(y_flat))]
+            # Get confidence for the actual target for each sample in y_flat
+            lgbm_conf_values = []
+            for i in range(len(y_flat)):
+                # Find the index of the true class in lgbm_classes
+                true_class_idx = np.where(lgbm_classes == y_flat.iloc[i])[0]
+                if len(true_class_idx) > 0:
+                    lgbm_conf_values.append(lgbm_probas_train_avg[i, true_class_idx[0]])
+                else:
+                    lgbm_conf_values.append(0.0) # Fallback if class not found (shouldn't happen with proper data)
+            
             meta_features_train['lgbm_proba'] = pd.Series(lgbm_conf_values, index=X_flat.index)
-
         else:
             meta_features_train['lgbm_proba'] = np.random.uniform(0.5, 0.9, len(X_flat))
 
@@ -393,8 +399,14 @@ class BullTrendEnsemble(BaseEnsemble):
         # LightGBM Prediction
         if self.models["lgbm"]:
             try:
+                # Prepare flat data for LightGBM prediction
+                X_flat_features_list = ['ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting']
+                # Ensure current_features_row is properly indexed for feature selection
+                X_current_flat = current_features_row[X_flat_features_list].copy()
+                X_current_flat = X_current_flat.fillna(0) # Fill NaNs for LGBM
+
                 # Average predictions from all fold models
-                lgbm_probas_all_folds = [model.predict_proba(X_flat) for model in self.models["lgbm"]]
+                lgbm_probas_all_folds = [model.predict_proba(X_current_flat) for model in self.models["lgbm"]]
                 lgbm_proba = np.mean(lgbm_probas_all_folds, axis=0)[0]
                 # Get probability for the 'BULL_TREND' class
                 bull_idx = np.where(self.models["lgbm"][0].classes_ == 'BULL_TREND')[0]

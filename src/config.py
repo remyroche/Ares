@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     """
     # --- Top-Level Environment-Specific Settings ---
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
-    trading_environment: Literal["LIVE", "TESTNET"] = Field(default="TESTNET", env="TRADING_ENVIRONMENT")
+    trading_environment: Literal["LIVE", "TESTNET", "PAPER"] = Field(default="TESTNET", env="TRADING_ENVIRONMENT") # Added PAPER
+    initial_equity: float = Field(default=10000.0, env="INITIAL_EQUITY") # Added initial equity to settings
 
     # --- Binance Credentials (loaded from .env) ---
     binance_live_api_key: Optional[str] = Field(default=None, env="BINANCE_LIVE_API_KEY")
@@ -36,6 +37,12 @@ class Settings(BaseSettings):
     # --- Firestore Credentials (loaded from .env) ---
     google_application_credentials: Optional[str] = Field(default=None, env="GOOGLE_APPLICATION_CREDENTIALS")
     firestore_project_id: Optional[str] = Field(default=None, env="FIRESTORE_PROJECT_ID")
+
+    # --- Emailer Credentials (loaded from .env) ---
+    email_sender_address: Optional[str] = Field(default=None, env="EMAIL_SENDER_ADDRESS")
+    email_sender_password: Optional[str] = Field(default=None, env="EMAIL_SENDER_PASSWORD")
+    email_recipient_address: Optional[str] = Field(default=None, env="EMAIL_RECIPIENT_ADDRESS")
+
 
     # --- Derived Properties for Convenience ---
     @property
@@ -81,10 +88,29 @@ CONFIG: Dict[str, Any] = {
     # --- General System & Trading Parameters ---
     "trading_symbol": "BTCUSDT",
     "trading_interval": "15m",
-    "initial_equity": 10000.0,
+    "initial_equity": settings.initial_equity, # Use initial_equity from settings
     "taker_fee": 0.0004,
     "maker_fee": 0.0002,
     "state_file": "ares_state.json",
+
+    # --- Firestore Configuration ---
+    "firestore": {
+        "enabled": settings.firestore_project_id is not None,
+        "project_id": settings.firestore_project_id,
+        "optimized_params_collection": "ares_optimized_params",
+        "live_metrics_collection": "ares_live_metrics", # New collection for live metrics
+        "alerts_collection": "ares_alerts" # New collection for alerts
+    },
+
+    # --- Email Configuration ---
+    "email": {
+        "enabled": settings.email_sender_address is not None and settings.email_recipient_address is not None,
+        "sender_address": settings.email_sender_address,
+        "sender_password": settings.email_sender_password, # App password for Gmail or similar
+        "recipient_address": settings.email_recipient_address,
+        "smtp_server": "smtp.gmail.com", # Example for Gmail
+        "smtp_port": 587 # Example for Gmail
+    },
 
     # --- Analyst Component ---
     "analyst": {
@@ -125,6 +151,18 @@ CONFIG: Dict[str, Any] = {
         "min_lss_for_entry": 60,
     },
     
+    # --- Supervisor Component (New and Updated) ---
+    "supervisor": {
+        "check_interval_seconds": 300, # How often the supervisor runs its checks (5 minutes)
+        "pause_trading_drawdown_pct": 0.20, # Drawdown percentage to pause all trading (20%)
+        "risk_reduction_drawdown_pct": 0.10, # Drawdown percentage to reduce risk (10%)
+        # Performance Monitoring specific settings
+        "decay_threshold_profit_factor": 0.80, # Live Profit Factor < 80% of Backtested Profit Factor
+        "decay_threshold_sharpe_ratio": 0.70, # Live Sharpe Ratio < 70% of Backtested Sharpe Ratio
+        "decay_threshold_max_drawdown_multiplier": 1.50, # Live Max Drawdown > 150% of Backtested Max Drawdown
+        "min_trades_for_monitoring": 50, # Minimum number of trades before starting decay monitoring
+    },
+
     # --- Backtesting & Optimization ---
     # This section integrates the Optuna-based optimization configuration.
     "backtesting": {

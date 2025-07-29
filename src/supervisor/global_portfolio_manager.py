@@ -2,7 +2,7 @@
 
 import asyncio
 from datetime import datetime
-from typing import List # Added import for List
+from typing import List, Optional # Added import for List
 from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
 from src.config import settings
 from src.utils.state_manager import StateManager

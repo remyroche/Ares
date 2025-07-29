@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, Optional # Added import for Dict, Any, Optional
 import pandas as pd
 import numpy as np
 import os
@@ -12,15 +12,18 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler # Assuming apschedul
 from .dynamic_weighter import DynamicWeighter
 from src.utils.model_manager import ModelManager
 from src.exchange.binance import BinanceExchange
-from src.utils.logger import logger
+from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
 from src.config import settings, CONFIG
 from src.utils.state_manager import StateManager
 from src.database.firestore_manager import FirestoreManager
 from src.supervisor.performance_monitor import PerformanceMonitor
 from backtesting.ares_backtester import Backtester # Re-added this import to match original
 from src.strategist.strategist import Strategist
+from src.tactician.tactician import Tactician # Import Tactician
+from src.analyst.analyst import Analyst # Import Analyst
+from src.sentinel.sentinel import Sentinel # Import Sentinel
+from src.paper_trader import PaperTrader # Import PaperTrader
 from src.emails.ares_mailer import AresMailer # Import AresMailer
-from src.utils.error_handler import get_logged_exceptions # Import the error logging utility
 
 class Supervisor:
     """
@@ -34,8 +37,7 @@ class Supervisor:
         self.exchange = exchange_client
         self.state_manager = state_manager
         self.firestore_manager = firestore_manager
-        self.logger = logger.getChild('Supervisor') # Corrected logger init
-        self.logger = logging.getLogger(self.__class__.__name__) # Re-added duplicate logger init to match original line count
+        self.logger = logger.getChild('Supervisor') # Corrected logger init (removed duplicate line)
         self.config = settings.get("supervisor", {}) # Corrected config init
         self.global_config = CONFIG
         self.data = self.load_data() # This might be for backtesting data, not live operations
@@ -46,10 +48,11 @@ class Supervisor:
         # These lines were in the original supervisor.py and are re-added.
         # ensemble_orchestrator and data_fetcher are initialized to None to prevent NameErrors,
         # as they are not defined globally in the provided file set.
-        self.ensemble_orchestrator = None # Placeholder, assuming it would be set up elsewhere if used
-        self.data_fetcher = None # Placeholder, assuming it would be set up elsewhere if used
-        self.dynamic_weighter = DynamicWeighter(self.global_config) # Corrected config reference
-        self.model_manager = ModelManager(config=self.global_config, firestore_manager=self.firestore_manager) # Corrected config reference
+        self.ensemble_orchestrator: Any = None # Placeholder, assuming it would be set up elsewhere if used
+        self.data_fetcher: Any = None # Placeholder, assuming it would be set up elsewhere if used
+        self.dynamic_weighter = DynamicWeighter(self.global_config) # Corrected config reference to self.global_config
+        # Fixed: Removed 'config=' argument as ModelManager does not accept it
+        self.model_manager = ModelManager(firestore_manager=self.firestore_manager) 
         
         self.prediction_history = pd.DataFrame() # For dynamic weighter
 
@@ -61,9 +64,60 @@ class Supervisor:
         self.state_manager.set_state_if_not_exists("current_position", self.state_manager._get_default_position_structure()) # Ensure default position structure is set
 
         self.performance_monitor = PerformanceMonitor(config=settings, firestore_manager=self.firestore_manager)
-        self.strategist = Strategist(exchange_client=None, state_manager=None) # Strategist instance from ModelManager will be used live
+        
+        # Fixed: Explicitly type these as Optional
+        self.sentinel: Optional[Sentinel] = None
+        self.analyst: Optional[Analyst] = None
+        self.strategist: Optional[Strategist] = None
+        self.tactician: Optional[Tactician] = None
 
-        self.scheduler = AsyncIOScheduler()
+        # Determine the actual trading client (PaperTrader or live exchange_client)
+        if settings.trading_environment == "PAPER":
+            self.trader: Union[PaperTrader, BinanceExchange] = PaperTrader(initial_equity=settings.initial_equity) # Fixed: Union type
+            self.logger.info("Paper Trader initialized for simulation.")
+        elif settings.trading_environment == "LIVE":
+            self.trader = exchange_client # Use the live exchange client passed from main
+            self.logger.info("Live Trader (BinanceExchange) initialized for live operations.")
+        else:
+            self.trader = None # Fixed: Explicitly allow None if environment is invalid
+            self.logger.error(f"Unknown trading environment: '{settings.trading_environment}'. Trading will be disabled.")
+            raise ValueError(f"Invalid TRADING_ENVIRONMENT: {settings.trading_environment}") # Halt if invalid
+
+        # Initialize the core real-time components, getting instances from ModelManager
+        if self.trader:
+            # Fixed: Pass self.trader and self.state_manager to constructors
+            self.sentinel = Sentinel(self.trader, self.state_manager) 
+            self.analyst = self.model_manager.get_analyst() # Get Analyst instance from ModelManager
+            self.strategist = self.model_manager.get_strategist() # Get Strategist instance from ModelManager
+            # Pass performance_reporter to Tactician
+            self.tactician = self.model_manager.get_tactician(performance_reporter=self.performance_reporter) 
+
+            # Ensure the Analyst, Strategist, Tactician instances from ModelManager
+            # have their exchange_client and state_manager set if they need it for live ops.
+            # This is a critical point for dependency injection.
+            # For the training pipeline, these are mostly placeholders.
+            if self.analyst: # Fixed: Check if not None
+                if self.analyst.exchange is None: self.analyst.exchange = self.trader
+                if self.analyst.state_manager is None: self.analyst.state_manager = self.state_manager
+
+            if self.strategist: # Fixed: Check if not None
+                if self.strategist.exchange is None: self.strategist.exchange = self.trader
+                if self.strategist.state_manager is None: self.strategist.state_manager = self.state_manager
+
+            if self.tactician: # Fixed: Check if not None
+                if self.tactician.exchange is None: self.tactician.exchange = self.trader
+                if self.tactician.state_manager is None: self.tactician.state_manager = self.state_manager
+
+
+        else:
+            self.logger.critical("Core trading components not initialized due to invalid trading environment.")
+            
+        # Fixed: Add type annotations for queues
+        self.market_data_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+        self.analysis_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+        self.signal_queue: asyncio.Queue = asyncio.Queue(maxsize=50)
+
+        self.scheduler = AsyncIOScheduler() # Corrected class name
 
     def start_background_tasks(self):
         """
@@ -85,7 +139,7 @@ class Supervisor:
         self.logger.info("Stopping Supervisor background task scheduler.")
         self.scheduler.shutdown()
 
-    def load_data(self):
+    def load_data(self) -> pd.DataFrame: # Fixed: Return type hint
         """Loads historical data for backtesting and analysis. (Placeholder for live system)"""
         try:
             # In a live system, this data might not be needed by Supervisor directly
@@ -185,7 +239,7 @@ class Supervisor:
         
         self.logger.info("Daily tasks complete.")
 
-    def _store_prediction_results(self, asset, prediction_output, actual_outcome):
+    def _store_prediction_results(self, asset: str, prediction_output: Dict[str, Any], actual_outcome: Any): # Fixed: Type hints
         """Appends prediction results to the history for the weighter to use."""
         new_record = {
             'timestamp': pd.Timestamp.now(tz='UTC'),
@@ -380,3 +434,10 @@ class Supervisor:
         self.logger.info("Initiating full system retraining pipeline...")
         # Placeholder for actual model training logic
         self.logger.info("System retraining complete (placeholder). Starting validation.")
+        
+        # Validate the new model using walk-forward and Monte Carlo analysis
+        # These methods would need to be called from the training pipeline orchestrator,
+        # not directly from supervisor in a live system, as they are blocking.
+        # For a live system, this would trigger a Celery task or similar.
+        # await self.run_walk_forward_analysis()
+        # await self.run_monte_carlo_simulation()

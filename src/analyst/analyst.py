@@ -139,6 +139,7 @@ class Analyst:
                     self._historical_agg_trades.set_index('timestamp', inplace=True)
                     self._historical_agg_trades.rename(columns={'p': 'price', 'q': 'quantity', 'm': 'is_buyer_maker'}, inplace=True)
                     for col in ['price', 'quantity']:
+                        agg_trades_df[col] = pd.to_numeric(agg_trades_df[col], errors='coerce') # Fix: use agg_trades_df here
                         self._historical_agg_trades[col] = pd.to_numeric(self._historical_agg_trades[col], errors='coerce')
                 else:
                     self.logger.warning("Failed to fetch historical aggregated trades from exchange.")
@@ -174,59 +175,40 @@ class Analyst:
             self.logger.error("No historical klines data available for preparation.")
             return False
 
-        try:
-            daily_df_for_sr = self._historical_klines.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna()
-            daily_df_for_sr.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
-            sr_levels = self.sr_analyzer.analyze(daily_df_for_sr)
-            self.state_manager.set_state("sr_levels", sr_levels)
-        except Exception as e:
-            self.logger.error(f"Error during S/R level analysis: {e}. Using empty SR levels.", exc_info=True)
-            sr_levels = []
-            self.state_manager.set_state("sr_levels", [])
+        daily_df_for_sr = self._historical_klines.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna()
+        daily_df_for_sr.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+        sr_levels = self.sr_analyzer.analyze(daily_df_for_sr)
+        self.state_manager.set_state("sr_levels", sr_levels)
 
-
-        try:
-            historical_features_df = self.feature_engineering.generate_all_features(
-                self._historical_klines, self._historical_agg_trades, self._historical_futures, sr_levels
-            )
-            if historical_features_df.empty:
-                self.logger.error("Failed to generate historical features.")
-                return False
-        except Exception as e:
-            self.logger.error(f"Error during historical feature generation: {e}. Aborting data preparation.", exc_info=True)
+        historical_features_df = self.feature_engineering.generate_all_features(
+            self._historical_klines, self._historical_agg_trades, self._historical_futures, sr_levels
+        )
+        if historical_features_df.empty:
+            self.logger.error("Failed to generate historical features.")
             return False
-
 
         # --- Train/Load Market Regime Classifier ---
         regime_classifier_model_path = os.path.join(self.model_checkpoint_dir, f"{CONFIG['REGIME_CLASSIFIER_MODEL_PREFIX']}{fold_id}.joblib") if fold_id is not None else None
 
-        try:
-            if regime_classifier_model_path and os.path.exists(regime_classifier_model_path):
-                self.logger.info(f"Loading Market Regime Classifier for fold {fold_id} from {regime_classifier_model_path}...")
-                if not self.regime_classifier.load_model(model_path=regime_classifier_model_path):
-                    self.logger.warning(f"Failed to load classifier for fold {fold_id}. Retraining.")
-                    self.regime_classifier.train_classifier(historical_features_df.copy(), self._historical_klines.copy(), model_path=regime_classifier_model_path)
-            else:
-                self.logger.info(f"Training Market Regime Classifier for fold {fold_id}...")
+        if regime_classifier_model_path and os.path.exists(regime_classifier_model_path):
+            self.logger.info(f"Loading Market Regime Classifier for fold {fold_id} from {regime_classifier_model_path}...")
+            if not self.regime_classifier.load_model(model_path=regime_classifier_model_path):
+                self.logger.warning(f"Failed to load classifier for fold {fold_id}. Retraining.")
                 self.regime_classifier.train_classifier(historical_features_df.copy(), self._historical_klines.copy(), model_path=regime_classifier_model_path)
-        except Exception as e:
-            self.logger.error(f"Error during Market Regime Classifier training/loading: {e}. Aborting data preparation.", exc_info=True)
-            return False
+        else:
+            self.logger.info(f"Training Market Regime Classifier for fold {fold_id}...")
+            self.regime_classifier.train_classifier(historical_features_df.copy(), self._historical_klines.copy(), model_path=regime_classifier_model_path)
 
 
         # --- Train/Load Predictive Ensembles ---
         ensemble_model_path_prefix = os.path.join(self.model_checkpoint_dir, f"{CONFIG['ENSEMBLE_MODEL_PREFIX']}{fold_id}_") if fold_id is not None else None
         
-        try:
-            self.logger.info(f"Training/Loading Predictive Ensembles for fold {fold_id}...")
-            self.predictive_ensembles.train_all_models(
-                asset=self.trade_symbol, 
-                prepared_data=historical_features_df.copy(),
-                model_path_prefix=ensemble_model_path_prefix
-            )
-        except Exception as e:
-            self.logger.error(f"Error during Predictive Ensembles training/loading: {e}. Aborting data preparation.", exc_info=True)
-            return False
+        self.logger.info(f"Training/Loading Predictive Ensembles for fold {fold_id}...")
+        self.predictive_ensembles.train_all_models(
+            asset=self.trade_symbol, 
+            prepared_data=historical_features_df.copy(),
+            model_path_prefix=ensemble_model_path_prefix
+        )
 
         self.logger.info(f"Historical data preparation and model training/loading complete for fold {fold_id}.")
         return True
@@ -234,7 +216,6 @@ class Analyst:
     async def run_analysis_pipeline(self):
         """
         Executes the full sequence of analysis tasks.
-        Includes robust error handling for each analysis step.
         """
         self.logger.info("--- Starting Analysis Pipeline ---")
         # Initialize analyst_intelligence with default values to ensure all keys exist even if parts fail

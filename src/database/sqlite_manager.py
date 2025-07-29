@@ -206,7 +206,6 @@ class SQLiteManager:
 
         columns = ', '.join(data_to_store.keys())
         placeholders = ', '.join(['?' for _ in data_to_store.keys()])
-        update_set = ', '.join([f"{k} = ?" for k in data_to_store.keys() if k != 'doc_id']) # Don't update PK
 
         query = f"""
         INSERT OR REPLACE INTO {collection_name} ({columns})

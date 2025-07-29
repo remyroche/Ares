@@ -1,12 +1,12 @@
 import asyncio
 import pandas as pd
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional # Ensure Optional is imported
 from datetime import datetime, timedelta
 import time
 import os # Import os for path manipulation
 
 from src.exchange.binance import BinanceExchange
-from src.utils.logger import logger
+from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
 from src.config import settings, CONFIG
 from src.utils.state_manager import StateManager
 from src.analyst.feature_engineering import FeatureEngineeringEngine
@@ -220,12 +220,16 @@ class Analyst:
         # --- Train/Load Predictive Ensembles ---
         ensemble_model_path_prefix = os.path.join(self.model_checkpoint_dir, f"{CONFIG['ENSEMBLE_MODEL_PREFIX']}{fold_id}_") if fold_id is not None else None
         
-        self.logger.info(f"Training/Loading Predictive Ensembles for fold {fold_id}...")
-        self.predictive_ensembles.train_all_models(
-            asset=self.trade_symbol, 
-            prepared_data=historical_features_df.copy(),
-            model_path_prefix=ensemble_model_path_prefix
-        )
+        try:
+            self.logger.info(f"Training/Loading Predictive Ensembles for fold {fold_id}...")
+            self.predictive_ensembles.train_all_models(
+                asset=self.trade_symbol, 
+                prepared_data=historical_features_df.copy(),
+                model_path_prefix=ensemble_model_path_prefix
+            )
+        except Exception as e:
+            self.logger.error(f"Error during Predictive Ensembles training/loading: {e}. Aborting data preparation.", exc_info=True)
+            return False
 
         self.logger.info(f"Historical data preparation and model training/loading complete for fold {fold_id}.")
         return True

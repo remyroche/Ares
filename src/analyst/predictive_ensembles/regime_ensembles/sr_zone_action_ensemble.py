@@ -161,7 +161,8 @@ class SRZoneActionEnsemble(BaseEnsemble):
 
         unique_targets = np.unique(y_flat)
         self.dl_target_map = {label: i for i, label in enumerate(unique_targets)}
-        y_flat_encoded = np.array([self.dl_target_map[label] for label in y_flat]) # F841 warning is expected here if TabNet is not used
+        # Removed the unused variable assignment for y_flat_encoded
+        # y_flat_encoded = np.array([self.dl_target_map[label] for label in y_flat]) # F841 warning is expected here if TabNet is not used
 
         # --- Train Individual Models ---
 

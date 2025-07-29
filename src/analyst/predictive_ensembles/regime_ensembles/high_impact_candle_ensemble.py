@@ -1,94 +1,65 @@
-import logging
 import numpy as np
 import pandas as pd
-import torch
 from lightgbm import LGBMClassifier
 from pytorch_tabnet.tab_model import TabNetClassifier
-
+from sklearn.naive_bayes import GaussianNB
 from .base_ensemble import BaseEnsemble
 
 class HighImpactCandleEnsemble(BaseEnsemble):
     """
-    ## CHANGE: Refactored to inherit the optimized training pipeline from BaseEnsemble.
-    ## This class now focuses only on the base models (including TabNet) and meta-features
-    ## specific to predicting the outcome of high-impact candle events.
+    This ensemble now combines signals from TabNet, a specialized LGBM, an order flow
+    model, and a Naive Bayes classifier for a robust, multi-faceted prediction.
     """
-
     def __init__(self, config: dict, ensemble_name: str = "HighImpactCandleEnsemble"):
         super().__init__(config, ensemble_name)
-        self.flat_feature_subset = [
-            'ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'rsi', 'stoch_k',
-            'bb_bandwidth', 'position_in_range', 'cvd_slope'
-        ]
+        self.models = {"tabnet": None, "candle_lgbm": None, "order_flow_lgbm": None, "naive_bayes": None}
 
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
-        """Trains base models for high-impact candles."""
+        """Trains multiple diverse base models for high-impact candles."""
         self.logger.info("Training HighImpactCandle base models...")
+        X_flat = aligned_data[self.flat_features].fillna(0)
         
-        # Ensure all features are present
-        for col in self.flat_feature_subset:
-            if col not in aligned_data.columns:
-                aligned_data[col] = 0.0
-        
-        X_flat = aligned_data[self.flat_feature_subset].fillna(0)
-
         # TabNet Model
         try:
-            self.models["tabnet"] = self._train_tabnet_model(X_flat, y_encoded)
+            tabnet = TabNetClassifier()
+            tabnet.fit(X_flat.values, y_encoded, max_epochs=50, patience=20, batch_size=1024)
+            self.models["tabnet"] = tabnet
         except Exception as e:
-            self.logger.error(f"TabNet training failed: {e}")
-        
-        # Order Flow Model (LGBM)
-        try:
-            of_features = ['volume', 'volume_delta', 'cvd_slope']
-            for col in of_features:
-                if col not in aligned_data.columns:
-                    aligned_data[col] = 0
-            X_of = aligned_data[of_features].fillna(0)
-            self.models["order_flow_lgbm"] = LGBMClassifier(random_state=42, verbose=-1).fit(X_of, y_encoded)
-        except Exception as e:
-            self.logger.error(f"Order Flow LGBM training failed: {e}")
+            self.logger.error(f"Candle TabNet training failed: {e}")
+
+        # General LGBM Model
+        lgbm_params = self._tune_hyperparameters(LGBMClassifier, self._get_lgbm_search_space, X_flat, y_encoded)
+        self.models["candle_lgbm"] = self._train_with_smote(LGBMClassifier(**lgbm_params, random_state=42, verbose=-1), X_flat, y_encoded)
+
+        # Specialized Order Flow LGBM
+        X_of = aligned_data[self.order_flow_features].fillna(0)
+        of_params = self._tune_hyperparameters(LGBMClassifier, self._get_lgbm_search_space, X_of, y_encoded)
+        self.models["order_flow_lgbm"] = self._train_with_smote(LGBMClassifier(**of_params, random_state=42, verbose=-1), X_of, y_encoded)
+
+        # Gaussian Naive Bayes for a probabilistic, non-tree-based perspective
+        self.logger.info("Training Gaussian Naive Bayes model...")
+        self.models["naive_bayes"] = self._train_with_smote(GaussianNB(), X_flat, y_encoded)
 
     def _get_meta_features(self, df: pd.DataFrame, is_live: bool = False, **kwargs) -> pd.DataFrame or dict:
-        """Generates meta-features for the high-impact candle meta-learner."""
-        
-        # Ensure all features are present
-        for col in self.flat_feature_subset:
-            if col not in df.columns:
-                df[col] = 0.0
-        
-        if is_live:
-            meta_features = {}
-            current_row = df.tail(1)
-            X_flat = current_row[self.flat_feature_subset].fillna(0)
+        """Generates meta-features from all base models for the high-impact candle meta-learner."""
+        X_flat = df[self.flat_features].fillna(0)
+        X_of = df[self.order_flow_features].fillna(0)
 
-            if self.models["tabnet"]:
-                meta_features['tabnet_prob'] = np.max(self.models["tabnet"].predict_proba(X_flat.values))
-            if self.models["order_flow_lgbm"]:
-                X_of = current_row[['volume', 'volume_delta', 'cvd_slope']].fillna(0)
-                meta_features['order_flow_prob'] = self.models["order_flow_lgbm"].predict_proba(X_of)[0][1]
-            
-            # Rule-based feature
-            meta_features['volume_imbalance_signal'] = np.divide(current_row['volume_delta'].iloc[-1], current_row['volume'].iloc[-1]) if current_row['volume'].iloc[-1] != 0 else 0
-            return meta_features
+        if is_live:
+            meta = {}
+            current_row_flat = X_flat.tail(1)
+            current_row_of = X_of.tail(1)
+            if self.models.get("tabnet"): meta['tabnet_prob'] = np.max(self.models["tabnet"].predict_proba(current_row_flat.values))
+            if self.models.get("candle_lgbm"): meta['candle_lgbm_prob'] = np.max(self.models["candle_lgbm"].predict_proba(current_row_flat))
+            if self.models.get("order_flow_lgbm"): meta['of_lgbm_prob'] = np.max(self.models["order_flow_lgbm"].predict_proba(current_row_of))
+            if self.models.get("naive_bayes"): meta['nb_prob'] = np.max(self.models["naive_bayes"].predict_proba(current_row_flat))
+            meta.update(current_row_flat.iloc[0].to_dict())
+            return meta
         else:
             meta_df = pd.DataFrame(index=df.index)
-            X_flat = df[self.flat_feature_subset].fillna(0)
-
-            if self.models["tabnet"]:
-                meta_df['tabnet_prob'] = np.max(self.models["tabnet"].predict_proba(X_flat.values), axis=1)
-            if self.models["order_flow_lgbm"]:
-                X_of = df[['volume', 'volume_delta', 'cvd_slope']].fillna(0)
-                meta_df['order_flow_prob'] = self.models["order_flow_lgbm"].predict_proba(X_of)[:, 1]
-            
-            meta_df['volume_imbalance_signal'] = np.divide(df['volume_delta'], df['volume'], where=df['volume']!=0, out=np.zeros_like(df['volume_delta'], dtype=float))
+            if self.models.get("tabnet"): meta_df['tabnet_prob'] = np.max(self.models["tabnet"].predict_proba(X_flat.values), axis=1)
+            if self.models.get("candle_lgbm"): meta_df['candle_lgbm_prob'] = np.max(self.models["candle_lgbm"].predict_proba(X_flat), axis=1)
+            if self.models.get("order_flow_lgbm"): meta_df['of_lgbm_prob'] = np.max(self.models["order_flow_lgbm"].predict_proba(X_of), axis=1)
+            if self.models.get("naive_bayes"): meta_df['nb_prob'] = np.max(self.models["naive_bayes"].predict_proba(X_flat), axis=1)
+            meta_df = meta_df.join(X_flat)
             return meta_df.fillna(0)
-            
-    def _train_tabnet_model(self, X_flat, y_flat_encoded):
-        try:
-            model = TabNetClassifier()
-            model.fit(X_flat.values, y_flat_encoded, max_epochs=50, patience=20, batch_size=1024, virtual_batch_size=128)
-            return model
-        except Exception as e:
-            self.logger.error(f"TabNet training failed: {e}")
-            return None

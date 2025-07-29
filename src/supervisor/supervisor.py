@@ -7,6 +7,8 @@ import pandas as pd
 import numpy as np
 import os
 
+from .dynamic_weighter import DynamicWeighter
+from src.utils.model_manager import ModelManager # Assuming this exists for saving/loading weights
 from src.exchange.binance import BinanceExchange
 from src.utils.logger import logger
 from src.config import settings, CONFIG
@@ -40,6 +42,16 @@ class Supervisor:
         self.global_config = CONFIG
         self.data = self.load_data()
 
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.ensemble_orchestrator = ensemble_orchestrator
+        self.data_fetcher = data_fetcher
+        self.dynamic_weighter = DynamicWeighter(config)
+        self.model_manager = ModelManager(config) # For persisting weights
+        
+        # In a real system, this would be loaded from a persistent database
+        self.prediction_history = pd.DataFrame()
+
+        
         # State is loaded from file by StateManager's constructor.
         # Initialize default values only if they don't exist in the loaded state.
         self.state_manager.set_state_if_not_exists("peak_equity", settings.get("initial_equity", 10000))
@@ -108,6 +120,37 @@ class Supervisor:
             except Exception as e:
                 self.logger.error(f"An error occurred in the Supervisor loop: {e}", exc_info=True)
 
+    def run_daily_tasks(self):
+        """
+        Daily task for dynamic weight adjustment.
+        This function is intended to be run once per day to adapt the model
+        weights based on their performance over the last week.
+        """
+        self.logger.info("Running daily supervisor tasks...")
+        
+        # 1. Run Dynamic Weight Adjustment
+        self.dynamic_weighter.run_daily_adjustment(self.ensemble_orchestrator, self.prediction_history)
+        
+        # 2. Persist the new weights
+        new_weights = self.ensemble_orchestrator.get_current_weights()
+        self.model_manager.save_ensemble_weights(new_weights)
+        
+        self.logger.info("Daily tasks complete.")
+
+    def _store_prediction_results(self, asset, prediction_output, actual_outcome):
+        """Appends prediction results to the history for the weighter to use."""
+        new_record = {
+            'timestamp': pd.Timestamp.now(tz='UTC'),
+            'asset': asset,
+            'regime': prediction_output.get('regime'),
+            'final_prediction': prediction_output.get('prediction'),
+            'actual': actual_outcome,
+            **prediction_output.get('base_predictions', {})
+        }
+        self.prediction_history = pd.concat([self.prediction_history, pd.DataFrame([new_record])], ignore_index=True)
+
+
+    
     async def _synchronize_exchange_state(self):
         """
         Fetches the current account equity and open positions from the exchange

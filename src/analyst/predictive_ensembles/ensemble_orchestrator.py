@@ -4,7 +4,7 @@ import pandas as pd
 from joblib import dump, load
 from typing import Any, Optional # Import Any and Optional
 
-from src.utils.logger import system_logger
+from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
 from src.config import CONFIG # Import CONFIG to get checkpoint paths
 from .regime_ensembles.bull_trend_ensemble import BullTrendEnsemble
 from .regime_ensembles.bear_trend_ensemble import BearTrendEnsemble
@@ -19,7 +19,7 @@ class RegimePredictiveEnsembles:
     """
     def __init__(self, config):
         self.config = config.get("analyst", {})
-        self.logger = system_logger.getChild('PredictiveEnsembles.Orchestrator')
+        self.logger = logger.getChild('PredictiveEnsembles.Orchestrator') # Fixed: Use imported logger
         
         # Initialize all possible ensemble instances
         self.regime_ensembles = {
@@ -88,7 +88,7 @@ class RegimePredictiveEnsembles:
                 ensemble_instance.save_model(full_model_path)
 
 
-    def get_all_predictions(self, asset: str, current_features: pd.DataFrame, **kwargs) -> dict:
+    def get_all_predictions(self, asset: str, current_features: pd.DataFrame, **kwargs) -> Dict[str, Any]: # Fixed: Return type hint
         """
         Gets a prediction by identifying the current regime and delegating to the
         appropriate trained ensemble.
@@ -131,7 +131,7 @@ class RegimePredictiveEnsembles:
             return current_features['Market_Regime_Label'].iloc[-1]
         return "UNKNOWN"
 
-    def save_model(self, ensemble_instance, path: str):
+    def save_model(self, ensemble_instance: Any, path: str): # Fixed: Type hint for ensemble_instance
         """Saves a trained ensemble instance to a file."""
         try:
             dump(ensemble_instance, path)
@@ -139,7 +139,7 @@ class RegimePredictiveEnsembles:
         except Exception as e:
             self.logger.error(f"Error saving ensemble model to {path}: {e}", exc_info=True)
 
-    def load_model(self, ensemble_instance, path: str) -> bool:
+    def load_model(self, ensemble_instance: Any, path: str) -> bool: # Fixed: Type hint for ensemble_instance
         """Loads a trained ensemble instance from a file."""
         if not os.path.exists(path):
             return False
@@ -154,13 +154,13 @@ class RegimePredictiveEnsembles:
             self.logger.error(f"Error loading ensemble model from {path}: {e}", exc_info=True)
             return False
 
-    def load_weights(self, weights: dict):
+    def load_weights(self, weights: Dict[str, Any]): # Fixed: Type hint for weights
         """Loads updated weights into the ensembles for dynamic weighting."""
         for regime, ensemble_weights in weights.items():
             if regime in self.regime_ensembles:
                 # Assuming BaseEnsemble has an attribute 'ensemble_weights'
                 self.regime_ensembles[regime].ensemble_weights = ensemble_weights
 
-    def get_current_weights(self) -> dict:
+    def get_current_weights(self) -> Dict[str, Any]: # Fixed: Return type hint
         """Returns the current weights of all ensembles."""
         return {regime: ens.ensemble_weights for regime, ens in self.regime_ensembles.items()}

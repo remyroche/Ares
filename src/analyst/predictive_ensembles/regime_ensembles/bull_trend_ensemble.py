@@ -258,7 +258,6 @@ class BullTrendEnsemble(BaseEnsemble):
             klines_df = kwargs.get('klines_df', full_df)
             agg_trades_df = kwargs.get('agg_trades_df', pd.DataFrame())
             order_book_data = kwargs.get('order_book_data', {})
-            current_price = kwargs.get('current_price', klines_df['close'].iloc[-1])
             
             meta_features.update(self._get_wyckoff_features(klines_df))
             meta_features.update(self._get_manipulation_features(order_book_data))

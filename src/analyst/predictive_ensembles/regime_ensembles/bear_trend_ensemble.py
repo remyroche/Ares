@@ -1,3 +1,4 @@
+# src/analyst/predictive_ensembles/regime_ensembles/bear_trend_ensemble.py
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression

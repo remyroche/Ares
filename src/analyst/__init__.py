@@ -12,7 +12,6 @@
 
 # src/analyst/data_utils.py
 import pandas as pd
-import numpy as np
 import os
 
 def load_klines_data(filename):

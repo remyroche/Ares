@@ -24,6 +24,7 @@ from src.analyst.analyst import Analyst # Import Analyst
 from src.sentinel.sentinel import Sentinel # Import Sentinel
 from src.paper_trader import PaperTrader # Import PaperTrader
 from src.emails.ares_mailer import AresMailer # Import AresMailer
+from src.tasks import run_monthly_training_pipeline
 
 class Supervisor:
     """
@@ -429,15 +430,14 @@ class Supervisor:
             time_until = next_retrain_due - datetime.now()
             self.logger.info(f"Next system retraining due in: {time_until.days} days, {time_until.seconds // 3600} hours.")
 
+
     async def _trigger_retraining(self):
-        """Triggers the full system retraining and validation pipeline."""
-        self.logger.info("Initiating full system retraining pipeline...")
-        # Placeholder for actual model training logic
-        self.logger.info("System retraining complete (placeholder). Starting validation.")
-        
-        # Validate the new model using walk-forward and Monte Carlo analysis
-        # These methods would need to be called from the training pipeline orchestrator,
-        # not directly from supervisor in a live system, as they are blocking.
-        # For a live system, this would trigger a Celery task or similar.
-        # await self.run_walk_forward_analysis()
-        # await self.run_monte_carlo_simulation()
+        """Triggers the full system retraining and validation pipeline using a Celery task."""
+        self.logger.info("Initiating full system retraining pipeline via Celery task...")
+        try:
+            # Call the Celery task to run the training pipeline in the background
+            run_monthly_training_pipeline.delay()
+            self.logger.info("Celery task 'run_monthly_training_pipeline' dispatched successfully.")
+        except Exception as e:
+            self.logger.error(f"Failed to dispatch Celery task for retraining: {e}", exc_info=True)
+            self.logger.critical("Automated retraining failed to trigger. Manual intervention may be required.")

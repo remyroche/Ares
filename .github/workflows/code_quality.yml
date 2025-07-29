@@ -67,17 +67,16 @@ jobs:
     - name: Run MyPy (Static Type Checking)
       run: |
         echo "Running MyPy static type checking..."
-        # Use --package src to tell MyPy that 'src' is a package root, resolving duplicate module names.
-        # This makes MyPy treat 'src/utils/logger.py' as 'src.utils.logger'.
-        mypy src/ --ignore-missing-imports --package src || true # Modified: Add --package src and || true
+        # Fixed: Removed 'src/' as a file argument when using '--package src'
+        # This resolves the "May only specify one of: module/package, files, or command" error.
+        mypy --ignore-missing-imports --package src || true # Modified: Removed 'src/'
         # For stricter checks, you might use: mypy src/ --strict
 
     - name: Run Radon (Code Complexity and Maintainability)
       run: |
         echo "Running Radon Cyclomatic Complexity check..."
-        # Removed --total-average and --no-color as they might not be supported by all Radon versions.
-        radon cc src/ -s -a -nc || true # Modified: Removed problematic arguments
+        radon cc src/ -s -nc || true # Modified: Removed problematic arguments
         echo "Running Radon Maintainability Index check..."
-        radon mi src/ -s -a -nc || true # Modified: Removed problematic arguments
+        radon mi src/ -s -nc || true # Modified: Removed problematic arguments
         # If you need total averages, you might need to parse the output and calculate them manually
         # or use a different tool/version of Radon.

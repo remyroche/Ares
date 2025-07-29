@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional # Added import for Dict, Any, Optional
+from typing import Dict, Any, Optional, Union # Added import for Dict, Any, Optional
 import pandas as pd
 import numpy as np
 import os
@@ -25,6 +25,7 @@ from src.sentinel.sentinel import Sentinel # Import Sentinel
 from src.paper_trader import PaperTrader # Import PaperTrader
 from src.emails.ares_mailer import AresMailer # Import AresMailer
 from src.tasks import run_monthly_training_pipeline
+from src.utils.error_handler import get_logged_exceptions
 
 class Supervisor:
     """

@@ -5,10 +5,14 @@ import os
 import datetime
 import json
 import uuid # Import uuid for unique trade IDs
-from typing import Dict, Any
+from typing import Any, Dict # Added imports for type hinting
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
+# Import both managers for type hinting, but use the one passed in __init__
+from src.database.firestore_manager import FirestoreManager
+from src.database.sqlite_manager import SQLiteManager
+
 
 class PerformanceReporter:
     """
@@ -16,10 +20,10 @@ class PerformanceReporter:
     It calculates daily and per-regime metrics, and saves them to CSV and Firestore.
     Now also records detailed individual trade logs.
     """
-    def __init__(self, config=CONFIG, firestore_manager=None):
+    def __init__(self, config=CONFIG, db_manager: Union[FirestoreManager, SQLiteManager, None] = None): # Fixed: Accept generic db_manager
         self.config = config.get("supervisor", {})
         self.global_config = config
-        self.firestore_manager = firestore_manager
+        self.db_manager = db_manager # Use the passed db_manager
         self.logger = system_logger.getChild('PerformanceReporter')
 
         # Use new monthly filename formats
@@ -147,7 +151,7 @@ class PerformanceReporter:
         return {"daily_summary": daily_summary, "strategy_breakdown": strategy_breakdown}
 
     async def update_daily_summary_csv_and_firestore(self, daily_summary: dict):
-        """Appends the daily summary to the CSV log and saves to Firestore."""
+        """Appends the daily summary to the CSV log and saves to DB."""
         try:
             # CSV
             filename = self._get_current_monthly_filename(self.daily_summary_log_filename_format)
@@ -160,18 +164,18 @@ class PerformanceReporter:
                 f.write(",".join(map(str, row)) + "\n")
             self.logger.info(f"Appended daily summary for {daily_summary['Date']} to CSV: {filename}.")
 
-            # Firestore
-            if self.firestore_manager and self.firestore_manager.firestore_enabled:
+            # DB
+            if self.db_manager: # Fixed: Use db_manager
                 collection_name = "daily_summaries" # Use a fixed collection name
-                await self.firestore_manager.set_document(
+                await self.db_manager.set_document( # Fixed: Use set_document for upsert
                     collection_name, doc_id=daily_summary["Date"], data=daily_summary, is_public=False
                 )
-                self.logger.info(f"Saved daily summary for {daily_summary['Date']} to Firestore.")
+                self.logger.info(f"Saved daily summary for {daily_summary['Date']} to DB.")
         except Exception as e:
-            self.logger.error(f"Error updating daily summary (CSV/Firestore): {e}", exc_info=True)
+            self.logger.error(f"Error updating daily summary (CSV/DB): {e}", exc_info=True)
 
     async def update_strategy_performance_log_and_firestore(self, current_date: datetime.date, strategy_breakdown: dict):
-        """Appends strategy performance breakdown to its CSV log and saves to Firestore."""
+        """Appends strategy performance breakdown to its CSV log and saves to DB."""
         try:
             # CSV
             filename = self._get_current_monthly_filename(self.strategy_performance_log_filename_format)
@@ -184,22 +188,23 @@ class PerformanceReporter:
                     f.write(",".join(map(str, row)) + "\n")
             self.logger.info(f"Appended strategy performance for {current_date} to CSV: {filename}.")
 
-            # Firestore
-            if self.firestore_manager and self.firestore_manager.firestore_enabled:
+            # DB
+            if self.db_manager: # Fixed: Use db_manager
                 collection_name = "strategy_performance_logs" # Use a fixed collection name
                 for regime, metrics in strategy_breakdown.items():
                     doc_id = f"{current_date.isoformat()}_{regime}"
                     doc_data = {"date": current_date.isoformat(), "regime": regime, **metrics}
-                    await self.firestore_manager.set_document(
-                        collection_name, doc_id=doc_id, data=doc_data, is_public=False
+                    # Use add_document as it's a log, not a single document that gets updated by ID
+                    await self.db_manager.add_document( 
+                        collection_name, data=doc_data, is_public=False
                     )
-                self.logger.info(f"Saved strategy performance for {current_date} to Firestore.")
+                self.logger.info(f"Saved strategy performance for {current_date} to DB.")
         except Exception as e:
-            self.logger.error(f"Error updating strategy performance log (CSV/Firestore): {e}", exc_info=True)
+            self.logger.error(f"Error updating strategy performance log (CSV/DB): {e}", exc_info=True)
 
     async def record_detailed_trade_log(self, trade_data: Dict[str, Any]):
         """
-        Records a single detailed trade log entry to the CSV file and Firestore.
+        Records a single detailed trade log entry to the CSV file and DB.
         """
         self.logger.info(f"Recording detailed trade log for Trade ID: {trade_data.get('TradeID')}")
         
@@ -235,15 +240,17 @@ class PerformanceReporter:
                 f.write(",".join(row_values) + "\n")
             self.logger.info(f"Detailed trade log for {trade_data.get('TradeID')} appended to CSV.")
 
-            # Firestore (optional, but good for real-time access)
-            if self.firestore_manager and self.firestore_manager.firestore_enabled:
+            # DB
+            if self.db_manager: # Fixed: Use db_manager
                 collection_name = "detailed_trade_logs" # Or a more specific name
                 # Use trade_data.get('TradeID') as doc_id for unique identification
-                await self.firestore_manager.set_document(
+                # Use set_document for detailed_trade_logs as TradeID is a PRIMARY KEY
+                await self.db_manager.set_document(
                     collection_name, doc_id=trade_data.get('TradeID'), data=trade_data, is_public=False
                 )
-                self.logger.info(f"Detailed trade log for {trade_data.get('TradeID')} saved to Firestore.")
+                self.logger.info(f"Detailed trade log for {trade_data.get('TradeID')} saved to DB.")
 
         except Exception as e:
             self.logger.error(f"Error recording detailed trade log: {e}", exc_info=True)
+
 

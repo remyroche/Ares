@@ -5,7 +5,7 @@ import os
 import datetime
 import json
 import uuid # Import uuid for unique trade IDs
-from typing import Any, Dict # Added imports for type hinting
+from typing import Any, Dict, Union # Added imports for type hinting
 
 from src.config import CONFIG
 from src.utils.logger import system_logger

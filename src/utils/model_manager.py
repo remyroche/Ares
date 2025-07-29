@@ -3,7 +3,7 @@ import json
 import copy
 from typing import Optional # Added import for Optional
 from src.config import CONFIG
-from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
+from src.utils.logger import system_logger as logger
 from src.analyst.analyst import Analyst
 from src.tactician.tactician import Tactician
 from src.strategist.strategist import Strategist

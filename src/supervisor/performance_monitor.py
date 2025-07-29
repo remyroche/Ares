@@ -1,8 +1,8 @@
-# src/supervisor/performance_monitor.py
 import pandas as pd
 import numpy as np
 import json
 import datetime
+import logging
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
@@ -118,15 +118,16 @@ class PerformanceMonitor:
             decay_detected = True
             alert_messages.append(f"  - Max Drawdown increased: Live ({live_max_drawdown:.2f}%) > Expected ({expected_max_drawdown:.2f}%) * {self.decay_threshold_max_drawdown_multiplier}")
         elif expected_max_drawdown == 0 and live_max_drawdown > 0: # If expected was 0, any drawdown is a concern
-             decay_detected = True
-             alert_messages.append(f"  - Max Drawdown observed: Live ({live_max_drawdown:.2f}%), while expected was 0%.")
+              decay_detected = True
+              alert_messages.append(f"  - Max Drawdown observed: Live ({live_max_drawdown:.2f}%), while expected was 0%.")
 
         if decay_detected:
             full_alert_message = "\n".join(alert_messages)
             self.logger.warning(full_alert_message)
             subject = "Ares Alert: Model Performance Decay Detected!"
             try:
-                await self.ares_mailer.send_email(subject, full_alert_message)
+                # Note: The original code had `send_email`, assuming it's `send_alert` from the mailer class
+                await self.ares_mailer.send_alert(subject, full_alert_message)
                 self.logger.info("Model decay alert email sent successfully.")
             except Exception as e:
                 self.logger.error(f"Failed to send model decay alert email: {e}", exc_info=True)

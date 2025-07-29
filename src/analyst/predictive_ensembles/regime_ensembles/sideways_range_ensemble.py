@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
 from sklearn.cluster import KMeans
-from sklearn.model_selection import KFold
 
 from .base_ensemble import BaseEnsemble
 
@@ -15,17 +14,17 @@ warnings.filterwarnings("ignore", category=FutureWarning, module="arch")
 
 class SidewaysRangeEnsemble(BaseEnsemble):
     """
-    This class now trains an ensemble of models suitable for range-bound markets,
-    including KMeans clustering and Bollinger Band analysis, and uses their outputs
-    as features for a final "meta-learner" model.
+    ## CHANGE: Enriched the feature set and fully implemented training logic.
+    ## This ensemble now incorporates classic oscillators (RSI, Stochastic), range analysis,
+    ## and a volume profile proxy to better predict behavior in sideways markets.
+    ## The meta-feature generation for training is now fully implemented.
     """
 
     def __init__(self, config: dict, ensemble_name: str = "SidewaysRangeEnsemble"):
         super().__init__(config, ensemble_name)
         self.models = {
-            "clustering": None,  # KMeans model
-            "bb_squeeze": None,  # Bollinger Bands logic
-            "order_flow": None,  # Order flow model (LGBM)
+            "clustering": None,
+            "order_flow": None,
         }
         self.meta_learner = None
         self.trained = False
@@ -33,6 +32,9 @@ class SidewaysRangeEnsemble(BaseEnsemble):
             "bb_window": 20,
             "bb_std_dev": 2,
             "kmeans_clusters": 4,
+            "rsi_period": 14,
+            "stoch_period": 14,
+            "range_window": 50,
         }
         self.meta_learner_features = []
 
@@ -72,12 +74,8 @@ class SidewaysRangeEnsemble(BaseEnsemble):
         except Exception as e:
             self.logger.error(f"Error training KMeans model: {e}")
 
-        # No specific training needed for BB Squeeze, it's a rule-based indicator
-        self.models["bb_squeeze"] = True
-
         self.logger.info("Training Order Flow (LGBM) model...")
         try:
-            # Using a simple LGBM on order flow related features
             of_features = ['volume', 'volume_delta', 'cvd_slope']
             for col in of_features:
                 if col not in X_flat.columns:
@@ -92,54 +90,79 @@ class SidewaysRangeEnsemble(BaseEnsemble):
         if not self.trained or not self.meta_learner:
             return {"prediction": "HOLD", "confidence": 0.0}
 
-        meta_features = self._get_meta_features(current_features, is_live=True, **kwargs)
+        # For live prediction, we need a window of data to calculate rolling features
+        history_window = kwargs.get("klines_df", current_features)
+        
+        meta_features = self._get_meta_features(history_window, is_live=True)
         meta_input_data = pd.DataFrame([meta_features], columns=self.meta_learner_features).fillna(0)
         return self._get_meta_prediction(meta_input_data)
 
-    def _get_meta_features(self, df, is_live=False, **kwargs):
-        meta_features = {}
-        
-        # For live, df is the single current row
+    def _get_meta_features(self, df, is_live=False):
+        """
+        ## CHANGE: Fully implemented meta-feature generation for both training and live prediction.
+        ## This function now calculates all base model outputs and new technical indicators.
+        """
         if is_live:
-            current_row = df.tail(1)
-        else: # For training, we operate on the whole dataframe
-            current_row = df
+            # For live prediction, we operate on the last row of the provided dataframe
+            current_row_df = df.tail(1)
+        else:
+            # For training, we operate on the entire dataframe
+            current_row_df = df
 
-        # Clustering features
+        meta_features_df = pd.DataFrame(index=current_row_df.index)
+
+        # --- Base Model Features ---
         if self.models["clustering"]:
-            cluster_data = current_row[['close', 'volume', 'ATR']].copy().fillna(0)
-            meta_features['price_cluster'] = self.models["clustering"].predict(cluster_data)[0]
+            cluster_data = current_row_df[['close', 'volume', 'ATR']].copy().fillna(0)
+            meta_features_df['price_cluster'] = self.models["clustering"].predict(cluster_data)
 
-        # BB Squeeze features
-        if self.models["bb_squeeze"]:
-            bb_window = self.model_config["bb_window"]
-            bb_std = self.model_config["bb_std_dev"]
-            rolling_close = df['close'].rolling(window=bb_window)
-            ma = rolling_close.mean()
-            std = rolling_close.std()
-            upper_band = ma + (std * bb_std)
-            lower_band = ma - (std * bb_std)
-            bandwidth = (upper_band - lower_band) / ma
-            meta_features['bb_bandwidth'] = bandwidth.iloc[-1] if not is_live else bandwidth
-
-        # Order Flow model prediction
         if self.models["order_flow"]:
             of_features = ['volume', 'volume_delta', 'cvd_slope']
             for col in of_features:
-                if col not in current_row.columns:
-                    current_row[col] = 0
-            X_of = current_row[of_features].fillna(0)
-            meta_features['order_flow_pred'] = self.models["order_flow"].predict_proba(X_of)[0][1] # Prob of class 1
+                if col not in current_row_df.columns:
+                    current_row_df[col] = 0
+            X_of = current_row_df[of_features].fillna(0)
+            # Predict probability of the first class
+            meta_features_df['order_flow_pred'] = self.models["order_flow"].predict_proba(X_of)[:, 0]
+
+        # --- New Technical Indicator Features ---
+        # Bollinger Bands
+        bb_window = self.model_config["bb_window"]
+        rolling_close = df['close'].rolling(window=bb_window)
+        ma = rolling_close.mean()
+        std = rolling_close.std()
+        meta_features_df['bb_bandwidth'] = ((ma + (std * 2)) - (ma - (std * 2))) / ma
+        meta_features_df['is_bb_squeeze'] = (meta_features_df['bb_bandwidth'] < meta_features_df['bb_bandwidth'].rolling(100).min()).astype(int)
+
+        # RSI
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=self.model_config['rsi_period']).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=self.model_config['rsi_period']).mean()
+        rs = gain / loss
+        meta_features_df['rsi'] = 100 - (100 / (1 + rs))
+
+        # Stochastic Oscillator
+        low_min = df['low'].rolling(window=self.model_config['stoch_period']).min()
+        high_max = df['high'].rolling(window=self.model_config['stoch_period']).max()
+        meta_features_df['stoch_k'] = 100 * ((df['close'] - low_min) / (high_max - low_min))
+        meta_features_df['stoch_d'] = meta_features_df['stoch_k'].rolling(window=3).mean()
+
+        # Position in Range
+        range_low = df['low'].rolling(window=self.model_config['range_window']).min()
+        range_high = df['high'].rolling(window=self.model_config['range_window']).max()
+        meta_features_df['position_in_range'] = (df['close'] - range_low) / (range_high - range_low)
+
+        # Distance to Point of Control (Volume Profile Proxy)
+        poc = df['close'].iloc[df['volume'].rolling(self.model_config['range_window']).apply(lambda x: x.idxmax(), raw=True).astype(int)]
+        poc.index = df.index
+        meta_features_df['distance_to_poc'] = (df['close'] - poc) / df['close']
 
         if is_live:
-            return meta_features
+            # Return a dictionary for the single live row
+            return meta_features_df.iloc[-1].to_dict()
         else:
-            # For training, this needs to return a DataFrame aligned with df's index
-            meta_features_df = pd.DataFrame(index=df.index)
-            # This part needs careful implementation to align all features
-            # For simplicity, returning an empty DF as the logic is complex
-            return pd.DataFrame()
-
+            # Return the full DataFrame for training
+            return meta_features_df.dropna()
 
     def _train_meta_learner(self, X, y):
         self.logger.info("Training meta-learner...")

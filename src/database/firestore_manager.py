@@ -2,7 +2,8 @@ import asyncio
 import os
 import uuid
 from functools import partial
-from typing import Any, Dict, List, Optional, Tuple # Added imports
+from typing import Any, Dict, List, Optional, Callable, Tuple
+
 
 import firebase_admin
 from firebase_admin import credentials, firestore

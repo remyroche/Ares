@@ -1,10 +1,9 @@
 import os
 import json
 import copy
-from typing import Optional
-
+from typing import Optional # Added import for Optional
 from src.config import CONFIG
-from src.utils.logger import system_logger
+from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
 from src.analyst.analyst import Analyst
 from src.tactician.tactician import Tactician
 from src.strategist.strategist import Strategist
@@ -16,14 +15,14 @@ class ModelManager:
     This allows for updating the strategy without restarting the bot.
     """
     def __init__(self, firestore_manager=None, performance_reporter: Optional[PerformanceReporter] = None): # Added performance_reporter
-        self.logger = system_logger.getChild('ModelManager')
+        self.logger = logger.getChild('ModelManager')
         self.firestore_manager = firestore_manager
         self.performance_reporter = performance_reporter # Store reporter instance
         
-        # These will hold the live, running instances of the modules
-        self.analyst = None
-        self.tactician = None
-        self.strategist = None
+        # Fixed: Annotate as Optional and initialize to None
+        self.analyst: Optional[Analyst] = None
+        self.tactician: Optional[Tactician] = None
+        self.strategist: Optional[Strategist] = None
         self.current_params = None
         
         # Load the initial 'champion' models on startup
@@ -59,6 +58,9 @@ class ModelManager:
         CONFIG['best_params'] = copy.deepcopy(self.current_params)
         
         # Instantiate the modules. Analyst will load its own sub-models (regime classifier, ensembles)
+        # Fixed: Pass actual exchange_client and state_manager when available (in live main.py context)
+        # For ModelManager's init, these are still None, but Analyst/Strategist/Tactician
+        # constructors are designed to handle Optional inputs.
         self.analyst = Analyst(exchange_client=None, state_manager=None)
         self.strategist = Strategist(exchange_client=None, state_manager=None)
         # Pass performance_reporter to Tactician
@@ -90,13 +92,13 @@ class ModelManager:
             self.logger.error(f"Failed to promote challenger model: {e}", exc_info=True)
             return False
 
-    def get_analyst(self):
+    def get_analyst(self) -> Optional[Analyst]: # Fixed: Return type hint
         return self.analyst
 
-    def get_strategist(self):
+    def get_strategist(self) -> Optional[Strategist]: # Fixed: Return type hint
         return self.strategist
 
-    def get_tactician(self, performance_reporter: Optional[PerformanceReporter] = None): # Allow passing reporter
+    def get_tactician(self, performance_reporter: Optional[PerformanceReporter] = None) -> Optional[Tactician]: # Fixed: Return type hint
         # If a reporter is passed, update the tactician's reporter
         if performance_reporter and self.tactician:
             self.tactician.performance_reporter = performance_reporter

@@ -103,10 +103,11 @@ class SRLevelAnalyzer:
         """
         assessed_levels = []
         for level_info in sr_levels:
-            # level_price = level_info["level_price"]
-            # num_touches = level_info["num_touches"]
-            # last_tested = level_info["last_tested_timestamp"]
-            # level_type = level_info["type"]
+            # Uncommented these lines to define the variables
+            level_price = level_info["level_price"]
+            num_touches = level_info["num_touches"]
+            last_tested = level_info["last_tested_timestamp"]
+            level_type = level_info["type"]
 
             # Calculate age of the level
             age_days = (current_timestamp - last_tested).days if current_timestamp and last_tested else 0
@@ -166,8 +167,7 @@ class SRLevelAnalyzer:
             raise ValueError("Historical data index must be a DatetimeIndex.")
 
         close_prices = historical_data['Close']
-        high_prices = historical_data['High']
-        low_prices = historical_data['Low']
+        # Removed unused variables high_prices and low_prices
         volumes = historical_data['Volume']
         current_timestamp = historical_data.index[-1] # Use the latest timestamp as current
 

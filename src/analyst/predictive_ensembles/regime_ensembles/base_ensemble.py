@@ -1,431 +1,186 @@
-# src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py
-import pandas as pd
+import logging
+import warnings
+
 import numpy as np
-from abc import ABC, abstractmethod
-from sklearn.preprocessing import StandardScaler
-from lightgbm import LGBMClassifier # Using LightGBM for the meta-learner
-from sklearn.model_selection import cross_val_score, KFold # For conceptual cross-validation
-from src.utils.logger import system_logger
-from src.analyst.data_utils import calculate_volume_profile # Import for volume profile features
+import pandas as pd
+import optuna
+from lightgbm import LGBMClassifier
+from sklearn.feature_selection import RFE
+from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import LabelEncoder
 
-class BaseEnsemble(ABC):
+warnings.filterwarnings("ignore", category=UserWarning, module="arch")
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+
+class BaseEnsemble:
     """
-    Abstract Base Class for all regime-specific predictive ensembles.
-    Defines the common interface and provides shared utility methods.
+    ## CHANGE: Upgraded to a full-featured, optimized training pipeline.
+    ## This base class now orchestrates the entire ensemble training process, including:
+    ## 1. Training of regime-specific base models (defined in child classes).
+    ## 2. Generation of meta-features from base model outputs.
+    ## 3. Recursive Feature Elimination (RFE) to select the most impactful meta-features.
+    ## 4. Hyperparameter tuning with Optuna to find the best settings for the meta-learner.
+    ## 5. Training of the final, optimized meta-learner.
     """
+
     def __init__(self, config: dict, ensemble_name: str):
-        self.config = config
+        self.config = config.get("analyst", {}).get(ensemble_name, {})
         self.ensemble_name = ensemble_name
-        self.logger = system_logger.getChild(f'Ensemble.{ensemble_name}')
-        self.models = {} # Dictionary to hold individual trained models
-        self.meta_learner = None # Model to combine individual predictions
-        self.scaler = StandardScaler() # Scaler for meta-learner features
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.models = {}
+        self.meta_learner = None
         self.trained = False
-        self.meta_learner_classes = [] # To store the classes learned by the meta-learner
-        self.meta_learner_features = [] # To store the ordered list of features for the meta-learner
+        self.selected_meta_features = []
+        self.best_meta_params = {}
+        self.label_encoder = LabelEncoder()
 
-    @abstractmethod
     def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: pd.Series):
         """
-        Abstract method to train all individual models and the meta-learner for this ensemble.
+        Main orchestration method for the entire training pipeline.
         """
-        pass
-
-    @abstractmethod
-    def get_prediction(self, current_features: pd.DataFrame, 
-                       klines_df: pd.DataFrame, agg_trades_df: pd.DataFrame, 
-                       order_book_data: dict, current_price: float) -> dict:
-        """
-        Abstract method to get a combined prediction and confidence score from the ensemble.
-        Returns a dictionary with 'prediction' (e.g., "BUY", "SELL", "HOLD") and 'confidence'.
-        """
-        pass
-
-    def _train_meta_learner(self, X_meta: pd.DataFrame, y_meta: pd.Series):
-        """
-        Trains the meta-learner (confluence model) for this ensemble using LightGBM.
-        Includes conceptual notes on cross-validation and regularization.
-        """
-        self.logger.info(f"Training meta-learner for {self.ensemble_name} using LightGBM...")
-        if X_meta.empty or y_meta.empty:
-            self.logger.warning(f"Meta-learner training: Input data is empty for {self.ensemble_name}. Skipping.")
-            self.trained = False
+        self.logger.info(f"Starting full training pipeline for {self.ensemble_name}...")
+        if historical_features.empty or historical_targets.empty:
+            self.logger.warning("No data provided for training. Aborting.")
             return
 
-        # Ensure target labels are suitable for classification (e.g., encoded if not already)
-        # For simplicity, assuming y_meta contains string labels like "BUY", "SELL", "HOLD"
-        # LightGBM can handle string labels directly.
+        aligned_data = historical_features.join(historical_targets.rename("target")).dropna()
+        if aligned_data.empty:
+            self.logger.warning("No data after alignment. Aborting.")
+            return
 
-        # Store the feature names for consistent prediction input later
-        self.meta_learner_features = X_meta.columns.tolist()
+        # Encode targets for all models
+        y_encoded = self.label_encoder.fit_transform(aligned_data["target"])
 
-        # Scale features for the meta-learner
-        scaled_X_meta = self.scaler.fit_transform(X_meta)
+        # 1. Train Base Models (implemented in child class)
+        self._train_base_models(aligned_data, y_encoded)
 
-        try:
-            # LightGBM Classifier with regularization parameters
-            # L1 (reg_alpha) and L2 (reg_lambda) regularization help prevent overfitting.
-            # These values would typically be part of the config or tuned via hyperparameter optimization.
-            self.meta_learner = LGBMClassifier(
-                random_state=42, 
-                verbose=-1, # Suppress verbose output during training
-                reg_alpha=self.config.get("meta_learner_l1_reg", 0.1), # L1 regularization
-                reg_lambda=self.config.get("meta_learner_l2_reg", 0.1) # L2 regularization
-            )
-            
-            # Conceptual Cross-Validation:
-            # In a real system, you would perform cross-validation here to get a more robust
-            # estimate of the meta-learner's performance and to tune its hyperparameters.
-            # For example:
-            # kf = KFold(n_splits=5, shuffle=True, random_state=42)
-            # cv_scores = cross_val_score(self.meta_learner, scaled_X_meta, y_meta, cv=kf, scoring='accuracy')
-            # self.logger.info(f"Meta-learner CV Accuracy: {np.mean(cv_scores):.4f} +/- {np.std(cv_scores):.4f}")
-            
-            self.meta_learner.fit(scaled_X_meta, y_meta)
-            self.meta_learner_classes = self.meta_learner.classes_ # Store learned classes
-            self.logger.info(f"Meta-learner for {self.ensemble_name} trained. Learned classes: {self.meta_learner_classes}")
-            self.trained = True
-        except Exception as e:
-            self.logger.error(f"Error training meta-learner for {self.ensemble_name}: {e}")
-            self.meta_learner = None # Invalidate model if training fails
-            self.trained = False
-
-    def _get_meta_prediction(self, individual_model_predictions: dict) -> tuple[str, float]:
-        """
-        Combines individual model predictions using the trained LightGBM meta-learner.
-        Returns the final prediction (e.g., "BUY", "SELL", "HOLD") and its confidence score.
-        """
-        if not self.trained or self.meta_learner is None:
-            self.logger.warning(f"Meta-learner for {self.ensemble_name} not trained. Returning default HOLD.")
-            return "HOLD", 0.0
-
-        # Prepare features for the meta-learner.
-        # This requires ensuring the input features match the training features (column order and names).
-        # `individual_model_predictions` is a dict like {'lstm_conf': 0.7, 'transformer_conf': 0.8, 'garch_volatility': 0.001, ...}
+        # 2. Generate Meta-Features (implemented in child class)
+        meta_features_train = self._get_meta_features(aligned_data, is_live=False)
         
-        # Create a DataFrame from the input dictionary, ensuring it's a single row
-        meta_features_raw = pd.DataFrame([individual_model_predictions])
+        # Align meta-features with targets
+        aligned_meta = meta_features_train.join(pd.Series(y_encoded, index=aligned_data.index, name="target")).dropna()
+        y_meta_train = aligned_meta["target"].values
+        X_meta_train = aligned_meta.drop(columns=["target"])
+
+        if X_meta_train.empty:
+            self.logger.warning("Meta-features are empty. Aborting meta-learner training.")
+            return
+            
+        # 3. Feature Selection
+        self.logger.info("Performing feature selection for meta-learner...")
+        self.selected_meta_features = self._perform_feature_selection(X_meta_train, y_meta_train)
+        X_meta_selected = X_meta_train[self.selected_meta_features]
+
+        # 4. Hyperparameter Tuning
+        self.logger.info("Tuning hyperparameters for meta-learner...")
+        self.best_meta_params = self._tune_meta_learner_hyperparameters(X_meta_selected, y_meta_train)
+
+        # 5. Train Final Meta-Learner
+        self._train_meta_learner(X_meta_selected, y_meta_train, self.best_meta_params)
+        self.trained = True
+        self.logger.info(f"Training pipeline for {self.ensemble_name} complete.")
+
+    def get_prediction(self, current_features: pd.DataFrame, **kwargs) -> dict:
+        """
+        Generates a prediction using the fully trained ensemble.
+        """
+        if not self.trained:
+            return {"prediction": "HOLD", "confidence": 0.0}
+
+        meta_features = self._get_meta_features(current_features, is_live=True, **kwargs)
         
-        try:
-            # Reindex to ensure feature order matches training order (stored in self.meta_learner_features)
-            meta_features_reindexed = meta_features_raw.reindex(columns=self.meta_learner_features, fill_value=0.0)
-            
-            # Scale the input features using the fitted scaler
-            scaled_meta_features = self.scaler.transform(meta_features_reindexed)
-            
-            # Get probability predictions from the meta-learner
-            # predict_proba returns probabilities for each class
-            probabilities = self.meta_learner.predict_proba(scaled_meta_features)[0]
-            
-            # Get the predicted class (e.g., "BUY", "SELL", "HOLD")
-            predicted_class_idx = np.argmax(probabilities)
-            final_prediction = self.meta_learner_classes[predicted_class_idx]
-            final_confidence = probabilities[predicted_class_idx]
+        # Ensure all selected features are present, fill with 0 if not
+        meta_input_dict = {key: meta_features.get(key, 0.0) for key in self.selected_meta_features}
+        meta_input = pd.DataFrame([meta_input_dict])
+        
+        return self._get_meta_prediction(meta_input)
 
-            self.logger.debug(f"Meta-learner raw predictions: {probabilities}, Final Pred: {final_prediction}, Conf: {final_confidence:.2f}")
-            
-            return final_prediction, final_confidence
-
-        except Exception as e:
-            self.logger.error(f"Error during meta-learner prediction for {self.ensemble_name}: {e}")
-            return "HOLD", 0.0 # Fallback on error
-
-    # --- Common Feature Extraction Methods (can be overridden by specific ensembles) ---
-
-    def _get_wyckoff_features(self, klines_df: pd.DataFrame, current_price: float) -> dict:
+    def _perform_feature_selection(self, X, y, n_features=15):
         """
-        Rule-based approximation for Wyckoff pattern features.
-        Detects Springs, Upthrusts, Signs of Strength/Weakness, and conceptual phases.
+        Selects the best features for the meta-learner using RFE.
         """
-        if klines_df.empty or len(klines_df) < 100: # Need sufficient history for patterns
-            return {
-                "is_wyckoff_sos": 0, "is_wyckoff_sow": 0, 
-                "is_wyckoff_spring": 0, "is_wyckoff_upthrust": 0,
-                "is_accumulation_phase": 0, "is_distribution_phase": 0
+        estimator = LGBMClassifier(random_state=42, verbose=-1)
+        # Ensure n_features is not greater than the number of available features
+        n_features_to_select = min(n_features, X.shape[1])
+        if n_features_to_select < 1:
+             return X.columns.tolist() # Not enough features to select
+
+        selector = RFE(estimator, n_features_to_select=n_features_to_select, step=1)
+        selector = selector.fit(X, y)
+        selected = X.columns[selector.support_].tolist()
+        self.logger.info(f"RFE selected {len(selected)} features: {selected}")
+        return selected
+
+    def _tune_meta_learner_hyperparameters(self, X, y):
+        """
+        ## CHANGE: Added L1 and L2 regularization to the hyperparameter search.
+        ## The Optuna study now tunes `reg_alpha` (L1) and `reg_lambda` (L2)
+        ## to find the optimal level of regularization, making the final
+        ## meta-learner more robust against overfitting.
+        """
+        def objective(trial):
+            params = {
+                'objective': 'multiclass',
+                'metric': 'multi_logloss',
+                'num_class': len(np.unique(y)),
+                'n_estimators': trial.suggest_int('n_estimators', 100, 1000, step=100),
+                'learning_rate': trial.suggest_float('learning_rate', 1e-3, 0.2, log=True),
+                'num_leaves': trial.suggest_int('num_leaves', 20, 300),
+                'max_depth': trial.suggest_int('max_depth', 3, 10),
+                'reg_alpha': trial.suggest_float('reg_alpha', 1e-3, 10.0, log=True),  # L1 Regularization
+                'reg_lambda': trial.suggest_float('reg_lambda', 1e-3, 10.0, log=True), # L2 Regularization
             }
+            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+            scores = []
+            for train_idx, val_idx in cv.split(X, y):
+                X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+                y_train, y_val = y[train_idx], y[val_idx]
+                model = LGBMClassifier(**params, random_state=42, verbose=-1)
+                model.fit(X_train, y_train)
+                scores.append(model.score(X_val, y_val))
+            return np.mean(scores)
 
-        recent_klines = klines_df.iloc[-100:] # Look at last 100 candles for broader patterns
-        avg_volume = recent_klines['volume'].mean()
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=50, n_jobs=-1) # Use all available cores
+        self.logger.info(f"Optuna best params: {study.best_params}")
+        return study.best_params
 
-        # --- Springs and Upthrusts (False Breakouts with Volume) ---
-        is_spring = 0
-        is_upthrust = 0
-
-        # Spring: Price dips below a previous low (support) but quickly recovers with volume
-        # Check for a new low that is immediately rejected
-        if len(recent_klines) >= 3:
-            last_low = recent_klines['low'].iloc[-1]
-            prev_lows_window = recent_klines['low'].iloc[-10:-1] # Look at recent lows
-            
-            # If current low breaks a recent support level AND closes significantly higher
-            if not prev_lows_window.empty and last_low < prev_lows_window.min() and \
-               recent_klines['close'].iloc[-1] > recent_klines['open'].iloc[-1] and \
-               recent_klines['volume'].iloc[-1] > avg_volume * 1.5: # Volume confirmation
-                is_spring = 1
-
-        # Upthrust: Price pokes above a previous high (resistance) but quickly falls with volume
-        # Check for a new high that is immediately rejected
-        if len(recent_klines) >= 3:
-            last_high = recent_klines['high'].iloc[-1]
-            prev_highs_window = recent_klines['high'].iloc[-10:-1] # Look at recent highs
-
-            # If current high breaks a recent resistance level AND closes significantly lower
-            if not prev_highs_window.empty and last_high > prev_highs_window.max() and \
-               recent_klines['close'].iloc[-1] < recent_klines['open'].iloc[-1] and \
-               recent_klines['volume'].iloc[-1] > avg_volume * 1.5: # Volume confirmation
-                is_upthrust = 1
-
-        # --- Signs of Strength (SOS) and Signs of Weakness (SOW) ---
-        is_sos = 0
-        is_sow = 0
-        
-        # SOS: Strong upward move on high volume
-        if recent_klines['close'].iloc[-1] > recent_klines['open'].iloc[-1] * 1.02 and \
-           recent_klines['volume'].iloc[-1] > avg_volume * 2.0: # 2% up move with 2x avg volume
-            is_sos = 1
-        # SOW: Strong downward move on high volume
-        elif recent_klines['close'].iloc[-1] < recent_klines['open'].iloc[-1] * 0.98 and \
-             recent_klines['volume'].iloc[-1] > avg_volume * 2.0: # 2% down move with 2x avg volume
-            is_sow = 1
-
-        # --- Conceptual Phases (Accumulation/Distribution) ---
-        # True detection of Wyckoff phases requires complex pattern recognition over longer periods,
-        # often involving visual inspection and subjective judgment.
-        # Here, we provide very simplified heuristics.
-        is_accumulation_phase = 0
-        is_distribution_phase = 0
-
-        # Accumulation: Sideways movement with increasing volume on rallies and decreasing volume on dips
-        # Or, price making higher lows and higher highs within a range.
-        # Heuristic: Recent price range is narrow, but volume is relatively high on upward moves.
-        price_std = recent_klines['close'].std()
-        if not np.isnan(price_std) and price_std / current_price < 0.01 and recent_klines['volume'].iloc[-10:].mean() > avg_volume * 1.2:
-             # Check for subtle upward bias within the range (e.g., higher lows)
-             if len(recent_klines) >= 5 and recent_klines['low'].iloc[-5:].is_monotonic_increasing:
-                 is_accumulation_phase = 1
-
-        # Distribution: Sideways movement with increasing volume on dips and decreasing volume on rallies
-        # Or, price making lower highs and lower lows within a range.
-        # Heuristic: Recent price range is narrow, but volume is relatively high on downward moves.
-        if not np.isnan(price_std) and price_std / current_price < 0.01 and recent_klines['volume'].iloc[-10:].mean() > avg_volume * 1.2:
-             # Check for subtle downward bias within the range (e.g., lower highs)
-             if len(recent_klines) >= 5 and recent_klines['high'].iloc[-5:].is_monotonic_decreasing:
-                 is_distribution_phase = 1
-
-        self.logger.debug(f"Wyckoff Features: Spring={is_spring}, Upthrust={is_upthrust}, SOS={is_sos}, SOW={is_sow}, Acc={is_accumulation_phase}, Dist={is_distribution_phase}")
-        return {
-            "is_wyckoff_sos": is_sos,
-            "is_wyckoff_sow": is_sow,
-            "is_wyckoff_spring": is_spring,
-            "is_wyckoff_upthrust": is_upthrust,
-            "is_accumulation_phase": is_accumulation_phase,
-            "is_distribution_phase": is_distribution_phase
-        }
-
-    def _get_manipulation_features(self, order_book_data: dict, current_price: float, agg_trades_df: pd.DataFrame) -> dict:
+    def _train_meta_learner(self, X, y, params):
         """
-        Heuristic approximation for detecting market manipulation features.
-        This is highly limited by the available data (top-5 order book, aggregated trades).
-        True manipulation detection requires Level 2/3 data and real-time order event tracking.
+        Trains the final meta-learner with the selected features and best parameters.
         """
-        bids = order_book_data.get('bids', [])
-        asks = order_book_data.get('asks', [])
+        self.meta_learner = LGBMClassifier(**params, random_state=42, verbose=-1)
+        self.meta_learner.fit(X, y)
+        self.logger.info(f"{self.ensemble_name} meta-learner trained successfully.")
 
-        # --- Spoofing/Layering Heuristic (Conceptual) ---
-        # This requires tracking changes in order book depth over time.
-        # With only a single snapshot, we can only look for large, static walls.
-        # For true spoofing, you need to see large orders appear and disappear rapidly without execution.
-        # Placeholder for conceptual logic:
-        # if large_wall_appeared_and_disappeared_rapidly: is_spoofing = 1
-
-        # Simplified: Check for unusually large single orders near current price (potential 'iceberg' or 'wall')
-        large_order_threshold_usd = self.config.get("order_book", {}).get("large_order_threshold_usd", 100000)
-        
-        is_large_bid_wall_near = 0
-        is_large_ask_wall_near = 0
-
-        if current_price > 0:
-            for bid_price, bid_qty in bids:
-                if bid_price < current_price and (bid_price * bid_qty) > large_order_threshold_usd:
-                    is_large_bid_wall_near = 1
-                    break
-            for ask_price, ask_qty in asks:
-                if ask_price > current_price and (ask_price * ask_qty) > large_order_threshold_usd:
-                    is_large_ask_wall_near = 1
-                    break
-        
-        # --- Liquidity Sweeping Heuristic ---
-        # Liquidity sweep: Rapid consumption of a large block of orders in the order book.
-        # This is hard to detect with aggregated trades and limited depth.
-        # Heuristic: A very large single aggregated trade that moves price significantly.
-        is_liquidity_sweep = 0
-        if not agg_trades_df.empty and len(agg_trades_df) > 1:
-            last_trade = agg_trades_df.iloc[-1]
-            # Ensure prev_trades_avg_qty calculation is robust
-            if len(agg_trades_df) > 1:
-                prev_trades_avg_qty = agg_trades_df['quantity'].iloc[:-1].mean()
-            else:
-                prev_trades_avg_qty = 0 # No previous trades
-            
-            # If current trade quantity is much larger than average AND price moved a lot
-            if prev_trades_avg_qty > 0 and last_trade['quantity'] > prev_trades_avg_qty * 5 and \
-               agg_trades_df['price'].iloc[-2] > 0 and \
-               abs(last_trade['price'] - agg_trades_df['price'].iloc[-2]) / agg_trades_df['price'].iloc[-2] > 0.001: # 0.1% price move
-                is_liquidity_sweep = 1
-
-        # --- Fake Breakout Heuristic ---
-        # This is more about price action, but can be influenced by manipulation.
-        # Already conceptually covered in Wyckoff (Upthrust/Spring).
-        is_fake_breakout = 0 # Re-using Wyckoff logic for now, or could add specific logic here.
-
-        self.logger.debug(f"Manipulation Features: Large Bid Wall={is_large_bid_wall_near}, Large Ask Wall={is_large_ask_wall_near}, Liquidity Sweep={is_liquidity_sweep}")
-        return {
-            "is_liquidity_sweep": is_liquidity_sweep,
-            "is_fake_breakout": is_fake_breakout,   # Placeholder, could integrate with Wyckoff
-            "is_large_bid_wall_near": is_large_bid_wall_near,
-            "is_large_ask_wall_near": is_large_ask_wall_near
-        }
-
-    def _get_order_flow_features(self, agg_trades_df: pd.DataFrame, order_book_data: dict, klines_df: pd.DataFrame) -> dict:
+    def _get_meta_prediction(self, meta_input_df):
         """
-        Enhanced heuristic implementation for Order Flow and Market Microstructure features.
-        Leverages available aggregated trades and order book data to create more robust features.
+        Makes a final prediction using the trained meta-learner.
         """
-        features = {
-            "cvd_value": 0.0, 
-            "cvd_divergence_score": 0.0, 
-            "is_absorption": 0, 
-            "is_exhaustion": 0, 
-            "aggressive_buy_volume": 0.0, 
-            "aggressive_sell_volume": 0.0,
-            "order_book_imbalance": 0.0, # New feature
-            "aggressive_volume_ratio": 0.0, # New feature
-            "recent_volume_spike": 0 # New feature
-        }
-
-        if agg_trades_df.empty or klines_df.empty:
-            self.logger.warning("Insufficient data for order flow features. Returning defaults.")
-            return features
-
-        # Ensure 'is_buyer_maker' and 'quantity' columns exist
-        if 'is_buyer_maker' not in agg_trades_df.columns or 'quantity' not in agg_trades_df.columns:
-            self.logger.warning("Missing 'is_buyer_maker' or 'quantity' in agg_trades_df for order flow features.")
-            return features
-
-        agg_trades_df_copy = agg_trades_df.copy()
-        # Corrected: Binance 'm' (is_buyer_maker) means if the BUYER was the MAKER.
-        # If m=True (buyer is maker), it's a sell order hitting a bid (price likely goes down). So signed_qty = -qty.
-        # If m=False (seller is maker), it's a buy order hitting an ask (price likely goes up). So signed_qty = +qty.
-        agg_trades_df_copy['signed_quantity'] = agg_trades_df_copy['quantity'] * np.where(agg_trades_df_copy['is_buyer_maker'], -1, 1)
+        if not self.meta_learner:
+            return {"prediction": "HOLD", "confidence": 0.0}
         
-        # Consider recent trades for CVD (e.g., last 100 trades or last 5 minutes)
-        recent_trades_lookback = self.config.get("order_flow_recent_trades_lookback", 100)
-        recent_trades = agg_trades_df_copy.iloc[-min(len(agg_trades_df_copy), recent_trades_lookback):] 
+        proba = self.meta_learner.predict_proba(meta_input_df)[0]
+        idx = np.argmax(proba)
         
-        if recent_trades.empty:
-            self.logger.warning("No recent trades for order flow features. Returning defaults.")
-            return features
+        # Use the label encoder to transform the numeric prediction back to the original string label
+        prediction_label = self.label_encoder.inverse_transform([idx])[0]
+        confidence = proba[idx]
+        
+        return {"prediction": prediction_label, "confidence": confidence}
 
-        features["cvd_value"] = recent_trades['signed_quantity'].sum()
-        
-        # --- CVD Divergence with Price (Heuristic) ---
-        # Divergence: Price moves one way, but CVD moves opposite or stagnates.
-        price_change_lookback = self.config.get("order_flow_price_change_lookback", 10) # candles
-        if len(klines_df) >= price_change_lookback:
-            price_change_recent = klines_df['close'].iloc[-1] - klines_df['close'].iloc[-price_change_lookback:].mean()
-            
-            if price_change_recent > 0 and features["cvd_value"] < 0: # Price up, but net selling
-                features["cvd_divergence_score"] = -1.0 # Bearish divergence
-            elif price_change_recent < 0 and features["cvd_value"] > 0: # Price down, but net buying
-                features["cvd_divergence_score"] = 1.0 # Bullish divergence
-
-        # --- Absorption and Exhaustion Patterns (Heuristic) ---
-        # Absorption: Strong buying/selling pressure (high CVD) but price not moving much.
-        # Exhaustion: Price moving strongly but CVD or volume is decreasing.
-        
-        # Absorption heuristic: High CVD, low price volatility
-        if recent_trades['quantity'].sum() > 0:
-            if abs(features["cvd_value"]) / recent_trades['quantity'].sum() > self.config.get("absorption_cvd_ratio_threshold", 0.2): # Significant CVD relative to total volume
-                recent_price_volatility_candles = self.config.get("absorption_volatility_lookback", 10)
-                if len(klines_df) >= recent_price_volatility_candles:
-                    recent_price_volatility = klines_df['close'].iloc[-recent_price_volatility_candles:].std()
-                    # Check if volatility is low relative to current price
-                    if klines_df['close'].iloc[-1] > 0 and recent_price_volatility / klines_df['close'].iloc[-1] < self.config.get("absorption_volatility_threshold_pct", 0.001): # Very low volatility (e.g., 0.1%)
-                        features["is_absorption"] = 1
-        
-        # Exhaustion heuristic: Price continues in a trend, but volume/CVD drops off
-        # For simplicity, if current candle is long but volume is low relative to average
-        volume_exhaustion_lookback = self.config.get("exhaustion_volume_lookback", 50)
-        if len(klines_df) >= volume_exhaustion_lookback: # Need enough history for average
-            current_candle_range = klines_df['high'].iloc[-1] - klines_df['low'].iloc[-1]
-            avg_candle_range = (klines_df['high'] - klines_df['low']).iloc[-volume_exhaustion_lookback:-1].mean()
-            
-            if avg_candle_range > 0 and current_candle_range / avg_candle_range > self.config.get("exhaustion_candle_range_multiplier", 1.5): # Large candle (1.5x average size)
-                current_volume = klines_df['volume'].iloc[-1]
-                avg_volume_recent = klines_df['volume'].iloc[-volume_exhaustion_lookback:-1].mean()
-                if avg_volume_recent > 0 and current_volume / avg_volume_recent < self.config.get("exhaustion_volume_ratio_threshold", 0.8): # But low volume (less than 80% of average)
-                    features["is_exhaustion"] = 1
-
-        # --- Aggressive Buy/Sell Volume (from Agg Trades) ---
-        features["aggressive_buy_volume"] = recent_trades[recent_trades['signed_quantity'] > 0]['quantity'].sum()
-        features["aggressive_sell_volume"] = recent_trades[recent_trades['signed_quantity'] < 0]['quantity'].sum()
-        
-        # NEW: Aggressive Volume Ratio
-        total_aggressive_volume = features["aggressive_buy_volume"] + features["aggressive_sell_volume"]
-        if total_aggressive_volume > 0:
-            features["aggressive_volume_ratio"] = (features["aggressive_buy_volume"] - features["aggressive_sell_volume"]) / total_aggressive_volume
-        
-        # NEW: Order Book Imbalance
-        bids = order_book_data.get('bids', [])
-        asks = order_book_data.get('asks', [])
-        
-        # Calculate imbalance for a few levels of depth
-        depth_levels = self.config.get("order_book_depth_levels", 5) # e.g., check top 5 bids/asks
-        total_bid_qty = sum([qty for price, qty in bids[:depth_levels]])
-        total_ask_qty = sum([qty for price, qty in asks[:depth_levels]])
-
-        if total_bid_qty + total_ask_qty > 0:
-            features["order_book_imbalance"] = (total_bid_qty - total_ask_qty) / (total_bid_qty + total_ask_qty)
-        
-        # NEW: Recent Volume Spike
-        volume_spike_lookback = self.config.get("volume_spike_lookback", 5)
-        volume_spike_threshold = self.config.get("volume_spike_threshold_multiplier", 2.0)
-        if len(klines_df) >= volume_spike_lookback:
-            recent_volumes = klines_df['volume'].iloc[-volume_spike_lookback:]
-            avg_recent_volume = recent_volumes.mean()
-            if avg_recent_volume > 0 and recent_volumes.iloc[-1] > avg_recent_volume * volume_spike_threshold:
-                features["recent_volume_spike"] = 1
-
-        self.logger.debug(f"Order Flow Features: CVD={features['cvd_value']:.2f}, CVD Divergence={features['cvd_divergence_score']:.2f}, Absorption={features['is_absorption']}, Exhaustion={features['is_exhaustion']}, AggBuy={features['aggressive_buy_volume']:.2f}, AggSell={features['aggressive_sell_volume']:.2f}, OB Imbalance={features['order_book_imbalance']:.2f}, Agg Vol Ratio={features['aggressive_volume_ratio']:.2f}, Vol Spike={features['recent_volume_spike']}")
-        return features
-
-    def _get_multi_timeframe_features(self, klines_df_htf: pd.DataFrame, klines_df_mtf: pd.DataFrame) -> dict:
+    # --- Abstract methods to be implemented by child classes ---
+    def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
         """
-        Calculates multi-timeframe trend features.
-        :param klines_df_htf: Higher Timeframe klines data (e.g., Daily).
-        :param klines_df_mtf: Medium Timeframe klines data (e.g., Hourly).
-        :return: Dictionary with multi-timeframe trend features.
+        Placeholder for training regime-specific base models.
+        Must be implemented by each child ensemble class.
         """
-        features = {
-            "htf_trend_bullish": 0,
-            "mtf_trend_bullish": 0
-        }
+        raise NotImplementedError("Child classes must implement _train_base_models.")
 
-        # Higher Timeframe Trend (e.g., using 50-period SMA on HTF)
-        if not klines_df_htf.empty and len(klines_df_htf) >= 50:
-            htf_sma_50 = klines_df_htf['close'].rolling(window=50).mean().iloc[-1]
-            if klines_df_htf['close'].iloc[-1] > htf_sma_50:
-                features["htf_trend_bullish"] = 1 # Price above SMA
-            elif klines_df_htf['close'].iloc[-1] < htf_sma_50:
-                features["htf_trend_bullish"] = -1 # Price below SMA
-        
-        # Medium Timeframe Trend (e.g., using 20-period SMA on MTF)
-        if not klines_df_mtf.empty and len(klines_df_mtf) >= 20:
-            mtf_sma_20 = klines_df_mtf['close'].rolling(window=20).mean().iloc[-1]
-            if klines_df_mtf['close'].iloc[-1] > mtf_sma_20:
-                features["mtf_trend_bullish"] = 1 # Price above SMA
-            elif klines_df_mtf['close'].iloc[-1] < mtf_sma_20:
-                features["mtf_trend_bullish"] = -1 # Price below SMA
-
-        self.logger.debug(f"Multi-Timeframe Features: HTF={features['htf_trend_bullish']}, MTF={features['mtf_trend_bullish']}")
-        return features
+    def _get_meta_features(self, df: pd.DataFrame, is_live: bool = False, **kwargs) -> pd.DataFrame or dict:
+        """
+        Placeholder for generating features for the meta-learner.
+        Must be implemented by each child ensemble class.
+        """
+        raise NotImplementedError("Child classes must implement _get_meta_features.")

@@ -40,13 +40,12 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt # Install your project dependencies
-        # Install Ruff, Mypy, Radon, Black, Isort, Vulture
+        # Install Ruff, MyPy, Radon, Black, Isort, Vulture
+        # Ensure versions are compatible if issues persist (e.g., Radon might be older)
         pip install ruff mypy radon black isort vulture
 
     - name: Run Ruff (Auto-fix & Report Unfixable Issues)
       run: |
-        # It's generally recommended to let Ruff handle formatting (which includes isort-like sorting)
-        # However, if you explicitly want to run Black and Isort separately first:
         echo "Running Black for formatting..."
         black src/
         echo "Running Isort for import sorting..."
@@ -59,32 +58,26 @@ jobs:
         ruff check . --fix # Automatically fix linting issues
 
         echo "Checking for any remaining unfixed Ruff issues..."
-        # This command will report any issues that couldn't be fixed automatically
-        # and will exit with a non-zero code if issues are found, failing the job.
-        ruff check . || true # Modified: Add || true to allow Ruff to run without failing the job
+        ruff check . || true # Allow Ruff to run without failing the job
 
     - name: Dead code detection
-      run: vulture src/ || true # Modified: Add || true to allow Vulture to run without failing the job
+      run: vulture src/ || true # Allow Vulture to run without failing the job
 
 
     - name: Run MyPy (Static Type Checking)
       run: |
-        # Run MyPy on your source code
-        # --ignore-missing-imports is often useful for third-party libraries without type stubs
-        # Adjust paths based on your project structure (e.g., src/)
-        mypy src/ --ignore-missing-imports || true # Modified: Add || true to allow MyPy to run without failing the job
+        echo "Running MyPy static type checking..."
+        # Use --package src to tell MyPy that 'src' is a package root, resolving duplicate module names.
+        # This makes MyPy treat 'src/utils/logger.py' as 'src.utils.logger'.
+        mypy src/ --ignore-missing-imports --package src || true # Modified: Add --package src and || true
         # For stricter checks, you might use: mypy src/ --strict
 
     - name: Run Radon (Code Complexity and Maintainability)
       run: |
-        # Check cyclomatic complexity (cc) and maintainability index (mi)
-        # Radon will exit with a non-zero code if configured thresholds are exceeded.
-        # Default thresholds: A-B (good), C (average), D-F (bad).
-        # You can add --min=C to fail if any module is below C.
         echo "Running Radon Cyclomatic Complexity check..."
-        radon cc src/ --total-average --no-color || true # Modified: Add || true
+        # Removed --total-average and --no-color as they might not be supported by all Radon versions.
+        radon cc src/ -s -a -nc || true # Modified: Removed problematic arguments
         echo "Running Radon Maintainability Index check..."
-        radon mi src/ --total-average --no-color || true # Modified: Add || true
-        # Example of failing the build if complexity is too high or maintainability too low:
-        # radon cc src/ --max-cc 10 --fail-on-error # Fails if any function has CC > 10
-        # radon mi src/ --min-mi 70 --fail-on-error # Fails if any module has MI < 70
+        radon mi src/ -s -a -nc || true # Modified: Removed problematic arguments
+        # If you need total averages, you might need to parse the output and calculate them manually
+        # or use a different tool/version of Radon.

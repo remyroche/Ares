@@ -8,8 +8,9 @@ import pandas_ta as ta
 import joblib # For saving/loading models
 import os # For path manipulation
 import sys # Import sys for sys.exit() in example usage
-from sr_analyzer import SRLevelAnalyzer # Assuming sr_analyzer.py is accessible
-from utils.logger import system_logger # Centralized logger
+from src.analyst.sr_analyzer import SRLevelAnalyzer # Assuming sr_analyzer.py is accessible
+from src.utils.logger import system_logger # Centralized logger
+from src.config import CONFIG # Import CONFIG to get checkpoint paths
 
 
 class MarketRegimeClassifier:
@@ -25,6 +26,7 @@ class MarketRegimeClassifier:
     """
     def __init__(self, config, sr_analyzer: SRLevelAnalyzer):
         self.config = config.get("analyst", {}).get("market_regime_classifier", {})
+        self.global_config = config # Store global config to access other sections
         self.sr_analyzer = sr_analyzer
         self.kmeans_model = None # KMeans model for feature-based clustering
         self.lgbm_classifier = None
@@ -38,8 +40,10 @@ class MarketRegimeClassifier:
             "SR_ZONE_ACTION": "SR_ZONE_ACTION" # SR_ZONE_ACTION will be determined separately
         }
         self.trained = False
-        self.model_path = self.config.get("model_storage_path", "models/analyst/") + "regime_classifier.joblib"
-        os.makedirs(os.path.dirname(self.model_path), exist_ok=True) # Ensure model storage path exists
+        # Default model path, can be overridden by save/load methods
+        # Using the new CHECKPOINT_DIR from CONFIG
+        self.default_model_path = os.path.join(CONFIG['CHECKPOINT_DIR'], "analyst_models", "regime_classifier.joblib")
+        os.makedirs(os.path.dirname(self.default_model_path), exist_ok=True) # Ensure model storage path exists
 
     def calculate_trend_strength(self, klines_df: pd.DataFrame):
         """
@@ -124,7 +128,7 @@ class MarketRegimeClassifier:
         
         return features
 
-    def train_classifier(self, historical_features: pd.DataFrame, historical_klines: pd.DataFrame):
+    def train_classifier(self, historical_features: pd.DataFrame, historical_klines: pd.DataFrame, model_path: str = None):
         """
         Trains the Market Regime Classifier using a pseudo-labeling approach.
         The `SR_ZONE_ACTION` regime is determined dynamically and not part of the clustering.
@@ -222,7 +226,10 @@ class MarketRegimeClassifier:
         self.lgbm_classifier.fit(features_for_lgbm, labels_for_lgbm) # Pass DataFrame directly
         self.trained = True
         self.logger.info("Market Regime Classifier training completed with pseudo-labeling and advanced features.")
-        self.save_model() # Save the model after training
+        
+        # Save the model after training if a path is provided
+        if model_path:
+            self.save_model(model_path)
 
     def predict_regime(self, current_features: pd.DataFrame, current_klines: pd.DataFrame, sr_levels: list):
         """
@@ -230,8 +237,9 @@ class MarketRegimeClassifier:
         Dynamically checks for SR_ZONE_ACTION.
         """
         if not self.trained:
-            self.logger.warning("Warning: Classifier not trained. Attempting to load model...")
-            if not self.load_model():
+            self.logger.warning("Warning: Classifier not trained. Attempting to load default model...")
+            # Use self.default_model_path for loading if no specific path is given
+            if not self.load_model(model_path=self.default_model_path):
                 self.logger.error("Classifier not trained and failed to load model. Returning default regime.")
                 # Calculate Trend Strength Score even if not trained for fallback
                 trend_strength, current_adx = self.calculate_trend_strength(current_klines)
@@ -243,7 +251,7 @@ class MarketRegimeClassifier:
         # Check for SR_ZONE_ACTION
         current_price = current_klines['close'].iloc[-1]
         current_atr = current_klines['ATR'].iloc[-1] if 'ATR' in current_klines.columns and not current_klines['ATR'].isnull().all() else 0
-        proximity_multiplier = self.config.get("proximity_multiplier", 0.25) # From main config's analyst section
+        proximity_multiplier = self.global_config['BEST_PARAMS'].get("proximity_multiplier", 0.25) # From main config's analyst section
 
         is_sr_interacting = False
         if sr_levels and current_atr > 0:
@@ -328,51 +336,12 @@ class MarketRegimeClassifier:
         
         # Predict cluster label for current features if KMeans was trained
         if self.kmeans_model and 'cluster_label' in features_for_prediction_df.columns:
-            # Predict cluster for the current data point
-            # Need to ensure the input to kmeans_model.predict is scaled the same way it was trained
-            # For simplicity, we'll assume `scaled_features` from training was the full set.
-            # Here, we need to scale the features *before* predicting the cluster.
-            # This requires careful handling of the scaler if not all features are used for clustering.
-            
-            # For robustness, we re-scale the relevant features for clustering prediction
-            # assuming the scaler was fitted on the full set of features used for LGBM.
-            
-            # Create a temporary DataFrame for scaling and clustering
-            temp_features_for_clustering = features_for_prediction_df.drop(columns=['cluster_label'], errors='ignore').copy()
-            
-            # Ensure the feature columns for scaling match what was used during training
-            # This is critical. The scaler's columns are implicitly defined by `features_for_lgbm` during training.
-            # We need to re-align `temp_features_for_clustering` to `self.scaler.feature_names_in_` if available,
-            # or to the columns of `features_for_lgbm` from training.
-            
-            # A simpler, more robust approach is to predict the cluster on the *unscaled* features
-            # if the KMeans model was trained on unscaled features, or ensure the scaler is applied
-            # consistently before KMeans prediction.
-            
-            # For now, assuming KMeans was trained on the same `features_for_lgbm` columns,
-            # we will predict the cluster on the unscaled version of those features.
-            # If KMeans was trained on `scaled_features`, this part needs adjustment.
-            
-            # Let's assume KMeans was trained on `scaled_features` which were derived from `features_for_lgbm`.
-            # So, for prediction, we need to scale `temp_features_for_clustering` using `self.scaler`.
-            
-            if not temp_features_for_clustering.empty:
+            if not features_for_prediction_df.empty:
                 try:
-                    # Ensure the columns match the scaler's expected input
-                    # This is a common point of failure if feature sets change.
-                    # A robust solution would involve storing feature names used for scaler fitting.
-                    
-                    # For now, let's assume `temp_features_for_clustering` has the same columns as `features_for_lgbm`
-                    # (excluding 'cluster_label') from the training phase.
-                    
-                    # Get the columns that were used to fit the scaler
-                    scaler_fitted_cols = self.scaler.feature_names_in_ if hasattr(self.scaler, 'feature_names_in_') else actual_features_for_lgbm # Fallback
-                    
-                    # Reindex current features to match scaler's input order
+                    scaler_fitted_cols = self.scaler.feature_names_in_ if hasattr(self.scaler, 'feature_names_in_') else actual_features_for_lgbm
                     current_scaled_input_for_kmeans = self.scaler.transform(
-                        temp_features_for_clustering.reindex(columns=scaler_fitted_cols, fill_value=0).tail(1)
+                        features_for_prediction_df.reindex(columns=scaler_fitted_cols, fill_value=0).tail(1)
                     )
-                    
                     predicted_cluster = self.kmeans_model.predict(current_scaled_input_for_kmeans)[0]
                     features_for_prediction_df.loc[features_for_prediction_df.index[-1], 'cluster_label'] = predicted_cluster
                 except Exception as e:
@@ -406,8 +375,9 @@ class MarketRegimeClassifier:
         self.logger.info(f"Predicted Regime: {predicted_regime}, Trend Strength: {trend_strength:.2f}, ADX: {current_adx:.2f}")
         return predicted_regime, trend_strength, current_adx
 
-    def save_model(self):
+    def save_model(self, model_path: str = None):
         """Saves the trained LGBM classifier, scaler, and KMeans model using joblib."""
+        path_to_save = model_path if model_path else self.default_model_path
         try:
             model_data = {
                 'lgbm_classifier': self.lgbm_classifier,
@@ -416,19 +386,20 @@ class MarketRegimeClassifier:
                 'lgbm_feature_names': self.lgbm_classifier.feature_name_ if hasattr(self.lgbm_classifier, 'feature_name_') else None,
                 'scaler_feature_names': self.scaler.feature_names_in_ if hasattr(self.scaler, 'feature_names_in_') else None
             }
-            joblib.dump(model_data, self.model_path)
-            self.logger.info(f"Market Regime Classifier model saved to {self.model_path}")
+            joblib.dump(model_data, path_to_save)
+            self.logger.info(f"Market Regime Classifier model saved to {path_to_save}")
         except Exception as e:
-            self.logger.error(f"Error saving Market Regime Classifier model: {e}", exc_info=True)
+            self.logger.error(f"Error saving Market Regime Classifier model to {path_to_save}: {e}", exc_info=True)
 
-    def load_model(self):
+    def load_model(self, model_path: str = None):
         """Loads the trained LGBM classifier, scaler, and KMeans model from file."""
-        if not os.path.exists(self.model_path):
-            self.logger.warning(f"Market Regime Classifier model file not found at {self.model_path}. Cannot load.")
+        path_to_load = model_path if model_path else self.default_model_path
+        if not os.path.exists(path_to_load):
+            self.logger.warning(f"Market Regime Classifier model file not found at {path_to_load}. Cannot load.")
             self.trained = False
             return False
         try:
-            model_data = joblib.load(self.model_path)
+            model_data = joblib.load(path_to_load)
             self.lgbm_classifier = model_data['lgbm_classifier']
             self.scaler = model_data['scaler']
             self.kmeans_model = model_data.get('kmeans_model') # Load KMeans model
@@ -440,10 +411,10 @@ class MarketRegimeClassifier:
                 self.scaler.feature_names_in_ = model_data['scaler_feature_names']
 
             self.trained = True
-            self.logger.info(f"Market Regime Classifier model loaded from {self.model_path}")
+            self.logger.info(f"Market Regime Classifier model loaded from {path_to_load}")
             return True
         except Exception as e:
-            self.logger.error(f"Error loading Market Regime Classifier model from {self.model_path}: {e}", exc_info=True)
+            self.logger.error(f"Error loading Market Regime Classifier model from {path_to_load}: {e}", exc_info=True)
             self.trained = False
             return False
 
@@ -454,7 +425,7 @@ if __name__ == "__main__":
 
     # Ensure dummy data exists for loading
     from src.analyst.data_utils import create_dummy_data, load_klines_data, load_agg_trades_data, load_futures_data
-    from config import CONFIG # Import the main CONFIG dictionary
+    from src.config import CONFIG # Import the main CONFIG dictionary
 
     klines_filename = CONFIG['KLINES_FILENAME']
     agg_trades_filename = CONFIG['AGG_TRADES_FILENAME']
@@ -494,7 +465,12 @@ if __name__ == "__main__":
 
     # Initialize and train the classifier
     classifier = MarketRegimeClassifier(CONFIG, sr_analyzer_demo)
-    classifier.train_classifier(historical_features_demo.copy(), klines_df.copy()) # Pass copies for training
+    
+    # Define a temporary model path for the demo
+    demo_model_path = os.path.join(CONFIG['CHECKPOINT_DIR'], "analyst_models", "demo_regime_classifier.joblib")
+    
+    # Train and save the model using the new model_path argument
+    classifier.train_classifier(historical_features_demo.copy(), klines_df.copy(), model_path=demo_model_path) # Pass copies for training
 
     # Test prediction
     print("\n--- Testing Regime Prediction ---")
@@ -516,7 +492,8 @@ if __name__ == "__main__":
     # Test loading the model
     print("\n--- Testing Model Loading ---")
     new_classifier_instance = MarketRegimeClassifier(CONFIG, sr_analyzer_demo)
-    if new_classifier_instance.load_model():
+    # Load the model using the new model_path argument
+    if new_classifier_instance.load_model(model_path=demo_model_path):
         print("Model loaded successfully. Testing prediction with loaded model:")
         current_feat = historical_features_demo.tail(1)
         current_kline = klines_df.tail(1)

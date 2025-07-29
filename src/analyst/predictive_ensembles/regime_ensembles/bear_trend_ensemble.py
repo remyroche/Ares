@@ -1,26 +1,27 @@
 # src/analyst/predictive_ensembles/regime_ensembles/bear_trend_ensemble.py
-import pandas as pd
 import numpy as np
-from sklearn.linear_model import LogisticRegression
-from lightgbm import LGBMClassifier
-import pandas_ta as ta
-from arch import arch_model
-import warnings
+import pandas as pd
 from sklearn.model_selection import KFold
+from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.layers import (
+    LSTM,
+    Activation,
+    BatchNormalization,
+    Dense,
+    Dropout,
+    Input,
+    MultiHeadSelfAttention,
+)
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.regularizers import l1_l2
+
+from .base_ensemble import BaseEnsemble
 
 # Suppress specific warnings from ARCH library
 warnings.filterwarnings("ignore", category=UserWarning, module="arch")
 warnings.filterwarnings("ignore", category=FutureWarning, module="arch")
-
-# TensorFlow/Keras imports for Deep Learning models
-import tensorflow as tf
-from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import LSTM, Dense, Dropout, Bidirectional, MultiHeadSelfAttention, LayerNormalization, Input
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.regularizers import l1_l2 # For L1/L2 regularization
-from tensorflow.keras.callbacks import EarlyStopping # For conceptual early stopping
-
-from .base_ensemble import BaseEnsemble
 
 class BearTrendEnsemble(BaseEnsemble):
     """

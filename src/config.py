@@ -161,6 +161,7 @@ CONFIG: Dict[str, Any] = {
         "decay_threshold_sharpe_ratio": 0.70, # Live Sharpe Ratio < 70% of Backtested Sharpe Ratio
         "decay_threshold_max_drawdown_multiplier": 1.50, # Live Max Drawdown > 150% of Backtested Max Drawdown
         "min_trades_for_monitoring": 50, # Minimum number of trades before starting decay monitoring
+        "retrain_interval_days": 30 # Duration in days between system retraining checks
     },
 
     # --- Backtesting & Optimization ---

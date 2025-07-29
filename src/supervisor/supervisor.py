@@ -40,10 +40,13 @@ class Supervisor:
         self.global_config = CONFIG
         self.data = self.load_data()
 
+        # State is loaded from file by StateManager's constructor.
+        # Initialize default values only if they don't exist in the loaded state.
         self.state_manager.set_state_if_not_exists("peak_equity", settings.get("initial_equity", 10000))
         self.state_manager.set_state_if_not_exists("is_trading_paused", False)
         self.state_manager.set_state_if_not_exists("global_risk_multiplier", 1.0)
         self.state_manager.set_state_if_not_exists("last_retrain_timestamp", datetime.now().isoformat())
+        self.state_manager.set_state_if_not_exists("active_position", None) # To track live trades
 
         self.performance_monitor = PerformanceMonitor(config=settings, firestore_manager=self.firestore_manager)
         self.strategist = Strategist(self.global_config)
@@ -62,10 +65,16 @@ class Supervisor:
             return pd.DataFrame()
 
     async def start(self):
-        """Starts the main supervisor monitoring loop."""
-        self.logger.info("Supervisor started. Monitoring overall system performance and risk.")
-        await self._update_account_state()
+        """Starts the main supervisor monitoring loop, ensuring state is recovered on startup."""
+        self.logger.info("Supervisor starting up...")
+        
+        # On startup, synchronize with the exchange to recover any active state.
+        self.logger.info("Attempting to synchronize state with exchange on startup...")
+        await self._synchronize_exchange_state()
+        self.logger.info("Initial state synchronization complete.")
 
+        self.logger.info("Supervisor started. Monitoring overall system performance and risk.")
+        
         check_interval = self.config.get("check_interval_seconds", 300)
         retrain_interval_days = self.global_config.get('supervisor', {}).get("retrain_interval_days", 30)
 
@@ -74,7 +83,9 @@ class Supervisor:
                 await asyncio.sleep(check_interval)
                 self.logger.info("--- Running Supervisor Health Check ---")
                 
-                await self._update_account_state()
+                # Periodically synchronize state with the exchange
+                await self._synchronize_exchange_state()
+                
                 await self._check_performance_and_risk()
 
                 current_equity = self.state_manager.get_state("account_equity")
@@ -96,23 +107,55 @@ class Supervisor:
             except Exception as e:
                 self.logger.error(f"An error occurred in the Supervisor loop: {e}", exc_info=True)
 
-    async def _update_account_state(self):
-        """Fetches the current account equity from the exchange and updates the state."""
+    async def _synchronize_exchange_state(self):
+        """
+        Fetches the current account equity and open positions from the exchange
+        and updates the persistent state. This is key for crash recovery.
+        """
         try:
+            # 1. Update account equity and peak equity
             account_info = await self.exchange.get_account_info()
             current_equity = float(account_info.get('totalWalletBalance', 0))
             
             if current_equity > 0:
                 self.state_manager.set_state("account_equity", current_equity)
-                self.logger.info(f"Updated account equity: ${current_equity:,.2f}")
+                self.logger.debug(f"Updated account equity: ${current_equity:,.2f}")
+
                 peak_equity = self.state_manager.get_state("peak_equity")
                 if current_equity > peak_equity:
                     self.state_manager.set_state("peak_equity", current_equity)
                     self.logger.info(f"New peak equity reached: ${current_equity:,.2f}")
             else:
                 self.logger.warning("Could not retrieve a valid account balance.")
+
+            # 2. Update open positions state for crash recovery
+            open_positions = await self.exchange.get_open_positions()
+            symbol = self.global_config.get('trading', {}).get('symbol', 'BTCUSDT')
+            active_position_on_exchange = None
+            
+            for position in open_positions:
+                # Find the position for the symbol we are trading
+                if position.get('symbol') == symbol and float(position.get('positionAmt', 0)) != 0:
+                    active_position_on_exchange = {
+                        "symbol": position['symbol'],
+                        "amount": float(position['positionAmt']),
+                        "entry_price": float(position['entryPrice']),
+                        "leverage": int(position.get('leverage', 1)),
+                        "side": "long" if float(position['positionAmt']) > 0 else "short"
+                    }
+                    self.logger.debug(f"Found active position on exchange for {symbol}.")
+                    break 
+
+            # Synchronize the state file with what's on the exchange
+            current_state_position = self.state_manager.get_state('active_position')
+            
+            if active_position_on_exchange != current_state_position:
+                self.logger.info(f"State mismatch or update: Synchronizing position state with exchange. New state: {active_position_on_exchange}")
+                self.state_manager.set_state('active_position', active_position_on_exchange)
+
         except Exception as e:
-            self.logger.error(f"Failed to update account state: {e}")
+            self.logger.error(f"Failed to synchronize state with exchange: {e}", exc_info=True)
+
 
     async def _check_performance_and_risk(self):
         """Calculates drawdown and adjusts risk parameters or pauses trading if necessary."""

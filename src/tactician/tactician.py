@@ -1,12 +1,12 @@
 import asyncio
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union # Ensure Union is imported
 import uuid # Import uuid for unique trade IDs
 import datetime # Import datetime for timestamps
 import numpy as np # Import numpy for numerical operations
 
 from src.exchange.binance import BinanceExchange
-from src.utils.logger import logger
+from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
 from src.config import settings, CONFIG # Import CONFIG for fees etc.
 from src.utils.state_manager import StateManager
 from src.supervisor.performance_reporter import PerformanceReporter # Import PerformanceReporter
@@ -30,6 +30,7 @@ class Tactician:
         self.trade_symbol = settings.trade_symbol
         
         # Initialize current_position from state_manager if available, otherwise default
+        # Ensure state_manager is not None before calling get_state
         self.current_position = self.state_manager.get_state("current_position", self._get_default_position()) if self.state_manager else self._get_default_position()
         self.logger.info(f"Tactician initialized. Position: {self.current_position.get('direction')}")
         self.last_analyst_timestamp = None
@@ -52,6 +53,7 @@ class Tactician:
 
     async def start(self):
         """Starts the main tactician loop."""
+        # Fixed: Explicitly check if state_manager and exchange are not None
         if self.state_manager is None or self.exchange is None:
             self.logger.error("Tactician cannot start: StateManager or Exchange client not provided.")
             return
@@ -91,7 +93,13 @@ class Tactician:
         if self.current_position.get("size", 0) > 0:
             exit_decision = self._check_exit_conditions(analyst_intel)
             if exit_decision:
-                await self.execute_close_position(exit_decision['reason'], analyst_intel, exit_decision.get('exit_price')) # Pass exit_price
+                # Fixed: Ensure exit_price is a float before passing
+                exit_price_val = exit_decision.get('exit_price')
+                if exit_price_val is not None:
+                    await self.execute_close_position(exit_decision['reason'], analyst_intel, float(exit_price_val))
+                else:
+                    self.logger.warning(f"Exit decision made but no valid exit_price provided for reason: {exit_decision['reason']}. Closing at current market price.")
+                    await self.execute_close_position(exit_decision['reason'], analyst_intel) # Close at current market price
                 return
             self.logger.info("Holding open position. No exit conditions met.")
             return
@@ -104,7 +112,7 @@ class Tactician:
         else:
             self.logger.info("Holding. No entry conditions met.")
 
-    def _prepare_trade_decision(self, analyst_intel: Dict) -> Dict | None:
+    def _prepare_trade_decision(self, analyst_intel: Dict) -> Union[Dict, None]: # Fixed: Union syntax
         """
         Interprets the Analyst's signal and prepares a detailed trade execution plan.
         This is the core logic for translating a signal into actionable trade parameters.
@@ -128,7 +136,11 @@ class Tactician:
             return None
             
         # --- Strategy-Specific Execution Logic ---
-        order_type = None; side = None; entry_price = None; stop_loss = None; take_profit = None
+        order_type: Optional[str] = None # Fixed: Explicitly type as Optional[str]
+        side: Optional[str] = None # Fixed: Explicitly type as Optional[str]
+        entry_price: Optional[float] = None # Fixed: Explicitly type as Optional[float]
+        stop_loss: Optional[float] = None # Fixed: Explicitly type as Optional[float]
+        take_profit: Optional[float] = None # Fixed: Explicitly type as Optional[float]
 
         if signal == "BUY":
             order_type = 'MARKET'; side = 'buy'
@@ -176,8 +188,13 @@ class Tactician:
         max_allowable_leverage = analyst_intel.get("strategist_params", {}).get("max_allowable_leverage", CONFIG['tactician']['initial_leverage'])
         leverage = self._determine_leverage(lss, max_allowable_leverage)
         
-        price_for_sizing = entry_price if entry_price else current_price
+        price_for_sizing = entry_price if entry_price is not None else current_price # Fixed: Check entry_price for None
         
+        # Fixed: Ensure stop_loss is not None before passing to _calculate_position_size
+        if stop_loss is None:
+            self.logger.warning("Stop loss is None, cannot calculate position size. Aborting trade.")
+            return None
+
         try:
             quantity = self._calculate_position_size(price_for_sizing, stop_loss, leverage)
         except ZeroDivisionError:
@@ -205,6 +222,11 @@ class Tactician:
         entry_timestamp = time.time() # Capture entry timestamp
         
         try:
+            # Fixed: Ensure self.exchange is not None before calling create_order
+            if self.exchange is None:
+                self.logger.error("Exchange client is None. Cannot execute open position.")
+                raise RuntimeError("Exchange client not initialized.")
+
             order_response = await self.exchange.create_order(
                 symbol=self.trade_symbol,
                 side=decision['side'],
@@ -245,37 +267,44 @@ class Tactician:
                 "MACDHistogramValueAtEntry": analyst_intel.get("technical_signals", {}).get("macd", {}).get("histogram"), # Revert
                 "PriceVsVWAPRatioAtEntry": analyst_intel.get("technical_signals", {}).get("price_to_vwap_ratio"), # Revert
                 "VolumeDeltaAtEntry": analyst_intel.get("volume_delta"), # This is now top-level in analyst_intel
-                "GlobalRiskMultiplierAtEntry": self.state_manager.get_state("global_risk_multiplier"),
-                "AvailableAccountEquityAtEntry": self.state_manager.get_state("account_equity"),
+                "GlobalRiskMultiplierAtEntry": self.state_manager.get_state("global_risk_multiplier") if self.state_manager else None, # Fixed: Check state_manager
+                "AvailableAccountEquityAtEntry": self.state_manager.get_state("account_equity") if self.state_manager else None, # Fixed: Check state_manager
                 "TradingEnvironment": settings.trading_environment,
-                "IsTradingPausedAtEntry": self.state_manager.get_state("is_trading_paused"),
-                "KillSwitchActiveAtEntry": self.state_manager.is_kill_switch_active(),
-                "ModelVersionID": self.state_manager.get_state("model_version_id", "champion")
+                "IsTradingPausedAtEntry": self.state_manager.get_state("is_trading_paused") if self.state_manager else None, # Fixed: Check state_manager
+                "KillSwitchActiveAtEntry": self.state_manager.is_kill_switch_active() if self.state_manager else None, # Fixed: Check state_manager
+                "ModelVersionID": self.state_manager.get_state("model_version_id", "champion") if self.state_manager else None # Fixed: Check state_manager
             }
 
-            self.current_position = {
-                "direction": "LONG" if decision['side'] == 'buy' else "SHORT",
-                "size": executed_qty,
-                "entry_price": avg_entry_price,
-                "stop_loss": decision["stop_loss"],
-                "take_profit": decision["take_profit"],
-                "leverage": decision["leverage"],
-                "entry_timestamp": entry_timestamp,
-                "trade_id": trade_id,
-                "entry_fees_usd": entry_fees_usd,
-                "entry_context": entry_context
-            }
-            self.state_manager.set_state("current_position", self.current_position)
-            self.logger.info(f"New position state saved: {self.current_position}")
+            # Fixed: Ensure self.state_manager is not None before setting state
+            if self.state_manager:
+                self.current_position = {
+                    "direction": "LONG" if decision['side'] == 'buy' else "SHORT",
+                    "size": executed_qty,
+                    "entry_price": avg_entry_price,
+                    "stop_loss": decision["stop_loss"],
+                    "take_profit": decision["take_profit"],
+                    "leverage": decision["leverage"],
+                    "entry_timestamp": entry_timestamp,
+                    "trade_id": trade_id,
+                    "entry_fees_usd": entry_fees_usd,
+                    "entry_context": entry_context
+                }
+                self.state_manager.set_state("current_position", self.current_position)
+                self.logger.info(f"New position state saved: {self.current_position}")
+            else:
+                self.logger.error("State manager is None. Cannot save current position state.")
+
 
         except Exception as e:
             self.logger.error(f"Failed to execute trade entry or update state: {e}", exc_info=True)
-            self.current_position = self._get_default_position()
-            self.state_manager.set_state("current_position", self.current_position)
+            # Fixed: Ensure self.state_manager is not None before setting state
+            if self.state_manager:
+                self.current_position = self._get_default_position()
+                self.state_manager.set_state("current_position", self.current_position)
 
-    def _check_exit_conditions(self, analyst_intel: Dict) -> Dict | None:
+    def _check_exit_conditions(self, analyst_intel: Dict) -> Union[Dict, None]: # Fixed: Union syntax
         pos = self.current_position
-        current_price = analyst_intel["current_price"] # Using top-level current_price from analyst_intel
+        current_price = analyst_intel.get("current_price") # Using top-level current_price from analyst_intel
         if current_price is None:
             self.logger.warning("Current price not available for exit condition check.")
             return None
@@ -289,9 +318,10 @@ class Tactician:
         return None
 
     def _calculate_position_size(self, current_price: float, stop_loss_price: float, leverage: int) -> float:
-        capital = self.state_manager.get_state("account_equity", settings.get("initial_equity", 10000))
+        # Fixed: Ensure self.state_manager is not None before calling get_state
+        capital = self.state_manager.get_state("account_equity", settings.get("initial_equity", 10000)) if self.state_manager else settings.get("initial_equity", 10000)
         risk_per_trade_pct = self.config.get("risk_per_trade_pct", 0.01)
-        risk_multiplier = self.state_manager.get_state("global_risk_multiplier", 1.0)
+        risk_multiplier = self.state_manager.get_state("global_risk_multiplier", 1.0) if self.state_manager else 1.0
         max_risk_usd = capital * risk_per_trade_pct * risk_multiplier
         
         # Handle potential division by zero if stop_loss_price is too close to current_price
@@ -309,7 +339,7 @@ class Tactician:
         scaled_leverage = initial_leverage + ((lss - 50) / 50) * (max_leverage_cap - initial_leverage)
         return min(max(initial_leverage, int(scaled_leverage)), max_leverage_cap)
 
-    async def execute_close_position(self, reason: str, analyst_intel: Dict, exit_price_override: Optional[float] = None): # Added exit_price_override
+    async def execute_close_position(self, reason: str, analyst_intel: Dict, exit_price_override: Optional[float] = None):
         """Executes the logic to close an open position and logs the trade."""
         
         pos_details = self.current_position
@@ -326,8 +356,6 @@ class Tactician:
         
         exit_timestamp = time.time()
         
-        # Use exit_price_override if provided (e.g., from TP/SL hit)
-        # Otherwise, default to current market price from analyst_intel
         exit_price = exit_price_override if exit_price_override is not None else analyst_intel.get("current_price")
         
         if exit_price is None:
@@ -337,6 +365,11 @@ class Tactician:
         self.logger.warning(f"Executing CLOSE for {direction} position (ID: {trade_id}). Reason: {reason}. Exit Price: {exit_price:.2f}")
         
         try:
+            # Fixed: Ensure self.exchange is not None before calling create_order
+            if self.exchange is None:
+                self.logger.error("Exchange client is None. Cannot execute close position.")
+                raise RuntimeError("Exchange client not initialized.")
+
             order_response = await self.exchange.create_order(
                 symbol=self.trade_symbol,
                 side="SELL" if direction == "LONG" else "BUY",
@@ -393,23 +426,29 @@ class Tactician:
                 **pos_details.get("entry_context", {})
             }
             
+            # Fixed: Ensure self.performance_reporter is not None before calling record_detailed_trade_log
             if self.performance_reporter:
                 await self.performance_reporter.record_detailed_trade_log(trade_log)
+            else:
+                self.logger.warning("Performance reporter is None. Cannot record detailed trade log.")
 
-            self.current_position = self._get_default_position()
-            self.state_manager.set_state("current_position", self.current_position)
-            self.logger.info("Position closed and state has been reset.")
+            # Fixed: Ensure self.state_manager is not None before setting state
+            if self.state_manager:
+                self.current_position = self._get_default_position()
+                self.state_manager.set_state("current_position", self.current_position)
+                self.logger.info("Position closed and state has been reset.")
+            else:
+                self.logger.error("State manager is None. Cannot reset position state.")
 
         except Exception as e:
             self.logger.error(f"Failed to execute close order or log trade: {e}", exc_info=True)
             # If close failed, don't reset position, allow supervisor to re-sync
             # or manual intervention.
 
-    def _calculate_atr_stop_loss(self, side: str, candle: dict, multiplier: float = 1.5) -> float:
+    def _calculate_atr_stop_loss(self, side: str, candle: Dict[str, Any], multiplier: float = 1.5) -> float: # Fixed: Type hint for candle
         atr = candle.get('ATR', 0)
         return candle['current_price'] - (atr * multiplier) if side == 'buy' else candle['current_price'] + (atr * multiplier)
 
-    def _calculate_atr_take_profit(self, side: str, candle: dict, stop_loss: float, rr_ratio: float = 2.0) -> float:
+    def _calculate_atr_take_profit(self, side: str, candle: Dict[str, Any], stop_loss: float, rr_ratio: float = 2.0) -> float: # Fixed: Type hint for candle
         risk = abs(candle['current_price'] - stop_loss)
         return candle['current_price'] + (risk * rr_ratio) if side == 'buy' else candle['current_price'] - (risk * rr_ratio)
-

@@ -1,11 +1,11 @@
 # src/supervisor/supervisor.py
 
 import asyncio
-import time
 from datetime import datetime, timedelta
 from typing import Dict, Any
 import pandas as pd
 import numpy as np
+import os
 
 from src.exchange.binance import BinanceExchange
 from src.utils.logger import logger
@@ -14,7 +14,7 @@ from src.utils.state_manager import StateManager
 from src.database.firestore_manager import FirestoreManager
 from src.supervisor.performance_monitor import PerformanceMonitor
 from backtesting.ares_backtester import Backtester
-from src.strategist.strategist import Strategist 
+from src.strategist.strategist import Strategist
 
 class Supervisor:
     """
@@ -54,6 +54,7 @@ class Supervisor:
     def load_data(self):
         """Loads historical data for backtesting and analysis."""
         try:
+            # This assumes a single data file for now, can be parameterized
             data_path = self.global_config.get("data_path", "data/historical/BTC_USDT-1h.csv")
             df = pd.read_csv(data_path)
             df['timestamp'] = pd.to_datetime(df['timestamp'])

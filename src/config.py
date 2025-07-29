@@ -93,6 +93,13 @@ CONFIG: Dict[str, Any] = {
     "maker_fee": 0.0002,
     "state_file": "ares_state.json",
 
+    # --- Risk Management (Global Portfolio Level) ---
+    "risk_management": {
+        "global_max_allocated_capital_usd": 50000,  # Total max capital to be deployed across all pairs
+        "max_allocation_per_pair_usd": 5000,      # Max capital for a single trading pair/bot
+        "pause_trading_drawdown_pct": 0.20,         # Global drawdown level to pause all trading
+    },
+    
     # --- Firestore Configuration ---
     "firestore": {
         "enabled": settings.firestore_project_id is not None,

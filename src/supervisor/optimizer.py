@@ -10,31 +10,32 @@ from skopt.space import Real, Integer
 from skopt.utils import dump, load # Import dump and load for checkpointing
 from functools import partial
 import os # Import os for file existence checks
-from typing import Optional, Any, Dict # Added for Optional type hint
+from typing import Optional # Added for Optional type hint
 
 from src.config import CONFIG
-from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
-from backtesting.ares_data_preparer import load_raw_data, get_sr_levels, calculate_and_label_regimes
-from backtesting.ares_backtester import run_backtest
-from backtesting.ares_deep_analyzer import calculate_detailed_metrics
+from src.utils.logger import system_logger as logger
+# Import both managers, but use the one passed in __init__
+from src.database.firestore_manager import FirestoreManager
+from src.database.sqlite_manager import SQLiteManager
+
 
 class Optimizer:
-    def __init__(self, config=CONFIG, firestore_manager=None):
+    def __init__(self, config=CONFIG, db_manager: Union[FirestoreManager, SQLiteManager, None] = None): # Fixed: Accept generic db_manager
         self.config = config.get("supervisor", {})
         self.global_config = config
-        self.firestore_manager = firestore_manager
-        self.logger = logger.getChild('Optimizer') # Fixed: Use imported logger
+        self.db_manager = db_manager # Use the passed db_manager
+        self.logger = logger.getChild('Optimizer')
         self.initial_equity = self.global_config['INITIAL_EQUITY']
         
         self.optimized_params_csv = self.config.get("optimized_params_csv", "reports/optimized_params_history.csv")
 
         # Attributes to hold data for the duration of an optimization run
-        self._optimization_klines_df: Optional[pd.DataFrame] = None # Fixed: Add type hint
-        self._optimization_agg_trades_df: Optional[pd.DataFrame] = None # Fixed: Add type hint
-        self._optimization_futures_df: Optional[pd.DataFrame] = None # Fixed: Add type hint
-        self._optimization_sr_levels: Optional[list] = None # Fixed: Add type hint
-        self.optimization_param_names: list[str] = [] # Fixed: Add type hint
-        self.optimization_dimensions: list[Union[Real, Integer]] = [] # Fixed: Add type hint
+        self._optimization_klines_df: Optional[pd.DataFrame] = None
+        self._optimization_agg_trades_df: Optional[pd.DataFrame] = None
+        self._optimization_futures_df: Optional[pd.DataFrame] = None
+        self._optimization_sr_levels: Optional[list] = None
+        self.optimization_param_names: list[str] = []
+        self.optimization_dimensions: list[Union[Real, Integer]] = []
 
 
     def _evaluate_params_with_backtest(self, params: dict) -> dict:
@@ -283,21 +284,24 @@ class Optimizer:
         optimization_run_id = str(uuid.uuid4())
         date_applied = datetime.datetime.now().isoformat()
 
-        if self.firestore_manager and self.firestore_manager.firestore_enabled:
+        # Fixed: Use the generic db_manager for storing optimized params
+        if self.db_manager:
             params_doc = {
                 "timestamp": date_applied, "optimization_run_id": optimization_run_id,
                 "performance_metrics": best_overall_performance, "date_applied": date_applied,
                 "params": best_overall_params
             }
-            await self.firestore_manager.set_document(
-                self.global_config['firestore']['optimized_params_collection'],
+            await self.db_manager.set_document(
+                self.global_config['firestore']['optimized_params_collection'], # Table name will be this string
                 doc_id=optimization_run_id, data=params_doc, is_public=True
             )
-            await self.firestore_manager.set_document(
+            await self.db_manager.set_document(
                 self.global_config['firestore']['optimized_params_collection'],
                 doc_id='latest', data=params_doc, is_public=True
             )
-            self.logger.info("Optimized parameters saved to Firestore.")
+            self.logger.info("Optimized parameters saved to DB.")
+        else:
+            self.logger.warning("DB Manager is None. Cannot save optimized parameters to DB.")
 
         try:
             performance_metrics_str = json.dumps(best_overall_performance)

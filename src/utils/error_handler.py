@@ -5,6 +5,8 @@ import json
 import traceback
 from datetime import datetime
 import os
+import asyncio
+from typing import List, Dict, Any
 
 from src.utils.logger import system_logger # Use the existing system logger
 from src.database.firestore_manager import db_manager # Import the global Firestore manager

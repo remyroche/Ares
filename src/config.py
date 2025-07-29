@@ -25,18 +25,24 @@ class Settings(BaseSettings):
     trade_symbol: str = Field(default="BTCUSDT", env="TRADE_SYMBOL")
     timeframe: str = Field(default="15m", env="TIMEFRAME")
 
+
+    # --- Binance Credentials (loaded from .env) ---
     binance_live_api_key: Optional[str] = Field(default=None, env="BINANCE_LIVE_API_KEY")
     binance_live_api_secret: Optional[str] = Field(default=None, env="BINANCE_LIVE_API_SECRET")
     binance_testnet_api_key: Optional[str] = Field(default=None, env="BINANCE_TESTNET_API_KEY")
     binance_testnet_api_secret: Optional[str] = Field(default=None, env="BINANCE_TESTNET_API_SECRET")
 
+    # --- Firestore Credentials (loaded from .env) ---
     google_application_credentials: Optional[str] = Field(default=None, env="GOOGLE_APPLICATION_CREDENTIALS")
     firestore_project_id: Optional[str] = Field(default=None, env="FIRESTORE_PROJECT_ID")
 
+    # --- Emailer Credentials (loaded from .env) ---
     email_sender_address: Optional[str] = Field(default=None, env="EMAIL_SENDER_ADDRESS")
     email_sender_password: Optional[str] = Field(default=None, env="EMAIL_SENDER_PASSWORD")
     email_recipient_address: Optional[str] = Field(default=None, env="EMAIL_RECIPIENT_ADDRESS")
 
+
+    # --- Derived Properties for Convenience ---
     @property
     def is_live_mode(self) -> bool:
         return self.trading_environment == "LIVE"
@@ -49,6 +55,7 @@ class Settings(BaseSettings):
     def binance_api_secret(self) -> Optional[str]:
         return self.binance_live_api_secret if self.is_live_mode else self.binance_testnet_api_secret
 
+    # --- Validators ---
     @validator('trading_environment')
     def check_keys_for_environment(cls, v, values):
         if v == "LIVE" and (not values.get('binance_live_api_key') or not values.get('binance_live_api_secret')):
@@ -102,6 +109,9 @@ CONFIG: Dict[str, Any] = {
     "PREPARED_DATA_CHECKPOINT_FILE": "full_prepared_data.parquet", # Relative to CHECKPOINT_DIR
     "REGIME_CLASSIFIER_MODEL_PREFIX": "regime_classifier_fold_", # Prefix for fold-specific models
     "ENSEMBLE_MODEL_PREFIX": "ensemble_fold_", # Prefix for fold-specific ensemble models
+
+    # --- Reporting Configuration ---
+    "DETAILED_TRADE_LOG_FILE": "reports/detailed_trade_log.csv", # New detailed trade log file
 
     # --- Firestore Configuration ---
     "firestore": {

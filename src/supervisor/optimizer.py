@@ -12,6 +12,10 @@ from functools import partial
 import os # Import os for file existence checks
 from typing import Optional, Union, Any, Dict
 
+from backtesting.ares_data_preparer import load_raw_data, calculate_and_label_regimes, get_sr_levels
+from backtesting.ares_backtester import run_backtest
+from backtesting.ares_deep_analyzer import calculate_detailed_metrics
+
 from src.config import CONFIG
 from src.utils.logger import system_logger as logger
 # Import both managers, but use the one passed in __init__

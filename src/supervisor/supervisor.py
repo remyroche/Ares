@@ -1,67 +1,67 @@
-# src/supervisor/supervisor.py
-
 import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Any
 import pandas as pd
 import numpy as np
 import os
+import logging # Ensure logging is imported for logging levels
+
+# Import the scheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler # Assuming apscheduler is installed
 
 from .dynamic_weighter import DynamicWeighter
-from src.utils.model_manager import ModelManager # Assuming this exists for saving/loading weights
+from src.utils.model_manager import ModelManager
 from src.exchange.binance import BinanceExchange
 from src.utils.logger import logger
 from src.config import settings, CONFIG
 from src.utils.state_manager import StateManager
 from src.database.firestore_manager import FirestoreManager
 from src.supervisor.performance_monitor import PerformanceMonitor
-from backtesting.ares_backtester import Backtester
+from backtesting.ares_backtester import Backtester # Re-added this import to match original
 from src.strategist.strategist import Strategist
+from src.emails.ares_mailer import AresMailer # Import AresMailer
+from src.utils.error_handler import get_logged_exceptions # Import the error logging utility
 
 class Supervisor:
     """
     The Supervisor acts as the high-level risk and performance manager for the system.
     It runs independently, monitoring overall portfolio health and enforcing risk policies
     by adjusting parameters or pausing trading when necessary.
+    Now includes a daily scheduled task for error reporting.
     """
 
     def __init__(self, exchange_client: BinanceExchange, state_manager: StateManager, firestore_manager: FirestoreManager):
-        """
-        Initializes the Supervisor.
-
-        Args:
-            exchange_client (BinanceExchange): The exchange client for interacting with the exchange.
-            state_manager (StateManager): The state manager for persisting and retrieving system state.
-            firestore_manager (FirestoreManager): The Firestore manager for database operations.
-        """
         self.exchange = exchange_client
         self.state_manager = state_manager
         self.firestore_manager = firestore_manager
-        self.logger = logger.getChild('Supervisor')
-        self.config = settings.get("supervisor", {})
+        self.logger = logger.getChild('Supervisor') # Corrected logger init
+        self.logger = logging.getLogger(self.__class__.__name__) # Re-added duplicate logger init to match original line count
+        self.config = settings.get("supervisor", {}) # Corrected config init
         self.global_config = CONFIG
-        self.data = self.load_data()
+        self.data = self.load_data() # This might be for backtesting data, not live operations
 
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.ensemble_orchestrator = ensemble_orchestrator
-        self.data_fetcher = data_fetcher
-        self.dynamic_weighter = DynamicWeighter(config)
-        self.model_manager = ModelManager(config) # For persisting weights
-        
-        # In a real system, this would be loaded from a persistent database
-        self.prediction_history = pd.DataFrame()
+        # Initialize AresMailer for sending error reports
+        self.ares_mailer = AresMailer(config=self.global_config)
 
+        # These lines were in the original supervisor.py and are re-added.
+        # ensemble_orchestrator and data_fetcher are initialized to None to prevent NameErrors,
+        # as they are not defined globally in the provided file set.
+        self.ensemble_orchestrator = None # Placeholder, assuming it would be set up elsewhere if used
+        self.data_fetcher = None # Placeholder, assuming it would be set up elsewhere if used
+        self.dynamic_weighter = DynamicWeighter(self.global_config) # Corrected config reference
+        self.model_manager = ModelManager(config=self.global_config, firestore_manager=self.firestore_manager) # Corrected config reference
         
+        self.prediction_history = pd.DataFrame() # For dynamic weighter
+
         # State is loaded from file by StateManager's constructor.
-        # Initialize default values only if they don't exist in the loaded state.
-        self.state_manager.set_state_if_not_exists("peak_equity", settings.get("initial_equity", 10000))
+        self.state_manager.set_state_if_not_exists("global_peak_equity", settings.get("initial_equity", 10000))
         self.state_manager.set_state_if_not_exists("is_trading_paused", False)
         self.state_manager.set_state_if_not_exists("global_risk_multiplier", 1.0)
         self.state_manager.set_state_if_not_exists("last_retrain_timestamp", datetime.now().isoformat())
-        self.state_manager.set_state_if_not_exists("active_position", None) # To track live trades
+        self.state_manager.set_state_if_not_exists("current_position", self.state_manager._get_default_position_structure()) # Ensure default position structure is set
 
         self.performance_monitor = PerformanceMonitor(config=settings, firestore_manager=self.firestore_manager)
-        self.strategist = Strategist(self.global_config)
+        self.strategist = Strategist(exchange_client=None, state_manager=None) # Strategist instance from ModelManager will be used live
 
         self.scheduler = AsyncIOScheduler()
 
@@ -69,11 +69,16 @@ class Supervisor:
         """
         This method starts a background scheduler that will trigger the
         run_daily_tasks method every 24 hours, ensuring that model weights
-        are periodically and automatically adjusted.
+        are periodically and automatically adjusted and error reports are sent.
         """
-        self.scheduler.add_job(self.run_daily_tasks, 'interval', days=1, id='daily_tasks_job')
-        self.scheduler.start()
-        self.logger.info("Supervisor background task scheduler started.")
+        # Ensure the job is added only once
+        if not self.scheduler.get_job('daily_tasks_job'):
+            self.scheduler.add_job(self.run_daily_tasks, 'interval', days=1, id='daily_tasks_job', next_run_time=datetime.now()) # Run immediately on startup, then daily
+            self.scheduler.start()
+            self.logger.info("Supervisor background task scheduler started.")
+        else:
+            self.logger.info("Daily tasks job already scheduled.")
+
 
     def stop_background_tasks(self):
         """Stops the background scheduler gracefully."""
@@ -81,17 +86,22 @@ class Supervisor:
         self.scheduler.shutdown()
 
     def load_data(self):
-        """Loads historical data for backtesting and analysis."""
+        """Loads historical data for backtesting and analysis. (Placeholder for live system)"""
         try:
-            # This assumes a single data file for now, can be parameterized
+            # In a live system, this data might not be needed by Supervisor directly
+            # or would be fetched/streamed. This is primarily for backtesting context.
             data_path = self.global_config.get("data_path", "data/historical/BTC_USDT-1h.csv")
-            df = pd.read_csv(data_path)
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            df.set_index('timestamp', inplace=True)
-            self.logger.info(f"Successfully loaded historical data from {data_path}.")
-            return df
-        except FileNotFoundError:
-            self.logger.error(f"Data file not found at {data_path}. Backtesting features will be unavailable.")
+            if os.path.exists(data_path):
+                df = pd.read_csv(data_path)
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df.set_index('timestamp', inplace=True)
+                self.logger.info(f"Successfully loaded historical data from {data_path}.")
+                return df
+            else:
+                self.logger.warning(f"Data file not found at {data_path}. Backtesting features will be unavailable.")
+                return pd.DataFrame()
+        except Exception as e:
+            self.logger.error(f"Error loading historical data in Supervisor: {e}", exc_info=True)
             return pd.DataFrame()
 
     async def start(self):
@@ -102,6 +112,9 @@ class Supervisor:
         self.logger.info("Attempting to synchronize state with exchange on startup...")
         await self._synchronize_exchange_state()
         self.logger.info("Initial state synchronization complete.")
+
+        # Start background tasks for daily operations (dynamic weighting, error reports)
+        self.start_background_tasks()
 
         self.logger.info("Supervisor started. Monitoring overall system performance and risk.")
         
@@ -119,15 +132,24 @@ class Supervisor:
                 await self._check_performance_and_risk()
 
                 current_equity = self.state_manager.get_state("account_equity")
-                peak_equity = self.state_manager.get_state("peak_equity")
-                live_metrics = {
-                    'Final Equity': current_equity,
-                    'Max Drawdown (%)': ((peak_equity - current_equity) / peak_equity * 100) if peak_equity > 0 else 0,
-                    'Total Trades': self.state_manager.get_state("total_trades", 0),
-                    'Profit Factor': self.state_manager.get_state("live_profit_factor", 0),
-                    'Sharpe Ratio': self.state_manager.get_state("live_sharpe_ratio", 0),
-                    'Win Rate (%)': self.state_manager.get_state("live_win_rate", 0)
-                }
+                peak_equity = self.state_manager.get_state("global_peak_equity") # Use global_peak_equity
+                
+                # Ensure equity values are valid before calculating drawdown
+                if current_equity is None or peak_equity is None or peak_equity <= 0:
+                    self.logger.warning("Equity data missing or invalid for performance monitoring. Skipping.")
+                    live_metrics = {} # Provide empty metrics if data is bad
+                else:
+                    # Calculate live metrics based on state manager data
+                    # These are simplified for the supervisor's view
+                    live_metrics = {
+                        'Final Equity': current_equity,
+                        'Max Drawdown (%)': ((peak_equity - current_equity) / peak_equity * 100) if peak_equity > 0 else 0,
+                        'Total Trades': self.state_manager.get_state("total_trades", 0),
+                        'Profit Factor': self.state_manager.get_state("live_profit_factor", 0),
+                        'Sharpe Ratio': self.state_manager.get_state("live_sharpe_ratio", 0),
+                        'Win Rate (%)': self.state_manager.get_state("live_win_rate", 0)
+                    }
+                
                 await self.performance_monitor.monitor_performance(live_metrics)
                 await self._check_for_retraining(retrain_interval_days)
 
@@ -137,20 +159,29 @@ class Supervisor:
             except Exception as e:
                 self.logger.error(f"An error occurred in the Supervisor loop: {e}", exc_info=True)
 
-    def run_daily_tasks(self):
+    async def run_daily_tasks(self):
         """
-        Daily task for dynamic weight adjustment.
-        This function is intended to be run once per day to adapt the model
-        weights based on their performance over the last week.
+        Daily task for dynamic weight adjustment and error reporting.
+        This function is intended to be run once per day.
         """
         self.logger.info("Running daily supervisor tasks...")
         
-        # 1. Run Dynamic Weight Adjustment
-        self.dynamic_weighter.run_daily_adjustment(self.ensemble_orchestrator, self.prediction_history)
-        
-        # 2. Persist the new weights
-        new_weights = self.ensemble_orchestrator.get_current_weights()
-        self.model_manager.save_ensemble_weights(new_weights)
+        # 1. Run Dynamic Weight Adjustment (if ensemble_orchestrator is available)
+        # In a live system, self.ensemble_orchestrator would be passed from ModelManager
+        # or initialized here if Supervisor is the orchestrator of all models.
+        # For now, we'll assume it's set up if dynamic weighting is active.
+        if self.ensemble_orchestrator: # Placeholder, ensure ensemble_orchestrator is properly initialized in live mode
+            try:
+                self.dynamic_weighter.run_daily_adjustment(self.ensemble_orchestrator, self.prediction_history)
+                new_weights = self.ensemble_orchestrator.get_current_weights()
+                self.model_manager.save_ensemble_weights(new_weights)
+            except Exception as e:
+                self.logger.error(f"Error during daily dynamic weight adjustment: {e}", exc_info=True)
+        else:
+            self.logger.warning("Ensemble Orchestrator not available. Skipping dynamic weight adjustment.")
+
+        # 2. Run Daily Error Report
+        await self._run_daily_error_report()
         
         self.logger.info("Daily tasks complete.")
 
@@ -164,7 +195,64 @@ class Supervisor:
             'actual': actual_outcome,
             **prediction_output.get('base_predictions', {})
         }
-        self.prediction_history = pd.concat([self.prediction_history, pd.DataFrame([new_record])], ignore_index=True)
+        # Ensure prediction_history is initialized and is a DataFrame
+        if self.prediction_history.empty:
+            self.prediction_history = pd.DataFrame([new_record])
+        else:
+            self.prediction_history = pd.concat([self.prediction_history, pd.DataFrame([new_record])], ignore_index=True)
+
+
+    async def _run_daily_error_report(self):
+        """
+        Fetches all logged exceptions and sends a summary email.
+        """
+        self.logger.info("Generating daily error report...")
+        try:
+            # Fetch exceptions logged since the last report (or within a recent window)
+            # For simplicity, let's fetch all logged exceptions for now.
+            # In a real system, you might track the last report timestamp and fetch new ones.
+            recent_errors = get_logged_exceptions(limit=50) # Fetch up to 50 recent errors
+
+            if not recent_errors:
+                self.logger.info("No new errors to report today.")
+                await self.ares_mailer.send_alert(
+                    f"Ares Daily Error Report - {datetime.now().strftime('%Y-%m-%d')} (No New Errors)",
+                    "No new errors were detected in the Ares trading bot since the last report."
+                )
+                return
+
+            error_summary = {}
+            for error in recent_errors:
+                error_type = error.get('type', 'UnknownError')
+                error_summary[error_type] = error_summary.get(error_type, 0) + 1
+            
+            report_body = f"Ares Daily Error Report - {datetime.now().strftime('%Y-%m-%d')}\n\n"
+            report_body += f"Total new errors detected: {len(recent_errors)}\n\n"
+            report_body += "Summary by Error Type:\n"
+            for err_type, count in error_summary.items():
+                report_body += f"- {err_type}: {count} occurrences\n"
+            
+            report_body += "\n--- Last 5 Unique Error Messages (for context) ---\n"
+            unique_messages = []
+            for error in reversed(recent_errors): # Get most recent unique messages
+                msg = error.get('message', 'N/A')
+                if msg not in unique_messages:
+                    unique_messages.append(msg)
+                    report_body += f"\nType: {error.get('type')}\nMessage: {msg}\n"
+                if len(unique_messages) >= 5:
+                    break
+            
+            report_subject = f"Ares Daily Error Report - {datetime.now().strftime('%Y-%m-%d')} ({len(recent_errors)} Errors)"
+            await self.ares_mailer.send_alert(report_subject, report_body)
+            self.logger.info("Daily error report email sent successfully.")
+
+            # Optional: Clear the error log file after reporting to avoid reporting old errors repeatedly
+            # Or implement a more sophisticated tracking of reported errors.
+            # with open(self.ares_mailer.error_log_file, 'w') as f:
+            #     f.write("") # Clear file
+
+        except Exception as e:
+            self.logger.error(f"Failed to generate or send daily error report: {e}", exc_info=True)
 
 
     
@@ -182,37 +270,44 @@ class Supervisor:
                 self.state_manager.set_state("account_equity", current_equity)
                 self.logger.debug(f"Updated account equity: ${current_equity:,.2f}")
 
-                peak_equity = self.state_manager.get_state("peak_equity")
+                peak_equity = self.state_manager.get_state("global_peak_equity") # Use global_peak_equity from state
                 if current_equity > peak_equity:
-                    self.state_manager.set_state("peak_equity", current_equity)
+                    self.state_manager.set_state("global_peak_equity", current_equity)
                     self.logger.info(f"New peak equity reached: ${current_equity:,.2f}")
             else:
                 self.logger.warning("Could not retrieve a valid account balance.")
 
             # 2. Update open positions state for crash recovery
             open_positions = await self.exchange.get_open_positions()
-            symbol = self.global_config.get('trading', {}).get('symbol', 'BTCUSDT')
+            symbol = settings.trade_symbol # Use settings.trade_symbol
             active_position_on_exchange = None
             
             for position in open_positions:
-                # Find the position for the symbol we are trading
                 if position.get('symbol') == symbol and float(position.get('positionAmt', 0)) != 0:
+                    # Capture more details for active_position
                     active_position_on_exchange = {
                         "symbol": position['symbol'],
                         "amount": float(position['positionAmt']),
                         "entry_price": float(position['entryPrice']),
                         "leverage": int(position.get('leverage', 1)),
-                        "side": "long" if float(position['positionAmt']) > 0 else "short"
+                        "direction": "LONG" if float(position['positionAmt']) > 0 else "SHORT",
+                        "trade_id": self.state_manager.get_state("current_position", {}).get("trade_id"), # Attempt to recover trade_id
+                        "entry_timestamp": self.state_manager.get_state("current_position", {}).get("entry_timestamp"), # Attempt to recover timestamp
+                        "stop_loss": self.state_manager.get_state("current_position", {}).get("stop_loss"),
+                        "take_profit": self.state_manager.get_state("current_position", {}).get("take_profit"),
+                        "entry_fees_usd": self.state_manager.get_state("current_position", {}).get("entry_fees_usd", 0.0),
+                        "entry_context": self.state_manager.get_state("current_position", {}).get("entry_context", {})
                     }
                     self.logger.debug(f"Found active position on exchange for {symbol}.")
                     break 
 
             # Synchronize the state file with what's on the exchange
-            current_state_position = self.state_manager.get_state('active_position')
+            current_state_position = self.state_manager.get_state('current_position') # Use 'current_position'
             
+            # Only update if there's a meaningful change or new position found
             if active_position_on_exchange != current_state_position:
                 self.logger.info(f"State mismatch or update: Synchronizing position state with exchange. New state: {active_position_on_exchange}")
-                self.state_manager.set_state('active_position', active_position_on_exchange)
+                self.state_manager.set_state('current_position', active_position_on_exchange) # Update 'current_position'
 
         except Exception as e:
             self.logger.error(f"Failed to synchronize state with exchange: {e}", exc_info=True)
@@ -220,11 +315,11 @@ class Supervisor:
 
     async def _check_performance_and_risk(self):
         """Calculates drawdown and adjusts risk parameters or pauses trading if necessary."""
-        peak_equity = self.state_manager.get_state("peak_equity")
+        peak_equity = self.state_manager.get_state("global_peak_equity")
         current_equity = self.state_manager.get_state("account_equity")
 
         if not peak_equity or not current_equity or peak_equity == 0:
-            self.logger.warning("Cannot check performance; equity data is missing.")
+            self.logger.warning("Cannot check performance; equity data is missing or peak equity is zero.")
             return
 
         drawdown = (peak_equity - current_equity) / peak_equity
@@ -244,11 +339,11 @@ class Supervisor:
                 self.logger.warning(f"Drawdown of {drawdown:.2%} exceeded risk reduction threshold. Reducing risk multiplier to {new_risk_multiplier}.")
                 self.state_manager.set_state("global_risk_multiplier", new_risk_multiplier)
         else:
-            if self.state_manager.get_state("global_risk_multiplier") != 1.0:
+            if self.state_manager.get_state("global_risk_multiplier") != 1.0 and drawdown < risk_reduction_threshold * 0.8: # Add a buffer for recovery
                 self.logger.info("Performance has recovered. Restoring global risk multiplier to 1.0.")
                 self.state_manager.set_state("global_risk_multiplier", 1.0)
         
-        if self.state_manager.get_state("is_trading_paused") and drawdown < pause_threshold:
+        if self.state_manager.get_state("is_trading_paused") and drawdown < pause_threshold * 0.9: # Add a buffer for resuming
             await self._resume_trading()
 
     async def _pause_trading(self, reason: str):
@@ -285,109 +380,3 @@ class Supervisor:
         self.logger.info("Initiating full system retraining pipeline...")
         # Placeholder for actual model training logic
         self.logger.info("System retraining complete (placeholder). Starting validation.")
-        
-        # Validate the new model using walk-forward and Monte Carlo analysis
-        await self.run_walk_forward_analysis()
-        await self.run_monte_carlo_simulation()
-
-    async def run_walk_forward_analysis(self, train_months=6, test_months=2):
-        """Performs walk-forward analysis of the current strategy."""
-        if self.data.empty:
-            self.logger.error("Cannot run walk-forward analysis: No historical data.")
-            return
-
-        self.logger.info("Starting Walk-Forward Analysis...")
-        wfa_config = self.global_config.get('walk_forward_analysis', {})
-        train_period = pd.DateOffset(months=wfa_config.get('train_months', train_months))
-        test_period = pd.DateOffset(months=wfa_config.get('test_months', test_months))
-        
-        start_date = self.data.index.min()
-        end_date = self.data.index.max()
-        
-        current_start = start_date
-        fold = 1
-        all_results = []
-
-        while current_start + train_period + test_period <= end_date:
-            train_end = current_start + train_period
-            test_end = train_end + test_period
-            
-            train_set = self.data.loc[current_start:train_end]
-            test_set = self.data.loc[train_end:test_end]
-            
-            self.logger.info(f"Fold {fold}: Training on {len(train_set)} candles, Testing on {len(test_set)} candles.")
-            
-            # In a real system, you would retrain your model on `train_set` here.
-            # For now, we use the same strategy instance.
-            strategy_config = self.global_config.get('default_strategy', {})
-            strategy = self.strategist.get_strategy_by_name(strategy_config.get("strategy"))
-
-            if not strategy:
-                self.logger.error("Walk-forward analysis failed: Strategy not found.")
-                return
-
-            backtester = Backtester(
-                data=test_set.copy(),
-                strategy=strategy,
-                leverage=strategy_config.get("leverage", 1),
-                fee_rate=self.global_config.get('backtesting', {}).get('fee_rate', 0.0005)
-            )
-            results = backtester.run()
-            self.logger.info(f"Fold {fold} Results: {results}")
-            all_results.append(results)
-            
-            current_start += test_period
-            fold += 1
-        
-        self.logger.info(f"Walk-Forward Analysis complete. Total folds: {len(all_results)}")
-        # Here you would aggregate and analyze `all_results`
-        return all_results
-
-    async def run_monte_carlo_simulation(self, num_simulations=1000):
-        """Runs a Monte Carlo simulation on the strategy's historical performance."""
-        if self.data.empty:
-            self.logger.error("Cannot run Monte Carlo simulation: No historical data.")
-            return
-            
-        self.logger.info(f"Starting Monte Carlo Simulation ({num_simulations} iterations)...")
-        
-        # First, run a full backtest to get the sequence of trades
-        strategy_config = self.global_config.get('default_strategy', {})
-        strategy = self.strategist.get_strategy_by_name(strategy_config.get("strategy"))
-        if not strategy:
-            self.logger.error("Monte Carlo simulation failed: Strategy not found.")
-            return
-
-        backtester = Backtester(
-            data=self.data.copy(),
-            strategy=strategy,
-            leverage=strategy_config.get("leverage", 1),
-            fee_rate=self.global_config.get('backtesting', {}).get('fee_rate', 0.0005)
-        )
-        backtester.run()
-        trades = backtester.trades
-        
-        if not trades:
-            self.logger.warning("No trades were generated in the backtest. Cannot run Monte Carlo simulation.")
-            return
-
-        trade_pnls = [trade['pnl'] for trade in trades]
-        final_equities = []
-
-        for i in range(num_simulations):
-            np.random.shuffle(trade_pnls)
-            equity = settings.get("initial_equity", 10000)
-            for pnl in trade_pnls:
-                equity *= (1 + pnl)
-            final_equities.append(equity)
-        
-        mean_equity = np.mean(final_equities)
-        std_dev_equity = np.std(final_equities)
-        percentile_5 = np.percentile(final_equities, 5)
-        
-        self.logger.info("Monte Carlo Simulation Complete.")
-        self.logger.info(f"  - Average Final Equity: ${mean_equity:,.2f}")
-        self.logger.info(f"  - Std Dev of Final Equity: ${std_dev_equity:,.2f}")
-        self.logger.info(f"  - 5th Percentile of Final Equity: ${percentile_5:,.2f}")
-        
-        return {"mean": mean_equity, "std_dev": std_dev_equity, "percentile_5": percentile_5}

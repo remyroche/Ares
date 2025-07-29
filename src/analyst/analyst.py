@@ -237,13 +237,14 @@ class Analyst:
         Includes robust error handling for each analysis step.
         """
         self.logger.info("--- Starting Analysis Pipeline ---")
+        # Initialize analyst_intelligence with default values to ensure all keys exist even if parts fail
         analyst_intelligence = {
             "timestamp": int(time.time() * 1000),
             "market_regime": "UNKNOWN",
             "trend_strength": 0.0,
             "adx": 0.0,
             "support_resistance": [],
-            "technical_signals": {},
+            "technical_signals": {}, # Full technical signals dict
             "market_health_score": 50.0,
             "liquidation_risk_score": 100.0,
             "liquidation_risk_reasons": "N/A",
@@ -253,16 +254,17 @@ class Analyst:
             "base_model_predictions": {},
             "ensemble_weights": {},
             "volume_delta": 0.0,
-            "current_price": 0.0,
-            "market_health_volatility_component": 50.0,
-            "bb_bandwidth": 0.0, "stoch_k": 0.0, "CMF": 0.0, 
-            "autoencoder_reconstruction_error": 0.0, "oi_roc": 0.0, 
-            "fundingRate": 0.0, "log_returns": 0.0, "volatility_20": 0.0, 
-            "skewness_20": 0.0, "kurtosis_20": 0.0, "avg_body_size_20": 0.0, 
-            "avg_range_size_20": 0.0, "volume_change": 0.0, "OBV": 0.0, 
-            "price_vs_vwap": 0.0, "ATR": 0.0,
-            "current_open_interest": None, "current_funding_rate": None,
-            "total_bid_liquidity": 0.0, "total_ask_liquidity": 0.0, "order_book_imbalance": 0.0
+            "current_price": 0.0, # Kept
+            "market_health_volatility_component": 50.0, # Kept
+            # Other raw features from df_features (initialized to None/0.0)
+            'bb_bandwidth': None, 'stoch_k': None, 'CMF': None, 
+            'autoencoder_reconstruction_error': None, 'oi_roc': None, 
+            'fundingRate': None, 'log_returns': None, 'volatility_20': None, 
+            'skewness_20': None, 'kurtosis_20': None, 'avg_body_size_20': None, 
+            'avg_range_size_20': None, 'volume_change': None, 'OBV': None, 
+            'price_vs_vwap': None, 'ATR': None,
+            'current_open_interest': None, 'current_funding_rate': None,
+            'total_bid_liquidity': 0.0, 'total_ask_liquidity': 0.0, 'order_book_imbalance': 0.0
         }
 
         try:
@@ -286,7 +288,15 @@ class Analyst:
                 self.state_manager.set_state("analyst_intelligence", analyst_intelligence)
                 return
 
-            order_book = self.exchange.order_book
+            # Initialize bids and asks here, before the try-except for order_book processing
+            bids = {}
+            asks = {}
+            order_book = self.exchange.order_book # Get the raw order_book from exchange
+            if order_book:
+                bids = order_book.get('bids', {})
+                asks = order_book.get('asks', {})
+
+
             recent_trades = self.exchange.recent_trades
             
             agg_trades_df = pd.DataFrame(recent_trades)
@@ -391,19 +401,6 @@ class Analyst:
                 analyst_intelligence['volume_delta'] = float(df_features['volume_delta'].iloc[-1])
             else:
                 analyst_intelligence['volume_delta'] = 0.0 # Default if not found
-
-            # --- Add other potentially useful raw features from df_features for context ---
-            for feature_col in ['bb_bandwidth', 'stoch_k', 'CMF', 'autoencoder_reconstruction_error', 
-                                'oi_roc', 'fundingRate', 'log_returns', 'volatility_20', 
-                                'skewness_20', 'kurtosis_20', 'avg_body_size_20', 'avg_range_size_20', 
-                                'volume_change', 'OBV', 'price_vs_vwap', 'ATR']: # ATR from df_features
-                if feature_col in df_features.columns and not df_features.empty:
-                    try:
-                        analyst_intelligence[feature_col] = float(df_features[feature_col].iloc[-1])
-                    except (ValueError, TypeError):
-                        analyst_intelligence[feature_col] = None # Handle non-numeric values
-                else:
-                    analyst_intelligence[feature_col] = None # Or 0.0, or np.nan as appropriate
 
             # --- Add current open interest and funding rate values from futures_df ---
             if 'openInterest' in futures_df.columns and not futures_df.empty:

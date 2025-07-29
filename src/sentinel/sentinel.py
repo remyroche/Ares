@@ -2,14 +2,18 @@ import asyncio
 import sys
 import os
 import time
+import datetime
+import json
 import pandas as pd
-from typing import Dict, Any
+import logging
 
+from typing import Dict, Any
 from src.exchange.binance import BinanceExchange
 from src.utils.logger import logger
 from src.config import settings, CONFIG # Import CONFIG for alert thresholds
 from src.utils.state_manager import StateManager
 from src.emails.ares_mailer import AresMailer # Import the AresMailer class
+
 
 class Sentinel:
     """

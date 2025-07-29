@@ -5,26 +5,35 @@ import json
 import traceback
 from datetime import datetime
 import os
-import asyncio
-from typing import List, Dict, Any
+import asyncio # Added import for asyncio
+from typing import List, Dict, Any # Added imports for List, Dict, Any
 
-from src.utils.logger import system_logger # Use the existing system logger
-from src.database.firestore_manager import db_manager # Import the global Firestore manager
+from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
+# Import both managers for type hinting, but use the one passed via db_manager_instance
+from src.database.firestore_manager import FirestoreManager
+from src.database.sqlite_manager import SQLiteManager
 from src.config import CONFIG # Import CONFIG for error log file path
 
 class AresExceptionHandler:
     """
     A centralized exception handler for the Ares trading bot.
     It logs unhandled exceptions to the system logger, a dedicated JSON file,
-    and optionally to Firestore.
+    and optionally to a database (Firestore or SQLite).
     """
     def __init__(self):
-        self.logger = system_logger.getChild('ExceptionHandler')
+        self.logger = logger.getChild('ExceptionHandler') # Fixed: Use imported logger
         self.error_log_file = os.path.join("logs", CONFIG.get("ERROR_LOG_FILE", "ares_errors.jsonl")) # Using .jsonl for JSON Lines format
         os.makedirs(os.path.dirname(self.error_log_file), exist_ok=True)
         self._original_excepthook = sys.excepthook
+        # db_manager is now passed from main.py
+        self.db_manager: Union[FirestoreManager, SQLiteManager, None] = None # Will be set by set_db_manager
 
-    def _log_exception(self, exc_type, exc_value, exc_traceback):
+    def set_db_manager(self, db_manager: Union[FirestoreManager, SQLiteManager, None]):
+        """Sets the database manager instance for logging exceptions to DB."""
+        self.db_manager = db_manager
+        self.logger.info("Database manager set for exception handler.")
+
+    def _log_exception(self, exc_type: Any, exc_value: Any, exc_traceback: Any): # Fixed: Type hints
         """
         Internal method to log the exception details.
         """
@@ -51,19 +60,20 @@ class AresExceptionHandler:
         except Exception as e:
             self.logger.error(f"Failed to write exception to dedicated log file: {e}", exc_info=True)
 
-        # Optionally log to Firestore
-        if db_manager and db_manager.firestore_enabled:
+        # Optionally log to DB
+        if self.db_manager: # Fixed: Use self.db_manager
             try:
-                # Firestore has document size limits (1MB), so truncate traceback if very long
-                firestore_record = error_record.copy()
-                if len(firestore_record["traceback"]) > 50000: # Arbitrary limit, adjust as needed
-                    firestore_record["traceback"] = firestore_record["traceback"][:50000] + "\n... (truncated)"
+                # DBs have document/record size limits, so truncate traceback if very long
+                db_record = error_record.copy()
+                if len(db_record["traceback"]) > 50000: # Arbitrary limit, adjust as needed
+                    db_record["traceback"] = db_record["traceback"][:50000] + "\n... (truncated)"
                 
-                # Run Firestore operation in a non-blocking way (e.g., in a separate task)
-                asyncio.create_task(db_manager.add_document("ares_unhandled_exceptions", firestore_record, is_public=False))
-                self.logger.info("Unhandled exception sent to Firestore.")
+                # Run DB operation in a non-blocking way (e.g., in a separate task)
+                # Use add_document for error logs
+                asyncio.create_task(self.db_manager.add_document("ares_unhandled_exceptions", db_record, is_public=False))
+                self.logger.info("Unhandled exception sent to DB.")
             except Exception as e:
-                self.logger.error(f"Failed to send exception to Firestore: {e}", exc_info=True)
+                self.logger.error(f"Failed to send exception to DB: {e}", exc_info=True)
 
         # Call the original excepthook to maintain default Python behavior (e.g., for IDEs)
         self._original_excepthook(exc_type, exc_value, exc_traceback)
@@ -81,15 +91,15 @@ class AresExceptionHandler:
 # Global instance of the exception handler
 ares_exception_handler = AresExceptionHandler()
 
-def register_global_exception_handler():
+def register_global_exception_handler(db_manager: Union[FirestoreManager, SQLiteManager, None] = None): # Fixed: Accept db_manager
     """Convenience function to register the global exception handler."""
+    ares_exception_handler.set_db_manager(db_manager) # Set the db_manager
     ares_exception_handler.register()
 
 def unregister_global_exception_handler():
     """Convenience function to unregister the global exception handler."""
     ares_exception_handler.unregister()
 
-# Function to get a list of logged exceptions (e.g., for a report)
 def get_logged_exceptions(limit: int = 100) -> List[Dict[str, Any]]:
     """
     Reads recent exceptions from the dedicated error log file.
@@ -112,4 +122,3 @@ def get_logged_exceptions(limit: int = 100) -> List[Dict[str, Any]]:
     except Exception as e:
         ares_exception_handler.logger.error(f"Error reading error log file: {e}", exc_info=True)
         return []
-

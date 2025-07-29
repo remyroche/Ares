@@ -7,7 +7,9 @@ import uuid
 import datetime
 from skopt import gp_minimize
 from skopt.space import Real, Integer
+from skopt.utils import dump, load # Import dump and load for checkpointing
 from functools import partial
+import os # Import os for file existence checks
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
@@ -47,13 +49,16 @@ class Optimizer:
                     'Profit Factor': -np.inf, 'Win Rate (%)': -np.inf}
 
         try:
+            # Ensure the correct trend_strength_threshold is passed if it's in params
+            trend_strength_threshold = params.get('analyst', {}).get('market_regime_classifier', {}).get('trend_threshold', 25)
+
             prepared_df = calculate_and_label_regimes(
                 self._optimization_klines_df.copy(), 
                 self._optimization_agg_trades_df.copy(), 
                 self._optimization_futures_df.copy(), 
-                params, 
+                params, # Pass the full params dict
                 self._optimization_sr_levels,
-                params.get('trend_strength_threshold', 25)
+                trend_strength_threshold # Pass this explicitly for now for compatibility
             )
             
             if prepared_df.empty:
@@ -97,12 +102,14 @@ class Optimizer:
             parts = param_path.split('.')
             self._set_param_value_at_path(full_params, parts, value)
 
+        # Ensure integer parameters are cast correctly
         for param_path in self.global_config['OPTIMIZATION_CONFIG']['INTEGER_PARAMS']:
             parts = param_path.split('.')
             current_value = self._get_param_value_from_path(full_params, parts)
             if current_value is not None:
                 self._set_param_value_at_path(full_params, parts, int(round(current_value)))
 
+        # Normalize weight parameters groups
         for group_path, keys in self.global_config['OPTIMIZATION_CONFIG']['WEIGHT_PARAMS_GROUPS']:
             parts = group_path.split('.')
             weights_dict = self._get_param_value_from_path(full_params, parts)
@@ -115,12 +122,23 @@ class Optimizer:
 
     def _define_optimization_dimensions(self):
         dimensions, param_names = [], []
-        for param_path, values in self.global_config['OPTIMIZATION_CONFIG']['COARSE_GRID_RANGES'].items():
-            if param_path in self.global_config['OPTIMIZATION_CONFIG']['INTEGER_PARAMS']:
-                dimensions.append(Integer(min(values), max(values), name=param_path))
-            else:
-                dimensions.append(Real(min(values), max(values), name=param_path))
-            param_names.append(param_path)
+        # Use the new structure for optimization parameters from CONFIG
+        opt_params_config = self.global_config['backtesting']['optimization']['params']
+
+        def add_dimensions_from_dict(d, parent_key=''):
+            for k, v in d.items():
+                full_path = f"{parent_key}.{k}" if parent_key else k
+                if isinstance(v, dict) and 'type' in v and 'low' in v and 'high' in v:
+                    if v['type'] == 'int':
+                        dimensions.append(Integer(v['low'], v['high'], name=full_path))
+                    elif v['type'] == 'float':
+                        dimensions.append(Real(v['low'], v['high'], name=full_path))
+                    param_names.append(full_path)
+                elif isinstance(v, dict):
+                    add_dimensions_from_dict(v, full_path)
+
+        add_dimensions_from_dict(opt_params_config)
+        
         self.optimization_dimensions = dimensions
         self.optimization_param_names = param_names
 
@@ -134,7 +152,6 @@ class Optimizer:
 
         self.logger.info(f"  Evaluating candidate: {full_candidate_params}")
         
-        # This method should run a full backtest and return a dictionary of metrics
         metrics = self._evaluate_params_with_backtest(full_candidate_params)
 
         sharpe = metrics.get('Sharpe Ratio', -1e9)
@@ -163,10 +180,13 @@ class Optimizer:
         # gp_minimize seeks to minimize the function, so we return the negative of our composite score.
         return -composite_score
 
-    async def implement_global_system_optimization(self, historical_pnl_data: pd.DataFrame, strategy_breakdown_data: dict):
+    async def implement_global_system_optimization(self, historical_pnl_data: pd.DataFrame, strategy_breakdown_data: dict, checkpoint_file_path: str = None):
         self.logger.info("\nRunning Global System Optimization (Bayesian Optimization)...")
         
         self.logger.info("  Loading raw data for optimization...")
+        # Load the full raw data, as optimization might be called with different training slices
+        # The optimizer itself doesn't need to be checkpointed for data, as it's passed in
+        # or loaded fresh for each run.
         self._optimization_klines_df, self._optimization_agg_trades_df, self._optimization_futures_df = load_raw_data()
         if self._optimization_klines_df is None or self._optimization_klines_df.empty:
             self.logger.error("  Failed to load raw data. Skipping optimization.")
@@ -177,25 +197,59 @@ class Optimizer:
         
         self._define_optimization_dimensions()
         
-        initial_params_values = [self._get_param_value_from_path(self.global_config['BEST_PARAMS'], name.split('.')) for name in self.optimization_param_names]
+        x0 = None
+        y0 = None
+        n_calls = self.global_config['backtesting']['optimization'].get("bayesian_opt_n_calls", 20)
+        n_initial_points = self.global_config['backtesting']['optimization'].get("bayesian_opt_n_initial_points", 5)
+
+        # --- Check for existing optimization checkpoint ---
+        if checkpoint_file_path and os.path.exists(checkpoint_file_path):
+            try:
+                res_loaded = load(checkpoint_file_path)
+                x0 = res_loaded.x_iters
+                y0 = res_loaded.func_vals
+                n_calls_remaining = n_calls - len(x0)
+                if n_calls_remaining > 0:
+                    self.logger.info(f"  Resuming Bayesian Optimization from checkpoint. {len(x0)} points already evaluated. {n_calls_remaining} calls remaining.")
+                    n_calls = n_calls_remaining
+                else:
+                    self.logger.info("  Bayesian Optimization already completed from checkpoint. Skipping new calls.")
+                    res = res_loaded # Use the loaded result directly
+            except Exception as e:
+                self.logger.warning(f"  Failed to load optimization checkpoint: {e}. Starting optimization from scratch.")
+                x0 = None
+                y0 = None
         
-        objective_with_feedback = partial(self._objective_function, strategy_breakdown_data_ref=strategy_breakdown_data)
+        if x0 is None: # If no checkpoint or failed to load, start fresh
+            initial_params_values = [self._get_param_value_from_path(self.global_config['BEST_PARAMS'], name.split('.')) for name in self.optimization_param_names]
+            x0 = [initial_params_values] # Provide initial point if starting fresh
+            self.logger.info(f"  Starting Bayesian Optimization with {n_calls} calls (fresh run).")
+        
+        # Only run gp_minimize if there are calls remaining
+        if n_calls > 0:
+            objective_with_feedback = partial(self._objective_function, strategy_breakdown_data_ref=strategy_breakdown_data)
 
-        n_calls = self.config.get("bayesian_opt_n_calls", 20)
-        n_initial_points = self.config.get("bayesian_opt_n_initial_points", 5)
+            res = gp_minimize(
+                func=objective_with_feedback,
+                dimensions=self.optimization_dimensions,
+                n_calls=n_calls,
+                n_initial_points=n_initial_points if x0 is None else 0, # Only use initial points if starting fresh
+                x0=x0,
+                y0=y0,
+                random_state=self.global_config['backtesting']['optimization'].get("bayesian_opt_random_state", 42),
+                verbose=True,
+                acq_func="gp_hedge"
+            )
 
-        self.logger.info(f"  Starting Bayesian Optimization with {n_calls} calls...")
-
-        res = gp_minimize(
-            func=objective_with_feedback,
-            dimensions=self.optimization_dimensions,
-            n_calls=n_calls,
-            n_initial_points=n_initial_points,
-            x0=[initial_params_values],
-            random_state=self.config.get("bayesian_opt_random_state", 42),
-            verbose=True,
-            acq_func="gp_hedge"
-        )
+            # Save checkpoint after optimization completes
+            if checkpoint_file_path:
+                try:
+                    dump(res, checkpoint_file_path, store_objective=False) # store_objective=False to save space
+                    self.logger.info(f"  Bayesian Optimization state saved to checkpoint: {checkpoint_file_path}")
+                except Exception as e:
+                    self.logger.error(f"  Error saving optimization checkpoint: {e}", exc_info=True)
+        else:
+            self.logger.info("  No new optimization calls needed. Using loaded result.")
 
         best_opt_params = dict(zip(self.optimization_param_names, res.x))
         best_overall_params = self._create_full_params_dict(best_opt_params)
@@ -204,8 +258,9 @@ class Optimizer:
         self.logger.info(f"\n--- Optimization Complete. Final Best Performance: {best_overall_performance} ---")
         self.logger.info(f"  Final Optimized Parameters: {best_overall_params}")
 
-        self._deep_update_dict(self.global_config['BEST_PARAMS'], best_overall_params)
-        self.logger.info("  CONFIG.BEST_PARAMS updated with optimized values.")
+        # Update the global CONFIG with the new best parameters
+        self._deep_update_dict(self.global_config['best_params'], best_overall_params)
+        self.logger.info("  CONFIG.best_params updated with optimized values.")
 
         optimization_run_id = str(uuid.uuid4())
         date_applied = datetime.datetime.now().isoformat()
@@ -241,3 +296,4 @@ class Optimizer:
                 self._deep_update_dict(target_dict[key], value)
             else:
                 target_dict[key] = value
+

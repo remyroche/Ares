@@ -6,6 +6,8 @@ from src.exchange.binance import BinanceExchange
 from src.utils.logger import logger
 from src.config import settings
 from src.utils.state_manager import StateManager
+from src.database.firestore_manager import FirestoreManager # Import FirestoreManager
+from src.supervisor.performance_monitor import PerformanceMonitor # Import the new PerformanceMonitor
 
 class Supervisor:
     """
@@ -14,9 +16,18 @@ class Supervisor:
     by adjusting parameters or pausing trading when necessary.
     """
 
-    def __init__(self, exchange_client: BinanceExchange, state_manager: StateManager):
+    def __init__(self, exchange_client: BinanceExchange, state_manager: StateManager, firestore_manager: FirestoreManager):
+        """
+        Initializes the Supervisor.
+
+        Args:
+            exchange_client (BinanceExchange): The exchange client for interacting with the exchange.
+            state_manager (StateManager): The state manager for persisting and retrieving system state.
+            firestore_manager (FirestoreManager): The Firestore manager for database operations.
+        """
         self.exchange = exchange_client
         self.state_manager = state_manager
+        self.firestore_manager = firestore_manager # Store the firestore_manager
         self.logger = logger.getChild('Supervisor')
         self.config = settings.get("supervisor", {})
         
@@ -24,6 +35,9 @@ class Supervisor:
         self.state_manager.set_state_if_not_exists("peak_equity", settings.get("initial_equity", 10000))
         self.state_manager.set_state_if_not_exists("is_trading_paused", False)
         self.state_manager.set_state_if_not_exists("global_risk_multiplier", 1.0)
+
+        # Initialize the PerformanceMonitor
+        self.performance_monitor = PerformanceMonitor(config=settings, firestore_manager=self.firestore_manager)
 
     async def start(self):
         """
@@ -45,6 +59,27 @@ class Supervisor:
                 
                 # 2. Check performance against risk thresholds
                 await self._check_performance_and_risk()
+
+                # 3. Prepare live metrics and run performance monitoring
+                # TODO: Integrate with PerformanceReporter or other modules to get more comprehensive live metrics
+                # For now, we'll use basic equity and drawdown for live metrics.
+                # A full implementation would involve tracking trades, PnL, etc., to calculate
+                # Sharpe, Profit Factor, Win Rate, etc., in real-time or near real-time.
+                current_equity = self.state_manager.get_state("account_equity")
+                peak_equity = self.state_manager.get_state("peak_equity")
+                initial_equity = settings.get("initial_equity", 10000)
+
+                # Placeholder for live metrics. In a real system, these would be
+                # calculated by a dedicated performance tracking module.
+                live_metrics = {
+                    'Final Equity': current_equity,
+                    'Max Drawdown (%)': ((peak_equity - current_equity) / peak_equity * 100) if peak_equity > 0 else 0,
+                    'Total Trades': self.state_manager.get_state("total_trades", 0), # Assuming total_trades is tracked elsewhere
+                    'Profit Factor': self.state_manager.get_state("live_profit_factor", 0), # Placeholder
+                    'Sharpe Ratio': self.state_manager.get_state("live_sharpe_ratio", 0), # Placeholder
+                    'Win Rate (%)': self.state_manager.get_state("live_win_rate", 0) # Placeholder
+                }
+                await self.performance_monitor.monitor_performance(live_metrics)
 
             except asyncio.CancelledError:
                 self.logger.info("Supervisor task cancelled.")

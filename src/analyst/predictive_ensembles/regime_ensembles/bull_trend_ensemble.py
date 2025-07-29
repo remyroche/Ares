@@ -204,7 +204,6 @@ class BullTrendEnsemble(BaseEnsemble):
         self.logger.info("Training LightGBM model with Cross-Validation and L1-L2 Regularization...")
         try:
             kf = KFold(n_splits=5, shuffle=True, random_state=42)
-            oof_preds = np.zeros(len(X_flat))
             models = []
 
             for fold, (train_index, val_index) in enumerate(kf.split(X_flat, y_flat)):

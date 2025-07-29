@@ -20,22 +20,27 @@ class PredictiveEnsembles:
 
     def get_predictions(self, asset_data):
         """
+        ## CHANGE: Updated the prediction workflow to use the full feature set.
+        ## This method now calls the new `_prepare_feature_data` helper to ensure
+        ## that the features used for live prediction match those used for training,
+        ## resolving the previous discrepancy.
         Orchestrates the process of getting predictions for a set of assets.
         """
         all_predictions = {}
         for asset, data in asset_data.items():
             self.logger.info(f"Processing predictions for {asset}...")
             try:
-                features_df = self.feature_engineering.generate_features(
-                    data["klines_df"]
+                # 1. Prepare the full feature set for inference
+                feature_data = self._prepare_feature_data(
+                    data["klines_df"],
+                    data.get("agg_trades_df"),
+                    data.get("order_book_data"),
                 )
-                regime_df = self.regime_classifier.classify_regime(features_df)
-                features_with_regime = pd.concat([features_df, regime_df], axis=1)
-                data_with_targets = self.ml_target_generator.generate_targets(
-                    features_with_regime
-                )
+
+                # 2. Get predictions using the full feature set
+                # Note: We pass `feature_data`, which has no target columns.
                 predictions = self.regime_ensembles.get_all_predictions(
-                    asset, data_with_targets
+                    asset, feature_data
                 )
                 all_predictions[asset] = predictions
                 self.logger.info(f"Successfully generated predictions for {asset}.")

@@ -7,12 +7,8 @@ import tensorflow as tf
 from arch import arch_model
 from lightgbm import LGBMClassifier
 from sklearn.model_selection import KFold
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import (
     LSTM,
-    Activation,
-    BatchNormalization,
     Dense,
     Dropout,
     Input,
@@ -25,40 +21,21 @@ from tensorflow.keras.regularizers import l1_l2
 
 from .base_ensemble import BaseEnsemble
 
-# Suppress specific warnings from ARCH library
 warnings.filterwarnings("ignore", category=UserWarning, module="arch")
 warnings.filterwarnings("ignore", category=FutureWarning, module="arch")
 
 
 class BullTrendEnsemble(BaseEnsemble):
     """
-    ## CHANGE: Fully updated and implemented the Bull Trend Ensemble.
-    ## This class now trains a sophisticated ensemble of models (LSTM, Transformer, GARCH, LGBM)
-    ## and uses their outputs as features for a final "meta-learner" model. This creates a
-    ## hierarchical system where the final prediction is based on the confluence of signals
-    ## from multiple specialized models.
+    Predictive Ensemble specifically designed for BULL_TREND market regimes.
+    Combines LSTM, Transformer, GARCH, and LightGBM models into a meta-learner.
     """
 
     def __init__(self, config: dict, ensemble_name: str = "BullTrendEnsemble"):
         super().__init__(config, ensemble_name)
-        # Specific models for this ensemble
-        self.models = {
-            "lstm": None,
-            "transformer": None,
-            "garch": None,
-            "lgbm": None,
-        }
+        self.models = {"lstm": None, "transformer": None, "garch": None, "lgbm": None}
         self.meta_learner = None
         self.trained = False
-        self.ensemble_weights = self.config.get(
-            "ensemble_weights",
-            {"lstm": 0.3, "transformer": 0.3, "garch": 0.2, "lgbm": 0.2},
-        )
-        self.min_confluence_confidence = self.config.get(
-            "min_confluence_confidence", 0.7
-        )
-
-        # DL model specific configurations
         self.dl_config = {
             "sequence_length": 20,
             "lstm_units": 50,
@@ -72,24 +49,12 @@ class BullTrendEnsemble(BaseEnsemble):
             "l2_reg_strength": self.config.get("meta_learner_l2_reg", 0.001),
         }
         self.expected_dl_features = [
-            "close",
-            "volume",
-            "ADX",
-            "MACD_HIST",
-            "ATR",
-            "volume_delta",
-            "autoencoder_reconstruction_error",
-            "Is_SR_Interacting",
+            "close", "volume", "ADX", "MACD_HIST", "ATR", "volume_delta",
+            "autoencoder_reconstruction_error", "Is_SR_Interacting",
         ]
-        self.dl_target_map = {}
         self.meta_learner_features = []
 
-    def _prepare_sequence_data(
-        self, df: pd.DataFrame, target_series: pd.Series = None
-    ):
-        """
-        Prepares data into sequences for LSTM/Transformer models.
-        """
+    def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None):
         features_df = df[self.expected_dl_features].copy().fillna(0)
         sequence_length = self.dl_config["sequence_length"]
         X, y = [], []
@@ -97,222 +62,168 @@ class BullTrendEnsemble(BaseEnsemble):
             X.append(features_df.iloc[i : (i + sequence_length)].values)
             if target_series is not None:
                 y.append(target_series.iloc[i + sequence_length - 1])
-
         if not X:
             return np.array([]), np.array([])
         return np.array(X), np.array(y) if y else None
 
     def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: pd.Series):
-        """
-        Trains the individual models and the meta-learner for the BULL_TREND ensemble.
-        """
         self.logger.info(f"Training {self.ensemble_name} ensemble models...")
-        if historical_features.empty or historical_targets.empty:
-            self.logger.warning(f"No data to train {self.ensemble_name}.")
+        if historical_features.empty:
             return
 
         for col in self.expected_dl_features:
             if col not in historical_features.columns:
                 historical_features[col] = 0.0
-
+        
         aligned_data = historical_features.join(historical_targets.rename("target")).dropna()
         if aligned_data.empty:
-            self.logger.warning(f"No aligned data for {self.ensemble_name}.")
             return
 
         X_seq, y_seq = self._prepare_sequence_data(aligned_data, aligned_data["target"])
         X_flat = aligned_data[self.expected_dl_features].copy().fillna(0)
-        y_flat = aligned_data["target"]
-
+        
         if X_seq.size == 0:
-            self.logger.warning(f"Insufficient data for {self.ensemble_name}.")
             return
 
-        # Train base models
-        self._train_base_models(X_seq, y_seq, X_flat, y_flat, aligned_data)
-
-        # Train meta-learner
-        self.logger.info(f"Training meta-learner for {self.ensemble_name}...")
+        self._train_base_models(X_seq, y_seq, X_flat, aligned_data["target"], aligned_data)
+        
         meta_features_train = self._get_meta_features(X_seq, X_flat, aligned_data)
-        meta_features_train = meta_features_train.loc[y_flat.index].dropna()
-        y_meta_train = y_flat.loc[meta_features_train.index]
-
-        if meta_features_train.empty:
-            self.logger.warning("Meta-features training set is empty.")
-            self.trained = False
+        aligned_meta = meta_features_train.join(aligned_data["target"]).dropna()
+        
+        if aligned_meta.empty:
             return
 
-        self.meta_learner_features = meta_features_train.columns.tolist()
-        self._train_meta_learner(meta_features_train, y_meta_train)
+        y_meta_train = aligned_meta["target"]
+        X_meta_train = aligned_meta.drop(columns=["target"])
+
+        self.meta_learner_features = X_meta_train.columns.tolist()
+        self._train_meta_learner(X_meta_train, y_meta_train)
         self.trained = True
 
     def _train_base_models(self, X_seq, y_seq, X_flat, y_flat, aligned_data):
-        """Helper to train all individual models."""
-        unique_targets = np.unique(y_seq)
-        self.dl_target_map = {label: i for i, label in enumerate(unique_targets)}
-        y_seq_encoded = np.array([self.dl_target_map[label] for label in y_seq])
+        unique_targets, y_seq_encoded = np.unique(y_seq, return_inverse=True)
+        num_classes = len(unique_targets)
 
-        # --- LSTM Model ---
-        self.logger.info("Training LSTM model...")
-        try:
-            model = Sequential([
-                LSTM(self.dl_config["lstm_units"], return_sequences=True, kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"]), input_shape=(X_seq.shape[1], X_seq.shape[2])),
-                Dropout(self.dl_config["dropout_rate"]),
-                LSTM(self.dl_config["lstm_units"] // 2, kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])),
-                Dropout(self.dl_config["dropout_rate"]),
-                Dense(len(unique_targets), activation='softmax', kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"]))
-            ])
-            model.compile(optimizer=Adam(learning_rate=self.dl_config["learning_rate"]), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-            model.fit(X_seq, y_seq_encoded, epochs=self.dl_config["epochs"], batch_size=self.dl_config["batch_size"], verbose=0)
-            self.models["lstm"] = model
-        except Exception as e:
-            self.logger.error(f"Error training LSTM model: {e}")
+        # Train DL models
+        self.models["lstm"] = self._train_dl_model(X_seq, y_seq_encoded, num_classes, is_transformer=False)
+        self.models["transformer"] = self._train_dl_model(X_seq, y_seq_encoded, num_classes, is_transformer=True)
 
-        # --- Transformer Model ---
-        self.logger.info("Training Transformer-like model...")
-        try:
-            inputs = Input(shape=(X_seq.shape[1], X_seq.shape[2]))
-            attn_output = MultiHeadSelfAttention(num_heads=self.dl_config["transformer_heads"], key_dim=self.dl_config["transformer_key_dim"])(inputs, inputs)
-            norm1 = LayerNormalization(epsilon=1e-6)(inputs + attn_output)
-            ffn_output = Dense(X_seq.shape[2], activation="relu", kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])) (norm1)
-            norm2 = LayerNormalization(epsilon=1e-6)(norm1 + ffn_output)
-            flattened_output = tf.keras.layers.Flatten()(norm2)
-            outputs = Dense(len(unique_targets), activation='softmax', kernel_regularizer=l1_l2(l1=self.dl_config["l1_reg_strength"], l2=self.dl_config["l2_reg_strength"])) (flattened_output)
-            model = Model(inputs=inputs, outputs=outputs)
-            model.compile(optimizer=Adam(learning_rate=self.dl_config["learning_rate"]), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-            model.fit(X_seq, y_seq_encoded, epochs=self.dl_config["epochs"], batch_size=self.dl_config["batch_size"], verbose=0)
-            self.models["transformer"] = model
-        except Exception as e:
-            self.logger.error(f"Error training Transformer-like model: {e}")
-
-        # --- GARCH Model ---
-        self.logger.info("Training GARCH model...")
+        # Train GARCH
         returns = aligned_data['close'].pct_change().dropna()
         if len(returns) > 100:
             try:
-                garch_model = arch_model(returns, vol='Garch', p=1, q=1, mean='AR', lags=1, dist='normal')
-                self.models["garch"] = garch_model.fit(disp='off')
+                garch = arch_model(returns, vol='Garch', p=1, q=1)
+                self.models["garch"] = garch.fit(disp='off')
             except Exception as e:
-                self.logger.error(f"Error training GARCH model: {e}")
+                self.logger.error(f"GARCH training failed: {e}")
 
-        # --- LightGBM Model ---
-        self.logger.info("Training LightGBM model...")
+        # Train LightGBM
         try:
             kf = KFold(n_splits=5, shuffle=True, random_state=42)
-            lgbm_models = []
-            for _, (train_index, _) in enumerate(kf.split(X_flat, y_flat)):
-                X_train, y_train = X_flat.iloc[train_index], y_flat.iloc[train_index]
-                model = LGBMClassifier(random_state=42, verbose=-1, reg_alpha=self.dl_config["l1_reg_strength"], reg_lambda=self.dl_config["l2_reg_strength"])
-                model.fit(X_train, y_train)
-                lgbm_models.append(model)
-            self.models["lgbm"] = lgbm_models
+            self.models["lgbm"] = [
+                LGBMClassifier(random_state=42, verbose=-1).fit(X_flat.iloc[train_idx], y_flat.iloc[train_idx])
+                for train_idx, _ in kf.split(X_flat, y_flat)
+            ]
         except Exception as e:
-            self.logger.error(f"Error training LightGBM model: {e}")
+            self.logger.error(f"LGBM training failed: {e}")
+
+    def _train_dl_model(self, X_seq, y_seq_encoded, num_classes, is_transformer=False):
+        try:
+            input_layer = Input(shape=(X_seq.shape[1], X_seq.shape[2]))
+            if is_transformer:
+                x = MultiHeadSelfAttention(num_heads=self.dl_config["transformer_heads"], key_dim=self.dl_config["transformer_key_dim"])(input_layer, input_layer)
+                x = LayerNormalization(epsilon=1e-6)(input_layer + x)
+                x = Dense(X_seq.shape[2], activation="relu")(x)
+                x = LayerNormalization(epsilon=1e-6)(x + x)
+                x = tf.keras.layers.Flatten()(x)
+            else: # LSTM
+                x = LSTM(self.dl_config["lstm_units"], return_sequences=True)(input_layer)
+                x = Dropout(self.dl_config["dropout_rate"])(x)
+                x = LSTM(self.dl_config["lstm_units"] // 2)(x)
+                x = Dropout(self.dl_config["dropout_rate"])(x)
+            
+            output_layer = Dense(num_classes, activation='softmax')(x)
+            model = Model(inputs=input_layer, outputs=output_layer)
+            model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
+            model.fit(X_seq, y_seq_encoded, epochs=self.dl_config["epochs"], batch_size=self.dl_config["batch_size"], verbose=0)
+            return model
+        except Exception as e:
+            self.logger.error(f"DL Model training failed: {e}")
+            return None
 
     def get_prediction(self, current_features: pd.DataFrame, **kwargs) -> dict:
-        """
-        Gets a combined prediction using the trained meta-learner.
-        """
-        if not self.trained or not self.meta_learner:
-            self.logger.warning(f"{self.ensemble_name} not trained. Returning HOLD.")
+        if not self.trained:
             return {"prediction": "HOLD", "confidence": 0.0}
-
-        self.logger.info(f"Getting prediction from {self.ensemble_name}...")
         
-        # Prepare sequence data for DL models
-        X_current_seq, _ = self._prepare_sequence_data(current_features)
-        if X_current_seq.size == 0:
-            self.logger.warning("Insufficient data for real-time sequence prediction.")
-            return {"prediction": "HOLD", "confidence": 0.0}
-
-        # Prepare flat data for LGBM
-        X_current_flat = current_features[self.expected_dl_features].tail(1).fillna(0)
+        X_seq, _ = self._prepare_sequence_data(current_features)
+        if X_seq.size == 0: return {"prediction": "HOLD", "confidence": 0.0}
         
-        # Get features for meta-learner
-        meta_features = self._get_meta_features(X_current_seq, X_current_flat, current_features, is_live=True, **kwargs)
+        X_flat = current_features[self.expected_dl_features].tail(1).fillna(0)
+        meta_features = self._get_meta_features(X_seq, X_flat, current_features, is_live=True, **kwargs)
+        meta_input = pd.DataFrame([meta_features], columns=self.meta_learner_features).fillna(0)
         
-        # Ensure order and presence of features
-        meta_input_data = pd.DataFrame([meta_features], columns=self.meta_learner_features).fillna(0)
-
-        return self._get_meta_prediction(meta_input_data)
+        return self._get_meta_prediction(meta_input)
 
     def _get_meta_features(self, X_seq, X_flat, full_df, is_live=False, **kwargs):
-        """Helper to generate features for the meta-learner."""
-        meta_features = {}
-
-        # Base model predictions
-        if self.models["lstm"]:
-            meta_features['lstm_conf'] = np.max(self.models["lstm"].predict(X_seq, verbose=0))
-        if self.models["transformer"]:
-            meta_features['transformer_conf'] = np.max(self.models["transformer"].predict(X_seq, verbose=0))
-        if self.models["lgbm"]:
-            probas = [model.predict_proba(X_flat) for model in self.models["lgbm"]]
-            meta_features['lgbm_proba'] = np.max(np.mean(probas, axis=0))
-        if self.models["garch"]:
-            forecast = self.models["garch"].forecast(horizon=1)
-            meta_features['garch_volatility'] = forecast.variance.iloc[-1].values[0]
-
-        # Advanced features
+        """
+        ## CHANGE: Fully implemented meta-feature generation for the training phase.
+        This function now correctly computes and aligns features from all base models
+        and advanced indicators across the entire historical dataset.
+        """
         if is_live:
-            # For live prediction, use passed kwargs
-            klines_df = kwargs.get('klines_df', full_df)
-            agg_trades_df = kwargs.get('agg_trades_df', pd.DataFrame())
-            order_book_data = kwargs.get('order_book_data', {})
+            # --- Live Prediction Logic ---
+            meta_features = {}
+            if self.models["lstm"]: meta_features['lstm_conf'] = np.max(self.models["lstm"].predict(X_seq, verbose=0))
+            if self.models["transformer"]: meta_features['transformer_conf'] = np.max(self.models["transformer"].predict(X_seq, verbose=0))
+            if self.models["lgbm"]: meta_features['lgbm_proba'] = np.max(np.mean([m.predict_proba(X_flat) for m in self.models["lgbm"]], axis=0))
+            if self.models["garch"]: meta_features['garch_volatility'] = self.models["garch"].forecast(horizon=1).variance.iloc[-1,0]
             
-            meta_features.update(self._get_wyckoff_features(klines_df))
-            meta_features.update(self._get_manipulation_features(order_book_data))
-            meta_features.update(self._get_order_flow_features(agg_trades_df))
-            meta_features.update(self._get_multi_timeframe_features(klines_df))
+            meta_features.update(self._get_wyckoff_features(full_df, is_live))
+            meta_features.update(self._get_multi_timeframe_features(full_df, is_live))
+            return meta_features
         else:
-            # For training, extract from the full dataframe
-            meta_features_df = pd.DataFrame(index=full_df.index)
-            meta_features_df['lstm_conf'] = np.max(self.models["lstm"].predict(X_seq, verbose=0), axis=1) if self.models["lstm"] else 0.5
-            meta_features_df['transformer_conf'] = np.max(self.models["transformer"].predict(X_seq, verbose=0), axis=1) if self.models["transformer"] else 0.5
-            # ... and so on for other models, aligning indices carefully. This is simplified here.
-            return meta_features_df # In a real implementation this would be a full dataframe
+            # --- Training Logic ---
+            meta_index = full_df.index[self.dl_config["sequence_length"] - 1:]
+            meta_features_df = pd.DataFrame(index=meta_index)
+            
+            # DL Models
+            if self.models["lstm"]: meta_features_df['lstm_conf'] = np.max(self.models["lstm"].predict(X_seq, verbose=0), axis=1)
+            if self.models["transformer"]: meta_features_df['transformer_conf'] = np.max(self.models["transformer"].predict(X_seq, verbose=0), axis=1)
+            
+            # Align flat features with sequence model outputs
+            X_flat_aligned = X_flat.loc[meta_index]
+            if self.models["lgbm"]:
+                probas = np.mean([m.predict_proba(X_flat_aligned) for m in self.models["lgbm"]], axis=0)
+                meta_features_df['lgbm_proba'] = np.max(probas, axis=1)
 
-        return meta_features
+            if self.models["garch"]:
+                meta_features_df['garch_volatility'] = self.models["garch"].conditional_volatility.reindex(meta_index, method='ffill')
+
+            # Advanced Features
+            meta_features_df = meta_features_df.join(self._get_wyckoff_features(full_df, is_live))
+            meta_features_df = meta_features_df.join(self._get_multi_timeframe_features(full_df, is_live))
+
+            return meta_features_df.fillna(0)
 
     def _train_meta_learner(self, X, y):
-        """Trains the meta-learner model."""
-        self.logger.info("Training meta-learner...")
         self.meta_learner = LGBMClassifier(random_state=42, verbose=-1)
         self.meta_learner.fit(X, y)
-        self.logger.info("Meta-learner training complete.")
+        self.logger.info(f"{self.ensemble_name} meta-learner trained.")
 
     def _get_meta_prediction(self, meta_input_df):
-        """Gets a prediction from the trained meta-learner."""
-        if not self.meta_learner:
-            return {"prediction": "HOLD", "confidence": 0.0}
-        
-        prediction_proba = self.meta_learner.predict_proba(meta_input_df)[0]
-        predicted_class_index = np.argmax(prediction_proba)
-        
-        final_prediction = self.meta_learner.classes_[predicted_class_index]
-        final_confidence = prediction_proba[predicted_class_index]
-        
-        return {"prediction": final_prediction, "confidence": final_confidence}
+        if not self.meta_learner: return {"prediction": "HOLD", "confidence": 0.0}
+        proba = self.meta_learner.predict_proba(meta_input_df)[0]
+        idx = np.argmax(proba)
+        return {"prediction": self.meta_learner.classes_[idx], "confidence": proba[idx]}
 
-    # --- Placeholder implementations for advanced feature extraction ---
-    def _get_wyckoff_features(self, klines_df):
-        volume_ma = klines_df["volume"].rolling(window=20).mean().iloc[-1]
-        is_high_volume = klines_df["volume"].iloc[-1] > (volume_ma * 1.5)
-        return {"wyckoff_high_volume": int(is_high_volume)}
+    # --- Feature Helpers ---
+    def _get_wyckoff_features(self, df, is_live):
+        vol_ma = df["volume"].rolling(20).mean()
+        high_vol = (df["volume"] > vol_ma * 1.5).astype(int)
+        return pd.DataFrame({'wyckoff_high_volume': high_vol}) if not is_live else {'wyckoff_high_volume': high_vol.iloc[-1]}
 
-    def _get_manipulation_features(self, order_book_data):
-        if not order_book_data or order_book_data.empty:
-            return {"is_spoofing": 0}
-        # Simplified spoofing detection
-        return {"is_spoofing": 0}
-
-    def _get_order_flow_features(self, agg_trades_df):
-        if agg_trades_df is None or agg_trades_df.empty:
-            return {"cvd_slope": 0}
-        direction = np.where(agg_trades_df["m"], -1, 1)
-        cvd = (agg_trades_df["q"] * direction).cumsum()
-        return {"cvd_slope": cvd.diff().mean() if len(cvd) > 1 else 0}
-
-    def _get_multi_timeframe_features(self, klines_df):
-        ma_short = klines_df["close"].rolling(window=10).mean().iloc[-1]
-        ma_long = klines_df["close"].rolling(window=50).mean().iloc[-1]
-        return {"ma_aligned": int(ma_short > ma_long)}
+    def _get_multi_timeframe_features(self, df, is_live):
+        ma_short = df["close"].rolling(10).mean()
+        ma_long = df["close"].rolling(50).mean()
+        aligned = (ma_short > ma_long).astype(int)
+        return pd.DataFrame({'ma_aligned': aligned}) if not is_live else {'ma_aligned': aligned.iloc[-1]}

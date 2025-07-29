@@ -1,8 +1,14 @@
 # src/analyst/predictive_ensembles/regime_ensembles/bear_trend_ensemble.py
+import logging
+import warnings
+
 import numpy as np
 import pandas as pd
+import tensorflow as tf
+from arch import arch_model
+from lightgbm import LGBMClassifier
 from sklearn.model_selection import KFold
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import (
     LSTM,
@@ -11,6 +17,7 @@ from tensorflow.keras.layers import (
     Dense,
     Dropout,
     Input,
+    LayerNormalization,
     MultiHeadSelfAttention,
 )
 from tensorflow.keras.models import Sequential

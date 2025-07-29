@@ -264,6 +264,7 @@ class Sentinel:
                     "symbol": order_data.get('s'),
                     "order_id": order_data.get('i'),
                     "executed_qty": executed_qty,
+                    "current_price": current_price,
                     "executed_price": executed_price,
                     "trade_notional": trade_size_notional,
                     "max_allowed_notional": max_notional_allowed

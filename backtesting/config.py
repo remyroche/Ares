@@ -6,6 +6,19 @@ SYMBOL = 'ETHUSDT'
 INTERVAL = '1m'
 LOOKBACK_YEARS = 2
 
+# Default configuration for backtesting
+BACKTESTING_CONFIG = {
+    "strategy": "YourStrategyName",
+    "leverage": 5,
+    "stop_loss_pct": 2.0,
+    "take_profit_pct": 5.0,
+    "fee_rate": 0.0005,  # Represents a 0.05% trading fee, a conservative value for many exchanges.
+    "data_path": "data/BTC_USDT-1h.csv",
+    "start_date": "2022-01-01",
+    "end_date": "2023-01-01",
+}
+
+
 # --- Data Caching Configuration ---
 KLINES_FILENAME = f"{SYMBOL}_{INTERVAL}_{LOOKBACK_YEARS}y_klines.csv"
 AGG_TRADES_FILENAME = f"{SYMBOL}_{LOOKBACK_YEARS}y_aggtrades.csv"

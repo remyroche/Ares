@@ -1,6 +1,6 @@
 import asyncio
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from src.exchange.binance import BinanceExchange
 from src.utils.logger import logger
@@ -9,23 +9,23 @@ from src.utils.state_manager import StateManager
 
 class Tactician:
     """
-    ## CHANGE: Fully updated to integrate strategy-specific execution logic.
-    ## This version replaces the broad regime-based assessment with a more precise
-    ## signal-driven approach. It can now interpret and execute all specialized
-    ## signals from the Analyst (e.g., 'SR_FADE_LONG', 'SR_BREAKOUT_SHORT') with
-    ## the correct order types (MARKET, LIMIT, STOP_MARKET) and parameters.
+    The Tactician translates the Analyst's rich intelligence into a high-level trading plan.
+    It now uses detailed technical analysis (VWAP, MAs, etc.) to formulate its strategy.
     """
 
-    def __init__(self, exchange_client: BinanceExchange, state_manager: StateManager):
+    def __init__(self, exchange_client: Optional[BinanceExchange] = None, state_manager: Optional[StateManager] = None):
+        # Allow exchange_client and state_manager to be optional for ModelManager instantiation
         self.exchange = exchange_client
         self.state_manager = state_manager
         self.logger = logger.getChild('Tactician')
         self.config = settings.get("tactician", {})
         self.trade_symbol = settings.trade_symbol
-        self.last_analyst_timestamp = None
         
-        self.current_position = self.state_manager.get_state("current_position", self._get_default_position())
+        # Initialize current_position from state_manager if available, otherwise default
+        self.current_position = self.state_manager.get_state("current_position", self._get_default_position()) if self.state_manager else self._get_default_position()
         self.logger.info(f"Tactician initialized. Position: {self.current_position.get('direction')}")
+        self.last_analyst_timestamp = None
+
 
     def _get_default_position(self):
         """Returns the default structure for an empty position."""
@@ -33,6 +33,10 @@ class Tactician:
 
     async def start(self):
         """Starts the main tactician loop."""
+        if self.state_manager is None or self.exchange is None:
+            self.logger.error("Tactician cannot start: StateManager or Exchange client not provided.")
+            return
+
         self.logger.info("Tactician started. Waiting for new analyst intelligence...")
         while True:
             try:
@@ -86,12 +90,12 @@ class Tactician:
         Interprets the Analyst's signal and prepares a detailed trade execution plan.
         This is the core logic for translating a signal into actionable trade parameters.
         """
-        signal = analyst_intel.get("prediction", "HOLD")
-        confidence = analyst_intel.get("confidence", 0.0)
-        current_candle = analyst_intel.get("technical_analysis", {})
+        signal = analyst_intel.get("ensemble_prediction", "HOLD") # Use ensemble_prediction
+        confidence = analyst_intel.get("ensemble_confidence", 0.0) # Use ensemble_confidence
+        technical_analysis_data = analyst_intel.get("technical_signals", {}) # Corrected key
         
-        if not current_candle or 'ATR' not in current_candle:
-            self.logger.warning("Cannot prepare trade decision: current candle or ATR data is missing.")
+        if not technical_analysis_data or 'current_price' not in technical_analysis_data or 'ATR' not in technical_analysis_data:
+            self.logger.warning("Cannot prepare trade decision: current price or ATR data is missing from technical_signals.")
             return None
 
         min_confidence = self.config.get("min_confidence_for_entry", 0.65)
@@ -99,35 +103,55 @@ class Tactician:
             self.logger.info(f"Signal '{signal}' confidence ({confidence:.2f}) is below threshold ({min_confidence}). No action.")
             return None
             
+        current_price = technical_analysis_data['current_price']
+        current_atr = technical_analysis_data['ATR']
+
         # --- Strategy-Specific Execution Logic ---
-        match signal:
-            case "BUY" | "SELL":
-                order_type = 'MARKET'; side = 'buy' if signal == 'BUY' else 'sell'
-                entry_price = None; stop_loss = self._calculate_atr_stop_loss(side, current_candle)
-                take_profit = self._calculate_atr_take_profit(side, current_candle, stop_loss)
-            case "SR_FADE_LONG":
-                order_type = 'LIMIT'; side = 'buy'
-                entry_price = current_candle['low']; stop_loss = entry_price - current_candle['ATR']
-                take_profit = entry_price + (current_candle['ATR'] * self.config.get("sr_tp_multiplier", 2.0))
-            case "SR_FADE_SHORT":
-                order_type = 'LIMIT'; side = 'sell'
-                entry_price = current_candle['high']; stop_loss = entry_price + current_candle['ATR']
-                take_profit = entry_price - (current_candle['ATR'] * self.config.get("sr_tp_multiplier", 2.0))
-            case "SR_BREAKOUT_LONG":
-                order_type = 'STOP_MARKET'; side = 'buy'
-                entry_price = current_candle['high']; stop_loss = current_candle['low']
-                take_profit = entry_price + (current_candle['ATR'] * self.config.get("sr_tp_multiplier", 2.0))
-            case "SR_BREAKOUT_SHORT":
-                order_type = 'STOP_MARKET'; side = 'sell'
-                entry_price = current_candle['low']; stop_loss = current_candle['high']
-                take_profit = entry_price - (current_candle['ATR'] * self.config.get("sr_tp_multiplier", 2.0))
-            case _:
-                return None # No action for HOLD or unknown signals
+        order_type = None; side = None; entry_price = None; stop_loss = None; take_profit = None
+
+        if signal == "BUY":
+            order_type = 'MARKET'; side = 'buy'
+            stop_loss = self._calculate_atr_stop_loss(side, technical_analysis_data)
+            take_profit = self._calculate_atr_take_profit(side, technical_analysis_data, stop_loss)
+        elif signal == "SELL":
+            order_type = 'MARKET'; side = 'sell'
+            stop_loss = self._calculate_atr_stop_loss(side, technical_analysis_data)
+            take_profit = self._calculate_atr_take_profit(side, technical_analysis_data, stop_loss)
+        elif signal == "SR_FADE_LONG":
+            order_type = 'LIMIT'; side = 'buy'
+            entry_price = technical_analysis_data['low'] # Assuming 'low' is available from kline
+            stop_loss = entry_price - current_atr
+            take_profit = entry_price + (current_atr * self.config.get("sr_tp_multiplier", 2.0))
+        elif signal == "SR_FADE_SHORT":
+            order_type = 'LIMIT'; side = 'sell'
+            entry_price = technical_analysis_data['high'] # Assuming 'high' is available from kline
+            stop_loss = entry_price + current_atr
+            take_profit = entry_price - (current_atr * self.config.get("sr_tp_multiplier", 2.0))
+        elif signal == "SR_BREAKOUT_LONG":
+            order_type = 'STOP_MARKET'; side = 'buy'
+            entry_price = technical_analysis_data['high'] # Assuming 'high' is the breakout level
+            stop_loss = technical_analysis_data['low'] # Stop below the breakout candle's low
+            take_profit = entry_price + (current_atr * self.config.get("sr_tp_multiplier", 2.0))
+        elif signal == "SR_BREAKOUT_SHORT":
+            order_type = 'STOP_MARKET'; side = 'sell'
+            entry_price = technical_analysis_data['low'] # Assuming 'low' is the breakout level
+            stop_loss = technical_analysis_data['high'] # Stop above the breakout candle's high
+            take_profit = entry_price - (current_atr * self.config.get("sr_tp_multiplier", 2.0))
+        else:
+            return None # No action for HOLD or unknown signals
+
+        if order_type is None:
+            return None # No valid signal processed
 
         # --- Risk & Sizing Calculation ---
-        lss = analyst_intel.get("liquidation_safety_score", 0)
-        leverage = self._determine_leverage(lss, self.config.get("max_allowable_leverage", 50))
-        quantity = self._calculate_position_size(current_candle['close'], stop_loss, leverage)
+        lss = analyst_intel.get("liquidation_risk_score", 0)
+        max_allowable_leverage = analyst_intel.get("strategist_params", {}).get("max_allowable_leverage", settings.CONFIG['tactician']['initial_leverage'])
+        leverage = self._determine_leverage(lss, max_allowable_leverage)
+        
+        # Use current_price for quantity calculation if entry_price is not set (e.g., for MARKET orders)
+        price_for_sizing = entry_price if entry_price else current_price
+        
+        quantity = self._calculate_position_size(price_for_sizing, stop_loss, leverage)
         
         if quantity <= 0:
             self.logger.warning("Position size calculated to be zero or less. Aborting trade.")
@@ -147,7 +171,7 @@ class Tactician:
                 symbol=self.trade_symbol,
                 side=decision['side'],
                 type=decision['order_type'],
-                amount=decision['quantity'],
+                quantity=decision['quantity'],
                 price=decision['entry_price'], # Used for LIMIT orders
                 params={
                     'stopPrice': decision['entry_price'], # Used for STOP_MARKET orders
@@ -161,7 +185,7 @@ class Tactician:
             self.current_position = {
                 "direction": "LONG" if decision['side'] == 'buy' else "SHORT",
                 "size": float(order.get('executedQty', decision['quantity'])),
-                "entry_price": float(order.get('avgPrice', decision['entry_price'] or self.state_manager.get_state("analyst_intelligence")['technical_analysis']['current_price'])),
+                "entry_price": float(order.get('avgPrice', decision['entry_price'] or self.state_manager.get_state("analyst_intelligence")['technical_signals']['current_price'])),
                 "stop_loss": decision["stop_loss"],
                 "take_profit": decision["take_profit"],
                 "leverage": decision["leverage"],
@@ -173,10 +197,9 @@ class Tactician:
         except Exception as e:
             self.logger.error(f"Failed to execute trade entry: {e}", exc_info=True)
 
-    # ... (other helper methods like _check_exit_conditions, _calculate_position_size, etc. remain the same)
     def _check_exit_conditions(self, analyst_intel: Dict) -> Dict | None:
         pos = self.current_position
-        price = analyst_intel["technical_analysis"]["current_price"]
+        price = analyst_intel["technical_signals"]["current_price"] # Corrected key
         if pos.get('direction') == "LONG":
             if price >= pos.get('take_profit', float('inf')): return {"reason": "Take Profit Hit"}
             if price <= pos.get('stop_loss', float('-inf')): return {"reason": "Stop Loss Hit"}
@@ -208,7 +231,7 @@ class Tactician:
                 symbol=self.trade_symbol,
                 side="SELL" if self.current_position['direction'] == "LONG" else "BUY",
                 type="MARKET",
-                amount=self.current_position['size']
+                quantity=self.current_position['size']
             )
             self.logger.info(f"Close order placed successfully: {order}")
             self.current_position = self._get_default_position()
@@ -219,8 +242,8 @@ class Tactician:
 
     def _calculate_atr_stop_loss(self, side: str, candle: dict, multiplier: float = 1.5) -> float:
         atr = candle.get('ATR', 0)
-        return candle['close'] - (atr * multiplier) if side == 'buy' else candle['close'] + (atr * multiplier)
+        return candle['current_price'] - (atr * multiplier) if side == 'buy' else candle['current_price'] + (atr * multiplier)
 
     def _calculate_atr_take_profit(self, side: str, candle: dict, stop_loss: float, rr_ratio: float = 2.0) -> float:
-        risk = abs(candle['close'] - stop_loss)
-        return candle['close'] + (risk * rr_ratio) if side == 'buy' else candle['close'] - (risk * rr_ratio)
+        risk = abs(candle['current_price'] - stop_loss)
+        return candle['current_price'] + (risk * rr_ratio) if side == 'buy' else candle['current_price'] - (risk * rr_ratio)

@@ -2,7 +2,8 @@
 
 import asyncio
 from datetime import datetime
-from src.utils.logger import logger
+from typing import List # Added import for List
+from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
 from src.config import settings
 from src.utils.state_manager import StateManager
 from src.database.firestore_manager import FirestoreManager
@@ -22,7 +23,7 @@ class GlobalPortfolioManager:
         self.config = settings.get("global_portfolio_manager", {})
         self.risk_config = settings.get("risk_management", {}) # Load risk management config
         self.exchange_configs = settings.get("exchanges", [])
-        self.exchange_clients = []
+        self.exchange_clients: List[BinanceExchange] = [] # Fixed: Added type annotation
 
         # Initialize state for the global portfolio
         self.state_manager.set_state_if_not_exists("global_peak_equity", settings.get("initial_equity", 10000))
@@ -36,7 +37,7 @@ class GlobalPortfolioManager:
                     BinanceExchange(
                         api_key=ex_config.get("api_key"),
                         api_secret=ex_config.get("api_secret"),
-                        paper_trade=ex_config.get("paper_trade", True)
+                        trade_symbol=ex_config.get("trade_symbol", "BTCUSDT") # Ensure trade_symbol is passed
                     )
                 )
             # Add other exchanges here as needed
@@ -75,24 +76,38 @@ class GlobalPortfolioManager:
         max_allocation_per_pair = self.risk_config.get("max_allocation_per_pair_usd", 5000)
         self.logger.info(f"Publishing risk parameters: Max allocation per pair = ${max_allocation_per_pair:,.2f}")
         
-        await self.firestore_manager.set_document(
-            "global_state",
-            "risk_params",
-            {"max_allocation_per_pair_usd": max_allocation_per_pair, "timestamp": datetime.now().isoformat()}
-        )
+        # Fixed: Ensure firestore_manager is not None before calling set_document
+        if self.firestore_manager:
+            await self.firestore_manager.set_document(
+                "global_state",
+                "risk_params",
+                {"max_allocation_per_pair_usd": max_allocation_per_pair, "timestamp": datetime.now().isoformat()}
+            )
+        else:
+            self.logger.warning("Firestore manager is None. Cannot publish risk parameters to Firestore.")
 
-    async def _calculate_total_portfolio_equity(self) -> float | None:
+
+    async def _calculate_total_portfolio_equity(self) -> Optional[float]: # Fixed: Return type can be Optional[float]
         """Fetches and aggregates equity from all configured exchange accounts."""
         total_equity = 0.0
+        if not self.exchange_clients:
+            self.logger.warning("No exchange clients initialized. Cannot calculate total portfolio equity.")
+            return None
+
         for client in self.exchange_clients:
             try:
                 account_info = await client.get_account_info()
-                equity = float(account_info.get('totalWalletBalance', 0))
+                # Fixed: Handle cases where 'totalWalletBalance' might be missing or non-numeric
+                equity_str = account_info.get('totalWalletBalance', '0')
+                equity = float(equity_str)
                 total_equity += equity
                 self.logger.debug(f"Fetched equity ${equity:,.2f} from exchange.")
+            except (ValueError, TypeError) as e:
+                self.logger.error(f"Failed to convert totalWalletBalance to float: {equity_str}. Error: {e}", exc_info=True)
+                return None # Return None if any client fails to provide valid equity
             except Exception as e:
-                self.logger.error(f"Failed to fetch account info from an exchange: {e}")
-                return None
+                self.logger.error(f"Failed to fetch account info from an exchange: {e}", exc_info=True)
+                return None # Return None on any other error
         
         self.logger.info(f"Total portfolio equity across all exchanges: ${total_equity:,.2f}")
         self.state_manager.set_state("global_current_equity", total_equity)
@@ -101,6 +116,10 @@ class GlobalPortfolioManager:
     def _update_peak_equity(self, current_equity: float):
         """Updates the global peak equity."""
         peak_equity = self.state_manager.get_state("global_peak_equity")
+        if peak_equity is None: # Fixed: Handle None for peak_equity
+            peak_equity = current_equity # Initialize if not set
+            self.state_manager.set_state("global_peak_equity", peak_equity)
+
         if current_equity > peak_equity:
             self.state_manager.set_state("global_peak_equity", current_equity)
             self.logger.info(f"New global peak equity reached: ${current_equity:,.2f}")
@@ -110,22 +129,29 @@ class GlobalPortfolioManager:
         max_allowed_exposure = self.risk_config.get("global_max_allocated_capital_usd", 50000)
         total_exposure = 0.0
 
+        if not self.exchange_clients:
+            self.logger.warning("No exchange clients initialized. Cannot check total exposure.")
+            return
+
         for client in self.exchange_clients:
             try:
-                positions = await client.get_open_positions()
+                positions = await client.get_position_risk() # Use get_position_risk
                 for pos in positions:
                     # notional value is a good measure of exposure
-                    total_exposure += abs(float(pos.get('notional', 0)))
+                    # Fixed: Ensure 'notional' key exists and is convertible to float
+                    notional_str = pos.get('notional', '0')
+                    total_exposure += abs(float(notional_str))
+            except (ValueError, TypeError) as e:
+                self.logger.error(f"Failed to convert notional value to float: {notional_str}. Error: {e}", exc_info=True)
+                # Continue to next client even if one fails
             except Exception as e:
-                self.logger.error(f"Could not get position exposure from an exchange: {e}")
+                self.logger.error(f"Could not get position exposure from an exchange: {e}", exc_info=True)
         
         self.logger.info(f"Current total exposure: ${total_exposure:,.2f}. Global limit: ${max_allowed_exposure:,.2f}")
 
         if total_exposure > max_allowed_exposure:
             await self._update_global_status("REDUCE_EXPOSURE", f"Total exposure of ${total_exposure:,.2f} exceeds limit of ${max_allowed_exposure:,.2f}.")
         else:
-            # If exposure is back within limits, we can return to a normal running state
-            # (unless paused for another reason like drawdown)
             current_status = self.state_manager.get_state("global_trading_status")
             if current_status == "REDUCE_EXPOSURE":
                 await self._update_global_status("RUNNING", "Total exposure is back within acceptable limits.")
@@ -134,7 +160,8 @@ class GlobalPortfolioManager:
     async def _check_global_risk(self, current_equity: float):
         """Checks global drawdown and updates the global trading status in Firestore."""
         peak_equity = self.state_manager.get_state("global_peak_equity")
-        if peak_equity == 0:
+        if peak_equity is None or peak_equity == 0: # Fixed: Handle None for peak_equity
+            self.logger.warning("Peak equity is not set or zero. Cannot calculate global drawdown.")
             return
 
         drawdown = (peak_equity - current_equity) / peak_equity
@@ -145,7 +172,6 @@ class GlobalPortfolioManager:
         if drawdown >= pause_threshold:
             await self._update_global_status("PAUSED", f"Drawdown of {drawdown:.2%} exceeded the global threshold of {pause_threshold:.2%}.")
         else:
-            # If we are not in a drawdown state, ensure we are not paused for this reason.
             current_status = self.state_manager.get_state("global_trading_status")
             if current_status == "PAUSED":
                 await self._update_global_status("RUNNING", "Global portfolio has recovered from drawdown.")
@@ -162,12 +188,16 @@ class GlobalPortfolioManager:
         self.state_manager.set_state("global_trading_status", new_status)
         
         try:
-            await self.firestore_manager.set_document(
-                "global_state", 
-                "status", 
-                {"trading_status": new_status, "reason": reason, "timestamp": datetime.now().isoformat()}
-            )
-            self.logger.info(f"Successfully published new global status '{new_status}' to Firestore.")
+            # Fixed: Ensure firestore_manager is not None before calling set_document
+            if self.firestore_manager:
+                await self.firestore_manager.set_document(
+                    "global_state", 
+                    "status", 
+                    {"trading_status": new_status, "reason": reason, "timestamp": datetime.now().isoformat()}
+                )
+                self.logger.info(f"Successfully published new global status '{new_status}' to Firestore.")
+            else:
+                self.logger.warning("Firestore manager is None. Cannot publish global status to Firestore.")
         except Exception as e:
             self.logger.error(f"Failed to publish global status to Firestore: {e}", exc_info=True)
 

@@ -1,13 +1,14 @@
 import asyncio
 import time
+from datetime import datetime, timedelta
 from typing import Dict, Any
 
 from src.exchange.binance import BinanceExchange
 from src.utils.logger import logger
-from src.config import settings
+from src.config import settings, CONFIG # Import CONFIG for retrain_interval_days
 from src.utils.state_manager import StateManager
-from src.database.firestore_manager import FirestoreManager # Import FirestoreManager
-from src.supervisor.performance_monitor import PerformanceMonitor # Import the new PerformanceMonitor
+from src.database.firestore_manager import FirestoreManager
+from src.supervisor.performance_monitor import PerformanceMonitor
 
 class Supervisor:
     """
@@ -27,14 +28,17 @@ class Supervisor:
         """
         self.exchange = exchange_client
         self.state_manager = state_manager
-        self.firestore_manager = firestore_manager # Store the firestore_manager
+        self.firestore_manager = firestore_manager
         self.logger = logger.getChild('Supervisor')
-        self.config = settings.get("supervisor", {})
-        
+        self.config = settings.get("supervisor", {}) # Specific supervisor config
+        self.global_config = CONFIG # Access to global CONFIG for retrain_interval_days
+
         # Initialize performance and risk states
         self.state_manager.set_state_if_not_exists("peak_equity", settings.get("initial_equity", 10000))
         self.state_manager.set_state_if_not_exists("is_trading_paused", False)
         self.state_manager.set_state_if_not_exists("global_risk_multiplier", 1.0)
+        # Initialize last_retrain_timestamp. Use current time if not set.
+        self.state_manager.set_state_if_not_exists("last_retrain_timestamp", datetime.now().isoformat())
 
         # Initialize the PerformanceMonitor
         self.performance_monitor = PerformanceMonitor(config=settings, firestore_manager=self.firestore_manager)
@@ -49,6 +53,8 @@ class Supervisor:
         await self._update_account_state()
 
         check_interval = self.config.get("check_interval_seconds", 300) # Check every 5 minutes
+        retrain_interval_days = self.global_config['supervisor'].get("retrain_interval_days", 30) # Default to 30 days
+        
         while True:
             try:
                 await asyncio.sleep(check_interval)
@@ -61,13 +67,8 @@ class Supervisor:
                 await self._check_performance_and_risk()
 
                 # 3. Prepare live metrics and run performance monitoring
-                # TODO: Integrate with PerformanceReporter or other modules to get more comprehensive live metrics
-                # For now, we'll use basic equity and drawdown for live metrics.
-                # A full implementation would involve tracking trades, PnL, etc., to calculate
-                # Sharpe, Profit Factor, Win Rate, etc., in real-time or near real-time.
                 current_equity = self.state_manager.get_state("account_equity")
                 peak_equity = self.state_manager.get_state("peak_equity")
-                initial_equity = settings.get("initial_equity", 10000)
 
                 # Placeholder for live metrics. In a real system, these would be
                 # calculated by a dedicated performance tracking module.
@@ -80,6 +81,9 @@ class Supervisor:
                     'Win Rate (%)': self.state_manager.get_state("live_win_rate", 0) # Placeholder
                 }
                 await self.performance_monitor.monitor_performance(live_metrics)
+
+                # 4. Check for scheduled model retraining
+                await self._check_for_retraining(retrain_interval_days)
 
             except asyncio.CancelledError:
                 self.logger.info("Supervisor task cancelled.")
@@ -162,3 +166,38 @@ class Supervisor:
         """Resumes trading activity."""
         self.logger.info("Resuming trading activity. Drawdown has recovered to an acceptable level.")
         self.state_manager.set_state("is_trading_paused", False)
+
+    async def _check_for_retraining(self, retrain_interval_days: int):
+        """
+        Checks if it's time to trigger a system retraining based on the configured interval.
+        """
+        last_retrain_timestamp_str = self.state_manager.get_state("last_retrain_timestamp")
+        
+        try:
+            last_retrain_datetime = datetime.fromisoformat(last_retrain_timestamp_str)
+        except (TypeError, ValueError):
+            self.logger.warning("Invalid last_retrain_timestamp found in state. Resetting to now.")
+            last_retrain_datetime = datetime.now()
+            self.state_manager.set_state("last_retrain_timestamp", last_retrain_datetime.isoformat())
+
+        next_retrain_due = last_retrain_datetime + timedelta(days=retrain_interval_days)
+        
+        if datetime.now() >= next_retrain_due:
+            self.logger.info(f"Retraining interval of {retrain_interval_days} days has passed. Triggering system retraining.")
+            await self._trigger_retraining()
+            # Update the timestamp after triggering retraining
+            self.state_manager.set_state("last_retrain_timestamp", datetime.now().isoformat())
+        else:
+            time_until_next_retrain = next_retrain_due - datetime.now()
+            self.logger.info(f"Next system retraining due in: {time_until_next_retrain.days} days, {time_until_next_retrain.seconds // 3600} hours.")
+
+    async def _trigger_retraining(self):
+        """
+        Placeholder method to trigger the full system retraining pipeline.
+        In a real scenario, this would call the relevant training orchestration module.
+        """
+        self.logger.info("Initiating full system retraining pipeline...")
+        # TODO: Implement the actual call to the training pipeline here.
+        # Example: await training_pipeline.run_training_pipeline()
+        self.logger.info("System retraining initiated (placeholder).")
+

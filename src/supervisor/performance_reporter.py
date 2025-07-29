@@ -4,6 +4,8 @@ import numpy as np
 import os
 import datetime
 import json
+import uuid # Import uuid for unique trade IDs
+
 from src.config import CONFIG
 from src.utils.logger import system_logger
 
@@ -11,6 +13,7 @@ class PerformanceReporter:
     """
     Handles all performance logging and reporting for the Supervisor.
     It calculates daily and per-regime metrics, and saves them to CSV and Firestore.
+    Now also records detailed individual trade logs.
     """
     def __init__(self, config=CONFIG, firestore_manager=None):
         self.config = config.get("supervisor", {})
@@ -18,32 +21,63 @@ class PerformanceReporter:
         self.firestore_manager = firestore_manager
         self.logger = system_logger.getChild('PerformanceReporter')
 
-        self.daily_summary_log_filename = self.config.get("daily_summary_log_filename", "reports/daily_summary_log.csv")
-        self.strategy_performance_log_filename = self.config.get("strategy_performance_log_filename", "reports/strategy_performance_log.csv")
+        # Use new monthly filename formats
+        self.daily_summary_log_filename_format = CONFIG.get("DAILY_SUMMARY_LOG_FILENAME_FORMAT", "reports/daily_summary_log_%Y-%m.csv")
+        self.strategy_performance_log_filename_format = CONFIG.get("STRATEGY_PERFORMANCE_LOG_FILENAME_FORMAT", "reports/strategy_performance_log_%Y-%m.csv")
+        self.detailed_trade_log_filename = CONFIG.get("DETAILED_TRADE_LOG_FILE", "reports/detailed_trade_log.csv") # This remains a single file
 
         # Ensure the reports directory exists
-        os.makedirs(os.path.dirname(self.daily_summary_log_filename), exist_ok=True)
+        os.makedirs(os.path.dirname(self.detailed_trade_log_filename), exist_ok=True)
+        os.makedirs(os.path.dirname(self.daily_summary_log_filename_format.replace('%Y-%m', '2000-01')), exist_ok=True) # Create example dir for format
+        
+        self._initialize_detailed_trade_log_csv() # Initialize the new log file
 
-        self._initialize_daily_summary_csv()
-        self._initialize_strategy_performance_csv()
+    def _get_current_monthly_filename(self, base_format: str) -> str:
+        """Generates a monthly filename based on the current date."""
+        return datetime.datetime.now().strftime(base_format)
 
     def _initialize_daily_summary_csv(self):
         """Ensures the daily summary CSV file exists with correct headers."""
-        if not os.path.exists(self.daily_summary_log_filename):
-            with open(self.daily_summary_log_filename, 'w') as f:
+        filename = self._get_current_monthly_filename(self.daily_summary_log_filename_format)
+        if not os.path.exists(filename):
+            with open(filename, 'w') as f:
                 f.write("Date,TotalTrades,WinRate,NetPnL,MaxDrawdown,EndingCapital,AllocatedCapitalMultiplier\n")
-            self.logger.info(f"Created daily summary log: {self.daily_summary_log_filename}")
+            self.logger.info(f"Created daily summary log: {filename}")
 
     def _initialize_strategy_performance_csv(self):
         """Ensures the strategy performance CSV file exists with correct headers."""
-        if not os.path.exists(self.strategy_performance_log_filename):
-            with open(self.strategy_performance_log_filename, 'w') as f:
+        filename = self._get_current_monthly_filename(self.strategy_performance_log_filename_format)
+        if not os.path.exists(filename):
+            with open(filename, 'w') as f:
                 f.write("Date,Regime,TotalTrades,WinRate,NetPnL,AvgPnLPerTrade,TradeDuration\n")
-            self.logger.info(f"Created strategy performance log: {self.strategy_performance_log_filename}")
+            self.logger.info(f"Created strategy performance log: {filename}")
+
+    def _initialize_detailed_trade_log_csv(self):
+        """Ensures the detailed trade log CSV file exists with correct headers."""
+        if not os.path.exists(self.detailed_trade_log_filename):
+            headers = [
+                "TradeID", "Token", "Exchange", "Side", "EntryTimestampUTC", "ExitTimestampUTC",
+                "TradeDurationSeconds", "NetPnLUSD", "PnLPercentage", "ExitReason",
+                "EntryPrice", "ExitPrice", "QuantityBaseAsset", "NotionalSizeUSD", "LeverageUsed",
+                "IntendedStopLossPrice", "IntendedTakeProfitPrice", "ActualStopLossPrice", "ActualTakeProfitPrice",
+                "OrderTypeEntry", "OrderTypeExit", "EntryFeesUSD", "ExitFeesUSD", "SlippageEntryPct", "SlippageExitPct",
+                "MarketRegimeAtEntry", "TacticianSignal", "EnsemblePredictionAtEntry", "EnsembleConfidenceAtEntry",
+                "DirectionalConfidenceAtEntry", "MarketHealthScoreAtEntry", "LiquidationSafetyScoreAtEntry",
+                "TrendStrengthAtEntry", "ADXValueAtEntry", "RSIValueAtEntry", "MACDHistogramValueAtEntry",
+                "PriceVsVWAPRatioAtEntry", "VolumeDeltaAtEntry", "GlobalRiskMultiplierAtEntry",
+                "AvailableAccountEquityAtEntry", "TradingEnvironment", "IsTradingPausedAtEntry",
+                "KillSwitchActiveAtEntry", "ModelVersionID",
+                "BaseModelPredictionsAtEntry", # New header
+                "EnsembleWeightsAtEntry" # New header
+            ]
+            with open(self.detailed_trade_log_filename, 'w') as f:
+                f.write(",".join(headers) + "\n")
+            self.logger.info(f"Created detailed trade log: {self.detailed_trade_log_filename}")
 
     async def generate_performance_report(self, trade_logs: list, current_date: datetime.date, allocated_capital: float):
         """
         Generates a detailed performance report for a given period.
+        This method now expects 'trade_logs' to be the list of detailed trade dictionaries.
         """
         self.logger.info(f"Generating Performance Report for {current_date}...")
         
@@ -59,17 +93,20 @@ class PerformanceReporter:
             }
             return {"daily_summary": daily_summary, "strategy_breakdown": {}}
 
+        # Use 'NetPnLUSD' for calculations now
         df_trades = pd.DataFrame(trade_logs)
-        df_trades['realized_pnl_usd'] = pd.to_numeric(df_trades['realized_pnl_usd'], errors='coerce').fillna(0)
+        df_trades['NetPnLUSD'] = pd.to_numeric(df_trades['NetPnLUSD'], errors='coerce').fillna(0)
 
         # --- Daily Summary Metrics ---
         total_trades = len(df_trades)
-        wins = df_trades[df_trades['realized_pnl_usd'] > 0]
+        wins = df_trades[df_trades['NetPnLUSD'] > 0]
         win_rate = (len(wins) / total_trades * 100) if total_trades > 0 else 0.0
-        net_pnl = df_trades['realized_pnl_usd'].sum()
+        net_pnl = df_trades['NetPnLUSD'].sum()
 
         # Calculate Max Drawdown for the period
-        equity_curve = pd.Series([initial_equity_for_period] + (initial_equity_for_period + df_trades['realized_pnl_usd'].cumsum()).tolist())
+        # This needs to be based on the equity curve from the start of the period
+        # For simplicity, if actual equity curve is not passed, use cumulative PnL
+        equity_curve = pd.Series([initial_equity_for_period] + (initial_equity_for_period + df_trades['NetPnLUSD'].cumsum()).tolist())
         peak = equity_curve.expanding(min_periods=1).max()
         drawdown = (equity_curve - peak) / peak
         max_drawdown = -drawdown.min() * 100 if not drawdown.empty else 0.0
@@ -89,19 +126,20 @@ class PerformanceReporter:
 
         # --- Strategy Performance Breakdown ---
         strategy_breakdown = {}
-        if 'market_state_at_entry' in df_trades.columns:
-            for regime, regime_trades in df_trades.groupby('market_state_at_entry'):
+        # Use 'MarketRegimeAtEntry' for grouping
+        if 'MarketRegimeAtEntry' in df_trades.columns:
+            for regime, regime_trades in df_trades.groupby('MarketRegimeAtEntry'):
                 regime_total_trades = len(regime_trades)
-                regime_wins = regime_trades[regime_trades['realized_pnl_usd'] > 0]
+                regime_wins = regime_trades[regime_trades['NetPnLUSD'] > 0]
                 regime_win_rate = (len(regime_wins) / regime_total_trades * 100) if regime_total_trades > 0 else 0.0
-                regime_net_pnl = regime_trades['realized_pnl_usd'].sum()
+                regime_net_pnl = regime_trades['NetPnLUSD'].sum()
                 
                 strategy_breakdown[regime] = {
                     "TotalTrades": regime_total_trades,
                     "WinRate": round(regime_win_rate, 2),
                     "NetPnL": round(regime_net_pnl, 2),
                     "AvgPnLPerTrade": round(regime_net_pnl / regime_total_trades, 2) if regime_total_trades > 0 else 0.0,
-                    "TradeDuration": 0.0  # Placeholder - would require entry/exit timestamps in logs
+                    "TradeDuration": round(regime_trades['TradeDurationSeconds'].mean(), 2) if regime_total_trades > 0 else 0.0
                 }
         
         self.logger.info("Performance Report Generated.")
@@ -111,18 +149,19 @@ class PerformanceReporter:
         """Appends the daily summary to the CSV log and saves to Firestore."""
         try:
             # CSV
+            filename = self._get_current_monthly_filename(self.daily_summary_log_filename_format)
             row = [
                 daily_summary["Date"], daily_summary["TotalTrades"], daily_summary["WinRate"],
                 daily_summary["NetPnL"], daily_summary["MaxDrawdown"], daily_summary["EndingCapital"],
                 daily_summary["AllocatedCapitalMultiplier"]
             ]
-            with open(self.daily_summary_log_filename, 'a') as f:
+            with open(filename, 'a') as f:
                 f.write(",".join(map(str, row)) + "\n")
-            self.logger.info(f"Appended daily summary for {daily_summary['Date']} to CSV.")
+            self.logger.info(f"Appended daily summary for {daily_summary['Date']} to CSV: {filename}.")
 
             # Firestore
             if self.firestore_manager and self.firestore_manager.firestore_enabled:
-                collection_name = self.daily_summary_log_filename.split('/')[-1].replace('.csv', '')
+                collection_name = "daily_summaries" # Use a fixed collection name
                 await self.firestore_manager.set_document(
                     collection_name, doc_id=daily_summary["Date"], data=daily_summary, is_public=False
                 )
@@ -134,18 +173,19 @@ class PerformanceReporter:
         """Appends strategy performance breakdown to its CSV log and saves to Firestore."""
         try:
             # CSV
-            with open(self.strategy_performance_log_filename, 'a') as f:
+            filename = self._get_current_monthly_filename(self.strategy_performance_log_filename_format)
+            with open(filename, 'a') as f:
                 for regime, metrics in strategy_breakdown.items():
                     row = [
                         current_date.strftime('%Y-%m-%d'), regime, metrics["TotalTrades"], metrics["WinRate"],
                         metrics["NetPnL"], metrics["AvgPnLPerTrade"], metrics["TradeDuration"]
                     ]
                     f.write(",".join(map(str, row)) + "\n")
-            self.logger.info(f"Appended strategy performance for {current_date} to CSV.")
+            self.logger.info(f"Appended strategy performance for {current_date} to CSV: {filename}.")
 
             # Firestore
             if self.firestore_manager and self.firestore_manager.firestore_enabled:
-                collection_name = self.strategy_performance_log_filename.split('/')[-1].replace('.csv', '')
+                collection_name = "strategy_performance_logs" # Use a fixed collection name
                 for regime, metrics in strategy_breakdown.items():
                     doc_id = f"{current_date.isoformat()}_{regime}"
                     doc_data = {"date": current_date.isoformat(), "regime": regime, **metrics}
@@ -155,3 +195,54 @@ class PerformanceReporter:
                 self.logger.info(f"Saved strategy performance for {current_date} to Firestore.")
         except Exception as e:
             self.logger.error(f"Error updating strategy performance log (CSV/Firestore): {e}", exc_info=True)
+
+    async def record_detailed_trade_log(self, trade_data: Dict[str, Any]):
+        """
+        Records a single detailed trade log entry to the CSV file and Firestore.
+        """
+        self.logger.info(f"Recording detailed trade log for Trade ID: {trade_data.get('TradeID')}")
+        
+        # Define the order of headers for the CSV
+        headers = [
+            "TradeID", "Token", "Exchange", "Side", "EntryTimestampUTC", "ExitTimestampUTC",
+            "TradeDurationSeconds", "NetPnLUSD", "PnLPercentage", "ExitReason",
+            "EntryPrice", "ExitPrice", "QuantityBaseAsset", "NotionalSizeUSD", "LeverageUsed",
+            "IntendedStopLossPrice", "IntendedTakeProfitPrice", "ActualStopLossPrice", "ActualTakeProfitPrice",
+            "OrderTypeEntry", "OrderTypeExit", "EntryFeesUSD", "ExitFeesUSD", "SlippageEntryPct", "SlippageExitPct",
+            "MarketRegimeAtEntry", "TacticianSignal", "EnsemblePredictionAtEntry", "EnsembleConfidenceAtEntry",
+            "DirectionalConfidenceAtEntry", "MarketHealthScoreAtEntry", "LiquidationSafetyScoreAtEntry",
+            "TrendStrengthAtEntry", "ADXValueAtEntry", "RSIValueAtEntry", "MACDHistogramValueAtEntry",
+            "PriceVsVWAPRatioAtEntry", "VolumeDeltaAtEntry", "GlobalRiskMultiplierAtEntry",
+            "AvailableAccountEquityAtEntry", "TradingEnvironment", "IsTradingPausedAtEntry",
+            "KillSwitchActiveAtEntry", "ModelVersionID",
+            "BaseModelPredictionsAtEntry", # New header
+            "EnsembleWeightsAtEntry" # New header
+        ]
+
+        try:
+            # Prepare the row data in the correct order, handling missing keys
+            row_values = []
+            for header in headers:
+                value = trade_data.get(header, "") # Get value or empty string if not present
+                # Handle nested dictionary values (like base_model_predictions, ensemble_weights)
+                if isinstance(value, dict):
+                    row_values.append(json.dumps(value)) # Convert dicts to JSON string
+                else:
+                    row_values.append(str(value))
+            
+            with open(self.detailed_trade_log_filename, 'a') as f:
+                f.write(",".join(row_values) + "\n")
+            self.logger.info(f"Detailed trade log for {trade_data.get('TradeID')} appended to CSV.")
+
+            # Firestore (optional, but good for real-time access)
+            if self.firestore_manager and self.firestore_manager.firestore_enabled:
+                collection_name = "detailed_trade_logs" # Or a more specific name
+                # Use trade_data.get('TradeID') as doc_id for unique identification
+                await self.firestore_manager.set_document(
+                    collection_name, doc_id=trade_data.get('TradeID'), data=trade_data, is_public=False
+                )
+                self.logger.info(f"Detailed trade log for {trade_data.get('TradeID')} saved to Firestore.")
+
+        except Exception as e:
+            self.logger.error(f"Error recording detailed trade log: {e}", exc_info=True)
+

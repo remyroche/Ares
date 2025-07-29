@@ -116,6 +116,10 @@ CONFIG: Dict[str, Any] = {
     "STRATEGY_PERFORMANCE_LOG_FILENAME_FORMAT": "reports/strategy_performance_log_%Y-%m.csv", # New: Monthly filenames for strategy reports
     "ERROR_LOG_FILE": "ares_errors.jsonl", # New: Dedicated error log file
 
+    # --- Database Configuration ---
+    "DATABASE_TYPE": "sqlite", # New: 'firestore' or 'sqlite'
+    "SQLITE_DB_PATH": "data/ares_local_db.sqlite", # New: Path for SQLite database file
+
     # --- Firestore Configuration ---
     "firestore": {
         "enabled": settings.firestore_project_id is not None,

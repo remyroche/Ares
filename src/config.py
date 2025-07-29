@@ -114,6 +114,7 @@ CONFIG: Dict[str, Any] = {
     "DETAILED_TRADE_LOG_FILE": "reports/detailed_trade_log.csv",
     "DAILY_SUMMARY_LOG_FILENAME_FORMAT": "reports/daily_summary_log_%Y-%m.csv", # New: Monthly filenames for summary reports
     "STRATEGY_PERFORMANCE_LOG_FILENAME_FORMAT": "reports/strategy_performance_log_%Y-%m.csv", # New: Monthly filenames for strategy reports
+    "ERROR_LOG_FILE": "ares_errors.jsonl", # New: Dedicated error log file
 
     # --- Firestore Configuration ---
     "firestore": {

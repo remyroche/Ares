@@ -1,3 +1,5 @@
+# backtesting/ares_backtester.py
+
 import pandas as pd
 import numpy as np
 import os
@@ -5,15 +7,15 @@ import subprocess
 import sys
 import traceback
 # Import the main CONFIG dictionary
-from config import CONFIG
-from ares_mailer import send_email # Import the email function
+from backtesting.config import BACKTESTING_CONFIG as CONFIG
+from emails.ares_mailer import send_email # Import the email function
 
 def load_prepared_data():
     """Loads prepared data. If the file is missing, calls the preparer script."""
     print("--- Step 1: Loading Prepared Data ---")
     # Access config values through the CONFIG dictionary
-    prepared_data_filename = CONFIG['PREPARED_DATA_FILENAME']
-    preparer_script_name = CONFIG['PREPARER_SCRIPT_NAME']
+    prepared_data_filename = CONFIG['data_path']
+    preparer_script_name = 'backtesting/ares_data_preparer.py'
 
     if not os.path.exists(prepared_data_filename):
         print(f"Prepared data file '{prepared_data_filename}' not found.")
@@ -52,7 +54,8 @@ class PortfolioManager:
         report = {}
         for src in df['source'].unique():
             subset = df[df['source'] == src]['pnl_pct']
-            sharpe = (subset.mean() / subset.std()) * np.sqrt(252 * 24 * 60) if len(subset) > 1 and subset.std() > 0 else 0
+            # Sharpe Ratio assumes daily returns, adjust for H1 data
+            sharpe = (subset.mean() / subset.std()) * np.sqrt(365 * 24) if len(subset) > 1 and subset.std() > 0 else 0
             report[src] = {
                 'num_trades': len(subset), 
                 'avg_profit_pct': subset.mean() * 100, 
@@ -81,16 +84,16 @@ class Analyst:
             
         return None
 
-def run_backtest(df, params=None): # Changed default to None, will use CONFIG['BEST_PARAMS']
+def run_backtest(df, params=None):
     """
     Runs the full backtest using the new confidence score logic.
     Improved exit logic to prioritize stop-loss if both SL/TP are hit within the same candle.
     """
     # Use BEST_PARAMS from the main CONFIG
     if params is None:
-        params = CONFIG['BEST_PARAMS']
+        params = CONFIG.get('BEST_PARAMS', {})
 
-    portfolio = PortfolioManager(CONFIG['INITIAL_EQUITY'])
+    portfolio = PortfolioManager(CONFIG.get('INITIAL_EQUITY', 10000))
     analyst = Analyst(params)
     position, entry_price, trade_info = 0, 0, {}
     
@@ -105,32 +108,26 @@ def run_backtest(df, params=None): # Changed default to None, will use CONFIG['B
             
             # Check for Stop Loss and Take Profit
             if position == 1: # Long position
-                # Check if price went below Stop Loss
                 sl_hit = row['low'] <= sl
-                # Check if price went above Take Profit
                 tp_hit = row['high'] >= tp
 
                 if sl_hit:
-                    # If Stop Loss is hit, exit at Stop Loss price
                     exit_price = sl
                 elif tp_hit:
-                    # If only Take Profit is hit, exit at Take Profit price
                     exit_price = tp
             elif position == -1: # Short position
-                # Check if price went above Stop Loss
                 sl_hit = row['high'] >= sl
-                # Check if price went below Take Profit
                 tp_hit = row['low'] <= tp
 
                 if sl_hit:
-                    # If Stop Loss is hit, exit at Stop Loss price
                     exit_price = sl
                 elif tp_hit:
-                    # If only Take Profit is hit, exit at Take Profit price
                     exit_price = tp
 
             if exit_price > 0: # If an exit condition was met
                 pnl = (exit_price - entry_price) / entry_price if position == 1 else (entry_price - exit_price) / entry_price
+                # Account for fees
+                pnl -= CONFIG.get('fee_rate', 0.0005) * 2 # entry and exit fees
                 portfolio.record(pnl, trade_info['source'])
                 position = 0 # Reset position after exit
                 continue # Move to next candle
@@ -158,7 +155,7 @@ def main():
     try:
         prepared_df = load_prepared_data()
         # Pass CONFIG['BEST_PARAMS'] explicitly to run_backtest
-        portfolio = run_backtest(prepared_df, CONFIG['BEST_PARAMS'])
+        portfolio = run_backtest(prepared_df, CONFIG.get('BEST_PARAMS'))
 
         report_lines = []
         separator = "="*80
@@ -188,6 +185,8 @@ def main():
         raise
         
     finally:
+        # Note: Email sending might require additional configuration (SMTP server, credentials, etc.)
+        # and is assumed to be set up in ares_mailer.py
         send_email(email_subject, email_body)
 
 if __name__ == "__main__":

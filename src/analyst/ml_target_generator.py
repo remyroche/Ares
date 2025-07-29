@@ -4,10 +4,10 @@ import pandas as pd
 
 class MLTargetGenerator:
     """
-    ## CHANGE: Implemented a new S/R-based target generation strategy.
-    ## This class now generates a dedicated 'target_sr' column with specific labels
-    ## for S/R Fade (Reversal) and Breakout scenarios. This allows the SRZoneActionEnsemble
-    ## to be trained to identify these precise, actionable trading setups.
+    CHANGE: Implemented a new S/R-based target generation strategy.
+    This class generates a dedicated 'target_sr' column with specific labels
+    for S/R Fade (Reversal) and Breakout scenarios. This allows the SRZoneActionEnsemble
+    to be trained to identify these precise, actionable trading setups.
     """
     def __init__(self, config):
         self.config = config.get("analyst", {}).get("ml_target_generator", {})

@@ -2,8 +2,10 @@ import logging
 import os
 import pandas as pd
 from joblib import dump, load
+from typing import Any, Optional # Import Any and Optional
 
 from src.utils.logger import system_logger
+from src.config import CONFIG # Import CONFIG to get checkpoint paths
 from .regime_ensembles.bull_trend_ensemble import BullTrendEnsemble
 from .regime_ensembles.bear_trend_ensemble import BearTrendEnsemble
 from .regime_ensembles.sideways_range_ensemble import SidewaysRangeEnsemble
@@ -12,11 +14,8 @@ from .regime_ensembles.high_impact_candle_ensemble import HighImpactCandleEnsemb
 
 class RegimePredictiveEnsembles:
     """
-    ## CHANGE: Fully updated the Ensemble Orchestrator.
-    ## This class is now a clean, high-level orchestrator that correctly manages
-    ## the training and prediction workflows for all specialized ensembles. It no longer
-    ## simulates its own data and properly delegates tasks, aligning with the
-    ## advanced, modular architecture of the system.
+    Orchestrates the training and prediction workflows for all specialized ensembles.
+    Now includes checkpointing for ensemble models.
     """
     def __init__(self, config):
         self.config = config.get("analyst", {})
@@ -30,37 +29,64 @@ class RegimePredictiveEnsembles:
             "SR_ZONE_ACTION": SRZoneActionEnsemble(config, "SRZoneActionEnsemble"),
             "HIGH_IMPACT_CANDLE": HighImpactCandleEnsemble(config, "HighImpactCandleEnsemble")
         }
-        self.model_storage_path = self.config.get("model_storage_path", "models/analyst/") + "ensembles/"
-        os.makedirs(self.model_storage_path, exist_ok=True)
+        # Model storage path is now dynamic based on checkpoint config
+        self.model_storage_dir = os.path.join(CONFIG['CHECKPOINT_DIR'], "analyst_models", "ensembles")
+        os.makedirs(self.model_storage_dir, exist_ok=True)
 
-    def train_all_models(self, asset: str, prepared_data: pd.DataFrame):
+    def train_all_models(self, asset: str, prepared_data: pd.DataFrame, model_path_prefix: Optional[str] = None):
         """
         Orchestrates the training of all regime-specific ensembles.
         It splits the prepared data by regime and passes the relevant slice to each ensemble.
-        """
-        self.logger.info(f"Orchestrator: Starting training for all ensembles for asset {asset}...")
         
-        if 'regime' not in prepared_data.columns or 'target' not in prepared_data.columns:
-            self.logger.error("Prepared data is missing 'regime' or 'target' column. Halting training.")
+        Args:
+            asset (str): The trading asset (e.g., "BTCUSDT").
+            prepared_data (pd.DataFrame): The full prepared historical data with 'regime' and 'target' columns.
+            model_path_prefix (str, optional): A prefix for saving models (e.g., includes fold_id).
+        """
+        self.logger.info(f"Orchestrator: Starting training for all ensembles for asset {asset} (prefix: {model_path_prefix})...")
+        
+        if 'Market_Regime_Label' not in prepared_data.columns or 'target' not in prepared_data.columns:
+            self.logger.error("Prepared data is missing 'Market_Regime_Label' or 'target' column. Halting training.")
             return
 
-        for regime, ensemble in self.regime_ensembles.items():
-            self.logger.info(f"--- Processing ensemble for {regime} ---")
+        for regime_key, ensemble_instance in self.regime_ensembles.items():
+            self.logger.info(f"--- Processing ensemble for {regime_key} ---")
             
-            regime_data = prepared_data[prepared_data['regime'] == regime]
+            # Filter data for the current regime
+            regime_data = prepared_data[prepared_data['Market_Regime_Label'] == regime_key]
             
             if regime_data.empty or len(regime_data['target'].unique()) < 2:
-                self.logger.warning(f"Insufficient or single-class data for {regime}. Skipping training.")
+                self.logger.warning(f"Insufficient or single-class data for {regime_key}. Skipping training.")
                 continue
 
-            historical_features = regime_data.drop(columns=['target'])
+            historical_features = regime_data.drop(columns=['target', 'Market_Regime_Label'], errors='ignore')
             historical_targets = regime_data['target']
 
-            ensemble.train_ensemble(historical_features, historical_targets)
+            # Construct the specific model path for this ensemble and fold
+            model_file_name = f"{regime_key.lower()}_ensemble.joblib"
+            if model_path_prefix:
+                # model_path_prefix will be like "checkpoints/analyst_models/ensemble_fold_X_"
+                full_model_path = f"{model_path_prefix}{model_file_name}"
+            else:
+                # Default path if no prefix (e.g., for live mode, load final model)
+                full_model_path = os.path.join(self.model_storage_dir, f"final_{model_file_name}")
+
+            # Try to load the model first
+            if os.path.exists(full_model_path):
+                self.logger.info(f"Attempting to load {regime_key} ensemble from {full_model_path}...")
+                if ensemble_instance.load_model(full_model_path):
+                    self.logger.info(f"Successfully loaded {regime_key} ensemble.")
+                    continue # Skip training if loaded successfully
+                else:
+                    self.logger.warning(f"Failed to load {regime_key} ensemble from {full_model_path}. Retraining.")
             
-            if ensemble.trained:
-                model_path = os.path.join(self.model_storage_path, f"{asset}_{regime.lower()}_ensemble.joblib")
-                self.save_model(ensemble, model_path)
+            # If not loaded, train the model
+            ensemble_instance.train_ensemble(historical_features, historical_targets)
+            
+            # Save the trained model
+            if ensemble_instance.trained:
+                ensemble_instance.save_model(full_model_path)
+
 
     def get_all_predictions(self, asset: str, current_features: pd.DataFrame, **kwargs) -> dict:
         """
@@ -74,19 +100,18 @@ class RegimePredictiveEnsembles:
             self.logger.warning(f"No ensemble defined for regime: {regime}.")
             return {"prediction": "HOLD", "confidence": 0.0, "regime": regime, "base_predictions": {}}
 
+        # For live prediction, we need to load the *final* trained model if not already loaded
         if not ensemble.trained:
-            self.logger.warning(f"Ensemble for {regime} is not trained. Attempting to load model...")
-            model_path = os.path.join(self.model_storage_path, f"{asset}_{regime.lower()}_ensemble.joblib")
-            if not self.load_model(ensemble, model_path):
-                 self.logger.error(f"Failed to load model for {regime}. Cannot make prediction.")
+            self.logger.warning(f"Ensemble for {regime} is not trained. Attempting to load final model...")
+            final_model_file_name = os.path.join(self.model_storage_dir, f"final_{regime.lower()}_ensemble.joblib")
+            if not ensemble.load_model(final_model_file_name):
+                 self.logger.error(f"Failed to load final model for {regime}. Cannot make prediction.")
                  return {"prediction": "HOLD", "confidence": 0.0, "regime": regime, "base_predictions": {}}
 
         final_prediction_output = ensemble.get_prediction(current_features, **kwargs)
         
-        # Get base model predictions for the dynamic weighter
         base_predictions = {}
         if hasattr(ensemble, '_get_meta_features'):
-             # We get the meta-features, which are the outputs of the base models
              base_predictions = ensemble._get_meta_features(current_features, is_live=True, **kwargs)
 
         return {
@@ -98,8 +123,8 @@ class RegimePredictiveEnsembles:
 
     def get_current_regime(self, current_features: pd.DataFrame) -> str:
         """Determines the most recent market regime from the feature data."""
-        if not current_features.empty and 'regime' in current_features.columns:
-            return current_features['regime'].iloc[-1]
+        if not current_features.empty and 'Market_Regime_Label' in current_features.columns:
+            return current_features['Market_Regime_Label'].iloc[-1]
         return "UNKNOWN"
 
     def save_model(self, ensemble_instance, path: str):
@@ -118,6 +143,7 @@ class RegimePredictiveEnsembles:
             loaded_ensemble = load(path)
             # Update the existing instance's state instead of replacing it
             ensemble_instance.__dict__.update(loaded_ensemble.__dict__)
+            ensemble_instance.trained = True # Ensure 'trained' flag is set
             self.logger.info(f"Successfully loaded pre-trained ensemble from {path}")
             return True
         except Exception as e:
@@ -128,8 +154,10 @@ class RegimePredictiveEnsembles:
         """Loads updated weights into the ensembles for dynamic weighting."""
         for regime, ensemble_weights in weights.items():
             if regime in self.regime_ensembles:
+                # Assuming BaseEnsemble has an attribute 'ensemble_weights'
                 self.regime_ensembles[regime].ensemble_weights = ensemble_weights
 
     def get_current_weights(self) -> dict:
         """Returns the current weights of all ensembles."""
         return {regime: ens.ensemble_weights for regime, ens in self.regime_ensembles.items()}
+

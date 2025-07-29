@@ -2,11 +2,13 @@
 
 import asyncio
 from datetime import datetime
-from typing import List, Optional # Added import for List
-from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
+from typing import List, Optional, Union # Added imports for type hinting
+from src.utils.logger import system_logger as logger
 from src.config import settings
 from src.utils.state_manager import StateManager
+# Import both managers for type hinting, but use the one passed in __init__
 from src.database.firestore_manager import FirestoreManager
+from src.database.sqlite_manager import SQLiteManager
 from src.exchange.binance import BinanceExchange # Assuming Binance for now, can be made generic
 
 class GlobalPortfolioManager:
@@ -16,9 +18,9 @@ class GlobalPortfolioManager:
     risk policies, including capital allocation.
     """
 
-    def __init__(self, state_manager: StateManager, firestore_manager: FirestoreManager):
+    def __init__(self, state_manager: StateManager, db_manager: Union[FirestoreManager, SQLiteManager, None] = None): # Fixed: Accept generic db_manager
         self.state_manager = state_manager
-        self.firestore_manager = firestore_manager
+        self.db_manager = db_manager # Use the passed db_manager
         self.logger = logger.getChild('GlobalPortfolioManager')
         self.config = settings.get("global_portfolio_manager", {})
         self.risk_config = settings.get("risk_management", {}) # Load risk management config
@@ -72,19 +74,20 @@ class GlobalPortfolioManager:
                 self.logger.error(f"An error occurred in the GlobalPortfolioManager loop: {e}", exc_info=True)
 
     async def _publish_risk_parameters(self):
-        """Publishes risk parameters from config to Firestore for local bots to use."""
+        """Publishes risk parameters from config to DB for local bots to use."""
         max_allocation_per_pair = self.risk_config.get("max_allocation_per_pair_usd", 5000)
         self.logger.info(f"Publishing risk parameters: Max allocation per pair = ${max_allocation_per_pair:,.2f}")
         
-        # Fixed: Ensure firestore_manager is not None before calling set_document
-        if self.firestore_manager:
-            await self.firestore_manager.set_document(
-                "global_state",
-                "risk_params",
-                {"max_allocation_per_pair_usd": max_allocation_per_pair, "timestamp": datetime.now().isoformat()}
+        # Fixed: Ensure db_manager is not None before calling set_document
+        if self.db_manager:
+            await self.db_manager.set_document(
+                "global_state", # Table name
+                "risk_params", # Doc ID / Key
+                {"max_allocation_per_pair_usd": max_allocation_per_pair, "timestamp": datetime.now().isoformat()},
+                is_public=True # is_public is ignored by SQLite, but kept for API compatibility
             )
         else:
-            self.logger.warning("Firestore manager is None. Cannot publish risk parameters to Firestore.")
+            self.logger.warning("DB Manager is None. Cannot publish risk parameters to DB.")
 
 
     async def _calculate_total_portfolio_equity(self) -> Optional[float]: # Fixed: Return type can be Optional[float]
@@ -158,7 +161,7 @@ class GlobalPortfolioManager:
 
 
     async def _check_global_risk(self, current_equity: float):
-        """Checks global drawdown and updates the global trading status in Firestore."""
+        """Checks global drawdown and updates the global trading status in DB."""
         peak_equity = self.state_manager.get_state("global_peak_equity")
         if peak_equity is None or peak_equity == 0: # Fixed: Handle None for peak_equity
             self.logger.warning("Peak equity is not set or zero. Cannot calculate global drawdown.")
@@ -178,7 +181,7 @@ class GlobalPortfolioManager:
 
     async def _update_global_status(self, new_status: str, reason: str):
         """
-        Helper method to update the global trading status in the state manager and Firestore.
+        Helper method to update the global trading status in the state manager and DB.
         """
         current_status = self.state_manager.get_state("global_trading_status")
         if new_status == current_status:
@@ -188,16 +191,16 @@ class GlobalPortfolioManager:
         self.state_manager.set_state("global_trading_status", new_status)
         
         try:
-            # Fixed: Ensure firestore_manager is not None before calling set_document
-            if self.firestore_manager:
-                await self.firestore_manager.set_document(
-                    "global_state", 
-                    "status", 
+            # Fixed: Ensure db_manager is not None before calling set_document
+            if self.db_manager:
+                await self.db_manager.set_document(
+                    "global_state", # Table name
+                    "status", # Doc ID / Key
                     {"trading_status": new_status, "reason": reason, "timestamp": datetime.now().isoformat()}
                 )
-                self.logger.info(f"Successfully published new global status '{new_status}' to Firestore.")
+                self.logger.info(f"Successfully published new global status '{new_status}' to DB.")
             else:
-                self.logger.warning("Firestore manager is None. Cannot publish global status to Firestore.")
+                self.logger.warning("DB Manager is None. Cannot publish global status to DB.")
         except Exception as e:
-            self.logger.error(f"Failed to publish global status to Firestore: {e}", exc_info=True)
+            self.logger.error(f"Failed to publish global status to DB: {e}", exc_info=True)
 

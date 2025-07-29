@@ -1,204 +1,198 @@
-# src/analyst/predictive_ensembles.py
-import pandas as pd
+import logging
+
 import numpy as np
-# Placeholder imports for ML models
-# from tensorflow.keras.models import load_model # For LSTM/Transformer
-# from sklearn.svm import SVC # For SVM
-# from lightgbm import LGBMClassifier # For LightGBM
-# from sklearn.ensemble import RandomForestClassifier # For Random Forest
-# from sklearn.linear_model import LogisticRegression # For Logistic Regression
-# from statsmodels.tsa.arima.model import ARIMA # For ARIMA (statistical)
-# from arch import arch_model # For GARCH (statistical)
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
 
-class RegimePredictiveEnsembles:
-    """
-    Manages regime-specific predictive ensembles, combining multiple models
-    and integrating advanced concepts like Wyckoff, Order Flow, and Manipulation Detection.
-    """
+# Placeholder imports for actual models
+# from tensorflow.keras.models import load_model
+# from lightgbm import LGBMClassifier
+
+
+class PredictiveEnsembles:
     def __init__(self, config):
-        self.config = config.get("analyst", {}).get("regime_predictive_ensembles", {})
-        self.ensemble_weights = self.config.get("ensemble_weights", {})
-        
-        # Placeholders for trained models for each regime
-        self.models = {
-            "BULL_TREND": {"lstm": None, "transformer": None, "statistical": None, "volume": None},
-            "BEAR_TREND": {"lstm": None, "transformer": None, "statistical": None, "volume": None},
-            "SIDEWAYS_RANGE": {"clustering": None, "bb_squeeze": None, "order_flow": None, "manipulation": None},
-            "SR_ZONE_ACTION": {"volume": None, "order_flow": None, "confluence": None},
-            "HIGH_IMPACT_CANDLE": {"volume_imbalance": None, "tabnet": None, "order_flow": None, "manipulation": None}
-        }
-        # Placeholder for confluence models (meta-learners)
-        self.confluence_models = {
-            "BULL_TREND": None, "BEAR_TREND": None, "SIDEWAYS_RANGE": None,
-            "SR_ZONE_ACTION": None, "HIGH_IMPACT_CANDLE": None
-        }
+        self.config = config
+        self.logger = logging.getLogger(__name__)
+        self.feature_engineering = FeatureEngineering(self.config)
+        self.regime_classifier = RegimeClassifier(self.config)
+        self.ml_target_generator = MLTargetGenerator(self.config)
+        self.regime_ensembles = RegimePredictiveEnsembles(self.config)
 
-    def _load_or_train_model(self, model_type: str, regime: str, data: pd.DataFrame = None):
+    def get_predictions(self, asset_data):
         """
-        Placeholder for loading or (simulating) training a specific model.
-        In a real system, models would be saved/loaded after training.
+        Orchestrates the process of getting predictions for a set of assets.
         """
-        print(f"Placeholder: Loading/Training {model_type} model for {regime} regime.")
-        # Example:
-        # if model_type == "lstm":
-        #     # self.models[regime]["lstm"] = load_model(f"models/{regime}_lstm.h5")
-        #     pass # Simulate loading
-        # elif model_type == "lightgbm":
-        #     # self.models[regime]["lightgbm"] = LGBMClassifier().fit(data_X, data_y)
-        #     pass # Simulate training/loading
-        return True # Simulate success
+        all_predictions = {}
+        for asset, data in asset_data.items():
+            self.logger.info(f"Processing predictions for {asset}...")
+            try:
+                features_df = self.feature_engineering.generate_features(
+                    data["klines_df"]
+                )
+                regime_df = self.regime_classifier.classify_regime(features_df)
+                features_with_regime = pd.concat([features_df, regime_df], axis=1)
+                data_with_targets = self.ml_target_generator.generate_targets(
+                    features_with_regime
+                )
+                predictions = self.regime_ensembles.get_all_predictions(
+                    asset, data_with_targets
+                )
+                all_predictions[asset] = predictions
+                self.logger.info(f"Successfully generated predictions for {asset}.")
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to get predictions for {asset}. Error: {e}", exc_info=True
+                )
+                all_predictions[asset] = {"error": str(e)}
+        return all_predictions
 
-    def train_all_ensembles(self, historical_features: pd.DataFrame, historical_targets: dict):
+    def train_models(self, asset_data):
         """
-        Placeholder for training all regime-specific ensembles.
-        `historical_targets` would be a dictionary mapping regime names to their respective target series.
+        Orchestrates the training of all predictive ensemble models.
         """
-        print("Placeholder: Training all Regime-Specific Predictive Ensembles...")
-        for regime in self.models.keys():
-            print(f"--- Training models for {regime} regime ---")
-            for model_type in self.models[regime].keys():
-                self._load_or_train_model(model_type, regime, historical_features)
-            # Train confluence model for this regime
-            # self.confluence_models[regime] = LightGBM().fit(ensemble_predictions, final_target)
-        print("Regime-Specific Predictive Ensembles training placeholder complete.")
+        self.logger.info("Starting model training orchestration...")
+        for asset, data in asset_data.items():
+            self.logger.info(f"Starting training for {asset}...")
+            try:
+                prepared_data = self._prepare_data_for_training(
+                    data["klines_df"],
+                    data.get("agg_trades_df"),
+                    data.get("order_book_data"),
+                )
+                self.regime_ensembles.train_all_models(asset, prepared_data)
+                self.logger.info(f"Successfully completed training for {asset}.")
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to train models for {asset}. Error: {e}", exc_info=True
+                )
+        self.logger.info("Model training orchestration finished.")
 
-    def _get_wyckoff_features(self, klines_df: pd.DataFrame, current_price: float):
-        """Placeholder for extracting Wyckoff pattern features."""
-        # This would involve pattern recognition logic on price/volume data
-        # e.g., identifying Springs, Upthrusts, Signs of Strength/Weakness, etc.
-        # Returns a dict of binary features or scores.
-        return {
-            "is_wyckoff_sos": np.random.choice([0, 1]),
-            "is_wyckoff_sow": np.random.choice([0, 1]),
-            "is_wyckoff_spring": np.random.choice([0, 1]),
-            "is_wyckoff_upthrust": np.random.choice([0, 1])
-        }
-
-    def _get_manipulation_features(self, order_book_data: dict, current_price: float):
-        """Placeholder for detecting market manipulation features (e.g., liquidity sweeps, fakeouts)."""
-        # This would involve more advanced analysis of order book changes and price action
-        return {
-            "is_liquidity_sweep": np.random.choice([0, 1]),
-            "is_fake_breakout": np.random.choice([0, 1])
-        }
-
-    def _get_order_flow_features(self, agg_trades_df: pd.DataFrame, order_book_data: dict):
-        """Placeholder for extracting Order Flow and Market Microstructure features."""
-        # This would involve calculating Cumulative Volume Delta (CVD), analyzing footprint charts,
-        # and detecting absorption/exhaustion patterns.
-        # Requires more granular data than just agg_trades_df (e.g., raw trades, order book snapshots).
-        return {
-            "cvd_divergence": np.random.uniform(-1, 1),
-            "is_absorption": np.random.choice([0, 1]),
-            "is_exhaustion": np.random.choice([0, 1])
-        }
-
-    def _get_multi_timeframe_features(self, klines_df_htf: pd.DataFrame, klines_df_mtf: pd.DataFrame):
-        """Placeholder for multi-timeframe analysis features."""
-        # e.g., HTF trend direction, alignment of MAs across timeframes.
-        return {
-            "htf_trend_bullish": np.random.choice([0, 1]),
-            "mtf_trend_bullish": np.random.choice([0, 1])
-        }
-
-    def get_ensemble_prediction(self, regime: str, current_features: pd.DataFrame, 
-                                klines_df: pd.DataFrame, agg_trades_df: pd.DataFrame, 
-                                order_book_data: dict, current_price: float):
+    def _prepare_data_for_training(
+        self, klines_df, agg_trades_df=None, order_book_data=None
+    ):
         """
-        Gets a combined prediction and confidence score for the given regime.
+        Prepares a complete dataset for training.
         """
-        if regime not in self.models:
-            print(f"Warning: No ensemble defined for regime: {regime}")
-            return {"prediction": "HOLD", "confidence": 0.0}
+        features_df = self.feature_engineering.generate_features(klines_df)
+        regime_df = self.regime_classifier.classify_regime(features_df)
+        data_with_targets = self.ml_target_generator.generate_targets(
+            pd.concat([features_df, regime_df], axis=1)
+        )
 
-        print(f"Getting ensemble prediction for {regime} regime...")
-        
-        # Gather features for specialized models
-        wyckoff_feats = self._get_wyckoff_features(klines_df, current_price)
-        manipulation_feats = self._get_manipulation_features(order_book_data, current_price)
-        order_flow_feats = self._get_order_flow_features(agg_trades_df, order_book_data)
-        # Assuming klines_df_htf and klines_df_mtf are available or derived
-        multi_timeframe_feats = self._get_multi_timeframe_features(klines_df, klines_df) # Placeholder
+        order_flow_feats = self._get_order_flow_features(
+            agg_trades_df, order_book_data
+        )
+        multi_timeframe_feats = self._get_multi_timeframe_features(klines_df)
+        wyckoff_feats = self._get_wyckoff_features(klines_df)
+        manipulation_feats = self._get_manipulation_features(order_book_data)
 
-        # Individual model predictions (placeholder for actual model inference)
-        model_predictions = {}
-        model_confidences = {}
+        # Combine all features
+        # Note: Merging requires a common index (timestamp)
+        final_data = data_with_targets
+        for f_df in [
+            order_flow_feats,
+            multi_timeframe_feats,
+            wyckoff_feats,
+            manipulation_feats,
+        ]:
+            if not f_df.empty:
+                final_data = final_data.join(f_df, how="left")
 
-        # Simulate predictions from different models based on regime
-        if regime == "BULL_TREND":
-            model_predictions["lstm"] = "CONTINUE_UP" if np.random.rand() > 0.3 else "MINOR_PULLBACK"
-            model_confidences["lstm"] = np.random.uniform(0.6, 0.9)
-            model_predictions["transformer"] = "CONTINUE_UP" if np.random.rand() > 0.4 else "MINOR_PULLBACK"
-            model_confidences["transformer"] = np.random.uniform(0.5, 0.8)
-            model_predictions["statistical"] = "CONTINUE_UP" if np.random.rand() > 0.5 else "REVERSAL"
-            model_confidences["statistical"] = np.random.uniform(0.4, 0.7)
-            model_predictions["volume"] = "CONTINUE_UP" if np.random.rand() > 0.3 else "REVERSAL"
-            model_confidences["volume"] = np.random.uniform(0.6, 0.9)
-            
-            # Incorporate Wyckoff/Order Flow as features for confluence model
-            if wyckoff_feats["is_wyckoff_sos"] and order_flow_feats["is_absorption"]:
-                model_confidences["volume"] += 0.1 # Boost confidence
-            if manipulation_feats["is_liquidity_sweep"]:
-                model_confidences["lstm"] += 0.1 # Boost confidence
+        return final_data.fillna(method="ffill").dropna()
 
-        elif regime == "BEAR_TREND":
-            model_predictions["lstm"] = "CONTINUE_DOWN" if np.random.rand() > 0.3 else "MINOR_BOUNCE"
-            model_confidences["lstm"] = np.random.uniform(0.6, 0.9)
-            model_predictions["transformer"] = "CONTINUE_DOWN" if np.random.rand() > 0.4 else "MINOR_BOUNCE"
-            model_confidences["transformer"] = np.random.uniform(0.5, 0.8)
-            model_predictions["statistical"] = "CONTINUE_DOWN" if np.random.rand() > 0.5 else "REVERSAL"
-            model_confidences["statistical"] = np.random.uniform(0.4, 0.7)
-            model_predictions["volume"] = "CONTINUE_DOWN" if np.random.rand() > 0.3 else "REVERSAL"
-            model_confidences["volume"] = np.random.uniform(0.6, 0.9)
+    def _get_order_flow_features(self, agg_trades_df, order_book_data):
+        if agg_trades_df is None or agg_trades_df.empty:
+            return pd.DataFrame()
 
-        elif regime == "SIDEWAYS_RANGE":
-            model_predictions["clustering"] = "MEAN_REVERT" if np.random.rand() > 0.5 else "BREAKOUT_UP"
-            model_confidences["clustering"] = np.random.uniform(0.5, 0.8)
-            model_predictions["bb_squeeze"] = "BREAKOUT_UP" if np.random.rand() > 0.6 else "MEAN_REVERT"
-            model_confidences["bb_squeeze"] = np.random.uniform(0.4, 0.7)
-            if manipulation_feats["is_fake_breakout"]:
-                model_predictions["bb_squeeze"] = "MEAN_REVERT"
-                model_confidences["bb_squeeze"] = 0.9 # High confidence for mean reversion
+        self.logger.info("Generating Order Flow features...")
+        # Calculate Cumulative Volume Delta (CVD)
+        # 'm' is True if the buyer is the maker, meaning the aggressor was a seller.
+        direction = np.where(agg_trades_df["m"], -1, 1)
+        signed_volume = agg_trades_df["q"] * direction
+        cvd = signed_volume.cumsum()
+        features = pd.DataFrame({"cvd": cvd}, index=agg_trades_df.index)
 
-        elif regime == "SR_ZONE_ACTION":
-            model_predictions["volume"] = "REJECTION" if np.random.rand() > 0.5 else "BREAKTHROUGH"
-            model_confidences["volume"] = np.random.uniform(0.5, 0.8)
-            model_predictions["order_flow"] = "REJECTION" if np.random.rand() > 0.6 else "BREAKTHROUGH"
-            model_confidences["order_flow"] = np.random.uniform(0.6, 0.9)
-            if order_flow_feats["cvd_divergence"] < -0.5: # Example for strong rejection signal
-                model_predictions["order_flow"] = "REJECTION"
-                model_confidences["order_flow"] = 0.95
+        # Basic order book features
+        if order_book_data is not None and not order_book_data.empty:
+            best_bid = order_book_data[order_book_data["side"] == "buy"]["price"].max()
+            best_ask = order_book_data[order_book_data["side"] == "sell"]["price"].min()
+            features["bid_ask_spread"] = best_ask - best_bid
 
-        elif regime == "HIGH_IMPACT_CANDLE":
-            model_predictions["volume_imbalance"] = "STRONG_BREAKOUT_UP" if np.random.rand() > 0.5 else "FAILED_BREAKOUT_UP"
-            model_confidences["volume_imbalance"] = np.random.uniform(0.6, 0.9)
-            model_predictions["tabnet"] = "STRONG_BREAKOUT_UP" if np.random.rand() > 0.6 else "FAILED_BREAKOUT_UP"
-            model_confidences["tabnet"] = np.random.uniform(0.5, 0.8)
+        return features
 
-        # Confluence Model (meta-learner) - Placeholder for actual logic
-        # In a real scenario, this would be a trained model (e.g., LightGBM) that takes
-        # the individual model predictions/confidences as input and outputs a final decision.
-        
-        final_prediction = "HOLD"
-        final_confidence = 0.0
-        
-        if model_confidences:
-            # Simple weighted average of confidences for demonstration
-            total_weighted_confidence = sum(model_confidences[m] * self.ensemble_weights.get(m, 1.0) 
-                                            for m in model_confidences if m in self.ensemble_weights)
-            total_weight = sum(self.ensemble_weights.get(m, 1.0) for m in model_confidences if m in self.ensemble_weights)
-            
-            if total_weight > 0:
-                final_confidence = total_weighted_confidence / total_weight
-            
-            # Determine final prediction based on highest average confidence or specific rules
-            if regime == "BULL_TREND":
-                if final_confidence > self.config.get("min_confluence_confidence", 0.7) and "CONTINUE_UP" in [p for p in model_predictions.values()]:
-                    final_prediction = "BUY"
-            elif regime == "BEAR_TREND":
-                if final_confidence > self.config.get("min_confluence_confidence", 0.7) and "CONTINUE_DOWN" in [p for p in model_predictions.values()]:
-                    final_prediction = "SELL"
-            # Add similar logic for other regimes
+    def _get_multi_timeframe_features(self, klines_df, htf_period="4H"):
+        if klines_df is None or klines_df.empty:
+            return pd.DataFrame()
 
-        print(f"Ensemble Result: Prediction={final_prediction}, Confidence={final_confidence:.2f}")
-        return {"prediction": final_prediction, "confidence": final_confidence}
+        self.logger.info("Generating Multi-Timeframe features...")
+        # Ensure index is datetime
+        klines_df.index = pd.to_datetime(klines_df.index)
+
+        # Base timeframe trend
+        klines_df["base_ma"] = klines_df["close"].rolling(window=20).mean()
+        klines_df["base_trend_up"] = (klines_df["close"] > klines_df["base_ma"]).astype(
+            int
+        )
+
+        # Higher timeframe trend
+        htf_klines = klines_df["close"].resample(htf_period).ohlc()
+        htf_klines["htf_ma"] = htf_klines["close"].rolling(window=10).mean()
+        htf_klines["htf_trend_up"] = (htf_klines["close"] > htf_klines["htf_ma"]).astype(
+            int
+        )
+
+        # Align HTF trend back to base timeframe
+        features = klines_df[["base_trend_up"]].join(
+            htf_klines[["htf_trend_up"]], how="left"
+        )
+        features["htf_trend_up"] = features["htf_trend_up"].fillna(method="ffill")
+        features["trend_alignment"] = (
+            features["base_trend_up"] == features["htf_trend_up"]
+        ).astype(int)
+
+        return features[["htf_trend_up", "trend_alignment"]]
+
+    def _get_wyckoff_features(self, klines_df):
+        if klines_df is None or klines_df.empty:
+            return pd.DataFrame()
+        self.logger.info("Generating Wyckoff features...")
+        volume_ma = klines_df["volume"].rolling(window=20).mean()
+        price_range = klines_df["high"] - klines_df["low"]
+        is_high_volume = klines_df["volume"] > (volume_ma * 1.5)
+        is_wide_range = price_range > price_range.rolling(window=20).mean() * 1.5
+        is_up_bar = klines_df["close"] > klines_df["open"]
+
+        sos_bar = is_high_volume & is_wide_range & is_up_bar
+        sow_bar = is_high_volume & is_wide_range & ~is_up_bar
+
+        return pd.DataFrame(
+            {"wyckoff_sos": sos_bar.astype(int), "wyckoff_sow": sow_bar.astype(int)},
+            index=klines_df.index,
+        )
+
+    def _get_manipulation_features(self, order_book_data):
+        if order_book_data is None or order_book_data.empty:
+            return pd.DataFrame()
+        self.logger.info("Generating Manipulation features...")
+        current_price = (
+            order_book_data[order_book_data["side"] == "buy"]["price"].max()
+            + order_book_data[order_book_data["side"] == "sell"]["price"].min()
+        ) / 2
+        avg_order_size = order_book_data["quantity"].mean()
+
+        # Look for large orders far from the current price
+        far_buy_orders = order_book_data[
+            (order_book_data["side"] == "buy")
+            & (order_book_data["price"] < current_price * 0.95)
+            & (order_book_data["quantity"] > avg_order_size * 10)
+        ]
+        far_sell_orders = order_book_data[
+            (order_book_data["side"] == "sell")
+            & (order_book_data["price"] > current_price * 1.05)
+            & (order_book_data["quantity"] > avg_order_size * 10)
+        ]
+
+        is_spoofing = not far_buy_orders.empty or not far_sell_orders.empty
+        # This feature would apply to the current snapshot, so we create a single-row DF
+        # In a real system, you'd align this with the kline timestamp.
+        return pd.DataFrame({"is_spoofing": [is_spoofing]}, index=[order_book_data.index[-1]])

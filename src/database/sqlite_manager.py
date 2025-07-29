@@ -3,7 +3,7 @@
 import sqlite3
 import json
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Callable, Tuple 
 
 # Assuming system_logger is available
 from src.utils.logger import system_logger as logger

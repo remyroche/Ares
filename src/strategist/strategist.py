@@ -1,8 +1,8 @@
 import asyncio
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union # Ensure Union is imported
 
-from src.utils.logger import logger
+from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
 from src.config import settings
 from src.utils.state_manager import StateManager
 from src.exchange.binance import BinanceExchange # Import if needed for type hinting
@@ -130,3 +130,4 @@ class Strategist:
             "BULL_TREND": 1.0, "BEAR_TREND": 1.0, "SIDEWAYS_RANGE": 0.5
         })
         return base_size * size_multiplier.get(market_regime, 0.25)
+

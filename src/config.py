@@ -111,7 +111,9 @@ CONFIG: Dict[str, Any] = {
     "ENSEMBLE_MODEL_PREFIX": "ensemble_fold_", # Prefix for fold-specific ensemble models
 
     # --- Reporting Configuration ---
-    "DETAILED_TRADE_LOG_FILE": "reports/detailed_trade_log.csv", # New detailed trade log file
+    "DETAILED_TRADE_LOG_FILE": "reports/detailed_trade_log.csv",
+    "DAILY_SUMMARY_LOG_FILENAME_FORMAT": "reports/daily_summary_log_%Y-%m.csv", # New: Monthly filenames for summary reports
+    "STRATEGY_PERFORMANCE_LOG_FILENAME_FORMAT": "reports/strategy_performance_log_%Y-%m.csv", # New: Monthly filenames for strategy reports
 
     # --- Firestore Configuration ---
     "firestore": {
@@ -281,3 +283,4 @@ CONFIG["klines_filename"] = f"data_cache/{CONFIG['trading_symbol']}_{CONFIG['tra
 CONFIG["agg_trades_filename"] = f"data_cache/{CONFIG['trading_symbol']}_{CONFIG['lookback_years']}y_aggtrades.csv"
 CONFIG["futures_filename"] = f"data_cache/{CONFIG['trading_symbol']}_futures_{CONFIG['lookback_years']}y_data.csv"
 CONFIG["prepared_data_filename"] = f"data_cache/{CONFIG['trading_symbol']}_{CONFIG['trading_interval']}_{CONFIG['lookback_years']}y_prepared_data.csv"
+

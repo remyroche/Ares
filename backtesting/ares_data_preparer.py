@@ -21,7 +21,7 @@ def load_raw_data():
     klines_filename = CONFIG['KLINES_FILENAME']
     agg_trades_filename = CONFIG['AGG_TRADES_FILENAME']
     futures_filename = CONFIG['FUTURES_FILENAME']
-    prepared_data_filename = CONFIG['PREPARED_DATA_FILENAME']
+    # Removed unused variable prepared_data_filename
     downloader_script_name = CONFIG['DOWNLOADER_SCRIPT_NAME']
     
     required_files = [klines_filename, agg_trades_filename, futures_filename]

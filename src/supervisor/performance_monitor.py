@@ -3,9 +3,13 @@ import numpy as np
 import json
 import datetime
 import logging
+from typing import Union # Added import for Union
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
+# Import both managers for type hinting, but use the one passed in __init__
+from src.database.firestore_manager import FirestoreManager
+from src.database.sqlite_manager import SQLiteManager
 from emails.ares_mailer import AresMailer # Assuming AresMailer is available in emails/ares_mailer.py
 
 class PerformanceMonitor:
@@ -13,17 +17,17 @@ class PerformanceMonitor:
     Monitors live trading performance against backtested expectations to detect model decay.
     Triggers alerts if performance degrades significantly.
     """
-    def __init__(self, config=CONFIG, firestore_manager=None):
+    def __init__(self, config=CONFIG, db_manager: Union[FirestoreManager, SQLiteManager, None] = None): # Fixed: Accept generic db_manager
         """
         Initializes the PerformanceMonitor.
 
         Args:
             config (dict): The global configuration dictionary.
-            firestore_manager: An instance of FirestoreManager for data persistence.
+            db_manager: An instance of FirestoreManager or SQLiteManager for data persistence.
         """
         self.config = config.get("supervisor", {})
         self.global_config = config
-        self.firestore_manager = firestore_manager
+        self.db_manager = db_manager # Use the passed db_manager
         self.logger = system_logger.getChild('PerformanceMonitor')
         self.ares_mailer = AresMailer(config=config) # Initialize AresMailer for sending alerts
 
@@ -33,38 +37,50 @@ class PerformanceMonitor:
         self.decay_threshold_max_drawdown_multiplier = self.config.get("decay_threshold_max_drawdown_multiplier", 1.5) # e.g., 50% increase
         self.min_trades_for_monitoring = self.config.get("min_trades_for_monitoring", 50) # Minimum trades before monitoring starts
 
-        # Load backtested expectations (e.g., from a 'latest' document in Firestore or a local file)
-        self.backtested_expectations = self._load_backtested_expectations()
+        # Load backtested expectations (e.g., from a 'latest' document in DB)
+        self.backtested_expectations = {} # Initialize as empty dict
+        # Call async method from sync __init__ using asyncio.run for initial load
+        # This is generally not ideal, but acceptable for startup loading of config-like data.
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If loop is already running (e.g., in async context), schedule as a task
+                loop.create_task(self._load_backtested_expectations_async())
+            else:
+                # If no loop running, run blocking
+                loop.run_until_complete(self._load_backtested_expectations_async())
+        except Exception as e:
+            self.logger.error(f"Failed to load backtested expectations during init: {e}", exc_info=True)
 
-    async def _load_backtested_expectations(self) -> dict:
+
+    async def _load_backtested_expectations_async(self) -> dict:
         """
         Loads the expected performance metrics from the most recent backtest.
         This typically comes from the 'latest' optimized parameters document.
-
-        Returns:
-            dict: A dictionary of expected performance metrics, or an empty dict if not found.
         """
         self.logger.info("Loading backtested performance expectations...")
-        if self.firestore_manager and self.firestore_manager.firestore_enabled:
+        if self.db_manager: # Fixed: Use db_manager
             try:
-                latest_params_doc = await self.firestore_manager.get_document(
-                    self.global_config['firestore']['optimized_params_collection'],
+                latest_params_doc = await self.db_manager.get_document( # Fixed: Use db_manager
+                    self.global_config['firestore']['optimized_params_collection'], # Table name will be this string
                     doc_id='latest',
                     is_public=True
                 )
                 if latest_params_doc and 'performance_metrics' in latest_params_doc:
-                    self.logger.info("Backtested expectations loaded successfully from Firestore.")
-                    return latest_params_doc['performance_metrics']
+                    self.logger.info("Backtested expectations loaded successfully from DB.")
+                    self.backtested_expectations = latest_params_doc['performance_metrics']
+                    return self.backtested_expectations
                 else:
-                    self.logger.warning("No 'latest' backtested performance metrics found in Firestore. Monitoring will be limited.")
+                    self.logger.warning("No 'latest' backtested performance metrics found in DB. Monitoring will be limited.")
+                    self.backtested_expectations = {}
                     return {}
             except Exception as e:
-                self.logger.error(f"Error loading backtested expectations from Firestore: {e}", exc_info=True)
+                self.logger.error(f"Error loading backtested expectations from DB: {e}", exc_info=True)
+                self.backtested_expectations = {}
                 return {}
         else:
-            self.logger.warning("Firestore is not enabled or manager not provided. Cannot load backtested expectations.")
-            # Fallback for local testing or if Firestore is not used
-            # You might want to load from a local JSON file here if applicable
+            self.logger.warning("DB Manager is not enabled or manager not provided. Cannot load backtested expectations.")
+            self.backtested_expectations = {}
             return {}
 
     async def monitor_performance(self, live_metrics: dict):

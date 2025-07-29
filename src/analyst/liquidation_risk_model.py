@@ -83,9 +83,7 @@ class ProbabilisticLiquidationRiskModel:
                     reasons.append("Effective volatility proxy is zero.")
                 else:
                     # Z-score: How many standard deviations away is the liquidation price?
-                    # This assumes a normal distribution of price changes.
-                    z_score_liq = distance_to_liq_abs / period_std_dev_proxy
-                    
+                    # This assumes a normal distribution of price changes.                 
                     # Adjust Z-score based on the direction of the trade
                     # For long, price needs to go down (negative deviation) to hit liq.
                     # For short, price needs to go up (positive deviation) to hit liq.

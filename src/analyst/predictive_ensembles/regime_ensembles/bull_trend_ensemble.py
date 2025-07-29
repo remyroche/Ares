@@ -1,10 +1,14 @@
 # src/analyst/predictive_ensembles/regime_ensembles/bull_trend_ensemble.py
 import logging
+import warnings
 
 import numpy as np
 import pandas as pd
+import tensorflow as tf
+from arch import arch_model
+from lightgbm import LGBMClassifier
 from sklearn.model_selection import KFold
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from tensorflow.keras.layers import (
     LSTM,
@@ -13,12 +17,15 @@ from tensorflow.keras.layers import (
     Dense,
     Dropout,
     Input,
+    LayerNormalization,
     MultiHeadSelfAttention,
 )
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.regularizers import l1_l2
 
+# Placeholder for visualization and simulation functions, assuming they exist elsewhere
+# from backtesting.some_module import run_monte_carlo_simulation, plot_results
 from .base_ensemble import BaseEnsemble
 
 # Suppress specific warnings from ARCH library

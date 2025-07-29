@@ -5,7 +5,6 @@ from loguru import logger
 from dotenv import load_dotenv
 
 # --- Environment Loading ---
-# Load .env file from the project's root directory
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
@@ -16,38 +15,28 @@ else:
 # ==============================================================================
 # Pydantic Settings for Environment Variables
 # ==============================================================================
-# This class handles loading and validating all settings that come from the
-# environment (e.g., .env file or system variables), such as API keys.
-
 class Settings(BaseSettings):
     """
     Manages all environment-specific settings using Pydantic.
     """
-    # --- Top-Level Environment-Specific Settings ---
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
     trading_environment: Literal["LIVE", "TESTNET", "PAPER"] = Field(default="TESTNET", env="TRADING_ENVIRONMENT")
     initial_equity: float = Field(default=10000.0, env="INITIAL_EQUITY")
     trade_symbol: str = Field(default="BTCUSDT", env="TRADE_SYMBOL")
     timeframe: str = Field(default="15m", env="TIMEFRAME")
 
-
-    # --- Binance Credentials (loaded from .env) ---
     binance_live_api_key: Optional[str] = Field(default=None, env="BINANCE_LIVE_API_KEY")
     binance_live_api_secret: Optional[str] = Field(default=None, env="BINANCE_LIVE_API_SECRET")
     binance_testnet_api_key: Optional[str] = Field(default=None, env="BINANCE_TESTNET_API_KEY")
     binance_testnet_api_secret: Optional[str] = Field(default=None, env="BINANCE_TESTNET_API_SECRET")
 
-    # --- Firestore Credentials (loaded from .env) ---
     google_application_credentials: Optional[str] = Field(default=None, env="GOOGLE_APPLICATION_CREDENTIALS")
     firestore_project_id: Optional[str] = Field(default=None, env="FIRESTORE_PROJECT_ID")
 
-    # --- Emailer Credentials (loaded from .env) ---
     email_sender_address: Optional[str] = Field(default=None, env="EMAIL_SENDER_ADDRESS")
     email_sender_password: Optional[str] = Field(default=None, env="EMAIL_SENDER_PASSWORD")
     email_recipient_address: Optional[str] = Field(default=None, env="EMAIL_RECIPIENT_ADDRESS")
 
-
-    # --- Derived Properties for Convenience ---
     @property
     def is_live_mode(self) -> bool:
         return self.trading_environment == "LIVE"
@@ -60,7 +49,6 @@ class Settings(BaseSettings):
     def binance_api_secret(self) -> Optional[str]:
         return self.binance_live_api_secret if self.is_live_mode else self.binance_testnet_api_secret
 
-    # --- Validators ---
     @validator('trading_environment')
     def check_keys_for_environment(cls, v, values):
         if v == "LIVE" and (not values.get('binance_live_api_key') or not values.get('binance_live_api_secret')):
@@ -83,10 +71,6 @@ except Exception as e:
 # ==============================================================================
 # Main Configuration Dictionary
 # ==============================================================================
-# This dictionary holds all the strategy, component, and backtesting parameters.
-# It's kept separate from the Pydantic settings for easier manipulation during
-# optimization and backtesting.
-
 CONFIG: Dict[str, Any] = {
     # --- General System & Trading Parameters ---
     "trading_symbol": settings.trade_symbol,
@@ -109,6 +93,15 @@ CONFIG: Dict[str, Any] = {
     "pipeline_script_name": "src/ares_pipeline.py",
     "pipeline_pid_file": "ares_pipeline.pid",
     "restart_flag_file": "restart_pipeline.flag",
+
+    # --- Checkpointing Configuration ---
+    "CHECKPOINT_DIR": "checkpoints",
+    "OPTIMIZER_CHECKPOINT_FILE": "optimizer_state.pkl", # Relative to CHECKPOINT_DIR
+    "PIPELINE_PROGRESS_FILE": "pipeline_progress.json", # Relative to CHECKPOINT_DIR
+    "WALK_FORWARD_REPORTS_FILE": "walk_forward_reports.json", # Relative to CHECKPOINT_DIR
+    "PREPARED_DATA_CHECKPOINT_FILE": "full_prepared_data.parquet", # Relative to CHECKPOINT_DIR
+    "REGIME_CLASSIFIER_MODEL_PREFIX": "regime_classifier_fold_", # Prefix for fold-specific models
+    "ENSEMBLE_MODEL_PREFIX": "ensemble_fold_", # Prefix for fold-specific ensemble models
 
     # --- Firestore Configuration ---
     "firestore": {
@@ -150,7 +143,7 @@ CONFIG: Dict[str, Any] = {
             "max_age_days": 90
         },
         "market_regime_classifier": {
-            "model_storage_path": "models/analyst/",
+            "model_storage_path": "models/analyst/", # This will be overridden by checkpoint dir
             "adx_period": 14,
             "macd_fast_period": 12,
             "macd_slow_period": 26,
@@ -163,6 +156,22 @@ CONFIG: Dict[str, Any] = {
             "profit_take_multiplier": 2.0,
             "stop_loss_multiplier": 1.5,
             "max_hold_periods": 20
+        },
+        "feature_engineering": {
+            "autoencoder_latent_dim": 16,
+            "proximity_multiplier": 0.25,
+            "resample_interval": "1T",
+            "adx_period": 14,
+            "macd_fast_period": 12,
+            "macd_slow_period": 26,
+            "macd_signal_period": 9,
+            "rsi_period": 14,
+            "stoch_period": 14,
+            "bb_period": 20,
+            "cmf_period": 20,
+            "kc_period": 20,
+            "atr_period": 14,
+            "model_storage_path": "models/analyst/feature_engineering/" # This will be overridden by checkpoint dir
         }
     },
 
@@ -207,10 +216,22 @@ CONFIG: Dict[str, Any] = {
             "storage": "sqlite:///ares_optimization.db",
             "direction": "maximize",
             "objective_metric": "Sharpe Ratio",
+            "bayesian_opt_n_calls": 20, # Default for Bayesian Optimization
+            "bayesian_opt_n_initial_points": 5,
+            "bayesian_opt_random_state": 42
         },
         "results": {
             "best_params_file": "models/best_strategy_params.json",
             "report_file": "backtests/performance_report.txt"
+        }
+    },
+
+    # --- Walk-Forward Analysis Parameters ---
+    "training_pipeline": {
+        "walk_forward": {
+            "n_splits": 5, # Number of walk-forward folds
+            "train_months": 12, # Training window size in months
+            "test_months": 3 # Testing window size in months
         }
     },
 

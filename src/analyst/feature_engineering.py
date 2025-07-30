@@ -82,6 +82,36 @@ class FeatureEngineeringEngine:
         except Exception as e:
             self.logger.error(f"Error calculating advanced volume & volatility indicators: {e}. Some indicators may be missing.", exc_info=True)
 
+        # 2b. Enhanced Volume Indicators (VROC, OBV Divergence)
+        try:
+            self._calculate_enhanced_volume_indicators(features_df)
+        except Exception as e:
+            self.logger.error(f"Error calculating enhanced volume indicators: {e}. Some indicators may be missing.", exc_info=True)
+
+        # 2c. Order Flow and Liquidity Indicators
+        try:
+            self._calculate_order_flow_indicators(features_df, agg_trades_df)
+        except Exception as e:
+            self.logger.error(f"Error calculating order flow indicators: {e}. Some indicators may be missing.", exc_info=True)
+
+        # 2d. Enhanced Funding Rate Analysis
+        try:
+            self._calculate_enhanced_funding_features(features_df)
+        except Exception as e:
+            self.logger.error(f"Error calculating enhanced funding features: {e}. Some indicators may be missing.", exc_info=True)
+
+        # 2e. ML-Enhanced Feature Engineering
+        try:
+            self._calculate_ml_enhanced_features(features_df)
+        except Exception as e:
+            self.logger.error(f"Error calculating ML-enhanced features: {e}. Some indicators may be missing.", exc_info=True)
+
+        # 2f. Time-Based Features
+        try:
+            self._calculate_time_features(features_df)
+        except Exception as e:
+            self.logger.error(f"Error calculating time-based features: {e}. Some indicators may be missing.", exc_info=True)
+
         # 3. Wavelet Transforms
         try:
             wavelet_features = self.apply_wavelet_transforms(features_df['close'])
@@ -457,3 +487,298 @@ class FeatureEngineeringEngine:
             except Exception as e:
                 self.logger.error(f"Error loading Autoencoder from {self.autoencoder_model_path} or {self.autoencoder_scaler_path}: {e}", exc_info=True)
         return False
+
+    @handle_data_processing_errors(
+        default_return=None,
+        context="calculate_enhanced_volume_indicators"
+    )
+    def _calculate_enhanced_volume_indicators(self, df: pd.DataFrame):
+        """Calculate enhanced volume indicators: VROC and OBV Divergence."""
+        self.logger.info("Calculating enhanced volume indicators...")
+        
+        if df.empty or 'volume' not in df.columns:
+            self.logger.warning("DataFrame is empty or missing volume data for enhanced volume indicators.")
+            return
+
+        # Volume Rate of Change (VROC)
+        try:
+            vroc_period = self.config.get("vroc_period", 25)
+            df['VROC'] = ((df['volume'] - df['volume'].shift(vroc_period)) / 
+                         df['volume'].shift(vroc_period).replace(0, np.nan)) * 100
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate VROC: {e}")
+            df['VROC'] = np.nan
+
+        # On-Balance Volume (OBV) Divergence
+        try:
+            if 'OBV' in df.columns:
+                obv_divergence_period = self.config.get("obv_divergence_period", 14)
+                price_change = df['close'].pct_change(obv_divergence_period)
+                obv_change = df['OBV'].pct_change(obv_divergence_period)
+                df['OBV_Divergence'] = price_change - obv_change
+            else:
+                df['OBV_Divergence'] = np.nan
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate OBV Divergence: {e}")
+            df['OBV_Divergence'] = np.nan
+
+    @handle_data_processing_errors(
+        default_return=None,
+        context="calculate_order_flow_indicators"
+    )
+    def _calculate_order_flow_indicators(self, df: pd.DataFrame, agg_trades_df: pd.DataFrame):
+        """Calculate order flow and liquidity indicators."""
+        self.logger.info("Calculating order flow and liquidity indicators...")
+        
+        if df.empty:
+            self.logger.warning("DataFrame is empty for order flow indicators.")
+            return
+
+        # Initialize default values
+        df['Buy_Sell_Pressure_Ratio'] = 0.0
+        df['Order_Flow_Imbalance'] = 0.0
+        df['Large_Order_Count'] = 0
+        df['Liquidity_Score'] = 0.0
+
+        if not agg_trades_df.empty and 'is_buyer_maker' in agg_trades_df.columns:
+            try:
+                resample_interval = self.config.get('resample_interval', '1T')
+                
+                # Order Flow Analysis
+                agg_trades_df['buy_volume'] = np.where(
+                    agg_trades_df['is_buyer_maker'] == False, 
+                    agg_trades_df['quantity'], 0
+                )
+                agg_trades_df['sell_volume'] = np.where(
+                    agg_trades_df['is_buyer_maker'] == True, 
+                    agg_trades_df['quantity'], 0
+                )
+                
+                # Resample and calculate ratios
+                flow_data = agg_trades_df.resample(resample_interval).agg({
+                    'buy_volume': 'sum',
+                    'sell_volume': 'sum',
+                    'quantity': ['mean', 'count']
+                }).fillna(0)
+                
+                # Buy/Sell Pressure Ratio
+                total_volume = flow_data[('buy_volume', 'sum')] + flow_data[('sell_volume', 'sum')]
+                df['Buy_Sell_Pressure_Ratio'] = np.where(
+                    total_volume > 0,
+                    flow_data[('buy_volume', 'sum')] / total_volume,
+                    0.5
+                )
+                
+                # Order Flow Imbalance
+                df['Order_Flow_Imbalance'] = np.where(
+                    total_volume > 0,
+                    (flow_data[('buy_volume', 'sum')] - flow_data[('sell_volume', 'sum')]) / total_volume,
+                    0.0
+                )
+                
+                # Large Order Detection
+                avg_trade_size = flow_data[('quantity', 'mean')]
+                large_threshold = avg_trade_size * 2
+                
+                # Count large orders per period
+                agg_trades_df['is_large_order'] = agg_trades_df['quantity'] > agg_trades_df['quantity'].rolling(100).mean() * 2
+                large_order_counts = agg_trades_df['is_large_order'].resample(resample_interval).sum()
+                df['Large_Order_Count'] = large_order_counts.reindex(df.index, fill_value=0)
+                
+                # Simple Liquidity Score (based on trade count and volume)
+                trade_counts = flow_data[('quantity', 'count')]
+                df['Liquidity_Score'] = (trade_counts * total_volume).fillna(0)
+                
+                # Reindex to match main DataFrame
+                df['Buy_Sell_Pressure_Ratio'] = df['Buy_Sell_Pressure_Ratio'].reindex(df.index, method='ffill').fillna(0.5)
+                df['Order_Flow_Imbalance'] = df['Order_Flow_Imbalance'].reindex(df.index, method='ffill').fillna(0)
+                df['Liquidity_Score'] = df['Liquidity_Score'].reindex(df.index, method='ffill').fillna(0)
+                
+            except Exception as e:
+                self.logger.error(f"Error calculating order flow indicators: {e}")
+
+    @handle_data_processing_errors(
+        default_return=None,
+        context="calculate_enhanced_funding_features"
+    )
+    def _calculate_enhanced_funding_features(self, df: pd.DataFrame):
+        """Calculate enhanced funding rate features."""
+        self.logger.info("Calculating enhanced funding rate features...")
+        
+        if df.empty or 'fundingRate' not in df.columns:
+            self.logger.warning("DataFrame is empty or missing funding rate data.")
+            # Initialize default values
+            df['Funding_Momentum'] = 0.0
+            df['Funding_Divergence'] = 0.0
+            df['Funding_Extreme'] = 0.0
+            return
+
+        try:
+            # Funding Rate Momentum
+            funding_momentum_period = self.config.get("funding_momentum_period", 3)
+            df['Funding_Momentum'] = df['fundingRate'].diff(funding_momentum_period)
+            
+            # Funding Rate Divergence
+            price_change = df['close'].pct_change(funding_momentum_period)
+            df['Funding_Divergence'] = df['Funding_Momentum'] - price_change
+            
+            # Funding Rate Extremes (Z-score)
+            funding_window = self.config.get("funding_window", 24)
+            funding_mean = df['fundingRate'].rolling(funding_window).mean()
+            funding_std = df['fundingRate'].rolling(funding_window).std()
+            df['Funding_Extreme'] = (df['fundingRate'] - funding_mean) / funding_std.replace(0, np.nan)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate enhanced funding features: {e}")
+            df['Funding_Momentum'] = 0.0
+            df['Funding_Divergence'] = 0.0
+            df['Funding_Extreme'] = 0.0
+
+    @handle_data_processing_errors(
+        default_return=None,
+        context="calculate_ml_enhanced_features"
+    )
+    def _calculate_ml_enhanced_features(self, df: pd.DataFrame):
+        """Calculate ML-enhanced feature engineering extensions."""
+        self.logger.info("Calculating ML-enhanced features...")
+        
+        if df.empty:
+            self.logger.warning("DataFrame is empty for ML-enhanced features.")
+            return
+
+        try:
+            # Price Action Patterns
+            momentum_period = self.config.get("price_momentum_period", 5)
+            df['Price_Momentum'] = df['close'].pct_change(momentum_period)
+            df['Price_Acceleration'] = df['Price_Momentum'].diff()
+            
+            # Volume Patterns
+            df['Volume_Momentum'] = df['volume'].pct_change(momentum_period)
+            df['Volume_Acceleration'] = df['Volume_Momentum'].diff()
+            
+            # Volatility Patterns
+            if 'ATR' in df.columns:
+                df['Volatility_Momentum'] = df['ATR'].pct_change(momentum_period)
+            else:
+                df['Volatility_Momentum'] = np.nan
+            
+            # Cross-Indicator Features
+            if 'rsi' in df.columns and 'MACD' in df.columns:
+                df['RSI_MACD_Divergence'] = df['rsi'] - df['MACD']
+            else:
+                df['RSI_MACD_Divergence'] = np.nan
+                
+            df['Volume_Price_Divergence'] = df['Volume_Momentum'] - df['Price_Momentum']
+            
+            # Price vs various MAs ratios
+            for ma_period in [9, 21, 50, 200]:
+                ma_col = f'SMA_{ma_period}'
+                if ma_col in df.columns:
+                    df[f'Price_SMA_{ma_period}_Ratio'] = df['close'] / df[ma_col].replace(0, np.nan)
+                
+            # Volatility regime indicator
+            if 'ATR' in df.columns:
+                atr_sma = df['ATR'].rolling(20).mean()
+                df['Volatility_Regime'] = df['ATR'] / atr_sma.replace(0, np.nan)
+            else:
+                df['Volatility_Regime'] = np.nan
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate ML-enhanced features: {e}")
+
+    @handle_data_processing_errors(
+        default_return=None,
+        context="calculate_time_features"
+    )
+    def _calculate_time_features(self, df: pd.DataFrame):
+        """Calculate time-based features for session dynamics."""
+        self.logger.info("Calculating time-based features...")
+        
+        if df.empty:
+            self.logger.warning("DataFrame is empty for time-based features.")
+            return
+
+        try:
+            # Ensure we have a datetime index
+            if not isinstance(df.index, pd.DatetimeIndex):
+                if 'timestamp' in df.columns:
+                    df.index = pd.to_datetime(df['timestamp'])
+                else:
+                    self.logger.warning("No datetime index or timestamp column found for time features")
+                    return
+            
+            # Time of Day
+            df['Hour'] = df.index.hour
+            df['Minute'] = df.index.minute
+            
+            # Day of Week
+            df['Day_of_Week'] = df.index.dayofweek
+            
+            # Session Indicators (UTC-based)
+            df['Is_London_Session'] = ((df['Hour'] >= 8) & (df['Hour'] < 16)).astype(int)
+            df['Is_NY_Session'] = ((df['Hour'] >= 13) & (df['Hour'] < 21)).astype(int)
+            df['Is_Asia_Session'] = ((df['Hour'] >= 0) & (df['Hour'] < 8)).astype(int)
+            
+            # Weekend Effect
+            df['Is_Weekend'] = (df['Day_of_Week'] >= 5).astype(int)
+            
+            # Hour sine/cosine encoding (for cyclical nature)
+            df['Hour_Sin'] = np.sin(2 * np.pi * df['Hour'] / 24)
+            df['Hour_Cos'] = np.cos(2 * np.pi * df['Hour'] / 24)
+            
+            # Day of week sine/cosine encoding
+            df['DayOfWeek_Sin'] = np.sin(2 * np.pi * df['Day_of_Week'] / 7)
+            df['DayOfWeek_Cos'] = np.cos(2 * np.pi * df['Day_of_Week'] / 7)
+            
+            # Market overlap indicators
+            df['London_NY_Overlap'] = (df['Is_London_Session'] & df['Is_NY_Session']).astype(int)
+            df['Asia_London_Overlap'] = (df['Is_Asia_Session'] & df['Is_London_Session']).astype(int)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate time-based features: {e}")
+
+    @handle_data_processing_errors(
+        default_return=None,
+        context="calculate_volatility_regime_indicators"
+    )
+    def _calculate_volatility_regime_indicators(self, df: pd.DataFrame):
+        """Calculate volatility regime detection indicators."""
+        self.logger.info("Calculating volatility regime indicators...")
+        
+        if df.empty:
+            self.logger.warning("DataFrame is empty for volatility regime indicators.")
+            return
+
+        try:
+            # Realized Volatility
+            returns = df['close'].pct_change()
+            vol_window = self.config.get("volatility_window", 24)
+            realized_vol = returns.rolling(vol_window).std() * np.sqrt(vol_window)
+            df['Realized_Volatility'] = realized_vol
+            
+            # Volatility Regime Classification
+            vol_quantiles = realized_vol.quantile([0.25, 0.5, 0.75])
+            
+            def classify_vol_regime(vol):
+                if pd.isna(vol):
+                    return 'UNKNOWN'
+                elif vol <= vol_quantiles[0.25]:
+                    return 'LOW'
+                elif vol <= vol_quantiles[0.5]:
+                    return 'MEDIUM'
+                elif vol <= vol_quantiles[0.75]:
+                    return 'HIGH'
+                else:
+                    return 'EXTREME'
+            
+            df['Volatility_Regime_Label'] = realized_vol.apply(classify_vol_regime)
+            
+            # Encode regime as numeric
+            regime_mapping = {'LOW': 1, 'MEDIUM': 2, 'HIGH': 3, 'EXTREME': 4, 'UNKNOWN': 0}
+            df['Volatility_Regime_Numeric'] = df['Volatility_Regime_Label'].map(regime_mapping)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate volatility regime indicators: {e}")
+            df['Realized_Volatility'] = np.nan
+            df['Volatility_Regime_Label'] = 'UNKNOWN'
+            df['Volatility_Regime_Numeric'] = 0

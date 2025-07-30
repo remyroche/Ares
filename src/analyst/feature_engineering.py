@@ -112,6 +112,13 @@ class FeatureEngineeringEngine:
         except Exception as e:
             self.logger.error(f"Error calculating time-based features: {e}. Some indicators may be missing.", exc_info=True)
 
+        # 2g. Volatility Targeting Features
+        try:
+            target_vol = self.config.get("target_volatility", 0.15)
+            self._calculate_volatility_targeting_features(features_df, target_vol)
+        except Exception as e:
+            self.logger.error(f"Error calculating volatility targeting features: {e}. Some indicators may be missing.", exc_info=True)
+
         # 3. Wavelet Transforms
         try:
             wavelet_features = self.apply_wavelet_transforms(features_df['close'])
@@ -782,3 +789,149 @@ class FeatureEngineeringEngine:
             df['Realized_Volatility'] = np.nan
             df['Volatility_Regime_Label'] = 'UNKNOWN'
             df['Volatility_Regime_Numeric'] = 0
+
+    @handle_data_processing_errors(
+        default_return=None,
+        context="calculate_volatility_targeting_features"
+    )
+    def _calculate_volatility_targeting_features(self, df: pd.DataFrame, target_volatility: float = 0.15):
+        """
+        Calculate volatility targeting features for dynamic position sizing.
+        
+        Args:
+            df: DataFrame with price data
+            target_volatility: Target annual volatility (default 15%)
+        """
+        self.logger.info("Calculating volatility targeting features...")
+        
+        if df.empty:
+            self.logger.warning("DataFrame is empty for volatility targeting features.")
+            return
+
+        try:
+            # Calculate various volatility measures
+            returns = df['close'].pct_change()
+            
+            # 1. Simple Historical Volatility (annualized)
+            simple_vol_period = self.config.get("simple_vol_period", 20)
+            simple_vol = returns.rolling(simple_vol_period).std() * np.sqrt(252)
+            df['Simple_Volatility'] = simple_vol
+            
+            # 2. EWMA Volatility (Exponentially Weighted Moving Average)
+            ewma_span = self.config.get("ewma_span", 20)
+            ewma_vol = returns.ewm(span=ewma_span).std() * np.sqrt(252)
+            df['EWMA_Volatility'] = ewma_vol
+            
+            # 3. GARCH-like volatility (simplified)
+            garch_period = self.config.get("garch_period", 30)
+            squared_returns = returns ** 2
+            garch_vol = squared_returns.rolling(garch_period).mean().apply(np.sqrt) * np.sqrt(252)
+            df['GARCH_Volatility'] = garch_vol
+            
+            # 4. Parkinson volatility (high-low estimator)
+            if all(col in df.columns for col in ['high', 'low']):
+                parkinson_vol = np.sqrt(
+                    (np.log(df['high'] / df['low']) ** 2).rolling(simple_vol_period).mean() * 
+                    252 / (4 * np.log(2))
+                )
+                df['Parkinson_Volatility'] = parkinson_vol
+            else:
+                df['Parkinson_Volatility'] = np.nan
+            
+            # 5. Calculate volatility targeting multipliers
+            max_leverage = self.config.get("max_leverage", 3.0)
+            min_leverage = self.config.get("min_leverage", 0.1)
+            
+            # Simple volatility targeting
+            df['Vol_Target_Multiplier_Simple'] = np.clip(
+                target_volatility / simple_vol.replace(0, np.nan),
+                min_leverage, max_leverage
+            )
+            
+            # EWMA volatility targeting
+            df['Vol_Target_Multiplier_EWMA'] = np.clip(
+                target_volatility / ewma_vol.replace(0, np.nan),
+                min_leverage, max_leverage
+            )
+            
+            # Parkinson volatility targeting
+            if not df['Parkinson_Volatility'].isna().all():
+                df['Vol_Target_Multiplier_Parkinson'] = np.clip(
+                    target_volatility / df['Parkinson_Volatility'].replace(0, np.nan),
+                    min_leverage, max_leverage
+                )
+            else:
+                df['Vol_Target_Multiplier_Parkinson'] = 1.0
+            
+            # 6. Adaptive volatility targeting with momentum filter
+            momentum_period = self.config.get("momentum_period", 10)
+            price_momentum = df['close'].pct_change(momentum_period)
+            
+            # Reduce exposure during negative momentum (risk-off)
+            momentum_factor = np.where(price_momentum > 0, 1.0, 0.7)
+            df['Vol_Target_Multiplier_Adaptive'] = (
+                df['Vol_Target_Multiplier_EWMA'] * momentum_factor
+            ).clip(min_leverage, max_leverage)
+            
+            # 7. Volatility regime detection for targeting
+            vol_percentiles = simple_vol.rolling(252).quantile([0.25, 0.5, 0.75])
+            df['Vol_Regime_Quantile'] = simple_vol.rolling(252).rank(pct=True)
+            
+            # Adjust targeting based on regime
+            regime_adjustment = np.where(
+                df['Vol_Regime_Quantile'] > 0.8, 0.5,  # High vol regime - reduce exposure
+                np.where(df['Vol_Regime_Quantile'] < 0.2, 1.5, 1.0)  # Low vol regime - increase exposure
+            )
+            
+            df['Vol_Target_Multiplier_Regime'] = (
+                df['Vol_Target_Multiplier_Simple'] * regime_adjustment
+            ).clip(min_leverage, max_leverage)
+            
+            # 8. Kelly Criterion enhancement
+            # Estimate return/volatility ratio for Kelly-based sizing
+            rolling_return = returns.rolling(simple_vol_period).mean() * 252
+            kelly_ratio = rolling_return / (simple_vol ** 2)
+            kelly_fraction = np.clip(kelly_ratio, 0, 0.25)  # Cap at 25% Kelly
+            
+            df['Kelly_Fraction'] = kelly_fraction
+            df['Vol_Target_Multiplier_Kelly'] = (
+                df['Vol_Target_Multiplier_Simple'] * (1 + kelly_fraction)
+            ).clip(min_leverage, max_leverage)
+            
+            # 9. Multi-timeframe volatility
+            short_vol = returns.rolling(5).std() * np.sqrt(252)
+            medium_vol = returns.rolling(20).std() * np.sqrt(252)
+            long_vol = returns.rolling(60).std() * np.sqrt(252)
+            
+            df['Short_Term_Vol'] = short_vol
+            df['Medium_Term_Vol'] = medium_vol
+            df['Long_Term_Vol'] = long_vol
+            
+            # Volatility term structure signal
+            df['Vol_Term_Structure'] = (short_vol - long_vol) / long_vol.replace(0, np.nan)
+            
+            # 10. Dynamic target adjustment
+            # Adjust target based on market conditions
+            market_stress_indicator = df.get('Order_Flow_Imbalance', 0).abs()
+            stress_adjustment = np.where(market_stress_indicator > 0.3, 0.8, 1.0)
+            
+            adjusted_target = target_volatility * stress_adjustment
+            df['Dynamic_Target_Vol'] = adjusted_target
+            df['Vol_Target_Multiplier_Dynamic'] = np.clip(
+                adjusted_target / ewma_vol.replace(0, np.nan),
+                min_leverage, max_leverage
+            )
+            
+            # Fill NaN values
+            vol_cols = [col for col in df.columns if 'Vol_Target_Multiplier' in col or 'Volatility' in col]
+            for col in vol_cols:
+                df[col] = df[col].fillna(1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate volatility targeting features: {e}")
+            # Initialize default values
+            df['Simple_Volatility'] = 0.15
+            df['EWMA_Volatility'] = 0.15
+            df['Vol_Target_Multiplier_Simple'] = 1.0
+            df['Vol_Target_Multiplier_EWMA'] = 1.0
+            df['Vol_Target_Multiplier_Adaptive'] = 1.0

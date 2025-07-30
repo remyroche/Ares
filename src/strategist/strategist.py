@@ -1,6 +1,7 @@
 import asyncio
 import time
 from typing import Dict, Any, Optional, Union # Ensure Union is imported
+import pandas as pd # Added for pd.isna
 
 from src.utils.logger import system_logger
 from src.config import settings
@@ -86,56 +87,29 @@ class Strategist:
             # Determine max notional trade size
             max_notional_size = self._determine_max_notional_size(market_regime)
 
+            # Incorporate volatility targeting
+            vol_targeting_multiplier = self._get_volatility_targeting_multiplier(analyst_intelligence)
+            adjusted_leverage_cap = self._apply_volatility_targeting(leverage_cap, vol_targeting_multiplier)
+            adjusted_notional_size = self._apply_volatility_targeting(max_notional_size, vol_targeting_multiplier)
+
             strategist_params = {
                 "timestamp": int(time.time() * 1000),
                 "positional_bias": positional_bias,
-                "max_allowable_leverage": leverage_cap,
-                "max_notional_trade_size": max_notional_size,
+                "max_allowable_leverage": adjusted_leverage_cap,
+                "max_notional_trade_size": adjusted_notional_size,
+                "volatility_multiplier": vol_targeting_multiplier,
+                "base_leverage": leverage_cap,
+                "base_notional_size": max_notional_size,
                 "source_analyst_timestamp": self.last_analyst_timestamp
             }
 
             if self.state_manager: # Only set state if state_manager is available
                 self.state_manager.set_state("strategist_params", strategist_params)
-            self.logger.info(f"Strategy formulated. Bias: {positional_bias}, Leverage Cap: {leverage_cap}x")
+            self.logger.info(f"Strategy formulated. Bias: {positional_bias}, Leverage Cap: {adjusted_leverage_cap}x")
             self.logger.debug(f"Strategist Params: {strategist_params}")
 
         except Exception as e:
             self.logger.error(f"Error during strategy formulation: {e}", exc_info=True)
-
-    @handle_errors(
-        exceptions=(KeyError, TypeError, AttributeError),
-        default_return="NEUTRAL",
-        context="determine_positional_bias"
-    )
-    def _determine_positional_bias(self, market_regime: str, tech_analysis: Dict) -> str:
-        """Determines the trading bias using a combination of regime and technicals."""
-        
-        regime_bias_map = self.config.get("regime_to_bias_map", {"BULL_TREND": "LONG", "BEAR_TREND": "SHORT"})
-        regime_bias = regime_bias_map.get(market_regime, "NEUTRAL")
-
-        ma_bias = "NEUTRAL"
-        vwap_bias = "NEUTRAL"
-        
-        mas = tech_analysis.get('moving_averages', {})
-        if mas.get('sma_9', 0) > mas.get('sma_50', 0): ma_bias = "LONG"
-        elif mas.get('sma_9', 0) < mas.get('sma_50', 0): ma_bias = "SHORT"
-
-        # VWAP analysis
-        vwap_data = tech_analysis.get('vwap', {})
-        if vwap_data.get('price_vs_vwap', 0) > 0: vwap_bias = "LONG"
-        elif vwap_data.get('price_vs_vwap', 0) < 0: vwap_bias = "SHORT"
-
-        # Combine biases (simple majority)
-        biases = [regime_bias, ma_bias, vwap_bias]
-        long_count = biases.count("LONG")
-        short_count = biases.count("SHORT")
-        
-        if long_count > short_count:
-            return "LONG"
-        elif short_count > long_count:
-            return "SHORT"
-        else:
-            return "NEUTRAL"
 
     @handle_errors(
         exceptions=(ValueError, TypeError, ZeroDivisionError),
@@ -175,4 +149,162 @@ class Strategist:
         
         multiplier = regime_multipliers.get(market_regime, 1.0)
         return base_size * multiplier
+
+    @handle_errors(
+        exceptions=(ValueError, TypeError, KeyError),
+        default_return=1.0,
+        context="get_volatility_targeting_multiplier"
+    )
+    def _get_volatility_targeting_multiplier(self, analyst_intelligence: Dict) -> float:
+        """Extract volatility targeting multiplier from analyst intelligence."""
+        try:
+            # Get features from analyst intelligence
+            features = analyst_intelligence.get("latest_features", {})
+            
+            # Check which volatility targeting method to use
+            vol_method = self.config.get("volatility_targeting_method", "EWMA")
+            
+            multiplier_map = {
+                "Simple": features.get("Vol_Target_Multiplier_Simple", 1.0),
+                "EWMA": features.get("Vol_Target_Multiplier_EWMA", 1.0),
+                "Adaptive": features.get("Vol_Target_Multiplier_Adaptive", 1.0),
+                "Regime": features.get("Vol_Target_Multiplier_Regime", 1.0),
+                "Kelly": features.get("Vol_Target_Multiplier_Kelly", 1.0),
+                "Dynamic": features.get("Vol_Target_Multiplier_Dynamic", 1.0),
+                "Parkinson": features.get("Vol_Target_Multiplier_Parkinson", 1.0)
+            }
+            
+            multiplier = multiplier_map.get(vol_method, 1.0)
+            
+            # Ensure multiplier is reasonable
+            if pd.isna(multiplier) or multiplier <= 0:
+                multiplier = 1.0
+                
+            # Additional safety bounds
+            max_vol_multiplier = self.config.get("max_volatility_multiplier", 3.0)
+            min_vol_multiplier = self.config.get("min_volatility_multiplier", 0.1)
+            
+            multiplier = max(min_vol_multiplier, min(max_vol_multiplier, multiplier))
+            
+            self.logger.debug(f"Volatility targeting multiplier ({vol_method}): {multiplier}")
+            return multiplier
+            
+        except Exception as e:
+            self.logger.warning(f"Error extracting volatility multiplier: {e}")
+            return 1.0
+
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=1.0,
+        context="apply_volatility_targeting"
+    )
+    def _apply_volatility_targeting(self, base_value: float, vol_multiplier: float) -> float:
+        """Apply volatility targeting to a base value (leverage or position size)."""
+        try:
+            adjusted_value = base_value * vol_multiplier
+            
+            # Ensure result is reasonable
+            if adjusted_value <= 0 or pd.isna(adjusted_value):
+                return base_value
+                
+            return adjusted_value
+            
+        except Exception as e:
+            self.logger.warning(f"Error applying volatility targeting: {e}")
+            return base_value
+
+    @handle_errors(
+        exceptions=(KeyError, TypeError, AttributeError),
+        default_return="NEUTRAL",
+        context="determine_positional_bias"
+    )
+    def _determine_positional_bias(self, market_regime: str, tech_analysis: Dict) -> str:
+        """Determines the trading bias using a combination of regime, technicals, and enhanced indicators."""
+        
+        regime_bias_map = self.config.get("regime_to_bias_map", {"BULL_TREND": "LONG", "BEAR_TREND": "SHORT"})
+        regime_bias = regime_bias_map.get(market_regime, "NEUTRAL")
+
+        ma_bias = "NEUTRAL"
+        vwap_bias = "NEUTRAL"
+        trend_bias = "NEUTRAL"
+        momentum_bias = "NEUTRAL"
+        
+        # Moving averages analysis
+        mas = tech_analysis.get('moving_averages', {})
+        if mas.get('sma_9', 0) > mas.get('sma_50', 0): 
+            ma_bias = "LONG"
+        elif mas.get('sma_9', 0) < mas.get('sma_50', 0): 
+            ma_bias = "SHORT"
+
+        # VWAP analysis
+        vwap_ratio = tech_analysis.get('price_to_vwap_ratio', 1.0)
+        if vwap_ratio > 1.02:  # Price 2% above VWAP
+            vwap_bias = "LONG"
+        elif vwap_ratio < 0.98:  # Price 2% below VWAP
+            vwap_bias = "SHORT"
+
+        # Enhanced trend indicators
+        psar = tech_analysis.get('parabolic_sar', {})
+        if psar.get('trend') == 'BULLISH':
+            trend_bias = "LONG"
+        elif psar.get('trend') == 'BEARISH':
+            trend_bias = "SHORT"
+            
+        # SuperTrend confirmation
+        supertrend = tech_analysis.get('supertrend', {})
+        if supertrend.get('trend') == 'BULLISH' and trend_bias == "LONG":
+            trend_bias = "LONG"  # Confirmed
+        elif supertrend.get('trend') == 'BEARISH' and trend_bias == "SHORT":
+            trend_bias = "SHORT"  # Confirmed
+        elif supertrend.get('trend') in ['BULLISH', 'BEARISH']:
+            trend_bias = "LONG" if supertrend.get('trend') == 'BULLISH' else "SHORT"
+
+        # Enhanced momentum indicators
+        williams_r = tech_analysis.get('williams_r', 0)
+        mfi = tech_analysis.get('mfi', 50)
+        roc = tech_analysis.get('roc', 0)
+        
+        momentum_signals = []
+        if williams_r < -80:  # Oversold
+            momentum_signals.append("LONG")
+        elif williams_r > -20:  # Overbought
+            momentum_signals.append("SHORT")
+            
+        if mfi < 20:  # Oversold
+            momentum_signals.append("LONG")
+        elif mfi > 80:  # Overbought
+            momentum_signals.append("SHORT")
+            
+        if roc > 0:
+            momentum_signals.append("LONG")
+        elif roc < 0:
+            momentum_signals.append("SHORT")
+            
+        # Momentum bias based on majority
+        if momentum_signals.count("LONG") > momentum_signals.count("SHORT"):
+            momentum_bias = "LONG"
+        elif momentum_signals.count("SHORT") > momentum_signals.count("LONG"):
+            momentum_bias = "SHORT"
+
+        # Combine all biases with weights
+        bias_weights = {
+            regime_bias: self.config.get("regime_weight", 0.4),
+            ma_bias: self.config.get("ma_weight", 0.2),
+            vwap_bias: self.config.get("vwap_weight", 0.15),
+            trend_bias: self.config.get("trend_weight", 0.15),
+            momentum_bias: self.config.get("momentum_weight", 0.1)
+        }
+        
+        long_weight = sum(weight for bias, weight in bias_weights.items() if bias == "LONG")
+        short_weight = sum(weight for bias, weight in bias_weights.items() if bias == "SHORT")
+        
+        # Require a minimum threshold for directional bias
+        min_threshold = self.config.get("bias_threshold", 0.6)
+        
+        if long_weight >= min_threshold:
+            return "LONG"
+        elif short_weight >= min_threshold:
+            return "SHORT"
+        else:
+            return "NEUTRAL"
 

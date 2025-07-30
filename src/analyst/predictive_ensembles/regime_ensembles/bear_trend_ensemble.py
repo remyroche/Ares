@@ -43,8 +43,9 @@ class BearTrendEnsemble(BaseEnsemble):
         of_params = self._tune_hyperparameters(LGBMClassifier, self._get_lgbm_search_space, X_of, y_encoded)
         self.models["order_flow_lgbm"] = self._train_with_smote(LGBMClassifier(**of_params, random_state=42, verbose=-1), X_of, y_encoded)
 
-        self.logger.info("Training Logistic Regression model...")
-        self.models["logistic_regression"] = self._train_with_smote(LogisticRegression(random_state=42, max_iter=1000, solver='liblinear'), X_flat, y_encoded)
+        # Logistic Regression with L1-L2 regularization
+        self.logger.info("Training Logistic Regression model with L1-L2 regularization...")
+        self.models["logistic_regression"] = self._train_with_smote(self._get_regularized_logistic_regression(), X_flat, y_encoded)
 
         returns = aligned_data['close'].pct_change().dropna()
         if len(returns) > 100:

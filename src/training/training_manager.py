@@ -37,6 +37,7 @@ class TrainingManager:
     2. Model retraining with latest data
     3. Model import/export functionality
     4. Training status and history tracking
+    5. L1-L2 regularization configuration and enforcement
     """
     
     def __init__(self, db_manager: SQLiteManager):
@@ -60,6 +61,172 @@ class TrainingManager:
         self.current_training_session = None
         self.training_history = {}
         
+        # L1-L2 Regularization configuration
+        self.regularization_config = self._get_regularization_config()
+        
+    def _get_regularization_config(self) -> Dict[str, Any]:
+        """
+        Extract and validate L1-L2 regularization configuration from CONFIG.
+        
+        Returns:
+            Dict containing regularization parameters for different model types
+        """
+        base_reg_config = CONFIG['MODEL_TRAINING'].get('regularization', {})
+        
+        regularization_config = {
+            # Base regularization parameters
+            'l1_alpha': base_reg_config.get('l1_alpha', 0.01),
+            'l2_alpha': base_reg_config.get('l2_alpha', 0.001),
+            'dropout_rate': base_reg_config.get('dropout_rate', 0.2),
+            
+            # LightGBM specific regularization
+            'lightgbm': {
+                'reg_alpha': base_reg_config.get('l1_alpha', 0.01),  # L1 regularization
+                'reg_lambda': base_reg_config.get('l2_alpha', 0.001)  # L2 regularization
+            },
+            
+            # TensorFlow/Keras specific regularization
+            'tensorflow': {
+                'l1_reg': base_reg_config.get('l1_alpha', 0.01),
+                'l2_reg': base_reg_config.get('l2_alpha', 0.001),
+                'dropout_rate': base_reg_config.get('dropout_rate', 0.2)
+            },
+            
+            # Sklearn specific regularization
+            'sklearn': {
+                'alpha': base_reg_config.get('l1_alpha', 0.01),  # For Ridge/Lasso
+                'l1_ratio': 0.5,  # For ElasticNet (0.5 = equal L1/L2)
+                'C': 1.0 / max(base_reg_config.get('l1_alpha', 0.01), 1e-8)  # For LogisticRegression
+            },
+            
+            # TabNet specific regularization
+            'tabnet': {
+                'lambda_sparse': base_reg_config.get('l1_alpha', 0.01),
+                'lambda_l2': base_reg_config.get('l2_alpha', 0.001)
+            }
+        }
+        
+        self.logger.info(f"Regularization configuration loaded: {regularization_config}")
+        return regularization_config
+    
+    def apply_regularization_to_components(self):
+        """
+        Apply L1-L2 regularization configuration to all training components.
+        This ensures consistent regularization across all models.
+        """
+        try:
+            # Update Analyst components with regularization config
+            if self.analyst:
+                # Update predictive ensembles with regularization config
+                if hasattr(self.analyst, 'predictive_ensembles'):
+                    ensemble_orchestrator = self.analyst.predictive_ensembles
+                    
+                    # Apply regularization to all regime ensembles
+                    for regime_name, ensemble_instance in ensemble_orchestrator.regime_ensembles.items():
+                        self._apply_regularization_to_ensemble(ensemble_instance, regime_name)
+                
+            self.logger.info("Successfully applied regularization configuration to all components")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to apply regularization configuration: {e}", exc_info=True)
+    
+    def _apply_regularization_to_ensemble(self, ensemble_instance, regime_name: str):
+        """
+        Apply regularization configuration to a specific ensemble instance.
+        
+        Args:
+            ensemble_instance: The ensemble object to configure
+            regime_name: Name of the regime ensemble for logging
+        """
+        try:
+            # Inject regularization config into ensemble
+            if hasattr(ensemble_instance, 'regularization_config'):
+                ensemble_instance.regularization_config = self.regularization_config
+            else:
+                # Add regularization config as new attribute
+                setattr(ensemble_instance, 'regularization_config', self.regularization_config)
+            
+            # Update deep learning configuration
+            if hasattr(ensemble_instance, 'dl_config'):
+                ensemble_instance.dl_config.update({
+                    'l1_reg': self.regularization_config['tensorflow']['l1_reg'],
+                    'l2_reg': self.regularization_config['tensorflow']['l2_reg'],
+                    'dropout_rate': self.regularization_config['tensorflow']['dropout_rate']
+                })
+            
+            self.logger.info(f"Applied regularization to {regime_name} ensemble")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to apply regularization to {regime_name} ensemble: {e}")
+    
+    def validate_and_report_regularization(self) -> bool:
+        """
+        Validate regularization configuration and report on the setup.
+        
+        Returns:
+            bool: True if regularization is properly configured, False otherwise
+        """
+        try:
+            self.logger.info("=== L1-L2 Regularization Validation Report ===")
+            
+            # Check configuration completeness
+            required_keys = ['l1_alpha', 'l2_alpha', 'dropout_rate']
+            missing_keys = [key for key in required_keys if key not in self.regularization_config]
+            
+            if missing_keys:
+                self.logger.warning(f"Missing regularization config keys: {missing_keys}")
+                return False
+            
+            # Report on each model type's regularization setup
+            self.logger.info(f"📊 Base Regularization Parameters:")
+            self.logger.info(f"   - L1 Alpha: {self.regularization_config['l1_alpha']}")
+            self.logger.info(f"   - L2 Alpha: {self.regularization_config['l2_alpha']}")
+            self.logger.info(f"   - Dropout Rate: {self.regularization_config['dropout_rate']}")
+            
+            self.logger.info(f"🌳 LightGBM Regularization:")
+            lgbm_config = self.regularization_config.get('lightgbm', {})
+            self.logger.info(f"   - L1 (reg_alpha): {lgbm_config.get('reg_alpha', 'Not set')}")
+            self.logger.info(f"   - L2 (reg_lambda): {lgbm_config.get('reg_lambda', 'Not set')}")
+            
+            self.logger.info(f"🧠 TensorFlow/Keras Regularization:")
+            tf_config = self.regularization_config.get('tensorflow', {})
+            self.logger.info(f"   - L1 Regularization: {tf_config.get('l1_reg', 'Not set')}")
+            self.logger.info(f"   - L2 Regularization: {tf_config.get('l2_reg', 'Not set')}")
+            self.logger.info(f"   - Dropout Rate: {tf_config.get('dropout_rate', 'Not set')}")
+            
+            self.logger.info(f"📈 Sklearn Regularization:")
+            sklearn_config = self.regularization_config.get('sklearn', {})
+            self.logger.info(f"   - ElasticNet Alpha: {sklearn_config.get('alpha', 'Not set')}")
+            self.logger.info(f"   - L1 Ratio: {sklearn_config.get('l1_ratio', 'Not set')}")
+            self.logger.info(f"   - LogisticRegression C: {sklearn_config.get('C', 'Not set')}")
+            
+            self.logger.info(f"🎯 TabNet Regularization:")
+            tabnet_config = self.regularization_config.get('tabnet', {})
+            self.logger.info(f"   - L1 (lambda_sparse): {tabnet_config.get('lambda_sparse', 'Not set')}")
+            self.logger.info(f"   - L2 (lambda_l2): {tabnet_config.get('lambda_l2', 'Not set')}")
+            
+            # Validate regularization values are reasonable
+            validation_issues = []
+            
+            if self.regularization_config['l1_alpha'] <= 0:
+                validation_issues.append("L1 alpha should be positive")
+            if self.regularization_config['l2_alpha'] <= 0:
+                validation_issues.append("L2 alpha should be positive")
+            if not 0 <= self.regularization_config['dropout_rate'] <= 1:
+                validation_issues.append("Dropout rate should be between 0 and 1")
+            
+            if validation_issues:
+                self.logger.warning(f"⚠️  Regularization validation issues: {validation_issues}")
+                return False
+            
+            self.logger.info("✅ Regularization configuration validated successfully")
+            self.logger.info("=== End Regularization Report ===")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to validate regularization configuration: {e}", exc_info=True)
+            return False
+
     async def initialize_components(self, symbol: str):
         """Initialize Analyst and Supervisor components for training."""
         try:
@@ -124,6 +291,13 @@ class TrainingManager:
             # Initialize components
             if not await self.initialize_components(symbol):
                 return False
+            
+            # Apply L1-L2 regularization configuration to all components
+            self.apply_regularization_to_components()
+            
+            # Validate and report regularization configuration
+            if not self.validate_and_report_regularization():
+                self.logger.warning("Regularization validation failed, but continuing with training...")
             
             # Step 1: Data Collection and Preparation
             self.logger.info("Step 1: Collecting and preparing historical data...")

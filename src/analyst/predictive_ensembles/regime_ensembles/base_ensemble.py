@@ -7,6 +7,7 @@ from lightgbm import LGBMClassifier
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import StratifiedKFold
+from sklearn.linear_model import LogisticRegression
 from imblearn.over_sampling import SMOTE
 import joblib # For saving/loading models
 import os # For path manipulation
@@ -19,6 +20,7 @@ class BaseEnsemble:
     """
     Base class for all child ensembles to train highly optimized and robust models.
     Includes common utilities for training, prediction, and now, model persistence.
+    Enhanced with L1-L2 regularization support.
     """
 
     def __init__(self, config: dict, ensemble_name: str):
@@ -36,6 +38,9 @@ class BaseEnsemble:
         self.use_smote = self.config.get("use_smote", True)
         self.tune_base_models = self.config.get("tune_base_models", True)
         self.ensemble_weights = {self.ensemble_name: 1.0} # Default initial weight
+        
+        # Regularization configuration - will be set by TrainingManager
+        self.regularization_config = None
 
         # Unified Feature Lists
         self.sequence_features = [
@@ -170,13 +175,52 @@ class BaseEnsemble:
         return study.best_params
 
     def _get_lgbm_search_space(self, trial):
-        return {
+        """Enhanced LightGBM search space with regularization from config."""
+        base_space = {
             'n_estimators': trial.suggest_int('n_estimators', 50, 500),
             'learning_rate': trial.suggest_float('learning_rate', 1e-3, 0.2, log=True),
             'num_leaves': trial.suggest_int('num_leaves', 20, 300),
-            'reg_alpha': trial.suggest_float('reg_alpha', 1e-3, 10.0, log=True),
-            'reg_lambda': trial.suggest_float('reg_lambda', 1e-3, 10.0, log=True),
         }
+        
+        # Use regularization config if available, otherwise use default optuna suggestions
+        if self.regularization_config and 'lightgbm' in self.regularization_config:
+            reg_config = self.regularization_config['lightgbm']
+            base_space.update({
+                'reg_alpha': reg_config.get('reg_alpha', 0.01),  # Fixed L1 from config
+                'reg_lambda': reg_config.get('reg_lambda', 0.001),  # Fixed L2 from config
+            })
+            self.logger.info(f"Using configured regularization: L1={base_space['reg_alpha']}, L2={base_space['reg_lambda']}")
+        else:
+            # Fallback to optuna optimization if no config available
+            base_space.update({
+                'reg_alpha': trial.suggest_float('reg_alpha', 1e-3, 10.0, log=True),
+                'reg_lambda': trial.suggest_float('reg_lambda', 1e-3, 10.0, log=True),
+            })
+            self.logger.info("Using optuna-optimized regularization parameters")
+        
+        return base_space
+    
+    def _get_regularized_logistic_regression(self):
+        """Create a LogisticRegression model with L1-L2 regularization."""
+        if self.regularization_config and 'sklearn' in self.regularization_config:
+            sklearn_config = self.regularization_config['sklearn']
+            
+            # Use ElasticNet penalty for combined L1/L2 regularization
+            model = LogisticRegression(
+                penalty='elasticnet',
+                C=sklearn_config.get('C', 1.0),
+                l1_ratio=sklearn_config.get('l1_ratio', 0.5),  # 0.5 = equal L1/L2
+                solver='saga',  # Required for elasticnet
+                random_state=42,
+                max_iter=1000
+            )
+            self.logger.info(f"Created regularized LogisticRegression with C={sklearn_config.get('C')}, l1_ratio={sklearn_config.get('l1_ratio')}")
+        else:
+            # Fallback to standard LogisticRegression
+            model = LogisticRegression(random_state=42, max_iter=1000, solver='liblinear')
+            self.logger.info("Created standard LogisticRegression (no regularization config available)")
+        
+        return model
 
     def _get_svm_search_space(self, trial):
         return {

@@ -231,7 +231,7 @@ CONFIG: Dict[str, Any] = {
         "sr_tp_multiplier": 2.0,
         "sr_sl_multiplier": 0.5,
         "micro_movement_threshold": 0.002,  # 0.2% for micro movements
-        "huge_candle_threshold": 0.05,  # 5% for huge candles
+        "huge_candle_threshold": 0.02,  # 2% for huge candles
         "sr_zone_proximity": 0.01,  # 1% proximity to S/R zones
         "position_size_multiplier": {
             "high_confidence": 1.5,

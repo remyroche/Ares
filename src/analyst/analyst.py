@@ -1,12 +1,12 @@
 import asyncio
 import pandas as pd
-from typing import Dict, Any, Optional # Ensure Optional is imported
+from typing import Dict, Any, Optional, Tuple, List # Ensure Optional is imported
 from datetime import datetime, timedelta
 import time
 import os # Import os for path manipulation
 
 from src.exchange.binance import BinanceExchange
-from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
+from src.utils.logger import system_logger
 from src.config import settings, CONFIG
 from src.utils.state_manager import StateManager
 from src.analyst.feature_engineering import FeatureEngineeringEngine
@@ -16,6 +16,17 @@ from src.analyst.technical_analyzer import TechnicalAnalyzer
 from src.analyst.market_health_analyzer import GeneralMarketAnalystModule
 from src.analyst.liquidation_risk_model import ProbabilisticLiquidationRiskModel
 from src.analyst.predictive_ensembles.ensemble_orchestrator import RegimePredictiveEnsembles
+from src.utils.error_handler import (
+    handle_errors, 
+    handle_data_processing_errors,
+    handle_network_operations,
+    handle_file_operations,
+    handle_type_conversions,
+    error_context,
+    ErrorRecoveryStrategies,
+    safe_dataframe_operation,
+    safe_numeric_operation
+)
 
 
 class Analyst:
@@ -35,7 +46,7 @@ class Analyst:
         """
         self.exchange = exchange_client
         self.state_manager = state_manager
-        self.logger = logger.getChild('Analyst')
+        self.logger = system_logger.getChild('Analyst')
         self.trade_symbol = settings.trade_symbol
         self.timeframe = settings.timeframe
         self.last_kline_open_time = None
@@ -60,6 +71,11 @@ class Analyst:
 
         self.logger.info("Analyst and all sub-analyzers initialized.")
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="analyst_start"
+    )
     async def start(self):
         """
         Starts the main analysis loop.
@@ -90,6 +106,11 @@ class Analyst:
                 # Wait before retrying to prevent rapid failure loops
                 await asyncio.sleep(10)
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="load_and_prepare_historical_data"
+    )
     async def load_and_prepare_historical_data(
         self, 
         historical_klines: Optional[pd.DataFrame] = None,
@@ -239,14 +260,52 @@ class Analyst:
         Executes the full sequence of analysis tasks.
         """
         self.logger.info("--- Starting Analysis Pipeline ---")
-        # Initialize analyst_intelligence with default values to ensure all keys exist even if parts fail
-        analyst_intelligence = {
+        
+        # Initialize analyst_intelligence with default values
+        analyst_intelligence = self._initialize_analyst_intelligence()
+        
+        try:
+            # Prepare data
+            data_package = await self._prepare_analysis_data()
+            if not data_package:
+                self.logger.error("Could not prepare analysis data. Aborting analysis cycle.")
+                self.state_manager.set_state("analyst_intelligence", analyst_intelligence)
+                return
+            
+            klines, agg_trades_df, futures_df, order_book, current_price = data_package
+            
+            # Generate features
+            df_features = self._generate_features(klines, agg_trades_df, futures_df)
+            if df_features.empty:
+                self.logger.error("Feature generation resulted in empty DataFrame. Aborting analysis cycle.")
+                self.state_manager.set_state("analyst_intelligence", analyst_intelligence)
+                return
+            
+            # Run analysis components
+            analyst_intelligence = await self._run_analysis_components(
+                analyst_intelligence, klines, df_features, agg_trades_df, 
+                futures_df, order_book, current_price
+            )
+            
+            # Save the consolidated intelligence
+            self.state_manager.set_state("analyst_intelligence", analyst_intelligence)
+            self.logger.info(f"Analysis complete. Intelligence package updated. Regime: {analyst_intelligence['market_regime']}, Ensemble Pred: {analyst_intelligence['ensemble_prediction']}, Conf: {analyst_intelligence['ensemble_confidence']:.2f}")
+            self.logger.debug(f"Analyst Intelligence: {analyst_intelligence}")
+
+        except Exception as e:
+            self.logger.error(f"A critical error occurred during analysis pipeline: {e}", exc_info=True)
+            # Ensure a default/empty intelligence is saved even on critical failure
+            self.state_manager.set_state("analyst_intelligence", analyst_intelligence)
+
+    def _initialize_analyst_intelligence(self) -> Dict[str, Any]:
+        """Initialize analyst_intelligence with default values."""
+        return {
             "timestamp": int(time.time() * 1000),
             "market_regime": "UNKNOWN",
             "trend_strength": 0.0,
             "adx": 0.0,
             "support_resistance": [],
-            "technical_signals": {}, # Full technical signals dict
+            "technical_signals": {},
             "market_health_score": 50.0,
             "liquidation_risk_score": 100.0,
             "liquidation_risk_reasons": "N/A",
@@ -256,8 +315,8 @@ class Analyst:
             "base_model_predictions": {},
             "ensemble_weights": {},
             "volume_delta": 0.0,
-            "current_price": 0.0, # Kept
-            "market_health_volatility_component": 50.0, # Kept
+            "current_price": 0.0,
+            "market_health_volatility_component": 50.0,
             # Other raw features from df_features (initialized to None/0.0)
             'bb_bandwidth': None, 'stoch_k': None, 'CMF': None, 
             'autoencoder_reconstruction_error': None, 'oi_roc': None, 
@@ -269,176 +328,246 @@ class Analyst:
             'total_bid_liquidity': 0.0, 'total_ask_liquidity': 0.0, 'order_book_imbalance': 0.0
         }
 
+    async def _prepare_analysis_data(self) -> Optional[Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict, float]]:
+        """Prepare all data needed for analysis."""
+        # Fetch klines data
+        klines_raw_data = await self.exchange.get_klines(self.trade_symbol, self.timeframe, limit=500)
+        if not klines_raw_data:
+            self.logger.error("Could not fetch latest klines. Aborting analysis cycle.")
+            return None
+
+        klines = self._format_klines_data(klines_raw_data)
+        if klines.empty:
+            self.logger.error("Formatted klines DataFrame is empty. Aborting analysis cycle.")
+            return None
+
+        # Prepare order book data
+        order_book = self.exchange.order_book
+        bids = order_book.get('bids', {}) if order_book else {}
+        asks = order_book.get('asks', {}) if order_book else {}
+
+        # Prepare aggregated trades data
+        agg_trades_df = self._prepare_agg_trades_data()
+
+        # Prepare futures data
+        futures_df = self._historical_futures.tail(100)
+        if futures_df.empty:
+            self.logger.warning("Historical futures data is empty. Some features may be missing.")
+
+        current_price = klines['close'].iloc[-1]
+        
+        return klines, agg_trades_df, futures_df, order_book, current_price
+
+    def _format_klines_data(self, klines_raw_data: List) -> pd.DataFrame:
+        """Format raw klines data into DataFrame."""
+        klines = pd.DataFrame(klines_raw_data)
+        klines['open_time'] = pd.to_datetime(klines['open_time'], unit='ms')
+        klines.set_index('open_time', inplace=True)
+        
+        klines_column_names = ['open', 'high', 'low', 'close', 'volume', 'close_time', 
+                              'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 
+                              'taker_buy_quote_asset_volume', 'ignore']
+        klines.columns = klines_column_names[:len(klines.columns)]
+        
+        for col in ['open', 'high', 'low', 'close', 'volume', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']:
+            if col in klines.columns:
+                klines[col] = pd.to_numeric(klines[col], errors='coerce')
+        
+        return klines
+
+    def _prepare_agg_trades_data(self) -> pd.DataFrame:
+        """Prepare aggregated trades data."""
+        recent_trades = self.exchange.recent_trades
+        agg_trades_df = pd.DataFrame(recent_trades)
+        
+        if not agg_trades_df.empty:
+            agg_trades_df['timestamp'] = pd.to_datetime(agg_trades_df['T'], unit='ms')
+            agg_trades_df.set_index('timestamp', inplace=True)
+            agg_trades_df.rename(columns={'p': 'price', 'q': 'quantity', 'm': 'is_buyer_maker'}, inplace=True)
+            for col in ['price', 'quantity']:
+                agg_trades_df[col] = pd.to_numeric(agg_trades_df[col], errors='coerce')
+        else:
+            agg_trades_df = pd.DataFrame(columns=['timestamp', 'price', 'quantity', 'is_buyer_maker'])
+        
+        return agg_trades_df
+
+    def _generate_features(self, klines: pd.DataFrame, agg_trades_df: pd.DataFrame, futures_df: pd.DataFrame) -> pd.DataFrame:
+        """Generate features for analysis."""
+        # Ensure ATR is calculated on klines before passing to feature_engineering
+        klines.ta.atr(length=settings.CONFIG['BEST_PARAMS']['atr_period'], append=True, col_names=('ATR'))
+        if klines['ATR'].iloc[-1] is None or pd.isna(klines['ATR'].iloc[-1]):
+            self.logger.warning("ATR calculation resulted in NaN for the latest kline. This might affect downstream models.")
+
+        df_features = self.feature_engineering.generate_all_features(
+            klines.copy(), agg_trades_df.copy(), futures_df.copy(), 
+            self.state_manager.get_state("sr_levels", [])
+        )
+        
+        # Ensure ATR from klines is also in df_features if not already there
+        if 'ATR' not in df_features.columns and 'ATR' in klines.columns:
+            df_features['ATR'] = klines['ATR']
+        
+        return df_features
+
+    async def _run_analysis_components(self, analyst_intelligence: Dict[str, Any], klines: pd.DataFrame, 
+                                     df_features: pd.DataFrame, agg_trades_df: pd.DataFrame, 
+                                     futures_df: pd.DataFrame, order_book: Dict, current_price: float) -> Dict[str, Any]:
+        """Run all analysis components and update analyst_intelligence."""
+        # Market Regime Classification
+        analyst_intelligence = await self._run_market_regime_analysis(analyst_intelligence, klines, df_features)
+        
+        # Support/Resistance Analysis
+        analyst_intelligence = await self._run_sr_analysis(analyst_intelligence, klines)
+        
+        # Technical Analysis
+        analyst_intelligence = await self._run_technical_analysis(analyst_intelligence, klines)
+        
+        # Market Health Analysis
+        analyst_intelligence = await self._run_market_health_analysis(analyst_intelligence, klines)
+        
+        # Liquidation Risk Analysis
+        analyst_intelligence = await self._run_liquidation_risk_analysis(analyst_intelligence, klines, order_book, current_price)
+        
+        # Predictive Ensembles
+        analyst_intelligence = await self._run_predictive_ensembles(analyst_intelligence, df_features, klines, agg_trades_df, order_book, current_price)
+        
+        # Additional Features
+        analyst_intelligence = self._add_additional_features(analyst_intelligence, df_features, futures_df, order_book)
+        
+        return analyst_intelligence
+
+    async def _run_market_regime_analysis(self, analyst_intelligence: Dict[str, Any], klines: pd.DataFrame, df_features: pd.DataFrame) -> Dict[str, Any]:
+        """Run market regime classification analysis."""
         try:
-            klines_raw_data = await self.exchange.get_klines(self.trade_symbol, self.timeframe, limit=500)
-            if not klines_raw_data:
-                self.logger.error("Could not fetch latest klines. Aborting analysis cycle.")
-                self.state_manager.set_state("analyst_intelligence", analyst_intelligence) # Save default intel
-                return
-
-            klines = pd.DataFrame(klines_raw_data)
-            klines['open_time'] = pd.to_datetime(klines['open_time'], unit='ms')
-            klines.set_index('open_time', inplace=True)
-            klines_column_names = ['open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore']
-            klines.columns = klines_column_names[:len(klines.columns)]
-            for col in ['open', 'high', 'low', 'close', 'volume', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']:
-                if col in klines.columns:
-                    klines[col] = pd.to_numeric(klines[col], errors='coerce')
-            
-            if klines.empty:
-                self.logger.error("Formatted klines DataFrame is empty. Aborting analysis cycle.")
-                self.state_manager.set_state("analyst_intelligence", analyst_intelligence)
-                return
-
-            # Initialize bids and asks here, before the try-except for order_book processing
-            bids = {}
-            asks = {}
-            order_book = self.exchange.order_book # Get the raw order_book from exchange
-            if order_book:
-                bids = order_book.get('bids', {})
-                asks = order_book.get('asks', {})
-
-
-            recent_trades = self.exchange.recent_trades
-            
-            agg_trades_df = pd.DataFrame(recent_trades)
-            if not agg_trades_df.empty:
-                agg_trades_df['timestamp'] = pd.to_datetime(agg_trades_df['T'], unit='ms')
-                agg_trades_df.set_index('timestamp', inplace=True)
-                agg_trades_df.rename(columns={'p': 'price', 'q': 'quantity', 'm': 'is_buyer_maker'}, inplace=True)
-                for col in ['price', 'quantity']:
-                    agg_trades_df[col] = pd.to_numeric(agg_trades_df[col], errors='coerce')
-            else:
-                agg_trades_df = pd.DataFrame(columns=['timestamp', 'price', 'quantity', 'is_buyer_maker'])
-
-            futures_df = self._historical_futures.tail(100) # Use a recent window of historical futures data
-            if futures_df.empty:
-                self.logger.warning("Historical futures data is empty. Some features may be missing.")
-
-
-            # Ensure ATR is calculated on klines before passing to feature_engineering
-            klines.ta.atr(length=settings.CONFIG['BEST_PARAMS']['atr_period'], append=True, col_names=('ATR'))
-            if klines['ATR'].iloc[-1] is None or pd.isna(klines['ATR'].iloc[-1]):
-                self.logger.warning("ATR calculation resulted in NaN for the latest kline. This might affect downstream models.")
-                # Fallback or handle appropriately, e.g., fill with average or default
-
-            df_features = self.feature_engineering.generate_all_features(klines.copy(), agg_trades_df.copy(), futures_df.copy(), self.state_manager.get_state("sr_levels", []))
-            
-            if df_features.empty:
-                self.logger.error("Feature generation resulted in empty DataFrame. Aborting analysis cycle.")
-                self.state_manager.set_state("analyst_intelligence", analyst_intelligence)
-                return
-
-            # Ensure ATR from klines is also in df_features if not already there
-            if 'ATR' not in df_features.columns and 'ATR' in klines.columns:
-                df_features['ATR'] = klines['ATR']
-
-            current_price = klines['close'].iloc[-1]
-            analyst_intelligence['current_price'] = float(current_price) # Ensure float
-            sr_levels_from_state = self.state_manager.get_state("sr_levels", [])
-
-            # --- Market Regime Classification ---
-            try:
-                market_regime, trend_strength, adx = self.regime_classifier.predict_regime(df_features.copy(), klines.copy(), sr_levels_from_state)
-                analyst_intelligence['market_regime'] = market_regime
-                analyst_intelligence['trend_strength'] = trend_strength
-                analyst_intelligence['adx'] = adx
-                analyst_intelligence['support_resistance'] = sr_levels_from_state # Use pre-calculated SR levels
-            except Exception as e:
-                self.logger.error(f"Error during market regime classification: {e}. Using default values.", exc_info=True)
-
-            # --- Technical Analysis ---
-            try:
-                technical_signals = self.technical_analyzer.analyze(klines.copy())
-                analyst_intelligence['technical_signals'] = technical_signals
-            except Exception as e:
-                self.logger.error(f"Error during technical analysis: {e}. Using empty technical signals.", exc_info=True)
-
-            # --- Market Health Analysis ---
-            try:
-                market_health_score = self.market_health_analyzer.get_market_health_score(klines.copy())
-                analyst_intelligence['market_health_score'] = market_health_score
-                analyst_intelligence['market_health_volatility_component'] = market_health_score # As requested
-            except Exception as e:
-                self.logger.error(f"Error during market health analysis: {e}. Using default score.", exc_info=True)
-
-            # --- Liquidation Risk Model ---
-            try:
-                current_position_risk = await self.exchange.get_position_risk(self.trade_symbol)
-                current_position_notional = 0.0
-                current_liquidation_price = 0.0
-                if current_position_risk and len(current_position_risk) > 0:
-                    pos = current_position_risk[0]
-                    current_position_notional = float(pos.get('positionAmt', 0)) * current_price
-                    current_liquidation_price = float(pos.get('liquidationPrice', 0))
-
-                liquidation_risk_score, lss_reasons = self.liquidation_risk_model.calculate_lss(
-                    current_price, current_position_notional, current_liquidation_price, klines.copy(), order_book
-                )
-                analyst_intelligence['liquidation_risk_score'] = liquidation_risk_score
-                analyst_intelligence['liquidation_risk_reasons'] = lss_reasons
-            except Exception as e:
-                self.logger.error(f"Error during liquidation risk calculation: {e}. Using default scores.", exc_info=True)
-
-            # --- Predictive Ensembles ---
-            try:
-                ensemble_prediction_result = self.predictive_ensembles.get_all_predictions(
-                    asset=self.trade_symbol, 
-                    current_features=df_features.copy(),
-                    klines_df=klines.copy(),
-                    agg_trades_df=agg_trades_df.copy(),
-                    order_book_data=order_book,
-                    current_price=current_price
-                )
-                analyst_intelligence['ensemble_prediction'] = ensemble_prediction_result["prediction"]
-                analyst_intelligence['ensemble_confidence'] = ensemble_prediction_result["confidence"]
-                analyst_intelligence['directional_confidence_score'] = ensemble_prediction_result["confidence"]
-                analyst_intelligence['base_model_predictions'] = ensemble_prediction_result.get("base_predictions", {})
-                analyst_intelligence['ensemble_weights'] = ensemble_prediction_result.get("ensemble_weights", {})
-            except Exception as e:
-                self.logger.error(f"Error during predictive ensembles prediction: {e}. Using default values.", exc_info=True)
-
-            # --- Add volume_delta from df_features directly to analyst_intelligence ---
-            if 'volume_delta' in df_features.columns and not df_features.empty:
-                analyst_intelligence['volume_delta'] = float(df_features['volume_delta'].iloc[-1])
-            else:
-                analyst_intelligence['volume_delta'] = 0.0 # Default if not found
-
-            # --- Add current open interest and funding rate values from futures_df ---
-            if 'openInterest' in futures_df.columns and not futures_df.empty:
-                analyst_intelligence['current_open_interest'] = float(futures_df['openInterest'].iloc[-1])
-            else:
-                analyst_intelligence['current_open_interest'] = None
-
-            if 'fundingRate' in futures_df.columns and not futures_df.empty:
-                analyst_intelligence['current_funding_rate'] = float(futures_df['fundingRate'].iloc[-1])
-            else:
-                analyst_intelligence['current_funding_rate'] = None
-
-            # --- Add current order book liquidity/imbalance metrics ---
-            try:
-                total_bid_qty = sum(bids.values()) if bids else 0.0
-                total_ask_qty = sum(asks.values()) if asks else 0.0
-                
-                analyst_intelligence['total_bid_liquidity'] = total_bid_qty
-                analyst_intelligence['total_ask_liquidity'] = total_ask_qty
-                if total_bid_qty + total_ask_qty > 0:
-                    analyst_intelligence['order_book_imbalance'] = (total_bid_qty - total_ask_qty) / (total_bid_qty + total_ask_qty)
-                else:
-                    analyst_intelligence['order_book_imbalance'] = 0.0
-            except Exception as e:
-                self.logger.error(f"Error calculating order book metrics: {e}. Using default values.", exc_info=True)
-
-
-            # Finally, save the consolidated intelligence
-            self.state_manager.set_state("analyst_intelligence", analyst_intelligence)
-            self.logger.info(f"Analysis complete. Intelligence package updated. Regime: {analyst_intelligence['market_regime']}, Ensemble Pred: {analyst_intelligence['ensemble_prediction']}, Conf: {analyst_intelligence['ensemble_confidence']:.2f}")
-            self.logger.debug(f"Analyst Intelligence: {analyst_intelligence}")
-
+            predicted_regime, trend_strength, current_adx = self.regime_classifier.predict_regime(df_features.copy())
+            analyst_intelligence['market_regime'] = predicted_regime
+            analyst_intelligence['trend_strength'] = trend_strength
+            analyst_intelligence['adx'] = current_adx
         except Exception as e:
-            self.logger.error(f"A critical error occurred during analysis pipeline: {e}", exc_info=True)
-            # Ensure a default/empty intelligence is saved even on critical failure
-            self.state_manager.set_state("analyst_intelligence", analyst_intelligence) 
+            self.logger.error(f"Error during market regime classification: {e}. Using default values.", exc_info=True)
+        
+        return analyst_intelligence
 
+    async def _run_sr_analysis(self, analyst_intelligence: Dict[str, Any], klines: pd.DataFrame) -> Dict[str, Any]:
+        """Run support/resistance analysis."""
+        try:
+            sr_levels = self.sr_analyzer.analyze_support_resistance(klines.copy())
+            analyst_intelligence['support_resistance'] = sr_levels
+        except Exception as e:
+            self.logger.error(f"Error during support/resistance analysis: {e}. Using empty list.", exc_info=True)
+        
+        return analyst_intelligence
+
+    async def _run_technical_analysis(self, analyst_intelligence: Dict[str, Any], klines: pd.DataFrame) -> Dict[str, Any]:
+        """Run technical analysis."""
+        try:
+            technical_signals = self.technical_analyzer.analyze(klines.copy())
+            analyst_intelligence['technical_signals'] = technical_signals
+        except Exception as e:
+            self.logger.error(f"Error during technical analysis: {e}. Using empty technical signals.", exc_info=True)
+        
+        return analyst_intelligence
+
+    async def _run_market_health_analysis(self, analyst_intelligence: Dict[str, Any], klines: pd.DataFrame) -> Dict[str, Any]:
+        """Run market health analysis."""
+        try:
+            market_health_score = self.market_health_analyzer.get_market_health_score(klines.copy())
+            analyst_intelligence['market_health_score'] = market_health_score
+            analyst_intelligence['market_health_volatility_component'] = market_health_score
+        except Exception as e:
+            self.logger.error(f"Error during market health analysis: {e}. Using default score.", exc_info=True)
+        
+        return analyst_intelligence
+
+    async def _run_liquidation_risk_analysis(self, analyst_intelligence: Dict[str, Any], klines: pd.DataFrame, 
+                                           order_book: Dict, current_price: float) -> Dict[str, Any]:
+        """Run liquidation risk analysis."""
+        try:
+            current_position_risk = await self.exchange.get_position_risk(self.trade_symbol)
+            current_position_notional = 0.0
+            current_liquidation_price = 0.0
+            
+            if current_position_risk and len(current_position_risk) > 0:
+                pos = current_position_risk[0]
+                current_position_notional = float(pos.get('positionAmt', 0)) * current_price
+                current_liquidation_price = float(pos.get('liquidationPrice', 0))
+
+            liquidation_risk_score, lss_reasons = self.liquidation_risk_model.calculate_lss(
+                current_price, current_position_notional, current_liquidation_price, klines.copy(), order_book
+            )
+            analyst_intelligence['liquidation_risk_score'] = liquidation_risk_score
+            analyst_intelligence['liquidation_risk_reasons'] = lss_reasons
+        except Exception as e:
+            self.logger.error(f"Error during liquidation risk calculation: {e}. Using default scores.", exc_info=True)
+        
+        return analyst_intelligence
+
+    async def _run_predictive_ensembles(self, analyst_intelligence: Dict[str, Any], df_features: pd.DataFrame, 
+                                      klines: pd.DataFrame, agg_trades_df: pd.DataFrame, 
+                                      order_book: Dict, current_price: float) -> Dict[str, Any]:
+        """Run predictive ensembles analysis."""
+        try:
+            ensemble_prediction_result = self.predictive_ensembles.get_all_predictions(
+                asset=self.trade_symbol, 
+                current_features=df_features.copy(),
+                klines_df=klines.copy(),
+                agg_trades_df=agg_trades_df.copy(),
+                order_book_data=order_book,
+                current_price=current_price
+            )
+            analyst_intelligence['ensemble_prediction'] = ensemble_prediction_result["prediction"]
+            analyst_intelligence['ensemble_confidence'] = ensemble_prediction_result["confidence"]
+            analyst_intelligence['directional_confidence_score'] = ensemble_prediction_result["confidence"]
+            analyst_intelligence['base_model_predictions'] = ensemble_prediction_result.get("base_predictions", {})
+            analyst_intelligence['ensemble_weights'] = ensemble_prediction_result.get("ensemble_weights", {})
+        except Exception as e:
+            self.logger.error(f"Error during predictive ensembles prediction: {e}. Using default values.", exc_info=True)
+        
+        return analyst_intelligence
+
+    def _add_additional_features(self, analyst_intelligence: Dict[str, Any], df_features: pd.DataFrame, 
+                               futures_df: pd.DataFrame, order_book: Dict) -> Dict[str, Any]:
+        """Add additional features to analyst_intelligence."""
+        # Add volume_delta from df_features
+        if 'volume_delta' in df_features.columns and not df_features.empty:
+            analyst_intelligence['volume_delta'] = float(df_features['volume_delta'].iloc[-1])
+        else:
+            analyst_intelligence['volume_delta'] = 0.0
+
+        # Add current open interest and funding rate values from futures_df
+        if 'openInterest' in futures_df.columns and not futures_df.empty:
+            analyst_intelligence['current_open_interest'] = float(futures_df['openInterest'].iloc[-1])
+        else:
+            analyst_intelligence['current_open_interest'] = None
+
+        if 'fundingRate' in futures_df.columns and not futures_df.empty:
+            analyst_intelligence['current_funding_rate'] = float(futures_df['fundingRate'].iloc[-1])
+        else:
+            analyst_intelligence['current_funding_rate'] = None
+
+        # Add current order book liquidity/imbalance metrics
+        try:
+            bids = order_book.get('bids', {}) if order_book else {}
+            asks = order_book.get('asks', {}) if order_book else {}
+            
+            total_bid_qty = sum(bids.values()) if bids else 0.0
+            total_ask_qty = sum(asks.values()) if asks else 0.0
+            
+            analyst_intelligence['total_bid_liquidity'] = total_bid_qty
+            analyst_intelligence['total_ask_liquidity'] = total_ask_qty
+            if total_bid_qty + total_ask_qty > 0:
+                analyst_intelligence['order_book_imbalance'] = (total_bid_qty - total_ask_qty) / (total_bid_qty + total_ask_qty)
+            else:
+                analyst_intelligence['order_book_imbalance'] = 0.0
+        except Exception as e:
+            self.logger.error(f"Error calculating order book metrics: {e}. Using default values.", exc_info=True)
+        
+        return analyst_intelligence
+
+    @handle_errors(
+        exceptions=(KeyError, TypeError, AttributeError),
+        default_return=0.5,
+        context="calculate_confidence"
+    )
     def _calculate_confidence(self, signals: Dict, regime: str) -> float:
         return signals.get('ensemble_confidence', 0.5)

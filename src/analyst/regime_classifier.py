@@ -11,6 +11,7 @@ import sys # Import sys for sys.exit() in example usage
 from src.analyst.sr_analyzer import SRLevelAnalyzer # Assuming sr_analyzer.py is accessible
 from src.utils.logger import system_logger # Centralized logger
 from src.config import CONFIG # Import CONFIG to get checkpoint paths
+from typing import Optional
 
 
 class MarketRegimeClassifier:
@@ -128,7 +129,7 @@ class MarketRegimeClassifier:
         
         return features
 
-    def train_classifier(self, historical_features: pd.DataFrame, historical_klines: pd.DataFrame, model_path: str = None):
+    def train_classifier(self, historical_features: pd.DataFrame, historical_klines: pd.DataFrame, model_path: Optional[str] = None):
         """
         Trains the Market Regime Classifier using a pseudo-labeling approach.
         The `SR_ZONE_ACTION` regime is determined dynamically and not part of the clustering.
@@ -238,144 +239,164 @@ class MarketRegimeClassifier:
         """
         if not self.trained:
             self.logger.warning("Warning: Classifier not trained. Attempting to load default model...")
-            # Use self.default_model_path for loading if no specific path is given
             if not self.load_model(model_path=self.default_model_path):
                 self.logger.error("Classifier not trained and failed to load model. Returning default regime.")
-                # Calculate Trend Strength Score even if not trained for fallback
                 trend_strength, current_adx = self.calculate_trend_strength(current_klines)
-                return "UNKNOWN", trend_strength, current_adx # Regime, Trend Strength, ADX
+                return "UNKNOWN", trend_strength, current_adx
 
-        # Calculate Trend Strength Score and ADX first, as it's needed regardless of regime
+        # Calculate Trend Strength Score and ADX first
         trend_strength, current_adx = self.calculate_trend_strength(current_klines)
 
         # Check for SR_ZONE_ACTION
-        current_price = current_klines['close'].iloc[-1]
-        current_atr = current_klines['ATR'].iloc[-1] if 'ATR' in current_klines.columns and not current_klines['ATR'].isnull().all() else 0
-        proximity_multiplier = self.global_config['BEST_PARAMS'].get("proximity_multiplier", 0.25) # From main config's analyst section
-
-        is_sr_interacting = False
-        if sr_levels and current_atr > 0:
-            for level_info in sr_levels:
-                level_price = level_info['level_price']
-                level_type = level_info['type'] # "Support" or "Resistance"
-                
-                # Only consider relevant levels (e.g., Strong, Very Strong, Moderate)
-                if level_info["current_expectation"] not in ["Very Strong", "Strong", "Moderate"]:
-                    continue
-
-                tolerance_abs = current_atr * proximity_multiplier
-                
-                # NEW LOGIC: Only care about Resistance if price is below it, Support if price is above it
-                directional_condition_met = False
-                if level_type == "Resistance" and current_price <= level_price:
-                    directional_condition_met = True
-                elif level_type == "Support" and current_price >= level_price:
-                    directional_condition_met = True
-                
-                if directional_condition_met:
-                    # Check for proximity within the tolerance band
-                    if (current_price <= level_price + tolerance_abs) and \
-                       (current_price >= level_price - tolerance_abs):
-                        is_sr_interacting = True
-                        break # Found an interacting S/R level that meets criteria
-        
-        if is_sr_interacting:
+        if self._is_sr_zone_action(current_klines, sr_levels):
             self.logger.info("Detected SR_ZONE_ACTION.")
-            # For SR_ZONE_ACTION, return the regime but still provide trend strength and ADX
-            return "SR_ZONE_ACTION", trend_strength, current_adx 
+            return "SR_ZONE_ACTION", trend_strength, current_adx
 
         # If not SR_ZONE_ACTION, proceed with LightGBM classification
-        # Ensure features for prediction match those used for training
-        # We need to ensure 'ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'Is_SR_Interacting' are present
+        predicted_regime = self._predict_with_lgbm(current_features, current_klines)
         
-        # Dynamically find the MACD_HIST column name
-        macd_hist_col = [col for col in current_features.columns if 'MACDh_' in col]
+        self.logger.info(f"Predicted Regime: {predicted_regime}, Trend Strength: {trend_strength:.2f}, ADX: {current_adx:.2f}")
+        return predicted_regime, trend_strength, current_adx
+
+    def _is_sr_zone_action(self, current_klines: pd.DataFrame, sr_levels: list) -> bool:
+        """Check if current market conditions indicate SR_ZONE_ACTION."""
+        current_price = current_klines['close'].iloc[-1]
+        current_atr = current_klines['ATR'].iloc[-1] if 'ATR' in current_klines.columns and not current_klines['ATR'].isnull().all() else 0
+        proximity_multiplier = self.global_config['BEST_PARAMS'].get("proximity_multiplier", 0.25)
+
+        if not sr_levels or current_atr <= 0:
+            return False
+
+        for level_info in sr_levels:
+            if not self._is_relevant_sr_level(level_info):
+                continue
+
+            if self._is_price_interacting_with_sr_level(current_price, level_info, current_atr, proximity_multiplier):
+                return True
+
+        return False
+
+    def _is_relevant_sr_level(self, level_info: dict) -> bool:
+        """Check if the SR level is relevant for analysis."""
+        return level_info["current_expectation"] in ["Very Strong", "Strong", "Moderate"]
+
+    def _is_price_interacting_with_sr_level(self, current_price: float, level_info: dict, 
+                                          current_atr: float, proximity_multiplier: float) -> bool:
+        """Check if price is interacting with a specific SR level."""
+        level_price = level_info['level_price']
+        level_type = level_info['type']  # "Support" or "Resistance"
+        
+        tolerance_abs = current_atr * proximity_multiplier
+        
+        # Check directional condition
+        directional_condition_met = False
+        if level_type == "Resistance" and current_price <= level_price:
+            directional_condition_met = True
+        elif level_type == "Support" and current_price >= level_price:
+            directional_condition_met = True
+        
+        if not directional_condition_met:
+            return False
+        
+        # Check for proximity within the tolerance band
+        return (current_price <= level_price + tolerance_abs) and \
+               (current_price >= level_price - tolerance_abs)
+
+    def _predict_with_lgbm(self, current_features: pd.DataFrame, current_klines: pd.DataFrame) -> str:
+        """Predict regime using LightGBM classifier."""
+        # Find MACD histogram column
+        macd_hist_col = self._find_macd_histogram_column(current_features)
         if not macd_hist_col:
             self.logger.warning("MACD Histogram column not found in current_features. Cannot predict regime.")
-            return "UNKNOWN", trend_strength, current_adx # Return calculated trend strength and ADX
+            return "UNKNOWN"
 
-        macd_hist_col = macd_hist_col[0]
+        # Prepare features for prediction
+        combined_features = self._prepare_features_for_prediction(current_features, current_klines, macd_hist_col)
+        if combined_features.empty:
+            self.logger.warning("Insufficient features for regime prediction after filtering and dropping NaNs.")
+            return "UNKNOWN"
 
-        # Calculate advanced features for current data
+        # Predict cluster label if KMeans was trained
+        combined_features = self._predict_cluster_label(combined_features)
+
+        # Make LGBM prediction
+        return self._make_lgbm_prediction(combined_features)
+
+    def _find_macd_histogram_column(self, current_features: pd.DataFrame) -> Optional[str]:
+        """Find the MACD histogram column name."""
+        macd_hist_cols = [col for col in current_features.columns if 'MACDh_' in col]
+        return macd_hist_cols[0] if macd_hist_cols else None
+
+    def _prepare_features_for_prediction(self, current_features: pd.DataFrame, 
+                                       current_klines: pd.DataFrame, macd_hist_col: str) -> pd.DataFrame:
+        """Prepare features for LGBM prediction."""
+        # Calculate advanced features
         current_advanced_features = self._calculate_advanced_features(current_klines.copy())
         
         # Merge all current features
-        # Ensure current_features has all expected columns from feature_engineering
-        # before merging with advanced_features
-        
-        # Create a combined DataFrame for prediction input, ensuring all expected features are present
-        # This is crucial because the scaler and LGBM expect the same feature set as during training.
-        
-        # First, ensure basic features are in current_features_row (from Analyst's feature_engineering)
-        # Then, add advanced features to it.
-        
-        # Ensure current_features is a copy to avoid modifying original
         combined_current_features = current_features.copy()
-        
-        # Merge advanced features, handling potential index mismatches (e.g., if current_klines is shorter)
-        # Use `reindex` and `fillna` to ensure consistency.
         combined_current_features = combined_current_features.merge(
             current_advanced_features, left_index=True, right_index=True, how='left', suffixes=('', '_adv')
         )
         
-        # Filter to only existing columns to avoid KeyError if some features are missing
-        required_features_for_lgbm = [
+        # Define required features
+        required_features = [
             'ADX', macd_hist_col, 'ATR', 'volume_delta', 'autoencoder_reconstruction_error',
             'Is_SR_Interacting', 'log_returns', 'volatility_20', 'skewness_20',
             'kurtosis_20', 'avg_body_size_20', 'avg_range_size_20', 'volume_change'
         ]
 
-        # Add 'cluster_label' if KMeans was trained
+        # Add cluster_label if KMeans was trained
         if self.kmeans_model:
-            required_features_for_lgbm.append('cluster_label')
+            required_features.append('cluster_label')
 
-        # Filter to only existing columns in combined_current_features
-        actual_features_for_lgbm = [col for col in required_features_for_lgbm if col in combined_current_features.columns]
+        # Filter to only existing columns
+        actual_features = [col for col in required_features if col in combined_current_features.columns]
         
-        features_for_prediction_df = combined_current_features[actual_features_for_lgbm].dropna()
-        
-        # Predict cluster label for current features if KMeans was trained
-        if self.kmeans_model and 'cluster_label' in features_for_prediction_df.columns:
-            if not features_for_prediction_df.empty:
-                try:
-                    scaler_fitted_cols = self.scaler.feature_names_in_ if hasattr(self.scaler, 'feature_names_in_') else actual_features_for_lgbm
-                    current_scaled_input_for_kmeans = self.scaler.transform(
-                        features_for_prediction_df.reindex(columns=scaler_fitted_cols, fill_value=0).tail(1)
-                    )
-                    predicted_cluster = self.kmeans_model.predict(current_scaled_input_for_kmeans)[0]
-                    features_for_prediction_df.loc[features_for_prediction_df.index[-1], 'cluster_label'] = predicted_cluster
-                except Exception as e:
-                    self.logger.error(f"Error predicting cluster for current features: {e}. Setting cluster_label to -1.", exc_info=True)
-                    features_for_prediction_df.loc[features_for_prediction_df.index[-1], 'cluster_label'] = -1
-            else:
-                features_for_prediction_df.loc[features_for_prediction_df.index[-1], 'cluster_label'] = -1
+        return combined_current_features[actual_features].dropna()
 
+    def _predict_cluster_label(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """Predict cluster label for current features if KMeans was trained."""
+        if not self.kmeans_model or 'cluster_label' not in features_df.columns:
+            return features_df
 
-        if features_for_prediction_df.empty:
-            self.logger.warning("Insufficient features for regime prediction after filtering and dropping NaNs.")
-            return "UNKNOWN", trend_strength, current_adx # Return calculated trend strength and ADX
+        if not features_df.empty:
+            try:
+                scaler_fitted_cols = self.scaler.feature_names_in_ if hasattr(self.scaler, 'feature_names_in_') else features_df.columns.tolist()
+                current_scaled_input = self.scaler.transform(
+                    features_df.reindex(columns=scaler_fitted_cols, fill_value=0).tail(1)
+                )
+                predicted_cluster = self.kmeans_model.predict(current_scaled_input)[0]
+                features_df.loc[features_df.index[-1], 'cluster_label'] = predicted_cluster
+            except Exception as e:
+                self.logger.error(f"Error predicting cluster for current features: {e}. Setting cluster_label to -1.", exc_info=True)
+                features_df.loc[features_df.index[-1], 'cluster_label'] = -1
+        else:
+            features_df.loc[features_df.index[-1], 'cluster_label'] = -1
 
-        # Ensure the scaler is fitted before transforming
+        return features_df
+
+    def _make_lgbm_prediction(self, features_df: pd.DataFrame) -> str:
+        """Make prediction using LightGBM classifier."""
         if self.scaler is None:
             self.logger.error("Scaler not fitted. Cannot predict regime. Returning UNKNOWN.")
-            return "UNKNOWN", trend_strength, current_adx
+            return "UNKNOWN"
 
-        # Scale the final features for LGBM prediction
-        # Use `reindex` to ensure column order matches training, and `fillna` for robustness
-        lgbm_input_cols = self.lgbm_classifier.feature_name_ if hasattr(self.lgbm_classifier, 'feature_name_') else actual_features_for_lgbm
-        if 'cluster_label' in lgbm_input_cols and 'cluster_label' not in features_for_prediction_df.columns:
-            features_for_prediction_df['cluster_label'] = -1 # Add if missing for prediction consistency
+        # Ensure cluster_label is present if needed
+        lgbm_input_cols = self.lgbm_classifier.feature_name_ if hasattr(self.lgbm_classifier, 'feature_name_') else features_df.columns.tolist()
+        if 'cluster_label' in lgbm_input_cols and 'cluster_label' not in features_df.columns:
+            features_df['cluster_label'] = -1
 
-        # Reindex the prediction DataFrame to match the training feature order
-        features_for_prediction_reindexed = features_for_prediction_df.reindex(columns=lgbm_input_cols, fill_value=0).tail(1)
+        # Reindex to match training feature order
+        features_reindexed = features_df.reindex(columns=lgbm_input_cols, fill_value=0).tail(1)
         
-        scaled_features_for_lgbm = self.scaler.transform(features_for_prediction_reindexed)
-        predicted_regime = self.lgbm_classifier.predict(scaled_features_for_lgbm)[0]
+        # Scale features and predict
+        scaled_features = self.scaler.transform(features_reindexed)
+        predicted_regime = self.lgbm_classifier.predict(scaled_features)[0]
 
-        self.logger.info(f"Predicted Regime: {predicted_regime}, Trend Strength: {trend_strength:.2f}, ADX: {current_adx:.2f}")
-        return predicted_regime, trend_strength, current_adx
+        return predicted_regime
 
-    def save_model(self, model_path: str = None):
+    def save_model(self, model_path: Optional[str] = None):
         """Saves the trained LGBM classifier, scaler, and KMeans model using joblib."""
         path_to_save = model_path if model_path else self.default_model_path
         try:
@@ -391,7 +412,7 @@ class MarketRegimeClassifier:
         except Exception as e:
             self.logger.error(f"Error saving Market Regime Classifier model to {path_to_save}: {e}", exc_info=True)
 
-    def load_model(self, model_path: str = None):
+    def load_model(self, model_path: Optional[str] = None):
         """Loads the trained LGBM classifier, scaler, and KMeans model from file."""
         path_to_load = model_path if model_path else self.default_model_path
         if not os.path.exists(path_to_load):

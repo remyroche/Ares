@@ -3,7 +3,7 @@ import json
 import copy
 from typing import Optional # Added import for Optional
 from src.config import CONFIG
-from src.utils.logger import system_logger as logger
+from src.utils.logger import system_logger
 from src.analyst.analyst import Analyst
 from src.tactician.tactician import Tactician
 from src.strategist.strategist import Strategist
@@ -15,7 +15,7 @@ class ModelManager:
     This allows for updating the strategy without restarting the bot.
     """
     def __init__(self, firestore_manager=None, performance_reporter: Optional[PerformanceReporter] = None): # Added performance_reporter
-        self.logger = logger.getChild('ModelManager')
+        self.logger = system_logger.getChild('ModelManager')
         self.firestore_manager = firestore_manager
         self.performance_reporter = performance_reporter # Store reporter instance
         

@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime
 from typing import List, Optional, Union # Added imports for type hinting
-from src.utils.logger import system_logger as logger
+from src.utils.logger import system_logger
 from src.config import settings
 from src.utils.state_manager import StateManager
 # Import both managers for type hinting, but use the one passed in __init__
@@ -21,7 +21,7 @@ class GlobalPortfolioManager:
     def __init__(self, state_manager: StateManager, db_manager: Union[FirestoreManager, SQLiteManager, None] = None): # Fixed: Accept generic db_manager
         self.state_manager = state_manager
         self.db_manager = db_manager # Use the passed db_manager
-        self.logger = logger.getChild('GlobalPortfolioManager')
+        self.logger: logging.Logger = system_logger.getChild('GlobalPortfolioManager')
         self.config = settings.get("global_portfolio_manager", {})
         self.risk_config = settings.get("risk_management", {}) # Load risk management config
         self.exchange_configs = settings.get("exchanges", [])

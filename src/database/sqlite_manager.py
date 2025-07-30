@@ -3,22 +3,37 @@
 import sqlite3
 import json
 import logging
+import shutil
+import os
+import time
+import hashlib
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union, Callable, Tuple 
 
 # Assuming system_logger is available
-from src.utils.logger import system_logger as logger
+from src.utils.logger import system_logger
+from src.config import CONFIG
 
 class SQLiteManager:
     """
     Manages interactions with a local SQLite database.
     Provides methods to store and retrieve structured data, mimicking FirestoreManager.
+    Enhanced with backup, migration, and persistence features.
     """
 
-    def __init__(self, db_path: str = "ares_local_db.sqlite"):
-        self.db_path = db_path
+    def __init__(self):
+        # Use the database path from CONFIG
+        self.db_path = CONFIG.get("SQLITE_DB_PATH", "data/ares_local_db.sqlite")
+        self.backup_dir = "data/backups"
+        self.migration_dir = "data/migrations"
         self.conn: Optional[sqlite3.Connection] = None
-        self.logger = logger.getChild('SQLiteManager')
+        self.logger = system_logger.getChild('SQLiteManager')
         self._initialized = False
+        
+        # Create necessary directories
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        os.makedirs(self.backup_dir, exist_ok=True)
+        os.makedirs(self.migration_dir, exist_ok=True)
 
     async def initialize(self):
         """Initializes the SQLite database connection and creates tables."""
@@ -27,14 +42,18 @@ class SQLiteManager:
             return
 
         try:
-            self.conn = sqlite3.connect(self.db_path, check_same_thread=False) # Allow multiple threads to access (for async)
-            self.conn.row_factory = sqlite3.Row # Access columns by name
+            self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
             await self._create_tables()
             self._initialized = True
             self.logger.info(f"SQLiteManager initialized successfully at {self.db_path}.")
+            
+            # Create initial backup
+            await self.create_backup("initial")
+            
         except Exception as e:
             self.logger.error(f"Failed to initialize SQLiteManager at {self.db_path}: {e}", exc_info=True)
-            self.conn = None # Ensure connection is None on failure
+            self.conn = None
 
     async def _execute_query(self, query: str, params: Union[Tuple[Any, ...], List[Tuple[Any, ...]]] = ()) -> List[sqlite3.Row]:
         """Helper to execute a single query or multiple queries (for executemany)."""
@@ -52,7 +71,7 @@ class SQLiteManager:
             return cursor.fetchall()
         except sqlite3.Error as e:
             self.logger.error(f"SQLite error executing query: {query} with params {params}. Error: {e}", exc_info=True)
-            self.conn.rollback() # Rollback on error
+            self.conn.rollback()
             return []
         except Exception as e:
             self.logger.error(f"Unexpected error executing query: {e}", exc_info=True)
@@ -67,17 +86,17 @@ class SQLiteManager:
                 doc_id TEXT PRIMARY KEY,
                 timestamp TEXT,
                 optimization_run_id TEXT,
-                performance_metrics TEXT, -- Stored as JSON string
+                performance_metrics TEXT,
                 date_applied TEXT,
-                params TEXT, -- Stored as JSON string
-                is_public INTEGER -- 0 for false, 1 for true
+                params TEXT,
+                is_public INTEGER
             );
             """,
             """
             CREATE TABLE IF NOT EXISTS ares_live_metrics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TEXT,
-                metrics TEXT -- Stored as JSON string
+                metrics TEXT
             );
             """,
             """
@@ -87,7 +106,7 @@ class SQLiteManager:
                 alert_type TEXT,
                 severity TEXT,
                 message TEXT,
-                context_data TEXT -- Stored as JSON string
+                context_data TEXT
             );
             """,
             """
@@ -98,94 +117,248 @@ class SQLiteManager:
                 Side TEXT,
                 EntryTimestampUTC TEXT,
                 ExitTimestampUTC TEXT,
-                TradeDurationSeconds REAL,
-                NetPnLUSD REAL,
-                PnLPercentage REAL,
-                ExitReason TEXT,
                 EntryPrice REAL,
                 ExitPrice REAL,
-                QuantityBaseAsset REAL,
-                NotionalSizeUSD REAL,
-                LeverageUsed INTEGER,
-                IntendedStopLossPrice REAL,
-                IntendedTakeProfitPrice REAL,
-                ActualStopLossPrice REAL,
-                ActualTakeProfitPrice REAL,
-                OrderTypeEntry TEXT,
-                OrderTypeExit TEXT,
-                EntryFeesUSD REAL,
-                ExitFeesUSD REAL,
-                SlippageEntryPct REAL,
-                SlippageExitPct REAL,
-                MarketRegimeAtEntry TEXT,
-                TacticianSignal TEXT,
-                EnsemblePredictionAtEntry TEXT,
-                EnsembleConfidenceAtEntry REAL,
-                DirectionalConfidenceAtEntry REAL,
-                MarketHealthScoreAtEntry REAL,
-                LiquidationSafetyScoreAtEntry REAL,
-                TrendStrengthAtEntry REAL,
-                ADXValueAtEntry REAL,
-                RSIValueAtEntry REAL,
-                MACDHistogramValueAtEntry REAL,
-                PriceVsVWAPRatioAtEntry REAL,
-                VolumeDeltaAtEntry REAL,
-                GlobalRiskMultiplierAtEntry REAL,
-                AvailableAccountEquityAtEntry REAL,
-                TradingEnvironment TEXT,
-                IsTradingPausedAtEntry INTEGER,
-                KillSwitchActiveAtEntry INTEGER,
-                ModelVersionID TEXT,
-                BaseModelPredictionsAtEntry TEXT, -- Stored as JSON string
-                EnsembleWeightsAtEntry TEXT -- Stored as JSON string
+                Quantity REAL,
+                PnL REAL,
+                PnLPercent REAL,
+                Strategy TEXT,
+                EntryReason TEXT,
+                ExitReason TEXT,
+                StopLoss REAL,
+                TakeProfit REAL,
+                Leverage INTEGER,
+                FundingRate REAL,
+                MarketRegime TEXT,
+                SRLevel TEXT,
+                TechnicalIndicators TEXT,
+                RiskMetrics TEXT
             );
             """,
             """
-            CREATE TABLE IF NOT EXISTS daily_summaries (
-                Date TEXT PRIMARY KEY,
-                TotalTrades INTEGER,
-                WinRate REAL,
-                NetPnL REAL,
-                MaxDrawdown REAL,
-                EndingCapital REAL,
-                AllocatedCapitalMultiplier REAL
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS strategy_performance_logs (
+            CREATE TABLE IF NOT EXISTS model_checkpoints (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                Date TEXT,
-                Regime TEXT,
-                TotalTrades INTEGER,
-                WinRate REAL,
-                NetPnL REAL,
-                AvgPnLPerTrade REAL,
-                TradeDuration REAL,
-                UNIQUE(Date, Regime) -- Ensure unique entry per date and regime
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS ares_unhandled_exceptions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model_name TEXT,
+                checkpoint_path TEXT,
                 timestamp TEXT,
-                level TEXT,
-                type TEXT,
-                message TEXT,
-                traceback TEXT,
-                context TEXT
+                performance_metrics TEXT,
+                model_hash TEXT,
+                is_active INTEGER DEFAULT 0
             );
             """,
             """
-            CREATE TABLE IF NOT EXISTS global_state (
-                key TEXT PRIMARY KEY,
-                value TEXT, -- Stored as JSON string
-                timestamp TEXT
+            CREATE TABLE IF NOT EXISTS backtest_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                backtest_id TEXT UNIQUE,
+                start_date TEXT,
+                end_date TEXT,
+                symbol TEXT,
+                strategy TEXT,
+                total_trades INTEGER,
+                winning_trades INTEGER,
+                losing_trades INTEGER,
+                win_rate REAL,
+                total_pnl REAL,
+                max_drawdown REAL,
+                sharpe_ratio REAL,
+                profit_factor REAL,
+                results_data TEXT,
+                created_at TEXT,
+                is_migrated INTEGER DEFAULT 0
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS trading_state (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key TEXT UNIQUE,
+                value TEXT,
+                timestamp TEXT,
+                updated_at TEXT
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS database_migrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                migration_id TEXT UNIQUE,
+                source_computer TEXT,
+                target_computer TEXT,
+                migration_type TEXT,
+                status TEXT,
+                created_at TEXT,
+                completed_at TEXT,
+                file_size INTEGER,
+                checksum TEXT
             );
             """
         ]
+        
         for query in queries:
             await self._execute_query(query)
+        
         self.logger.info("All necessary SQLite tables checked/created.")
+
+    async def create_backup(self, backup_name: str = None) -> str:
+        """Creates a backup of the database."""
+        if not backup_name:
+            backup_name = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        backup_path = os.path.join(self.backup_dir, f"{backup_name}.sqlite")
+        
+        try:
+            if self.conn:
+                self.conn.close()
+            
+            shutil.copy2(self.db_path, backup_path)
+            
+            if not self._initialized:
+                self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+                self.conn.row_factory = sqlite3.Row
+            
+            # Calculate checksum
+            with open(backup_path, 'rb') as f:
+                checksum = hashlib.md5(f.read()).hexdigest()
+            
+            self.logger.info(f"Database backup created: {backup_path} (checksum: {checksum})")
+            return backup_path
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create backup: {e}", exc_info=True)
+            return ""
+
+    async def restore_backup(self, backup_path: str) -> bool:
+        """Restores database from a backup."""
+        try:
+            if self.conn:
+                self.conn.close()
+            
+            shutil.copy2(backup_path, self.db_path)
+            
+            self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
+            
+            self.logger.info(f"Database restored from backup: {backup_path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to restore backup: {e}", exc_info=True)
+            return False
+
+    async def export_for_migration(self, migration_name: str = None) -> str:
+        """Exports database for migration to another computer."""
+        if not migration_name:
+            migration_name = f"migration_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        migration_path = os.path.join(self.migration_dir, f"{migration_name}.sqlite")
+        
+        try:
+            # Create a clean copy for migration
+            shutil.copy2(self.db_path, migration_path)
+            
+            # Calculate checksum
+            with open(migration_path, 'rb') as f:
+                checksum = hashlib.md5(f.read()).hexdigest()
+            
+            # Record migration
+            migration_data = {
+                'migration_id': migration_name,
+                'source_computer': os.uname().nodename if hasattr(os, 'uname') else 'unknown',
+                'target_computer': 'pending',
+                'migration_type': 'export',
+                'status': 'created',
+                'created_at': datetime.now().isoformat(),
+                'completed_at': None,
+                'file_size': os.path.getsize(migration_path),
+                'checksum': checksum
+            }
+            
+            await self.set_document('database_migrations', migration_name, migration_data)
+            
+            self.logger.info(f"Migration export created: {migration_path} (checksum: {checksum})")
+            return migration_path
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create migration export: {e}", exc_info=True)
+            return ""
+
+    async def import_migration(self, migration_path: str) -> bool:
+        """Imports database from a migration file."""
+        try:
+            # Verify file exists
+            if not os.path.exists(migration_path):
+                self.logger.error(f"Migration file not found: {migration_path}")
+                return False
+            
+            # Calculate checksum of migration file
+            with open(migration_path, 'rb') as f:
+                checksum = hashlib.md5(f.read()).hexdigest()
+            
+            # Create backup before import
+            await self.create_backup("pre_migration_import")
+            
+            # Close current connection
+            if self.conn:
+                self.conn.close()
+            
+            # Copy migration file to database location
+            shutil.copy2(migration_path, self.db_path)
+            
+            # Reopen connection
+            self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
+            
+            # Update migration record
+            migration_name = os.path.basename(migration_path).replace('.sqlite', '')
+            migration_data = {
+                'migration_id': migration_name,
+                'source_computer': 'unknown',
+                'target_computer': os.uname().nodename if hasattr(os, 'uname') else 'unknown',
+                'migration_type': 'import',
+                'status': 'completed',
+                'created_at': datetime.now().isoformat(),
+                'completed_at': datetime.now().isoformat(),
+                'file_size': os.path.getsize(migration_path),
+                'checksum': checksum
+            }
+            
+            await self.set_document('database_migrations', migration_name, migration_data)
+            
+            self.logger.info(f"Migration import completed: {migration_path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to import migration: {e}", exc_info=True)
+            return False
+
+    async def schedule_backup(self, interval_hours: int = 24):
+        """Schedules regular backups."""
+        while True:
+            try:
+                await asyncio.sleep(interval_hours * 3600)  # Convert hours to seconds
+                await self.create_backup()
+            except Exception as e:
+                self.logger.error(f"Backup scheduling error: {e}", exc_info=True)
+
+    async def get_backtest_results(self, backtest_id: str = None) -> List[Dict[str, Any]]:
+        """Retrieves backtest results."""
+        if backtest_id:
+            return await self.get_document('backtest_results', backtest_id)
+        else:
+            return await self.get_collection('backtest_results')
+
+    async def save_backtest_results(self, results: Dict[str, Any]) -> bool:
+        """Saves backtest results to database."""
+        backtest_id = results.get('backtest_id', f"backtest_{int(time.time())}")
+        results['created_at'] = datetime.now().isoformat()
+        return await self.set_document('backtest_results', backtest_id, results)
+
+    async def get_trading_state(self, key: str) -> Optional[Dict[str, Any]]:
+        """Retrieves trading state by key."""
+        return await self.get_document('trading_state', key)
+
+    async def set_trading_state(self, key: str, value: Dict[str, Any]) -> bool:
+        """Sets trading state by key."""
+        value['updated_at'] = datetime.now().isoformat()
+        return await self.set_document('trading_state', key, value)
 
     async def set_document(self, collection_name: str, doc_id: str, data: Dict[str, Any], is_public: bool = False):
         """
@@ -222,7 +395,10 @@ class SQLiteManager:
             return False
 
     async def get_document(self, collection_name: str, doc_id: str, is_public: bool = False) -> Optional[Dict[str, Any]]:
-        """Retrieves a single document by its ID from a specified table."""
+        """
+        Retrieves a single document by its ID.
+        'is_public' is ignored for local SQLite.
+        """
         if not self.conn:
             self.logger.error(f"Database not initialized. Cannot get document from {collection_name}.")
             return None
@@ -238,17 +414,15 @@ class SQLiteManager:
                     try:
                         doc[k] = json.loads(v)
                     except json.JSONDecodeError:
-                        pass # Not a JSON string, keep as is
-            self.logger.debug(f"Document {doc_id} retrieved from {collection_name}.")
+                        pass
             return doc
-        else:
-            self.logger.debug(f"Document {doc_id} not found in {collection_name}.")
-            return None
+        return None
 
     async def add_document(self, collection_name: str, data: Dict[str, Any], is_public: bool = False) -> Optional[str]:
         """
-        Adds a new document to a specified table, with an auto-incrementing ID.
-        Returns the ID of the new document.
+        Adds a new document to a collection (table).
+        'is_public' is ignored for local SQLite.
+        Returns the generated document ID.
         """
         if not self.conn:
             self.logger.error(f"Database not initialized. Cannot add document to {collection_name}.")
@@ -268,10 +442,11 @@ class SQLiteManager:
 
         try:
             await self._execute_query(query, params)
-            # For auto-incrementing primary keys, lastrowid gives the ID
-            last_id = self.conn.cursor().lastrowid
-            self.logger.debug(f"Document added to {collection_name} with ID: {last_id}.")
-            return str(last_id)
+            # For tables with auto-increment, we can't easily get the ID
+            # For now, return a timestamp-based ID
+            doc_id = f"{collection_name}_{int(time.time())}"
+            self.logger.debug(f"Document added to {collection_name} with ID: {doc_id}.")
+            return doc_id
         except Exception as e:
             self.logger.error(f"Error adding document to {collection_name}: {e}", exc_info=True)
             return None
@@ -314,7 +489,10 @@ class SQLiteManager:
         return results
 
     async def delete_document(self, collection_name: str, doc_id: str, is_public: bool = False) -> bool:
-        """Deletes a document by its ID from a specified table."""
+        """
+        Deletes a document from a collection (table).
+        'is_public' is ignored for local SQLite.
+        """
         if not self.conn:
             self.logger.error(f"Database not initialized. Cannot delete document from {collection_name}.")
             return False
@@ -332,7 +510,6 @@ class SQLiteManager:
         """Closes the database connection."""
         if self.conn:
             self.conn.close()
-            self.conn = None
             self._initialized = False
             self.logger.info(f"SQLite database connection to {self.db_path} closed.")
 

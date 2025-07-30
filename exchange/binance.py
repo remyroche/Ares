@@ -9,8 +9,16 @@ from datetime import datetime, timedelta
 
 import aiohttp
 import websockets
-from src.utils.logger import logger
+from src.utils.logger import system_logger
 from src.config import settings
+from src.utils.error_handler import (
+    handle_errors,
+    handle_network_operations,
+    handle_data_processing_errors,
+    handle_type_conversions,
+    error_context,
+    ErrorRecoveryStrategies
+)
 
 class BinanceExchange:
     """
@@ -30,17 +38,34 @@ class BinanceExchange:
         self.order_book = {'bids': {}, 'asks': {}}
         self.recent_trades = []
         self.kline_data = {}
+        self.mark_price_data = {}
+        self.funding_rate_data = {}
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="get_session"
+    )
     async def _get_session(self):
         """Ensures an aiohttp session is active."""
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(base_url=self.BASE_URL)
         return self._session
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=int(time.time() * 1000),
+        context="get_timestamp"
+    )
     def _get_timestamp(self) -> int:
         """Returns the current timestamp in milliseconds."""
         return int(time.time() * 1000)
 
+    @handle_errors(
+        exceptions=(ValueError, TypeError, AttributeError),
+        default_return="",
+        context="generate_signature"
+    )
     async def _generate_signature(self, data: Dict[str, Any]) -> str:
         """Generates a HMAC SHA256 signature for signed requests."""
         if not self._api_secret:
@@ -48,6 +73,11 @@ class BinanceExchange:
         query_string = '&'.join([f"{k}={v}" for k, v in data.items() if v is not None])
         return hmac.new(self._api_secret, query_string.encode('utf-8'), hashlib.sha256).hexdigest()
 
+    @handle_network_operations(
+        max_retries=5,
+        default_return=None,
+        context="binance_request"
+    )
     async def _request(self, method: str, endpoint: str, params: Dict[str, Any] = None, signed: bool = False, max_retries: int = 5):
         """
         Makes an asynchronous HTTP request to the Binance API with retry logic.
@@ -58,7 +88,7 @@ class BinanceExchange:
         
         if signed:
             if not self._api_key or not self._api_secret:
-                logger.error(f"Permission Error: API key or secret missing for signed endpoint {endpoint}.")
+                system_logger.error(f"Permission Error: API key or secret missing for signed endpoint {endpoint}.")
                 raise PermissionError("Signed endpoint requires API key and secret.")
             params['timestamp'] = self._get_timestamp()
             params['signature'] = await self._generate_signature(params)
@@ -76,19 +106,19 @@ class BinanceExchange:
                         json_response = await response.json()
                         return json_response
                     except aiohttp.ContentTypeError:
-                        logger.error(f"Content Type Error: Expected JSON but got {response.headers.get('Content-Type')} for {endpoint}. Response: {await response.text()}")
+                        system_logger.error(f"Content Type Error: Expected JSON but got {response.headers.get('Content-Type')} for {endpoint}. Response: {await response.text()}")
                         raise ValueError("Invalid content type in API response.")
                     except json.JSONDecodeError:
-                        logger.error(f"JSON Decode Error: Could not parse response as JSON for {endpoint}. Response: {await response.text()}")
+                        system_logger.error(f"JSON Decode Error: Could not parse response as JSON for {endpoint}. Response: {await response.text()}")
                         raise ValueError("Could not decode JSON response from API.")
 
             except aiohttp.ClientResponseError as e:
                 # Handle specific HTTP errors (4xx, 5xx)
-                logger.error(f"HTTP Error {e.status} for {method} {endpoint}: {e.message}. Response: {e.history or await response.text()}")
+                system_logger.error(f"HTTP Error {e.status} for {method} {endpoint}: {e.message}. Response: {e.history or await response.text()}")
                 if e.status in [400, 401, 403, 404, 429]: # Client errors, often not retryable or rate limit
                     if e.status == 429: # Rate limit
                         retry_after = int(response.headers.get('Retry-After', 5)) # Get retry-after header
-                        logger.warning(f"Rate limit hit. Retrying after {retry_after} seconds.")
+                        system_logger.warning(f"Rate limit hit. Retrying after {retry_after} seconds.")
                         await asyncio.sleep(retry_after)
                         # Don't increment attempt for rate limit, allow more retries if needed
                         continue 
@@ -96,39 +126,44 @@ class BinanceExchange:
                 elif e.status >= 500: # Server errors, often retryable
                     if attempt < max_retries - 1:
                         wait_time = 2 ** attempt
-                        logger.warning(f"Server error. Retrying in {wait_time} seconds (attempt {attempt + 1}/{max_retries})...")
+                        system_logger.warning(f"Server error. Retrying in {wait_time} seconds (attempt {attempt + 1}/{max_retries})...")
                         await asyncio.sleep(wait_time)
                     else:
-                        logger.critical(f"Failed after {max_retries} attempts due to server error for {endpoint}.")
+                        system_logger.critical(f"Failed after {max_retries} attempts due to server error for {endpoint}.")
                         raise
                 else: # Other HTTP errors
                     raise
 
             except asyncio.TimeoutError:
-                logger.error(f"Request timed out for {method} {endpoint} (attempt {attempt + 1}/{max_retries}).")
+                system_logger.error(f"Request timed out for {method} {endpoint} (attempt {attempt + 1}/{max_retries}).")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(2) # Short delay before retrying timeout
                 else:
-                    logger.critical(f"Failed after {max_retries} attempts due to timeout for {endpoint}.")
+                    system_logger.critical(f"Failed after {max_retries} attempts due to timeout for {endpoint}.")
                     raise
 
             except aiohttp.ClientError as e:
                 # Catch broader aiohttp client errors (e.g., connection issues)
-                logger.error(f"Aiohttp Client Error for {method} {endpoint}: {e} (attempt {attempt + 1}/{max_retries}).")
+                system_logger.error(f"Aiohttp Client Error for {method} {endpoint}: {e} (attempt {attempt + 1}/{max_retries}).")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(2)
                 else:
-                    logger.critical(f"Failed after {max_retries} attempts due to client error for {endpoint}.")
+                    system_logger.critical(f"Failed after {max_retries} attempts due to client error for {endpoint}.")
                     raise
             except Exception as e:
                 # Catch any other unexpected errors during the request
-                logger.error(f"An unexpected error occurred during API request to {endpoint}: {e}", exc_info=True)
+                system_logger.error(f"An unexpected error occurred during API request to {endpoint}: {e}", exc_info=True)
                 raise # Re-raise to ensure it's handled upstream
 
-        logger.critical(f"Request to {endpoint} failed after {max_retries} attempts.")
+        system_logger.critical(f"Request to {endpoint} failed after {max_retries} attempts.")
         return None # Should not be reached if exceptions are re-raised
 
     # --- REST API Functions ---
+    @handle_network_operations(
+        max_retries=3,
+        default_return=[],
+        context="get_klines"
+    )
     async def get_klines(self, symbol: str, interval: str, limit: int = 500) -> List[Dict[str, Any]]:
         """Fetches historical kline (candlestick) data."""
         endpoint = "/fapi/v1/klines"
@@ -136,9 +171,14 @@ class BinanceExchange:
         try:
             return await self._request("GET", endpoint, params)
         except Exception as e:
-            logger.error(f"Failed to get klines for {symbol}-{interval}: {e}")
+            system_logger.error(f"Failed to get klines for {symbol}-{interval}: {e}")
             return []
 
+    @handle_network_operations(
+        max_retries=3,
+        default_return={"error": "Failed to create order", "status": "failed"},
+        context="create_order"
+    )
     async def create_order(self, symbol: str, side: str, order_type: str, quantity: float, price: float = None, time_in_force: str = None, params: Dict[str, Any] = None):
         """Creates a new order."""
         endpoint = "/fapi/v1/order"
@@ -162,10 +202,15 @@ class BinanceExchange:
         try:
             return await self._request("POST", endpoint, order_params, signed=True)
         except Exception as e:
-            logger.error(f"Failed to create {order_type} order for {symbol} ({side} {quantity}): {e}")
+            system_logger.error(f"Failed to create {order_type} order for {symbol} ({side} {quantity}): {e}")
             # Return a structured error response or re-raise based on upstream needs
             return {"error": str(e), "status": "failed"}
 
+    @handle_network_operations(
+        max_retries=3,
+        default_return={"error": "Failed to get order status"},
+        context="get_order_status"
+    )
     async def get_order_status(self, symbol: str, order_id: int):
         """Retrieves the status of a specific order."""
         endpoint = "/fapi/v1/order"
@@ -173,9 +218,14 @@ class BinanceExchange:
         try:
             return await self._request("GET", endpoint, params, signed=True)
         except Exception as e:
-            logger.error(f"Failed to get status for order {order_id} on {symbol}: {e}")
+            system_logger.error(f"Failed to get status for order {order_id} on {symbol}: {e}")
             return {"error": str(e)}
         
+    @handle_network_operations(
+        max_retries=3,
+        default_return={"error": "Failed to cancel order"},
+        context="cancel_order"
+    )
     async def cancel_order(self, symbol: str, order_id: int):
         """Cancels an open order."""
         endpoint = "/fapi/v1/order"
@@ -183,18 +233,28 @@ class BinanceExchange:
         try:
             return await self._request("DELETE", endpoint, params, signed=True)
         except Exception as e:
-            logger.error(f"Failed to cancel order {order_id} on {symbol}: {e}")
+            system_logger.error(f"Failed to cancel order {order_id} on {symbol}: {e}")
             return {"error": str(e)}
 
+    @handle_network_operations(
+        max_retries=3,
+        default_return={"error": "Failed to get account info"},
+        context="get_account_info"
+    )
     async def get_account_info(self):
         """Fetches account information, including balances and positions."""
         endpoint = "/fapi/v2/account"
         try:
             return await self._request("GET", endpoint, signed=True)
         except Exception as e:
-            logger.error(f"Failed to get account info: {e}")
+            system_logger.error(f"Failed to get account info: {e}")
             return {"error": str(e)}
         
+    @handle_network_operations(
+        max_retries=3,
+        default_return=[],
+        context="get_position_risk"
+    )
     async def get_position_risk(self, symbol: str = None):
         """Gets current position risk for all symbols or a specific symbol."""
         endpoint = "/fapi/v2/positionRisk"
@@ -202,9 +262,14 @@ class BinanceExchange:
         try:
             return await self._request("GET", endpoint, params, signed=True)
         except Exception as e:
-            logger.error(f"Failed to get position risk for {symbol or 'all symbols'}: {e}")
+            system_logger.error(f"Failed to get position risk for {symbol or 'all symbols'}: {e}")
             return []
 
+    @handle_network_operations(
+        max_retries=3,
+        default_return=[],
+        context="get_open_orders"
+    )
     async def get_open_orders(self, symbol: str = None) -> List[Dict[str, Any]]:
         """
         Retrieves all open orders for a given symbol or all symbols.
@@ -214,15 +279,20 @@ class BinanceExchange:
         try:
             return await self._request("GET", endpoint, params, signed=True)
         except Exception as e:
-            logger.error(f"Failed to get open orders for {symbol or 'all symbols'}: {e}")
+            system_logger.error(f"Failed to get open orders for {symbol or 'all symbols'}: {e}")
             return []
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="close_all_positions"
+    )
     async def close_all_positions(self, symbol: str = None):
         """
         Closes all open positions for a given symbol or all symbols.
         This will place market orders to close positions.
         """
-        logger.warning(f"Attempting to close all open positions for {symbol if symbol else 'all symbols'}...")
+        system_logger.warning(f"Attempting to close all open positions for {symbol if symbol else 'all symbols'}...")
         try:
             positions = await self.get_position_risk(symbol)
             for position in positions:
@@ -232,7 +302,7 @@ class BinanceExchange:
                     side = "SELL" if position_amount > 0 else "BUY"
                     quantity = abs(position_amount)
 
-                    logger.info(f"Closing {side} position for {current_symbol} with quantity {quantity}...")
+                    system_logger.info(f"Closing {side} position for {current_symbol} with quantity {quantity}...")
                     order_response = await self.create_order(
                         symbol=current_symbol,
                         side=side,
@@ -240,37 +310,47 @@ class BinanceExchange:
                         quantity=quantity
                     )
                     if order_response and order_response.get('status') == 'failed':
-                        logger.error(f"Failed to place closing order for {current_symbol}: {order_response.get('error')}")
+                        system_logger.error(f"Failed to place closing order for {current_symbol}: {order_response.get('error')}")
                     else:
-                        logger.info(f"Closed position for {current_symbol}: {order_response}")
+                        system_logger.info(f"Closed position for {current_symbol}: {order_response}")
                 else:
-                    logger.debug(f"No open position for {position.get('symbol', 'N/A')}.")
+                    system_logger.debug(f"No open position for {position.get('symbol', 'N/A')}.")
         except Exception as e:
-            logger.error(f"Error closing all positions: {e}", exc_info=True)
+            system_logger.error(f"Error closing all positions: {e}", exc_info=True)
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="cancel_all_orders"
+    )
     async def cancel_all_orders(self, symbol: str = None):
         """
         Cancels all open orders for a given symbol or all symbols.
         """
-        logger.warning(f"Attempting to cancel all open orders for {symbol if symbol else 'all symbols'}...")
+        system_logger.warning(f"Attempting to cancel all open orders for {symbol if symbol else 'all symbols'}...")
         try:
             open_orders = await self.get_open_orders(symbol)
             if not open_orders:
-                logger.info(f"No open orders found for {symbol if symbol else 'all symbols'}.")
+                system_logger.info(f"No open orders found for {symbol if symbol else 'all symbols'}.")
                 return
 
             for order in open_orders:
                 order_id = order['orderId']
                 order_symbol = order['symbol']
-                logger.info(f"Cancelling order {order_id} for {order_symbol}...")
+                system_logger.info(f"Cancelling order {order_id} for {order_symbol}...")
                 cancel_response = await self.cancel_order(order_symbol, order_id)
                 if cancel_response and cancel_response.get('status') == 'failed':
-                    logger.error(f"Failed to cancel order {order_id} for {order_symbol}: {cancel_response.get('error')}")
+                    system_logger.error(f"Failed to cancel order {order_id} for {order_symbol}: {cancel_response.get('error')}")
                 else:
-                    logger.info(f"Cancelled order {order_id} for {order_symbol}: {cancel_response}")
+                    system_logger.info(f"Cancelled order {order_id} for {order_symbol}: {cancel_response}")
         except Exception as e:
-            logger.error(f"Error cancelling all orders: {e}", exc_info=True)
+            system_logger.error(f"Error cancelling all orders: {e}", exc_info=True)
 
+    @handle_network_operations(
+        max_retries=3,
+        default_return=[],
+        context="get_historical_agg_trades"
+    )
     async def get_historical_agg_trades(self, symbol: str, start_time_ms: int, end_time_ms: int, limit: int = 1000) -> List[Dict[str, Any]]:
         """
         Fetches historical aggregated trades for a symbol within a time range.
@@ -299,11 +379,16 @@ class BinanceExchange:
                 
                 await asyncio.sleep(0.1) # Small delay to avoid hitting rate limits
             except Exception as e:
-                logger.error(f"Error fetching historical agg trades for {symbol}: {e}")
+                system_logger.error(f"Error fetching historical agg trades for {symbol}: {e}")
                 break # Stop fetching for this period on error
         
         return all_trades
 
+    @handle_network_operations(
+        max_retries=3,
+        default_return={"funding_rates": [], "open_interest": []},
+        context="get_historical_futures_data"
+    )
     async def get_historical_futures_data(self, symbol: str, start_time_ms: int, end_time_ms: int) -> Dict[str, List[Dict[str, Any]]]:
         """
         Fetches historical futures-specific data (funding rates, open interest).
@@ -329,7 +414,7 @@ class BinanceExchange:
                 current_fr_start = rates[-1]['fundingTime'] + 1
                 await asyncio.sleep(0.1)
             except Exception as e:
-                logger.error(f"Error fetching historical funding rates for {symbol}: {e}")
+                system_logger.error(f"Error fetching historical funding rates for {symbol}: {e}")
                 break
 
         # Fetch Open Interest History
@@ -344,37 +429,382 @@ class BinanceExchange:
             if oi_data:
                 open_interest.extend(oi_data)
         except Exception as e:
-            logger.error(f"Error fetching historical open interest for {symbol}: {e}")
+            system_logger.error(f"Error fetching historical open interest for {symbol}: {e}")
         
         return {"funding_rates": funding_rates, "open_interest": open_interest}
 
+    @handle_network_operations(
+        max_retries=3,
+        default_return={},
+        context="get_exchange_info"
+    )
+    async def get_exchange_info(self):
+        """Fetches exchange information including symbols, filters, and trading rules."""
+        endpoint = "/fapi/v1/exchangeInfo"
+        try:
+            return await self._request("GET", endpoint)
+        except Exception as e:
+            system_logger.error(f"Failed to get exchange info: {e}")
+            return {}
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return={},
+        context="get_ticker"
+    )
+    async def get_ticker(self, symbol: str = None):
+        """Fetches 24hr ticker price change statistics."""
+        endpoint = "/fapi/v1/ticker/24hr"
+        params = {"symbol": symbol.upper()} if symbol else {}
+        try:
+            return await self._request("GET", endpoint, params)
+        except Exception as e:
+            system_logger.error(f"Failed to get ticker for {symbol or 'all symbols'}: {e}")
+            return {}
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return={},
+        context="get_funding_rate"
+    )
+    async def get_funding_rate(self, symbol: str = None):
+        """Fetches current funding rate for a symbol or all symbols."""
+        endpoint = "/fapi/v1/fundingRate"
+        params = {"symbol": symbol.upper()} if symbol else {}
+        try:
+            return await self._request("GET", endpoint, params)
+        except Exception as e:
+            system_logger.error(f"Failed to get funding rate for {symbol or 'all symbols'}: {e}")
+            return {}
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return={},
+        context="get_open_interest"
+    )
+    async def get_open_interest(self, symbol: str):
+        """Fetches current open interest for a symbol."""
+        endpoint = "/fapi/v1/openInterest"
+        params = {"symbol": symbol.upper()}
+        try:
+            return await self._request("GET", endpoint, params)
+        except Exception as e:
+            system_logger.error(f"Failed to get open interest for {symbol}: {e}")
+            return {}
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return=[],
+        context="get_all_orders"
+    )
+    async def get_all_orders(self, symbol: str, order_id: int = None, start_time: int = None, end_time: int = None, limit: int = 500):
+        """Fetches all orders for a symbol."""
+        endpoint = "/fapi/v1/allOrders"
+        params = {"symbol": symbol.upper(), "limit": limit}
+        if order_id:
+            params["orderId"] = order_id
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        try:
+            return await self._request("GET", endpoint, params, signed=True)
+        except Exception as e:
+            system_logger.error(f"Failed to get all orders for {symbol}: {e}")
+            return []
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return=[],
+        context="get_trade_history"
+    )
+    async def get_trade_history(self, symbol: str, order_id: int = None, start_time: int = None, end_time: int = None, limit: int = 500):
+        """Fetches trade history for a symbol."""
+        endpoint = "/fapi/v1/userTrades"
+        params = {"symbol": symbol.upper(), "limit": limit}
+        if order_id:
+            params["orderId"] = order_id
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        try:
+            return await self._request("GET", endpoint, params, signed=True)
+        except Exception as e:
+            system_logger.error(f"Failed to get trade history for {symbol}: {e}")
+            return []
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return={"error": "Failed to create batch orders"},
+        context="create_batch_orders"
+    )
+    async def create_batch_orders(self, orders: List[Dict[str, Any]]):
+        """Creates multiple orders in a single request."""
+        endpoint = "/fapi/v1/batchOrders"
+        params = {"batchOrders": json.dumps(orders)}
+        try:
+            return await self._request("POST", endpoint, params, signed=True)
+        except Exception as e:
+            system_logger.error(f"Failed to create batch orders: {e}")
+            return {"error": str(e)}
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return={"error": "Failed to cancel batch orders"},
+        context="cancel_batch_orders"
+    )
+    async def cancel_batch_orders(self, orders: List[Dict[str, Any]]):
+        """Cancels multiple orders in a single request."""
+        endpoint = "/fapi/v1/batchOrders"
+        params = {"batchOrders": json.dumps(orders)}
+        try:
+            return await self._request("DELETE", endpoint, params, signed=True)
+        except Exception as e:
+            system_logger.error(f"Failed to cancel batch orders: {e}")
+            return {"error": str(e)}
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return={},
+        context="get_income_history"
+    )
+    async def get_income_history(self, symbol: str = None, income_type: str = None, start_time: int = None, end_time: int = None, limit: int = 500):
+        """Fetches income history (realized PnL, funding, etc.)."""
+        endpoint = "/fapi/v1/income"
+        params = {"limit": limit}
+        if symbol:
+            params["symbol"] = symbol.upper()
+        if income_type:
+            params["incomeType"] = income_type
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        try:
+            return await self._request("GET", endpoint, params, signed=True)
+        except Exception as e:
+            system_logger.error(f"Failed to get income history: {e}")
+            return {}
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return={},
+        context="get_commission_rate"
+    )
+    async def get_commission_rate(self, symbol: str):
+        """Fetches commission rate for a symbol."""
+        endpoint = "/fapi/v1/commissionRate"
+        params = {"symbol": symbol.upper()}
+        try:
+            return await self._request("GET", endpoint, params, signed=True)
+        except Exception as e:
+            system_logger.error(f"Failed to get commission rate for {symbol}: {e}")
+            return {}
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return=[],
+        context="get_adl_quantile"
+    )
+    async def get_adl_quantile(self, symbol: str = None):
+        """Fetches ADL (Auto-Deleveraging) quantile for positions."""
+        endpoint = "/fapi/v1/adlQuantile"
+        params = {"symbol": symbol.upper()} if symbol else {}
+        try:
+            return await self._request("GET", endpoint, params, signed=True)
+        except Exception as e:
+            system_logger.error(f"Failed to get ADL quantile for {symbol or 'all symbols'}: {e}")
+            return []
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return={},
+        context="get_force_orders"
+    )
+    async def get_force_orders(self, symbol: str = None, auto_close_type: str = None, start_time: int = None, end_time: int = None, limit: int = 500):
+        """Fetches force orders (liquidation, ADL, etc.)."""
+        endpoint = "/fapi/v1/forceOrders"
+        params = {"limit": limit}
+        if symbol:
+            params["symbol"] = symbol.upper()
+        if auto_close_type:
+            params["autoCloseType"] = auto_close_type
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        try:
+            return await self._request("GET", endpoint, params, signed=True)
+        except Exception as e:
+            system_logger.error(f"Failed to get force orders: {e}")
+            return {}
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return={},
+        context="get_position_side_dual"
+    )
+    async def get_position_side_dual(self):
+        """Checks if dual side position mode is enabled."""
+        endpoint = "/fapi/v1/positionSide/dual"
+        try:
+            return await self._request("GET", endpoint, signed=True)
+        except Exception as e:
+            system_logger.error(f"Failed to get position side dual status: {e}")
+            return {}
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return={},
+        context="change_position_side_dual"
+    )
+    async def change_position_side_dual(self, dual_side_position: bool):
+        """Changes dual side position mode."""
+        endpoint = "/fapi/v1/positionSide/dual"
+        params = {"dualSidePosition": str(dual_side_position).lower()}
+        try:
+            return await self._request("POST", endpoint, params, signed=True)
+        except Exception as e:
+            system_logger.error(f"Failed to change position side dual mode: {e}")
+            return {}
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return={},
+        context="get_multi_assets_margin"
+    )
+    async def get_multi_assets_margin(self):
+        """Gets multi-assets margin mode status."""
+        endpoint = "/fapi/v1/multiAssetsMargin"
+        try:
+            return await self._request("GET", endpoint, signed=True)
+        except Exception as e:
+            system_logger.error(f"Failed to get multi-assets margin status: {e}")
+            return {}
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return={},
+        context="change_multi_assets_margin"
+    )
+    async def change_multi_assets_margin(self, multi_assets_margin: bool):
+        """Changes multi-assets margin mode."""
+        endpoint = "/fapi/v1/multiAssetsMargin"
+        params = {"multiAssetsMargin": str(multi_assets_margin).lower()}
+        try:
+            return await self._request("POST", endpoint, params, signed=True)
+        except Exception as e:
+            system_logger.error(f"Failed to change multi-assets margin mode: {e}")
+            return {}
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return=0.0,
+        context="get_account_balance"
+    )
+    async def get_account_balance(self, asset: str = 'USDT') -> float:
+        """Gets the balance of a specific asset in the futures account."""
+        try:
+            account_info = await self.get_account_info()
+            assets = account_info.get('assets', [])
+            
+            for asset_info in assets:
+                if asset_info.get('asset') == asset:
+                    return float(asset_info.get('walletBalance', 0))
+            
+            return 0.0
+        except Exception as e:
+            system_logger.error(f"Failed to get {asset} balance: {e}")
+            return 0.0
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return=0.0,
+        context="get_spot_balance"
+    )
+    async def get_spot_balance(self, asset: str = 'USDT') -> float:
+        """Gets the balance of a specific asset in the spot account."""
+        try:
+            # Use spot API endpoint
+            endpoint = "/api/v3/account"
+            response = await self._request("GET", endpoint, signed=True)
+            
+            balances = response.get('balances', [])
+            for balance in balances:
+                if balance.get('asset') == asset:
+                    return float(balance.get('free', 0))
+            
+            return 0.0
+        except Exception as e:
+            system_logger.error(f"Failed to get spot {asset} balance: {e}")
+            return 0.0
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return=False,
+        context="transfer_to_spot"
+    )
+    async def transfer_to_spot(self, asset: str, amount: float) -> bool:
+        """Transfers funds from futures to spot account."""
+        try:
+            # Use futures transfer endpoint
+            endpoint = "/fapi/v1/transfer"
+            params = {
+                "asset": asset,
+                "amount": amount,
+                "type": 1  # 1 = futures to spot
+            }
+            
+            response = await self._request("POST", endpoint, params, signed=True)
+            
+            if response.get('status') == 'CONFIRMED':
+                system_logger.info(f"Successfully transferred {amount} {asset} to spot account")
+                return True
+            else:
+                system_logger.error(f"Transfer failed: {response}")
+                return False
+                
+        except Exception as e:
+            system_logger.error(f"Failed to transfer {amount} {asset} to spot: {e}")
+            return False
 
     # --- WebSocket Handlers ---
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="websocket_handler"
+    )
     async def _websocket_handler(self, url: str, callback: Callable, name: str):
         """Generic WebSocket handler with reconnection logic."""
-        logger.info(f"Connecting to {name} WebSocket: {url}")
+        system_logger.info(f"Connecting to {name} WebSocket: {url}")
         while True:
             try:
                 async with websockets.connect(url) as ws:
-                    logger.info(f"{name} WebSocket connected.")
+                    system_logger.info(f"{name} WebSocket connected.")
                     while True:
                         try:
                             data = await ws.recv()
                             await callback(json.loads(data))
                         except json.JSONDecodeError as e:
-                            logger.error(f"WebSocket JSON Decode Error for {name}: {e}. Raw data: {data[:200]}...")
+                            system_logger.error(f"WebSocket JSON Decode Error for {name}: {e}. Raw data: {data[:200]}...")
                         except Exception as e:
-                            logger.error(f"Error processing WebSocket message for {name}: {e}", exc_info=True)
+                            system_logger.error(f"Error processing WebSocket message for {name}: {e}", exc_info=True)
             except websockets.exceptions.ConnectionClosed as e:
-                logger.warning(f"{name} WebSocket disconnected: {e}. Reconnecting in 5 seconds...")
+                system_logger.warning(f"{name} WebSocket disconnected: {e}. Reconnecting in 5 seconds...")
                 await asyncio.sleep(5)
             except asyncio.TimeoutError:
-                logger.warning(f"{name} WebSocket connection timed out. Reconnecting in 5 seconds...")
+                system_logger.warning(f"{name} WebSocket connection timed out. Reconnecting in 5 seconds...")
                 await asyncio.sleep(5)
             except Exception as e:
-                logger.error(f"An unexpected error occurred in {name} WebSocket: {e}. Reconnecting in 10 seconds...", exc_info=True)
+                system_logger.error(f"An unexpected error occurred in {name} WebSocket: {e}. Reconnecting in 10 seconds...", exc_info=True)
                 await asyncio.sleep(10)
 
+    @handle_errors(
+        exceptions=(KeyError, TypeError, ValueError),
+        default_return=None,
+        context="process_depth_message"
+    )
     async def _process_depth_message(self, data: Dict[str, Any]):
         """Callback to process incoming depth stream messages."""
         try:
@@ -393,8 +823,13 @@ class BinanceExchange:
                 else:
                     self.order_book['asks'][price] = qty
         except Exception as e:
-            logger.error(f"Error processing depth message: {e}. Data: {data}", exc_info=True)
+            system_logger.error(f"Error processing depth message: {e}. Data: {data}", exc_info=True)
 
+    @handle_errors(
+        exceptions=(KeyError, TypeError, ValueError),
+        default_return=None,
+        context="process_trade_message"
+    )
     async def _process_trade_message(self, data: Dict[str, Any]):
         """Callback to process incoming trade stream messages."""
         try:
@@ -402,8 +837,13 @@ class BinanceExchange:
             if len(self.recent_trades) > 200:
                 self.recent_trades.pop(0)
         except Exception as e:
-            logger.error(f"Error processing trade message: {e}. Data: {data}", exc_info=True)
+            system_logger.error(f"Error processing trade message: {e}. Data: {data}", exc_info=True)
 
+    @handle_errors(
+        exceptions=(KeyError, TypeError, ValueError),
+        default_return=None,
+        context="process_kline_message"
+    )
     async def _process_kline_message(self, data: Dict[str, Any]):
         """Callback to process incoming kline stream messages."""
         try:
@@ -419,26 +859,46 @@ class BinanceExchange:
                 'is_closed': kline.get('x')
             }
         except Exception as e:
-            logger.error(f"Error processing kline message: {e}. Data: {data}", exc_info=True)
+            system_logger.error(f"Error processing kline message: {e}. Data: {data}", exc_info=True)
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="start_kline_socket"
+    )
     async def start_kline_socket(self, symbol: str, interval: str):
         """Connects to the kline WebSocket stream."""
         stream_name = f"{symbol.lower()}@kline_{interval}"
         url = f"{self.WS_BASE_URL}/ws/{stream_name}"
         await self._websocket_handler(url, self._process_kline_message, f"Kline ({symbol})")
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="start_depth_socket"
+    )
     async def start_depth_socket(self, symbol: str):
         """Connects to the depth (order book) WebSocket stream."""
         stream_name = f"{symbol.lower()}@depth"
         url = f"{self.WS_BASE_URL}/ws/{stream_name}"
         await self._websocket_handler(url, self._process_depth_message, f"Depth ({symbol})")
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="start_trade_socket"
+    )
     async def start_trade_socket(self, symbol: str):
         """Connects to the trade WebSocket stream."""
         stream_name = f"{symbol.lower()}@trade"
         url = f"{self.WS_BASE_URL}/ws/{stream_name}"
         await self._websocket_handler(url, self._process_trade_message, f"Trade ({symbol})")
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="start_user_data_socket"
+    )
     async def start_user_data_socket(self, callback: Callable):
         """Connects to the user data stream for account and order updates."""
         while True:
@@ -446,7 +906,7 @@ class BinanceExchange:
                 listen_key_resp = await self._request("POST", "/fapi/v1/listenKey", signed=True)
                 listen_key = listen_key_resp.get('listenKey')
                 if not listen_key:
-                    logger.error("Failed to get listenKey for user data stream. Retrying in 30 seconds.")
+                    system_logger.error("Failed to get listenKey for user data stream. Retrying in 30 seconds.")
                     await asyncio.sleep(30)
                     continue
 
@@ -457,9 +917,9 @@ class BinanceExchange:
                         await asyncio.sleep(30 * 60) # Keepalive every 30 mins
                         try:
                             await self._request("PUT", "/fapi/v1/listenKey", signed=True)
-                            logger.info("User data stream listen key keepalive sent.")
+                            system_logger.info("User data stream listen key keepalive sent.")
                         except Exception as e:
-                            logger.error(f"Failed to send user data stream keepalive: {e}")
+                            system_logger.error(f"Failed to send user data stream keepalive: {e}")
 
                 keepalive_task = asyncio.create_task(keepalive())
                 ws_handler_task = asyncio.create_task(self._websocket_handler(url, callback, "User Data"))
@@ -467,15 +927,80 @@ class BinanceExchange:
                 await ws_handler_task
                 keepalive_task.cancel()
             except Exception as e:
-                logger.error(f"Failed to start or maintain user data socket: {e}. Retrying in 10 seconds...", exc_info=True)
+                system_logger.error(f"Failed to start or maintain user data socket: {e}. Retrying in 10 seconds...", exc_info=True)
                 await asyncio.sleep(10)
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="start_mark_price_socket"
+    )
+    async def start_mark_price_socket(self, symbol: str):
+        """Connects to the mark price WebSocket stream."""
+        stream_name = f"{symbol.lower()}@markPrice"
+        url = f"{self.WS_BASE_URL}/ws/{stream_name}"
+        await self._websocket_handler(url, self._process_mark_price_message, f"Mark Price ({symbol})")
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="start_funding_rate_socket"
+    )
+    async def start_funding_rate_socket(self, symbol: str):
+        """Connects to the funding rate WebSocket stream."""
+        stream_name = f"{symbol.lower()}@fundingRate"
+        url = f"{self.WS_BASE_URL}/ws/{stream_name}"
+        await self._websocket_handler(url, self._process_funding_rate_message, f"Funding Rate ({symbol})")
+
+    @handle_errors(
+        exceptions=(KeyError, TypeError, ValueError),
+        default_return=None,
+        context="process_mark_price_message"
+    )
+    async def _process_mark_price_message(self, data: Dict[str, Any]):
+        """Callback to process incoming mark price stream messages."""
+        try:
+            # Store mark price data for potential use
+            self.mark_price_data = {
+                'symbol': data.get('s'),
+                'mark_price': data.get('p'),
+                'index_price': data.get('i'),
+                'settlement_price': data.get('P'),
+                'funding_rate': data.get('r'),
+                'next_funding_time': data.get('T')
+            }
+        except Exception as e:
+            system_logger.error(f"Error processing mark price message: {e}. Data: {data}", exc_info=True)
+
+    @handle_errors(
+        exceptions=(KeyError, TypeError, ValueError),
+        default_return=None,
+        context="process_funding_rate_message"
+    )
+    async def _process_funding_rate_message(self, data: Dict[str, Any]):
+        """Callback to process incoming funding rate stream messages."""
+        try:
+            # Store funding rate data for potential use
+            self.funding_rate_data = {
+                'symbol': data.get('s'),
+                'funding_rate': data.get('r'),
+                'funding_time': data.get('T'),
+                'next_funding_time': data.get('N')
+            }
+        except Exception as e:
+            system_logger.error(f"Error processing funding rate message: {e}. Data: {data}", exc_info=True)
+
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="close_session"
+    )
     async def close(self):
         """Closes the aiohttp session."""
         if self._session and not self._session.closed:
             await self._session.close()
-            logger.info("HTTP session closed.")
+            system_logger.info("HTTP session closed.")
 
 # --- Global exchange instance ---
 try:
@@ -484,8 +1009,8 @@ try:
         api_secret=settings.binance_api_secret,
         trade_symbol=settings.trade_symbol
     )
-    logger.info("BinanceExchange client instantiated for Futures.")
+    system_logger.info("BinanceExchange client instantiated for Futures.")
 except Exception as e:
-    logger.critical(f"Failed to instantiate BinanceExchange: {e}")
+    system_logger.critical(f"Failed to instantiate BinanceExchange: {e}")
     exchange = None
 

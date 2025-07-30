@@ -141,7 +141,7 @@ def main_listener_loop():
     """Main loop to run the email listener periodically."""
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     logger = logging.getLogger("EmailListenerLoop")
-    logger.info("--- Ares Email Command Listener Starting ---")
+    system_logger.info("--- Ares Email Command Listener Starting ---")
     
     state_manager = StateManager(CONFIG)
     mailer = AresMailer(CONFIG)
@@ -154,10 +154,10 @@ def main_listener_loop():
             listener.listen_for_commands()
             time.sleep(polling_interval)
         except KeyboardInterrupt:
-            logger.info("Email listener stopped by user.")
+            system_logger.info("Email listener stopped by user.")
             break
         except Exception as e:
-            logger.error(f"Critical error in listener loop: {e}", exc_info=True)
+            system_logger.error(f"Critical error in listener loop: {e}", exc_info=True)
             time.sleep(polling_interval * 2) # Wait longer after a critical error
 
 if __name__ == "__main__":

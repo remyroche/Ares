@@ -1,67 +1,161 @@
 import asyncio
-from src.utils.logger import logger, setup_logging # Import setup_logging
+import signal
+import sys
+from typing import Optional
+
+from src.utils.logger import system_logger
 from src.config import settings, CONFIG
-from src.supervisor.main import Supervisor # Import Supervisor only
-from src.exchange.binance import exchange # Import the global exchange instance
-from src.utils.error_handler import register_global_exception_handler, unregister_global_exception_handler # Import handler functions
+from src.utils.state_manager import StateManager
+from src.database.sqlite_manager import SQLiteManager
+from src.supervisor.supervisor import Supervisor
+from src.utils.error_handler import (
+    handle_errors,
+    handle_data_processing_errors,
+    handle_file_operations,
+    handle_network_operations,
+    handle_type_conversions,
+    error_context,
+    ErrorRecoveryStrategies
+)
 
-# Import both database managers
-from src.database.firestore_manager import db_manager as firestore_db_manager
-from src.database.sqlite_manager import sqlite_manager as local_db_manager
+# Global variables for graceful shutdown
+shutdown_event = asyncio.Event()
+supervisor_instance: Optional[Supervisor] = None
 
+@handle_errors(
+    exceptions=(KeyboardInterrupt, SystemExit),
+    default_return=None,
+    context="signal_handler"
+)
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully."""
+    system_logger.info(f"Received signal {signum}. Initiating graceful shutdown...")
+    shutdown_event.set()
 
-async def main():
-    """
-    The main entry point and orchestrator for the Ares Trading Bot.
-    Initializes the Supervisor and runs it.
-    """
-    logger.info("--- Starting Ares Trading Bot ---")
-
-    # Register the global exception handler as early as possible
-    register_global_exception_handler()
-
-    # --- Select and Initialize the Database Manager ---
-    if CONFIG["DATABASE_TYPE"] == "firestore":
-        db_manager_instance = firestore_db_manager
-        logger.info("Using Firestore as the database manager.")
-    elif CONFIG["DATABASE_TYPE"] == "sqlite":
-        db_manager_instance = local_db_manager
-        logger.info(f"Using SQLite as the database manager: {CONFIG['SQLITE_DB_PATH']}.")
-    else:
-        logger.critical(f"Invalid DATABASE_TYPE configured: {CONFIG['DATABASE_TYPE']}. Exiting.")
-        return # Exit if database type is invalid
-
-    await db_manager_instance.initialize()
-    # --- End Database Manager Selection ---
-
-
-    # The Supervisor is now responsible for initializing all core modules
-    # and managing the trading environment (PaperTrader vs Live Exchange).
-    # Pass the selected db_manager_instance
-    supervisor = Supervisor(exchange_client=exchange, firestore_manager=db_manager_instance) 
-    logger.info("Supervisor initialized.")
-
-    # 3. Run the Supervisor's main loop
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=False,
+    context="initialize_system"
+)
+async def initialize_system() -> bool:
+    """Initialize the trading system components."""
     try:
-        await supervisor.start()
-    except asyncio.CancelledError:
-        logger.info("Main task cancelled. Shutting down all modules...")
-    finally:
-        # Ensure the global exception handler is unregistered on graceful shutdown
-        unregister_global_exception_handler()
-        # Ensure the database connection is closed
-        if db_manager_instance:
-            await db_manager_instance.close()
-        logger.info("--- Ares Trading Bot has been shut down gracefully ---")
+        system_logger.info("🚀 Initializing Ares Trading Bot...")
+        
+        # Initialize database manager
+        db_manager = SQLiteManager()
+        await db_manager.initialize()
+        system_logger.info("✅ Database initialized")
+        
+        # Initialize state manager
+        state_manager = StateManager()
+        system_logger.info("✅ State manager initialized")
+        
+        # Initialize supervisor
+        global supervisor_instance
+        supervisor_instance = Supervisor(
+            exchange_client=None,  # Will be initialized by supervisor
+            state_manager=state_manager,
+            db_manager=db_manager
+        )
+        system_logger.info("✅ Supervisor initialized")
+        
+        return True
+        
+    except Exception as e:
+        system_logger.error(f"❌ Failed to initialize system: {e}")
+        return False
 
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=False,
+    context="start_supervisor"
+)
+async def start_supervisor() -> bool:
+    """Start the supervisor and begin trading operations."""
+    try:
+        if supervisor_instance is None:
+            system_logger.error("Supervisor not initialized")
+            return False
+        
+        system_logger.info("🔄 Starting supervisor...")
+        await supervisor_instance.start()
+        system_logger.info("✅ Supervisor started successfully")
+        return True
+        
+    except Exception as e:
+        system_logger.error(f"❌ Failed to start supervisor: {e}")
+        return False
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="shutdown_system"
+)
+async def shutdown_system():
+    """Gracefully shutdown the trading system."""
+    try:
+        system_logger.info("🛑 Shutting down Ares Trading Bot...")
+        
+        if supervisor_instance:
+            await supervisor_instance.stop()
+            system_logger.info("✅ Supervisor stopped")
+        
+        system_logger.info("✅ Shutdown complete")
+        
+    except Exception as e:
+        system_logger.error(f"❌ Error during shutdown: {e}")
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=1,
+    context="main"
+)
+async def main():
+    """Main entry point for the Ares trading bot."""
+    try:
+        # Set up signal handlers for graceful shutdown
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+        
+        system_logger.info("🎯 Ares Trading Bot Starting...")
+        system_logger.info(f"Environment: {settings.trading_environment}")
+        system_logger.info(f"Symbol: {settings.trade_symbol}")
+        system_logger.info(f"Timeframe: {settings.timeframe}")
+        
+        # Initialize system components
+        if not await initialize_system():
+            system_logger.error("❌ System initialization failed")
+            return 1
+        
+        # Start supervisor
+        if not await start_supervisor():
+            system_logger.error("❌ Supervisor startup failed")
+            return 1
+        
+        system_logger.info("🎉 Ares Trading Bot is now running!")
+        system_logger.info("Press Ctrl+C to stop the bot gracefully")
+        
+        # Wait for shutdown signal
+        await shutdown_event.wait()
+        
+        # Graceful shutdown
+        await shutdown_system()
+        
+        return 0
+        
+    except Exception as e:
+        system_logger.error(f"❌ Critical error in main: {e}")
+        await shutdown_system()
+        return 1
 
 if __name__ == "__main__":
-    # Setup logging first to ensure all subsequent logs are formatted correctly
-    setup_logging() 
     try:
-        asyncio.run(main())
+        exit_code = asyncio.run(main())
+        sys.exit(exit_code)
     except KeyboardInterrupt:
-        logger.info("Bot stopped by user (KeyboardInterrupt).")
+        system_logger.info("🛑 Bot stopped by user")
+        sys.exit(0)
     except Exception as e:
-        # Unhandled exceptions will be caught by sys.excepthook, but this ensures a final log
-        logger.critical(f"A critical unhandled error occurred in main execution: {e}", exc_info=True)
+        system_logger.error(f"❌ Fatal error: {e}")
+        sys.exit(1)

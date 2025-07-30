@@ -95,3 +95,8 @@ def setup_logging():
 #    except Exception:
 #        # logger.exception automatically includes the full traceback in the log
 #        logger.exception("A critical error occurred during calculation.")
+
+# Create a system logger instance that can be imported by other modules
+system_logger = logging.getLogger('ares.system')
+
+__all__ = ["system_logger", "setup_logging"]

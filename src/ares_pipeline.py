@@ -11,7 +11,7 @@ from src.config import CONFIG, settings
 from src.database.firestore_manager import FirestoreManager
 from src.exchange.binance import BinanceExchange
 from src.supervisor.supervisor import Supervisor as LocalSupervisor
-from src.utils.logger import logger
+from src.utils.logger import system_logger
 from src.utils.state_manager import StateManager
 from src.utils.model_manager import ModelManager
 from src.analyst.analyst import Analyst
@@ -31,7 +31,7 @@ class AresPipeline:
         self.state_manager = state_manager
         self.firestore_manager = firestore_manager
         self.supervisor = supervisor
-        self.logger = logger.getChild(f"AresPipeline-{self.exchange.symbol}")
+        self.logger = system_logger.getChild(f"AresPipeline-{self.exchange.symbol}")
         self.config = CONFIG
         
         # Initialize core logic and safety components

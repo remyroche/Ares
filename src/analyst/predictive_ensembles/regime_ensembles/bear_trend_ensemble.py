@@ -9,6 +9,7 @@ from sklearn.model_selection import KFold
 from tensorflow.keras.layers import (Input, LSTM, Dense, Dropout,
                                      MultiHeadSelfAttention, LayerNormalization)
 from tensorflow.keras.models import Model
+from typing import List, Any
 
 from .base_ensemble import BaseEnsemble
 
@@ -99,9 +100,10 @@ class BearTrendEnsemble(BaseEnsemble):
             if col not in df.columns: df[col] = 0.0
         features_df = df[self.sequence_features].copy().fillna(0)
         seq_len = self.dl_config["sequence_length"]
-        X, y = [], []
+        X: List[Any] = []
+        y: List[Any] = []
         if len(features_df) < seq_len: return np.array(X), np.array(y)
-        for i in range(len(features_df) - seq_len + 1):
+        for i in range(int(len(features_df) - seq_len + 1)):
             X.append(features_df.iloc[i:i+seq_len].values)
             if target_series is not None: y.append(target_series.iloc[i + seq_len - 1])
         return np.array(X), np.array(y) if target_series is not None else None

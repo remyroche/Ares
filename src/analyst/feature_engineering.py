@@ -12,6 +12,16 @@ from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.optimizers import Adam # Import Adam optimizer
 from src.utils.logger import system_logger
 from src.config import CONFIG # Import CONFIG to get checkpoint paths
+from src.utils.error_handler import (
+    handle_errors,
+    handle_data_processing_errors,
+    handle_file_operations,
+    handle_type_conversions,
+    error_context,
+    ErrorRecoveryStrategies,
+    safe_dataframe_operation,
+    safe_numeric_operation
+)
 
 class FeatureEngineeringEngine:
     """
@@ -31,6 +41,11 @@ class FeatureEngineeringEngine:
         self.autoencoder_model_path = os.path.join(self.model_storage_path, "autoencoder_model.h5")
         self.autoencoder_scaler_path = os.path.join(self.model_storage_path, "autoencoder_scaler.joblib")
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.DataFrame(),
+        context="generate_all_features"
+    )
     def generate_all_features(self, klines_df: pd.DataFrame, agg_trades_df: pd.DataFrame, futures_df: pd.DataFrame, sr_levels: list):
         """
         Orchestrates the generation of all raw and engineered features for the Analyst.
@@ -117,6 +132,10 @@ class FeatureEngineeringEngine:
         self.logger.info("Feature generation complete.")
         return features_df
 
+    @handle_data_processing_errors(
+        default_return=None,
+        context="calculate_technical_indicators"
+    )
     def _calculate_technical_indicators(self, df: pd.DataFrame):
         # Ensure df is not empty before applying TA
         if df.empty:
@@ -170,6 +189,10 @@ class FeatureEngineeringEngine:
             df['ATR'] = np.nan
 
 
+    @handle_data_processing_errors(
+        default_return=None,
+        context="calculate_volume_volatility_indicators"
+    )
     def _calculate_volume_volatility_indicators(self, df: pd.DataFrame, agg_trades_df: pd.DataFrame):
         self.logger.info("Calculating advanced volume and volatility indicators...")
         if df.empty:
@@ -227,6 +250,10 @@ class FeatureEngineeringEngine:
             df['volume_delta'] = np.nan
 
 
+    @handle_data_processing_errors(
+        default_return=pd.DataFrame(),
+        context="apply_wavelet_transforms"
+    )
     def apply_wavelet_transforms(self, data: pd.Series, wavelet='db1', level=3):
         if data.empty: 
             self.logger.warning("Input data for wavelet transform is empty.")
@@ -265,6 +292,10 @@ class FeatureEngineeringEngine:
             return features
 
 
+    @handle_data_processing_errors(
+        default_return=pd.DataFrame(),
+        context="calculate_sr_interaction_types"
+    )
     def _calculate_sr_interaction_types(self, df: pd.DataFrame, sr_levels: list, proximity_multiplier: float) -> pd.DataFrame:
         df['Is_SR_Support_Interacting'] = 0
         df['Is_SR_Resistance_Interacting'] = 0
@@ -314,14 +345,17 @@ class FeatureEngineeringEngine:
             df['Is_SR_Resistance_Interacting'] = is_resistance_interacting.astype(int)
             df['Is_SR_Interacting'] = (df['Is_SR_Support_Interacting'] | df['Is_SR_Resistance_Interacting'])
             df.drop(columns=['ATR_filled'], inplace=True, errors='ignore')
+            
+            return df[['Is_SR_Support_Interacting', 'Is_SR_Resistance_Interacting', 'Is_SR_Interacting']]
         except Exception as e:
-            self.logger.error(f"Error in S/R interaction calculation loop: {e}. S/R interaction features will be defaulted.", exc_info=True)
-            df['Is_SR_Support_Interacting'] = 0
-            df['Is_SR_Resistance_Interacting'] = 0
-            df['Is_SR_Interacting'] = 0
+            self.logger.error(f"Error during S/R interaction calculation: {e}. Returning default values.", exc_info=True)
+            return df[['Is_SR_Support_Interacting', 'Is_SR_Resistance_Interacting', 'Is_SR_Interacting']]
 
-        return df[['Is_SR_Support_Interacting', 'Is_SR_Resistance_Interacting', 'Is_SR_Interacting']]
 
+    @handle_file_operations(
+        default_return=False,
+        context="train_autoencoder"
+    )
     def train_autoencoder(self, data: pd.DataFrame):
         self.logger.info(f"Autoencoder training: Input data shape {data.shape}...")
         
@@ -369,6 +403,10 @@ class FeatureEngineeringEngine:
             self.autoencoder_scaler = None
 
 
+    @handle_data_processing_errors(
+        default_return=pd.Series(),
+        context="apply_autoencoders"
+    )
     def apply_autoencoders(self, data: pd.DataFrame):
         if self.autoencoder_model is None or self.autoencoder_scaler is None:
             if not self.load_autoencoder():
@@ -405,6 +443,10 @@ class FeatureEngineeringEngine:
             self.logger.error(f"Error applying Autoencoder: {e}", exc_info=True)
             return pd.Series(np.nan, index=data.index, name='autoencoder_reconstruction_error')
 
+    @handle_file_operations(
+        default_return=False,
+        context="load_autoencoder"
+    )
     def load_autoencoder(self):
         if os.path.exists(self.autoencoder_model_path) and os.path.exists(self.autoencoder_scaler_path):
             try:

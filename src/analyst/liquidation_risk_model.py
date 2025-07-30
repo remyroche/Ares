@@ -2,194 +2,264 @@
 import pandas as pd
 import numpy as np
 from scipy.stats import norm # For normal distribution CDF
+from typing import Tuple, List, Dict, Any, Optional
+from src.utils.logger import system_logger
+from src.utils.error_handler import (
+    handle_errors,
+    handle_data_processing_errors,
+    handle_type_conversions,
+    error_context,
+    ErrorRecoveryStrategies
+)
 
 class ProbabilisticLiquidationRiskModel:
     """
-    Calculates the Liquidation Safety Score (LSS), estimating the probability of liquidation
-    at various price points based on volatility, order book depth, and current position.
+    Calculates a probabilistic Liquidation Safety Score (LSS) based on market conditions,
+    position size, leverage, and historical volatility.
     """
-    def __init__(self, config):
-        self.config = config.get("analyst", {}).get("liquidation_risk_model", {})
 
-    def calculate_lss(self, current_price: float, current_position_notional: float, 
-                      current_liquidation_price: float, historical_klines: pd.DataFrame, 
-                      order_book_data: dict) -> tuple[float, str]:
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        self.config = config or {}
+        self.logger = system_logger.getChild('LiquidationRiskModel')
+
+    @handle_errors(
+        exceptions=(ValueError, TypeError, KeyError),
+        default_return=50.0,
+        context="calculate_lss"
+    )
+    def calculate_lss(self, 
+                     current_price: float,
+                     position_size: float,
+                     leverage: int,
+                     side: str,
+                     atr: float,
+                     market_volatility: float = None,
+                     account_balance: float = None) -> float:
         """
-        Calculates the Liquidation Safety Score (LSS) (0-100).
-        Higher score indicates the safety from liquidation.
-        This enhanced version incorporates more probabilistic elements.
-
-        :param current_price: The current market price.
-        :param current_position_notional: The current open position's notional value (size * current_price).
-        :param current_liquidation_price: The estimated liquidation price for the current position.
-        :param historical_klines: DataFrame of recent historical k-lines, used for volatility.
-        :param order_book_data: Dictionary of current order book (bids, asks).
-        :return: A tuple containing the LSS (float) and a string explaining the reasons.
+        Calculate Liquidation Safety Score (LSS) - higher is safer.
+        
+        Args:
+            current_price: Current asset price
+            position_size: Position size in base currency
+            leverage: Current leverage
+            side: 'long' or 'short'
+            atr: Average True Range
+            market_volatility: Optional market volatility metric
+            account_balance: Optional account balance for additional risk assessment
+            
+        Returns:
+            float: LSS score between 0-100 (higher = safer)
         """
-        if current_position_notional == 0:
-            return 100.0, "No open position, LSS is max." # Max safety if no position
-
-        if current_liquidation_price is None or current_liquidation_price == 0:
-            return 0.0, "Liquidation price unknown or zero, LSS is min."
-
-        reasons = []
-
-        # Determine if position is LONG or SHORT
-        is_long = current_position_notional > 0
-        
-        # 1. Volatility Factor (Probability of touching liquidation price)
-        # Using historical klines to estimate volatility (e.g., standard deviation of returns or ATR)
-        vol_config = self.config.get("volatility_impact", 0.4)
-        lookback_period_vol = self.config.get("lookback_periods_volatility", 240) # e.g., 240 periods for hourly data (10 days)
-
-        probability_of_touch = 0.5 # Default neutral probability
-
-        if historical_klines.empty or len(historical_klines) < lookback_period_vol:
-            reasons.append("Insufficient historical data for volatility assessment.")
-        else:
-            klines_for_vol = historical_klines.tail(lookback_period_vol)
+        try:
+            if current_price <= 0 or position_size <= 0 or leverage <= 0:
+                self.logger.warning("Invalid parameters for LSS calculation")
+                return 50.0
             
-            # Calculate True Range and ATR
-            high_prices = klines_for_vol['high']
-            low_prices = klines_for_vol['low']
-            close_prices = klines_for_vol['close']
-
-            # Ensure there's enough data for ATR calculation (at least 1 period for TR, then atr_period for EMA)
-            if len(close_prices) > 1:
-                high_low = high_prices - low_prices
-                high_prev_close = abs(high_prices - close_prices.shift(1))
-                low_prev_close = abs(low_prices - close_prices.shift(1))
-                true_range = pd.concat([high_low, high_prev_close, low_prev_close], axis=1).max(axis=1)
-                
-                atr_period_cfg = self.config.get("atr_period", 14)
-                current_atr_series = true_range.ewm(span=atr_period_cfg, adjust=False).mean()
-                current_atr = current_atr_series.iloc[-1] if not current_atr_series.empty else 0
-            else:
-                current_atr = 0
-
-            if current_atr == 0:
-                reasons.append("Current ATR is zero, volatility factor neutral.")
-            else:
-                # Convert ATR to a proxy for standard deviation of price movement
-                # This factor is crucial and should be tuned.
-                atr_to_std_factor = self.config.get("atr_to_std_factor", 2.5) 
-                # Ensure period_std_dev_proxy is not zero
-                period_std_dev_proxy = current_atr / atr_to_std_factor
-                
-                if period_std_dev_proxy == 0:
-                    reasons.append("Effective volatility proxy is zero.")
-                else:
-                    # Z-score: How many standard deviations away is the liquidation price?
-                    # This assumes a normal distribution of price changes.                 
-                    # Adjust Z-score based on the direction of the trade
-                    # For long, price needs to go down (negative deviation) to hit liq.
-                    # For short, price needs to go up (positive deviation) to hit liq.
-                    if (is_long and current_liquidation_price < current_price) or \
-                       (not is_long and current_liquidation_price > current_price):
-                        # This Z-score is for the distance to liquidation.
-                        # We want the probability of price moving *towards* liquidation.
-                        # If price needs to drop for long, we're interested in P(X <= liq_price)
-                        # If price needs to rise for short, we're interested in P(X >= liq_price)
-                        
-                        # The sign of z_score_liq should reflect direction relative to current price
-                        # If liq_price < current_price (long position) -> negative deviation
-                        # If liq_price > current_price (short position) -> positive deviation
-                        signed_distance_to_liq = current_liquidation_price - current_price
-                        z_score_for_norm_cdf = signed_distance_to_liq / period_std_dev_proxy
-
-                        if is_long: # Price needs to go down (negative deviation)
-                            probability_of_touch = norm.cdf(z_score_for_norm_cdf) # P(X <= liq_price)
-                        else: # Price needs to go up (positive deviation)
-                            probability_of_touch = 1 - norm.cdf(z_score_for_norm_cdf) # P(X >= liq_price)
-                        
-                        # Clip to ensure it's within [0, 1] due to approximations
-                        probability_of_touch = np.clip(probability_of_touch, 0.001, 0.999) # Avoid 0 or 1
-                        reasons.append(f"Prob. of touching liq. price (volatility): {probability_of_touch:.2%}")
-                    else:
-                        reasons.append("Liquidation price is in favorable direction, volatility factor neutral.")
-                        probability_of_touch = 0.001 # Very low probability if already profitable relative to liq price
+            # Calculate base liquidation distance
+            liquidation_distance = self._calculate_liquidation_distance(
+                current_price, position_size, leverage, side
+            )
             
-        # 2. Order Book Depth Factor (Slippage/Absorption probability)
-        # How much volume is needed to push price to liquidation, and is it available?
-        ob_config = self.config.get("order_book_depth_impact", 0.3)
+            # Calculate volatility risk
+            volatility_risk = self._calculate_volatility_risk(atr, market_volatility)
+            
+            # Calculate position size risk
+            position_risk = self._calculate_position_risk(position_size, account_balance)
+            
+            # Calculate leverage risk
+            leverage_risk = self._calculate_leverage_risk(leverage)
+            
+            # Combine risks into final LSS
+            lss = self._combine_risk_factors(
+                liquidation_distance, volatility_risk, position_risk, leverage_risk
+            )
+            
+            self.logger.info(f"LSS calculated: {lss:.2f} "
+                           f"(Distance: {liquidation_distance:.4f}, "
+                           f"Vol Risk: {volatility_risk:.2f}, "
+                           f"Pos Risk: {position_risk:.2f}, "
+                           f"Lev Risk: {leverage_risk:.2f})")
+            
+            return max(0.0, min(100.0, lss))
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating LSS: {e}")
+            return 50.0
+
+    @handle_data_processing_errors(
+        default_return=0.0,
+        context="calculate_liquidation_distance"
+    )
+    def _calculate_liquidation_distance(self, current_price: float, position_size: float, 
+                                      leverage: int, side: str) -> float:
+        """Calculate the distance to liquidation price."""
+        try:
+            # Calculate liquidation price
+            if side.lower() == 'long':
+                liquidation_price = current_price * (1 - 1/leverage)
+                distance = (current_price - liquidation_price) / current_price
+            elif side.lower() == 'short':
+                liquidation_price = current_price * (1 + 1/leverage)
+                distance = (liquidation_price - current_price) / current_price
+            else:
+                self.logger.warning(f"Invalid side: {side}")
+                return 0.0
+            
+            return distance
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating liquidation distance: {e}")
+            return 0.0
+
+    @handle_data_processing_errors(
+        default_return=0.0,
+        context="calculate_volatility_risk"
+    )
+    def _calculate_volatility_risk(self, atr: float, market_volatility: float = None) -> float:
+        """Calculate risk based on volatility."""
+        try:
+            # Use ATR as base volatility measure
+            volatility_measure = atr if atr > 0 else 0.01
+            
+            # Normalize volatility (higher volatility = higher risk)
+            # Assuming 5% daily volatility is "normal"
+            normalized_volatility = volatility_measure / 0.05
+            
+            # Convert to risk score (0-100, higher = more risky)
+            volatility_risk = min(100.0, normalized_volatility * 50)
+            
+            return volatility_risk
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating volatility risk: {e}")
+            return 50.0
+
+    @handle_data_processing_errors(
+        default_return=0.0,
+        context="calculate_position_risk"
+    )
+    def _calculate_position_risk(self, position_size: float, account_balance: float = None) -> float:
+        """Calculate risk based on position size relative to account."""
+        try:
+            if account_balance is None or account_balance <= 0:
+                # Default risk if no account balance provided
+                return 25.0
+            
+            # Calculate position size as percentage of account
+            position_pct = (position_size / account_balance) * 100
+            
+            # Higher position percentage = higher risk
+            if position_pct <= 1.0:
+                risk = 10.0  # Very small position
+            elif position_pct <= 5.0:
+                risk = 25.0  # Small position
+            elif position_pct <= 10.0:
+                risk = 50.0  # Medium position
+            elif position_pct <= 20.0:
+                risk = 75.0  # Large position
+            else:
+                risk = 100.0  # Very large position
+            
+            return risk
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating position risk: {e}")
+            return 50.0
+
+    @handle_data_processing_errors(
+        default_return=0.0,
+        context="calculate_leverage_risk"
+    )
+    def _calculate_leverage_risk(self, leverage: int) -> float:
+        """Calculate risk based on leverage."""
+        try:
+            # Higher leverage = higher risk
+            if leverage <= 5:
+                risk = 10.0  # Very low leverage
+            elif leverage <= 10:
+                risk = 25.0  # Low leverage
+            elif leverage <= 25:
+                risk = 50.0  # Medium leverage
+            elif leverage <= 50:
+                risk = 75.0  # High leverage
+            else:
+                risk = 100.0  # Very high leverage
+            
+            return risk
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating leverage risk: {e}")
+            return 50.0
+
+    @handle_data_processing_errors(
+        default_return=50.0,
+        context="combine_risk_factors"
+    )
+    def _combine_risk_factors(self, liquidation_distance: float, volatility_risk: float,
+                             position_risk: float, leverage_risk: float) -> float:
+        """Combine all risk factors into final LSS score."""
+        try:
+            # Weights for different risk factors
+            weights = self.config.get("lss_weights", {
+                "liquidation_distance": 0.4,
+                "volatility_risk": 0.25,
+                "position_risk": 0.2,
+                "leverage_risk": 0.15
+            })
+            
+            # Convert liquidation distance to safety score (higher distance = safer)
+            distance_safety = min(100.0, liquidation_distance * 1000)  # Scale factor
+            
+            # Calculate weighted average of safety scores
+            lss = (
+                distance_safety * weights["liquidation_distance"] +
+                (100.0 - volatility_risk) * weights["volatility_risk"] +
+                (100.0 - position_risk) * weights["position_risk"] +
+                (100.0 - leverage_risk) * weights["leverage_risk"]
+            )
+            
+            return lss
+            
+        except Exception as e:
+            self.logger.error(f"Error combining risk factors: {e}")
+            return 50.0
+
+    @handle_errors(
+        exceptions=(ValueError, TypeError, KeyError),
+        default_return={},
+        context="get_risk_metrics"
+    )
+    def get_risk_metrics(self, current_price: float, position_size: float, 
+                        leverage: int, side: str, atr: float) -> Dict[str, Any]:
+        """
+        Get comprehensive risk metrics for a position.
         
-        bids = order_book_data.get('bids', [])
-        asks = order_book_data.get('asks', [])
-
-        order_book_resistance_score = 0.5 # Neutral by default (higher is more resistance to price move)
-
-        # Calculate total notional volume within a certain percentage range towards liquidation
-        depth_range_pct = self.config.get("ob_depth_range_pct", 0.005) # e.g., 0.5% range
-        
-        total_defensive_volume = 0
-        if is_long: # Long position, looking for support (bids) below current price
-            # Consider bids from current_price down to liquidation_price, plus a buffer
-            lower_bound_depth = min(current_price * (1 - depth_range_pct), current_liquidation_price * (1 - self.config.get("liq_buffer_zone_pct", 0.001)))
-            upper_bound_depth = current_price
-            for p, q in bids:
-                if lower_bound_depth <= p <= upper_bound_depth:
-                    total_defensive_volume += p * q
-        else: # Short position, looking for resistance (asks) above current price
-            # Consider asks from current_price up to liquidation_price, plus a buffer
-            lower_bound_depth = current_price
-            upper_bound_depth = max(current_price * (1 + depth_range_pct), current_liquidation_price * (1 + self.config.get("liq_buffer_zone_pct", 0.001)))
-            for p, q in asks:
-                if lower_bound_depth <= p <= upper_bound_depth:
-                    total_defensive_volume += p * q
-
-        # Compare total defensive volume to current position notional
-        if current_position_notional > 0:
-            depth_ratio = total_defensive_volume / abs(current_position_notional)
-            # Map depth_ratio to a score (e.g., 0-1, where higher is more resistance)
-            # Use a sigmoid or tanh function to map to a bounded score
-            # Example: score = tanh(depth_ratio / scaling_factor)
-            order_book_resistance_score = np.tanh(depth_ratio / self.config.get("ob_depth_scaling_factor", 10.0)) # Scale depth_ratio
-            reasons.append(f"Order book resistance: {depth_ratio:.2f}x position notional (score: {order_book_resistance_score:.2f}).")
-        else:
-            order_book_resistance_score = 0.5 # Neutral if no position or zero notional
-            reasons.append("Order book depth not applicable or zero position notional.")
-
-
-        # 3. Position Health Factor (how close is current price to liquidation price)
-        # This is a direct measure of proximity, independent of volatility.
-        pos_config = self.config.get("position_impact", 0.3)
-        
-        # Normalized distance from current price to liquidation price (0-1, higher is safer)
-        # Max safety if price is far (e.g., 5% away). Min safety if very close.
-        if current_price == 0:
-            normalized_distance_to_liq = 0.0 # Max risk
-        else:
-            # Ensure distance is calculated correctly based on direction
-            if is_long: # For long, distance is (current_price - liq_price)
-                distance_abs_for_health = max(0, current_price - current_liquidation_price)
-            else: # For short, distance is (liq_price - current_price)
-                distance_abs_for_health = max(0, current_liquidation_price - current_price)
-
-            normalized_distance_to_liq = distance_abs_for_health / current_price
-            # Scale this distance. E.g., if 5% away is max safety (score 1.0), 0% away is 0.0.
-            # Use a linear clip for simplicity, but could be non-linear.
-            normalized_distance_to_liq = np.clip(normalized_distance_to_liq / self.config.get("max_safe_distance_pct", 0.05), 0, 1)
-        
-        position_health_score = normalized_distance_to_liq
-        reasons.append(f"Proximity to liquidation: {normalized_distance_to_liq:.2%}.")
-
-
-        # Combine factors into LSS (0-100)
-        # Note: probability_of_touch is a risk (lower is better), so we use (1 - probability_of_touch)
-        # order_book_resistance_score and position_health_score are safety scores (higher is better)
-        
-        # Convert probability_of_touch to a safety score (1 - prob_of_touch)
-        volatility_safety_score = (1 - probability_of_touch)
-
-        lss_raw = (volatility_safety_score * vol_config + 
-                   order_book_resistance_score * ob_config + 
-                   position_health_score * pos_config)
-        
-        # Normalize by sum of weights to keep it within 0-1, then scale to 0-100
-        total_weight = vol_config + ob_config + pos_config
-        lss = (lss_raw / total_weight) * 100 if total_weight > 0 else 0
-
-        # Ensure LSS is within 0-100 bounds
-        lss = np.clip(lss, 0, 100)
-
-        return lss, " | ".join(reasons)
+        Returns:
+            Dict containing various risk metrics
+        """
+        try:
+            lss = self.calculate_lss(current_price, position_size, leverage, side, atr)
+            
+            # Calculate liquidation price
+            if side.lower() == 'long':
+                liquidation_price = current_price * (1 - 1/leverage)
+            else:
+                liquidation_price = current_price * (1 + 1/leverage)
+            
+            # Calculate distance to liquidation
+            distance_to_liquidation = abs(current_price - liquidation_price) / current_price
+            
+            return {
+                "lss": lss,
+                "liquidation_price": liquidation_price,
+                "distance_to_liquidation": distance_to_liquidation,
+                "leverage": leverage,
+                "position_size": position_size,
+                "side": side,
+                "current_price": current_price,
+                "atr": atr
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting risk metrics: {e}")
+            return {}

@@ -1,1 +1,128 @@
-https://docs.google.com/document/d/1CaGYCuJSUJAiqpEOXF3MAT_dHATFIUmEJcnqt2-qp3A/edit?tab=t.0
+# Ares Trading Bot
+
+Ares is a modular, research-driven, fully automated trading bot for cryptocurrency markets. It is designed for robust live trading, advanced backtesting, and machine learning-driven strategy optimization. The system is built for reliability, extensibility, and ease of migration between machines.
+
+---
+
+## Features
+- **Modular architecture**: Analyst, Strategist, Tactician, Supervisor, Sentinel, and PaperTrader components.
+- **Comprehensive error handling**: Centralized decorators and structured logging for all critical operations.
+- **SQLite-based persistence**: All state, trades, and models are stored locally for easy migration and backup.
+- **Backtesting and live trading**: Seamless switching between paper trading and live Binance trading.
+- **Advanced model training pipeline**: Full support for feature engineering, model training, hyperparameter optimization, walk-forward and Monte Carlo validation, and A/B testing.
+- **CLI tools**: For database migration and model training management.
+- **Configurable via .env and config.py**: All environment variables and parameters are managed centrally.
+
+---
+
+## Architecture Overview
+- **src/**: Main source code
+  - `analyst/`: Feature engineering, regime classification, market health, S/R analysis
+  - `strategist/`: High-level trading logic
+  - `tactician/`: Trade execution, micro-movement detection, dynamic leverage
+  - `supervisor/`: Orchestration, risk, performance, optimization, reporting
+  - `sentinel/`: Watchdog and system health
+  - `database/`: SQLite manager, migration utilities
+  - `utils/`: Error handling, logging, state management
+  - `training/`: Training pipeline orchestration
+  - `config.py`: Central configuration (uses Pydantic)
+  - `main.py`: Main entry point
+- **exchange/**: Binance REST and WebSocket API clients
+- **backtesting/**: Data download, preparation, backtesting, and optimization
+- **scripts/**: CLI tools for training and database migration
+
+---
+
+## Setup
+
+### 1. Clone the repository
+```bash
+git clone <repo-url>
+cd Ares
+```
+
+### 2. Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Environment configuration
+- Copy `.env.example` to `.env` and fill in your Binance API keys and email credentials as needed.
+- By default, the bot runs in PAPER mode (no API keys required).
+
+### 4. Database
+- The bot uses SQLite for all persistence. The database file is set in `src/config.py` (`SQLITE_DB_PATH`).
+- Use the CLI tools in `scripts/` for migration and backup.
+
+---
+
+## Usage
+
+### Run the bot
+```bash
+python -m src.main
+```
+
+### Run backtesting
+```bash
+python backtesting/main_orchestrator.py
+```
+
+### Model training pipeline (manual)
+```bash
+python scripts/training_cli.py train --symbol BTCUSDT --exchange BINANCE
+```
+
+### Database migration/backup
+```bash
+python scripts/database_migration.py export --output exported_db.sqlite
+python scripts/database_migration.py import --input exported_db.sqlite
+```
+
+---
+
+## Key Dependencies
+- Python >= 3.11
+- aiohttp, websockets
+- numpy, pandas, scikit-learn, lightgbm, xgboost
+- pydantic, pydantic-settings
+- python-json-logger
+- ccxt (for exchange abstraction)
+
+---
+
+## Error Handling & Logging
+- All critical functions are wrapped with decorators from `src/utils/error_handler.py`.
+- Logging is structured (JSON) and configurable via `src/utils/logger.py` and the config.
+- Logs are written to both console and rotating files in the `logs/` directory.
+
+---
+
+## Migration & Backups
+- All trading and backtesting data is stored in SQLite.
+- Use the migration CLI to export/import the database for moving between machines.
+- Automatic and manual backup support is built-in.
+
+---
+
+## Model Training & Management
+- Full pipeline: data collection, feature engineering, model training, hyperparameter optimization, validation, and A/B testing.
+- Models are stored as files and tracked in the database.
+- Use the training CLI for manual retraining, import/export, and status checks.
+
+---
+
+## Paper Trading
+- The `PaperTrader` module simulates trades for safe strategy development and testing.
+- Switch between PAPER and LIVE mode via the `TRADING_ENVIRONMENT` variable in `.env` or config.
+
+---
+
+## Support & Documentation
+- See `docs/DATABASE_MIGRATION.md` for details on database migration and backup.
+- For advanced configuration, see `src/config.py` and the CLI help (`python scripts/training_cli.py --help`).
+
+---
+
+## License
+MIT

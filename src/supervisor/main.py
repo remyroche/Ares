@@ -7,7 +7,6 @@ from typing import Any # Import Any for type hinting
 
 # Import necessary modules
 from src.config import settings, CONFIG # Import settings for trading_mode, and CONFIG for other params
-from src.database.firestore_manager import FirestoreManager, db_manager
 from src.supervisor.ab_tester import ABTester
 from src.supervisor.performance_reporter import PerformanceReporter
 from src.supervisor.risk_allocator import RiskAllocator
@@ -19,9 +18,7 @@ from src.tactician.tactician import Tactician
 from src.paper_trader import PaperTrader # Import PaperTrader for paper trading mode
 from src.utils.state_manager import StateManager
 from src.utils.model_manager import ModelManager
-
-
-logger = logging.getLogger(__name__)
+from src.utils.logger import system_logger
 
 
 class Supervisor:
@@ -30,20 +27,18 @@ class Supervisor:
     It initializes, manages, and connects all the core components of the
     trading pipeline, ensuring they run concurrently and communicate efficiently.
     """
-    def __init__(self, exchange_client: Any): # Accept the exchange client from main.py
-        self.logger = logger
-        self.state_manager = StateManager(state_file=CONFIG.get("state_file", "ares_state.json")) # Pass state_file from CONFIG
+    def __init__(self, exchange_client: Any, state_manager: StateManager, db_manager: Any): # Accept the exchange client from main.py
+        self.logger = system_logger.getChild('Supervisor')
+        self.state_manager = state_manager # Use the passed state_manager
         self.state = self.state_manager.get_state("global_trading_status") # Use get_state() to load current state
         self.config = CONFIG # Use the global CONFIG dictionary for general settings
+        self.db_manager = db_manager # Store the database manager
 
-        # Initialize FirestoreManager (it uses settings internally)
-        self.firestore_manager = FirestoreManager()
-        
         # Initialize Supervisor sub-components, passing necessary dependencies
         self.risk_allocator = RiskAllocator(self.config)
-        self.performance_reporter = PerformanceReporter(self.config, self.firestore_manager) # Pass firestore_manager
+        self.performance_reporter = PerformanceReporter(self.config, self.db_manager) # Pass db_manager
         self.ab_tester = ABTester(self.config, self.performance_reporter)
-        self.monitoring = Monitoring(self.firestore_manager)
+        self.monitoring = Monitoring(self.db_manager)
         
         # Determine the actual trading client (PaperTrader or live exchange_client)
         if settings.trading_environment == "PAPER":
@@ -59,7 +54,7 @@ class Supervisor:
 
         # Initialize ModelManager first, which will load the champion models
         # Pass performance_reporter to ModelManager so it can pass it to Tactician
-        self.model_manager = ModelManager(firestore_manager=self.firestore_manager, performance_reporter=self.performance_reporter)
+        self.model_manager = ModelManager(db_manager=self.db_manager, performance_reporter=self.performance_reporter)
 
         # Initialize the core real-time components, getting instances from ModelManager
         if self.trader:
@@ -109,8 +104,8 @@ class Supervisor:
         self.logger.info("Supervisor starting all components...")
         self.running = True
 
-        if hasattr(db_manager, 'initialize') and asyncio.iscoroutinefunction(db_manager.initialize):
-            await db_manager.initialize()
+        if hasattr(self.db_manager, 'initialize') and asyncio.iscoroutinefunction(self.db_manager.initialize):
+            await self.db_manager.initialize()
 
         tasks = []
         if self.trader and self.sentinel and self.analyst and self.strategist and self.tactician:
@@ -150,7 +145,7 @@ class Supervisor:
         """
         try:
             # 1. Update account equity and peak equity
-            account_info = await self.exchange.get_account_info()
+            account_info = await self.trader.get_account_info() # Use self.trader
             current_equity = float(account_info.get('totalWalletBalance', 0))
             
             if current_equity > 0:
@@ -165,7 +160,7 @@ class Supervisor:
                 self.logger.warning("Could not retrieve a valid account balance.")
 
             # 2. Update open positions state for crash recovery
-            open_positions = await self.exchange.get_open_positions()
+            open_positions = await self.trader.get_open_positions() # Use self.trader
             symbol = settings.trade_symbol # Use settings.trade_symbol
             active_position_on_exchange = None
             

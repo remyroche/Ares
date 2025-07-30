@@ -5,11 +5,20 @@ import uuid # Import uuid for unique trade IDs
 import datetime # Import datetime for timestamps
 import numpy as np # Import numpy for numerical operations
 
-from src.exchange.binance import BinanceExchange
-from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
+from exchange.binance import BinanceExchange
+from src.utils.logger import system_logger
 from src.config import settings, CONFIG # Import CONFIG for fees etc.
 from src.utils.state_manager import StateManager
 from src.supervisor.performance_reporter import PerformanceReporter # Import PerformanceReporter
+from src.utils.error_handler import (
+    handle_errors,
+    handle_data_processing_errors,
+    handle_type_conversions,
+    handle_network_operations,
+    error_context,
+    ErrorRecoveryStrategies,
+    safe_numeric_operation
+)
 
 class Tactician:
     """
@@ -25,7 +34,7 @@ class Tactician:
         self.exchange = exchange_client
         self.state_manager = state_manager
         self.performance_reporter = performance_reporter # Store reporter instance
-        self.logger = logger.getChild('Tactician')
+        self.logger = system_logger.getChild('Tactician')
         self.config = settings.get("tactician", {})
         self.trade_symbol = settings.trade_symbol
         
@@ -51,6 +60,11 @@ class Tactician:
             "entry_context": {} # Store all decision-making context at entry
         }
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="tactician_start"
+    )
     async def start(self):
         """Starts the main tactician loop."""
         # Fixed: Explicitly check if state_manager and exchange are not None
@@ -82,6 +96,11 @@ class Tactician:
                 self.logger.error(f"An error occurred in the Tactician loop: {e}", exc_info=True)
                 await asyncio.sleep(10)
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="run_tactical_assessment"
+    )
     async def run_tactical_assessment(self, analyst_intel: Dict):
         """
         Assesses the current market situation based on Analyst intelligence
@@ -112,12 +131,52 @@ class Tactician:
         else:
             self.logger.info("Holding. No entry conditions met.")
 
-    def _prepare_trade_decision(self, analyst_intel: Dict) -> Union[Dict, None]: # Fixed: Union syntax
-        """
-        Interprets the Analyst's signal and prepares a detailed trade execution plan.
-        This is the core logic for translating a signal into actionable trade parameters.
-        Includes error handling for missing data.
-        """
+    def _prepare_trade_decision(self, analyst_intel: Dict) -> Union[Dict, None]:
+        """Prepares a trade decision based on analyst intelligence with micro-movement detection."""
+        # Extract and validate signal data
+        signal_data = self._extract_signal_data(analyst_intel)
+        if not signal_data:
+            return None
+
+        signal, confidence, technical_analysis_data, current_price, current_atr = signal_data
+
+        # Validate confidence threshold
+        if not self._validate_confidence(confidence):
+            return None
+
+        # Detect micro-movements and market conditions for high-leverage opportunities
+        market_conditions = self._detect_micro_movements(analyst_intel)
+        
+        # Log market conditions for debugging
+        if market_conditions.get("opportunity_type") != "STANDARD":
+            self.logger.info(f"Special market conditions detected: {market_conditions}")
+        
+        # Prepare order parameters based on signal
+        order_params = self._prepare_order_parameters(signal, technical_analysis_data, current_atr)
+        if not order_params:
+            return None
+
+        # Calculate enhanced position sizing and risk management with market conditions
+        risk_params = self._calculate_enhanced_risk_parameters(
+            current_price, order_params['stop_loss'], analyst_intel, confidence, market_conditions
+        )
+
+        # Build final decision
+        decision = self._build_trade_decision(
+            signal, confidence, order_params, risk_params, current_price, current_atr
+        )
+
+        # Add market conditions to decision for logging
+        decision['market_conditions'] = market_conditions
+
+        self.logger.info(f"Trade decision prepared: {signal} {order_params['side']} @ {order_params['entry_price']} "
+                        f"(SL: {order_params['stop_loss']}, TP: {order_params['take_profit']}, "
+                        f"Size: {risk_params['position_size']:.4f}, Leverage: {risk_params['leverage']}x, "
+                        f"Opportunity: {market_conditions.get('opportunity_type', 'STANDARD')})")
+        return decision
+
+    def _extract_signal_data(self, analyst_intel: Dict) -> Optional[Tuple[str, float, Dict, float, float]]:
+        """Extract and validate signal data from analyst intelligence."""
         signal = analyst_intel.get("ensemble_prediction", "HOLD")
         confidence = analyst_intel.get("ensemble_confidence", 0.0)
         technical_analysis_data = analyst_intel.get("technical_signals", {})
@@ -130,90 +189,289 @@ class Tactician:
             self.logger.warning(f"Cannot prepare trade decision: current price ({current_price}) or ATR ({current_atr}) data is missing or invalid from technical_signals.")
             return None
 
+        return signal, confidence, technical_analysis_data, current_price, current_atr
+
+    def _validate_confidence(self, confidence: float) -> bool:
+        """Validate if confidence meets minimum threshold."""
         min_confidence = self.config.get("min_confidence_for_entry", 0.65)
         if confidence < min_confidence:
-            self.logger.info(f"Signal '{signal}' confidence ({confidence:.2f}) is below threshold ({min_confidence}). No action.")
-            return None
+            self.logger.info(f"Signal confidence ({confidence:.2f}) is below threshold ({min_confidence}). No action.")
+            return False
+        return True
+
+    def _detect_micro_movements(self, analyst_intel: Dict) -> Dict[str, Any]:
+        """Detect micro price movements and market conditions for high-leverage opportunities."""
+        current_price = analyst_intel.get("current_price", 0)
+        technical_analysis = analyst_intel.get("technical_analysis", {})
+        technical_signals = analyst_intel.get("technical_signals", {})
+        
+        # Get recent price data from technical analysis
+        recent_klines = technical_analysis.get("recent_klines", [])
+        if not recent_klines or len(recent_klines) < 2:
+            self.logger.warning("Insufficient recent klines data for micro-movement detection")
+            return {"micro_movement": False, "movement_size": 0, "opportunity_type": "STANDARD"}
+        
+        # Calculate recent price movement
+        prev_price = recent_klines[-2].get("close", current_price)
+        price_change = abs(current_price - prev_price) / prev_price
+        
+        # Detect micro movements (less than 0.2% by default)
+        micro_movement_threshold = self.config.get("micro_movement_threshold", 0.002)
+        is_micro_movement = price_change <= micro_movement_threshold
+        
+        # Detect huge candles (more than 5% by default)
+        huge_candle_threshold = self.config.get("huge_candle_threshold", 0.05)
+        is_huge_candle = price_change >= huge_candle_threshold
+        
+        # Detect S/R zone proximity using S/R levels from analyst
+        sr_levels = technical_analysis.get("sr_levels", [])
+        is_near_sr = False
+        nearest_sr_distance = float('inf')
+        nearest_sr_level = None
+        
+        for sr_level in sr_levels:
+            if isinstance(sr_level, dict):
+                level_price = sr_level.get("level_price", 0)
+            else:
+                level_price = float(sr_level)
             
-        # --- Strategy-Specific Execution Logic ---
-        order_type: Optional[str] = None # Fixed: Explicitly type as Optional[str]
-        side: Optional[str] = None # Fixed: Explicitly type as Optional[str]
-        entry_price: Optional[float] = None # Fixed: Explicitly type as Optional[float]
-        stop_loss: Optional[float] = None # Fixed: Explicitly type as Optional[float]
-        take_profit: Optional[float] = None # Fixed: Explicitly type as Optional[float]
-
-        if signal == "BUY":
-            order_type = 'MARKET'; side = 'buy'
-            stop_loss = self._calculate_atr_stop_loss(side, technical_analysis_data)
-            take_profit = self._calculate_atr_take_profit(side, technical_analysis_data, stop_loss)
-        elif signal == "SELL":
-            order_type = 'MARKET'; side = 'sell'
-            stop_loss = self._calculate_atr_stop_loss(side, technical_analysis_data)
-            take_profit = self._calculate_atr_take_profit(side, technical_analysis_data, stop_loss)
-        elif signal == "SR_FADE_LONG":
-            order_type = 'LIMIT'; side = 'buy'
-            entry_price = technical_analysis_data.get('low')
-            if entry_price is None: self.logger.warning("Missing 'low' for SR_FADE_LONG entry."); return None
-            stop_loss = entry_price - current_atr
-            take_profit = entry_price + (current_atr * self.config.get("sr_tp_multiplier", 2.0))
-        elif signal == "SR_FADE_SHORT":
-            order_type = 'LIMIT'; side = 'sell'
-            entry_price = technical_analysis_data.get('high')
-            if entry_price is None: self.logger.warning("Missing 'high' for SR_FADE_SHORT entry."); return None
-            stop_loss = entry_price + current_atr
-            take_profit = entry_price - (current_atr * self.config.get("sr_tp_multiplier", 2.0))
-        elif signal == "SR_BREAKOUT_LONG":
-            order_type = 'STOP_MARKET'; side = 'buy'
-            entry_price = technical_analysis_data.get('high')
-            if entry_price is None: self.logger.warning("Missing 'high' for SR_BREAKOUT_LONG entry."); return None
-            stop_loss = technical_analysis_data.get('low')
-            if stop_loss is None: self.logger.warning("Missing 'low' for SR_BREAKOUT_LONG stop loss."); return None
-            take_profit = entry_price + (current_atr * self.config.get("sr_tp_multiplier", 2.0))
-        elif signal == "SR_BREAKOUT_SHORT":
-            order_type = 'STOP_MARKET'; side = 'sell'
-            entry_price = technical_analysis_data.get('low')
-            if entry_price is None: self.logger.warning("Missing 'low' for SR_BREAKOUT_SHORT entry."); return None
-            stop_loss = technical_analysis_data.get('high')
-            if stop_loss is None: self.logger.warning("Missing 'high' for SR_BREAKOUT_SHORT stop loss."); return None
-            take_profit = entry_price - (current_atr * self.config.get("sr_tp_multiplier", 2.0))
-        else:
-            return None # No action for HOLD or unknown signals
-
-        if order_type is None:
-            self.logger.warning(f"No valid order type determined for signal: {signal}.")
-            return None
-
-        # --- Risk & Sizing Calculation ---
-        lss = analyst_intel.get("liquidation_risk_score", 0)
-        max_allowable_leverage = analyst_intel.get("strategist_params", {}).get("max_allowable_leverage", CONFIG['tactician']['initial_leverage'])
-        leverage = self._determine_leverage(lss, max_allowable_leverage)
+            distance = abs(current_price - level_price) / current_price
+            sr_zone_proximity = self.config.get("sr_zone_proximity", 0.01)
+            
+            if distance <= sr_zone_proximity:
+                is_near_sr = True
+                if distance < nearest_sr_distance:
+                    nearest_sr_distance = distance
+                    nearest_sr_level = sr_level
         
-        price_for_sizing = entry_price if entry_price is not None else current_price # Fixed: Check entry_price for None
+        # Determine opportunity type
+        opportunity_type = self._determine_opportunity_type(is_micro_movement, is_huge_candle, is_near_sr)
         
-        # Fixed: Ensure stop_loss is not None before passing to _calculate_position_size
-        if stop_loss is None:
-            self.logger.warning("Stop loss is None, cannot calculate position size. Aborting trade.")
-            return None
-
-        try:
-            quantity = self._calculate_position_size(price_for_sizing, stop_loss, leverage)
-        except ZeroDivisionError:
-            self.logger.error("ZeroDivisionError in _calculate_position_size. Stop loss price might be too close to current price.")
-            return None
-        except Exception as e:
-            self.logger.error(f"Error calculating position size: {e}", exc_info=True)
-            return None
-
-        if quantity <= 0:
-            self.logger.warning("Position size calculated to be zero or less. Aborting trade.")
-            return None
-
+        # Enhanced logging for micro-movement opportunities
+        if opportunity_type != "STANDARD":
+            self.logger.info(f"🎯 MICRO-MOVEMENT OPPORTUNITY DETECTED:")
+            self.logger.info(f"   Price Change: {price_change:.4f} ({price_change*100:.2f}%)")
+            self.logger.info(f"   Micro Movement: {is_micro_movement} (threshold: {micro_movement_threshold})")
+            self.logger.info(f"   Huge Candle: {is_huge_candle} (threshold: {huge_candle_threshold})")
+            self.logger.info(f"   Near S/R Zone: {is_near_sr} (distance: {nearest_sr_distance:.4f})")
+            if nearest_sr_level:
+                self.logger.info(f"   Nearest S/R: {nearest_sr_level.get('type', 'Unknown')} at {nearest_sr_level.get('level_price', 0):.2f}")
+            self.logger.info(f"   Opportunity Type: {opportunity_type}")
+        
         return {
-            "signal": signal, "side": side, "order_type": order_type,
-            "quantity": quantity, "leverage": leverage,
-            "entry_price": entry_price, "stop_loss": stop_loss, "take_profit": take_profit,
+            "micro_movement": is_micro_movement,
+            "huge_candle": is_huge_candle,
+            "near_sr_zone": is_near_sr,
+            "movement_size": price_change,
+            "nearest_sr_distance": nearest_sr_distance,
+            "nearest_sr_level": nearest_sr_level,
+            "opportunity_type": opportunity_type,
+            "current_price": current_price,
+            "prev_price": prev_price
         }
 
+    def _determine_opportunity_type(self, micro_movement: bool, huge_candle: bool, near_sr: bool) -> str:
+        """Determine the type of trading opportunity based on market conditions."""
+        if huge_candle and near_sr:
+            return "SR_BREAKOUT"
+        elif micro_movement and near_sr:
+            return "SR_FADE"
+        elif huge_candle:
+            return "MOMENTUM"
+        elif micro_movement:
+            return "MICRO_MOVEMENT"
+        else:
+            return "STANDARD"
+
+    def _prepare_order_parameters(self, signal: str, technical_analysis_data: Dict, current_atr: float) -> Optional[Dict]:
+        """Prepare order parameters based on signal type."""
+        if signal == "BUY":
+            return self._prepare_buy_order(technical_analysis_data, current_atr)
+        elif signal == "SELL":
+            return self._prepare_sell_order(technical_analysis_data, current_atr)
+        elif signal == "SR_FADE_LONG":
+            return self._prepare_sr_fade_long_order(technical_analysis_data, current_atr)
+        elif signal == "SR_FADE_SHORT":
+            return self._prepare_sr_fade_short_order(technical_analysis_data, current_atr)
+        elif signal == "SR_BREAKOUT_LONG":
+            return self._prepare_sr_breakout_long_order(technical_analysis_data, current_atr)
+        elif signal == "SR_BREAKOUT_SHORT":
+            return self._prepare_sr_breakout_short_order(technical_analysis_data, current_atr)
+        else:
+            return None  # No action for HOLD or unknown signals
+
+    def _prepare_buy_order(self, technical_analysis_data: Dict, current_atr: float) -> Dict:
+        """Prepare buy order parameters."""
+        stop_loss = self._calculate_atr_stop_loss('buy', technical_analysis_data)
+        take_profit = self._calculate_atr_take_profit('buy', technical_analysis_data, stop_loss)
+        
+        return {
+            'order_type': 'MARKET',
+            'side': 'buy',
+            'entry_price': None,
+            'stop_loss': stop_loss,
+            'take_profit': take_profit
+        }
+
+    def _prepare_sell_order(self, technical_analysis_data: Dict, current_atr: float) -> Dict:
+        """Prepare sell order parameters."""
+        stop_loss = self._calculate_atr_stop_loss('sell', technical_analysis_data)
+        take_profit = self._calculate_atr_take_profit('sell', technical_analysis_data, stop_loss)
+        
+        return {
+            'order_type': 'MARKET',
+            'side': 'sell',
+            'entry_price': None,
+            'stop_loss': stop_loss,
+            'take_profit': take_profit
+        }
+
+    def _prepare_sr_fade_long_order(self, technical_analysis_data: Dict, current_atr: float) -> Optional[Dict]:
+        """Prepare SR fade long order parameters with micro-movement adjustments."""
+        entry_price = technical_analysis_data.get('low')
+        if entry_price is None:
+            self.logger.warning("Missing 'low' for SR_FADE_LONG entry.")
+            return None
+        
+        # Use tighter stops for micro-movements around S/R zones
+        sr_sl_multiplier = self.config.get("sr_sl_multiplier", 0.5)
+        stop_loss = entry_price - (current_atr * sr_sl_multiplier)
+        take_profit = entry_price + (current_atr * self.config.get("sr_tp_multiplier", 2.0))
+        
+        return {
+            'order_type': 'LIMIT',
+            'side': 'buy',
+            'entry_price': entry_price,
+            'stop_loss': stop_loss,
+            'take_profit': take_profit
+        }
+
+    def _prepare_sr_fade_short_order(self, technical_analysis_data: Dict, current_atr: float) -> Optional[Dict]:
+        """Prepare SR fade short order parameters with micro-movement adjustments."""
+        entry_price = technical_analysis_data.get('high')
+        if entry_price is None:
+            self.logger.warning("Missing 'high' for SR_FADE_SHORT entry.")
+            return None
+        
+        # Use tighter stops for micro-movements around S/R zones
+        sr_sl_multiplier = self.config.get("sr_sl_multiplier", 0.5)
+        stop_loss = entry_price + (current_atr * sr_sl_multiplier)
+        take_profit = entry_price - (current_atr * self.config.get("sr_tp_multiplier", 2.0))
+        
+        return {
+            'order_type': 'LIMIT',
+            'side': 'sell',
+            'entry_price': entry_price,
+            'stop_loss': stop_loss,
+            'take_profit': take_profit
+        }
+
+    def _prepare_sr_breakout_long_order(self, technical_analysis_data: Dict, current_atr: float) -> Optional[Dict]:
+        """Prepare SR breakout long order parameters."""
+        entry_price = technical_analysis_data.get('high')
+        if entry_price is None:
+            self.logger.warning("Missing 'high' for SR_BREAKOUT_LONG entry.")
+            return None
+        
+        stop_loss = technical_analysis_data.get('low')
+        if stop_loss is None:
+            self.logger.warning("Missing 'low' for SR_BREAKOUT_LONG stop loss.")
+            return None
+        
+        take_profit = entry_price + (current_atr * self.config.get("sr_tp_multiplier", 2.0))
+        
+        return {
+            'order_type': 'STOP_MARKET',
+            'side': 'buy',
+            'entry_price': entry_price,
+            'stop_loss': stop_loss,
+            'take_profit': take_profit
+        }
+
+    def _prepare_sr_breakout_short_order(self, technical_analysis_data: Dict, current_atr: float) -> Optional[Dict]:
+        """Prepare SR breakout short order parameters."""
+        entry_price = technical_analysis_data.get('low')
+        if entry_price is None:
+            self.logger.warning("Missing 'low' for SR_BREAKOUT_SHORT entry.")
+            return None
+        
+        stop_loss = technical_analysis_data.get('high')
+        if stop_loss is None:
+            self.logger.warning("Missing 'high' for SR_BREAKOUT_SHORT stop loss.")
+            return None
+        
+        take_profit = entry_price - (current_atr * self.config.get("sr_tp_multiplier", 2.0))
+        
+        return {
+            'order_type': 'STOP_MARKET',
+            'side': 'sell',
+            'entry_price': entry_price,
+            'stop_loss': stop_loss,
+            'take_profit': take_profit
+        }
+
+    def _calculate_risk_parameters(self, current_price: float, stop_loss: float, analyst_intel: Dict) -> Dict:
+        """Calculate position sizing and risk management parameters."""
+        leverage = self._determine_leverage(
+            analyst_intel.get("liquidation_risk_score", 100), 
+            analyst_intel.get("max_allowable_leverage", 10)
+        )
+        position_size = self._calculate_position_size(current_price, stop_loss, leverage)
+        
+        return {
+            'leverage': leverage,
+            'position_size': position_size
+        }
+
+    def _calculate_enhanced_risk_parameters(self, current_price: float, stop_loss: float, analyst_intel: Dict, 
+                                          confidence: float, market_conditions: Dict[str, Any]) -> Dict:
+        """Calculate enhanced risk parameters with micro-movement and high-confidence adjustments."""
+        # Get LSS from analyst intelligence
+        lss = analyst_intel.get("liquidation_risk_score", 50)
+        
+        # Determine enhanced leverage based on LSS, confidence, and market conditions
+        max_leverage_cap = self.config.get("max_leverage_cap", 100)
+        leverage = self._determine_leverage(lss, max_leverage_cap, confidence, market_conditions)
+        
+        # Calculate enhanced position size with confidence and market condition multipliers
+        position_size = self._calculate_position_size(current_price, stop_loss, leverage, confidence, market_conditions)
+        
+        # Calculate risk-reward ratio
+        take_profit = analyst_intel.get("technical_signals", {}).get("take_profit", current_price * 1.02)
+        risk_reward_ratio = abs(take_profit - current_price) / abs(stop_loss - current_price) if stop_loss != current_price else 0
+        
+        return {
+            "leverage": leverage,
+            "position_size": position_size,
+            "lss": lss,
+            "confidence": confidence,
+            "market_conditions": market_conditions,
+            "risk_reward_ratio": risk_reward_ratio,
+            "opportunity_type": market_conditions.get("opportunity_type", "STANDARD")
+        }
+
+    def _build_trade_decision(self, signal: str, confidence: float, order_params: Dict, 
+                             risk_params: Dict, current_price: float, current_atr: float) -> Dict:
+        """Build the final trade decision structure."""
+        return {
+            "signal": signal,
+            "confidence": confidence,
+            "order_type": order_params['order_type'],
+            "side": order_params['side'],
+            "entry_price": order_params['entry_price'],
+            "stop_loss": order_params['stop_loss'],
+            "take_profit": order_params['take_profit'],
+            "leverage": risk_params['leverage'],
+            "position_size": risk_params['position_size'],
+            "current_price": current_price,
+            "current_atr": current_atr
+        }
+
+    @handle_errors(
+        exceptions=(KeyError, TypeError, AttributeError),
+        default_return=None,
+        context="execute_open_position"
+    )
     async def execute_open_position(self, decision: Dict, analyst_intel: Dict):
         """Executes the logic to open a new position based on the prepared decision."""
         self.logger.info(f"Executing OPEN for {decision['side'].upper()} signal '{decision['signal']}': Qty={decision['quantity']:.3f}, Type={decision['order_type']}")
@@ -302,6 +560,11 @@ class Tactician:
                 self.current_position = self._get_default_position()
                 self.state_manager.set_state("current_position", self.current_position)
 
+    @handle_errors(
+        exceptions=(KeyError, TypeError, AttributeError),
+        default_return=None,
+        context="check_exit_conditions"
+    )
     def _check_exit_conditions(self, analyst_intel: Dict) -> Union[Dict, None]: # Fixed: Union syntax
         pos = self.current_position
         current_price = analyst_intel.get("current_price") # Using top-level current_price from analyst_intel
@@ -317,7 +580,14 @@ class Tactician:
             if current_price >= pos.get('stop_loss', float('inf')): return {"reason": "Stop Loss Hit", "exit_price": pos.get('stop_loss')}
         return None
 
-    def _calculate_position_size(self, current_price: float, stop_loss_price: float, leverage: int) -> float:
+    @handle_errors(
+        exceptions=(ValueError, TypeError, ZeroDivisionError),
+        default_return=0.0,
+        context="calculate_position_size"
+    )
+    def _calculate_position_size(self, current_price: float, stop_loss_price: float, leverage: int, 
+                               confidence: float = 0.0, market_conditions: Dict[str, Any] = None) -> float:
+        """Calculate position size with enhanced micro-movement handling."""
         # Fixed: Ensure self.state_manager is not None before calling get_state
         capital = self.state_manager.get_state("account_equity", settings.get("initial_equity", 10000)) if self.state_manager else settings.get("initial_equity", 10000)
         risk_per_trade_pct = self.config.get("risk_per_trade_pct", 0.01)
@@ -330,15 +600,128 @@ class Tactician:
             self.logger.warning("Stop loss distance is zero, cannot calculate position size. Returning 0.")
             return 0.0
         
-        units = max_risk_usd / stop_loss_distance
-        return round(units, 3)
+        # Base position size calculation
+        base_units = max_risk_usd / stop_loss_distance
+        
+        # Apply position size multipliers based on confidence and market conditions
+        position_multiplier = 1.0
+        
+        if market_conditions:
+            multipliers = self.config.get("position_size_multiplier", {})
+            opportunity_type = market_conditions.get("opportunity_type", "STANDARD")
+            
+            # Enhanced micro-movement handling
+            if opportunity_type in ["SR_FADE", "SR_BREAKOUT", "MICRO_MOVEMENT"]:
+                # For micro-movements, we can be more aggressive with position sizing
+                # since we're targeting small, precise moves
+                micro_multiplier = multipliers.get("micro_movement", 1.5)
+                position_multiplier *= micro_multiplier
+                self.logger.info(f"Micro-movement detected: Applying {micro_multiplier}x position multiplier")
+            
+            # High confidence multiplier
+            if confidence >= self.config.get("high_confidence_threshold", 0.85):
+                high_conf_multiplier = multipliers.get("high_confidence", 1.5)
+                position_multiplier *= high_conf_multiplier
+                self.logger.info(f"High confidence ({confidence:.2f}): Applying {high_conf_multiplier}x position multiplier")
+            
+            # S/R zone multiplier
+            if market_conditions.get("near_sr_zone", False):
+                sr_multiplier = multipliers.get("sr_zone", 1.3)
+                position_multiplier *= sr_multiplier
+                self.logger.info(f"Near S/R zone: Applying {sr_multiplier}x position multiplier")
+            
+            # Huge candle multiplier
+            if market_conditions.get("huge_candle", False):
+                huge_candle_multiplier = multipliers.get("huge_candle", 1.4)
+                position_multiplier *= huge_candle_multiplier
+                self.logger.info(f"Huge candle detected: Applying {huge_candle_multiplier}x position multiplier")
+            
+            # Combined conditions multiplier (multiple conditions met)
+            condition_count = sum([
+                confidence >= self.config.get("high_confidence_threshold", 0.85),
+                market_conditions.get("near_sr_zone", False),
+                market_conditions.get("huge_candle", False),
+                opportunity_type in ["SR_FADE", "SR_BREAKOUT", "MICRO_MOVEMENT"]
+            ])
+            
+            if condition_count >= 2:
+                combined_multiplier = multipliers.get("combined", 2.0)
+                position_multiplier *= combined_multiplier
+                self.logger.info(f"Multiple conditions met ({condition_count}): Applying {combined_multiplier}x position multiplier")
+        
+        final_units = base_units * position_multiplier
+        
+        # Log detailed position sizing information
+        self.logger.info(f"Position size calculation:")
+        self.logger.info(f"   Capital: ${capital:,.2f}")
+        self.logger.info(f"   Max Risk: ${max_risk_usd:,.2f}")
+        self.logger.info(f"   Stop Loss Distance: ${stop_loss_distance:.4f}")
+        self.logger.info(f"   Base Units: {base_units:.3f}")
+        self.logger.info(f"   Position Multiplier: {position_multiplier:.2f}")
+        self.logger.info(f"   Final Units: {final_units:.3f}")
+        
+        return round(final_units, 3)
 
-    def _determine_leverage(self, lss: float, max_leverage_cap: int) -> int:
-        initial_leverage = self.config.get("initial_leverage", 25)
-        if lss <= 50: return initial_leverage
-        scaled_leverage = initial_leverage + ((lss - 50) / 50) * (max_leverage_cap - initial_leverage)
-        return min(max(initial_leverage, int(scaled_leverage)), max_leverage_cap)
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=1,
+        context="determine_leverage"
+    )
+    def _determine_leverage(self, lss: float, max_leverage_cap: int, confidence: float = 0.0, 
+                           market_conditions: Dict[str, Any] = None) -> int:
+        """Determine leverage with enhanced micro-movement handling."""
+        # Base leverage calculation
+        base_leverage = min(lss, max_leverage_cap)
+        
+        # Apply confidence-based adjustments
+        if confidence >= self.config.get("high_confidence_threshold", 0.85):
+            high_conf_boost = self.config.get("high_confidence_leverage_boost", 1.8)
+            base_leverage = min(base_leverage * high_conf_boost, max_leverage_cap)
+            self.logger.info(f"High confidence leverage boost: {high_conf_boost}x")
+        
+        # Apply market condition adjustments
+        if market_conditions:
+            opportunity_type = market_conditions.get("opportunity_type", "STANDARD")
+            
+            # Enhanced leverage for micro-movements
+            if opportunity_type in ["SR_FADE", "SR_BREAKOUT", "MICRO_MOVEMENT"]:
+                # For micro-movements, we can use higher leverage since we're targeting
+                # small, precise moves with tight stops
+                micro_leverage_boost = 2.0  # Higher leverage for micro-movements
+                base_leverage = min(base_leverage * micro_leverage_boost, max_leverage_cap)
+                self.logger.info(f"Micro-movement leverage boost: {micro_leverage_boost}x")
+            
+            # S/R zone leverage boost
+            if market_conditions.get("near_sr_zone", False):
+                sr_boost = self.config.get("sr_zone_leverage_boost", 1.5)
+                base_leverage = min(base_leverage * sr_boost, max_leverage_cap)
+                self.logger.info(f"S/R zone leverage boost: {sr_boost}x")
+            
+            # Huge candle leverage boost
+            if market_conditions.get("huge_candle", False):
+                huge_candle_boost = self.config.get("huge_candle_leverage_boost", 2.0)
+                base_leverage = min(base_leverage * huge_candle_boost, max_leverage_cap)
+                self.logger.info(f"Huge candle leverage boost: {huge_candle_boost}x")
+        
+        # Ensure leverage doesn't exceed maximum cap
+        final_leverage = min(int(base_leverage), max_leverage_cap)
+        
+        # Log leverage calculation details
+        self.logger.info(f"Leverage calculation:")
+        self.logger.info(f"   Base LSS: {lss}")
+        self.logger.info(f"   Max Cap: {max_leverage_cap}")
+        self.logger.info(f"   Confidence: {confidence:.2f}")
+        if market_conditions:
+            self.logger.info(f"   Opportunity Type: {market_conditions.get('opportunity_type', 'STANDARD')}")
+        self.logger.info(f"   Final Leverage: {final_leverage}x")
+        
+        return final_leverage
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="execute_close_position"
+    )
     async def execute_close_position(self, reason: str, analyst_intel: Dict, exit_price_override: Optional[float] = None):
         """Executes the logic to close an open position and logs the trade."""
         
@@ -445,10 +828,20 @@ class Tactician:
             # If close failed, don't reset position, allow supervisor to re-sync
             # or manual intervention.
 
+    @handle_errors(
+        exceptions=(KeyError, TypeError, ValueError),
+        default_return=0.0,
+        context="calculate_atr_stop_loss"
+    )
     def _calculate_atr_stop_loss(self, side: str, candle: Dict[str, Any], multiplier: float = 1.5) -> float: # Fixed: Type hint for candle
         atr = candle.get('ATR', 0)
         return candle['current_price'] - (atr * multiplier) if side == 'buy' else candle['current_price'] + (atr * multiplier)
 
+    @handle_errors(
+        exceptions=(KeyError, TypeError, ValueError),
+        default_return=0.0,
+        context="calculate_atr_take_profit"
+    )
     def _calculate_atr_take_profit(self, side: str, candle: Dict[str, Any], stop_loss: float, rr_ratio: float = 2.0) -> float: # Fixed: Type hint for candle
         risk = abs(candle['current_price'] - stop_loss)
         return candle['current_price'] + (risk * rr_ratio) if side == 'buy' else candle['current_price'] - (risk * rr_ratio)

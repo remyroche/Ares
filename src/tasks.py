@@ -30,19 +30,41 @@ def run_trading_bot_instance(symbol, exchange):
 @app.task
 def run_monthly_training_pipeline():
     """
-    Celery task to run the monthly retraining and validation pipeline.
+    Celery task to run the monthly retraining and validation pipeline using TrainingManager.
     """
     print("Celery Task: Kicking off monthly training pipeline...")
     try:
-        # We run this as a subprocess to ensure it uses the latest code
-        # and has a clean environment.
-        script_path = os.path.join(os.path.dirname(__file__), '..', 'backtesting', 'training_pipeline.py')
-        result = subprocess.run([sys.executable, script_path], capture_output=True, text=True, check=True)
-        print("Monthly training pipeline completed successfully.")
-        print(result.stdout)
-    except subprocess.CalledProcessError as e:
-        print(f"ERROR: Monthly training pipeline failed.")
-        print(e.stderr)
+        import asyncio
+        from src.database.sqlite_manager import SQLiteManager
+        from src.training.training_manager import TrainingManager
+        from src.config import settings
+        
+        async def run_training():
+            # Initialize database manager
+            db_manager = SQLiteManager()
+            await db_manager.initialize()
+            
+            # Initialize training manager
+            training_manager = TrainingManager(db_manager)
+            
+            # Get current trading symbol
+            symbol = settings.trade_symbol
+            exchange_name = "BINANCE"
+            
+            # Run full training pipeline
+            success = await training_manager.run_full_training(symbol, exchange_name)
+            
+            if success:
+                print(f"Monthly training pipeline completed successfully for {symbol}")
+            else:
+                print(f"Monthly training pipeline failed for {symbol}")
+            
+            # Close database connection
+            await db_manager.close()
+        
+        # Run the async training function
+        asyncio.run(run_training())
+        
     except Exception as e:
         print(f"An unexpected error occurred while running the training pipeline task: {e}")
 

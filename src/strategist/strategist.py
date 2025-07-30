@@ -2,10 +2,17 @@ import asyncio
 import time
 from typing import Dict, Any, Optional, Union # Ensure Union is imported
 
-from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
+from src.utils.logger import system_logger
 from src.config import settings
 from src.utils.state_manager import StateManager
 from src.exchange.binance import BinanceExchange # Import if needed for type hinting
+from src.utils.error_handler import (
+    handle_errors,
+    handle_data_processing_errors,
+    handle_type_conversions,
+    error_context,
+    ErrorRecoveryStrategies
+)
 
 class Strategist:
     """
@@ -17,11 +24,16 @@ class Strategist:
         # Allow exchange_client and state_manager to be optional for ModelManager instantiation
         self.exchange = exchange_client
         self.state_manager = state_manager
-        self.logger = logger.getChild('Strategist')
+        self.logger = system_logger.getChild('Strategist')
         self.config = settings.get("strategist", {})
         self.last_analyst_timestamp = None
         self.logger.info("Strategist initialized.")
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="strategist_start"
+    )
     async def start(self):
         """
         Starts the main strategist loop, waiting for new intelligence from the Analyst.
@@ -49,6 +61,11 @@ class Strategist:
                 self.logger.error(f"An error occurred in the Strategist loop: {e}", exc_info=True)
                 await asyncio.sleep(10)
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="formulate_strategy"
+    )
     async def formulate_strategy(self, analyst_intelligence: Dict[str, Any]):
         """
         Formulates the high-level strategy based on the Analyst's detailed findings.
@@ -85,6 +102,11 @@ class Strategist:
         except Exception as e:
             self.logger.error(f"Error during strategy formulation: {e}", exc_info=True)
 
+    @handle_errors(
+        exceptions=(KeyError, TypeError, AttributeError),
+        default_return="NEUTRAL",
+        context="determine_positional_bias"
+    )
     def _determine_positional_bias(self, market_regime: str, tech_analysis: Dict) -> str:
         """Determines the trading bias using a combination of regime and technicals."""
         
@@ -98,36 +120,59 @@ class Strategist:
         if mas.get('sma_9', 0) > mas.get('sma_50', 0): ma_bias = "LONG"
         elif mas.get('sma_9', 0) < mas.get('sma_50', 0): ma_bias = "SHORT"
 
-        price_to_vwap = tech_analysis.get('price_to_vwap_ratio', 1.0)
-        if price_to_vwap > 1.005:
-            vwap_bias = "LONG"
-        elif price_to_vwap < 0.995:
-            vwap_bias = "SHORT"
+        # VWAP analysis
+        vwap_data = tech_analysis.get('vwap', {})
+        if vwap_data.get('price_vs_vwap', 0) > 0: vwap_bias = "LONG"
+        elif vwap_data.get('price_vs_vwap', 0) < 0: vwap_bias = "SHORT"
 
+        # Combine biases (simple majority)
         biases = [regime_bias, ma_bias, vwap_bias]
-        long_votes = biases.count("LONG")
-        short_votes = biases.count("SHORT")
-
-        if long_votes > short_votes:
-            return "LONG"
-        if short_votes > long_votes:
-            return "SHORT"
+        long_count = biases.count("LONG")
+        short_count = biases.count("SHORT")
         
-        return "NEUTRAL"
+        if long_count > short_count:
+            return "LONG"
+        elif short_count > long_count:
+            return "SHORT"
+        else:
+            return "NEUTRAL"
 
+    @handle_errors(
+        exceptions=(ValueError, TypeError, ZeroDivisionError),
+        default_return=1,
+        context="determine_leverage_cap"
+    )
     def _determine_leverage_cap(self, liquidation_risk: float, confidence: float) -> int:
-        """Calculates an appropriate leverage cap."""
-        base_leverage = self.config.get("base_leverage", 10)
-        risk_factor = 1 - (liquidation_risk / 100)
-        confidence_factor = 0.8 + (confidence * 0.4)
-        leverage = base_leverage * risk_factor * confidence_factor
-        return int(max(1, min(self.config.get("max_leverage_limit", 25), leverage)))
+        """Determines the maximum allowable leverage based on risk and confidence."""
+        # Base leverage cap from config
+        base_leverage = self.config.get("base_leverage_cap", 10)
+        
+        # Adjust based on liquidation risk (higher risk = lower leverage)
+        risk_factor = max(0.1, 1 - (liquidation_risk / 100))
+        
+        # Adjust based on confidence (higher confidence = higher leverage)
+        confidence_factor = max(0.1, min(2.0, confidence * 2))
+        
+        leverage_cap = int(base_leverage * risk_factor * confidence_factor)
+        return max(1, min(leverage_cap, 20))  # Clamp between 1 and 20
 
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=1000.0,
+        context="determine_max_notional_size"
+    )
     def _determine_max_notional_size(self, market_regime: str) -> float:
-        """Determines the maximum notional size for a single trade."""
-        base_size = self.config.get("base_notional_trade_size", 5000)
-        size_multiplier = self.config.get("regime_size_multipliers", {
-            "BULL_TREND": 1.0, "BEAR_TREND": 1.0, "SIDEWAYS_RANGE": 0.5
-        })
-        return base_size * size_multiplier.get(market_regime, 0.25)
+        """Determines the maximum notional trade size based on market regime."""
+        base_size = self.config.get("base_notional_size", 1000.0)
+        
+        # Adjust based on market regime
+        regime_multipliers = {
+            "BULL_TREND": 1.5,
+            "BEAR_TREND": 0.8,
+            "SIDEWAYS": 1.0,
+            "HIGH_IMPACT": 0.5
+        }
+        
+        multiplier = regime_multipliers.get(market_regime, 1.0)
+        return base_size * multiplier
 

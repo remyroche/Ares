@@ -9,7 +9,7 @@ import json # Added import for json
 import logging # Added import for logging module
 
 from src.exchange.binance import exchange
-from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
+from src.utils.logger import system_logger
 from src.config import settings, CONFIG # Import CONFIG for alert thresholds
 from src.utils.state_manager import StateManager
 from src.emails.ares_mailer import AresMailer # Import the AresMailer class
@@ -46,7 +46,7 @@ class Sentinel:
         """
         self.exchange = exchange_client
         self.state_manager = state_manager
-        self.logger = logger.getChild('Sentinel')
+        self.logger = system_logger.getChild('Sentinel')
         self.config = settings.get("sentinel", {}) # Sentinel specific config
         self.global_config = CONFIG # Global config for shared thresholds
         self.trade_symbol = settings.trade_symbol

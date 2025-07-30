@@ -11,7 +11,7 @@ from typing import Union # Added import for Union
 from src.database.firestore_manager import FirestoreManager
 from src.database.sqlite_manager import SQLiteManager
 
-logger = logging.getLogger(__name__)
+from src.utils.logger import system_logger
 
 
 class Monitoring:
@@ -19,6 +19,7 @@ class Monitoring:
         self.db_manager = db_manager # Use the passed db_manager
         self.log_file = log_file
         self.start_time = time.time()
+        self.logger: logging.Logger = system_logger.getChild('Monitoring')
 
     def record_heartbeat(self):
         """Records a heartbeat to indicate the bot is alive and running."""
@@ -36,7 +37,7 @@ class Monitoring:
             asyncio.create_task(self.db_manager.set_document("monitoring", "heartbeat", heartbeat_data))
         else:
             self.logger.warning("DB Manager not initialized, cannot record heartbeat to DB.")
-        logger.info("Heartbeat recorded.")
+        self.logger.info("Heartbeat recorded.")
 
     def record_trade(self, trade_data: dict):
         """Records the details of a trade."""
@@ -46,7 +47,7 @@ class Monitoring:
             asyncio.create_task(self.db_manager.add_document("trades", trade_data))
         else:
             self.logger.warning("DB Manager not initialized, cannot record trade to DB.")
-        logger.info(f"Trade recorded: {trade_data}")
+        self.logger.info(f"Trade recorded: {trade_data}")
 
     def record_error(self, error_message: str):
         """Records an error."""
@@ -60,7 +61,7 @@ class Monitoring:
             asyncio.create_task(self.db_manager.add_document("errors", error_data))
         else:
             self.logger.warning("DB Manager not initialized, cannot record error to DB.")
-        logger.error(f"Error recorded: {error_message}")
+        self.logger.error(f"Error recorded: {error_message}")
 
     def record_performance_metrics(self, metrics: dict):
         """Records performance metrics."""
@@ -74,7 +75,7 @@ class Monitoring:
             asyncio.create_task(self.db_manager.add_document("performance", performance_data))
         else:
             self.logger.warning("DB Manager not initialized, cannot record performance metrics to DB.")
-        logger.info(f"Performance metrics recorded: {metrics}")
+        self.logger.info(f"Performance metrics recorded: {metrics}")
 
     def _log_to_file(self, data: dict):
         """Logs data to a local JSON file."""
@@ -82,4 +83,4 @@ class Monitoring:
             with open(self.log_file, "a") as f:
                 f.write(json.dumps(data) + "\n")
         except Exception as e:
-            logger.error(f"Failed to write to monitoring log file {self.log_file}: {e}", exc_info=True)
+            self.logger.error(f"Failed to write to monitoring log file {self.log_file}: {e}", exc_info=True)

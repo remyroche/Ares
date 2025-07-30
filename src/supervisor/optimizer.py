@@ -17,18 +17,17 @@ from backtesting.ares_backtester import run_backtest
 from backtesting.ares_deep_analyzer import calculate_detailed_metrics
 
 from src.config import CONFIG
-from src.utils.logger import system_logger as logger
+from src.utils.logger import system_logger
 # Import both managers, but use the one passed in __init__
-from src.database.firestore_manager import FirestoreManager
 from src.database.sqlite_manager import SQLiteManager
 
 
 class Optimizer:
-    def __init__(self, config=CONFIG, db_manager: Union[FirestoreManager, SQLiteManager, None] = None): # Fixed: Accept generic db_manager
+    def __init__(self, config=CONFIG, db_manager: Union[SQLiteManager, None] = None): # Fixed: Accept generic db_manager
         self.config = config.get("supervisor", {})
         self.global_config = config
         self.db_manager = db_manager # Use the passed db_manager
-        self.logger = logger.getChild('Optimizer')
+        self.logger = system_logger.getChild('Optimizer')
         self.initial_equity = self.global_config['INITIAL_EQUITY']
         
         self.optimized_params_csv = self.config.get("optimized_params_csv", "reports/optimized_params_history.csv")

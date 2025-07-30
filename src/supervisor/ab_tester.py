@@ -14,7 +14,7 @@ class ABTester:
         self.config = config.get("supervisor", {})
         self.global_config = config
         self.reporter = reporter
-        self.logger = system_logger.getChild('ABTester')
+        self.logger: logging.Logger = system_logger.getChild('ABTester')
         
         self.ab_test_active = False
         self.ab_test_start_date = None

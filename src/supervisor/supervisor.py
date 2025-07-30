@@ -12,10 +12,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler # Assuming apschedul
 from .dynamic_weighter import DynamicWeighter
 from src.utils.model_manager import ModelManager
 from src.exchange.binance import BinanceExchange
-from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
+from src.utils.logger import system_logger
 from src.config import settings, CONFIG
 from src.utils.state_manager import StateManager
-from src.database.firestore_manager import FirestoreManager
+# FirestoreManager import removed - using SQLite only
 from src.supervisor.performance_monitor import PerformanceMonitor
 from backtesting.ares_backtester import Backtester # Re-added this import to match original
 from src.strategist.strategist import Strategist
@@ -24,8 +24,17 @@ from src.analyst.analyst import Analyst # Import Analyst
 from src.sentinel.sentinel import Sentinel # Import Sentinel
 from src.paper_trader import PaperTrader # Import PaperTrader
 from src.emails.ares_mailer import AresMailer # Import AresMailer
-from src.tasks import run_monthly_training_pipeline
+from src.training.training_manager import TrainingManager
 from src.utils.error_handler import get_logged_exceptions
+from src.utils.error_handler import (
+    handle_errors,
+    handle_data_processing_errors,
+    handle_file_operations,
+    handle_network_operations,
+    handle_type_conversions,
+    error_context,
+    ErrorRecoveryStrategies
+)
 
 class Supervisor:
     """
@@ -35,11 +44,11 @@ class Supervisor:
     Now includes a daily scheduled task for error reporting.
     """
 
-    def __init__(self, exchange_client: BinanceExchange, state_manager: StateManager, firestore_manager: FirestoreManager):
+    def __init__(self, exchange_client: BinanceExchange, state_manager: StateManager, db_manager):
         self.exchange = exchange_client
         self.state_manager = state_manager
-        self.firestore_manager = firestore_manager
-        self.logger = logger.getChild('Supervisor') # Corrected logger init (removed duplicate line)
+        self.db_manager = db_manager
+        self.logger = system_logger.getChild('Supervisor')
         self.config = settings.get("supervisor", {}) # Corrected config init
         self.global_config = CONFIG
         self.data = self.load_data() # This might be for backtesting data, not live operations
@@ -54,7 +63,7 @@ class Supervisor:
         self.data_fetcher: Any = None # Placeholder, assuming it would be set up elsewhere if used
         self.dynamic_weighter = DynamicWeighter(self.global_config) # Corrected config reference to self.global_config
         # Fixed: Removed 'config=' argument as ModelManager does not accept it
-        self.model_manager = ModelManager(firestore_manager=self.firestore_manager) 
+        self.model_manager = ModelManager(firestore_manager=self.db_manager) 
         
         self.prediction_history = pd.DataFrame() # For dynamic weighter
 
@@ -65,13 +74,16 @@ class Supervisor:
         self.state_manager.set_state_if_not_exists("last_retrain_timestamp", datetime.now().isoformat())
         self.state_manager.set_state_if_not_exists("current_position", self.state_manager._get_default_position_structure()) # Ensure default position structure is set
 
-        self.performance_monitor = PerformanceMonitor(config=settings, firestore_manager=self.firestore_manager)
+        self.performance_monitor = PerformanceMonitor(config=settings, firestore_manager=self.db_manager)
         
         # Fixed: Explicitly type these as Optional
         self.sentinel: Optional[Sentinel] = None
         self.analyst: Optional[Analyst] = None
         self.strategist: Optional[Strategist] = None
         self.tactician: Optional[Tactician] = None
+        
+        # Initialize TrainingManager for monthly retraining
+        self.training_manager = TrainingManager(self.db_manager)
 
         # Determine the actual trading client (PaperTrader or live exchange_client)
         if settings.trading_environment == "PAPER":
@@ -92,7 +104,7 @@ class Supervisor:
             self.analyst = self.model_manager.get_analyst() # Get Analyst instance from ModelManager
             self.strategist = self.model_manager.get_strategist() # Get Strategist instance from ModelManager
             # Pass performance_reporter to Tactician
-            self.tactician = self.model_manager.get_tactician(performance_reporter=self.performance_reporter) 
+            self.tactician = self.model_manager.get_tactician(performance_reporter=self.performance_monitor) 
 
             # Ensure the Analyst, Strategist, Tactician instances from ModelManager
             # have their exchange_client and state_manager set if they need it for live ops.
@@ -141,6 +153,10 @@ class Supervisor:
         self.logger.info("Stopping Supervisor background task scheduler.")
         self.scheduler.shutdown()
 
+    @handle_file_operations(
+        default_return=pd.DataFrame(),
+        context="load_data"
+    )
     def load_data(self) -> pd.DataFrame: # Fixed: Return type hint
         """Loads historical data for backtesting and analysis. (Placeholder for live system)"""
         try:
@@ -160,6 +176,11 @@ class Supervisor:
             self.logger.error(f"Error loading historical data in Supervisor: {e}", exc_info=True)
             return pd.DataFrame()
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="supervisor_start"
+    )
     async def start(self):
         """Starts the main supervisor monitoring loop, ensuring state is recovered on startup."""
         self.logger.info("Supervisor starting up...")
@@ -208,6 +229,7 @@ class Supervisor:
                 
                 await self.performance_monitor.monitor_performance(live_metrics)
                 await self._check_for_retraining(retrain_interval_days)
+                await self.run_daily_profit_sweep() # Add daily profit sweep to main loop
 
             except asyncio.CancelledError:
                 self.logger.info("Supervisor task cancelled.")
@@ -215,6 +237,11 @@ class Supervisor:
             except Exception as e:
                 self.logger.error(f"An error occurred in the Supervisor loop: {e}", exc_info=True)
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="run_daily_tasks"
+    )
     async def run_daily_tasks(self):
         """
         Daily task for dynamic weight adjustment and error reporting.
@@ -241,6 +268,11 @@ class Supervisor:
         
         self.logger.info("Daily tasks complete.")
 
+    @handle_errors(
+        exceptions=(KeyError, TypeError, ValueError),
+        default_return=None,
+        context="store_prediction_results"
+    )
     def _store_prediction_results(self, asset: str, prediction_output: Dict[str, Any], actual_outcome: Any): # Fixed: Type hints
         """Appends prediction results to the history for the weighter to use."""
         new_record = {
@@ -258,6 +290,11 @@ class Supervisor:
             self.prediction_history = pd.concat([self.prediction_history, pd.DataFrame([new_record])], ignore_index=True)
 
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="run_daily_error_report"
+    )
     async def _run_daily_error_report(self):
         """
         Fetches all logged exceptions and sends a summary email.
@@ -310,8 +347,11 @@ class Supervisor:
         except Exception as e:
             self.logger.error(f"Failed to generate or send daily error report: {e}", exc_info=True)
 
-
-    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="synchronize_exchange_state"
+    )
     async def _synchronize_exchange_state(self):
         """
         Fetches the current account equity and open positions from the exchange
@@ -343,12 +383,12 @@ class Supervisor:
                     # Capture more details for active_position
                     active_position_on_exchange = {
                         "symbol": position['symbol'],
-                        "amount": float(position['positionAmt']),
-                        "entry_price": float(position['entryPrice']),
+                        "amount": float(position.get('positionAmt', 0)),
+                        "entry_price": float(position.get('entryPrice', 0)),
                         "leverage": int(position.get('leverage', 1)),
-                        "direction": "LONG" if float(position['positionAmt']) > 0 else "SHORT",
-                        "trade_id": self.state_manager.get_state("current_position", {}).get("trade_id"), # Attempt to recover trade_id
-                        "entry_timestamp": self.state_manager.get_state("current_position", {}).get("entry_timestamp"), # Attempt to recover timestamp
+                        "direction": "LONG" if float(position.get('positionAmt', 0)) > 0 else "SHORT",
+                        "trade_id": self.state_manager.get_state("current_position", {}).get("trade_id"),
+                        "entry_timestamp": self.state_manager.get_state("current_position", {}).get("entry_timestamp"),
                         "stop_loss": self.state_manager.get_state("current_position", {}).get("stop_loss"),
                         "take_profit": self.state_manager.get_state("current_position", {}).get("take_profit"),
                         "entry_fees_usd": self.state_manager.get_state("current_position", {}).get("entry_fees_usd", 0.0),
@@ -368,7 +408,11 @@ class Supervisor:
         except Exception as e:
             self.logger.error(f"Failed to synchronize state with exchange: {e}", exc_info=True)
 
-
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="check_performance_and_risk"
+    )
     async def _check_performance_and_risk(self):
         """Calculates drawdown and adjusts risk parameters or pauses trading if necessary."""
         peak_equity = self.state_manager.get_state("global_peak_equity")
@@ -395,23 +439,38 @@ class Supervisor:
                 self.logger.warning(f"Drawdown of {drawdown:.2%} exceeded risk reduction threshold. Reducing risk multiplier to {new_risk_multiplier}.")
                 self.state_manager.set_state("global_risk_multiplier", new_risk_multiplier)
         else:
-            if self.state_manager.get_state("global_risk_multiplier") != 1.0 and drawdown < risk_reduction_threshold * 0.8: # Add a buffer for recovery
+            if self.state_manager.get_state("global_risk_multiplier") != 1.0:
                 self.logger.info("Performance has recovered. Restoring global risk multiplier to 1.0.")
                 self.state_manager.set_state("global_risk_multiplier", 1.0)
         
         if self.state_manager.get_state("is_trading_paused") and drawdown < pause_threshold * 0.9: # Add a buffer for resuming
             await self._resume_trading()
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="pause_trading"
+    )
     async def _pause_trading(self, reason: str):
         """Pauses all new trading activity."""
         self.logger.critical(f"PAUSING ALL TRADING. Reason: {reason}")
         self.state_manager.set_state("is_trading_paused", True)
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="resume_trading"
+    )
     async def _resume_trading(self):
         """Resumes trading activity."""
         self.logger.info("Resuming trading activity. Drawdown has recovered to an acceptable level.")
         self.state_manager.set_state("is_trading_paused", False)
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="check_for_retraining"
+    )
     async def _check_for_retraining(self, retrain_interval_days: int):
         """Checks if it's time to trigger a system retraining."""
         last_retrain_timestamp_str = self.state_manager.get_state("last_retrain_timestamp")
@@ -432,13 +491,152 @@ class Supervisor:
             self.logger.info(f"Next system retraining due in: {time_until.days} days, {time_until.seconds // 3600} hours.")
 
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="trigger_retraining"
+    )
     async def _trigger_retraining(self):
-        """Triggers the full system retraining and validation pipeline using a Celery task."""
-        self.logger.info("Initiating full system retraining pipeline via Celery task...")
+        """Triggers the full system retraining and validation pipeline using the TrainingManager."""
+        self.logger.info("Initiating full system retraining pipeline via TrainingManager...")
         try:
-            # Call the Celery task to run the training pipeline in the background
-            run_monthly_training_pipeline.delay()
-            self.logger.info("Celery task 'run_monthly_training_pipeline' dispatched successfully.")
+            # Get the current trading symbol from settings
+            symbol = settings.trade_symbol
+            exchange_name = "BINANCE"  # Default to BINANCE
+            
+            # Run full training pipeline for the current symbol
+            success = await self.training_manager.run_full_training(symbol, exchange_name)
+            
+            if success:
+                self.logger.info(f"Monthly retraining completed successfully for {symbol}")
+                # Send email notification of successful retraining
+                await self.ares_mailer.send_email(
+                    subject=f"Ares Monthly Retraining Complete - {symbol}",
+                    body=f"Monthly retraining pipeline completed successfully for {symbol} on {exchange_name}.\n\nTraining session details:\n{self.training_manager.current_training_session}"
+                )
+            else:
+                self.logger.error(f"Monthly retraining failed for {symbol}")
+                # Send email notification of failed retraining
+                await self.ares_mailer.send_email(
+                    subject=f"Ares Monthly Retraining Failed - {symbol}",
+                    body=f"Monthly retraining pipeline failed for {symbol} on {exchange_name}.\n\nError details:\n{self.training_manager.current_training_session.get('error', 'Unknown error')}"
+                )
+                
         except Exception as e:
-            self.logger.error(f"Failed to dispatch Celery task for retraining: {e}", exc_info=True)
+            self.logger.error(f"Failed to trigger retraining: {e}", exc_info=True)
             self.logger.critical("Automated retraining failed to trigger. Manual intervention may be required.")
+            # Send email notification of critical error
+            await self.ares_mailer.send_email(
+                subject="Ares Monthly Retraining Critical Error",
+                body=f"Critical error during monthly retraining:\n{str(e)}"
+            )
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="run_daily_profit_sweep"
+    )
+    async def run_daily_profit_sweep(self):
+        """
+        Daily profit sweep: Check USDT balance, move 10% of gains to spot/euro,
+        and send withdrawal alerts when threshold is reached.
+        """
+        self.logger.info("Running daily profit sweep...")
+        
+        try:
+            # Get current balances
+            perps_balance = await self.trader.get_account_balance('USDT')
+            spot_balance = await self.trader.get_spot_balance('USDT')
+            euro_balance = await self.trader.get_spot_balance('EUR')
+            
+            # Load highest historical balance
+            highest_balance = self.state_manager.get_state("highest_usdt_balance", 0)
+            
+            action = ""
+            sweep_amount = 0
+            
+            if perps_balance > highest_balance:
+                gain = perps_balance - highest_balance
+                sweep_amount = gain * 0.10  # Move 10% of gains
+                
+                # Move to spot account
+                await self.trader.transfer_to_spot('USDT', sweep_amount)
+                
+                # Update highest balance
+                self.state_manager.set_state("highest_usdt_balance", perps_balance)
+                action = f"Swept {sweep_amount:.2f} USDT to spot account"
+                self.logger.info(f"Profit sweep: {action}")
+            else:
+                action = "No sweep - balance not higher than peak"
+                self.logger.info("Profit sweep: No action taken")
+            
+            # Log daily balances
+            await self._log_daily_balances(perps_balance, spot_balance, euro_balance, action)
+            
+            # Check withdrawal threshold
+            total_withdrawable = spot_balance + euro_balance
+            withdrawal_threshold = self.config.get("withdrawable_amount_threshold", 1000)  # Default $1000
+            
+            if total_withdrawable >= withdrawal_threshold:
+                await self._send_withdrawal_alert(total_withdrawable, spot_balance, euro_balance)
+                
+        except Exception as e:
+            self.logger.error(f"Error during daily profit sweep: {e}", exc_info=True)
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="log_daily_balances"
+    )
+    async def _log_daily_balances(self, perps_balance: float, spot_balance: float, euro_balance: float, action: str):
+        """Log daily account balances to CSV file."""
+        import csv
+        from datetime import datetime
+        
+        balance_file = "data/daily_balances.csv"
+        
+        # Ensure data directory exists
+        os.makedirs(os.path.dirname(balance_file), exist_ok=True)
+        
+        # Create file with headers if it doesn't exist
+        file_exists = os.path.exists(balance_file)
+        
+        with open(balance_file, 'a', newline='') as f:
+            writer = csv.writer(f)
+            
+            if not file_exists:
+                writer.writerow(['Date', 'Perps_USDT', 'Spot_USDT', 'Spot_EUR', 'Action'])
+            
+            writer.writerow([
+                datetime.now().strftime('%Y-%m-%d'),
+                f"{perps_balance:.2f}",
+                f"{spot_balance:.2f}",
+                f"{euro_balance:.2f}",
+                action
+            ])
+        
+        self.logger.info(f"Daily balances logged to {balance_file}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="send_withdrawal_alert"
+    )
+    async def _send_withdrawal_alert(self, total_withdrawable: float, spot_balance: float, euro_balance: float):
+        """Send email alert for manual withdrawal."""
+        subject = "Ares: Manual Withdrawal Alert"
+        body = f"""
+        Withdrawal threshold reached!
+        
+        Total withdrawable amount: ${total_withdrawable:.2f}
+        - Spot USDT: ${spot_balance:.2f}
+        - Spot EUR: ${euro_balance:.2f}
+        
+        Please manually withdraw these funds from your exchange account.
+        """
+        
+        try:
+            await self.ares_mailer.send_alert(subject, body)
+            self.logger.info(f"Withdrawal alert sent for ${total_withdrawable:.2f}")
+        except Exception as e:
+            self.logger.error(f"Failed to send withdrawal alert: {e}", exc_info=True)

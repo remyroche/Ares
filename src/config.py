@@ -1,16 +1,16 @@
 import os
 from typing import Literal, Dict, Any, Optional
-from pydantic import BaseSettings, Field, validator
-from loguru import logger
+from pydantic_settings import BaseSettings
+from pydantic import Field, validator
 from dotenv import load_dotenv
 
 # --- Environment Loading ---
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
-    logger.info(".env file loaded.")
+    print(".env file loaded.")
 else:
-    logger.warning(".env file not found. Using environment variables or defaults.")
+    print(".env file not found. Using environment variables or defaults.")
 
 # ==============================================================================
 # Pydantic Settings for Environment Variables
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     Manages all environment-specific settings using Pydantic.
     """
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
-    trading_environment: Literal["LIVE", "TESTNET", "PAPER"] = Field(default="TESTNET", env="TRADING_ENVIRONMENT")
+    trading_environment: Literal["LIVE", "TESTNET", "PAPER"] = Field(default="PAPER", env="TRADING_ENVIRONMENT")
     initial_equity: float = Field(default=10000.0, env="INITIAL_EQUITY")
     trade_symbol: str = Field(default="BTCUSDT", env="TRADE_SYMBOL")
     timeframe: str = Field(default="15m", env="TIMEFRAME")
@@ -62,6 +62,7 @@ class Settings(BaseSettings):
             raise ValueError("For LIVE environment, BINANCE_LIVE_API_KEY and BINANCE_LIVE_API_SECRET must be set.")
         if v == "TESTNET" and (not values.get('binance_testnet_api_key') or not values.get('binance_testnet_api_secret')):
             raise ValueError("For TESTNET environment, BINANCE_TESTNET_API_KEY and BINANCE_TESTNET_API_SECRET must be set.")
+        # PAPER mode doesn't require API keys
         return v
         
     class Config:
@@ -70,9 +71,9 @@ class Settings(BaseSettings):
 # --- Global Settings Instance ---
 try:
     settings = Settings()
-    logger.info(f"Configuration loaded successfully. Trading Environment: {settings.trading_environment}")
+    print(f"Configuration loaded successfully. Trading Environment: {settings.trading_environment}")
 except Exception as e:
-    logger.critical(f"Failed to load or validate configuration: {e}")
+    print(f"Failed to load or validate configuration: {e}")
     exit(1) # Exit if essential env vars are missing/invalid
 
 # ==============================================================================
@@ -117,16 +118,21 @@ CONFIG: Dict[str, Any] = {
     "ERROR_LOG_FILE": "ares_errors.jsonl", # New: Dedicated error log file
 
     # --- Database Configuration ---
-    "DATABASE_TYPE": "sqlite", # New: 'firestore' or 'sqlite'
-    "SQLITE_DB_PATH": "data/ares_local_db.sqlite", # New: Path for SQLite database file
+    "DATABASE_TYPE": "sqlite", # 'sqlite' only - Firebase removed
+    "SQLITE_DB_PATH": "data/ares_local_db.sqlite", # Path for SQLite database file
+    "BACKUP_INTERVAL_HOURS": 24, # Automatic backup interval
+    "BACKUP_RETENTION_DAYS": 30, # How long to keep backups
 
-    # --- Firestore Configuration ---
-    "firestore": {
-        "enabled": settings.firestore_project_id is not None,
-        "project_id": settings.firestore_project_id,
+    # --- SQLite Configuration ---
+    "sqlite": {
+        "enabled": True,
+        "backup_enabled": True,
+        "migration_enabled": True,
         "optimized_params_collection": "ares_optimized_params",
         "live_metrics_collection": "ares_live_metrics",
-        "alerts_collection": "ares_alerts"
+        "alerts_collection": "ares_alerts",
+        "backtest_results_collection": "backtest_results",
+        "trading_state_collection": "trading_state"
     },
 
     # --- Email Configuration ---
@@ -203,6 +209,24 @@ CONFIG: Dict[str, Any] = {
     "tactician": {
         "initial_leverage": 25,
         "min_lss_for_entry": 60,
+        "min_confidence_for_entry": 0.65,
+        "high_confidence_threshold": 0.85,
+        "max_leverage_cap": 100,
+        "sr_zone_leverage_boost": 1.5,
+        "huge_candle_leverage_boost": 2.0,
+        "high_confidence_leverage_boost": 1.8,
+        "sr_tp_multiplier": 2.0,
+        "sr_sl_multiplier": 0.5,
+        "micro_movement_threshold": 0.002,  # 0.2% for micro movements
+        "huge_candle_threshold": 0.05,  # 5% for huge candles
+        "sr_zone_proximity": 0.01,  # 1% proximity to S/R zones
+        "position_size_multiplier": {
+            "high_confidence": 1.5,
+            "sr_zone": 1.3,
+            "huge_candle": 1.4,
+            "micro_movement": 1.5,  # Enhanced multiplier for micro-movements
+            "combined": 2.0
+        }
     },
     
     # --- Supervisor Component ---
@@ -213,7 +237,10 @@ CONFIG: Dict[str, Any] = {
         "decay_threshold_sharpe_ratio": 0.70,
         "decay_threshold_max_drawdown_multiplier": 1.50,
         "min_trades_for_monitoring": 50,
-        "retrain_interval_days": 30
+        "retrain_interval_days": 30,
+        "withdrawable_amount_threshold": 1000,  # Amount in USD to trigger withdrawal alert
+        "profit_sweep_enabled": True,  # Enable daily profit sweep
+        "profit_sweep_percentage": 0.10  # Percentage of gains to sweep (10%)
     },
 
     # --- Risk Management (Global Portfolio Level) ---
@@ -280,6 +307,98 @@ CONFIG: Dict[str, Any] = {
         'bband_squeeze_threshold': 0.01,
         'scaling_factor': 100, 
         'trend_strength_threshold': 25
+    },
+
+    # --- Trading Configuration ---
+    "SUPPORTED_TOKENS": {
+        "BINANCE": [
+            "BTCUSDT",
+            "ETHUSDT", 
+            "BNBUSDT",
+            "ADAUSDT",
+            "SOLUSDT",
+            "DOTUSDT",
+            "LINKUSDT",
+            "MATICUSDT",
+            "AVAXUSDT",
+            "ATOMUSDT",
+            "LTCUSDT",
+            "BCHUSDT",
+            "XRPUSDT",
+            "TRXUSDT",
+            "EOSUSDT",
+            "FILUSDT",
+            "NEARUSDT",
+            "FTMUSDT",
+            "ALGOUSDT",
+            "VETUSDT"
+        ]
+    },
+
+    # --- Model Training Configuration ---
+    "MODEL_TRAINING": {
+        "enabled": True,
+        "data_retention_days": 365,
+        "min_data_points": 10000,
+        "train_test_split": 0.8,
+        "validation_split": 0.1,
+        "forward_walk_days": 30,
+        "monte_carlo_simulations": 1000,
+        "ab_test_duration_days": 7,
+        "regularization": {
+            "l1_alpha": 0.01,
+            "l2_alpha": 0.001,
+            "dropout_rate": 0.2
+        },
+        "hyperparameter_tuning": {
+            "enabled": True,
+            "max_trials": 50,
+            "optimization_metric": "sharpe_ratio"
+        },
+        "model_types": {
+            "lightgbm": {
+                "enabled": True,
+                "params": {
+                    "objective": "regression",
+                    "metric": "rmse",
+                    "boosting_type": "gbdt",
+                    "num_leaves": 31,
+                    "learning_rate": 0.05,
+                    "feature_fraction": 0.9,
+                    "bagging_fraction": 0.8,
+                    "bagging_freq": 5,
+                    "verbose": -1
+                }
+            },
+            "xgboost": {
+                "enabled": True,
+                "params": {
+                    "objective": "reg:squarederror",
+                    "eval_metric": "rmse",
+                    "max_depth": 6,
+                    "learning_rate": 0.1,
+                    "subsample": 0.8,
+                    "colsample_bytree": 0.8,
+                    "n_estimators": 100
+                }
+            },
+            "neural_network": {
+                "enabled": True,
+                "architecture": [64, 32, 16],
+                "activation": "relu",
+                "optimizer": "adam",
+                "learning_rate": 0.001,
+                "batch_size": 32,
+                "epochs": 100
+            },
+            "random_forest": {
+                "enabled": True,
+                "n_estimators": 100,
+                "max_depth": 10,
+                "min_samples_split": 5,
+                "min_samples_leaf": 2
+            }
+        }
     }
 }
 

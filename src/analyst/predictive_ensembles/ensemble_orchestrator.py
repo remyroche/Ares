@@ -4,7 +4,7 @@ import pandas as pd
 from joblib import dump, load
 from typing import Any, Optional, Dict # Import Any and Optional
 
-from src.utils.logger import system_logger as logger # Fixed: Changed import to system_logger
+from src.utils.logger import system_logger
 from src.config import CONFIG # Import CONFIG to get checkpoint paths
 from .regime_ensembles.bull_trend_ensemble import BullTrendEnsemble
 from .regime_ensembles.bear_trend_ensemble import BearTrendEnsemble
@@ -19,7 +19,7 @@ class RegimePredictiveEnsembles:
     """
     def __init__(self, config):
         self.config = config.get("analyst", {})
-        self.logger = logger.getChild('PredictiveEnsembles.Orchestrator') # Fixed: Use imported logger
+        self.logger = system_logger.getChild('PredictiveEnsembles.Orchestrator') # Fixed: Use imported logger
         
         # Initialize all possible ensemble instances
         self.regime_ensembles = {

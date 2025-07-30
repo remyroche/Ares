@@ -8,9 +8,15 @@ from typing import Any, Dict, List, Optional, Callable, Tuple
 import firebase_admin
 from firebase_admin import credentials, firestore
 from firebase_admin.auth import get_auth
-from loguru import logger
 
 from src.config import settings, CONFIG # Import CONFIG
+from src.utils.error_handler import (
+    handle_errors, 
+    safe_database_operation, 
+    ErrorRecoveryStrategies,
+    error_context
+)
+from src.utils.logger import system_logger
 
 class FirestoreManager:
     """
@@ -21,6 +27,7 @@ class FirestoreManager:
     """
 
     def __init__(self):
+        self.logger: logging.Logger = system_logger.getChild('FirestoreManager')
         self._db: Optional[firestore.Client] = None # Fixed: Type hint
         self._auth: Any = None # Fixed: Type hint
         self._user_id: Optional[str] = None # Fixed: Type hint
@@ -28,24 +35,34 @@ class FirestoreManager:
         self._initialized = False
         self._firestore_enabled = False # This will be set based on config
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="firestore_initialization"
+    )
     async def initialize(self):
         """Asynchronously initializes the Firestore connection."""
         if self._initialized:
-            logger.info("FirestoreManager already initialized.")
+            self.logger.info("FirestoreManager already initialized.")
             return
 
         # Check if Firestore is enabled in the settings AND if DATABASE_TYPE is 'firestore'
-        if not settings.google_application_credentials or not settings.firestore_project_id or CONFIG.get("DATABASE_TYPE") != "firestore":
-            logger.warning("Firestore not configured or DATABASE_TYPE is not 'firestore'. Firestore operations will be disabled.")
-            self._firestore_enabled = False
-            self._initialized = True
-            return
+        with error_context("firestore_config_validation"):
+            if not settings.google_application_credentials or not settings.firestore_project_id or CONFIG.get("DATABASE_TYPE") != "firestore":
+                self.logger.warning("Firestore not configured or DATABASE_TYPE is not 'firestore'. Firestore operations will be disabled.")
+                self._firestore_enabled = False
+                self._initialized = True
+                return
         
         self._firestore_enabled = True
-        self._app_id = os.environ.get('__app_id', 'default-ares-app-id')
-        initial_auth_token = os.environ.get('__initial_auth_token')
+        self._app_id = ErrorRecoveryStrategies.safe_dict_access(
+            os.environ, '__app_id', 'default-ares-app-id'
+        )
+        initial_auth_token = ErrorRecoveryStrategies.safe_dict_access(
+            os.environ, '__initial_auth_token', None
+        )
 
-        try:
+        with error_context("firestore_connection_setup"):
             loop = asyncio.get_running_loop()
             # Run blocking initialization in a separate thread
             await loop.run_in_executor(None, self._blocking_initialize)
@@ -54,153 +71,197 @@ class FirestoreManager:
             self._determine_user_id(initial_auth_token)
 
             self._initialized = True
-            logger.info("FirestoreManager initialized successfully.")
-            logger.info(f"Firestore operations will use user_id: {self._user_id}") # Fixed: Use _user_id
-            logger.info("Ensure Firestore Security Rules are configured for user data access.")
+            self.logger.info("FirestoreManager initialized successfully.")
+            self.logger.info(f"Firestore operations will use user_id: {self._user_id}")
+            self.logger.info("Ensure Firestore Security Rules are configured for user data access.")
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="firebase_blocking_initialization"
+    )
+    def _blocking_initialize(self):
+        """Synchronous part of the initialization. Runs in a thread pool."""
+        try:
+            if not firebase_admin._apps:
+                cred = credentials.ApplicationDefault()
+                firebase_admin.initialize_app(cred, {'projectId': settings.firestore_project_id})
+                self.logger.info("Firebase Admin SDK initialized.")
+            else:
+                self.logger.info("Firebase app already initialized. Reusing existing app.")
+
+            self._db = firestore.client()
+            self._auth = get_auth()
         except Exception as e:
-            logger.error(f"Failed to initialize FirestoreManager: {e}", exc_info=True)
+            self.logger.error(f"Failed to initialize Firebase: {e}", exc_info=True)
             self._db = None
             self._auth = None
             self._firestore_enabled = False
+            raise
 
-    def _blocking_initialize(self):
-        """Synchronous part of the initialization. Runs in a thread pool."""
-        if not firebase_admin._apps:
-            cred = credentials.ApplicationDefault()
-            firebase_admin.initialize_app(cred, {'projectId': settings.firestore_project_id})
-            logger.info("Firebase Admin SDK initialized.")
-        else:
-            logger.info("Firebase app already initialized. Reusing existing app.")
-
-        self._db = firestore.client()
-        self._auth = get_auth()
-
-    def _determine_user_id(self, initial_auth_token: Optional[str]): # Fixed: Type hint
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="user_id_determination"
+    )
+    def _determine_user_id(self, initial_auth_token: Optional[str]):
         """Determines the user ID for Firestore document paths."""
-        if initial_auth_token:
-            try:
+        try:
+            if initial_auth_token:
                 self._user_id = f"canvas-user-{self._app_id}"
-                logger.info(f"Using Canvas-derived user ID for Firestore paths: {self._user_id}")
-            except Exception as e:
-                logger.warning(f"Could not derive user ID from auth token: {e}. Falling back.")
+                self.logger.info(f"Using Canvas-derived user ID for Firestore paths: {self._user_id}")
+            else:
                 self._user_id = str(uuid.uuid4())
-        else:
+                self.logger.info(f"Using anonymous user ID for Firestore paths: {self._user_id}")
+        except Exception as e:
+            self.logger.warning(f"Could not derive user ID from auth token: {e}. Falling back to UUID.")
             self._user_id = str(uuid.uuid4())
-            logger.info(f"Using anonymous user ID for Firestore paths: {self._user_id}")
 
-    def _get_collection_path(self, collection_name: str, is_public: bool = False) -> Optional[str]: # Fixed: Return type hint
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="collection_path_construction"
+    )
+    def _get_collection_path(self, collection_name: str, is_public: bool = False) -> Optional[str]:
         """Constructs the full Firestore collection path."""
-        if self._app_id is None: # Fixed: Check if _app_id is None
-            logger.error("App ID not set. Cannot construct collection path.")
+        if self._app_id is None:
+            self.logger.error("App ID not set. Cannot construct collection path.")
             return None
         
-        base_path = f"artifacts/{self._app_id}"
-        if is_public:
-            return f"{base_path}/public/data/{collection_name}"
-        else:
-            if not self._user_id: # Fixed: Use _user_id
-                logger.error("User ID not set. Cannot construct private collection path.")
-                return None
-            return f"{base_path}/users/{self._user_id}/{collection_name}"
+        try:
+            base_path = f"artifacts/{self._app_id}"
+            if is_public:
+                return f"{base_path}/public/data/{collection_name}"
+            else:
+                if not self._user_id:
+                    self.logger.error("User ID not set. Cannot construct private collection path.")
+                    return None
+                return f"{base_path}/users/{self._user_id}/{collection_name}"
+        except Exception as e:
+            self.logger.error(f"Error constructing collection path: {e}", exc_info=True)
+            return None
 
-    async def _execute_blocking(self, func: Callable, *args: Any, **kwargs: Any) -> Any: # Fixed: Type hints
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="firestore_blocking_execution"
+    )
+    async def _execute_blocking(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
         """Helper to run any blocking function in a thread pool."""
         if not self._firestore_enabled or not self._initialized or not self._db:
-            logger.warning("Firestore not available. Cannot perform operation.")
+            self.logger.warning("Firestore not available. Cannot perform operation.")
             return None
-        loop = asyncio.get_running_loop()
-        p_func = partial(func, *args, **kwargs)
-        return await loop.run_in_executor(None, p_func)
+        
+        try:
+            loop = asyncio.get_running_loop()
+            p_func = partial(func, *args, **kwargs)
+            return await loop.run_in_executor(None, p_func)
+        except Exception as e:
+            self.logger.error(f"Error executing blocking operation: {e}", exc_info=True)
+            return None
 
-    async def set_document(self, collection_name: str, doc_id: str, data: Dict[str, Any], is_public: bool = False) -> bool: # Fixed: Type hints
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="firestore_set_document"
+    )
+    async def set_document(self, collection_name: str, doc_id: str, data: Dict[str, Any], is_public: bool = False) -> bool:
         """Sets a document with a specified ID (creates or overwrites)."""
-        if not self._firestore_enabled: # Fixed: Check if enabled
+        if not self._firestore_enabled:
             self.logger.debug(f"Firestore disabled. Skipping set_document for {collection_name}/{doc_id}.")
             return False
 
         collection_path = self._get_collection_path(collection_name, is_public)
-        if not collection_path: return False
+        if not collection_path: 
+            return False
 
         def _blocking_op():
-            if self._db: # Fixed: Check if _db is not None
+            if self._db:
                 doc_ref = self._db.collection(collection_path).document(str(doc_id))
                 doc_ref.set(data)
             else:
                 raise RuntimeError("Firestore client not available.")
         
-        try:
-            await self._execute_blocking(_blocking_op)
-            logger.info(f"Document {doc_id} set in {collection_name}.")
+        result = await self._execute_blocking(_blocking_op)
+        if result is not None:
+            self.logger.info(f"Document {doc_id} set in {collection_name}.")
             return True
-        except Exception as e:
-            logger.error(f"Error setting document {doc_id} in {collection_name}: {e}", exc_info=True)
-            return False
+        return False
 
-    async def get_document(self, collection_name: str, doc_id: str, is_public: bool = False) -> Optional[Dict[str, Any]]: # Fixed: Type hints
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="firestore_get_document"
+    )
+    async def get_document(self, collection_name: str, doc_id: str, is_public: bool = False) -> Optional[Dict[str, Any]]:
         """Retrieves a single document by its ID."""
-        if not self._firestore_enabled: # Fixed: Check if enabled
+        if not self._firestore_enabled:
             self.logger.debug(f"Firestore disabled. Skipping get_document for {collection_name}/{doc_id}.")
             return None
 
         collection_path = self._get_collection_path(collection_name, is_public)
-        if not collection_path: return None
+        if not collection_path: 
+            return None
 
         def _blocking_op():
-            if self._db: # Fixed: Check if _db is not None
+            if self._db:
                 doc_ref = self._db.collection(collection_path).document(str(doc_id))
                 doc = doc_ref.get()
                 return doc.to_dict() if doc.exists else None
             else:
                 raise RuntimeError("Firestore client not available.")
         
-        try:
-            result = await self._execute_blocking(_blocking_op)
-            if result is not None:
-                logger.debug(f"Document {doc_id} retrieved from {collection_name}.")
-            else:
-                logger.warning(f"Document {doc_id} not found in {collection_name}.")
-            return result
-        except Exception as e:
-            logger.error(f"Error getting document {doc_id} from {collection_name}: {e}", exc_info=True)
-            return None
+        result = await self._execute_blocking(_blocking_op)
+        if result is not None:
+            self.logger.debug(f"Document {doc_id} retrieved from {collection_name}.")
+        else:
+            self.logger.warning(f"Document {doc_id} not found in {collection_name}.")
+        return result
 
-    async def add_document(self, collection_name: str, data: Dict[str, Any], is_public: bool = False) -> Optional[str]: # Fixed: Return type hint
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="firestore_add_document"
+    )
+    async def add_document(self, collection_name: str, data: Dict[str, Any], is_public: bool = False) -> Optional[str]:
         """Adds a document with an auto-generated ID."""
-        if not self._firestore_enabled: # Fixed: Check if enabled
+        if not self._firestore_enabled:
             self.logger.debug(f"Firestore disabled. Skipping add_document for {collection_name}.")
             return None
 
         collection_path = self._get_collection_path(collection_name, is_public)
-        if not collection_path: return None
+        if not collection_path: 
+            return None
 
         def _blocking_op():
-            if self._db: # Fixed: Check if _db is not None
+            if self._db:
                 doc_ref = self._db.collection(collection_path).add(data)
-                return doc_ref[1].id # Return the ID of the newly created document
+                return doc_ref[1].id  # Return the ID of the newly created document
             else:
                 raise RuntimeError("Firestore client not available.")
 
-        try:
-            doc_id = await self._execute_blocking(_blocking_op)
-            logger.info(f"Document added to {collection_name} with ID: {doc_id}.")
-            return doc_id
-        except Exception as e:
-            logger.error(f"Error adding document to {collection_name}: {e}", exc_info=True)
-            return None
+        doc_id = await self._execute_blocking(_blocking_op)
+        if doc_id:
+            self.logger.info(f"Document added to {collection_name} with ID: {doc_id}.")
+        return doc_id
 
-
-    async def get_collection(self, collection_name: str, is_public: bool = False, query_filters: Optional[List[Tuple[str, str, Any]]] = None) -> List[Dict[str, Any]]: # Fixed: Type hints
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=[],
+        context="firestore_get_collection"
+    )
+    async def get_collection(self, collection_name: str, is_public: bool = False, query_filters: Optional[List[Tuple[str, str, Any]]] = None) -> List[Dict[str, Any]]:
         """Retrieves all documents from a collection, optionally with filters."""
-        if not self._firestore_enabled: # Fixed: Check if enabled
+        if not self._firestore_enabled:
             self.logger.debug(f"Firestore disabled. Skipping get_collection for {collection_name}.")
             return []
 
         collection_path = self._get_collection_path(collection_name, is_public)
-        if not collection_path: return []
+        if not collection_path: 
+            return []
 
         def _blocking_op():
-            if self._db: # Fixed: Check if _db is not None
+            if self._db:
                 collection_ref = self._db.collection(collection_path)
                 if query_filters:
                     for field, op, value in query_filters:
@@ -209,36 +270,38 @@ class FirestoreManager:
             else:
                 raise RuntimeError("Firestore client not available.")
 
-        try:
-            docs = await self._execute_blocking(_blocking_op)
-            logger.info(f"Retrieved {len(docs)} documents from {collection_name}.")
+        docs = await self._execute_blocking(_blocking_op)
+        if docs:
+            self.logger.info(f"Retrieved {len(docs)} documents from {collection_name}.")
             return docs
-        except Exception as e:
-            logger.error(f"Error getting documents from {collection_name}: {e}", exc_info=True)
-            return []
+        return []
 
-    async def delete_document(self, collection_name: str, doc_id: str, is_public: bool = False) -> bool: # Fixed: Return type hint
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="firestore_delete_document"
+    )
+    async def delete_document(self, collection_name: str, doc_id: str, is_public: bool = False) -> bool:
         """Deletes a document by its ID."""
-        if not self._firestore_enabled: # Fixed: Check if enabled
+        if not self._firestore_enabled:
             self.logger.debug(f"Firestore disabled. Skipping delete_document for {collection_name}/{doc_id}.")
             return False
 
         collection_path = self._get_collection_path(collection_name, is_public)
-        if not collection_path: return False
+        if not collection_path: 
+            return False
 
         def _blocking_op():
-            if self._db: # Fixed: Check if _db is not None
+            if self._db:
                 self._db.collection(collection_path).document(str(doc_id)).delete()
             else:
                 raise RuntimeError("Firestore client not available.")
 
-        try:
-            await self._execute_blocking(_blocking_op)
-            logger.info(f"Document {doc_id} deleted from {collection_name}.")
+        result = await self._execute_blocking(_blocking_op)
+        if result is not None:
+            self.logger.info(f"Document {doc_id} deleted from {collection_name}.")
             return True
-        except Exception as e:
-            logger.error(f"Error deleting document {doc_id} from {collection_name}: {e}", exc_info=True)
-            return False
+        return False
 
 # Global database instance.
 # It should be initialized asynchronously in the main application entry point.

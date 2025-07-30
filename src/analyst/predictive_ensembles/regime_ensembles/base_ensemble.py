@@ -10,6 +10,7 @@ from sklearn.model_selection import StratifiedKFold
 from imblearn.over_sampling import SMOTE
 import joblib # For saving/loading models
 import os # For path manipulation
+from typing import Dict, Any
 
 warnings.filterwarnings("ignore", category=UserWarning, module="arch")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -24,12 +25,12 @@ class BaseEnsemble:
         self.config = config.get("analyst", {}).get(ensemble_name, {})
         self.ensemble_name = ensemble_name
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.models = {}
+        self.models: Dict[Any, Any] = {}
         self.meta_learner = None
         self.trained = False
         self.pca = None
         self.meta_feature_scaler = StandardScaler()
-        self.best_meta_params = {}
+        self.best_meta_params: Dict[Any, Any] = {}
         self.label_encoder = LabelEncoder()
         self.n_pca_components = self.config.get("n_pca_components", 15)
         self.use_smote = self.config.get("use_smote", True)

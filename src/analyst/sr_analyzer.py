@@ -2,6 +2,16 @@ import pandas as pd
 import numpy as np
 from scipy.signal import find_peaks
 import datetime
+from typing import List, Any
+
+from src.utils.logger import system_logger
+from src.utils.error_handler import (
+    handle_errors,
+    handle_data_processing_errors,
+    handle_type_conversions,
+    error_context,
+    ErrorRecoveryStrategies
+)
 
 class SRLevelAnalyzer:
     """
@@ -20,11 +30,20 @@ class SRLevelAnalyzer:
         }
         if config:
             self.config.update(config)
+        self.logger = system_logger.getChild('SRLevelAnalyzer')
 
+    @handle_data_processing_errors(
+        default_return=([], [], [], []),
+        context="detect_peaks_and_troughs"
+    )
     def _detect_peaks_and_troughs(self, prices: pd.Series):
         """
         Detects local maxima (resistance candidates) and minima (support candidates).
         """
+        if prices.empty:
+            self.logger.warning("Empty price series provided for peak detection")
+            return [], [], [], []
+        
         # Convert prominence to absolute value based on average price
         avg_price = prices.mean()
         prominence_abs = avg_price * self.config["peak_prominence"]
@@ -41,6 +60,10 @@ class SRLevelAnalyzer:
 
         return resistance_levels, resistance_timestamps, support_levels, support_timestamps
 
+    @handle_data_processing_errors(
+        default_return=[],
+        context="group_levels"
+    )
     def _group_levels(self, levels, timestamps, level_type: str, current_price: float):
         """
         Groups nearby price levels into significant S/R zones.
@@ -52,7 +75,7 @@ class SRLevelAnalyzer:
         sorted_levels_info = sorted(zip(levels, timestamps), key=lambda x: x[0])
 
         grouped_sr_levels = []
-        current_group = []
+        current_group: List[Any] = []
 
         for level, ts in sorted_levels_info:
             if not current_group:
@@ -97,61 +120,76 @@ class SRLevelAnalyzer:
             })
         return final_sr_levels
 
+    @handle_data_processing_errors(
+        default_return=[],
+        context="assess_strength"
+    )
     def _assess_strength(self, sr_levels: list, prices: pd.Series, volumes: pd.Series, current_timestamp):
         """
         Assesses the strength of each S/R level based on number of touches, volume, and recency.
         """
         assessed_levels = []
         for level_info in sr_levels:
-            num_touches = level_info["num_touches"]
-            last_tested = level_info["last_tested_timestamp"]
+            try:
+                num_touches = level_info["num_touches"]
+                last_tested = level_info["last_tested_timestamp"]
 
-            # Calculate age of the level
-            age_days = (current_timestamp - last_tested).days if current_timestamp and last_tested else 0
+                # Calculate age of the level
+                age_days = (current_timestamp - last_tested).days if current_timestamp and last_tested else 0
 
-            # Volume at touches: Sum volume around the touch points
-            total_volume_at_touches = 0
-            for touch_ts in level_info["touches"]:
-                # Find the index of the touch_ts in the prices/volumes index
-                try:
-                    idx = prices.index.get_loc(touch_ts, method='nearest')
-                    # Sum volume for a small window around the touch
-                    start_idx = max(0, idx - self.config["volume_lookback_window"] // 2)
-                    end_idx = min(len(volumes) - 1, idx + self.config["volume_lookback_window"] // 2)
-                    total_volume_at_touches += volumes.iloc[start_idx:end_idx+1].sum()
-                except KeyError:
-                    # Handle cases where timestamp might not exactly match index
-                    pass
+                # Volume at touches: Sum volume around the touch points
+                total_volume_at_touches = 0
+                for touch_ts in level_info["touches"]:
+                    # Find the index of the touch_ts in the prices/volumes index
+                    try:
+                        idx = prices.index.get_loc(touch_ts, method='nearest')
+                        # Sum volume for a small window around the touch
+                        start_idx = max(0, idx - self.config["volume_lookback_window"] // 2)
+                        end_idx = min(len(volumes) - 1, idx + self.config["volume_lookback_window"] // 2)
+                        total_volume_at_touches += volumes.iloc[start_idx:end_idx+1].sum()
+                    except KeyError:
+                        # Handle cases where timestamp might not exactly match index
+                        pass
 
-            # Normalize volume by average volume over the entire period
-            avg_daily_volume = volumes.mean()
-            volume_factor = (total_volume_at_touches / (num_touches * avg_daily_volume)) if num_touches > 0 and avg_daily_volume > 0 else 0
+                # Normalize volume by average volume over the entire period
+                avg_daily_volume = volumes.mean()
+                volume_factor = (total_volume_at_touches / (num_touches * avg_daily_volume)) if num_touches > 0 and avg_daily_volume > 0 else 0
 
-            # Strength Score Calculation (heuristic)
-            # Factors: num_touches, volume_factor, recency (inverse of age)
-            recency_factor = max(0, 1 - (age_days / self.config["max_age_days"])) # 1 for recent, 0 for old
+                # Strength Score Calculation (heuristic)
+                # Factors: num_touches, volume_factor, recency (inverse of age)
+                recency_factor = max(0, 1 - (age_days / self.config["max_age_days"])) # 1 for recent, 0 for old
 
-            # Combine factors (weights can be adjusted)
-            strength_score = (num_touches * 0.4) + (volume_factor * 0.3) + (recency_factor * 0.3)
-            strength_score = min(10.0, strength_score) # Cap score for readability, adjust max as needed
+                # Combine factors (weights can be adjusted)
+                strength_score = (num_touches * 0.4) + (volume_factor * 0.3) + (recency_factor * 0.3)
+                strength_score = min(10.0, strength_score)
 
-            level_info["strength_score"] = strength_score
+                # Determine current expectation based on strength and position
+                level_price = level_info["level_price"]
+                if level_price > current_timestamp:  # Assuming current_timestamp is actually current_price
+                    if strength_score >= 7.0:
+                        level_info["current_expectation"] = "Very Strong"
+                    elif strength_score >= 5.0:
+                        level_info["current_expectation"] = "Strong"
+                    elif strength_score >= 3.0:
+                        level_info["current_expectation"] = "Moderate"
+                    else:
+                        level_info["current_expectation"] = "Weak"
+                else:
+                    level_info["current_expectation"] = "Unknown"
 
-            # Determine current expectation based on age and strength
-            if age_days > self.config["max_age_days"]:
-                level_info["current_expectation"] = "Irrelevant (Too Old)"
-            elif strength_score >= 7.0:
-                level_info["current_expectation"] = "Very Strong"
-            elif strength_score >= 5.0:
-                level_info["current_expectation"] = "Strong"
-            elif strength_score >= 3.0:
-                level_info["current_expectation"] = "Moderate"
-            else:
-                level_info["current_expectation"] = "Weak"
-
-            assessed_levels.append(level_info)
+                level_info["strength_score"] = strength_score
+                assessed_levels.append(level_info)
+            except Exception as e:
+                self.logger.error(f"Error assessing strength for level {level_info}: {e}")
+                continue
+        
         return assessed_levels
 
+    @handle_errors(
+        exceptions=(ValueError, TypeError, KeyError),
+        default_return=[],
+        context="analyze"
+    )
     def analyze(self, historical_data: pd.DataFrame):
         """
         Main function to analyze historical data and identify S/R levels.
@@ -182,7 +220,7 @@ class SRLevelAnalyzer:
 
         # Combine and sort by price
         all_sr_levels = sorted(assessed_resistances + assessed_supports, key=lambda x: x["level_price"])
-
+        
         return all_sr_levels
 
 # --- Example Usage (Simulated Data) ---

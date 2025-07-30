@@ -97,7 +97,7 @@ def run_walk_forward_analysis(full_df, params=None): # Changed default to None
     
     if num_windows == 0:
         report_lines.append(f"Not enough data for a single walk-forward window. Need more than {TRAINING_MONTHS} months.")
-        logger.warning(report_lines[-1])
+        system_logger.warning(report_lines[-1])
         return "\n".join(report_lines)
 
     report_lines.append(f"Dataset covers ~{total_months:.1f} months.")
@@ -188,7 +188,7 @@ def run_monte_carlo_simulation(full_df, params=None): # Changed default to None
 def plot_results(mc_curves, base_portfolio):
     """Creates an interactive plot of the Monte Carlo simulation and drawdown."""
     if not mc_curves or base_portfolio is None:
-        logger.warning("No data to plot for deep analysis.")
+        system_logger.warning("No data to plot for deep analysis.")
         return
 
     # Access INITIAL_EQUITY from CONFIG
@@ -245,7 +245,7 @@ def main():
     # Load and prepare data once using BEST_PARAMS from config
     klines_df, agg_trades_df, futures_df = load_raw_data() # Load futures_df here
     if klines_df is None or klines_df.empty:
-        logger.error("Failed to load data. Halting deep analysis.")
+        system_logger.error("Failed to load data. Halting deep analysis.")
         return
 
     daily_df = klines_df.resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})

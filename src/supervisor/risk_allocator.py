@@ -3,13 +3,14 @@ import pandas as pd
 import numpy as np
 from src.config import CONFIG
 from src.utils.logger import system_logger
+import logging
 
 class RiskAllocator:
     def __init__(self, config=CONFIG, portfolio_risk_pct=None):
         self.config = config.get("supervisor", {})
         self.global_config = config
         self.initial_equity = self.global_config['INITIAL_EQUITY']
-        self.logger = system_logger.getChild('RiskAllocator')
+        self.logger: logging.Logger = system_logger.getChild('RiskAllocator')
         self.allocated_capital_multiplier = self.config.get("initial_allocated_capital_multiplier", 1.0)
         self.portfolio_risk_pct = portfolio_risk_pct if portfolio_risk_pct is not None else CONFIG['risk_allocator'].get('portfolio_risk_pct', 0.01)
 

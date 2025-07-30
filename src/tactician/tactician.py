@@ -19,6 +19,9 @@ from src.utils.error_handler import (
     ErrorRecoveryStrategies,
     safe_numeric_operation
 )
+from src.analyst.ml_dynamic_target_predictor import MLDynamicTargetPredictor
+from src.tactician.ml_target_updater import MLTargetUpdater
+from src.tactician.ml_target_validator import MLTargetValidator
 
 class Tactician:
     """
@@ -37,6 +40,20 @@ class Tactician:
         self.logger = system_logger.getChild('Tactician')
         self.config = settings.get("tactician", {})
         self.trade_symbol = settings.trade_symbol
+        
+        # Initialize ML Dynamic Target Predictor
+        self.ml_target_predictor = MLDynamicTargetPredictor(settings)
+        
+        # Initialize ML Target Updater
+        self.ml_target_updater = MLTargetUpdater(
+            ml_target_predictor=self.ml_target_predictor,
+            exchange_client=exchange_client,
+            state_manager=state_manager,
+            config=settings
+        )
+        
+        # Initialize ML Target Validator
+        self.ml_target_validator = MLTargetValidator(settings)
         
         # Initialize current_position from state_manager if available, otherwise default
         # Ensure state_manager is not None before calling get_state
@@ -73,6 +90,10 @@ class Tactician:
             return
 
         self.logger.info("Tactician started. Waiting for new analyst intelligence...")
+        
+        # Start ML target updater in background
+        asyncio.create_task(self.ml_target_updater.start_monitoring())
+        
         while True:
             try:
                 if self.state_manager.get_state("is_trading_paused", False):
@@ -327,16 +348,54 @@ class Tactician:
         }
 
     def _prepare_sr_fade_long_order(self, technical_analysis_data: Dict, current_atr: float) -> Optional[Dict]:
-        """Prepare SR fade long order parameters with micro-movement adjustments."""
+        """Prepare SR fade long order parameters with ML-based dynamic targets."""
         entry_price = technical_analysis_data.get('low')
         if entry_price is None:
             self.logger.warning("Missing 'low' for SR_FADE_LONG entry.")
             return None
         
-        # Use tighter stops for micro-movements around S/R zones
-        sr_sl_multiplier = self.config.get("sr_sl_multiplier", 0.5)
-        stop_loss = entry_price - (current_atr * sr_sl_multiplier)
-        take_profit = entry_price + (current_atr * self.config.get("sr_tp_multiplier", 2.0))
+        # Get current features for ML prediction
+        current_features = technical_analysis_data.get('current_features', pd.DataFrame())
+        
+        # Use ML-based dynamic targets with validation
+        try:
+            ml_targets = self.ml_target_predictor.predict_dynamic_targets(
+                signal_type="SR_FADE_LONG",
+                technical_analysis_data=technical_analysis_data,
+                current_features=current_features,
+                current_atr=current_atr
+            )
+            
+            # Validate and potentially correct the prediction
+            validation_result = self.ml_target_validator.validate_prediction(
+                prediction=ml_targets,
+                signal_type="SR_FADE_LONG",
+                current_atr=current_atr,
+                market_data=technical_analysis_data
+            )
+            
+            validated_targets = validation_result["corrected_prediction"]
+            stop_loss = validated_targets.get('stop_loss')
+            take_profit = validated_targets.get('take_profit')
+            confidence = validated_targets.get('prediction_confidence', 0.0)
+            
+            # Log validation results
+            if validation_result["used_fallback"]:
+                self.logger.warning(
+                    f"SR_FADE_LONG used fallback: {', '.join(validation_result['validation_issues'][:2])}"
+                )
+            
+            self.logger.info(
+                f"SR_FADE_LONG ML targets: TP={validated_targets.get('tp_multiplier', 'N/A'):.2f}x ATR, "
+                f"SL={validated_targets.get('sl_multiplier', 'N/A'):.2f}x ATR, Confidence={confidence:.2f}"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"ML target prediction failed for SR_FADE_LONG: {e}. Using fallback.")
+            # Fallback to original fixed multipliers
+            sr_sl_multiplier = self.config.get("sr_sl_multiplier", 0.5)
+            stop_loss = entry_price - (current_atr * sr_sl_multiplier)
+            take_profit = entry_price + (current_atr * self.config.get("sr_tp_multiplier", 2.0))
         
         return {
             'order_type': 'LIMIT',
@@ -347,16 +406,39 @@ class Tactician:
         }
 
     def _prepare_sr_fade_short_order(self, technical_analysis_data: Dict, current_atr: float) -> Optional[Dict]:
-        """Prepare SR fade short order parameters with micro-movement adjustments."""
+        """Prepare SR fade short order parameters with ML-based dynamic targets."""
         entry_price = technical_analysis_data.get('high')
         if entry_price is None:
             self.logger.warning("Missing 'high' for SR_FADE_SHORT entry.")
             return None
         
-        # Use tighter stops for micro-movements around S/R zones
-        sr_sl_multiplier = self.config.get("sr_sl_multiplier", 0.5)
-        stop_loss = entry_price + (current_atr * sr_sl_multiplier)
-        take_profit = entry_price - (current_atr * self.config.get("sr_tp_multiplier", 2.0))
+        # Get current features for ML prediction
+        current_features = technical_analysis_data.get('current_features', pd.DataFrame())
+        
+        # Use ML-based dynamic targets
+        try:
+            ml_targets = self.ml_target_predictor.predict_dynamic_targets(
+                signal_type="SR_FADE_SHORT",
+                technical_analysis_data=technical_analysis_data,
+                current_features=current_features,
+                current_atr=current_atr
+            )
+            
+            stop_loss = ml_targets.get('stop_loss')
+            take_profit = ml_targets.get('take_profit')
+            confidence = ml_targets.get('prediction_confidence', 0.0)
+            
+            self.logger.info(
+                f"SR_FADE_SHORT ML targets: TP={ml_targets.get('tp_multiplier', 'N/A'):.2f}x ATR, "
+                f"SL={ml_targets.get('sl_multiplier', 'N/A'):.2f}x ATR, Confidence={confidence:.2f}"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"ML target prediction failed for SR_FADE_SHORT: {e}. Using fallback.")
+            # Fallback to original fixed multipliers
+            sr_sl_multiplier = self.config.get("sr_sl_multiplier", 0.5)
+            stop_loss = entry_price + (current_atr * sr_sl_multiplier)
+            take_profit = entry_price - (current_atr * self.config.get("sr_tp_multiplier", 2.0))
         
         return {
             'order_type': 'LIMIT',
@@ -367,18 +449,43 @@ class Tactician:
         }
 
     def _prepare_sr_breakout_long_order(self, technical_analysis_data: Dict, current_atr: float) -> Optional[Dict]:
-        """Prepare SR breakout long order parameters."""
+        """Prepare SR breakout long order parameters with ML-based dynamic targets."""
         entry_price = technical_analysis_data.get('high')
         if entry_price is None:
             self.logger.warning("Missing 'high' for SR_BREAKOUT_LONG entry.")
             return None
         
-        stop_loss = technical_analysis_data.get('low')
-        if stop_loss is None:
+        fallback_stop_loss = technical_analysis_data.get('low')
+        if fallback_stop_loss is None:
             self.logger.warning("Missing 'low' for SR_BREAKOUT_LONG stop loss.")
             return None
         
-        take_profit = entry_price + (current_atr * self.config.get("sr_tp_multiplier", 2.0))
+        # Get current features for ML prediction
+        current_features = technical_analysis_data.get('current_features', pd.DataFrame())
+        
+        # Use ML-based dynamic targets
+        try:
+            ml_targets = self.ml_target_predictor.predict_dynamic_targets(
+                signal_type="SR_BREAKOUT_LONG",
+                technical_analysis_data=technical_analysis_data,
+                current_features=current_features,
+                current_atr=current_atr
+            )
+            
+            stop_loss = ml_targets.get('stop_loss', fallback_stop_loss)
+            take_profit = ml_targets.get('take_profit')
+            confidence = ml_targets.get('prediction_confidence', 0.0)
+            
+            self.logger.info(
+                f"SR_BREAKOUT_LONG ML targets: TP={ml_targets.get('tp_multiplier', 'N/A'):.2f}x ATR, "
+                f"SL={ml_targets.get('sl_multiplier', 'N/A'):.2f}x ATR, Confidence={confidence:.2f}"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"ML target prediction failed for SR_BREAKOUT_LONG: {e}. Using fallback.")
+            # Fallback to original fixed multipliers
+            stop_loss = fallback_stop_loss
+            take_profit = entry_price + (current_atr * self.config.get("sr_tp_multiplier", 2.0))
         
         return {
             'order_type': 'STOP_MARKET',
@@ -389,18 +496,43 @@ class Tactician:
         }
 
     def _prepare_sr_breakout_short_order(self, technical_analysis_data: Dict, current_atr: float) -> Optional[Dict]:
-        """Prepare SR breakout short order parameters."""
+        """Prepare SR breakout short order parameters with ML-based dynamic targets."""
         entry_price = technical_analysis_data.get('low')
         if entry_price is None:
             self.logger.warning("Missing 'low' for SR_BREAKOUT_SHORT entry.")
             return None
         
-        stop_loss = technical_analysis_data.get('high')
-        if stop_loss is None:
+        fallback_stop_loss = technical_analysis_data.get('high')
+        if fallback_stop_loss is None:
             self.logger.warning("Missing 'high' for SR_BREAKOUT_SHORT stop loss.")
             return None
         
-        take_profit = entry_price - (current_atr * self.config.get("sr_tp_multiplier", 2.0))
+        # Get current features for ML prediction
+        current_features = technical_analysis_data.get('current_features', pd.DataFrame())
+        
+        # Use ML-based dynamic targets
+        try:
+            ml_targets = self.ml_target_predictor.predict_dynamic_targets(
+                signal_type="SR_BREAKOUT_SHORT",
+                technical_analysis_data=technical_analysis_data,
+                current_features=current_features,
+                current_atr=current_atr
+            )
+            
+            stop_loss = ml_targets.get('stop_loss', fallback_stop_loss)
+            take_profit = ml_targets.get('take_profit')
+            confidence = ml_targets.get('prediction_confidence', 0.0)
+            
+            self.logger.info(
+                f"SR_BREAKOUT_SHORT ML targets: TP={ml_targets.get('tp_multiplier', 'N/A'):.2f}x ATR, "
+                f"SL={ml_targets.get('sl_multiplier', 'N/A'):.2f}x ATR, Confidence={confidence:.2f}"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"ML target prediction failed for SR_BREAKOUT_SHORT: {e}. Using fallback.")
+            # Fallback to original fixed multipliers
+            stop_loss = fallback_stop_loss
+            take_profit = entry_price - (current_atr * self.config.get("sr_tp_multiplier", 2.0))
         
         return {
             'order_type': 'STOP_MARKET',

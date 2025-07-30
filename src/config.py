@@ -158,6 +158,19 @@ CONFIG: Dict[str, Any] = {
 
     # --- Analyst Component ---
     "analyst": {
+        # ML Dynamic Target Predictor Configuration
+        "ml_dynamic_target_predictor": {
+            "retrain_interval_hours": 24,
+            "lookback_window": 200,
+            "min_samples_for_training": 500,
+            "validation_split": 0.2,
+            "min_tp_multiplier": 0.5,
+            "max_tp_multiplier": 6.0,
+            "min_sl_multiplier": 0.2,
+            "max_sl_multiplier": 2.0,
+            "fallback_tp_multiplier": 2.0,
+            "fallback_sl_multiplier": 0.5
+        },
         "sr_analyzer": {
             "peak_prominence": 0.005,
             "peak_width": 5,
@@ -227,6 +240,33 @@ CONFIG: Dict[str, Any] = {
             "micro_movement": 1.5,  # Enhanced multiplier for micro-movements
             "combined": 2.0
         }
+    },
+    
+    # --- ML Target Updater Configuration ---
+    "ml_target_updater": {
+        "update_interval_seconds": 300,  # 5 minutes
+        "min_time_between_updates_seconds": 60,  # 1 minute minimum
+        "confidence_threshold_for_update": 0.6,
+        "max_target_change_percent": 0.25,  # 25% maximum change
+        "enable_stop_loss_updates": True,
+        "enable_take_profit_updates": True,
+        "trailing_stop_enabled": True,
+        "max_sl_distance_from_entry": 0.05,  # 5% maximum SL distance from entry
+        "min_tp_distance_from_current": 0.01  # 1% minimum TP distance from current price
+    },
+    
+    # --- ML Target Validator Configuration ---
+    "ml_target_validator": {
+        "max_reasonable_tp_multiplier": 10.0,
+        "min_reasonable_tp_multiplier": 0.1,
+        "max_reasonable_sl_multiplier": 5.0,
+        "min_reasonable_sl_multiplier": 0.05,
+        "min_confidence_threshold": 0.3,
+        "performance_window_size": 100,
+        "max_consecutive_failures": 5,
+        "enable_automatic_fallback": True,
+        "fallback_tp_multiplier": 2.0,
+        "fallback_sl_multiplier": 0.5
     },
     
     # --- Supervisor Component ---

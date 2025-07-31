@@ -1,0 +1,14 @@
+artifact_uri: file:///Users/remyroche/Documents/Ares/mlruns/917070489756191097/b7fece7f58cf4cb4a2d88e6b8bb5db81/artifacts
+end_time: 1753901176987
+entry_point_name: ''
+experiment_id: '917070489756191097'
+lifecycle_stage: active
+run_id: b7fece7f58cf4cb4a2d88e6b8bb5db81
+run_name: training_BTCUSDT_20250730_204559
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1753901159252
+status: 3
+tags: []
+user_id: remyroche

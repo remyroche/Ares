@@ -1,0 +1,14 @@
+artifact_uri: file:///Users/remyroche/Documents/Ares/mlruns/917070489756191097/5a5b1c5f2f56451c8355d6651bc9ce49/artifacts
+end_time: 1753952915855
+entry_point_name: ''
+experiment_id: '917070489756191097'
+lifecycle_stage: active
+run_id: 5a5b1c5f2f56451c8355d6651bc9ce49
+run_name: training_ETHUSDT_20250731_110733
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1753952853922
+status: 3
+tags: []
+user_id: remyroche

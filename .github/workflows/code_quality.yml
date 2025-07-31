@@ -1,0 +1,58 @@
+name: Code Quality Checks
+
+on:
+  push:
+    branches:
+      - main # Run on pushes to the main branch
+      - develop # Run on pushes to the develop branch
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  lint-and-typecheck:
+    runs-on: ubuntu-latest # Use a Linux runner
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4 # Action to checkout your repository code
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+
+    - name: Set up Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: '1.8.2' # Use a specific version for reproducibility
+        virtualenvs-in-project: true
+
+    - name: Install TA-Lib C Library
+      run: |
+        wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz -O /tmp/ta-lib-0.4.0-src.tar.gz
+        tar -xzf /tmp/ta-lib-0.4.0-src.tar.gz -C /tmp
+        cd /tmp/ta-lib/
+        ./configure --prefix=/usr
+        make
+        sudo make install
+    
+    - name: Install dependencies
+      run: |
+        poetry install --no-root --sync
+
+    - name: Run Linters and Formatters
+      run: |
+        poetry run ruff check .
+        poetry run ruff format . --check
+
+    - name: Dead code detection
+      run: poetry run vulture src/ --min-confidence 80 || true
+
+    - name: Run MyPy (Static Type Checking)
+      run: poetry run mypy --ignore-missing-imports --package src
+
+    - name: Run Radon (Code Complexity and Maintainability)
+      run: poetry run radon cc src/ -s -nc

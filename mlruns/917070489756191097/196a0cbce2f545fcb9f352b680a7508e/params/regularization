@@ -1,0 +1,1 @@
+{'l1_alpha': 0.01, 'l2_alpha': 0.001, 'dropout_rate': 0.2}

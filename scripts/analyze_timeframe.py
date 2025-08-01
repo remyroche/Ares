@@ -1,19 +1,27 @@
+# analyze_timeframe.py
+
+# This Python script analyzes historical trade data to determine the average time required to reach a specific net profit target without first hitting a stop-loss. 
+# By calculating a score that prioritizes frequent and fast outcomes, it identifies the most efficient combination of profit and risk parameters.
+# After accounting for Binance trading fees, to help define an optimal timeframe for market labeling.
+
 import os
 import csv
 import pandas as pd
 import numpy as np
 from datetime import datetime
 
+
 def load_and_prepare_data(directory):
     """
-    Loads all formatted CSV files from a directory into a single, sorted DataFrame.
+    Loads all formatted CSV files, then resamples the data to a 1-second frequency.
 
     Args:
         directory (str): The path to the directory containing formatted CSV files.
 
     Returns:
-        pandas.DataFrame: A DataFrame with all trade data, sorted by timestamp.
-                          Returns None if the directory is not found or is empty.
+        pandas.DataFrame: A DataFrame with price data at 1-second intervals,
+                          sorted by timestamp. Returns None if the directory is
+                          not found or is empty.
     """
     all_files = [os.path.join(directory, f) for f in os.listdir(directory) if f.startswith('formatted_') and f.endswith('.csv')]
     
@@ -39,21 +47,38 @@ def load_and_prepare_data(directory):
 
     full_df = pd.concat(df_list, ignore_index=True)
     full_df['price'] = pd.to_numeric(full_df['price'], errors='coerce')
-    full_df['quantity'] = pd.to_numeric(full_df['quantity'], errors='coerce')
     full_df.dropna(subset=['timestamp', 'price'], inplace=True)
     full_df.sort_values('timestamp', inplace=True)
-    full_df.reset_index(drop=True, inplace=True)
 
-    print(f"Successfully loaded and prepared {len(full_df)} total trades.")
-    return full_df
+    print(f"Successfully loaded {len(full_df)} total trades.")
+    
+    # --- NEW: Resample data to 1-second frequency ---
+    print("Resampling data to a 1-second frequency...")
+    if full_df.empty:
+        print("Warning: No data available to resample.")
+        return full_df
+
+    # Set timestamp as the index to perform time-based operations
+    full_df.set_index('timestamp', inplace=True)
+
+    # Resample the price column to 1-second intervals, taking the last price of each second.
+    # Then, forward-fill any gaps (seconds with no trades will carry over the last known price).
+    resampled_df = full_df['price'].resample('1S').last().ffill()
+
+    # Reset the index so 'timestamp' becomes a column again, which the rest of the script expects.
+    resampled_df = resampled_df.reset_index()
+    
+    print(f"Data has been resampled to {len(resampled_df)} one-second intervals.")
+    
+    return resampled_df
 
 def analyze_price_action(df, target_pct, stop_loss_pct):
     """
     Calculates the average time and number of occurrences for hitting a price 
-    target without hitting a stop loss.
+    target without hitting a stop loss, using the resampled (1-second) data.
 
     Args:
-        df (pandas.DataFrame): The DataFrame with trade data.
+        df (pandas.DataFrame): The DataFrame with 1-second interval trade data.
         target_pct (float): The target profit percentage (e.g., 0.5 for 0.5%).
         stop_loss_pct (float): The stop loss percentage (e.g., 0.1 for 0.1%).
 
@@ -70,7 +95,7 @@ def analyze_price_action(df, target_pct, stop_loss_pct):
     upper_stop_multiplier = 1 + (stop_loss_pct / 100)
     lower_stop_multiplier = 1 - (stop_loss_pct / 100)
 
-    # Using .values for a slight performance boost in the loop
+    # Using .values for a performance boost in the loop
     prices = df['price'].values
     timestamps = df['timestamp'].values
 
@@ -83,32 +108,35 @@ def analyze_price_action(df, target_pct, stop_loss_pct):
         up_stop_price = start_price * upper_stop_multiplier
         down_stop_price = start_price * lower_stop_multiplier
 
-        # Check subsequent trades
+        # Check subsequent seconds
         for j in range(i + 1, len(df)):
             current_price = prices[j]
             
-            # Check for upward target hit
-            if current_price >= up_target_price:
-                # Check for stop loss hit on the path to the target
+            # Barrier checks
+            hit_up_target = current_price >= up_target_price
+            hit_down_target = current_price <= down_target_price
+            hit_up_stop = current_price >= up_stop_price
+            hit_down_stop = current_price <= down_stop_price
+
+            if hit_up_target:
+                # Check if stop loss was crossed on the path to the target
                 path_prices = prices[i+1:j+1]
                 if not np.any(path_prices <= down_stop_price):
                     duration = (timestamps[j] - start_time).total_seconds()
                     durations.append(duration)
-                break # Exit inner loop once a barrier is hit
+                break # Exit inner loop once any barrier is hit
 
-            # Check for downward target hit
-            if current_price <= down_target_price:
-                # Check for stop loss hit on the path to the target
+            if hit_down_target:
+                # Check if stop loss was crossed on the path to the target
                 path_prices = prices[i+1:j+1]
                 if not np.any(path_prices >= up_stop_price):
                     duration = (timestamps[j] - start_time).total_seconds()
                     durations.append(duration)
-                break # Exit inner loop once a barrier is hit
+                break # Exit inner loop once any barrier is hit
             
-            # Check if a stop loss was hit, invalidating this path
-            if current_price <= down_stop_price or current_price >= up_stop_price:
+            # If a stop loss was hit first, the path is invalid.
+            if hit_down_stop or hit_up_stop:
                 break
-
 
     if not durations:
         return np.nan, 0
@@ -130,17 +158,13 @@ if __name__ == '__main__':
         index_labels = [f"{p:.1f}%" for p in target_percentages]
         column_labels = [f"{p:.1f}%" for p in stop_loss_percentages]
 
-        # DataFrame for the final display table (will contain strings)
         results_display_df = pd.DataFrame(index=index_labels, columns=column_labels, dtype=object)
         results_display_df.index.name = "Target %"
         results_display_df.columns.name = "Stop Loss %"
 
-        # Separate DataFrame to store the raw scores for calculation
         results_score_df = pd.DataFrame(index=index_labels, columns=column_labels, dtype=float)
 
-
-        print("\n--- Starting Price Action Analysis ---")
-        print("This may take some time depending on the size of your dataset...")
+        print("\n--- Starting Price Action Analysis (1-Second Intervals) ---")
         
         for target in target_percentages:
             for stop_loss in stop_loss_percentages:
@@ -150,17 +174,14 @@ if __name__ == '__main__':
                 display_str = "N/A"
 
                 if count > 0 and not np.isnan(avg_time) and avg_time > 0:
-                    # New score formula: (Occurrences^2) / Time
                     score = (count ** 2) / avg_time
                     display_str = f"{avg_time:.1f}s | {count} | {score:.2f}"
 
-                # Store the results
                 results_display_df.loc[f"{target:.1f}%", f"{stop_loss:.1f}%"] = display_str
                 results_score_df.loc[f"{target:.1f}%", f"{stop_loss:.1f}%"] = score
                 
                 print(f"  - Target: {target:.1f}%, Stop: {stop_loss:.1f}% -> {display_str}")
 
-        # --- Display the final results ---
         print("\n" + "="*70)
         print("                     Analysis Complete")
         print("="*70)
@@ -170,7 +191,6 @@ if __name__ == '__main__':
         pd.set_option('display.width', 200)
         print(results_display_df)
 
-        # --- Find and print the best score ---
         max_score = results_score_df.max().max()
         if max_score > 0:
             max_pos = results_score_df.stack().idxmax()

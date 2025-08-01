@@ -4,13 +4,6 @@
 # By calculating a score that prioritizes frequent and fast outcomes, it identifies the most efficient combination of profit and risk parameters.
 # After accounting for Binance trading fees, to help define an optimal timeframe for market labeling.
 
-import os
-import csv
-import pandas as pd
-import numpy as np
-from datetime import datetime
-
-
 def load_and_prepare_data(directory):
     """
     Loads all formatted CSV files, then resamples the data to a 1-second frequency.
@@ -52,50 +45,43 @@ def load_and_prepare_data(directory):
 
     print(f"Successfully loaded {len(full_df)} total trades.")
     
-    # --- NEW: Resample data to 1-second frequency ---
     print("Resampling data to a 1-second frequency...")
     if full_df.empty:
         print("Warning: No data available to resample.")
         return full_df
 
-    # Set timestamp as the index to perform time-based operations
     full_df.set_index('timestamp', inplace=True)
-
-    # Resample the price column to 1-second intervals, taking the last price of each second.
-    # Then, forward-fill any gaps (seconds with no trades will carry over the last known price).
     resampled_df = full_df['price'].resample('1S').last().ffill()
-
-    # Reset the index so 'timestamp' becomes a column again, which the rest of the script expects.
     resampled_df = resampled_df.reset_index()
     
     print(f"Data has been resampled to {len(resampled_df)} one-second intervals.")
     
     return resampled_df
 
-def analyze_price_action(df, target_pct, stop_loss_pct):
+def analyze_price_action(df, net_target_pct, stop_loss_pct, round_trip_fee_pct):
     """
-    Calculates the average time and number of occurrences for hitting a price 
-    target without hitting a stop loss, using the resampled (1-second) data.
+    Calculates the average time and occurrences for hitting a *net* price target
+    (after fees) without hitting a stop loss.
 
     Args:
         df (pandas.DataFrame): The DataFrame with 1-second interval trade data.
-        target_pct (float): The target profit percentage (e.g., 0.5 for 0.5%).
-        stop_loss_pct (float): The stop loss percentage (e.g., 0.1 for 0.1%).
+        net_target_pct (float): The desired *net* profit percentage.
+        stop_loss_pct (float): The stop loss percentage on gross price movement.
+        round_trip_fee_pct (float): The total fee percentage for opening and closing.
 
     Returns:
-        tuple: A tuple containing:
-               - float: The average time in seconds to hit the target.
-               - int: The number of times the event occurred.
-               Returns (NaN, 0) if no such events are found.
+        tuple: (average_time_seconds, number_of_occurrences)
     """
     durations = []
     
-    upper_target_multiplier = 1 + (target_pct / 100)
-    lower_target_multiplier = 1 - (target_pct / 100)
+    # The price must move by the net target PLUS the fees to be profitable.
+    gross_target_pct = net_target_pct + round_trip_fee_pct
+    
+    upper_target_multiplier = 1 + (gross_target_pct / 100)
+    lower_target_multiplier = 1 - (gross_target_pct / 100)
     upper_stop_multiplier = 1 + (stop_loss_pct / 100)
     lower_stop_multiplier = 1 - (stop_loss_pct / 100)
 
-    # Using .values for a performance boost in the loop
     prices = df['price'].values
     timestamps = df['timestamp'].values
 
@@ -108,33 +94,28 @@ def analyze_price_action(df, target_pct, stop_loss_pct):
         up_stop_price = start_price * upper_stop_multiplier
         down_stop_price = start_price * lower_stop_multiplier
 
-        # Check subsequent seconds
         for j in range(i + 1, len(df)):
             current_price = prices[j]
             
-            # Barrier checks
             hit_up_target = current_price >= up_target_price
             hit_down_target = current_price <= down_target_price
             hit_up_stop = current_price >= up_stop_price
             hit_down_stop = current_price <= down_stop_price
 
             if hit_up_target:
-                # Check if stop loss was crossed on the path to the target
                 path_prices = prices[i+1:j+1]
                 if not np.any(path_prices <= down_stop_price):
                     duration = (timestamps[j] - start_time).total_seconds()
                     durations.append(duration)
-                break # Exit inner loop once any barrier is hit
+                break 
 
             if hit_down_target:
-                # Check if stop loss was crossed on the path to the target
                 path_prices = prices[i+1:j+1]
                 if not np.any(path_prices >= up_stop_price):
                     duration = (timestamps[j] - start_time).total_seconds()
                     durations.append(duration)
-                break # Exit inner loop once any barrier is hit
+                break
             
-            # If a stop loss was hit first, the path is invalid.
             if hit_down_stop or hit_up_stop:
                 break
 
@@ -147,7 +128,13 @@ def analyze_price_action(df, target_pct, stop_loss_pct):
 if __name__ == '__main__':
     # --- Configuration ---
     FORMATTED_DATA_DIR = "formatted_csvs"
+    OUTPUT_CSV_FILENAME = "price_action_analysis.csv"
     
+    # --- Fee Configuration (Binance USDT-M Futures, Non-VIP) ---
+    ROUND_TRIP_FEE_PCT = 0.08
+    print(f"Using a conservative round-trip fee of {ROUND_TRIP_FEE_PCT}% for all calculations.")
+
+    # These are your desired NET profit targets
     target_percentages = np.arange(0.5, 1.6, 0.1)
     stop_loss_percentages = np.arange(0.1, 1.1, 0.1)
 
@@ -159,16 +146,16 @@ if __name__ == '__main__':
         column_labels = [f"{p:.1f}%" for p in stop_loss_percentages]
 
         results_display_df = pd.DataFrame(index=index_labels, columns=column_labels, dtype=object)
-        results_display_df.index.name = "Target %"
+        results_display_df.index.name = "Net Target %"
         results_display_df.columns.name = "Stop Loss %"
 
         results_score_df = pd.DataFrame(index=index_labels, columns=column_labels, dtype=float)
 
-        print("\n--- Starting Price Action Analysis (1-Second Intervals) ---")
+        print("\n--- Starting Price Action Analysis (1-Second Intervals, Fees Included) ---")
         
-        for target in target_percentages:
+        for net_target in target_percentages:
             for stop_loss in stop_loss_percentages:
-                avg_time, count = analyze_price_action(trade_data, target, stop_loss)
+                avg_time, count = analyze_price_action(trade_data, net_target, stop_loss, ROUND_TRIP_FEE_PCT)
                 
                 score = 0
                 display_str = "N/A"
@@ -177,11 +164,12 @@ if __name__ == '__main__':
                     score = (count ** 2) / avg_time
                     display_str = f"{avg_time:.1f}s | {count} | {score:.2f}"
 
-                results_display_df.loc[f"{target:.1f}%", f"{stop_loss:.1f}%"] = display_str
-                results_score_df.loc[f"{target:.1f}%", f"{stop_loss:.1f}%"] = score
+                results_display_df.loc[f"{net_target:.1f}%", f"{stop_loss:.1f}%"] = display_str
+                results_score_df.loc[f"{net_target:.1f}%", f"{stop_loss:.1f}%"] = score
                 
-                print(f"  - Target: {target:.1f}%, Stop: {stop_loss:.1f}% -> {display_str}")
+                print(f"  - Net Target: {net_target:.1f}%, Stop: {stop_loss:.1f}% -> {display_str}")
 
+        # --- Display and Save Results ---
         print("\n" + "="*70)
         print("                     Analysis Complete")
         print("="*70)
@@ -191,17 +179,25 @@ if __name__ == '__main__':
         pd.set_option('display.width', 200)
         print(results_display_df)
 
+        # Save the results DataFrame to a CSV file
+        try:
+            results_display_df.to_csv(OUTPUT_CSV_FILENAME)
+            print(f"\nResults have been successfully saved to '{OUTPUT_CSV_FILENAME}'")
+        except Exception as e:
+            print(f"\nError: Could not save results to CSV. Reason: {e}")
+
+        # --- Find and print the best score ---
         max_score = results_score_df.max().max()
         if max_score > 0:
             max_pos = results_score_df.stack().idxmax()
             ideal_target, ideal_stop = max_pos
             
             print("\n" + "="*70)
-            print("                       Ideal Parameters")
+            print("                       Ideal Parameters (Net Profit)")
             print("="*70)
             print(f"\nThe combination with the highest Frequency-to-Time Score ({max_score:.2f}) is:")
-            print(f"  - Target Profit: {ideal_target}")
-            print(f"  - Stop Loss:     {ideal_stop}")
-            print("\nThis combination offers the best balance of high frequency and fast resolution.")
+            print(f"  - Desired Net Profit: {ideal_target}")
+            print(f"  - Stop Loss:          {ideal_stop}")
+            print("\nThis combination offers the best balance of high frequency and fast resolution after fees.")
         else:
             print("\nCould not determine an ideal parameter set as no valid events were found.")

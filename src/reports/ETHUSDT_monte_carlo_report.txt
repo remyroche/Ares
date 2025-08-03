@@ -2,10 +2,10 @@
         Monte Carlo Simulation Report
         ============================
         
-        Data Points: 43059
+        Data Points: 43058
         Parameters: 13 parameters
         
         Base Portfolio Results:
         - Status: Completed
-        - Data Processed: 43059 rows
+        - Data Processed: 43058 rows
         

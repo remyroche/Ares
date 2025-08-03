@@ -1,0 +1,57 @@
+2025-08-03 23:30:57,671 - AresGlobal - INFO - ================================================================================
+2025-08-03 23:30:57,671 - AresGlobal - INFO - 📊 SESSION SUMMARY
+2025-08-03 23:30:57,671 - AresGlobal - INFO - Session started: 2025-08-03 23:30:57
+2025-08-03 23:30:57,671 - AresGlobal - INFO - Global log file: ares_global_20250803_233057.log
+2025-08-03 23:30:57,671 - AresGlobal - INFO - This file contains ALL logs for this session
+2025-08-03 23:30:57,671 - AresGlobal - INFO - ================================================================================
+2025-08-03 23:30:57,671 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-03 23:30:57,671 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION
+2025-08-03 23:30:57,671 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-03 23:30:57
+2025-08-03 23:30:57,672 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-03 23:30:57,672 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-03 23:30:57,672 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-03 23:30:57,672 - AresGlobal.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-08-03 23:30:57,672 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-03 23:30:57,672 - AresGlobal.AresLauncher - INFO - Start time: 2025-08-03 23:30:57
+2025-08-03 23:30:57,672 - AresGlobal.AresLauncher - INFO - Log directory: log
+2025-08-03 23:30:57,672 - AresGlobal.AresLauncher - INFO - Log level: INFO
+2025-08-03 23:30:57,672 - AresGlobal.AresLauncher - INFO - Global log file: ares_global_20250803_233057.log
+2025-08-03 23:30:57,672 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-03 23:30:57,672 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-03 23:30:57,672 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: blank - Symbol: ETHUSDT - Exchange: BINANCE
+2025-08-03 23:30:57,672 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-03 23:30:57
+2025-08-03 23:30:57,672 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-03 23:30:57,672 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-03 23:30:57,673 - AresGlobal.AresLauncher - INFO - 🧪 Running blank training for ETHUSDT on BINANCE
+2025-08-03 23:31:06,250 - AresGlobal.EnhancedTrainingManager - INFO - Initializing Enhanced Training Manager...
+2025-08-03 23:31:06,251 - AresGlobal.EnhancedTrainingManager - INFO - Enhanced training configuration loaded successfully
+2025-08-03 23:31:06,251 - AresGlobal.EnhancedTrainingManager - INFO - Configuration validation successful
+2025-08-03 23:31:06,252 - AresGlobal.EnhancedTrainingManager - INFO - Advanced model training module initialized
+2025-08-03 23:31:06,252 - AresGlobal.EnhancedTrainingManager - INFO - Ensemble training module initialized
+2025-08-03 23:31:06,252 - AresGlobal.EnhancedTrainingManager - INFO - Multi-timeframe training module initialized
+2025-08-03 23:31:06,252 - AresGlobal.EnhancedTrainingManager - INFO - Adaptive training module initialized
+2025-08-03 23:31:06,252 - AresGlobal.SRLevelAnalyzer - INFO - Initializing SR Level Analyzer...
+2025-08-03 23:31:06,255 - AresGlobal.SRLevelAnalyzer - INFO - SR configuration loaded successfully
+2025-08-03 23:31:06,256 - AresGlobal.SRLevelAnalyzer - INFO - Analysis parameters initialized
+2025-08-03 23:31:06,256 - AresGlobal.SRLevelAnalyzer - INFO - Configuration validation successful
+2025-08-03 23:31:06,256 - AresGlobal.SRLevelAnalyzer - INFO - ✅ SR Level Analyzer initialization completed successfully
+2025-08-03 23:31:06,256 - AresGlobal.EnhancedTrainingManager - INFO - SR Breakout Predictor module initialized
+2025-08-03 23:31:06,256 - AresGlobal.EnhancedTrainingManager - INFO - Enhanced training modules initialized successfully
+2025-08-03 23:31:06,256 - AresGlobal.EnhancedTrainingManager - INFO - ✅ Async optimization setup complete with 10 connections
+2025-08-03 23:31:06,257 - AresGlobal.EnhancedTrainingManager - INFO - ✅ Caching layer setup complete
+2025-08-03 23:31:06,257 - AresGlobal.EnhancedTrainingManager - INFO - ✅ Metrics collection setup complete
+2025-08-03 23:31:06,257 - AresGlobal.EnhancedTrainingManager - INFO - ✅ Distributed tracing setup complete
+2025-08-03 23:31:06,257 - AresGlobal.EnhancedTrainingManager - INFO - ✅ Enhanced Training Manager initialization completed successfully
+2025-08-03 23:31:06,257 - AresGlobal.EnhancedTrainingManager - INFO - 🔄 Starting enhanced training execution...
+2025-08-03 23:31:06,257 - AresGlobal.EnhancedTrainingManager - INFO - 🔧 BLANK TRAINING MODE: Using unified training pipeline
+2025-08-03 23:31:06,257 - AresGlobal.EnhancedTrainingManager - INFO - 🚀 Starting unified training pipeline...
+2025-08-03 23:31:06,257 - AresGlobal.EnhancedTrainingManager - INFO - 🔍 Step 0.5: System Resources Validation
+2025-08-03 23:31:06,257 - AresGlobal.EnhancedTrainingManager - ERROR - ❌ System resources validation failed: ['Insufficient memory: 2.8GB available, need 4GB']
+2025-08-03 23:31:06,257 - AresGlobal.EnhancedTrainingManager - ERROR - ❌ Core training pipeline failed
+2025-08-03 23:31:06,261 - AresGlobal.AresLauncher - ERROR - ❌ blank training failed
+2025-08-03 23:31:06,262 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-03 23:31:06,262 - AresGlobal - INFO - [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1
+2025-08-03 23:31:06,263 - AresGlobal - INFO - [SYSTEM] End time: 2025-08-03 23:31:06
+2025-08-03 23:31:06,263 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-03 23:31:06,263 - AresGlobal.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-08-03 23:31:06,263 - AresGlobal.AresLauncher - INFO - ✅ Cleanup completed

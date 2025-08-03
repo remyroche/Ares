@@ -1052,3 +1052,66 @@ class MexcExchange(BaseExchange):
         except Exception as e:
             logger.error(f"❌ MEXC: get_historical_agg_trades_ccxt failed: {e}")
             return []
+
+    async def get_historical_klines_ccxt(
+        self,
+        symbol: str,
+        interval: str,
+        start_time_ms: int,
+        end_time_ms: int,
+        limit: int = 1000,
+    ) -> list[list]:
+        """Get historical klines using CCXT for consolidation."""
+        try:
+            logger.info(f"🔧 MEXC: get_historical_klines_ccxt called for {symbol}")
+            
+            # Use the existing method that we know works
+            result = await self.get_historical_klines(symbol, interval, start_time_ms, end_time_ms, limit)
+            
+            # Convert the result to the expected format (list of lists)
+            klines = []
+            for kline in result:
+                # Convert dict to list format: [timestamp, open, high, low, close, volume, ...]
+                kline_list = [
+                    kline.get('timestamp', 0),  # timestamp
+                    float(kline.get('open', 0)),  # open
+                    float(kline.get('high', 0)),  # high
+                    float(kline.get('low', 0)),  # low
+                    float(kline.get('close', 0)),  # close
+                    float(kline.get('volume', 0)),  # volume
+                    kline.get('close_time', 0),  # close time
+                    float(kline.get('quote_volume', 0)),  # quote volume
+                    int(kline.get('trades', 0)),  # number of trades
+                    float(kline.get('taker_buy_base', 0)),  # taker buy base volume
+                    float(kline.get('taker_buy_quote', 0)),  # taker buy quote volume
+                    kline.get('ignore', 0)  # ignore
+                ]
+                klines.append(kline_list)
+            
+            logger.info(f"✅ MEXC: get_historical_klines_ccxt completed, returned {len(klines)} klines")
+            return klines
+            
+        except Exception as e:
+            logger.error(f"❌ MEXC: get_historical_klines_ccxt failed: {e}")
+            return []
+
+    def _get_interval_ms(self, interval: str) -> int:
+        """Convert interval string to milliseconds."""
+        interval_map = {
+            "1m": 60 * 1000,
+            "3m": 3 * 60 * 1000,
+            "5m": 5 * 60 * 1000,
+            "15m": 15 * 60 * 1000,
+            "30m": 30 * 60 * 1000,
+            "1h": 60 * 60 * 1000,
+            "2h": 2 * 60 * 60 * 1000,
+            "4h": 4 * 60 * 60 * 1000,
+            "6h": 6 * 60 * 60 * 1000,
+            "8h": 8 * 60 * 60 * 1000,
+            "12h": 12 * 60 * 60 * 1000,
+            "1d": 24 * 60 * 60 * 1000,
+            "3d": 3 * 24 * 60 * 60 * 1000,
+            "1w": 7 * 24 * 60 * 60 * 1000,
+            "1M": 30 * 24 * 60 * 60 * 1000,  # Approximate
+        }
+        return interval_map.get(interval, 60 * 1000)  # Default to 1 minute

@@ -51,7 +51,7 @@ class HMMRegimeClassifier:
         )  # 10 periods for 15m-1h timeframe (more responsive)
         self.min_data_points = self.config.get(
             "min_data_points",
-            1000,
+            1000,  # General minimum data points requirement
         )  # Minimum data points
 
         # Models
@@ -110,9 +110,13 @@ class HMMRegimeClassifier:
         self.logger.info(f"✅ Validated {self.target_timeframe} timeframe data (actual: {minutes_diff:.2f}m)")
         return True
 
-    def _calculate_features(self, klines_df: pd.DataFrame) -> pd.DataFrame:
+    def _calculate_features(self, klines_df: pd.DataFrame, min_data_points: int = None) -> pd.DataFrame:
         """
         Calculate comprehensive features for regime classification with enhanced NaN handling.
+        
+        Args:
+            klines_df: DataFrame with OHLCV data
+            min_data_points: Override minimum data points requirement (default: None, uses general requirement)
         """
         try:
             if klines_df.empty:
@@ -132,8 +136,11 @@ class HMMRegimeClassifier:
             if len(klines_df) < initial_rows:
                 self.logger.warning(f"⚠️ Removed {initial_rows - len(klines_df)} rows with NaN in critical columns")
 
-            if len(klines_df) < self.min_data_points:
-                self.logger.warning(f"Insufficient data after cleaning. Got {len(klines_df)}, need {self.min_data_points}")
+            # Use provided minimum data points or general requirement
+            effective_min_data_points = min_data_points if min_data_points is not None else self.min_data_points
+            
+            if len(klines_df) < effective_min_data_points:
+                self.logger.warning(f"Insufficient data after cleaning. Got {len(klines_df)}, need {effective_min_data_points}")
                 return pd.DataFrame()
 
             features = pd.DataFrame(index=klines_df.index)
@@ -1917,7 +1924,7 @@ class HMMRegimeClassifier:
             self.logger.error(f"❌ Error during HMM labeling: {e}", exc_info=True)
             return False
 
-    async def train_ml_model(self, symbol: str, exchange: str = "BINANCE", lookback_years: int = 2) -> bool:
+    async def train_ml_model(self, symbol: str, exchange: str = "BINANCE", lookback_years: int = 2, training_min_data_points: int = None) -> bool:
         """
         Train ML model based on HMM-labeled historical data.
         
@@ -1925,16 +1932,20 @@ class HMMRegimeClassifier:
             symbol: Trading symbol (e.g., ETHUSDT)
             exchange: Exchange name (default: BINANCE)
             lookback_years: Number of years of data to use (default: 2)
+            training_min_data_points: Override minimum data points for training (default: None, uses general requirement)
             
         Returns:
             bool: True if training was successful, False otherwise
         """
         try:
+            # Use training-specific minimum data points if provided, otherwise use general requirement
+            effective_min_data_points = training_min_data_points if training_min_data_points is not None else self.min_data_points
+            
             self.logger.info(f"🤖 Starting ML model training for {symbol} on {exchange} (last {lookback_years} years)")
             self.logger.info(f"📊 Configuration:")
             self.logger.info(f"   - Target timeframe: {self.target_timeframe}")
             self.logger.info(f"   - Volatility period: {self.volatility_period}")
-            self.logger.info(f"   - Min data points: {self.min_data_points}")
+            self.logger.info(f"   - Min data points: {effective_min_data_points} (training override: {training_min_data_points if training_min_data_points is not None else 'None'})")
             self.logger.info(f"   - HMM states: {self.n_states}")
             self.logger.info(f"   - HMM iterations: {self.n_iter}")
             
@@ -1997,7 +2008,7 @@ class HMMRegimeClassifier:
             
             # For now, use the HMM features directly instead of the complex feature calculation
             # This avoids the need for agg_trades_df and futures_df
-            prepared_df = self._calculate_features(klines_df)
+            prepared_df = self._calculate_features(klines_df, effective_min_data_points)
             
             if prepared_df.empty:
                 self.logger.error("❌ Failed to calculate features")
@@ -2016,7 +2027,7 @@ class HMMRegimeClassifier:
                     return False
             
             # Get HMM features and state sequence (use only basic features for HMM)
-            hmm_features = self._calculate_features(klines_df)
+            hmm_features = self._calculate_features(klines_df, effective_min_data_points)
             if hmm_features.empty:
                 self.logger.error("❌ Failed to calculate HMM features")
                 return False

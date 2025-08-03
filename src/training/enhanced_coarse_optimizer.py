@@ -133,69 +133,128 @@ class EnhancedCoarseOptimizer:
             self.logger.error(f"Error preparing data: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data cleaning",
-    )
     def _clean_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Clean the input data."""
-        try:
-            # Remove duplicates
-            cleaned = data.drop_duplicates()
-
-            # Handle missing values
-            cleaned = cleaned.fillna(method="ffill")
-
-            # Remove outliers
-            cleaned = self._remove_outliers(cleaned)
-
-            return cleaned
-
-        except Exception as e:
-            self.logger.error(f"Error cleaning data: {e}")
-            return data
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="outlier removal",
-    )
-    def _remove_outliers(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Remove outliers and extreme values from the data."""
-        try:
-            cleaned_data = data.copy()
+        """Clean data with enhanced quality logging."""
+        self.logger.info("🧹 ENHANCED DATA CLEANING:")
+        self.logger.info("=" * 50)
+        
+        original_shape = data.shape
+        original_memory = data.memory_usage(deep=True).sum() / 1024**2
+        
+        self.logger.info(f"📊 Initial data state:")
+        self.logger.info(f"   - Shape: {original_shape}")
+        self.logger.info(f"   - Memory: {original_memory:.2f} MB")
+        self.logger.info(f"   - Data types: {dict(data.dtypes.value_counts())}")
+        
+        # Track cleaning steps
+        cleaning_steps = []
+        
+        # 1. Remove duplicate rows
+        initial_duplicates = data.duplicated().sum()
+        if initial_duplicates > 0:
+            data = data.drop_duplicates()
+            cleaning_steps.append(f"Removed {initial_duplicates} duplicate rows")
+            self.logger.info(f"   ✅ Removed {initial_duplicates} duplicate rows")
+        
+        # 2. Handle infinity values
+        inf_counts = np.isinf(data.select_dtypes(include=[np.number])).sum().sum()
+        if inf_counts > 0:
+            data = data.replace([np.inf, -np.inf], np.nan)
+            cleaning_steps.append(f"Replaced {inf_counts} infinity values with NaN")
+            self.logger.info(f"   ✅ Replaced {inf_counts} infinity values with NaN")
+        
+        # 3. Handle extreme outliers
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        outlier_counts = 0
+        
+        for col in numeric_cols:
+            if col in data.columns:
+                Q1 = data[col].quantile(0.25)
+                Q3 = data[col].quantile(0.75)
+                IQR = Q3 - Q1
+                lower_bound = Q1 - 3 * IQR  # Using 3*IQR for more conservative outlier detection
+                upper_bound = Q3 + 3 * IQR
+                
+                outliers = ((data[col] < lower_bound) | (data[col] > upper_bound)).sum()
+                if outliers > 0:
+                    # Replace outliers with bounds instead of removing
+                    data[col] = data[col].clip(lower=lower_bound, upper=upper_bound)
+                    outlier_counts += outliers
+                    self.logger.info(f"   📊 {col}: Clipped {outliers} outliers to bounds [{lower_bound:.4f}, {upper_bound:.4f}]")
+        
+        if outlier_counts > 0:
+            cleaning_steps.append(f"Clipped {outlier_counts} extreme outliers")
+        
+        # 4. Handle missing values
+        missing_before = data.isnull().sum().sum()
+        if missing_before > 0:
+            # For numeric columns, use forward fill then backward fill
+            numeric_cols = data.select_dtypes(include=[np.number]).columns
+            for col in numeric_cols:
+                if data[col].isnull().sum() > 0:
+                    # Forward fill then backward fill
+                    data[col] = data[col].fillna(method='ffill').fillna(method='bfill')
+                    # If still has NaN, fill with median
+                    if data[col].isnull().sum() > 0:
+                        median_val = data[col].median()
+                        data[col] = data[col].fillna(median_val)
+                        self.logger.info(f"   📊 {col}: Filled remaining NaN with median {median_val:.4f}")
             
-            # Handle extreme values for each numeric column
-            for column in cleaned_data.select_dtypes(include=[np.number]).columns:
-                if column in cleaned_data.columns:
-                    # Calculate robust statistics
-                    q1 = cleaned_data[column].quantile(0.01)
-                    q99 = cleaned_data[column].quantile(0.99)
-                    iqr = cleaned_data[column].quantile(0.75) - cleaned_data[column].quantile(0.25)
-                    
-                    # Define bounds for extreme values
-                    lower_bound = q1 - 3 * iqr
-                    upper_bound = q99 + 3 * iqr
-                    
-                    # Count extreme values before cleaning
-                    extreme_count = ((cleaned_data[column] < lower_bound) | 
-                                   (cleaned_data[column] > upper_bound)).sum()
-                    
-                    if extreme_count > 0:
-                        self.logger.warning(f"Found {extreme_count} extreme values in {column} (range: {lower_bound:.4f} to {upper_bound:.4f})")
-                        
-                        # Clip extreme values instead of removing them
-                        cleaned_data[column] = cleaned_data[column].clip(lower_bound, upper_bound)
-                        
-                        # Fill any remaining NaN values
-                        cleaned_data[column] = cleaned_data[column].fillna(cleaned_data[column].median())
+            missing_after = data.isnull().sum().sum()
+            filled_count = missing_before - missing_after
+            cleaning_steps.append(f"Filled {filled_count} missing values")
+            self.logger.info(f"   ✅ Filled {filled_count} missing values")
+        
+        # 5. Data type optimization
+        memory_before = data.memory_usage(deep=True).sum() / 1024**2
+        data = self._optimize_dtypes(data)
+        memory_after = data.memory_usage(deep=True).sum() / 1024**2
+        memory_saved = memory_before - memory_after
+        
+        if memory_saved > 0:
+            cleaning_steps.append(f"Optimized data types (saved {memory_saved:.2f} MB)")
+            self.logger.info(f"   ✅ Memory optimization: {memory_before:.2f} MB → {memory_after:.2f} MB (saved {memory_saved:.2f} MB)")
+        
+        # Final statistics
+        final_shape = data.shape
+        final_memory = data.memory_usage(deep=True).sum() / 1024**2
+        
+        self.logger.info(f"📊 Final data state:")
+        self.logger.info(f"   - Shape: {final_shape}")
+        self.logger.info(f"   - Memory: {final_memory:.2f} MB")
+        self.logger.info(f"   - Data loss: {original_shape[0] - final_shape[0]} rows")
+        self.logger.info(f"   - Memory reduction: {((original_memory - final_memory) / original_memory * 100):.1f}%")
+        
+        self.logger.info(f"🔧 Cleaning steps performed:")
+        for step in cleaning_steps:
+            self.logger.info(f"   - {step}")
+        
+        self.logger.info("=" * 50)
+        self.logger.info("✅ Enhanced data cleaning complete")
+        
+        return data
+    
+    def _optimize_dtypes(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize data types to reduce memory usage."""
+        optimized_data = data.copy()
+        
+        # Optimize numeric columns
+        for col in optimized_data.select_dtypes(include=['int64']).columns:
+            col_min = optimized_data[col].min()
+            col_max = optimized_data[col].max()
             
-            return cleaned_data
-            
-        except Exception as e:
-            self.logger.error(f"Error removing outliers: {e}")
-            return data
+            if col_min >= np.iinfo(np.int8).min and col_max <= np.iinfo(np.int8).max:
+                optimized_data[col] = optimized_data[col].astype(np.int8)
+            elif col_min >= np.iinfo(np.int16).min and col_max <= np.iinfo(np.int16).max:
+                optimized_data[col] = optimized_data[col].astype(np.int16)
+            elif col_min >= np.iinfo(np.int32).min and col_max <= np.iinfo(np.int32).max:
+                optimized_data[col] = optimized_data[col].astype(np.int32)
+        
+        # Optimize float columns
+        for col in optimized_data.select_dtypes(include=['float64']).columns:
+            optimized_data[col] = pd.to_numeric(optimized_data[col], downcast='float')
+        
+        return optimized_data
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -438,103 +497,130 @@ class EnhancedCoarseOptimizer:
         self._analyze_missing_values()
 
     def _analyze_missing_values(self):
-        """Analyze and report missing values in the dataset."""
-        self.logger.info("🔍 Analyzing missing values in the dataset...")
-
-        try:
-            # Create a combined dataset for analysis
-            analysis_data = self.data_with_targets.copy()
-
-            # Calculate missing values statistics
-            total_rows = len(analysis_data)
-            total_cells = analysis_data.size
-            missing_cells = analysis_data.isnull().sum().sum()
-            missing_percentage = (missing_cells / total_cells) * 100
-
-            # Get columns with missing values
-            missing_by_column = analysis_data.isnull().sum()
-            columns_with_missing = missing_by_column[missing_by_column > 0]
-
-            # Calculate missing values by data type
-            numeric_columns = analysis_data.select_dtypes(include=[np.number]).columns
-            categorical_columns = analysis_data.select_dtypes(
-                include=["object", "category"],
-            ).columns
-
-            numeric_missing = analysis_data[numeric_columns].isnull().sum().sum()
-            categorical_missing = (
-                analysis_data[categorical_columns].isnull().sum().sum()
-            )
-
-            # Log the analysis results
-            self.logger.info("📊 Missing Values Analysis:")
-            self.logger.info(f"   📈 Total rows: {total_rows:,}")
-            self.logger.info(f"   📈 Total cells: {total_cells:,}")
-            self.logger.info(
-                f"   ❌ Missing cells: {missing_cells:,} ({missing_percentage:.2f}%)",
-            )
-            self.logger.info(f"   📊 Numeric missing: {numeric_missing:,}")
-            self.logger.info(f"   📊 Categorical missing: {categorical_missing:,}")
-
-            if len(columns_with_missing) > 0:
-                self.logger.info(
-                    f"   🔍 Columns with missing values: {len(columns_with_missing)}",
-                )
-                for col, missing_count in columns_with_missing.items():
-                    missing_pct = (missing_count / total_rows) * 100
-                    self.logger.info(
-                        f"      - {col}: {missing_count:,} ({missing_pct:.2f}%)",
-                    )
-            else:
-                self.logger.info("   ✅ No missing values found!")
-
-            # Check for patterns in missing values
-            if missing_cells > 0:
-                # Check if missing values are clustered in time
-                if "open_time" in analysis_data.columns:
-                    time_missing = (
-                        analysis_data.groupby(analysis_data["open_time"].dt.date)
-                        .isnull()
-                        .sum()
-                        .sum(axis=1)
-                    )
-                    high_missing_days = time_missing[
-                        time_missing > time_missing.mean() + 2 * time_missing.std()
-                    ]
-                    if len(high_missing_days) > 0:
-                        self.logger.warning(
-                            f"   ⚠️  High missing values detected on {len(high_missing_days)} days",
-                        )
-                        for date, missing_count in high_missing_days.items():
-                            self.logger.warning(
-                                f"      - {date}: {missing_count} missing values",
-                            )
-
-                # Check for correlation in missing values between columns
-                missing_corr = analysis_data.isnull().corr()
-                high_corr_pairs = []
-                for i in range(len(missing_corr.columns)):
-                    for j in range(i + 1, len(missing_corr.columns)):
-                        if (
-                            abs(missing_corr.iloc[i, j]) > 0.7
-                        ):  # High correlation threshold
-                            high_corr_pairs.append(
-                                (
-                                    missing_corr.columns[i],
-                                    missing_corr.columns[j],
-                                    missing_corr.iloc[i, j],
-                                ),
-                            )
-
-                if high_corr_pairs:
-                    self.logger.info(
-                        f"   🔗 Found {len(high_corr_pairs)} pairs of columns with correlated missing values:",
-                    )
-                    for col1, col2, corr in high_corr_pairs[:5]:  # Show top 5
-                        self.logger.info(f"      - {col1} ↔ {col2}: {corr:.3f}")
-
-        except Exception as e:
-            self.logger.warning(f"⚠️  Error during missing values analysis: {e}")
+        """Enhanced analysis of missing values with detailed logging."""
+        self.logger.info("🔍 ENHANCED NaN ANALYSIS:")
+        self.logger.info("=" * 60)
+        
+        # Analyze each dataset separately
+        datasets = {
+            "klines": self.klines_data,
+            "agg_trades": self.agg_trades_data,
+            "futures": self.futures_data,
+            "combined": self.data_with_targets
+        }
+        
+        for dataset_name, dataset in datasets.items():
+            if dataset is not None and not dataset.empty:
+                self.logger.info(f"📊 {dataset_name.upper()} DATASET ANALYSIS:")
+                self.logger.info(f"   - Shape: {dataset.shape}")
+                self.logger.info(f"   - Memory usage: {dataset.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+                
+                # Check for NaN values
+                nan_counts = dataset.isnull().sum()
+                nan_percentages = (nan_counts / len(dataset)) * 100
+                
+                # Find columns with NaN values
+                columns_with_nan = nan_counts[nan_counts > 0]
+                
+                if len(columns_with_nan) > 0:
+                    self.logger.warning(f"   ❌ Found {len(columns_with_nan)} columns with NaN values:")
+                    for col, count in columns_with_nan.items():
+                        percentage = nan_percentages[col]
+                        self.logger.warning(f"      - {col}: {count} NaN values ({percentage:.2f}%)")
+                        
+                        # Analyze the column to understand why NaN values exist
+                        if col in dataset.columns:
+                            col_data = dataset[col]
+                            self.logger.info(f"      📈 {col} analysis:")
+                            self.logger.info(f"         - Data type: {col_data.dtype}")
+                            self.logger.info(f"         - Unique values: {col_data.nunique()}")
+                            self.logger.info(f"         - Value range: {col_data.min()} to {col_data.max()}")
+                            
+                            # Check for infinity values
+                            inf_count = np.isinf(col_data).sum()
+                            if inf_count > 0:
+                                self.logger.warning(f"         - Infinity values: {inf_count}")
+                            
+                            # Check for zero values
+                            zero_count = (col_data == 0).sum()
+                            self.logger.info(f"         - Zero values: {zero_count}")
+                            
+                            # Sample of non-NaN values
+                            non_nan_sample = col_data.dropna().head(3).tolist()
+                            self.logger.info(f"         - Sample values: {non_nan_sample}")
+                else:
+                    self.logger.info(f"   ✅ No NaN values found in {dataset_name}")
+                
+                # Check for duplicate rows
+                duplicates = dataset.duplicated().sum()
+                if duplicates > 0:
+                    self.logger.warning(f"   ⚠️  Found {duplicates} duplicate rows")
+                
+                # Check for constant columns
+                constant_cols = [col for col in dataset.columns if dataset[col].nunique() <= 1]
+                if constant_cols:
+                    self.logger.warning(f"   ⚠️  Found {len(constant_cols)} constant columns: {constant_cols}")
+                
+                self.logger.info("")
+        
+        # Analyze feature engineering process
+        if hasattr(self, 'data_with_targets') and self.data_with_targets is not None:
+            self.logger.info("🔧 FEATURE ENGINEERING ANALYSIS:")
+            
+            # Check which features are causing NaN values
+            feature_nan_counts = self.data_with_targets.isnull().sum()
+            problematic_features = feature_nan_counts[feature_nan_counts > 0]
+            
+            if len(problematic_features) > 0:
+                self.logger.warning(f"   ❌ Features with NaN values after engineering:")
+                for feature, count in problematic_features.items():
+                    percentage = (count / len(self.data_with_targets)) * 100
+                    self.logger.warning(f"      - {feature}: {count} NaN values ({percentage:.2f}%)")
+                    
+                    # Analyze the feature to understand the cause
+                    feature_data = self.data_with_targets[feature]
+                    
+                    # Check if it's a calculated feature
+                    if any(op in feature for op in ['_', 'ratio', 'pct', 'diff', 'ma', 'std', 'vol']):
+                        self.logger.info(f"      📊 {feature} appears to be a calculated feature")
+                        
+                        # Check if it's a division-based feature
+                        if any(op in feature for op in ['ratio', 'pct', 'div']):
+                            self.logger.warning(f"      ⚠️  {feature} might have division by zero issues")
+                        
+                        # Check if it's a rolling window feature
+                        if any(op in feature for op in ['ma', 'std', 'vol']):
+                            self.logger.info(f"      📈 {feature} is a rolling window feature")
+                            # Check if we have enough data for the window
+                            if 'ma' in feature or 'std' in feature:
+                                window_size = 20  # Default assumption
+                                if len(self.data_with_targets) < window_size:
+                                    self.logger.warning(f"      ⚠️  Insufficient data for {feature} (need {window_size}, have {len(self.data_with_targets)})")
+            
+            # Check for correlation between NaN patterns
+            self.logger.info("   🔗 Analyzing NaN patterns...")
+            nan_matrix = self.data_with_targets.isnull()
+            nan_correlations = nan_matrix.corr()
+            
+            # Find highly correlated NaN patterns
+            high_corr_pairs = []
+            for i in range(len(nan_correlations.columns)):
+                for j in range(i+1, len(nan_correlations.columns)):
+                    corr_val = nan_correlations.iloc[i, j]
+                    if abs(corr_val) > 0.8:  # High correlation threshold
+                        high_corr_pairs.append((
+                            nan_correlations.columns[i],
+                            nan_correlations.columns[j],
+                            corr_val
+                        ))
+            
+            if high_corr_pairs:
+                self.logger.warning(f"   🔗 Found {len(high_corr_pairs)} highly correlated NaN patterns:")
+                for feat1, feat2, corr in high_corr_pairs[:5]:  # Show top 5
+                    self.logger.warning(f"      - {feat1} ↔ {feat2}: {corr:.3f}")
+        
+        self.logger.info("=" * 60)
+        self.logger.info("✅ Enhanced NaN analysis complete")
 
     def enhanced_prune_features(self, top_n_percent: float = 0.5) -> list[str]:
         """
@@ -833,7 +919,13 @@ class EnhancedCoarseOptimizer:
             self.logger.info("   🔍 SHAP IMPORT ANALYSIS:")
             try:
                 import shap
-                self.logger.info(f"      - SHAP version: {shap.__version__}")
+                # Check for version attribute safely
+                try:
+                    shap_version = shap.__version__
+                    self.logger.info(f"      - SHAP version: {shap_version}")
+                except AttributeError:
+                    self.logger.info("      - SHAP version: Unknown (no __version__ attribute)")
+                
                 self.logger.info(f"      - SHAP available attributes: {[attr for attr in dir(shap) if 'Tree' in attr or 'Explainer' in attr]}")
                 
                 # Check if TreeExplainer is available
@@ -1022,7 +1114,6 @@ class EnhancedCoarseOptimizer:
                     "objective": "multiclass" if n_classes > 2 else "binary",
                     "metric": "multi_logloss" if n_classes > 2 else "binary_logloss",
                     "verbosity": -1,
-                    "boosting_type": "gbdt",
                     "n_estimators": trial.suggest_int("n_estimators", 50, 2000),
                     "learning_rate": trial.suggest_float(
                         "learning_rate",
@@ -1030,7 +1121,6 @@ class EnhancedCoarseOptimizer:
                         0.3,
                         log=True,
                     ),
-                    "num_leaves": trial.suggest_int("num_leaves", 10, 500),
                     "max_depth": trial.suggest_int("max_depth", 2, 20),
                     "subsample": trial.suggest_float("subsample", 0.5, 1.0),
                     "colsample_bytree": trial.suggest_float(
@@ -1038,13 +1128,12 @@ class EnhancedCoarseOptimizer:
                         0.5,
                         1.0,
                     ),
+                    # L1-L2 Regularization parameters
                     "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
-                    "reg_lambda": trial.suggest_float(
-                        "reg_lambda",
-                        1e-8,
-                        10.0,
-                        log=True,
-                    ),
+                    "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
+                    # Additional regularization
+                    "min_child_weight": trial.suggest_float("min_child_weight", 1e-3, 10.0, log=True),
+                    "min_split_gain": trial.suggest_float("min_split_gain", 1e-8, 1.0, log=True),
                 }
                 if n_classes > 2:
                     param["num_class"] = n_classes
@@ -1167,17 +1256,37 @@ class EnhancedCoarseOptimizer:
                         if param_name in t.params
                     ]
                     if values:  # Only create range if we have values
-                        ranges[param_name] = {
-                            "low": min(values),
-                            "high": max(values),
-                            "type": "float" if isinstance(values[0], float) else "int",
-                        }
-                        if isinstance(values[0], float):
-                            ranges[param_name]["step"] = (
-                                max(values) - min(values)
-                            ) / 10.0
+                        # Filter out non-numeric values and convert to proper types
+                        numeric_values = []
+                        for val in values:
+                            if val is not None:
+                                try:
+                                    if isinstance(val, str):
+                                        # Try to convert string to float/int
+                                        if '.' in val:
+                                            numeric_values.append(float(val))
+                                        else:
+                                            numeric_values.append(int(val))
+                                    elif isinstance(val, (int, float)):
+                                        numeric_values.append(val)
+                                except (ValueError, TypeError):
+                                    self.logger.warning(f"⚠️  Skipping non-numeric value '{val}' for parameter {param_name}")
+                                    continue
+                        
+                        if numeric_values:  # Only create range if we have numeric values
+                            ranges[param_name] = {
+                                "low": min(numeric_values),
+                                "high": max(numeric_values),
+                                "type": "float" if isinstance(numeric_values[0], float) else "int",
+                            }
+                            if isinstance(numeric_values[0], float):
+                                ranges[param_name]["step"] = (
+                                    max(numeric_values) - min(numeric_values)
+                                ) / 10.0
+                            else:
+                                ranges[param_name]["step"] = 1
                         else:
-                            ranges[param_name]["step"] = 1
+                            self.logger.warning(f"⚠️  No numeric values found for parameter {param_name}")
                 except (KeyError, AttributeError) as e:
                     self.logger.warning(f"⚠️  Skipping parameter {param_name}: {e}")
                     continue

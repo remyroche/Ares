@@ -1,0 +1,16 @@
+2025-08-03 23:19:58,063 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-03 23:19:58,097 - AresTradingSystem.System - INFO - CCXT: Fetching klines for ETHUSDT from 2025-08-03 23:15:00 to 2025-08-03 23:19:58.078000
+2025-08-03 23:20:02,542 - AresTradingSystem.System - INFO - CCXT: Retrieved 5 klines for ETHUSDT
+2025-08-03 23:20:02,910 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:29:06.190000 to 2025-08-03 00:00:00
+2025-08-03 23:20:03,329 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754087346326
+2025-08-03 23:20:03,329 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754087363431
+2025-08-03 23:20:03,329 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 519
+2025-08-03 23:20:03,329 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-03 23:20:03,590 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-03 00:00:00 to 2025-08-03 23:20:03.582000
+2025-08-03 23:20:04,010 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754172000165
+2025-08-03 23:20:04,010 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754172052412
+2025-08-03 23:20:04,010 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 480
+2025-08-03 23:20:04,011 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-03 23:20:06,467 - AresTradingSystem.System - INFO - HTTP session closed.
+2025-08-03 23:27:48,746 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Received SIGINT signal
+2025-08-03 23:27:48,748 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Initiating graceful shutdown: SIGINT

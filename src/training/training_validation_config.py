@@ -389,24 +389,47 @@ def validate_system_resources() -> tuple[bool, list[str]]:
 
     import psutil
 
-    # Check available memory (need at least 4GB free)
+    # Check available memory (need at least 2GB free for blank mode, 4GB for full training)
     memory = psutil.virtual_memory()
-    if memory.available < 4 * 1024 * 1024 * 1024:  # 4GB
+    
+    # Check if we're in blank training mode by looking at environment or config
+    import os
+    blank_mode = os.getenv('BLANK_TRAINING_MODE', '0') == '1'
+    
+    # Debug logging
+    print(f"🔍 DEBUG: BLANK_TRAINING_MODE environment variable: {os.getenv('BLANK_TRAINING_MODE', 'not set')}")
+    print(f"🔍 DEBUG: blank_mode detected: {blank_mode}")
+    print(f"🔍 DEBUG: Available memory: {memory.available / (1024**3):.1f}GB")
+    
+    if blank_mode:
+        # More lenient requirements for blank mode
+        min_memory_gb = 2
+        min_disk_gb = 5
+        min_cpu_cores = 2
+        print(f"🔍 DEBUG: Using blank mode requirements: {min_memory_gb}GB RAM, {min_disk_gb}GB disk, {min_cpu_cores} CPU cores")
+    else:
+        # Full requirements for production training
+        min_memory_gb = 4
+        min_disk_gb = 10
+        min_cpu_cores = 4
+        print(f"🔍 DEBUG: Using production requirements: {min_memory_gb}GB RAM, {min_disk_gb}GB disk, {min_cpu_cores} CPU cores")
+    
+    if memory.available < min_memory_gb * 1024 * 1024 * 1024:
         errors.append(
-            f"Insufficient memory: {memory.available / (1024**3):.1f}GB available, need 4GB",
+            f"Insufficient memory: {memory.available / (1024**3):.1f}GB available, need {min_memory_gb}GB",
         )
 
-    # Check available disk space (need at least 10GB free)
+    # Check available disk space
     disk = psutil.disk_usage("/")
-    if disk.free < 10 * 1024 * 1024 * 1024:  # 10GB
+    if disk.free < min_disk_gb * 1024 * 1024 * 1024:
         errors.append(
-            f"Insufficient disk space: {disk.free / (1024**3):.1f}GB available, need 10GB",
+            f"Insufficient disk space: {disk.free / (1024**3):.1f}GB available, need {min_disk_gb}GB",
         )
 
-    # Check CPU cores (need at least 4 cores)
+    # Check CPU cores
     cpu_count = psutil.cpu_count()
-    if cpu_count < 4:
-        errors.append(f"Insufficient CPU cores: {cpu_count} available, need 4")
+    if cpu_count < min_cpu_cores:
+        errors.append(f"Insufficient CPU cores: {cpu_count} available, need {min_cpu_cores}")
 
     return len(errors) == 0, errors
 

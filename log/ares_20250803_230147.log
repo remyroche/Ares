@@ -1,0 +1,475 @@
+2025-08-03 23:01:47,538 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-03 23:01:47,538 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STARTING OPTIMIZED DATA DOWNLOAD PROCESS
+2025-08-03 23:01:47,538 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Configuration: MEXC ETHUSDT 1m
+2025-08-03 23:01:47,538 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 STEP 1: Initializing optimized downloader...
+2025-08-03 23:01:47,538 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Configuration: exchange=MEXC, symbol=ETHUSDT, interval=1m, lookback_years=3
+2025-08-03 23:01:47,539 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Creating exchange client...
+2025-08-03 23:01:47,542 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Exchange client created: MexcExchange
+2025-08-03 23:01:47,542 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🌐 Setting up HTTP session...
+2025-08-03 23:01:47,542 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ HTTP session configured
+2025-08-03 23:01:47,542 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Ensuring cache directory exists...
+2025-08-03 23:01:47,542 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Cache directory ready: data_cache
+2025-08-03 23:01:47,542 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ STEP 1 COMPLETED: Optimized downloader initialized successfully
+2025-08-03 23:01:47,542 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 STEP 4: Starting parallel downloads for all data types...
+2025-08-03 23:01:47,542 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Created 3 parallel download tasks
+2025-08-03 23:01:47,542 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing all tasks concurrently...
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STEP 3: Starting parallel klines download...
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📅 STEP 2: Calculating time periods for klines...
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Date range: 2022-08-04 to 2025-08-03
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Total days: 1095
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Processing klines (monthly periods)...
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_MEXC_ETHUSDT_1m_2022-08.csv
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_MEXC_ETHUSDT_1m_2022-09.csv
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_MEXC_ETHUSDT_1m_2022-10.csv
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_MEXC_ETHUSDT_1m_2022-11.csv
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_MEXC_ETHUSDT_1m_2022-12.csv
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_MEXC_ETHUSDT_1m_2023-01.csv
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_MEXC_ETHUSDT_1m_2023-02.csv
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_MEXC_ETHUSDT_1m_2023-03.csv
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_MEXC_ETHUSDT_1m_2023-04.csv
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_MEXC_ETHUSDT_1m_2023-05.csv
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_MEXC_ETHUSDT_1m_2023-06.csv
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_MEXC_ETHUSDT_1m_2023-07.csv
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2023-08.csv
+2025-08-03 23:01:47,543 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2023-09.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2023-10.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2023-11.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2023-12.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2024-01.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2024-02.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2024-03.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2024-04.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2024-05.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2024-06.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2024-07.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2024-08.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2024-09.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2024-10.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2024-11.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2024-12.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2025-01.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2025-02.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2025-03.csv
+2025-08-03 23:01:47,544 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2025-04.csv
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2025-05.csv
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2025-06.csv
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2025-07.csv
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_MEXC_ETHUSDT_1m_2025-08.csv
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Summary: 12 months to download, 25 months skipped
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Found 12 monthly periods to download
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Creating 12 parallel download tasks...
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 1: 2022-08 to 2022-09
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 2: 2022-09 to 2022-10
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 3: 2022-10 to 2022-11
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 4: 2022-11 to 2022-12
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 5: 2022-12 to 2023-01
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 6: 2023-01 to 2023-02
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 7: 2023-02 to 2023-03
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 8: 2023-03 to 2023-04
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 9: 2023-04 to 2023-05
+2025-08-03 23:01:47,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 10: 2023-05 to 2023-06
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 11: 2023-06 to 2023-07
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 12: 2023-07 to 2023-08
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing 12 tasks concurrently...
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STEP 3B: Starting parallel aggtrades download...
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📅 STEP 2: Calculating time periods for aggtrades...
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Date range: 2022-08-04 to 2025-08-03
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Total days: 1095
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Processing aggtrades (daily periods)...
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2022-08-04.csv
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2022-08-05.csv
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2022-08-06.csv
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2022-08-07.csv
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2022-08-08.csv
+2025-08-03 23:01:47,546 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2022-09-22.csv
+2025-08-03 23:01:47,547 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2022-11-11.csv
+2025-08-03 23:01:47,547 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2022-12-31.csv
+2025-08-03 23:01:47,548 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2023-02-19.csv
+2025-08-03 23:01:47,548 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2023-04-10.csv
+2025-08-03 23:01:47,549 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2023-05-30.csv
+2025-08-03 23:01:47,549 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2023-07-19.csv
+2025-08-03 23:01:47,550 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2023-09-07.csv
+2025-08-03 23:01:47,550 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2023-10-27.csv
+2025-08-03 23:01:47,551 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2023-12-16.csv
+2025-08-03 23:01:47,551 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2024-02-04.csv
+2025-08-03 23:01:47,552 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2024-03-25.csv
+2025-08-03 23:01:47,552 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2024-05-14.csv
+2025-08-03 23:01:47,552 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2024-07-03.csv
+2025-08-03 23:01:47,553 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2024-08-22.csv
+2025-08-03 23:01:47,553 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2024-10-11.csv
+2025-08-03 23:01:47,553 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2024-11-30.csv
+2025-08-03 23:01:47,554 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2025-01-19.csv
+2025-08-03 23:01:47,554 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2025-03-10.csv
+2025-08-03 23:01:47,555 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2025-04-29.csv
+2025-08-03 23:01:47,555 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_MEXC_ETHUSDT_2025-06-18.csv
+2025-08-03 23:01:47,555 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_MEXC_ETHUSDT_2025-07-04.csv
+2025-08-03 23:01:47,555 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_MEXC_ETHUSDT_2025-07-05.csv
+2025-08-03 23:01:47,555 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_MEXC_ETHUSDT_2025-07-07.csv
+2025-08-03 23:01:47,555 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_MEXC_ETHUSDT_2025-07-08.csv
+2025-08-03 23:01:47,555 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_MEXC_ETHUSDT_2025-07-09.csv
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Summary: 15 days to download, 1081 days skipped
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Found 15 daily periods to download
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Creating 15 parallel download tasks...
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 1: 2025-07-04 to 2025-07-05
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 2: 2025-07-05 to 2025-07-06
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 3: 2025-07-07 to 2025-07-08
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 4: 2025-07-08 to 2025-07-09
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 5: 2025-07-09 to 2025-07-10
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing 15 tasks concurrently...
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STEP 3C: Starting parallel futures download...
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📅 STEP 2: Calculating time periods for futures...
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Date range: 2022-08-04 to 2025-08-03
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Total days: 1095
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Processing futures (monthly periods)...
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_MEXC_ETHUSDT_2022-08.csv
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_MEXC_ETHUSDT_2022-09.csv
+2025-08-03 23:01:47,556 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_MEXC_ETHUSDT_2022-10.csv
+2025-08-03 23:01:47,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_MEXC_ETHUSDT_2022-11.csv
+2025-08-03 23:01:47,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_MEXC_ETHUSDT_2022-12.csv
+2025-08-03 23:01:47,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_MEXC_ETHUSDT_2023-01.csv
+2025-08-03 23:01:47,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_MEXC_ETHUSDT_2023-02.csv
+2025-08-03 23:01:47,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_MEXC_ETHUSDT_2023-03.csv
+2025-08-03 23:01:47,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_MEXC_ETHUSDT_2023-04.csv
+2025-08-03 23:01:47,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_MEXC_ETHUSDT_2023-05.csv
+2025-08-03 23:01:47,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_MEXC_ETHUSDT_2023-06.csv
+2025-08-03 23:01:47,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_MEXC_ETHUSDT_2023-07.csv
+2025-08-03 23:01:47,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2023-08.csv
+2025-08-03 23:01:47,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2023-09.csv
+2025-08-03 23:01:47,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2023-10.csv
+2025-08-03 23:01:47,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2023-11.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2023-12.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2024-01.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2024-02.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2024-03.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2024-04.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2024-05.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2024-06.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2024-07.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2024-08.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2024-09.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2024-10.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2024-11.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2024-12.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2025-01.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2025-02.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2025-03.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2025-04.csv
+2025-08-03 23:01:47,558 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2025-05.csv
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2025-06.csv
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2025-07.csv
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_MEXC_ETHUSDT_2025-08.csv
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Summary: 12 months to download, 25 months skipped
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Found 12 daily periods to download
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Creating 12 parallel download tasks...
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 1: 2022-08-01 to 2022-09-01
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 2: 2022-09-01 to 2022-10-01
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 3: 2022-10-01 to 2022-11-01
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 4: 2022-11-01 to 2022-12-01
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 5: 2022-12-01 to 2023-01-01
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing 12 tasks concurrently...
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2022-08
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2022-08-01 00:00:00 to 2022-09-01 00:00:00
+2025-08-03 23:01:47,559 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1659304800000 to 1661983200000
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2022-09
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2022-09-01 00:00:00 to 2022-10-01 00:00:00
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1661983200000 to 1664575200000
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2022-10
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2022-10-01 00:00:00 to 2022-11-01 00:00:00
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1664575200000 to 1667257200000
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2022-11
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2022-11-01 00:00:00 to 2022-12-01 00:00:00
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1667257200000 to 1669849200000
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2022-12
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2022-12-01 00:00:00 to 2023-01-01 00:00:00
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1669849200000 to 1672527600000
+2025-08-03 23:01:47,560 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:57,487 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-03 23:01:57,488 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2022-08
+2025-08-03 23:01:57,488 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2023-01
+2025-08-03 23:01:57,488 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-01-01 00:00:00 to 2023-02-01 00:00:00
+2025-08-03 23:01:57,488 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1672527600000 to 1675206000000
+2025-08-03 23:01:57,488 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:57,614 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-03 23:01:57,615 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2022-11
+2025-08-03 23:01:57,615 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2023-02
+2025-08-03 23:01:57,615 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-02-01 00:00:00 to 2023-03-01 00:00:00
+2025-08-03 23:01:57,615 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1675206000000 to 1677625200000
+2025-08-03 23:01:57,616 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:57,621 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-03 23:01:57,621 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2022-10
+2025-08-03 23:01:57,622 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2023-03
+2025-08-03 23:01:57,622 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-03-01 00:00:00 to 2023-04-01 00:00:00
+2025-08-03 23:01:57,622 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1677625200000 to 1680300000000
+2025-08-03 23:01:57,622 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:57,645 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-03 23:01:57,645 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2022-09
+2025-08-03 23:01:57,645 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2023-04
+2025-08-03 23:01:57,645 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-04-01 00:00:00 to 2023-05-01 00:00:00
+2025-08-03 23:01:57,646 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1680300000000 to 1682892000000
+2025-08-03 23:01:57,646 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:58,124 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-03 23:01:58,125 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2023-01
+2025-08-03 23:01:58,125 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2023-05
+2025-08-03 23:01:58,125 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-05-01 00:00:00 to 2023-06-01 00:00:00
+2025-08-03 23:01:58,126 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1682892000000 to 1685570400000
+2025-08-03 23:01:58,126 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:58,253 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-03 23:01:58,254 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2023-02
+2025-08-03 23:01:58,254 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2023-06
+2025-08-03 23:01:58,254 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-06-01 00:00:00 to 2023-07-01 00:00:00
+2025-08-03 23:01:58,254 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1685570400000 to 1688162400000
+2025-08-03 23:01:58,254 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:58,420 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-03 23:01:58,420 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2023-03
+2025-08-03 23:01:58,421 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2023-07
+2025-08-03 23:01:58,421 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-07-01 00:00:00 to 2023-08-01 00:00:00
+2025-08-03 23:01:58,422 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1688162400000 to 1690840800000
+2025-08-03 23:01:58,422 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:58,423 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-03 23:01:58,423 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2022-12
+2025-08-03 23:01:58,423 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-04
+2025-08-03 23:01:58,424 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-04 00:00:00 to 2025-07-05 00:00:00
+2025-08-03 23:01:58,424 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1751580000000 to 1751666400000
+2025-08-03 23:01:58,424 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:58,424 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:01:58,424 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:01:58,787 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-03 23:01:58,787 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2023-05
+2025-08-03 23:01:58,788 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-05
+2025-08-03 23:01:58,788 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-05 00:00:00 to 2025-07-06 00:00:00
+2025-08-03 23:01:58,788 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1751666400000 to 1751752800000
+2025-08-03 23:01:58,788 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:58,789 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:01:58,789 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:01:58,931 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-03 23:01:58,931 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2023-06
+2025-08-03 23:01:58,932 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-07
+2025-08-03 23:01:58,932 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-07 00:00:00 to 2025-07-08 00:00:00
+2025-08-03 23:01:58,932 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1751839200000 to 1751925600000
+2025-08-03 23:01:58,932 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:58,932 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:01:58,933 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:01:58,943 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-03 23:01:58,943 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2023-04
+2025-08-03 23:01:58,943 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-08
+2025-08-03 23:01:58,943 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-08 00:00:00 to 2025-07-09 00:00:00
+2025-08-03 23:01:58,943 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1751925600000 to 1752012000000
+2025-08-03 23:01:58,944 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:58,944 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:01:58,944 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:01:59,007 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-03 23:01:59,008 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2023-07
+2025-08-03 23:01:59,008 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-09
+2025-08-03 23:01:59,008 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-09 00:00:00 to 2025-07-10 00:00:00
+2025-08-03 23:01:59,008 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1752012000000 to 1752098400000
+2025-08-03 23:01:59,009 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:59,009 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:01:59,009 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:01:59,009 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Processing results...
+2025-08-03 23:01:59,010 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ STEP 3 COMPLETED: Klines download finished - 0/12 periods successful, 0 errors
+2025-08-03 23:01:59,010 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 CSV Files: 0 monthly klines files created
+2025-08-03 23:01:59,430 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:01:59,431 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:01:59,431 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-04
+2025-08-03 23:01:59,432 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-10
+2025-08-03 23:01:59,432 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-10 00:00:00 to 2025-07-11 00:00:00
+2025-08-03 23:01:59,432 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1752098400000 to 1752184800000
+2025-08-03 23:01:59,432 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:01:59,432 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:01:59,432 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:02:00,641 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:00,641 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:00,641 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-08
+2025-08-03 23:02:00,641 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-11
+2025-08-03 23:02:00,641 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-11 00:00:00 to 2025-07-12 00:00:00
+2025-08-03 23:02:00,641 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1752184800000 to 1752271200000
+2025-08-03 23:02:00,641 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:00,641 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:02:00,641 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:02:00,660 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:00,660 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:00,661 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-05
+2025-08-03 23:02:00,661 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-12
+2025-08-03 23:02:00,661 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-12 00:00:00 to 2025-07-13 00:00:00
+2025-08-03 23:02:00,661 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1752271200000 to 1752357600000
+2025-08-03 23:02:00,661 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:00,661 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:02:00,661 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:02:00,721 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:00,721 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:00,721 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-09
+2025-08-03 23:02:00,722 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-13
+2025-08-03 23:02:00,722 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-13 00:00:00 to 2025-07-14 00:00:00
+2025-08-03 23:02:00,722 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1752357600000 to 1752444000000
+2025-08-03 23:02:00,722 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:00,722 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:02:00,722 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:02:00,786 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:00,787 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:00,787 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-07
+2025-08-03 23:02:00,787 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-15
+2025-08-03 23:02:00,787 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-15 00:00:00 to 2025-07-16 00:00:00
+2025-08-03 23:02:00,787 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1752530400000 to 1752616800000
+2025-08-03 23:02:00,787 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:00,787 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:02:00,787 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:02:01,154 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:01,155 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:01,155 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-10
+2025-08-03 23:02:01,156 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-16
+2025-08-03 23:02:01,157 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-16 00:00:00 to 2025-07-17 00:00:00
+2025-08-03 23:02:01,157 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1752616800000 to 1752703200000
+2025-08-03 23:02:01,157 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:01,157 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:02:01,157 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:02:02,206 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:02,206 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:02,206 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-12
+2025-08-03 23:02:02,207 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-23
+2025-08-03 23:02:02,207 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-23 00:00:00 to 2025-07-24 00:00:00
+2025-08-03 23:02:02,207 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1753221600000 to 1753308000000
+2025-08-03 23:02:02,207 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:02,208 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:02:02,208 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:02:02,360 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:02,360 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:02,361 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-13
+2025-08-03 23:02:02,361 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-24
+2025-08-03 23:02:02,361 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-24 00:00:00 to 2025-07-25 00:00:00
+2025-08-03 23:02:02,361 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1753308000000 to 1753394400000
+2025-08-03 23:02:02,361 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:02,361 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:02:02,361 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:02:02,410 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:02,411 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:02,411 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-11
+2025-08-03 23:02:02,411 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-31
+2025-08-03 23:02:02,412 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-31 00:00:00 to 2025-08-01 00:00:00
+2025-08-03 23:02:02,412 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1753912800000 to 1753999200000
+2025-08-03 23:02:02,412 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:02,412 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:02:02,412 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:02:02,580 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:02,580 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:02,580 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-16
+2025-08-03 23:02:02,581 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-08-03
+2025-08-03 23:02:02,582 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-08-03 00:00:00 to 2025-08-03 23:01:47.546239
+2025-08-03 23:02:02,582 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1754172000000 to 1754254907546
+2025-08-03 23:02:02,582 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:02,582 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Using MEXC-specific approach with synthetic data...
+2025-08-03 23:02:02,582 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 Creating synthetic historical data from existing klines...
+2025-08-03 23:02:02,752 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:02,752 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:02,753 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-15
+2025-08-03 23:02:02,754 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading futures for 2022-08
+2025-08-03 23:02:02,754 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2022-08-01 00:00:00 to 2022-09-01 00:00:00
+2025-08-03 23:02:02,754 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1659304800000 to 1661983200000
+2025-08-03 23:02:02,754 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:03,263 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:03,264 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:03,264 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-08-03
+2025-08-03 23:02:03,264 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading futures for 2022-09
+2025-08-03 23:02:03,265 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2022-09-01 00:00:00 to 2022-10-01 00:00:00
+2025-08-03 23:02:03,265 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1661983200000 to 1664575200000
+2025-08-03 23:02:03,265 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:03,786 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:03,786 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:03,786 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-23
+2025-08-03 23:02:03,786 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading futures for 2022-10
+2025-08-03 23:02:03,786 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2022-10-01 00:00:00 to 2022-11-01 00:00:00
+2025-08-03 23:02:03,786 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1664575200000 to 1667257200000
+2025-08-03 23:02:03,787 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:04,204 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:04,205 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:04,205 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-24
+2025-08-03 23:02:04,206 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading futures for 2022-11
+2025-08-03 23:02:04,207 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2022-11-01 00:00:00 to 2022-12-01 00:00:00
+2025-08-03 23:02:04,207 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1667257200000 to 1669849200000
+2025-08-03 23:02:04,207 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:04,467 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 futures records
+2025-08-03 23:02:04,468 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No futures data received for 2022-08
+2025-08-03 23:02:04,468 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading futures for 2022-12
+2025-08-03 23:02:04,468 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2022-12-01 00:00:00 to 2023-01-01 00:00:00
+2025-08-03 23:02:04,468 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1669849200000 to 1672527600000
+2025-08-03 23:02:04,468 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:04,561 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Created 0 synthetic trades from klines
+2025-08-03 23:02:04,561 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-03 23:02:04,561 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-07-31
+2025-08-03 23:02:04,562 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading futures for 2023-01
+2025-08-03 23:02:04,562 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-01-01 00:00:00 to 2023-02-01 00:00:00
+2025-08-03 23:02:04,562 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1672527600000 to 1675206000000
+2025-08-03 23:02:04,563 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:04,574 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Processing results...
+2025-08-03 23:02:04,574 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ STEP 3B COMPLETED: Aggtrades download finished - 0/15 periods successful, 0 errors
+2025-08-03 23:02:04,574 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 CSV Files: 0 daily aggtrades files created
+2025-08-03 23:02:05,426 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 futures records
+2025-08-03 23:02:05,427 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No futures data received for 2022-10
+2025-08-03 23:02:05,427 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading futures for 2023-02
+2025-08-03 23:02:05,427 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-02-01 00:00:00 to 2023-03-01 00:00:00
+2025-08-03 23:02:05,427 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1675206000000 to 1677625200000
+2025-08-03 23:02:05,427 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:06,051 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 futures records
+2025-08-03 23:02:06,052 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No futures data received for 2022-12
+2025-08-03 23:02:06,052 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading futures for 2023-03
+2025-08-03 23:02:06,053 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-03-01 00:00:00 to 2023-04-01 00:00:00
+2025-08-03 23:02:06,053 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1677625200000 to 1680300000000
+2025-08-03 23:02:06,053 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:06,150 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 futures records
+2025-08-03 23:02:06,151 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No futures data received for 2022-11
+2025-08-03 23:02:06,151 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading futures for 2023-04
+2025-08-03 23:02:06,151 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-04-01 00:00:00 to 2023-05-01 00:00:00
+2025-08-03 23:02:06,152 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1680300000000 to 1682892000000
+2025-08-03 23:02:06,152 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:06,168 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 futures records
+2025-08-03 23:02:06,168 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No futures data received for 2023-01
+2025-08-03 23:02:06,168 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 futures records
+2025-08-03 23:02:06,168 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No futures data received for 2022-09
+2025-08-03 23:02:06,168 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading futures for 2023-05
+2025-08-03 23:02:06,169 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-05-01 00:00:00 to 2023-06-01 00:00:00
+2025-08-03 23:02:06,169 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1682892000000 to 1685570400000
+2025-08-03 23:02:06,169 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:06,178 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading futures for 2023-06
+2025-08-03 23:02:06,178 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-06-01 00:00:00 to 2023-07-01 00:00:00
+2025-08-03 23:02:06,178 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1685570400000 to 1688162400000
+2025-08-03 23:02:06,178 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:07,392 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 futures records
+2025-08-03 23:02:07,392 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No futures data received for 2023-02
+2025-08-03 23:02:07,393 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading futures for 2023-07
+2025-08-03 23:02:07,393 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-07-01 00:00:00 to 2023-08-01 00:00:00
+2025-08-03 23:02:07,393 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1688162400000 to 1690840800000
+2025-08-03 23:02:07,393 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to MEXC
+2025-08-03 23:02:08,143 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 futures records
+2025-08-03 23:02:08,144 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No futures data received for 2023-03
+2025-08-03 23:02:08,153 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 futures records
+2025-08-03 23:02:08,153 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No futures data received for 2023-05
+2025-08-03 23:02:09,054 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 futures records
+2025-08-03 23:02:09,054 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No futures data received for 2023-06
+2025-08-03 23:02:09,055 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 futures records
+2025-08-03 23:02:09,055 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No futures data received for 2023-04
+2025-08-03 23:02:10,592 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 futures records
+2025-08-03 23:02:10,592 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No futures data received for 2023-07
+2025-08-03 23:02:10,593 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Processing results...
+2025-08-03 23:02:10,593 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ STEP 3C COMPLETED: Futures download finished - 0/12 periods successful, 0 errors
+2025-08-03 23:02:10,593 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 CSV Files: 0 daily futures files created
+2025-08-03 23:02:10,594 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Processing final results...
+2025-08-03 23:02:10,594 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🎉 OPTIMIZED DOWNLOAD PROCESS COMPLETED
+2025-08-03 23:02:10,594 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 FINAL STATISTICS:
+2025-08-03 23:02:10,595 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    ✅ Successful downloads: 0/3
+2025-08-03 23:02:10,595 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    ❌ Failed downloads: 0/3
+2025-08-03 23:02:10,595 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    ⏱️ Total time: 23.06 seconds
+2025-08-03 23:02:10,595 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    📈 Klines files downloaded: 0
+2025-08-03 23:02:10,595 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    📊 Aggtrades files downloaded: 0
+2025-08-03 23:02:10,595 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    📈 Futures files downloaded: 0
+2025-08-03 23:02:10,595 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    ❌ Total errors: 0
+2025-08-03 23:02:10,596 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 CSV FILES CREATED: 0 total files
+2025-08-03 23:02:10,596 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    📈 Monthly klines files: 0
+2025-08-03 23:02:10,596 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    📊 Daily aggtrades files: 0
+2025-08-03 23:02:10,596 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    📈 Daily futures files: 0
+2025-08-03 23:02:10,596 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🧹 Cleaning up resources...
+2025-08-03 23:02:10,849 - AresTradingSystem.System - INFO - MEXC CCXT session closed.
+2025-08-03 23:02:10,850 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Cleanup completed
+2025-08-03 23:02:10,850 - AresTradingSystem.System.OptimizedDataDownloader - ERROR - ❌ Optimized download failed

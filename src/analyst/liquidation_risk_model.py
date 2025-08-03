@@ -1,10 +1,11 @@
 # src/analyst/liquidation_risk_model.py
-from typing import Dict, Any, Optional
-from src.utils.logger import system_logger
+from typing import Any
+
 from src.utils.error_handler import (
-    handle_errors,
     handle_data_processing_errors,
+    handle_errors,
 )
+from src.utils.logger import system_logger
 
 
 class ProbabilisticLiquidationRiskModel:
@@ -13,7 +14,7 @@ class ProbabilisticLiquidationRiskModel:
     position size, leverage, and historical volatility.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.logger = system_logger.getChild("LiquidationRiskModel")
 
@@ -54,7 +55,10 @@ class ProbabilisticLiquidationRiskModel:
 
             # Calculate base liquidation distance
             liquidation_distance = self._calculate_liquidation_distance(
-                current_price, position_size, leverage, side
+                current_price,
+                position_size,
+                leverage,
+                side,
             )
 
             # Calculate volatility risk
@@ -62,7 +66,8 @@ class ProbabilisticLiquidationRiskModel:
 
             # Calculate position size risk
             position_risk = self._calculate_position_risk(
-                position_size, account_balance
+                position_size,
+                account_balance,
             )
 
             # Calculate leverage risk
@@ -70,7 +75,10 @@ class ProbabilisticLiquidationRiskModel:
 
             # Combine risks into final LSS
             lss = self._combine_risk_factors(
-                liquidation_distance, volatility_risk, position_risk, leverage_risk
+                liquidation_distance,
+                volatility_risk,
+                position_risk,
+                leverage_risk,
             )
 
             self.logger.info(
@@ -78,7 +86,7 @@ class ProbabilisticLiquidationRiskModel:
                 f"(Distance: {liquidation_distance:.4f}, "
                 f"Vol Risk: {volatility_risk:.2f}, "
                 f"Pos Risk: {position_risk:.2f}, "
-                f"Lev Risk: {leverage_risk:.2f})"
+                f"Lev Risk: {leverage_risk:.2f})",
             )
 
             return max(0.0, min(100.0, lss))
@@ -88,10 +96,15 @@ class ProbabilisticLiquidationRiskModel:
             return 50.0
 
     @handle_data_processing_errors(
-        default_return=0.0, context="calculate_liquidation_distance"
+        default_return=0.0,
+        context="calculate_liquidation_distance",
     )
     def _calculate_liquidation_distance(
-        self, current_price: float, position_size: float, leverage: int, side: str
+        self,
+        current_price: float,
+        position_size: float,
+        leverage: int,
+        side: str,
     ) -> float:
         """Calculate the distance to liquidation price."""
         try:
@@ -113,10 +126,13 @@ class ProbabilisticLiquidationRiskModel:
             return 0.0
 
     @handle_data_processing_errors(
-        default_return=0.0, context="calculate_volatility_risk"
+        default_return=0.0,
+        context="calculate_volatility_risk",
     )
     def _calculate_volatility_risk(
-        self, atr: float, market_volatility: float = None
+        self,
+        atr: float,
+        market_volatility: float = None,
     ) -> float:
         """Calculate risk based on volatility."""
         try:
@@ -137,10 +153,13 @@ class ProbabilisticLiquidationRiskModel:
             return 50.0
 
     @handle_data_processing_errors(
-        default_return=0.0, context="calculate_position_risk"
+        default_return=0.0,
+        context="calculate_position_risk",
     )
     def _calculate_position_risk(
-        self, position_size: float, account_balance: float = None
+        self,
+        position_size: float,
+        account_balance: float = None,
     ) -> float:
         """Calculate risk based on position size relative to account."""
         try:
@@ -170,7 +189,8 @@ class ProbabilisticLiquidationRiskModel:
             return 50.0
 
     @handle_data_processing_errors(
-        default_return=0.0, context="calculate_leverage_risk"
+        default_return=0.0,
+        context="calculate_leverage_risk",
     )
     def _calculate_leverage_risk(self, leverage: int) -> float:
         """Calculate risk based on leverage."""
@@ -243,7 +263,7 @@ class ProbabilisticLiquidationRiskModel:
         leverage: int,
         side: str,
         atr: float,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get comprehensive risk metrics for a position.
 

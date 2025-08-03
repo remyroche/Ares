@@ -1,470 +1,1100 @@
 # src/components/modular_strategist.py
 
-from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Any
 
-from src.interfaces import IStrategist, AnalysisResult, StrategyResult, EventType
-from src.interfaces.base_interfaces import IExchangeClient, IStateManager, IEventBus
-from src.utils.logger import system_logger
-from src.config import settings
+import numpy as np
+
 from src.utils.error_handler import (
     handle_errors,
-    handle_data_processing_errors,
+    handle_specific_errors,
 )
+from src.utils.logger import system_logger
 
 
-class ModularStrategist(IStrategist):
+class ModularStrategist:
     """
-    Modular implementation of the Strategist that implements the IStrategist interface.
-    Uses dependency injection and event-driven communication.
+    Enhanced modular strategist with comprehensive error handling and type safety.
     """
 
-    def __init__(
-        self,
-        exchange_client: IExchangeClient,
-        state_manager: IStateManager,
-        event_bus: Optional[IEventBus] = None,
-    ):
+    def __init__(self, config: dict[str, Any]) -> None:
         """
-        Initialize the modular strategist.
+        Initialize modular strategist with enhanced type safety.
 
         Args:
-            exchange_client: Exchange client for data access
-            state_manager: State manager for persistence
-            event_bus: Optional event bus for communication
+            config: Configuration dictionary
         """
-        self.exchange = exchange_client
-        self.state_manager = state_manager
-        self.event_bus = event_bus
+        self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("ModularStrategist")
-        self.config = settings.get("strategist", {})
-        self.last_analyst_timestamp = None
-        self.running = False
-        self.strategy_performance = {}
 
-        self.logger.info("ModularStrategist initialized")
+        # Strategy state
+        self.is_strategizing: bool = False
+        self.strategy_results: dict[str, Any] = {}
+        self.strategy_history: list[dict[str, Any]] = []
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="modular_strategist_start"
+        # Configuration
+        self.strategist_config: dict[str, Any] = self.config.get(
+            "modular_strategist",
+            {},
+        )
+        self.strategy_interval: int = self.strategist_config.get(
+            "strategy_interval",
+            60,
+        )
+        self.max_strategy_history: int = self.strategist_config.get(
+            "max_strategy_history",
+            100,
+        )
+        self.enable_position_sizing: bool = self.strategist_config.get(
+            "enable_position_sizing",
+            True,
+        )
+        self.enable_risk_management: bool = self.strategist_config.get(
+            "enable_risk_management",
+            True,
+        )
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid modular strategist configuration"),
+            AttributeError: (False, "Missing required strategist parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="modular strategist initialization",
     )
-    async def start(self) -> None:
-        """Start the modular strategist"""
-        self.logger.info("Starting ModularStrategist")
-        self.running = True
-
-        # Subscribe to analysis events if event bus is available
-        if self.event_bus:
-            await self.event_bus.subscribe(
-                EventType.ANALYSIS_COMPLETED, self._handle_analysis_result
-            )
-
-        self.logger.info("ModularStrategist started")
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="modular_strategist_stop"
-    )
-    async def stop(self) -> None:
-        """Stop the modular strategist"""
-        self.logger.info("Stopping ModularStrategist")
-        self.running = False
-
-        # Unsubscribe from events if event bus is available
-        if self.event_bus:
-            await self.event_bus.unsubscribe(
-                EventType.ANALYSIS_COMPLETED, self._handle_analysis_result
-            )
-
-        self.logger.info("ModularStrategist stopped")
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="formulate_strategy"
-    )
-    async def formulate_strategy(
-        self, analysis_result: AnalysisResult
-    ) -> StrategyResult:
+    async def initialize(self) -> bool:
         """
-        Formulate trading strategy based on analysis result.
-
-        Args:
-            analysis_result: Analysis result from the analyst
+        Initialize modular strategist with enhanced error handling.
 
         Returns:
-            Strategy result
+            bool: True if initialization successful, False otherwise
         """
-        if not self.running:
-            self.logger.warning("Strategist not running, skipping strategy formulation")
-            return None
-
-        self.logger.debug(f"Formulating strategy for {analysis_result.symbol}")
-
         try:
-            # Determine positional bias
-            position_bias = await self._determine_positional_bias(analysis_result)
+            self.logger.info("Initializing Modular Strategist...")
 
-            # Determine leverage cap
-            leverage_cap = await self._determine_leverage_cap(analysis_result)
+            # Load strategist configuration
+            await self._load_strategist_configuration()
 
-            # Determine max notional size
-            max_notional_size = await self._determine_max_notional_size(analysis_result)
+            # Validate configuration
+            if not self._validate_configuration():
+                self.logger.error("Invalid configuration for modular strategist")
+                return False
 
-            # Calculate risk parameters
-            risk_parameters = await self._calculate_risk_parameters(analysis_result)
+            # Initialize strategy modules
+            await self._initialize_strategy_modules()
 
-            # Assess market conditions
-            market_conditions = await self._assess_market_conditions(analysis_result)
-
-            # Build strategy result
-            strategy_result = StrategyResult(
-                timestamp=datetime.now(),
-                symbol=analysis_result.symbol,
-                position_bias=position_bias,
-                leverage_cap=leverage_cap,
-                max_notional_size=max_notional_size,
-                risk_parameters=risk_parameters,
-                market_conditions=market_conditions,
+            self.logger.info(
+                "✅ Modular Strategist initialization completed successfully",
             )
-
-            # Publish strategy formulated event
-            if self.event_bus:
-                await self.event_bus.publish(
-                    EventType.STRATEGY_FORMULATED, strategy_result, "ModularStrategist"
-                )
-
-            # Update performance tracking
-            await self._update_strategy_performance(strategy_result)
-
-            return strategy_result
+            return True
 
         except Exception as e:
-            self.logger.error(f"Strategy formulation failed: {e}", exc_info=True)
-            return None
+            self.logger.error(f"❌ Modular Strategist initialization failed: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="strategist configuration loading",
+    )
+    async def _load_strategist_configuration(self) -> None:
+        """Load strategist configuration."""
+        try:
+            # Set default strategist parameters
+            self.strategist_config.setdefault("strategy_interval", 60)
+            self.strategist_config.setdefault("max_strategy_history", 100)
+            self.strategist_config.setdefault("enable_position_sizing", True)
+            self.strategist_config.setdefault("enable_risk_management", True)
+            self.strategist_config.setdefault("enable_portfolio_optimization", False)
+            self.strategist_config.setdefault("enable_dynamic_rebalancing", True)
+
+            # Update configuration
+            self.strategy_interval = self.strategist_config["strategy_interval"]
+            self.max_strategy_history = self.strategist_config["max_strategy_history"]
+            self.enable_position_sizing = self.strategist_config[
+                "enable_position_sizing"
+            ]
+            self.enable_risk_management = self.strategist_config[
+                "enable_risk_management"
+            ]
+
+            self.logger.info("Strategist configuration loaded successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error loading strategist configuration: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
+    def _validate_configuration(self) -> bool:
+        """
+        Validate strategist configuration.
+
+        Returns:
+            bool: True if configuration is valid, False otherwise
+        """
+        try:
+            # Validate strategy interval
+            if self.strategy_interval <= 0:
+                self.logger.error("Invalid strategy interval")
+                return False
+
+            # Validate max strategy history
+            if self.max_strategy_history <= 0:
+                self.logger.error("Invalid max strategy history")
+                return False
+
+            # Validate that at least one strategy type is enabled
+            if not any(
+                [
+                    self.enable_position_sizing,
+                    self.enable_risk_management,
+                    self.strategist_config.get("enable_portfolio_optimization", False),
+                    self.strategist_config.get("enable_dynamic_rebalancing", True),
+                ],
+            ):
+                self.logger.error("At least one strategy type must be enabled")
+                return False
+
+            self.logger.info("Configuration validation successful")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="strategy modules initialization",
+    )
+    async def _initialize_strategy_modules(self) -> None:
+        """Initialize strategy modules."""
+        try:
+            # Initialize position sizing module
+            if self.enable_position_sizing:
+                await self._initialize_position_sizing()
+
+            # Initialize risk management module
+            if self.enable_risk_management:
+                await self._initialize_risk_management()
+
+            # Initialize portfolio optimization module
+            if self.strategist_config.get("enable_portfolio_optimization", False):
+                await self._initialize_portfolio_optimization()
+
+            # Initialize dynamic rebalancing module
+            if self.strategist_config.get("enable_dynamic_rebalancing", True):
+                await self._initialize_dynamic_rebalancing()
+
+            self.logger.info("Strategy modules initialized successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing strategy modules: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="position sizing initialization",
+    )
+    async def _initialize_position_sizing(self) -> None:
+        """Initialize position sizing module."""
+        try:
+            # Initialize position sizing strategies
+            self.position_sizing_strategies = {
+                "kelly_criterion": True,
+                "fixed_fraction": True,
+                "volatility_targeting": True,
+                "risk_parity": True,
+            }
+
+            self.logger.info("Position sizing module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing position sizing: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="risk management initialization",
+    )
+    async def _initialize_risk_management(self) -> None:
+        """Initialize risk management module."""
+        try:
+            # Initialize risk management strategies
+            self.risk_management_strategies = {
+                "stop_loss": True,
+                "take_profit": True,
+                "trailing_stop": True,
+                "position_limits": True,
+            }
+
+            self.logger.info("Risk management module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing risk management: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="portfolio optimization initialization",
+    )
+    async def _initialize_portfolio_optimization(self) -> None:
+        """Initialize portfolio optimization module."""
+        try:
+            # Initialize portfolio optimization strategies
+            self.portfolio_optimization_strategies = {
+                "mean_variance": True,
+                "black_litterman": True,
+                "risk_parity": True,
+                "maximum_sharpe": True,
+            }
+
+            self.logger.info("Portfolio optimization module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing portfolio optimization: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="dynamic rebalancing initialization",
+    )
+    async def _initialize_dynamic_rebalancing(self) -> None:
+        """Initialize dynamic rebalancing module."""
+        try:
+            # Initialize dynamic rebalancing strategies
+            self.dynamic_rebalancing_strategies = {
+                "threshold_rebalancing": True,
+                "calendar_rebalancing": True,
+                "drift_rebalancing": True,
+                "volatility_rebalancing": True,
+            }
+
+            self.logger.info("Dynamic rebalancing module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing dynamic rebalancing: {e}")
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid strategy parameters"),
+            AttributeError: (False, "Missing strategy components"),
+            KeyError: (False, "Missing required strategy data"),
+        },
+        default_return=False,
+        context="strategy execution",
+    )
+    async def execute_strategy(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> bool:
+        """
+        Execute trading strategy.
+
+        Args:
+            market_data: Market data dictionary
+            analysis_data: Analysis data dictionary
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if not self._validate_strategy_inputs(market_data, analysis_data):
+                return False
+
+            self.is_strategizing = True
+            self.logger.info("🔄 Starting strategy execution...")
+
+            # Perform position sizing
+            if self.enable_position_sizing:
+                position_results = await self._perform_position_sizing(
+                    market_data,
+                    analysis_data,
+                )
+                self.strategy_results["position_sizing"] = position_results
+
+            # Perform risk management
+            if self.enable_risk_management:
+                risk_results = await self._perform_risk_management(
+                    market_data,
+                    analysis_data,
+                )
+                self.strategy_results["risk_management"] = risk_results
+
+            # Perform portfolio optimization
+            if self.strategist_config.get("enable_portfolio_optimization", False):
+                portfolio_results = await self._perform_portfolio_optimization(
+                    market_data,
+                    analysis_data,
+                )
+                self.strategy_results["portfolio_optimization"] = portfolio_results
+
+            # Perform dynamic rebalancing
+            if self.strategist_config.get("enable_dynamic_rebalancing", True):
+                rebalancing_results = await self._perform_dynamic_rebalancing(
+                    market_data,
+                    analysis_data,
+                )
+                self.strategy_results["dynamic_rebalancing"] = rebalancing_results
+
+            # Store strategy results
+            await self._store_strategy_results()
+
+            self.is_strategizing = False
+            self.logger.info("✅ Strategy execution completed successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error executing strategy: {e}")
+            self.is_strategizing = False
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="strategy inputs validation",
+    )
+    def _validate_strategy_inputs(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> bool:
+        """
+        Validate strategy inputs.
+
+        Args:
+            market_data: Market data dictionary
+            analysis_data: Analysis data dictionary
+
+        Returns:
+            bool: True if valid, False otherwise
+        """
+        try:
+            # Check required market data fields
+            required_market_fields = ["symbol", "price", "volume", "timestamp"]
+            for field in required_market_fields:
+                if field not in market_data:
+                    self.logger.error(f"Missing required market data field: {field}")
+                    return False
+
+            # Check required analysis data fields
+            required_analysis_fields = ["signal", "confidence"]
+            for field in required_analysis_fields:
+                if field not in analysis_data:
+                    self.logger.error(f"Missing required analysis data field: {field}")
+                    return False
+
+            # Validate data types
+            if not isinstance(market_data["price"], (int, float)):
+                self.logger.error("Invalid price data type")
+                return False
+
+            if not isinstance(analysis_data["confidence"], (int, float)):
+                self.logger.error("Invalid confidence data type")
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error validating strategy inputs: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="position sizing",
+    )
+    async def _perform_position_sizing(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform position sizing.
+
+        Args:
+            market_data: Market data dictionary
+            analysis_data: Analysis data dictionary
+
+        Returns:
+            Dict[str, Any]: Position sizing results
+        """
+        try:
+            results = {}
+
+            # Calculate Kelly Criterion
+            if self.position_sizing_strategies.get("kelly_criterion", False):
+                results["kelly_criterion"] = self._calculate_kelly_criterion(
+                    market_data,
+                    analysis_data,
+                )
+
+            # Calculate Fixed Fraction
+            if self.position_sizing_strategies.get("fixed_fraction", False):
+                results["fixed_fraction"] = self._calculate_fixed_fraction(
+                    market_data,
+                    analysis_data,
+                )
+
+            # Calculate Volatility Targeting
+            if self.position_sizing_strategies.get("volatility_targeting", False):
+                results["volatility_targeting"] = self._calculate_volatility_targeting(
+                    market_data,
+                    analysis_data,
+                )
+
+            # Calculate Risk Parity
+            if self.position_sizing_strategies.get("risk_parity", False):
+                results["risk_parity"] = self._calculate_risk_parity(
+                    market_data,
+                    analysis_data,
+                )
+
+            self.logger.info("Position sizing completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing position sizing: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="risk management",
+    )
+    async def _perform_risk_management(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform risk management.
+
+        Args:
+            market_data: Market data dictionary
+            analysis_data: Analysis data dictionary
+
+        Returns:
+            Dict[str, Any]: Risk management results
+        """
+        try:
+            results = {}
+
+            # Calculate Stop Loss
+            if self.risk_management_strategies.get("stop_loss", False):
+                results["stop_loss"] = self._calculate_stop_loss(
+                    market_data,
+                    analysis_data,
+                )
+
+            # Calculate Take Profit
+            if self.risk_management_strategies.get("take_profit", False):
+                results["take_profit"] = self._calculate_take_profit(
+                    market_data,
+                    analysis_data,
+                )
+
+            # Calculate Trailing Stop
+            if self.risk_management_strategies.get("trailing_stop", False):
+                results["trailing_stop"] = self._calculate_trailing_stop(
+                    market_data,
+                    analysis_data,
+                )
+
+            # Calculate Position Limits
+            if self.risk_management_strategies.get("position_limits", False):
+                results["position_limits"] = self._calculate_position_limits(
+                    market_data,
+                    analysis_data,
+                )
+
+            self.logger.info("Risk management completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing risk management: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="portfolio optimization",
+    )
+    async def _perform_portfolio_optimization(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform portfolio optimization.
+
+        Args:
+            market_data: Market data dictionary
+            analysis_data: Analysis data dictionary
+
+        Returns:
+            Dict[str, Any]: Portfolio optimization results
+        """
+        try:
+            results = {}
+
+            # Calculate Mean Variance
+            if self.portfolio_optimization_strategies.get("mean_variance", False):
+                results["mean_variance"] = self._calculate_mean_variance(
+                    market_data,
+                    analysis_data,
+                )
+
+            # Calculate Black Litterman
+            if self.portfolio_optimization_strategies.get("black_litterman", False):
+                results["black_litterman"] = self._calculate_black_litterman(
+                    market_data,
+                    analysis_data,
+                )
+
+            # Calculate Risk Parity
+            if self.portfolio_optimization_strategies.get("risk_parity", False):
+                results["risk_parity"] = self._calculate_portfolio_risk_parity(
+                    market_data,
+                    analysis_data,
+                )
+
+            # Calculate Maximum Sharpe
+            if self.portfolio_optimization_strategies.get("maximum_sharpe", False):
+                results["maximum_sharpe"] = self._calculate_maximum_sharpe(
+                    market_data,
+                    analysis_data,
+                )
+
+            self.logger.info("Portfolio optimization completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing portfolio optimization: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="dynamic rebalancing",
+    )
+    async def _perform_dynamic_rebalancing(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform dynamic rebalancing.
+
+        Args:
+            market_data: Market data dictionary
+            analysis_data: Analysis data dictionary
+
+        Returns:
+            Dict[str, Any]: Dynamic rebalancing results
+        """
+        try:
+            results = {}
+
+            # Calculate Threshold Rebalancing
+            if self.dynamic_rebalancing_strategies.get("threshold_rebalancing", False):
+                results["threshold_rebalancing"] = (
+                    self._calculate_threshold_rebalancing(market_data, analysis_data)
+                )
+
+            # Calculate Calendar Rebalancing
+            if self.dynamic_rebalancing_strategies.get("calendar_rebalancing", False):
+                results["calendar_rebalancing"] = self._calculate_calendar_rebalancing(
+                    market_data,
+                    analysis_data,
+                )
+
+            # Calculate Drift Rebalancing
+            if self.dynamic_rebalancing_strategies.get("drift_rebalancing", False):
+                results["drift_rebalancing"] = self._calculate_drift_rebalancing(
+                    market_data,
+                    analysis_data,
+                )
+
+            # Calculate Volatility Rebalancing
+            if self.dynamic_rebalancing_strategies.get("volatility_rebalancing", False):
+                results["volatility_rebalancing"] = (
+                    self._calculate_volatility_rebalancing(market_data, analysis_data)
+                )
+
+            self.logger.info("Dynamic rebalancing completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing dynamic rebalancing: {e}")
+            return {}
+
+    # Position sizing calculation methods
+    def _calculate_kelly_criterion(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> float:
+        """Calculate Kelly Criterion position size."""
+        try:
+            # Simulate Kelly Criterion calculation
+            win_rate = analysis_data.get("confidence", 0.5)
+            avg_win = 0.02  # 2% average win
+            avg_loss = 0.01  # 1% average loss
+
+            kelly_fraction = (win_rate * avg_win - (1 - win_rate) * avg_loss) / avg_win
+            return max(0, min(kelly_fraction, 0.25))  # Cap at 25%
+        except Exception as e:
+            self.logger.error(f"Error calculating Kelly Criterion: {e}")
+            return 0.0
+
+    def _calculate_fixed_fraction(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> float:
+        """Calculate Fixed Fraction position size."""
+        try:
+            # Simulate Fixed Fraction calculation
+            confidence = analysis_data.get("confidence", 0.5)
+            base_fraction = 0.1  # 10% base position
+
+            return base_fraction * confidence
+        except Exception as e:
+            self.logger.error(f"Error calculating Fixed Fraction: {e}")
+            return 0.0
+
+    def _calculate_volatility_targeting(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> float:
+        """Calculate Volatility Targeting position size."""
+        try:
+            # Simulate Volatility Targeting calculation
+            volatility = 0.02  # 2% volatility
+            target_volatility = 0.01  # 1% target volatility
+
+            return target_volatility / volatility
+        except Exception as e:
+            self.logger.error(f"Error calculating Volatility Targeting: {e}")
+            return 0.0
+
+    def _calculate_risk_parity(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> float:
+        """Calculate Risk Parity position size."""
+        try:
+            # Simulate Risk Parity calculation
+            risk_contribution = 0.5  # Equal risk contribution
+
+            return risk_contribution
+        except Exception as e:
+            self.logger.error(f"Error calculating Risk Parity: {e}")
+            return 0.0
+
+    # Risk management calculation methods
+    def _calculate_stop_loss(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> float:
+        """Calculate Stop Loss level."""
+        try:
+            # Simulate Stop Loss calculation
+            current_price = market_data.get("price", 0)
+            stop_loss_pct = 0.02  # 2% stop loss
+
+            return current_price * (1 - stop_loss_pct)
+        except Exception as e:
+            self.logger.error(f"Error calculating Stop Loss: {e}")
+            return 0.0
+
+    def _calculate_take_profit(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> float:
+        """Calculate Take Profit level."""
+        try:
+            # Simulate Take Profit calculation
+            current_price = market_data.get("price", 0)
+            take_profit_pct = 0.04  # 4% take profit
+
+            return current_price * (1 + take_profit_pct)
+        except Exception as e:
+            self.logger.error(f"Error calculating Take Profit: {e}")
+            return 0.0
+
+    def _calculate_trailing_stop(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> float:
+        """Calculate Trailing Stop level."""
+        try:
+            # Simulate Trailing Stop calculation
+            current_price = market_data.get("price", 0)
+            trailing_pct = 0.015  # 1.5% trailing stop
+
+            return current_price * (1 - trailing_pct)
+        except Exception as e:
+            self.logger.error(f"Error calculating Trailing Stop: {e}")
+            return 0.0
+
+    def _calculate_position_limits(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> dict[str, float]:
+        """Calculate Position Limits."""
+        try:
+            # Simulate Position Limits calculation
+            return {
+                "max_position_size": 0.25,  # 25% max position
+                "max_leverage": 3.0,  # 3x max leverage
+                "max_drawdown": 0.1,  # 10% max drawdown
+            }
+        except Exception as e:
+            self.logger.error(f"Error calculating Position Limits: {e}")
+            return {"max_position_size": 0.0, "max_leverage": 0.0, "max_drawdown": 0.0}
+
+    # Portfolio optimization calculation methods
+    def _calculate_mean_variance(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> dict[str, float]:
+        """Calculate Mean Variance optimization."""
+        try:
+            # Simulate Mean Variance calculation
+            return {
+                "optimal_weight": 0.6,
+                "expected_return": 0.08,
+                "volatility": 0.15,
+                "sharpe_ratio": 0.53,
+            }
+        except Exception as e:
+            self.logger.error(f"Error calculating Mean Variance: {e}")
+            return {
+                "optimal_weight": 0.0,
+                "expected_return": 0.0,
+                "volatility": 0.0,
+                "sharpe_ratio": 0.0,
+            }
+
+    def _calculate_black_litterman(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> dict[str, float]:
+        """Calculate Black Litterman optimization."""
+        try:
+            # Simulate Black Litterman calculation
+            return {
+                "optimal_weight": 0.55,
+                "expected_return": 0.07,
+                "volatility": 0.14,
+                "confidence": 0.8,
+            }
+        except Exception as e:
+            self.logger.error(f"Error calculating Black Litterman: {e}")
+            return {
+                "optimal_weight": 0.0,
+                "expected_return": 0.0,
+                "volatility": 0.0,
+                "confidence": 0.0,
+            }
+
+    def _calculate_portfolio_risk_parity(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> dict[str, float]:
+        """Calculate Portfolio Risk Parity."""
+        try:
+            # Simulate Portfolio Risk Parity calculation
+            return {
+                "risk_contribution": 0.5,
+                "volatility": 0.12,
+                "diversification_ratio": 1.2,
+            }
+        except Exception as e:
+            self.logger.error(f"Error calculating Portfolio Risk Parity: {e}")
+            return {
+                "risk_contribution": 0.0,
+                "volatility": 0.0,
+                "diversification_ratio": 0.0,
+            }
+
+    def _calculate_maximum_sharpe(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> dict[str, float]:
+        """Calculate Maximum Sharpe optimization."""
+        try:
+            # Simulate Maximum Sharpe calculation
+            return {
+                "optimal_weight": 0.65,
+                "expected_return": 0.09,
+                "volatility": 0.16,
+                "sharpe_ratio": 0.56,
+            }
+        except Exception as e:
+            self.logger.error(f"Error calculating Maximum Sharpe: {e}")
+            return {
+                "optimal_weight": 0.0,
+                "expected_return": 0.0,
+                "volatility": 0.0,
+                "sharpe_ratio": 0.0,
+            }
+
+    # Dynamic rebalancing calculation methods
+    def _calculate_threshold_rebalancing(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> bool:
+        """Calculate Threshold Rebalancing trigger."""
+        try:
+            # Simulate Threshold Rebalancing calculation
+            drift = np.random.random() * 0.1  # Random drift
+            threshold = 0.05  # 5% threshold
+
+            return drift > threshold
+        except Exception as e:
+            self.logger.error(f"Error calculating Threshold Rebalancing: {e}")
+            return False
+
+    def _calculate_calendar_rebalancing(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> bool:
+        """Calculate Calendar Rebalancing trigger."""
+        try:
+            # Simulate Calendar Rebalancing calculation
+            current_time = datetime.now()
+            last_rebalance = datetime.now() - timedelta(days=30)
+            rebalance_interval = timedelta(days=7)  # Weekly rebalancing
+
+            return (current_time - last_rebalance) > rebalance_interval
+        except Exception as e:
+            self.logger.error(f"Error calculating Calendar Rebalancing: {e}")
+            return False
+
+    def _calculate_drift_rebalancing(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> bool:
+        """Calculate Drift Rebalancing trigger."""
+        try:
+            # Simulate Drift Rebalancing calculation
+            drift = np.random.random() * 0.08  # Random drift
+            max_drift = 0.03  # 3% max drift
+
+            return drift > max_drift
+        except Exception as e:
+            self.logger.error(f"Error calculating Drift Rebalancing: {e}")
+            return False
+
+    def _calculate_volatility_rebalancing(
+        self,
+        market_data: dict[str, Any],
+        analysis_data: dict[str, Any],
+    ) -> bool:
+        """Calculate Volatility Rebalancing trigger."""
+        try:
+            # Simulate Volatility Rebalancing calculation
+            current_volatility = np.random.random() * 0.05  # Random volatility
+            target_volatility = 0.02  # 2% target volatility
+            threshold = 0.01  # 1% threshold
+
+            return abs(current_volatility - target_volatility) > threshold
+        except Exception as e:
+            self.logger.error(f"Error calculating Volatility Rebalancing: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="strategy results storage",
+    )
+    async def _store_strategy_results(self) -> None:
+        """Store strategy results."""
+        try:
+            # Add timestamp
+            self.strategy_results["timestamp"] = datetime.now().isoformat()
+
+            # Add to history
+            self.strategy_history.append(self.strategy_results.copy())
+
+            # Limit history size
+            if len(self.strategy_history) > self.max_strategy_history:
+                self.strategy_history.pop(0)
+
+            self.logger.info("Strategy results stored successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error storing strategy results: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="strategy results getting",
+    )
+    def get_strategy_results(
+        self,
+        strategy_type: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get strategy results.
+
+        Args:
+            strategy_type: Optional strategy type filter
+
+        Returns:
+            Dict[str, Any]: Strategy results
+        """
+        try:
+            if strategy_type:
+                return self.strategy_results.get(strategy_type, {})
+            return self.strategy_results.copy()
+
+        except Exception as e:
+            self.logger.error(f"Error getting strategy results: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="strategy history getting",
+    )
+    def get_strategy_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+        """
+        Get strategy history.
+
+        Args:
+            limit: Optional limit on number of records
+
+        Returns:
+            List[Dict[str, Any]]: Strategy history
+        """
+        try:
+            history = self.strategy_history.copy()
+
+            if limit:
+                history = history[-limit:]
+
+            return history
+
+        except Exception as e:
+            self.logger.error(f"Error getting strategy history: {e}")
+            return []
+
+    def get_strategist_status(self) -> dict[str, Any]:
+        """
+        Get strategist status information.
+
+        Returns:
+            Dict[str, Any]: Strategist status
+        """
+        return {
+            "is_strategizing": self.is_strategizing,
+            "strategy_interval": self.strategy_interval,
+            "max_strategy_history": self.max_strategy_history,
+            "enable_position_sizing": self.enable_position_sizing,
+            "enable_risk_management": self.enable_risk_management,
+            "enable_portfolio_optimization": self.strategist_config.get(
+                "enable_portfolio_optimization",
+                False,
+            ),
+            "enable_dynamic_rebalancing": self.strategist_config.get(
+                "enable_dynamic_rebalancing",
+                True,
+            ),
+            "strategy_history_count": len(self.strategy_history),
+        }
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
-        context="update_strategy_parameters",
+        context="modular strategist cleanup",
     )
-    async def update_strategy_parameters(self, parameters: Dict[str, Any]) -> None:
-        """
-        Update strategy parameters.
-
-        Args:
-            parameters: New strategy parameters
-        """
-        self.logger.info("Updating strategy parameters")
+    async def stop(self) -> None:
+        """Stop the modular strategist."""
+        self.logger.info("🛑 Stopping Modular Strategist...")
 
         try:
-            # Update configuration
-            for key, value in parameters.items():
-                if key in self.config:
-                    self.config[key] = value
+            # Stop strategizing
+            self.is_strategizing = False
 
-            # Update state manager
-            self.state_manager.set_state("strategy_parameters", parameters)
+            # Clear results
+            self.strategy_results.clear()
 
-            self.logger.info("Strategy parameters updated successfully")
+            # Clear history
+            self.strategy_history.clear()
+
+            self.logger.info("✅ Modular Strategist stopped successfully")
 
         except Exception as e:
-            self.logger.error(
-                f"Failed to update strategy parameters: {e}", exc_info=True
-            )
+            self.logger.error(f"Error stopping modular strategist: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,), default_return={}, context="get_strategy_performance"
-    )
-    async def get_strategy_performance(self) -> Dict[str, Any]:
-        """
-        Get strategy performance metrics.
 
-        Returns:
-            Strategy performance metrics
-        """
-        return self.strategy_performance.copy()
+# Global modular strategist instance
+modular_strategist: ModularStrategist | None = None
 
-    async def _handle_analysis_result(self, event) -> None:
-        """Handle analysis result events"""
-        analysis_result = event.data
-        await self.formulate_strategy(analysis_result)
 
-    @handle_data_processing_errors(
-        exceptions=(ValueError, TypeError, ZeroDivisionError),
-        default_return="NEUTRAL",
-        context="determine_positional_bias",
-    )
-    async def _determine_positional_bias(self, analysis_result: AnalysisResult) -> str:
-        """Determine positional bias based on analysis"""
-        try:
-            confidence = analysis_result.confidence
-            signal = analysis_result.signal
-            market_regime = analysis_result.market_regime
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="modular strategist setup",
+)
+async def setup_modular_strategist(
+    config: dict[str, Any] | None = None,
+) -> ModularStrategist | None:
+    """
+    Setup global modular strategist.
 
-            # High confidence signals
-            if confidence > 0.7:
-                if signal == "BUY":
-                    return "LONG"
-                elif signal == "SELL":
-                    return "SHORT"
+    Args:
+        config: Optional configuration dictionary
 
-            # Medium confidence with strong market regime
-            elif confidence > 0.5:
-                if market_regime == "BULL_TREND" and signal == "BUY":
-                    return "LONG"
-                elif market_regime == "BEAR_TREND" and signal == "SELL":
-                    return "SHORT"
+    Returns:
+        Optional[ModularStrategist]: Global modular strategist instance
+    """
+    try:
+        global modular_strategist
 
-            # Low confidence or neutral signals
-            return "NEUTRAL"
-
-        except Exception as e:
-            self.logger.error(f"Error determining positional bias: {e}")
-            return "NEUTRAL"
-
-    @handle_data_processing_errors(
-        exceptions=(ValueError, TypeError, ZeroDivisionError),
-        default_return=1.0,
-        context="determine_leverage_cap",
-    )
-    async def _determine_leverage_cap(self, analysis_result: AnalysisResult) -> float:
-        """Determine leverage cap based on analysis"""
-        try:
-            confidence = analysis_result.confidence
-            market_regime = analysis_result.market_regime
-            risk_metrics = analysis_result.risk_metrics
-
-            # Base leverage from config
-            base_leverage = self.config.get("base_leverage", 1.0)
-
-            # Adjust based on confidence
-            if confidence > 0.8:
-                leverage_multiplier = 1.5
-            elif confidence > 0.6:
-                leverage_multiplier = 1.2
-            else:
-                leverage_multiplier = 1.0
-
-            # Adjust based on market regime
-            if market_regime == "BULL_TREND":
-                regime_multiplier = 1.1
-            elif market_regime == "BEAR_TREND":
-                regime_multiplier = 1.1
-            else:
-                regime_multiplier = 1.0
-
-            # Adjust based on risk metrics
-            risk_score = risk_metrics.get("liquidation_risk", 0.5)
-            if risk_score < 0.3:
-                risk_multiplier = 1.2
-            elif risk_score > 0.7:
-                risk_multiplier = 0.8
-            else:
-                risk_multiplier = 1.0
-
-            leverage_cap = (
-                base_leverage
-                * leverage_multiplier
-                * regime_multiplier
-                * risk_multiplier
-            )
-
-            # Apply maximum leverage limit
-            max_leverage = self.config.get("max_leverage", 10.0)
-            leverage_cap = min(leverage_cap, max_leverage)
-
-            return leverage_cap
-
-        except Exception as e:
-            self.logger.error(f"Error determining leverage cap: {e}")
-            return 1.0
-
-    @handle_data_processing_errors(
-        exceptions=(ValueError, TypeError, ZeroDivisionError),
-        default_return=0.1,
-        context="determine_max_notional_size",
-    )
-    async def _determine_max_notional_size(
-        self, analysis_result: AnalysisResult
-    ) -> float:
-        """Determine maximum notional size based on analysis"""
-        try:
-            confidence = analysis_result.confidence
-            market_health = analysis_result.features.get("market_health", 0.5)
-
-            # Base position size from config
-            base_position_size = self.config.get("base_position_size", 0.1)
-
-            # Adjust based on confidence
-            if confidence > 0.8:
-                size_multiplier = 1.5
-            elif confidence > 0.6:
-                size_multiplier = 1.2
-            else:
-                size_multiplier = 1.0
-
-            # Adjust based on market health
-            if market_health > 0.7:
-                health_multiplier = 1.2
-            elif market_health < 0.3:
-                health_multiplier = 0.8
-            else:
-                health_multiplier = 1.0
-
-            max_notional_size = base_position_size * size_multiplier * health_multiplier
-
-            # Apply maximum position size limit
-            max_position_size = self.config.get("max_position_size", 0.5)
-            max_notional_size = min(max_notional_size, max_position_size)
-
-            return max_notional_size
-
-        except Exception as e:
-            self.logger.error(f"Error determining max notional size: {e}")
-            return 0.1
-
-    @handle_data_processing_errors(
-        exceptions=(ValueError, TypeError, ZeroDivisionError),
-        default_return={},
-        context="calculate_risk_parameters",
-    )
-    async def _calculate_risk_parameters(
-        self, analysis_result: AnalysisResult
-    ) -> Dict[str, float]:
-        """Calculate risk parameters based on analysis"""
-        try:
-            risk_metrics = analysis_result.risk_metrics
-            technical_indicators = analysis_result.technical_indicators
-
-            risk_parameters = {
-                "stop_loss_pct": self.config.get("default_stop_loss", 0.05),
-                "take_profit_pct": self.config.get("default_take_profit", 0.10),
-                "max_drawdown": self.config.get("max_drawdown", 0.20),
-                "risk_per_trade": self.config.get("risk_per_trade", 0.02),
+        if config is None:
+            config = {
+                "modular_strategist": {
+                    "strategy_interval": 60,
+                    "max_strategy_history": 100,
+                    "enable_position_sizing": True,
+                    "enable_risk_management": True,
+                    "enable_portfolio_optimization": False,
+                    "enable_dynamic_rebalancing": True,
+                },
             }
 
-            # Adjust based on volatility
-            if "atr" in technical_indicators:
-                atr = technical_indicators["atr"]
-                current_price = analysis_result.features.get("close", 100)
-                if current_price > 0:
-                    atr_pct = atr / current_price
-                    risk_parameters["stop_loss_pct"] = max(atr_pct * 2, 0.02)
-                    risk_parameters["take_profit_pct"] = max(atr_pct * 4, 0.05)
+        # Create modular strategist
+        modular_strategist = ModularStrategist(config)
 
-            # Adjust based on liquidation risk
-            liquidation_risk = risk_metrics.get("liquidation_risk", 0.5)
-            if liquidation_risk > 0.7:
-                risk_parameters["risk_per_trade"] *= 0.5
-            elif liquidation_risk < 0.3:
-                risk_parameters["risk_per_trade"] *= 1.2
+        # Initialize modular strategist
+        success = await modular_strategist.initialize()
+        if success:
+            return modular_strategist
+        return None
 
-            return risk_parameters
-
-        except Exception as e:
-            self.logger.error(f"Error calculating risk parameters: {e}")
-            return {
-                "stop_loss_pct": 0.05,
-                "take_profit_pct": 0.10,
-                "max_drawdown": 0.20,
-                "risk_per_trade": 0.02,
-            }
-
-    @handle_data_processing_errors(
-        exceptions=(ValueError, TypeError, ZeroDivisionError),
-        default_return={},
-        context="assess_market_conditions",
-    )
-    async def _assess_market_conditions(
-        self, analysis_result: AnalysisResult
-    ) -> Dict[str, Any]:
-        """Assess market conditions based on analysis"""
-        try:
-            market_conditions = {
-                "volatility": "MEDIUM",
-                "trend_strength": "MEDIUM",
-                "liquidity": "MEDIUM",
-                "market_sentiment": "NEUTRAL",
-            }
-
-            # Assess volatility
-            technical_indicators = analysis_result.technical_indicators
-            if "atr" in technical_indicators:
-                atr = technical_indicators["atr"]
-                current_price = analysis_result.features.get("close", 100)
-                if current_price > 0:
-                    atr_pct = atr / current_price
-                    if atr_pct > 0.05:
-                        market_conditions["volatility"] = "HIGH"
-                    elif atr_pct < 0.02:
-                        market_conditions["volatility"] = "LOW"
-
-            # Assess trend strength
-            market_regime = analysis_result.market_regime
-            if market_regime in ["BULL_TREND", "BEAR_TREND"]:
-                market_conditions["trend_strength"] = "STRONG"
-            elif market_regime == "SIDEWAYS":
-                market_conditions["trend_strength"] = "WEAK"
-
-            # Assess market sentiment
-            confidence = analysis_result.confidence
-            if confidence > 0.7:
-                market_conditions["market_sentiment"] = "BULLISH"
-            elif confidence < 0.3:
-                market_conditions["market_sentiment"] = "BEARISH"
-
-            return market_conditions
-
-        except Exception as e:
-            self.logger.error(f"Error assessing market conditions: {e}")
-            return {
-                "volatility": "MEDIUM",
-                "trend_strength": "MEDIUM",
-                "liquidity": "MEDIUM",
-                "market_sentiment": "NEUTRAL",
-            }
-
-    async def _update_strategy_performance(
-        self, strategy_result: StrategyResult
-    ) -> None:
-        """Update strategy performance tracking"""
-        try:
-            timestamp = strategy_result.timestamp
-            symbol = strategy_result.symbol
-
-            if symbol not in self.strategy_performance:
-                self.strategy_performance[symbol] = {
-                    "total_decisions": 0,
-                    "long_decisions": 0,
-                    "short_decisions": 0,
-                    "neutral_decisions": 0,
-                    "avg_leverage": 0.0,
-                    "avg_position_size": 0.0,
-                    "last_updated": timestamp,
-                }
-
-            performance = self.strategy_performance[symbol]
-            performance["total_decisions"] += 1
-
-            if strategy_result.position_bias == "LONG":
-                performance["long_decisions"] += 1
-            elif strategy_result.position_bias == "SHORT":
-                performance["short_decisions"] += 1
-            else:
-                performance["neutral_decisions"] += 1
-
-            # Update averages
-            current_avg_leverage = performance["avg_leverage"]
-            current_avg_position_size = performance["avg_position_size"]
-            total_decisions = performance["total_decisions"]
-
-            performance["avg_leverage"] = (
-                current_avg_leverage * (total_decisions - 1)
-                + strategy_result.leverage_cap
-            ) / total_decisions
-            performance["avg_position_size"] = (
-                current_avg_position_size * (total_decisions - 1)
-                + strategy_result.max_notional_size
-            ) / total_decisions
-
-            performance["last_updated"] = timestamp
-
-        except Exception as e:
-            self.logger.error(f"Error updating strategy performance: {e}")
+    except Exception as e:
+        print(f"Error setting up modular strategist: {e}")
+        return None

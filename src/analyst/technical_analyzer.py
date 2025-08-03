@@ -1,12 +1,26 @@
-import pandas as pd
+from typing import Any
+
 import numpy as np
+import pandas as pd
 import pandas_ta as ta
-from typing import Dict, List, Any, Optional, Tuple
-from src.utils.logger import system_logger
+
+# Initialize pandas_ta properly - try multiple approaches
+try:
+    ta.extend_pandas()
+except Exception:
+    # Fallback: manually extend DataFrame
+    pd.DataFrame.ta = ta
+
+# Additional fallback: ensure pandas_ta is properly initialized
+if not hasattr(pd.DataFrame, "ta"):
+    pd.DataFrame.ta = ta
+
 from src.utils.error_handler import (
-    handle_errors,
     handle_data_processing_errors,
+    handle_errors,
+    handle_specific_errors,
 )
+from src.utils.logger import system_logger
 
 
 class TechnicalAnalyzer:
@@ -15,118 +29,143 @@ class TechnicalAnalyzer:
     including MAs, VWAP, Volume Profile, and enhanced indicators from ENHANCED_INDICATORS_RECOMMENDATION.md.
     """
 
-    def __init__(self, config: Optional[Dict[Any, Any]] = None):
+    def __init__(self, config: dict[Any, Any] | None = None):
         self.config = config or {}
         self.logger = system_logger.getChild("TechnicalAnalyzer")
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (None, "Invalid data format"),
+            AttributeError: (None, "Missing required data columns"),
+            TypeError: (None, "Invalid data types"),
+        },
+        default_return=None,
+        context="technical analysis",
+    )
+    def analyze(self, df: pd.DataFrame) -> dict:
+        """Perform comprehensive technical analysis with enhanced error handling."""
+        try:
+            # Validate input data
+            self._validate_input_data(df)
+
+            # Perform technical analysis
+            results = {}
+
+            # Calculate RSI
+            results["rsi"] = self._calculate_rsi(df)
+
+            # Calculate MACD
+            results["macd"] = self._calculate_macd(df)
+
+            # Calculate Moving Averages
+            results["moving_averages"] = self._calculate_moving_averages(df)
+
+            # Calculate VWAP
+            results["vwap"] = self._calculate_vwap(df)
+
+            # Calculate Williams %R
+            results["williams_r"] = self._calculate_williams_r(df)
+
+            # Calculate CCI
+            results["cci"] = self._calculate_cci(df)
+
+            # Calculate MFI
+            results["mfi"] = self._calculate_mfi(df)
+
+            # Calculate ROC
+            results["roc"] = self._calculate_roc(df)
+
+            # Calculate Parabolic SAR
+            results["parabolic_sar"] = self._calculate_parabolic_sar(df)
+
+            # Calculate Ichimoku Cloud
+            results["ichimoku_cloud"] = self._calculate_ichimoku_cloud(df)
+
+            # Calculate SuperTrend
+            results["supertrend"] = self._calculate_supertrend(df)
+
+            # Calculate ATR Bands
+            results["atr_bands"] = self._calculate_atr_bands(df)
+
+            # Calculate Bollinger Bands
+            results["bollinger_bands"] = self._calculate_bollinger_bands(df)
+
+            # Calculate ATR
+            results["atr"] = self._calculate_atr(df)
+
+            # Calculate ADX
+            results["adx"] = self._calculate_adx(df)
+
+            # Calculate OBV
+            results["obv"] = self._calculate_obv(df)
+
+            # Calculate ATR Ratio
+            results["atr_ratio"] = self._calculate_atr_ratio(df)
+
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error in technical analysis: {e}")
+            return None
 
     @handle_errors(
         exceptions=(ValueError, TypeError, KeyError),
         default_return={},
         context="analyze",
     )
-    def analyze(self, df: pd.DataFrame) -> Dict:
-        """
-        Runs all technical analysis calculations and returns a consolidated dictionary.
-
-        Args:
-            df (pd.DataFrame): DataFrame with columns ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-
-        Returns:
-            Dict: A dictionary containing all calculated technical indicators.
-        """
-        if df.empty:
-            self.logger.warning("Empty DataFrame provided for technical analysis")
-            return {}
-
-        # Ensure correct data types
-        for col in ["open", "high", "low", "close", "volume"]:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-        # Check for NaN values after conversion
-        if df[["open", "high", "low", "close", "volume"]].isnull().any().any():
-            self.logger.warning("NaN values detected in price data after conversion")
-
-        # --- Standard Indicators (RSI, MACD) ---
-        rsi = self._calculate_rsi(df)
-        macd = self._calculate_macd(df)
-
-        # --- Moving Averages ---
-        mas = self._calculate_moving_averages(df)
-
-        # --- VWAP ---
-        vwap = self._calculate_vwap(df)
-
-        # --- Volume Profile ---
-        volume_profile = self._calculate_volume_profile(df)
-
-        # --- Enhanced Momentum Indicators ---
-        willr = self._calculate_williams_r(df)
-        cci = self._calculate_cci(df)
-        mfi = self._calculate_mfi(df)
-        roc = self._calculate_roc(df)
-
-        # --- Enhanced Trend Indicators ---
-        psar = self._calculate_parabolic_sar(df)
-        ichimoku = self._calculate_ichimoku_cloud(df)
-        supertrend = self._calculate_supertrend(df)
-
-        # --- Enhanced Volatility Indicators ---
-        donchian = self._calculate_donchian_channels(df)
-        atr_bands = self._calculate_atr_bands(df)
-
-        # --- Enhanced VWAP Variations ---
-        vwap_bands = self._calculate_vwap_bands(df)
-
-        current_price = df["close"].iloc[-1]
-
-        return {
-            "current_price": current_price,
-            "rsi": rsi,
-            "macd": macd,
-            "moving_averages": mas,
-            "vwap": vwap,
-            "price_to_vwap_ratio": (current_price / vwap) if vwap and vwap != 0 else 0,
-            "volume_profile": volume_profile,
-            # Enhanced Momentum Indicators
-            "williams_r": willr,
-            "cci": cci,
-            "mfi": mfi,
-            "roc": roc,
-            # Enhanced Trend Indicators
-            "parabolic_sar": psar,
-            "ichimoku": ichimoku,
-            "supertrend": supertrend,
-            # Enhanced Volatility Indicators
-            "donchian_channels": donchian,
-            "atr_bands": atr_bands,
-            # Enhanced VWAP
-            "vwap_bands": vwap_bands,
-        }
-
-    @handle_data_processing_errors(default_return=np.nan, context="calculate_rsi")
     def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> float:
+        print(
+            f"[DEBUG] _calculate_rsi: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
         """Calculates the Relative Strength Index (RSI)."""
         if len(df) < period:
             self.logger.warning(
-                f"Insufficient data for RSI calculation. Need {period}, got {len(df)}"
+                f"Insufficient data for RSI calculation. Need {period}, got {len(df)}",
             )
             return np.nan
 
-        rsi = df.ta.rsi(length=period)
+        # Try pandas-ta directly
+        try:
+            import pandas_ta as ta
+
+            rsi = ta.rsi(df["close"], length=period)
+        except Exception as e:
+            self.logger.error(f"Error calculating RSI: {e}")
+            return np.nan
         return rsi.iloc[-1] if not rsi.empty and not pd.isna(rsi.iloc[-1]) else np.nan
 
-    @handle_data_processing_errors(default_return={}, context="calculate_macd")
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="MACD calculation",
+    )
     def _calculate_macd(
-        self, df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9
-    ) -> Dict:
+        self,
+        df: pd.DataFrame,
+        fast: int = 12,
+        slow: int = 26,
+        signal: int = 9,
+    ) -> dict:
+        print(
+            f"[DEBUG] _calculate_macd: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
         """Calculates the Moving Average Convergence Divergence (MACD)."""
         if len(df) < slow:
             self.logger.warning(
-                f"Insufficient data for MACD calculation. Need {slow}, got {len(df)}"
+                f"Insufficient data for MACD calculation. Need {slow}, got {len(df)}",
             )
             return {}
 
-        macd_df = df.ta.macd(fast=fast, slow=slow, signal=signal)
+        # Try pandas-ta directly
+        try:
+            import pandas_ta as ta
+
+            macd_df = ta.macd(df["close"], fast=fast, slow=slow, signal=signal)
+        except Exception as e:
+            self.logger.error(f"Error calculating MACD: {e}")
+            return {}
         if macd_df.empty:
             return {}
 
@@ -140,32 +179,52 @@ class TechnicalAnalyzer:
             self.logger.error(f"MACD column not found: {e}")
             return {}
 
-    @handle_data_processing_errors(
-        default_return={}, context="calculate_moving_averages"
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="moving averages calculation",
     )
     def _calculate_moving_averages(
-        self, df: pd.DataFrame, periods: List[int] = [9, 21, 50, 200]
-    ) -> Dict:
+        self,
+        df: pd.DataFrame,
+        periods: list[int] = [9, 21, 50, 200],
+    ) -> dict:
+        print(
+            f"[DEBUG] _calculate_moving_averages: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
         """Calculates multiple Simple Moving Averages (SMAs)."""
         mas = {}
         for period in periods:
             if len(df) < period:
                 self.logger.warning(
-                    f"Insufficient data for SMA {period}. Need {period}, got {len(df)}"
+                    f"Insufficient data for SMA {period}. Need {period}, got {len(df)}",
                 )
                 continue
 
-            sma = df.ta.sma(length=period)
+            # Try pandas-ta directly
+            try:
+                import pandas_ta as ta
+
+                sma = ta.sma(df["close"], length=period)
+            except Exception as e:
+                self.logger.error(f"Error calculating SMA {period}: {e}")
+                continue
+
             if not sma.empty and not pd.isna(sma.iloc[-1]):
                 mas[f"sma_{period}"] = sma.iloc[-1]
         return mas
 
-    @handle_data_processing_errors(default_return=np.nan, context="calculate_vwap")
-    def _calculate_vwap(self, df: pd.DataFrame) -> float:
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="VWAP calculation",
+    )
+    def _calculate_vwap(self, df: pd.DataFrame) -> pd.Series:
         """Calculates the Volume-Weighted Average Price (VWAP) for the given period."""
         if "volume" not in df.columns or df["volume"].sum() == 0:
             self.logger.warning("No volume data available for VWAP calculation")
-            return np.nan
+            return None
 
         try:
             typical_price = (df["high"] + df["low"] + df["close"]) / 3
@@ -173,12 +232,13 @@ class TechnicalAnalyzer:
             return vwap if not np.isnan(vwap) else np.nan
         except Exception as e:
             self.logger.error(f"Error calculating VWAP: {e}")
-            return np.nan
+            return None
 
     @handle_data_processing_errors(
-        default_return={}, context="calculate_volume_profile"
+        default_return={},
+        context="calculate_volume_profile",
     )
-    def _calculate_volume_profile(self, df: pd.DataFrame, bins: int = 20) -> Dict:
+    def _calculate_volume_profile(self, df: pd.DataFrame, bins: int = 20) -> dict:
         """
         Calculates a simple Volume Profile.
 
@@ -223,19 +283,26 @@ class TechnicalAnalyzer:
             self.logger.error(f"Error calculating volume profile: {e}")
             return {}
 
-    @handle_data_processing_errors(
-        default_return=np.nan, context="calculate_williams_r"
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="Williams %R calculation",
     )
-    def _calculate_williams_r(self, df: pd.DataFrame, period: int = 14) -> float:
+    def _calculate_williams_r(self, df: pd.DataFrame) -> pd.Series:
+        print(
+            f"[DEBUG] _calculate_williams_r: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
         """Calculates Williams %R momentum oscillator."""
-        if len(df) < period:
+        if len(df) < 14:
             self.logger.warning(
-                f"Insufficient data for Williams %R calculation. Need {period}, got {len(df)}"
+                f"Insufficient data for Williams %R calculation. Need 14, got {len(df)}",
             )
-            return np.nan
+            return None
 
         try:
-            willr = df.ta.willr(length=period)
+            # Use direct pandas-ta function with correct parameters
+            willr = ta.willr(df["high"], df["low"], df["close"], length=14)
             return (
                 willr.iloc[-1]
                 if not willr.empty and not pd.isna(willr.iloc[-1])
@@ -243,75 +310,122 @@ class TechnicalAnalyzer:
             )
         except Exception as e:
             self.logger.error(f"Error calculating Williams %R: {e}")
-            return np.nan
+            return None
 
-    @handle_data_processing_errors(default_return=np.nan, context="calculate_cci")
-    def _calculate_cci(self, df: pd.DataFrame, period: int = 20) -> float:
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="CCI calculation",
+    )
+    def _calculate_cci(self, df: pd.DataFrame) -> pd.Series:
+        print(
+            f"[DEBUG] _calculate_cci: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
         """Calculates Commodity Channel Index (CCI)."""
-        if len(df) < period:
+        if len(df) < 20:
             self.logger.warning(
-                f"Insufficient data for CCI calculation. Need {period}, got {len(df)}"
+                f"Insufficient data for CCI calculation. Need 20, got {len(df)}",
             )
-            return np.nan
+            return None
 
         try:
-            cci = df.ta.cci(length=period)
+            # Use direct pandas-ta function with correct parameters
+            cci = ta.cci(df["high"], df["low"], df["close"], length=20)
             return (
                 cci.iloc[-1] if not cci.empty and not pd.isna(cci.iloc[-1]) else np.nan
             )
         except Exception as e:
             self.logger.error(f"Error calculating CCI: {e}")
-            return np.nan
+            return None
 
-    @handle_data_processing_errors(default_return=np.nan, context="calculate_mfi")
-    def _calculate_mfi(self, df: pd.DataFrame, period: int = 14) -> float:
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="MFI calculation",
+    )
+    def _calculate_mfi(self, df: pd.DataFrame) -> pd.Series:
+        print(
+            f"[DEBUG] _calculate_mfi: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
         """Calculates Money Flow Index (MFI) - Volume-weighted RSI."""
-        if len(df) < period:
+        if len(df) < 14:
             self.logger.warning(
-                f"Insufficient data for MFI calculation. Need {period}, got {len(df)}"
+                f"Insufficient data for MFI calculation. Need 14, got {len(df)}",
             )
-            return np.nan
+            return None
 
+        # Debug logging for DataFrame structure
+        print(
+            f"[DEBUG] Calculating MFI: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
         try:
-            mfi = df.ta.mfi(length=period)
+            # Use direct pandas-ta function with correct parameters
+            mfi = ta.mfi(
+                df["high"],
+                df["low"],
+                df["close"],
+                df["volume"],
+                length=14,
+            )
             return (
                 mfi.iloc[-1] if not mfi.empty and not pd.isna(mfi.iloc[-1]) else np.nan
             )
         except Exception as e:
             self.logger.error(f"Error calculating MFI: {e}")
-            return np.nan
+            return None
 
-    @handle_data_processing_errors(default_return=np.nan, context="calculate_roc")
-    def _calculate_roc(self, df: pd.DataFrame, period: int = 10) -> float:
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="ROC calculation",
+    )
+    def _calculate_roc(self, df: pd.DataFrame) -> pd.Series:
+        print(
+            f"[DEBUG] _calculate_roc: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
         """Calculates Rate of Change (ROC) momentum indicator."""
-        if len(df) < period:
+        if len(df) < 10:
             self.logger.warning(
-                f"Insufficient data for ROC calculation. Need {period}, got {len(df)}"
+                f"Insufficient data for ROC calculation. Need 10, got {len(df)}",
             )
-            return np.nan
+            return None
 
         try:
-            roc = df.ta.roc(length=period)
+            # Use direct pandas-ta function with correct parameters
+            roc = ta.roc(df["close"], length=10)
             return (
                 roc.iloc[-1] if not roc.empty and not pd.isna(roc.iloc[-1]) else np.nan
             )
         except Exception as e:
             self.logger.error(f"Error calculating ROC: {e}")
-            return np.nan
+            return None
 
-    @handle_data_processing_errors(default_return={}, context="calculate_parabolic_sar")
-    def _calculate_parabolic_sar(self, df: pd.DataFrame) -> Dict:
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="Parabolic SAR calculation",
+    )
+    def _calculate_parabolic_sar(self, df: pd.DataFrame) -> pd.Series:
+        print(
+            f"[DEBUG] _calculate_parabolic_sar: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
         """Calculates Parabolic SAR trend following indicator."""
         if len(df) < 20:  # Need sufficient data for PSAR
             self.logger.warning(
-                f"Insufficient data for Parabolic SAR calculation. Need 20, got {len(df)}"
+                f"Insufficient data for Parabolic SAR calculation. Need 20, got {len(df)}",
             )
-            return {}
+            return None
 
         try:
-            psar = df.ta.psar()
+            # Use direct pandas-ta function with correct parameters
+            psar = ta.psar(df["high"], df["low"], df["close"])
             if psar.empty:
-                return {}
+                return None
 
             current_psar = (
                 psar["PSARl_0.02_0.2"].iloc[-1]
@@ -332,21 +446,35 @@ class TechnicalAnalyzer:
             }
         except Exception as e:
             self.logger.error(f"Error calculating Parabolic SAR: {e}")
-            return {}
+            return None
 
-    @handle_data_processing_errors(
-        default_return={}, context="calculate_ichimoku_cloud"
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="Ichimoku Cloud calculation",
     )
-    def _calculate_ichimoku_cloud(self, df: pd.DataFrame) -> Dict:
+    def _calculate_ichimoku_cloud(self, df: pd.DataFrame) -> dict:
+        print(
+            f"[DEBUG] _calculate_ichimoku_cloud: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
         """Calculates Ichimoku Cloud components."""
         if len(df) < 52:  # Need sufficient data for Ichimoku
             self.logger.warning(
-                f"Insufficient data for Ichimoku calculation. Need 52, got {len(df)}"
+                f"Insufficient data for Ichimoku calculation. Need 52, got {len(df)}",
             )
             return {}
 
         try:
-            ichimoku = df.ta.ichimoku()
+            # Use direct pandas-ta function with correct parameters
+            ichimoku_result = ta.ichimoku(df["high"], df["low"], df["close"])
+            
+            # Handle the case where ichimoku returns a tuple
+            if isinstance(ichimoku_result, tuple):
+                ichimoku = ichimoku_result[0]  # First element is the DataFrame
+            else:
+                ichimoku = ichimoku_result
+                
             if ichimoku.empty:
                 return {}
 
@@ -403,24 +531,35 @@ class TechnicalAnalyzer:
             }
         except Exception as e:
             self.logger.error(f"Error calculating Ichimoku Cloud: {e}")
-            return {}
+            return None
 
-    @handle_data_processing_errors(default_return={}, context="calculate_supertrend")
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="SuperTrend calculation",
+    )
     def _calculate_supertrend(
-        self, df: pd.DataFrame, period: int = 10, multiplier: float = 3.0
-    ) -> Dict:
+        self,
+        df: pd.DataFrame,
+        period: int = 10,
+        multiplier: float = 3.0,
+    ) -> pd.Series:
+        print(
+            f"[DEBUG] _calculate_supertrend: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
         """Calculates SuperTrend indicator."""
         if len(df) < period:
             self.logger.warning(
-                f"Insufficient data for SuperTrend calculation. Need {period}, got {len(df)}"
+                f"Insufficient data for SuperTrend calculation. Need {period}, got {len(df)}",
             )
-            return {}
+            return None
 
         try:
-            # Calculate ATR
-            atr = df.ta.atr(length=period)
+            # Calculate ATR using direct pandas-ta function
+            atr = ta.atr(df["high"], df["low"], df["close"], length=period)
             if atr.empty:
-                return {}
+                return None
 
             hl2 = (df["high"] + df["low"]) / 2
 
@@ -462,16 +601,17 @@ class TechnicalAnalyzer:
             }
         except Exception as e:
             self.logger.error(f"Error calculating SuperTrend: {e}")
-            return {}
+            return None
 
     @handle_data_processing_errors(
-        default_return={}, context="calculate_donchian_channels"
+        default_return={},
+        context="calculate_donchian_channels",
     )
-    def _calculate_donchian_channels(self, df: pd.DataFrame, period: int = 20) -> Dict:
+    def _calculate_donchian_channels(self, df: pd.DataFrame, period: int = 20) -> dict:
         """Calculates Donchian Channels."""
         if len(df) < period:
             self.logger.warning(
-                f"Insufficient data for Donchian Channels calculation. Need {period}, got {len(df)}"
+                f"Insufficient data for Donchian Channels calculation. Need {period}, got {len(df)}",
             )
             return {}
 
@@ -508,23 +648,35 @@ class TechnicalAnalyzer:
             self.logger.error(f"Error calculating Donchian Channels: {e}")
             return {}
 
-    @handle_data_processing_errors(default_return={}, context="calculate_atr_bands")
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="ATR Bands calculation",
+    )
     def _calculate_atr_bands(
-        self, df: pd.DataFrame, period: int = 14, multiplier: float = 2.0
-    ) -> Dict:
+        self,
+        df: pd.DataFrame,
+        period: int = 14,
+        multiplier: float = 2.0,
+    ) -> dict:
+        print(
+            f"[DEBUG] _calculate_atr_bands: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
         """Calculates ATR-based volatility bands."""
         if len(df) < period:
             self.logger.warning(
-                f"Insufficient data for ATR Bands calculation. Need {period}, got {len(df)}"
+                f"Insufficient data for ATR Bands calculation. Need {period}, got {len(df)}",
             )
-            return {}
+            return None
 
         try:
-            atr = df.ta.atr(length=period)
-            sma = df.ta.sma(length=period)
+            # Use direct pandas-ta functions with correct parameters
+            atr = ta.atr(df["high"], df["low"], df["close"], length=period)
+            sma = ta.sma(df["close"], length=period)
 
             if atr.empty or sma.empty:
-                return {}
+                return None
 
             upper_band = sma + (multiplier * atr)
             lower_band = sma - (multiplier * atr)
@@ -551,16 +703,19 @@ class TechnicalAnalyzer:
             }
         except Exception as e:
             self.logger.error(f"Error calculating ATR Bands: {e}")
-            return {}
+            return None
 
     @handle_data_processing_errors(default_return={}, context="calculate_vwap_bands")
     def _calculate_vwap_bands(
-        self, df: pd.DataFrame, period: int = 20, multiplier: float = 2.0
-    ) -> Dict:
+        self,
+        df: pd.DataFrame,
+        period: int = 20,
+        multiplier: float = 2.0,
+    ) -> dict:
         """Calculates VWAP-based bands."""
         if len(df) < period:
             self.logger.warning(
-                f"Insufficient data for VWAP Bands calculation. Need {period}, got {len(df)}"
+                f"Insufficient data for VWAP Bands calculation. Need {period}, got {len(df)}",
             )
             return {}
 
@@ -603,3 +758,292 @@ class TechnicalAnalyzer:
         except Exception as e:
             self.logger.error(f"Error calculating VWAP Bands: {e}")
             return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="Bollinger Bands calculation",
+    )
+    def _calculate_bollinger_bands(
+        self,
+        df: pd.DataFrame,
+        period: int = 20,
+        std_dev: float = 2.0,
+    ) -> dict:
+        print(
+            f"[DEBUG] _calculate_bollinger_bands: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
+        """Calculates Bollinger Bands (BBU_20_2.0, BBL_20_2.0)."""
+        if len(df) < period:
+            self.logger.warning(
+                f"Insufficient data for Bollinger Bands calculation. Need {period}, got {len(df)}",
+            )
+            return None
+
+        try:
+            # Try pandas-ta directly if .ta attribute is not available
+            try:
+                bb = df.ta.bbands(length=period, std=std_dev)
+            except AttributeError:
+                # Fallback to direct pandas-ta function
+                bb = ta.bbands(df["close"], length=period, std=std_dev)
+            except Exception:
+                # Manual calculation as final fallback
+                sma = df["close"].rolling(window=period).mean()
+                std = df["close"].rolling(window=period).std()
+                bb_upper = sma + (std_dev * std)
+                bb_lower = sma - (std_dev * std)
+                bb_middle = sma
+
+                bb = pd.DataFrame(
+                    {
+                        f"BBU_{period}_{std_dev}": bb_upper,
+                        f"BBL_{period}_{std_dev}": bb_lower,
+                        f"BBM_{period}_{std_dev}": bb_middle,
+                    },
+                )
+
+            if bb.empty:
+                return None
+
+            # Get the latest values
+            bb_upper = (
+                bb[f"BBU_{period}_{std_dev}"].iloc[-1]
+                if f"BBU_{period}_{std_dev}" in bb.columns
+                else np.nan
+            )
+            bb_lower = (
+                bb[f"BBL_{period}_{std_dev}"].iloc[-1]
+                if f"BBL_{period}_{std_dev}" in bb.columns
+                else np.nan
+            )
+            bb_middle = (
+                bb[f"BBM_{period}_{std_dev}"].iloc[-1]
+                if f"BBM_{period}_{std_dev}" in bb.columns
+                else np.nan
+            )
+
+            current_price = df["close"].iloc[-1]
+
+            return {
+                "BBU_20_2.0": bb_upper,
+                "BBL_20_2.0": bb_lower,
+                "BBM_20_2.0": bb_middle,
+                "bb_position": (current_price - bb_lower) / (bb_upper - bb_lower)
+                if not (pd.isna(bb_upper) or pd.isna(bb_lower))
+                and (bb_upper - bb_lower) > 0
+                else np.nan,
+                "above_upper": current_price > bb_upper
+                if not pd.isna(bb_upper)
+                else False,
+                "below_lower": current_price < bb_lower
+                if not pd.isna(bb_lower)
+                else False,
+            }
+        except Exception as e:
+            self.logger.error(f"Error calculating Bollinger Bands: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="ATR calculation",
+    )
+    def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> float:
+        print(
+            f"[DEBUG] _calculate_atr: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
+        """Calculates Average True Range (ATR)."""
+        if len(df) < period:
+            self.logger.warning(
+                f"Insufficient data for ATR calculation. Need {period}, got {len(df)}",
+            )
+            return np.nan
+
+        try:
+            # Try pandas-ta directly if .ta attribute is not available
+            try:
+                atr = df.ta.atr(length=period)
+            except AttributeError:
+                # Fallback to direct pandas-ta function
+                atr = ta.atr(df["high"], df["low"], df["close"], length=period)
+            except Exception:
+                # Manual ATR calculation as final fallback
+                high_low = df["high"] - df["low"]
+                high_close = np.abs(df["high"] - df["close"].shift())
+                low_close = np.abs(df["low"] - df["close"].shift())
+
+                true_range = pd.concat([high_low, high_close, low_close], axis=1).max(
+                    axis=1,
+                )
+                atr = true_range.rolling(window=period).mean()
+
+            return (
+                atr.iloc[-1] if not atr.empty and not pd.isna(atr.iloc[-1]) else np.nan
+            )
+        except Exception as e:
+            self.logger.error(f"Error calculating ATR: {e}")
+            return np.nan
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="ADX calculation",
+    )
+    def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> float:
+        print(
+            f"[DEBUG] _calculate_adx: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
+        """Calculates Average Directional Index (ADX)."""
+        if len(df) < period:
+            self.logger.warning(
+                f"Insufficient data for ADX calculation. Need {period}, got {len(df)}",
+            )
+            return np.nan
+
+        try:
+            # Use direct pandas-ta function with correct parameters
+            adx = ta.adx(df["high"], df["low"], df["close"], length=period)
+        except Exception:
+            # Manual ADX calculation as fallback if pandas-ta fails
+            # Simplified ADX calculation
+            high_diff = df["high"].diff()
+            low_diff = df["low"].diff()
+
+            plus_dm = np.where(
+                (high_diff > low_diff) & (high_diff > 0),
+                high_diff,
+                0,
+            )
+            minus_dm = np.where(
+                (low_diff > high_diff) & (low_diff > 0),
+                -low_diff,
+                0,
+            )
+
+            tr = pd.concat(
+                [
+                    df["high"] - df["low"],
+                    np.abs(df["high"] - df["close"].shift()),
+                    np.abs(df["low"] - df["close"].shift()),
+                ],
+                axis=1,
+            ).max(axis=1)
+
+            # Smooth the values
+            plus_di = (
+                100
+                * pd.Series(plus_dm).rolling(window=period).mean()
+                / tr.rolling(window=period).mean()
+            )
+            minus_di = (
+                100
+                * pd.Series(minus_dm).rolling(window=period).mean()
+                / tr.rolling(window=period).mean()
+            )
+
+            dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
+            dx = pd.Series(dx).fillna(0)  # Fill NaN values
+            adx = dx.rolling(window=period).mean()
+
+            # ADX is typically the first column in the result
+            adx_column = None
+            if hasattr(adx, "columns"):
+                for col in adx.columns:
+                    if "ADX" in col:
+                        adx_column = col
+                        break
+
+                if adx_column is None:
+                    # If no ADX column found, use the first column
+                    adx_column = adx.columns[0]
+
+                return (
+                    adx[adx_column].iloc[-1]
+                    if not adx.empty and not pd.isna(adx[adx_column].iloc[-1])
+                    else np.nan
+                )
+            # adx is a Series
+            return (
+                adx.iloc[-1] if not adx.empty and not pd.isna(adx.iloc[-1]) else np.nan
+            )
+        except Exception as e:
+            self.logger.error(f"Error calculating ADX: {e}")
+            return np.nan
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="OBV calculation",
+    )
+    def _calculate_obv(self, df: pd.DataFrame) -> float:
+        print(
+            f"[DEBUG] _calculate_obv: shape={df.shape}, columns={df.columns.tolist()}",
+        )
+        print(df.head())
+        """Calculates On-Balance Volume (OBV)."""
+        if len(df) < 2:
+            self.logger.warning(
+                f"Insufficient data for OBV calculation. Need 2, got {len(df)}",
+            )
+            return np.nan
+
+        try:
+            # Use direct pandas-ta function with correct parameters
+            obv = ta.obv(df["close"], df["volume"])
+        except Exception:
+            # Manual OBV calculation as fallback if pandas-ta fails
+            obv = pd.Series(index=df.index, dtype=float)
+            obv.iloc[0] = df["volume"].iloc[0]
+
+            for i in range(1, len(df)):
+                if df["close"].iloc[i] > df["close"].iloc[i - 1]:
+                    obv.iloc[i] = obv.iloc[i - 1] + df["volume"].iloc[i]
+                elif df["close"].iloc[i] < df["close"].iloc[i - 1]:
+                    obv.iloc[i] = obv.iloc[i - 1] - df["volume"].iloc[i]
+                else:
+                    obv.iloc[i] = obv.iloc[i - 1]
+
+        except Exception as e:
+            self.logger.error(f"Error calculating OBV: {e}")
+            return np.nan
+
+        return (
+            obv.iloc[-1] if not obv.empty and not pd.isna(obv.iloc[-1]) else np.nan
+        )
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="ATR ratio calculation",
+    )
+    def _calculate_atr_ratio(self, df: pd.DataFrame, period: int = 14) -> float:
+        """Calculates ATR ratio (ATRr_14) - ATR as a percentage of price."""
+        atr_value = self._calculate_atr(df, period)
+        if pd.isna(atr_value):
+            return np.nan
+
+        current_price = df["close"].iloc[-1]
+        if current_price == 0:
+            return np.nan
+
+        return (atr_value / current_price) * 100  # Convert to percentage
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="input data validation",
+    )
+    def _validate_input_data(self, df: pd.DataFrame) -> None:
+        """Validate input data for technical analysis."""
+        if df is None or df.empty:
+            raise ValueError("Input DataFrame is None or empty")
+
+        required_columns = ["open", "high", "low", "close"]
+        missing_columns = [col for col in required_columns if col not in df.columns]
+
+        if missing_columns:
+            raise ValueError(f"Missing required columns: {missing_columns}")

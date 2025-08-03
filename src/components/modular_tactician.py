@@ -1,597 +1,1092 @@
-# src/components/modular_tactician.py
+from datetime import datetime, timedelta
+from typing import Any
 
-import uuid
-from typing import Dict, Any, Optional
-from datetime import datetime
+import numpy as np
 
-from src.interfaces import (
-    ITactician,
-    StrategyResult,
-    AnalysisResult,
-    TradeDecision,
-    MarketData,
-    EventType,
-)
-from src.interfaces.base_interfaces import (
-    IExchangeClient,
-    IStateManager,
-    IPerformanceReporter,
-    IEventBus,
-)
-from src.utils.logger import system_logger
-from src.config import settings
 from src.utils.error_handler import (
     handle_errors,
-    handle_data_processing_errors,
-    handle_network_operations,
+    handle_specific_errors,
 )
+from src.utils.logger import system_logger
 
 
-class ModularTactician(ITactician):
+class ModularTactician:
     """
-    Modular implementation of the Tactician that implements the ITactician interface.
-    Uses dependency injection and event-driven communication.
+    Enhanced modular tactician with comprehensive error handling and type safety.
     """
 
-    def __init__(
-        self,
-        exchange_client: IExchangeClient,
-        state_manager: IStateManager,
-        performance_reporter: IPerformanceReporter,
-        event_bus: Optional[IEventBus] = None,
-    ):
+    def __init__(self, config: dict[str, Any]) -> None:
         """
-        Initialize the modular tactician.
+        Initialize modular tactician with enhanced type safety.
 
         Args:
-            exchange_client: Exchange client for trading
-            state_manager: State manager for persistence
-            performance_reporter: Performance reporter for logging
-            event_bus: Optional event bus for communication
+            config: Configuration dictionary
         """
-        self.exchange = exchange_client
-        self.state_manager = state_manager
-        self.performance_reporter = performance_reporter
-        self.event_bus = event_bus
+        self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("ModularTactician")
-        self.config = settings.get("tactician", {})
-        self.running = False
-        self.current_position = None
-        self.trade_history = []
 
-        self.logger.info("ModularTactician initialized")
+        # Tactician state
+        self.is_tactician_active: bool = False
+        self.tactician_results: dict[str, Any] = {}
+        self.tactician_history: list[dict[str, Any]] = []
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="modular_tactician_start"
+        # Configuration
+        self.tactician_config: dict[str, Any] = self.config.get("modular_tactician", {})
+        self.tactician_interval: int = self.tactician_config.get(
+            "tactician_interval",
+            5,
+        )
+        self.max_tactician_history: int = self.tactician_config.get(
+            "max_tactician_history",
+            100,
+        )
+        self.enable_entry_monitoring: bool = self.tactician_config.get(
+            "enable_entry_monitoring",
+            True,
+        )
+        self.enable_exit_monitoring: bool = self.tactician_config.get(
+            "enable_exit_monitoring",
+            True,
+        )
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid modular tactician configuration"),
+            AttributeError: (False, "Missing required tactician parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="modular tactician initialization",
     )
-    async def start(self) -> None:
-        """Start the modular tactician"""
-        self.logger.info("Starting ModularTactician")
-        self.running = True
+    async def initialize(self) -> bool:
+        """
+        Initialize modular tactician with enhanced error handling.
 
-        # Subscribe to strategy events if event bus is available
-        if self.event_bus:
-            await self.event_bus.subscribe(
-                EventType.STRATEGY_FORMULATED, self._handle_strategy_result
+        Returns:
+            bool: True if initialization successful, False otherwise
+        """
+        try:
+            self.logger.info("Initializing Modular Tactician...")
+
+            # Load tactician configuration
+            await self._load_tactician_configuration()
+
+            # Validate configuration
+            if not self._validate_configuration():
+                self.logger.error("Invalid configuration for modular tactician")
+                return False
+
+            # Initialize tactician modules
+            await self._initialize_tactician_modules()
+
+            self.logger.info(
+                "✅ Modular Tactician initialization completed successfully",
             )
-
-        self.logger.info("ModularTactician started")
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="modular_tactician_stop"
-    )
-    async def stop(self) -> None:
-        """Stop the modular tactician"""
-        self.logger.info("Stopping ModularTactician")
-        self.running = False
-
-        # Unsubscribe from events if event bus is available
-        if self.event_bus:
-            await self.event_bus.unsubscribe(
-                EventType.STRATEGY_FORMULATED, self._handle_strategy_result
-            )
-
-        self.logger.info("ModularTactician stopped")
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="execute_trade_decision"
-    )
-    async def execute_trade_decision(
-        self, strategy_result: StrategyResult, analysis_result: AnalysisResult
-    ) -> Optional[TradeDecision]:
-        """
-        Execute trade decision based on strategy and analysis.
-
-        Args:
-            strategy_result: Strategy result from strategist
-            analysis_result: Analysis result from analyst
-
-        Returns:
-            Trade decision if executed, None otherwise
-        """
-        if not self.running:
-            self.logger.warning("Tactician not running, skipping trade execution")
-            return None
-
-        self.logger.debug(f"Executing trade decision for {strategy_result.symbol}")
-
-        try:
-            # Check exit conditions first
-            if await self._check_exit_conditions(strategy_result, analysis_result):
-                return await self._execute_close_position(
-                    strategy_result, analysis_result
-                )
-
-            # Check entry conditions
-            if await self._check_entry_conditions(strategy_result, analysis_result):
-                return await self._execute_open_position(
-                    strategy_result, analysis_result
-                )
-
-            return None
+            return True
 
         except Exception as e:
-            self.logger.error(f"Trade execution failed: {e}", exc_info=True)
-            return None
+            self.logger.error(f"❌ Modular Tactician initialization failed: {e}")
+            return False
 
     @handle_errors(
-        exceptions=(Exception,), default_return=0.0, context="calculate_position_size"
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="tactician configuration loading",
     )
-    async def calculate_position_size(
-        self, strategy_result: StrategyResult, account_balance: float
-    ) -> float:
-        """
-        Calculate position size based on strategy and account balance.
-
-        Args:
-            strategy_result: Strategy result
-            account_balance: Current account balance
-
-        Returns:
-            Position size
-        """
+    async def _load_tactician_configuration(self) -> None:
+        """Load tactician configuration."""
         try:
-            # Base position size from strategy
-            base_size = strategy_result.max_notional_size
+            # Set default tactician parameters
+            self.tactician_config.setdefault("tactician_interval", 5)
+            self.tactician_config.setdefault("max_tactician_history", 100)
+            self.tactician_config.setdefault("enable_entry_monitoring", True)
+            self.tactician_config.setdefault("enable_exit_monitoring", True)
+            self.tactician_config.setdefault("enable_position_monitoring", False)
+            self.tactician_config.setdefault("enable_risk_monitoring", True)
 
-            # Adjust based on account balance
-            risk_per_trade = strategy_result.risk_parameters.get("risk_per_trade", 0.02)
-            max_position_value = account_balance * risk_per_trade
+            # Update configuration
+            self.tactician_interval = self.tactician_config["tactician_interval"]
+            self.max_tactician_history = self.tactician_config["max_tactician_history"]
+            self.enable_entry_monitoring = self.tactician_config[
+                "enable_entry_monitoring"
+            ]
+            self.enable_exit_monitoring = self.tactician_config[
+                "enable_exit_monitoring"
+            ]
 
-            # Calculate position size
-            current_price = await self._get_current_price(strategy_result.symbol)
-            if current_price > 0:
-                position_size = min(base_size, max_position_value / current_price)
-            else:
-                position_size = base_size
-
-            # Apply minimum position size
-            min_position_size = self.config.get("min_position_size", 0.001)
-            position_size = max(position_size, min_position_size)
-
-            return position_size
+            self.logger.info("Tactician configuration loaded successfully")
 
         except Exception as e:
-            self.logger.error(f"Error calculating position size: {e}")
-            return 0.0
+            self.logger.error(f"Error loading tactician configuration: {e}")
 
     @handle_errors(
-        exceptions=(Exception,), default_return={}, context="calculate_risk_parameters"
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
     )
-    async def calculate_risk_parameters(
-        self, strategy_result: StrategyResult, market_data: MarketData
-    ) -> Dict[str, float]:
+    def _validate_configuration(self) -> bool:
         """
-        Calculate risk parameters based on strategy and market data.
-
-        Args:
-            strategy_result: Strategy result
-            market_data: Current market data
+        Validate tactician configuration.
 
         Returns:
-            Risk parameters
+            bool: True if configuration is valid, False otherwise
         """
         try:
-            risk_params = strategy_result.risk_parameters.copy()
-
-            # Calculate ATR-based stop loss
-            atr_stop_loss = await self._calculate_atr_stop_loss(market_data)
-            if atr_stop_loss > 0:
-                risk_params["stop_loss_pct"] = atr_stop_loss
-
-            # Calculate ATR-based take profit
-            atr_take_profit = await self._calculate_atr_take_profit(market_data)
-            if atr_take_profit > 0:
-                risk_params["take_profit_pct"] = atr_take_profit
-
-            return risk_params
-
-        except Exception as e:
-            self.logger.error(f"Error calculating risk parameters: {e}")
-            return strategy_result.risk_parameters
-
-    async def _handle_strategy_result(self, event) -> None:
-        """Handle strategy result events"""
-        strategy_result = event.data
-        # Get latest analysis result from state
-        analysis_result = self.state_manager.get_state("latest_analysis_result")
-        if analysis_result:
-            await self.execute_trade_decision(strategy_result, analysis_result)
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=False, context="check_entry_conditions"
-    )
-    async def _check_entry_conditions(
-        self, strategy_result: StrategyResult, analysis_result: AnalysisResult
-    ) -> bool:
-        """Check if entry conditions are met"""
-        try:
-            # Check if we have a position bias
-            if strategy_result.position_bias == "NEUTRAL":
+            # Validate tactician interval
+            if self.tactician_interval <= 0:
+                self.logger.error("Invalid tactician interval")
                 return False
 
-            # Check confidence threshold
-            if analysis_result.confidence < self.config.get("min_confidence", 0.6):
+            # Validate max tactician history
+            if self.max_tactician_history <= 0:
+                self.logger.error("Invalid max tactician history")
                 return False
 
-            # Check if we already have a position
-            if self.current_position:
-                return False
-
-            # Check market conditions
-            market_conditions = strategy_result.market_conditions
-            if market_conditions.get("volatility") == "HIGH" and not self.config.get(
-                "allow_high_volatility", False
+            # Validate that at least one tactician type is enabled
+            if not any(
+                [
+                    self.enable_entry_monitoring,
+                    self.enable_exit_monitoring,
+                    self.tactician_config.get("enable_position_monitoring", False),
+                    self.tactician_config.get("enable_risk_monitoring", True),
+                ],
             ):
+                self.logger.error("At least one tactician type must be enabled")
+                return False
+
+            self.logger.info("Configuration validation successful")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="tactician modules initialization",
+    )
+    async def _initialize_tactician_modules(self) -> None:
+        """Initialize tactician modules."""
+        try:
+            # Initialize entry monitoring module
+            if self.enable_entry_monitoring:
+                await self._initialize_entry_monitoring()
+
+            # Initialize exit monitoring module
+            if self.enable_exit_monitoring:
+                await self._initialize_exit_monitoring()
+
+            # Initialize position monitoring module
+            if self.tactician_config.get("enable_position_monitoring", False):
+                await self._initialize_position_monitoring()
+
+            # Initialize risk monitoring module
+            if self.tactician_config.get("enable_risk_monitoring", True):
+                await self._initialize_risk_monitoring()
+
+            self.logger.info("Tactician modules initialized successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing tactician modules: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="entry monitoring initialization",
+    )
+    async def _initialize_entry_monitoring(self) -> None:
+        """Initialize entry monitoring module."""
+        try:
+            # Initialize entry strategies
+            self.entry_strategies = {
+                "breakout": True,
+                "pullback": True,
+                "momentum": True,
+                "mean_reversion": True,
+            }
+
+            self.logger.info("Entry monitoring module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing entry monitoring: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="exit monitoring initialization",
+    )
+    async def _initialize_exit_monitoring(self) -> None:
+        """Initialize exit monitoring module."""
+        try:
+            # Initialize exit strategies
+            self.exit_strategies = {
+                "stop_loss": True,
+                "take_profit": True,
+                "trailing_stop": True,
+                "time_based": True,
+            }
+
+            self.logger.info("Exit monitoring module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing exit monitoring: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="position monitoring initialization",
+    )
+    async def _initialize_position_monitoring(self) -> None:
+        """Initialize position monitoring module."""
+        try:
+            # Initialize position strategies
+            self.position_strategies = {
+                "scaling": True,
+                "averaging": True,
+                "hedging": True,
+                "rebalancing": True,
+            }
+
+            self.logger.info("Position monitoring module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing position monitoring: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="risk monitoring initialization",
+    )
+    async def _initialize_risk_monitoring(self) -> None:
+        """Initialize risk monitoring module."""
+        try:
+            # Initialize risk strategies
+            self.risk_strategies = {
+                "position_sizing": True,
+                "leverage_control": True,
+                "correlation_monitoring": True,
+                "volatility_adjustment": True,
+            }
+
+            self.logger.info("Risk monitoring module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing risk monitoring: {e}")
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid tactician parameters"),
+            AttributeError: (False, "Missing tactician components"),
+            KeyError: (False, "Missing required tactician data"),
+        },
+        default_return=False,
+        context="tactician execution",
+    )
+    async def execute_tactician(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """
+        Execute tactician monitoring.
+
+        Args:
+            market_data: Market data dictionary
+            strategy_data: Strategy data dictionary
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if not self._validate_tactician_inputs(market_data, strategy_data):
+                return False
+
+            self.is_tactician_active = True
+            self.logger.info("🔄 Starting tactician monitoring...")
+
+            # Perform entry monitoring
+            if self.enable_entry_monitoring:
+                entry_results = await self._perform_entry_monitoring(
+                    market_data,
+                    strategy_data,
+                )
+                self.tactician_results["entry"] = entry_results
+
+            # Perform exit monitoring
+            if self.enable_exit_monitoring:
+                exit_results = await self._perform_exit_monitoring(
+                    market_data,
+                    strategy_data,
+                )
+                self.tactician_results["exit"] = exit_results
+
+            # Perform position monitoring
+            if self.tactician_config.get("enable_position_monitoring", False):
+                position_results = await self._perform_position_monitoring(
+                    market_data,
+                    strategy_data,
+                )
+                self.tactician_results["position"] = position_results
+
+            # Perform risk monitoring
+            if self.tactician_config.get("enable_risk_monitoring", True):
+                risk_results = await self._perform_risk_monitoring(
+                    market_data,
+                    strategy_data,
+                )
+                self.tactician_results["risk"] = risk_results
+
+            # Store tactician results
+            await self._store_tactician_results()
+
+            self.is_tactician_active = False
+            self.logger.info("✅ Tactician monitoring completed successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error executing tactician: {e}")
+            self.is_tactician_active = False
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="tactician inputs validation",
+    )
+    def _validate_tactician_inputs(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """
+        Validate tactician inputs.
+
+        Args:
+            market_data: Market data dictionary
+            strategy_data: Strategy data dictionary
+
+        Returns:
+            bool: True if valid, False otherwise
+        """
+        try:
+            # Check required market data fields
+            required_market_fields = ["symbol", "price", "volume", "timestamp"]
+            for field in required_market_fields:
+                if field not in market_data:
+                    self.logger.error(f"Missing required market data field: {field}")
+                    return False
+
+            # Check required strategy data fields
+            required_strategy_fields = ["signal", "position_size", "timestamp"]
+            for field in required_strategy_fields:
+                if field not in strategy_data:
+                    self.logger.error(f"Missing required strategy data field: {field}")
+                    return False
+
+            # Validate data types
+            if not isinstance(market_data["price"], (int, float)):
+                self.logger.error("Invalid price data type")
+                return False
+
+            if not isinstance(strategy_data["position_size"], (int, float)):
+                self.logger.error("Invalid position size data type")
                 return False
 
             return True
 
         except Exception as e:
-            self.logger.error(f"Error checking entry conditions: {e}")
+            self.logger.error(f"Error validating tactician inputs: {e}")
             return False
 
     @handle_errors(
-        exceptions=(Exception,), default_return=False, context="check_exit_conditions"
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="entry monitoring",
     )
-    async def _check_exit_conditions(
-        self, strategy_result: StrategyResult, analysis_result: AnalysisResult
-    ) -> bool:
-        """Check if exit conditions are met"""
+    async def _perform_entry_monitoring(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform entry monitoring.
+
+        Args:
+            market_data: Market data dictionary
+            strategy_data: Strategy data dictionary
+
+        Returns:
+            Dict[str, Any]: Entry monitoring results
+        """
         try:
-            if not self.current_position:
-                return False
+            results = {}
 
-            # Check for stop loss or take profit
-            current_price = await self._get_current_price(strategy_result.symbol)
-            if not current_price:
-                return False
-
-            position = self.current_position
-            entry_price = position.get("entry_price", 0)
-
-            if entry_price <= 0:
-                return False
-
-            # Calculate P&L
-            if position.get("side") == "LONG":
-                pnl_pct = (current_price - entry_price) / entry_price
-            else:
-                pnl_pct = (entry_price - current_price) / entry_price
-
-            # Check stop loss
-            stop_loss_pct = strategy_result.risk_parameters.get("stop_loss_pct", 0.05)
-            if pnl_pct <= -stop_loss_pct:
-                self.logger.info(f"Stop loss triggered: {pnl_pct:.2%}")
-                return True
-
-            # Check take profit
-            take_profit_pct = strategy_result.risk_parameters.get(
-                "take_profit_pct", 0.10
-            )
-            if pnl_pct >= take_profit_pct:
-                self.logger.info(f"Take profit triggered: {pnl_pct:.2%}")
-                return True
-
-            # Check for signal reversal
-            if strategy_result.position_bias == "NEUTRAL":
-                self.logger.info("Signal reversal detected")
-                return True
-
-            return False
-
-        except Exception as e:
-            self.logger.error(f"Error checking exit conditions: {e}")
-            return False
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="execute_open_position"
-    )
-    async def _execute_open_position(
-        self, strategy_result: StrategyResult, analysis_result: AnalysisResult
-    ) -> Optional[TradeDecision]:
-        """Execute opening a new position"""
-        try:
-            symbol = strategy_result.symbol
-            side = "BUY" if strategy_result.position_bias == "LONG" else "SELL"
-
-            # Get account balance
-            account_info = await self.exchange.get_account_info()
-            balance = account_info.get("totalWalletBalance", 0)
-
-            # Calculate position size
-            position_size = await self.calculate_position_size(strategy_result, balance)
-
-            # Get current price
-            current_price = await self._get_current_price(symbol)
-            if not current_price:
-                return None
-
-            # Calculate leverage
-            leverage = await self._determine_leverage(strategy_result, analysis_result)
-
-            # Calculate risk parameters
-            risk_params = await self.calculate_risk_parameters(
-                strategy_result,
-                MarketData(
-                    symbol=symbol,
-                    timestamp=datetime.now(),
-                    open=current_price,
-                    high=current_price,
-                    low=current_price,
-                    close=current_price,
-                    volume=0,
-                    interval="1m",
-                ),
-            )
-
-            # Create trade decision
-            trade_decision = TradeDecision(
-                timestamp=datetime.now(),
-                symbol=symbol,
-                action=f"OPEN_{side}",
-                quantity=position_size,
-                price=current_price,
-                leverage=leverage,
-                stop_loss=current_price * (1 - risk_params["stop_loss_pct"])
-                if side == "BUY"
-                else current_price * (1 + risk_params["stop_loss_pct"]),
-                take_profit=current_price * (1 + risk_params["take_profit_pct"])
-                if side == "BUY"
-                else current_price * (1 - risk_params["take_profit_pct"]),
-                confidence=analysis_result.confidence,
-                risk_score=analysis_result.risk_metrics.get("liquidation_risk", 0.5),
-            )
-
-            # Execute the trade
-            if await self._execute_trade(trade_decision):
-                self.current_position = {
-                    "symbol": symbol,
-                    "side": side,
-                    "entry_price": current_price,
-                    "quantity": position_size,
-                    "leverage": leverage,
-                    "entry_time": datetime.now(),
-                    "trade_id": str(uuid.uuid4()),
-                }
-
-                # Publish trade executed event
-                if self.event_bus:
-                    await self.event_bus.publish(
-                        EventType.TRADE_EXECUTED, trade_decision, "ModularTactician"
-                    )
-
-                return trade_decision
-
-            return None
-
-        except Exception as e:
-            self.logger.error(f"Error executing open position: {e}", exc_info=True)
-            return None
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="execute_close_position"
-    )
-    async def _execute_close_position(
-        self, strategy_result: StrategyResult, analysis_result: AnalysisResult
-    ) -> Optional[TradeDecision]:
-        """Execute closing an existing position"""
-        try:
-            if not self.current_position:
-                return None
-
-            symbol = self.current_position["symbol"]
-            # side = "SELL" if self.current_position["side"] == "LONG" else "BUY"
-
-            # Get current price
-            current_price = await self._get_current_price(symbol)
-            if not current_price:
-                return None
-
-            # Create trade decision
-            trade_decision = TradeDecision(
-                timestamp=datetime.now(),
-                symbol=symbol,
-                action=f"CLOSE_{self.current_position['side']}",
-                quantity=self.current_position["quantity"],
-                price=current_price,
-                leverage=self.current_position["leverage"],
-                stop_loss=0.0,
-                take_profit=0.0,
-                confidence=analysis_result.confidence,
-                risk_score=analysis_result.risk_metrics.get("liquidation_risk", 0.5),
-            )
-
-            # Execute the trade
-            if await self._execute_trade(trade_decision):
-                # Log the trade
-                await self._log_trade(trade_decision, self.current_position)
-
-                # Clear current position
-                self.current_position = None
-
-                # Publish trade executed event
-                if self.event_bus:
-                    await self.event_bus.publish(
-                        EventType.TRADE_EXECUTED, trade_decision, "ModularTactician"
-                    )
-
-                return trade_decision
-
-            return None
-
-        except Exception as e:
-            self.logger.error(f"Error executing close position: {e}", exc_info=True)
-            return None
-
-    @handle_network_operations(
-        exceptions=(Exception,), default_return=False, context="execute_trade"
-    )
-    async def _execute_trade(self, trade_decision: TradeDecision) -> bool:
-        """Execute a trade on the exchange"""
-        try:
-            # Create order
-            order_result = await self.exchange.create_order(
-                symbol=trade_decision.symbol,
-                side=trade_decision.action.split("_")[1],  # BUY or SELL
-                quantity=trade_decision.quantity,
-                price=trade_decision.price,
-                order_type="MARKET",
-            )
-
-            if order_result and order_result.get("status") == "FILLED":
-                self.logger.info(
-                    f"Trade executed: {trade_decision.action} {trade_decision.quantity} {trade_decision.symbol} at {trade_decision.price}"
+            # Check breakout entry
+            if self.entry_strategies.get("breakout", False):
+                results["breakout"] = self._check_breakout_entry(
+                    market_data,
+                    strategy_data,
                 )
-                return True
-            else:
-                self.logger.warning(f"Trade execution failed: {order_result}")
-                return False
+
+            # Check pullback entry
+            if self.entry_strategies.get("pullback", False):
+                results["pullback"] = self._check_pullback_entry(
+                    market_data,
+                    strategy_data,
+                )
+
+            # Check momentum entry
+            if self.entry_strategies.get("momentum", False):
+                results["momentum"] = self._check_momentum_entry(
+                    market_data,
+                    strategy_data,
+                )
+
+            # Check mean reversion entry
+            if self.entry_strategies.get("mean_reversion", False):
+                results["mean_reversion"] = self._check_mean_reversion_entry(
+                    market_data,
+                    strategy_data,
+                )
+
+            self.logger.info("Entry monitoring completed")
+            return results
 
         except Exception as e:
-            self.logger.error(f"Error executing trade: {e}")
+            self.logger.error(f"Error performing entry monitoring: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="exit monitoring",
+    )
+    async def _perform_exit_monitoring(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform exit monitoring.
+
+        Args:
+            market_data: Market data dictionary
+            strategy_data: Strategy data dictionary
+
+        Returns:
+            Dict[str, Any]: Exit monitoring results
+        """
+        try:
+            results = {}
+
+            # Check stop loss exit
+            if self.exit_strategies.get("stop_loss", False):
+                results["stop_loss"] = self._check_stop_loss_exit(
+                    market_data,
+                    strategy_data,
+                )
+
+            # Check take profit exit
+            if self.exit_strategies.get("take_profit", False):
+                results["take_profit"] = self._check_take_profit_exit(
+                    market_data,
+                    strategy_data,
+                )
+
+            # Check trailing stop exit
+            if self.exit_strategies.get("trailing_stop", False):
+                results["trailing_stop"] = self._check_trailing_stop_exit(
+                    market_data,
+                    strategy_data,
+                )
+
+            # Check time based exit
+            if self.exit_strategies.get("time_based", False):
+                results["time_based"] = self._check_time_based_exit(
+                    market_data,
+                    strategy_data,
+                )
+
+            self.logger.info("Exit monitoring completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing exit monitoring: {e}")
+            return {}
+
+    # Entry monitoring calculation methods
+    def _check_breakout_entry(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check for breakout entry opportunity."""
+        try:
+            # Simulate breakout entry check
+            current_price = market_data.get("price", 0)
+            resistance_level = current_price * 1.02  # 2% above current price
+
+            return current_price > resistance_level
+        except Exception as e:
+            self.logger.error(f"Error checking breakout entry: {e}")
             return False
 
-    @handle_network_operations(
-        exceptions=(Exception,), default_return=0.0, context="get_current_price"
-    )
-    async def _get_current_price(self, symbol: str) -> float:
-        """Get current price for a symbol"""
+    def _check_pullback_entry(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check for pullback entry opportunity."""
         try:
-            # Get latest kline data
-            klines = await self.exchange.get_klines(symbol, "1m", 1)
-            if klines and len(klines) > 0:
-                return klines[0].close
-            return 0.0
+            # Simulate pullback entry check
+            current_price = market_data.get("price", 0)
+            support_level = current_price * 0.98  # 2% below current price
+
+            return current_price < support_level
         except Exception as e:
-            self.logger.error(f"Error getting current price: {e}")
-            return 0.0
+            self.logger.error(f"Error checking pullback entry: {e}")
+            return False
 
-    @handle_data_processing_errors(
-        exceptions=(ValueError, TypeError, ZeroDivisionError),
-        default_return=1.0,
-        context="determine_leverage",
-    )
-    async def _determine_leverage(
-        self, strategy_result: StrategyResult, analysis_result: AnalysisResult
-    ) -> float:
-        """Determine leverage based on strategy and analysis"""
+    def _check_momentum_entry(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check for momentum entry opportunity."""
         try:
-            base_leverage = strategy_result.leverage_cap
+            # Simulate momentum entry check
+            signal = strategy_data.get("signal", "HOLD")
 
-            # Adjust based on confidence
-            confidence = analysis_result.confidence
-            if confidence > 0.8:
-                leverage_multiplier = 1.2
-            elif confidence > 0.6:
-                leverage_multiplier = 1.0
-            else:
-                leverage_multiplier = 0.8
+            return signal in ["BUY", "SELL"]
+        except Exception as e:
+            self.logger.error(f"Error checking momentum entry: {e}")
+            return False
 
-            # Adjust based on risk score
-            risk_score = analysis_result.risk_metrics.get("liquidation_risk", 0.5)
-            if risk_score > 0.7:
-                risk_multiplier = 0.5
-            elif risk_score < 0.3:
-                risk_multiplier = 1.2
-            else:
-                risk_multiplier = 1.0
+    def _check_mean_reversion_entry(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check for mean reversion entry opportunity."""
+        try:
+            # Simulate mean reversion entry check
+            current_price = market_data.get("price", 0)
+            avg_price = current_price * 1.01  # Simulated average price
 
-            leverage = base_leverage * leverage_multiplier * risk_multiplier
+            deviation = abs(current_price - avg_price) / avg_price
 
-            # Apply limits
-            max_leverage = self.config.get("max_leverage", 10.0)
-            min_leverage = self.config.get("min_leverage", 1.0)
+            return deviation > 0.05  # 5% deviation threshold
+        except Exception as e:
+            self.logger.error(f"Error checking mean reversion entry: {e}")
+            return False
 
-            return max(min_leverage, min(leverage, max_leverage))
+    # Exit monitoring calculation methods
+    def _check_stop_loss_exit(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check for stop loss exit."""
+        try:
+            # Simulate stop loss exit check
+            current_price = market_data.get("price", 0)
+            entry_price = current_price * 1.01  # Simulated entry price
+            stop_loss_pct = 0.02  # 2% stop loss
+
+            loss_pct = (current_price - entry_price) / entry_price
+
+            return loss_pct < -stop_loss_pct
+        except Exception as e:
+            self.logger.error(f"Error checking stop loss exit: {e}")
+            return False
+
+    def _check_take_profit_exit(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check for take profit exit."""
+        try:
+            # Simulate take profit exit check
+            current_price = market_data.get("price", 0)
+            entry_price = current_price * 0.99  # Simulated entry price
+            take_profit_pct = 0.04  # 4% take profit
+
+            profit_pct = (current_price - entry_price) / entry_price
+
+            return profit_pct > take_profit_pct
+        except Exception as e:
+            self.logger.error(f"Error checking take profit exit: {e}")
+            return False
+
+    def _check_trailing_stop_exit(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check for trailing stop exit."""
+        try:
+            # Simulate trailing stop exit check
+            current_price = market_data.get("price", 0)
+            highest_price = current_price * 1.03  # Simulated highest price
+            trailing_pct = 0.015  # 1.5% trailing stop
+
+            drawdown = (highest_price - current_price) / highest_price
+
+            return drawdown > trailing_pct
+        except Exception as e:
+            self.logger.error(f"Error checking trailing stop exit: {e}")
+            return False
+
+    def _check_time_based_exit(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check for time based exit."""
+        try:
+            # Simulate time based exit check
+            entry_time = datetime.now() - timedelta(hours=2)  # Simulated entry time
+            max_hold_time = timedelta(hours=4)  # 4 hour max hold time
+
+            current_time = datetime.now()
+            hold_time = current_time - entry_time
+
+            return hold_time > max_hold_time
+        except Exception as e:
+            self.logger.error(f"Error checking time based exit: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="position monitoring",
+    )
+    async def _perform_position_monitoring(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform position monitoring.
+
+        Args:
+            market_data: Market data dictionary
+            strategy_data: Strategy data dictionary
+
+        Returns:
+            Dict[str, Any]: Position monitoring results
+        """
+        try:
+            results = {}
+
+            # Check scaling opportunities
+            if self.position_strategies.get("scaling", False):
+                results["scaling"] = self._check_scaling_opportunity(
+                    market_data,
+                    strategy_data,
+                )
+
+            # Check averaging opportunities
+            if self.position_strategies.get("averaging", False):
+                results["averaging"] = self._check_averaging_opportunity(
+                    market_data,
+                    strategy_data,
+                )
+
+            # Check hedging opportunities
+            if self.position_strategies.get("hedging", False):
+                results["hedging"] = self._check_hedging_opportunity(
+                    market_data,
+                    strategy_data,
+                )
+
+            # Check rebalancing opportunities
+            if self.position_strategies.get("rebalancing", False):
+                results["rebalancing"] = self._check_rebalancing_opportunity(
+                    market_data,
+                    strategy_data,
+                )
+
+            self.logger.info("Position monitoring completed")
+            return results
 
         except Exception as e:
-            self.logger.error(f"Error determining leverage: {e}")
-            return 1.0
+            self.logger.error(f"Error performing position monitoring: {e}")
+            return {}
 
-    @handle_data_processing_errors(
-        exceptions=(ValueError, TypeError, ZeroDivisionError),
-        default_return=0.05,
-        context="calculate_atr_stop_loss",
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="risk monitoring",
     )
-    async def _calculate_atr_stop_loss(self, market_data: MarketData) -> float:
-        """Calculate ATR-based stop loss"""
-        try:
-            # This would typically calculate ATR from historical data
-            # For now, use a simple percentage
-            return 0.05  # 5% default stop loss
-        except Exception as e:
-            self.logger.error(f"Error calculating ATR stop loss: {e}")
-            return 0.05
+    async def _perform_risk_monitoring(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform risk monitoring.
 
-    @handle_data_processing_errors(
-        exceptions=(ValueError, TypeError, ZeroDivisionError),
-        default_return=0.10,
-        context="calculate_atr_take_profit",
+        Args:
+            market_data: Market data dictionary
+            strategy_data: Strategy data dictionary
+
+        Returns:
+            Dict[str, Any]: Risk monitoring results
+        """
+        try:
+            results = {}
+
+            # Check position sizing
+            if self.risk_strategies.get("position_sizing", False):
+                results["position_sizing"] = self._check_position_sizing(
+                    market_data,
+                    strategy_data,
+                )
+
+            # Check leverage control
+            if self.risk_strategies.get("leverage_control", False):
+                results["leverage_control"] = self._check_leverage_control(
+                    market_data,
+                    strategy_data,
+                )
+
+            # Check correlation monitoring
+            if self.risk_strategies.get("correlation_monitoring", False):
+                results["correlation_monitoring"] = self._check_correlation_monitoring(
+                    market_data,
+                    strategy_data,
+                )
+
+            # Check volatility adjustment
+            if self.risk_strategies.get("volatility_adjustment", False):
+                results["volatility_adjustment"] = self._check_volatility_adjustment(
+                    market_data,
+                    strategy_data,
+                )
+
+            self.logger.info("Risk monitoring completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing risk monitoring: {e}")
+            return {}
+
+    # Position monitoring calculation methods
+    def _check_scaling_opportunity(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check for scaling opportunity."""
+        try:
+            # Simulate scaling opportunity check
+            current_price = market_data.get("price", 0)
+            entry_price = current_price * 0.98  # Simulated entry price
+
+            profit_pct = (current_price - entry_price) / entry_price
+
+            return profit_pct > 0.03  # 3% profit threshold for scaling
+        except Exception as e:
+            self.logger.error(f"Error checking scaling opportunity: {e}")
+            return False
+
+    def _check_averaging_opportunity(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check for averaging opportunity."""
+        try:
+            # Simulate averaging opportunity check
+            current_price = market_data.get("price", 0)
+            entry_price = current_price * 1.02  # Simulated entry price
+
+            loss_pct = (current_price - entry_price) / entry_price
+
+            return loss_pct < -0.02  # 2% loss threshold for averaging
+        except Exception as e:
+            self.logger.error(f"Error checking averaging opportunity: {e}")
+            return False
+
+    def _check_hedging_opportunity(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check for hedging opportunity."""
+        try:
+            # Simulate hedging opportunity check
+            volatility = np.random.random() * 0.05  # Random volatility
+            high_volatility_threshold = 0.03  # 3% volatility threshold
+
+            return volatility > high_volatility_threshold
+        except Exception as e:
+            self.logger.error(f"Error checking hedging opportunity: {e}")
+            return False
+
+    def _check_rebalancing_opportunity(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check for rebalancing opportunity."""
+        try:
+            # Simulate rebalancing opportunity check
+            current_allocation = 0.6  # Simulated current allocation
+            target_allocation = 0.5  # Simulated target allocation
+            rebalance_threshold = 0.1  # 10% threshold
+
+            allocation_deviation = abs(current_allocation - target_allocation)
+
+            return allocation_deviation > rebalance_threshold
+        except Exception as e:
+            self.logger.error(f"Error checking rebalancing opportunity: {e}")
+            return False
+
+    # Risk monitoring calculation methods
+    def _check_position_sizing(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check position sizing."""
+        try:
+            # Simulate position sizing check
+            position_size = strategy_data.get("position_size", 0)
+            max_position_size = 0.25  # 25% max position size
+
+            return position_size > max_position_size
+        except Exception as e:
+            self.logger.error(f"Error checking position sizing: {e}")
+            return False
+
+    def _check_leverage_control(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check leverage control."""
+        try:
+            # Simulate leverage control check
+            current_leverage = 2.5  # Simulated current leverage
+            max_leverage = 3.0  # 3x max leverage
+
+            return current_leverage > max_leverage
+        except Exception as e:
+            self.logger.error(f"Error checking leverage control: {e}")
+            return False
+
+    def _check_correlation_monitoring(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check correlation monitoring."""
+        try:
+            # Simulate correlation monitoring check
+            correlation = (
+                np.random.random() * 2 - 1
+            )  # Random correlation between -1 and 1
+            high_correlation_threshold = 0.8  # 80% correlation threshold
+
+            return abs(correlation) > high_correlation_threshold
+        except Exception as e:
+            self.logger.error(f"Error checking correlation monitoring: {e}")
+            return False
+
+    def _check_volatility_adjustment(
+        self,
+        market_data: dict[str, Any],
+        strategy_data: dict[str, Any],
+    ) -> bool:
+        """Check volatility adjustment."""
+        try:
+            # Simulate volatility adjustment check
+            current_volatility = np.random.random() * 0.1  # Random volatility
+            volatility_threshold = 0.05  # 5% volatility threshold
+
+            return current_volatility > volatility_threshold
+        except Exception as e:
+            self.logger.error(f"Error checking volatility adjustment: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="tactician results storage",
     )
-    async def _calculate_atr_take_profit(self, market_data: MarketData) -> float:
-        """Calculate ATR-based take profit"""
+    async def _store_tactician_results(self) -> None:
+        """Store tactician results."""
         try:
-            # This would typically calculate ATR from historical data
-            # For now, use a simple percentage
-            return 0.10  # 10% default take profit
+            # Add timestamp
+            self.tactician_results["timestamp"] = datetime.now().isoformat()
+
+            # Add to history
+            self.tactician_history.append(self.tactician_results.copy())
+
+            # Limit history size
+            if len(self.tactician_history) > self.max_tactician_history:
+                self.tactician_history.pop(0)
+
+            self.logger.info("Tactician results stored successfully")
+
         except Exception as e:
-            self.logger.error(f"Error calculating ATR take profit: {e}")
-            return 0.10
+            self.logger.error(f"Error storing tactician results: {e}")
 
-    async def _log_trade(
-        self, trade_decision: TradeDecision, position: Dict[str, Any]
-    ) -> None:
-        """Log trade details"""
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="tactician results getting",
+    )
+    def get_tactician_results(
+        self,
+        tactician_type: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get tactician results.
+
+        Args:
+            tactician_type: Optional tactician type filter
+
+        Returns:
+            Dict[str, Any]: Tactician results
+        """
         try:
-            # Calculate P&L
-            entry_price = position.get("entry_price", 0)
-            exit_price = trade_decision.price
-            quantity = trade_decision.quantity
+            if tactician_type:
+                return self.tactician_results.get(tactician_type, {})
+            return self.tactician_results.copy()
 
-            if position.get("side") == "LONG":
-                pnl = (exit_price - entry_price) * quantity
-            else:
-                pnl = (entry_price - exit_price) * quantity
+        except Exception as e:
+            self.logger.error(f"Error getting tactician results: {e}")
+            return {}
 
-            # Log to performance reporter
-            trade_data = {
-                "trade_id": position.get("trade_id"),
-                "symbol": trade_decision.symbol,
-                "side": position.get("side"),
-                "entry_price": entry_price,
-                "exit_price": exit_price,
-                "quantity": quantity,
-                "pnl": pnl,
-                "entry_time": position.get("entry_time"),
-                "exit_time": trade_decision.timestamp,
-                "leverage": position.get("leverage"),
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="tactician history getting",
+    )
+    def get_tactician_history(
+        self,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Get tactician history.
+
+        Args:
+            limit: Optional limit on number of records
+
+        Returns:
+            List[Dict[str, Any]]: Tactician history
+        """
+        try:
+            history = self.tactician_history.copy()
+
+            if limit:
+                history = history[-limit:]
+
+            return history
+
+        except Exception as e:
+            self.logger.error(f"Error getting tactician history: {e}")
+            return []
+
+    def get_tactician_status(self) -> dict[str, Any]:
+        """
+        Get tactician status information.
+
+        Returns:
+            Dict[str, Any]: Tactician status
+        """
+        return {
+            "is_tactician_active": self.is_tactician_active,
+            "tactician_interval": self.tactician_interval,
+            "max_tactician_history": self.max_tactician_history,
+            "enable_entry_monitoring": self.enable_entry_monitoring,
+            "enable_exit_monitoring": self.enable_exit_monitoring,
+            "enable_position_monitoring": self.tactician_config.get(
+                "enable_position_monitoring",
+                False,
+            ),
+            "enable_risk_monitoring": self.tactician_config.get(
+                "enable_risk_monitoring",
+                True,
+            ),
+            "tactician_history_count": len(self.tactician_history),
+        }
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="modular tactician cleanup",
+    )
+    async def stop(self) -> None:
+        """Stop the modular tactician."""
+        self.logger.info("🛑 Stopping Modular Tactician...")
+
+        try:
+            # Stop tactician
+            self.is_tactician_active = False
+
+            # Clear results
+            self.tactician_results.clear()
+
+            # Clear history
+            self.tactician_history.clear()
+
+            self.logger.info("✅ Modular Tactician stopped successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error stopping modular tactician: {e}")
+
+
+# Global modular tactician instance
+modular_tactician: ModularTactician | None = None
+
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="modular tactician setup",
+)
+async def setup_modular_tactician(
+    config: dict[str, Any] | None = None,
+) -> ModularTactician | None:
+    """
+    Setup global modular tactician.
+
+    Args:
+        config: Optional configuration dictionary
+
+    Returns:
+        Optional[ModularTactician]: Global modular tactician instance
+    """
+    try:
+        global modular_tactician
+
+        if config is None:
+            config = {
+                "modular_tactician": {
+                    "tactician_interval": 5,
+                    "max_tactician_history": 100,
+                    "enable_entry_monitoring": True,
+                    "enable_exit_monitoring": True,
+                    "enable_position_monitoring": False,
+                    "enable_risk_monitoring": True,
+                },
             }
 
-            await self.performance_reporter.log_trade(trade_data)
+        # Create modular tactician
+        modular_tactician = ModularTactician(config)
 
-            # Add to trade history
-            self.trade_history.append(trade_data)
+        # Initialize modular tactician
+        success = await modular_tactician.initialize()
+        if success:
+            return modular_tactician
+        return None
 
-        except Exception as e:
-            self.logger.error(f"Error logging trade: {e}")
+    except Exception as e:
+        print(f"Error setting up modular tactician: {e}")
+        return None

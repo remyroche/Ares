@@ -1,20 +1,20 @@
+from typing import Any
+
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 from arch import arch_model
-from lightgbm import LGBMClassifier
-from pytorch_tabnet.tab_model import TabNetClassifier
 from keras.layers import (
-    Input,
     LSTM,
     Dense,
     Dropout,
-    LayerNormalization,
     Flatten,
+    Input,
+    LayerNormalization,
+    MultiHeadAttention,
 )
-from keras.layers import MultiHeadAttention
 from keras.models import Model
-from typing import List, Any
+from lightgbm import LGBMClassifier
+from pytorch_tabnet.tab_model import TabNetClassifier
 
 from .base_ensemble import BaseEnsemble
 
@@ -48,17 +48,24 @@ class BearTrendEnsemble(BaseEnsemble):
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
         # (This method's logic is identical to the Bull Trend ensemble)
         X_seq, y_seq_aligned_encoded = self._prepare_sequence_data(
-            aligned_data, pd.Series(y_encoded, index=aligned_data.index)
+            aligned_data,
+            pd.Series(y_encoded, index=aligned_data.index),
         )
         X_flat = aligned_data[self.flat_features].fillna(0)
         num_classes = len(np.unique(y_encoded))
 
         if X_seq.size > 0:
             self.models["lstm"] = self._train_dl_model(
-                X_seq, y_seq_aligned_encoded, num_classes, is_transformer=False
+                X_seq,
+                y_seq_aligned_encoded,
+                num_classes,
+                is_transformer=False,
             )
             self.models["transformer"] = self._train_dl_model(
-                X_seq, y_seq_aligned_encoded, num_classes, is_transformer=True
+                X_seq,
+                y_seq_aligned_encoded,
+                num_classes,
+                is_transformer=True,
             )
 
         self.models["tabnet"] = self._train_tabnet_model(X_flat, y_encoded)
@@ -66,31 +73,41 @@ class BearTrendEnsemble(BaseEnsemble):
         self.logger.info("Tuning and training specialized Order Flow LGBM...")
         X_of = aligned_data[self.order_flow_features].fillna(0)
         of_params = self._tune_hyperparameters(
-            LGBMClassifier, self._get_lgbm_search_space, X_of, y_encoded
+            LGBMClassifier,
+            self._get_lgbm_search_space,
+            X_of,
+            y_encoded,
         )
         self.models["order_flow_lgbm"] = self._train_with_smote(
-            LGBMClassifier(**of_params, random_state=42, verbose=-1), X_of, y_encoded
+            LGBMClassifier(**of_params, random_state=42, verbose=-1),
+            X_of,
+            y_encoded,
         )
 
         # Logistic Regression with L1-L2 regularization
         self.logger.info(
-            "Training Logistic Regression model with L1-L2 regularization..."
+            "Training Logistic Regression model with L1-L2 regularization...",
         )
         self.models["logistic_regression"] = self._train_with_smote(
-            self._get_regularized_logistic_regression(), X_flat, y_encoded
+            self._get_regularized_logistic_regression(),
+            X_flat,
+            y_encoded,
         )
 
         returns = aligned_data["close"].pct_change().dropna()
         if len(returns) > 100:
             try:
                 self.models["garch"] = arch_model(returns, vol="Garch", p=1, q=1).fit(
-                    disp="off"
+                    disp="off",
                 )
             except Exception as e:
                 self.logger.error(f"GARCH training failed: {e}")
 
     def _get_meta_features(
-        self, df: pd.DataFrame, is_live: bool = False, **kwargs
+        self,
+        df: pd.DataFrame,
+        is_live: bool = False,
+        **kwargs,
     ) -> pd.DataFrame | dict:
         # (This method's logic is identical to the Bull Trend ensemble)
         base_preds = self._get_base_model_predictions(df, is_live)
@@ -103,12 +120,11 @@ class BearTrendEnsemble(BaseEnsemble):
                     current_row[col].iloc[0] if col in current_row.columns else 0.0
                 )
             return base_preds
-        else:
-            meta_df = base_preds
-            for col in raw_features_to_include:
-                if col in df.columns:
-                    meta_df = meta_df.join(df[[col]])
-            return meta_df.fillna(0)
+        meta_df = base_preds
+        for col in raw_features_to_include:
+            if col in df.columns:
+                meta_df = meta_df.join(df[[col]])
+        return meta_df.fillna(0)
 
     def _get_base_model_predictions(self, df: pd.DataFrame, is_live: bool):
         seq_len = self.dl_config["sequence_length"]
@@ -120,59 +136,62 @@ class BearTrendEnsemble(BaseEnsemble):
             meta = {}
             if self.models.get("lstm") and X_seq.size > 0:
                 meta["lstm_conf"] = np.max(
-                    self.models["lstm"].predict(X_seq, verbose=0)
+                    self.models["lstm"].predict(X_seq, verbose=0),
                 )
             if self.models.get("transformer") and X_seq.size > 0:
                 meta["transformer_conf"] = np.max(
-                    self.models["transformer"].predict(X_seq, verbose=0)
+                    self.models["transformer"].predict(X_seq, verbose=0),
                 )
             if self.models.get("tabnet"):
                 meta["tabnet_proba"] = np.max(
-                    self.models["tabnet"].predict_proba(X_flat.tail(1).values)
+                    self.models["tabnet"].predict_proba(X_flat.tail(1).values),
                 )
             if self.models.get("order_flow_lgbm"):
                 meta["of_lgbm_prob"] = np.max(
-                    self.models["order_flow_lgbm"].predict_proba(X_of.tail(1))
+                    self.models["order_flow_lgbm"].predict_proba(X_of.tail(1)),
                 )
             if self.models.get("logistic_regression"):
                 meta["log_reg_prob"] = np.max(
-                    self.models["logistic_regression"].predict_proba(X_flat.tail(1))
+                    self.models["logistic_regression"].predict_proba(X_flat.tail(1)),
                 )
             if self.models.get("garch"):
                 meta["garch_volatility"] = (
                     self.models["garch"].forecast(horizon=1).variance.iloc[-1, 0]
                 )
             return meta
-        else:
-            meta_df = pd.DataFrame(index=df.index[seq_len - 1 :])
-            X_flat_aligned = X_flat.loc[meta_df.index]
-            X_of_aligned = X_of.loc[meta_df.index]
-            if self.models.get("lstm") and X_seq.size > 0:
-                meta_df["lstm_conf"] = np.max(
-                    self.models["lstm"].predict(X_seq, verbose=0), axis=1
-                )
-            if self.models.get("transformer") and X_seq.size > 0:
-                meta_df["transformer_conf"] = np.max(
-                    self.models["transformer"].predict(X_seq, verbose=0), axis=1
-                )
-            if self.models.get("tabnet"):
-                meta_df["tabnet_proba"] = np.max(
-                    self.models["tabnet"].predict_proba(X_flat_aligned.values), axis=1
-                )
-            if self.models.get("order_flow_lgbm"):
-                meta_df["of_lgbm_prob"] = np.max(
-                    self.models["order_flow_lgbm"].predict_proba(X_of_aligned), axis=1
-                )
-            if self.models.get("logistic_regression"):
-                meta_df["log_reg_prob"] = np.max(
-                    self.models["logistic_regression"].predict_proba(X_flat_aligned),
-                    axis=1,
-                )
-            if self.models.get("garch"):
-                meta_df["garch_volatility"] = self.models[
-                    "garch"
-                ].conditional_volatility.reindex(meta_df.index, method="ffill")
-            return meta_df
+        meta_df = pd.DataFrame(index=df.index[seq_len - 1 :])
+        X_flat_aligned = X_flat.loc[meta_df.index]
+        X_of_aligned = X_of.loc[meta_df.index]
+        if self.models.get("lstm") and X_seq.size > 0:
+            meta_df["lstm_conf"] = np.max(
+                self.models["lstm"].predict(X_seq, verbose=0),
+                axis=1,
+            )
+        if self.models.get("transformer") and X_seq.size > 0:
+            meta_df["transformer_conf"] = np.max(
+                self.models["transformer"].predict(X_seq, verbose=0),
+                axis=1,
+            )
+        if self.models.get("tabnet"):
+            meta_df["tabnet_proba"] = np.max(
+                self.models["tabnet"].predict_proba(X_flat_aligned.values),
+                axis=1,
+            )
+        if self.models.get("order_flow_lgbm"):
+            meta_df["of_lgbm_prob"] = np.max(
+                self.models["order_flow_lgbm"].predict_proba(X_of_aligned),
+                axis=1,
+            )
+        if self.models.get("logistic_regression"):
+            meta_df["log_reg_prob"] = np.max(
+                self.models["logistic_regression"].predict_proba(X_flat_aligned),
+                axis=1,
+            )
+        if self.models.get("garch"):
+            meta_df["garch_volatility"] = self.models[
+                "garch"
+            ].conditional_volatility.reindex(meta_df.index, method="ffill")
+        return meta_df
 
     def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None):
         for col in self.sequence_features:
@@ -180,8 +199,8 @@ class BearTrendEnsemble(BaseEnsemble):
                 df[col] = 0.0
         features_df = df[self.sequence_features].copy().fillna(0)
         seq_len = self.dl_config["sequence_length"]
-        X: List[Any] = []
-        y: List[Any] = []
+        X: list[Any] = []
+        y: list[Any] = []
         if len(features_df) < seq_len:
             return np.array(X), np.array(y)
         for i in range(int(len(features_df) - seq_len + 1)):

@@ -1,10 +1,10 @@
 # main_orchestrator.py
-import subprocess
-import time
-import os
-import sys
-import signal
 import argparse
+import os
+import signal
+import subprocess
+import sys
+import time
 
 # Import the main CONFIG dictionary
 from src.config import CONFIG
@@ -14,7 +14,7 @@ def get_process_pid(pid_file):
     """Reads the PID from a specified PID file."""
     if os.path.exists(pid_file):
         try:
-            with open(pid_file, "r") as f:
+            with open(pid_file) as f:
                 pid = int(f.read().strip())
             return pid
         except (ValueError, FileNotFoundError):
@@ -50,9 +50,8 @@ def terminate_process(pid, name="process"):
         if not is_process_running(pid):
             print(f"{name} (PID: {pid}) terminated.")
             return True
-        else:
-            print(f"Failed to terminate {name} (PID: {pid}).")
-            return False
+        print(f"Failed to terminate {name} (PID: {pid}).")
+        return False
     except ProcessLookupError:
         print(f"{name} (PID: {pid}) was not found, likely already terminated.")
         return True  # Already gone, so consider it terminated
@@ -81,7 +80,7 @@ def start_process(script_name, name="process"):  # Removed log_prefix parameter
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Ares Main Orchestrator for Backtesting or Live Trading."
+        description="Ares Main Orchestrator for Backtesting or Live Trading.",
     )
     parser.add_argument(
         "--symbol",
@@ -139,7 +138,7 @@ def main():
     )
 
     print(
-        f"--- Ares Main Orchestrator Starting in '{args.mode}' mode for {args.symbol} on {args.exchange} ---"
+        f"--- Ares Main Orchestrator Starting in '{args.mode}' mode for {args.symbol} on {args.exchange} ---",
     )
 
     # Clean up any old PID or flag files
@@ -164,47 +163,97 @@ def main():
         sys.exit(0)
 
     elif args.mode == "train":
-        print(f"Launching ML/Fine-tuning pipeline for {args.symbol}...")
+        print(f"Launching Enhanced ML/Fine-tuning pipeline for {args.symbol}...")
         try:
-            from backtesting.training_pipeline import main as run_training_pipeline_main
+            import asyncio
 
-            # training_pipeline.main() uses asyncio.run(), so we call it directly
-            run_training_pipeline_main()
-        except ImportError:
-            print(
-                "ERROR: 'training_pipeline.py' not found. Please create it for 'train' mode."
-            )
-            sys.exit(1)
+            from src.database.sqlite_manager import SQLiteManager
+            from src.training.enhanced_training_manager import EnhancedTrainingManager
+
+            async def run_enhanced_training():
+                # Initialize database manager
+                db_manager = SQLiteManager({})
+                await db_manager.initialize()
+
+                # Initialize enhanced training manager
+                training_manager = EnhancedTrainingManager(db_manager)
+
+                # Run enhanced training pipeline
+                session_id = await training_manager.run_full_training(
+                    symbol=args.symbol,
+                    exchange_name=args.exchange.upper(),
+                    timeframe="1h",
+                )
+
+                if session_id:
+                    print(
+                        f"✅ Enhanced training completed successfully for {args.symbol}",
+                    )
+                else:
+                    print(f"❌ Enhanced training failed for {args.symbol}")
+
+                # Close database connection
+                await db_manager.close()
+
+            # Run the async training function
+            asyncio.run(run_enhanced_training())
         except Exception as e:
-            print(f"Error running training pipeline: {e}")
+            print(f"Error running enhanced training pipeline: {e}")
             sys.exit(1)
         sys.exit(0)
 
     elif args.mode == "full_backtest":
         print(
-            f"--- Running Full Backtest Workflow: Train then Backtest for {args.symbol} ---"
+            f"--- Running Full Backtest Workflow: Train then Backtest for {args.symbol} ---",
         )
 
-        # Step 1: Run the Training Pipeline
-        print(f"Step 1/2: Launching ML/Fine-tuning pipeline for {args.symbol}...")
+        # Step 1: Run the Enhanced Training Pipeline
+        print(
+            f"Step 1/2: Launching Enhanced ML/Fine-tuning pipeline for {args.symbol}...",
+        )
         try:
-            from backtesting.training_pipeline import main as run_training_pipeline_main
+            import asyncio
 
-            # training_pipeline.main() uses asyncio.run(), so we call it directly
-            run_training_pipeline_main()
+            from src.database.sqlite_manager import SQLiteManager
+            from src.training.enhanced_training_manager import EnhancedTrainingManager
+
+            async def run_enhanced_training():
+                # Initialize database manager
+                db_manager = SQLiteManager({})
+                await db_manager.initialize()
+
+                # Initialize enhanced training manager
+                training_manager = EnhancedTrainingManager(db_manager)
+
+                # Run enhanced training pipeline
+                session_id = await training_manager.run_full_training(
+                    symbol=args.symbol,
+                    exchange_name=args.exchange.upper(),
+                    timeframe="1h",
+                )
+
+                if session_id:
+                    print(
+                        f"✅ Enhanced training completed successfully for {args.symbol}",
+                    )
+                else:
+                    print(f"❌ Enhanced training failed for {args.symbol}")
+
+                # Close database connection
+                await db_manager.close()
+
+            # Run the async training function
+            asyncio.run(run_enhanced_training())
             print(
-                f"Step 1/2: Training pipeline completed successfully for {args.symbol}."
+                f"Step 1/2: Enhanced training pipeline completed successfully for {args.symbol}.",
             )
-        except ImportError:
-            print("ERROR: 'training_pipeline.py' not found. Cannot run full_backtest.")
-            sys.exit(1)
         except Exception as e:
-            print(f"Error during training pipeline in full_backtest mode: {e}")
+            print(f"Error during enhanced training pipeline in full_backtest mode: {e}")
             sys.exit(1)
 
         # Step 2: Run the Backtester
         print(
-            f"Step 2/2: Launching backtester for {args.symbol} with newly trained models..."
+            f"Step 2/2: Launching backtester for {args.symbol} with newly trained models...",
         )
         try:
             from backtesting.ares_backtester import main as run_backtester_main
@@ -220,7 +269,8 @@ def main():
         # ... (live mode logic remains the same) ...
         print(f"Launching live trading bot for {args.symbol}...")
         listener_process = start_process(
-            "emails/email_command_listener.py", "Email Listener"
+            "emails/email_command_listener.py",
+            "Email Listener",
         )
         if listener_process is None:
             print("Failed to start Email Listener. Exiting.")
@@ -237,11 +287,12 @@ def main():
             while True:
                 if not is_process_running(pipeline_process.pid):
                     print(
-                        f"Ares Pipeline (PID: {pipeline_process.pid}) has stopped unexpectedly."
+                        f"Ares Pipeline (PID: {pipeline_process.pid}) has stopped unexpectedly.",
                     )
                     print("Attempting to restart Ares Pipeline...")
                     pipeline_process = start_process(
-                        pipeline_script_name, "Ares Pipeline"
+                        pipeline_script_name,
+                        "Ares Pipeline",
                     )
                     if pipeline_process is None:
                         print("Failed to restart Ares Pipeline. Exiting orchestrator.")
@@ -249,16 +300,16 @@ def main():
 
                 if os.path.exists(restart_flag_file):
                     print(
-                        f"'{restart_flag_file}' detected. Initiating pipeline restart."
+                        f"'{restart_flag_file}' detected. Initiating pipeline restart.",
                     )
                     current_pipeline_pid = get_process_pid(pipeline_pid_file)
                     if current_pipeline_pid and is_process_running(
-                        current_pipeline_pid
+                        current_pipeline_pid,
                     ):
                         terminate_process(current_pipeline_pid, "Ares Pipeline")
                     else:
                         print(
-                            "No active pipeline process found via PID file to stop. Proceeding with restart."
+                            "No active pipeline process found via PID file to stop. Proceeding with restart.",
                         )
 
                     try:
@@ -268,11 +319,12 @@ def main():
                         print(f"Error removing restart flag file: {e}")
 
                     pipeline_process = start_process(
-                        pipeline_script_name, "Ares Pipeline"
+                        pipeline_script_name,
+                        "Ares Pipeline",
                     )
                     if pipeline_process is None:
                         print(
-                            "Failed to restart Ares Pipeline after flag. Exiting orchestrator."
+                            "Failed to restart Ares Pipeline after flag. Exiting orchestrator.",
                         )
                         break
 
@@ -296,7 +348,7 @@ def main():
             print("All processes terminated and cleanup complete.")
     else:
         print(
-            f"ERROR: Unknown mode '{args.mode}'. Please choose 'backtest', 'train', 'live', or 'full_backtest'."
+            f"ERROR: Unknown mode '{args.mode}'. Please choose 'backtest', 'train', 'live', or 'full_backtest'.",
         )
         sys.exit(1)
 

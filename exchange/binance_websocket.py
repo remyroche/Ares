@@ -1,9 +1,10 @@
-import logging
 import json
+import logging
 import threading
 import time
-from websocket import WebSocketApp
+
 import pandas as pd
+from websocket import WebSocketApp
 
 
 class BinanceWebsocketClient:

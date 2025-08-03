@@ -1,8 +1,4 @@
-from typing import Dict, Any
-
-# Ensure these imports are correct relative to the project root
-from src.config import CONFIG
-from src.utils.logger import system_logger
+from typing import Any
 
 # Import necessary ensemble types for type hinting and applying regularization
 # These imports are here to allow the apply_regularization_to_ensembles method
@@ -11,6 +7,10 @@ from src.analyst.predictive_ensembles.ensemble_orchestrator import (
     RegimePredictiveEnsembles,
 )
 from src.analyst.predictive_ensembles.regime_ensembles.base_ensemble import BaseEnsemble
+
+# Ensure these imports are correct relative to the project root
+from src.config import CONFIG
+from src.utils.logger import system_logger
 
 
 class RegularizationManager:
@@ -25,7 +25,7 @@ class RegularizationManager:
         self.regularization_config = self._get_regularization_config()
         self.logger.info("RegularizationManager initialized.")
 
-    def _get_regularization_config(self) -> Dict[str, Any]:
+    def _get_regularization_config(self) -> dict[str, Any]:
         """Extract and validate L1-L2 regularization configuration from CONFIG."""
         base_reg_config = CONFIG["MODEL_TRAINING"].get("regularization", {})
 
@@ -54,12 +54,13 @@ class RegularizationManager:
         }
 
         self.logger.info(
-            f"Regularization configuration loaded: {regularization_config}"
+            f"Regularization configuration loaded: {regularization_config}",
         )
         return regularization_config
 
     def apply_regularization_to_ensembles(
-        self, ensemble_orchestrator: RegimePredictiveEnsembles
+        self,
+        ensemble_orchestrator: RegimePredictiveEnsembles,
     ):
         """
         Applies the loaded L1-L2 regularization configuration to all ensemble instances.
@@ -71,10 +72,11 @@ class RegularizationManager:
                 ensemble_instance,
             ) in ensemble_orchestrator.regime_ensembles.items():
                 self._apply_regularization_to_single_ensemble(
-                    ensemble_instance, regime_name
+                    ensemble_instance,
+                    regime_name,
                 )
             self.logger.info(
-                "Successfully applied regularization configuration to all ensembles."
+                "Successfully applied regularization configuration to all ensembles.",
             )
         except Exception as e:
             self.logger.error(
@@ -83,7 +85,9 @@ class RegularizationManager:
             )
 
     def _apply_regularization_to_single_ensemble(
-        self, ensemble_instance: BaseEnsemble, regime_name: str
+        self,
+        ensemble_instance: BaseEnsemble,
+        regime_name: str,
     ):
         """Applies regularization configuration to a specific ensemble instance."""
         try:
@@ -93,11 +97,7 @@ class RegularizationManager:
                 ensemble_instance.regularization_config = self.regularization_config
             else:
                 # If not present, add it. This ensures it's available for model creation.
-                setattr(
-                    ensemble_instance,
-                    "regularization_config",
-                    self.regularization_config,
-                )
+                ensemble_instance.regularization_config = self.regularization_config
 
             # If the ensemble has specific deep learning config, update it directly
             if hasattr(ensemble_instance, "dl_config"):
@@ -108,14 +108,14 @@ class RegularizationManager:
                         "dropout_rate": self.regularization_config["tensorflow"][
                             "dropout_rate"
                         ],
-                    }
+                    },
                 )
 
             self.logger.info(f"Applied regularization to {regime_name} ensemble.")
 
         except Exception as e:
             self.logger.error(
-                f"Failed to apply regularization to {regime_name} ensemble: {e}"
+                f"Failed to apply regularization to {regime_name} ensemble: {e}",
             )
 
     def validate_and_report_regularization(self) -> bool:
@@ -136,7 +136,7 @@ class RegularizationManager:
 
             if missing_keys:
                 self.logger.warning(
-                    f"Missing regularization config keys: {missing_keys}"
+                    f"Missing regularization config keys: {missing_keys}",
                 )
                 return False
 
@@ -145,49 +145,49 @@ class RegularizationManager:
             self.logger.info(f"   - L1 Alpha: {self.regularization_config['l1_alpha']}")
             self.logger.info(f"   - L2 Alpha: {self.regularization_config['l2_alpha']}")
             self.logger.info(
-                f"   - Dropout Rate: {self.regularization_config['dropout_rate']}"
+                f"   - Dropout Rate: {self.regularization_config['dropout_rate']}",
             )
 
             self.logger.info("\n🌳 LightGBM Regularization:")
             lgbm_config = self.regularization_config.get("lightgbm", {})
             self.logger.info(
-                f"   - L1 (reg_alpha): {lgbm_config.get('reg_alpha', 'Not set')}"
+                f"   - L1 (reg_alpha): {lgbm_config.get('reg_alpha', 'Not set')}",
             )
             self.logger.info(
-                f"   - L2 (reg_lambda): {lgbm_config.get('reg_lambda', 'Not set')}"
+                f"   - L2 (reg_lambda): {lgbm_config.get('reg_lambda', 'Not set')}",
             )
 
             self.logger.info("\n🧠 TensorFlow/Keras Regularization:")
             tf_config = self.regularization_config.get("tensorflow", {})
             self.logger.info(
-                f"   - L1 Regularization: {tf_config.get('l1_reg', 'Not set')}"
+                f"   - L1 Regularization: {tf_config.get('l1_reg', 'Not set')}",
             )
             self.logger.info(
-                f"   - L2 Regularization: {tf_config.get('l2_reg', 'Not set')}"
+                f"   - L2 Regularization: {tf_config.get('l2_reg', 'Not set')}",
             )
             self.logger.info(
-                f"   - Dropout Rate: {tf_config.get('dropout_rate', 'Not set')}"
+                f"   - Dropout Rate: {tf_config.get('dropout_rate', 'Not set')}",
             )
 
             self.logger.info("\n📈 Scikit-learn Regularization:")
             sklearn_config = self.regularization_config.get("sklearn", {})
             print(
-                f"   - alpha (for Ridge/Lasso): {sklearn_config.get('alpha', 'Not set')}"
+                f"   - alpha (for Ridge/Lasso): {sklearn_config.get('alpha', 'Not set')}",
             )
             print(
-                f"   - l1_ratio (for ElasticNet): {sklearn_config.get('l1_ratio', 'Not set')}"
+                f"   - l1_ratio (for ElasticNet): {sklearn_config.get('l1_ratio', 'Not set')}",
             )
             print(
-                f"   - C (for LogisticRegression): {sklearn_config.get('C', 'Not set')}"
+                f"   - C (for LogisticRegression): {sklearn_config.get('C', 'Not set')}",
             )
 
             self.logger.info("\n🎯 TabNet Regularization:")
             tabnet_config = self.regularization_config.get("tabnet", {})
             self.logger.info(
-                f"   - lambda_sparse (L1): {tabnet_config.get('lambda_sparse', 'Not set')}"
+                f"   - lambda_sparse (L1): {tabnet_config.get('lambda_sparse', 'Not set')}",
             )
             self.logger.info(
-                f"   - lambda_l2 (L2): {tabnet_config.get('lambda_l2', 'Not set')}"
+                f"   - lambda_l2 (L2): {tabnet_config.get('lambda_l2', 'Not set')}",
             )
 
             # Validate regularization values are reasonable
@@ -202,7 +202,7 @@ class RegularizationManager:
 
             if validation_issues:
                 self.logger.warning(
-                    f"⚠️  Regularization validation issues: {validation_issues}"
+                    f"⚠️  Regularization validation issues: {validation_issues}",
                 )
                 return False
 
@@ -212,6 +212,7 @@ class RegularizationManager:
 
         except Exception as e:
             self.logger.error(
-                f"Failed to validate regularization configuration: {e}", exc_info=True
+                f"Failed to validate regularization configuration: {e}",
+                exc_info=True,
             )
             return False

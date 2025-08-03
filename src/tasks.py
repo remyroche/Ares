@@ -1,7 +1,8 @@
 # src/tasks.py
+import os
+
 from celery import Celery
 from celery.schedules import crontab
-import os
 
 # Configure Celery
 app = Celery("ares_tasks", broker="redis://localhost:6379/0")
@@ -37,21 +38,22 @@ def run_monthly_training_pipeline():
     print("Celery Task: Kicking off monthly training pipeline...")
     try:
         import asyncio
-        from src.database.sqlite_manager import SQLiteManager
-        from src.training.training_manager import TrainingManager
+
         from src.config import settings
+        from src.database.sqlite_manager import SQLiteManager
+        from src.training.enhanced_training_manager import EnhancedTrainingManager
 
         async def run_training():
             # Initialize database manager
-            db_manager = SQLiteManager()
+            db_manager = SQLiteManager({})
             await db_manager.initialize()
 
-            # Initialize training manager
-            training_manager = TrainingManager(db_manager)
+            # Initialize enhanced training manager
+            training_manager = EnhancedTrainingManager(db_manager)
 
-            # Get current trading symbol
+            # Get current trading symbol and exchange
             symbol = settings.trade_symbol
-            exchange_name = "BINANCE"
+            exchange_name = settings.exchange_name
 
             # Run full training pipeline
             success = await training_manager.run_full_training(symbol, exchange_name)
@@ -69,7 +71,7 @@ def run_monthly_training_pipeline():
 
     except Exception as e:
         print(
-            f"An unexpected error occurred while running the training pipeline task: {e}"
+            f"An unexpected error occurred while running the training pipeline task: {e}",
         )
 
 

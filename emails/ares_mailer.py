@@ -1,13 +1,14 @@
 import logging
 
 try:
-    import aiosmtp
+    import aiosmtplib
 
     AIOSMTP_AVAILABLE = True
 except ImportError:
-    aiosmtp = None
+    aiosmtplib = None
     AIOSMTP_AVAILABLE = False
 from email.mime.text import MIMEText
+
 from src.config import settings
 
 
@@ -35,7 +36,7 @@ class AresMailer:
                 self.smtp_user,
                 self.smtp_password,
                 self.recipients,
-            ]
+            ],
         ):
             self.logger.error("Email configuration is incomplete. Cannot send alert.")
             return
@@ -51,16 +52,13 @@ class AresMailer:
 
         try:
             self.logger.info(f"Sending alert: {subject}")
-            await aiosmtp.send(
-                msg,
-                sender=self.smtp_user,
-                recipients=self.recipients,
+            async with aiosmtplib.SMTP(
                 hostname=self.smtp_server,
                 port=self.smtp_port,
-                username=self.smtp_user,
-                password=self.smtp_password,
                 use_tls=True,
-            )
+            ) as smtp:
+                await smtp.login(self.smtp_user, self.smtp_password)
+                await smtp.send_message(msg)
             self.logger.info("Alert sent successfully.")
         except Exception as e:
             self.logger.error(f"Failed to send email alert: {e}", exc_info=True)

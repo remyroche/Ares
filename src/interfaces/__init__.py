@@ -2,17 +2,16 @@
 
 from .base_interfaces import (
     IAnalyst,
-    IStrategist,
-    ITactician,
-    ISupervisor,
-    IExchangeClient,
-    IStateManager,
-    IPerformanceReporter,
-    IModelManager,
     IEventBus,
+    IExchangeClient,
+    IModelManager,
+    IPerformanceReporter,
+    IStateManager,
+    IStrategist,
+    ISupervisor,
+    ITactician,
 )
-
-from .event_bus import EventBus, EventType, Event
+from .event_bus import Event, EventBus, EventType
 
 __all__ = [
     "IAnalyst",

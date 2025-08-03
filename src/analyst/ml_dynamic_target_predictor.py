@@ -1,585 +1,725 @@
-import logging
-import numpy as np
-import pandas as pd
-from typing import Dict, Optional, Tuple, Any
-from lightgbm import LGBMRegressor
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, r2_score
-import joblib
 import os
 from datetime import datetime
+from typing import Any
+
+import joblib
+import pandas as pd
+
+from src.utils.error_handler import (
+    handle_errors,
+    handle_file_operations,
+    handle_specific_errors,
+)
+from src.utils.logger import system_logger
 
 
 class MLDynamicTargetPredictor:
     """
-    Machine Learning-based dynamic target predictor for SR fade and breakout orders.
-
-    This class predicts optimal take-profit and stop-loss levels based on:
-    - Current market conditions
-    - Support/Resistance strength
-    - Volatility patterns
-    - Order flow dynamics
-    - Historical success rates at different target levels
-
-    The predictor continuously learns and adapts to market conditions,
-    replacing fixed ATR multipliers with ML-based dynamic targets.
+    Enhanced ML dynamic target predictor with comprehensive error handling and type safety.
     """
 
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config.get("analyst", {}).get("ml_dynamic_target_predictor", {})
-        self.logger = logging.getLogger(self.__class__.__name__)
-
-        # Model configuration
-        self.retrain_interval_hours = self.config.get("retrain_interval_hours", 24)
-        self.lookback_window = self.config.get("lookback_window", 200)
-        self.min_samples_for_training = self.config.get("min_samples_for_training", 500)
-        self.validation_split = self.config.get("validation_split", 0.2)
-
-        # Target prediction bounds
-        self.min_tp_multiplier = self.config.get("min_tp_multiplier", 0.5)
-        self.max_tp_multiplier = self.config.get("max_tp_multiplier", 6.0)
-        self.min_sl_multiplier = self.config.get("min_sl_multiplier", 0.2)
-        self.max_sl_multiplier = self.config.get("max_sl_multiplier", 2.0)
-
-        # Fallback values
-        self.fallback_tp_multiplier = self.config.get("fallback_tp_multiplier", 2.0)
-        self.fallback_sl_multiplier = self.config.get("fallback_sl_multiplier", 0.5)
-
-        # Model storage
-        checkpoint_dir = config.get("CHECKPOINT_DIR", "checkpoints")
-        self.model_dir = os.path.join(checkpoint_dir, "ml_target_models")
-        os.makedirs(self.model_dir, exist_ok=True)
-
-        # Models for different scenarios
-        self.models = {
-            "sr_fade_long_tp": None,
-            "sr_fade_long_sl": None,
-            "sr_fade_short_tp": None,
-            "sr_fade_short_sl": None,
-            "sr_breakout_long_tp": None,
-            "sr_breakout_long_sl": None,
-            "sr_breakout_short_tp": None,
-            "sr_breakout_short_sl": None,
-        }
-
-        # Feature scalers
-        self.scalers = {}
-        for model_name in self.models.keys():
-            self.scalers[model_name] = StandardScaler()
-
-        # Last training time
-        self.last_training_time = None
-
-        # Load existing models if available
-        self._load_models()
-
-    def predict_dynamic_targets(
-        self,
-        signal_type: str,
-        technical_analysis_data: Dict[str, Any],
-        current_features: pd.DataFrame,
-        current_atr: float,
-    ) -> Dict[str, float]:
+    def __init__(self, config: dict[str, Any]) -> None:
         """
-        Predict dynamic targets for SR fade and breakout orders.
+        Initialize ML dynamic target predictor with enhanced type safety.
 
         Args:
-            signal_type: One of ["SR_FADE_LONG", "SR_FADE_SHORT", "SR_BREAKOUT_LONG", "SR_BREAKOUT_SHORT"]
-            technical_analysis_data: Current technical analysis data
-            current_features: Current feature vector for ML prediction
-            current_atr: Current ATR value
+            config: Configuration dictionary
+        """
+        self.config: dict[str, Any] = config
+        self.logger = system_logger.getChild("MLDynamicTargetPredictor")
+
+        # Model state
+        self.model: Any | None = None
+        self.is_trained: bool = False
+        self.last_training_time: datetime | None = None
+        self.model_performance: dict[str, float] = {}
+
+        # Configuration
+        self.predictor_config: dict[str, Any] = self.config.get(
+            "ml_dynamic_target_predictor",
+            {},
+        )
+        self.model_path: str = self.predictor_config.get(
+            "model_path",
+            "models/dynamic_target_predictor.joblib",
+        )
+        self.retrain_interval_hours: int = self.predictor_config.get(
+            "retrain_interval_hours",
+            24,
+        )
+        # Import the centralized lookback window function
+        from src.config import get_lookback_window
+        self.lookback_window: int = get_lookback_window()
+        self.min_samples_for_training: int = self.predictor_config.get(
+            "min_samples_for_training",
+            500,
+        )
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid ML dynamic target predictor configuration"),
+            AttributeError: (False, "Missing required predictor parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="ML dynamic target predictor initialization",
+    )
+    async def initialize(self) -> bool:
+        """
+        Initialize ML dynamic target predictor with enhanced error handling.
 
         Returns:
-            Dict containing predicted target and stop loss multipliers
+            bool: True if initialization successful, False otherwise
         """
         try:
-            # Extract relevant features for prediction
-            prediction_features = self._extract_prediction_features(
-                technical_analysis_data, current_features, current_atr
-            )
+            self.logger.info("Initializing ML Dynamic Target Predictor...")
 
-            # Get model names for this signal type
-            tp_model_name, sl_model_name = self._get_model_names(signal_type)
+            # Load predictor configuration
+            await self._load_predictor_configuration()
 
-            # Predict take profit multiplier
-            tp_multiplier = self._predict_single_target(
-                tp_model_name, prediction_features, "tp"
-            )
+            # Initialize model parameters
+            await self._initialize_model_parameters()
 
-            # Predict stop loss multiplier
-            sl_multiplier = self._predict_single_target(
-                sl_model_name, prediction_features, "sl"
-            )
+            # Load existing model if available
+            await self._load_existing_model()
 
-            # Apply bounds and validation
-            tp_multiplier = np.clip(
-                tp_multiplier, self.min_tp_multiplier, self.max_tp_multiplier
-            )
-            sl_multiplier = np.clip(
-                sl_multiplier, self.min_sl_multiplier, self.max_sl_multiplier
-            )
-
-            # Calculate actual prices
-            entry_price = self._get_entry_price(signal_type, technical_analysis_data)
-            if entry_price is None:
-                return self._get_fallback_targets(current_atr)
-
-            if "LONG" in signal_type:
-                take_profit = entry_price + (current_atr * tp_multiplier)
-                stop_loss = entry_price - (current_atr * sl_multiplier)
-            else:  # SHORT
-                take_profit = entry_price - (current_atr * tp_multiplier)
-                stop_loss = entry_price + (current_atr * sl_multiplier)
-
-            self.logger.info(
-                f"ML Dynamic Targets - {signal_type}: TP={tp_multiplier:.2f}x ATR, "
-                f"SL={sl_multiplier:.2f}x ATR (Entry: {entry_price:.6f})"
-            )
-
-            return {
-                "take_profit": take_profit,
-                "stop_loss": stop_loss,
-                "tp_multiplier": tp_multiplier,
-                "sl_multiplier": sl_multiplier,
-                "entry_price": entry_price,
-                "prediction_confidence": self._calculate_prediction_confidence(
-                    tp_model_name, sl_model_name
-                ),
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error predicting dynamic targets: {e}", exc_info=True)
-            return self._get_fallback_targets(current_atr, technical_analysis_data)
-
-    def train_models(self, historical_data: pd.DataFrame, force_retrain: bool = False):
-        """
-        Train ML models for dynamic target prediction.
-
-        Args:
-            historical_data: Historical data with features and outcomes
-            force_retrain: Force retraining even if recently trained
-        """
-        # Check if retraining is needed
-        if not force_retrain and self._should_skip_training():
-            return
-
-        try:
-            self.logger.info("Starting ML dynamic target model training...")
-
-            # Prepare training data for each signal type
-            training_datasets = self._prepare_training_data(historical_data)
-
-            for signal_type, dataset in training_datasets.items():
-                if len(dataset) < self.min_samples_for_training:
-                    self.logger.warning(
-                        f"Insufficient data for {signal_type}: {len(dataset)} samples "
-                        f"(minimum: {self.min_samples_for_training})"
-                    )
-                    continue
-
-                self._train_signal_models(signal_type, dataset)
-
-            # Save all trained models
-            self._save_models()
-            self.last_training_time = datetime.now()
-
-            self.logger.info("ML dynamic target model training completed successfully")
-
-        except Exception as e:
-            self.logger.error(f"Error training ML target models: {e}", exc_info=True)
-
-    def _extract_prediction_features(
-        self,
-        technical_analysis_data: Dict[str, Any],
-        current_features: pd.DataFrame,
-        current_atr: float,
-    ) -> np.ndarray:
-        """Extract relevant features for target prediction."""
-        features = []
-
-        # ATR-based features
-        features.append(current_atr)
-        features.append(
-            technical_analysis_data.get("close", 0) / current_atr
-            if current_atr > 0
-            else 0
-        )
-
-        # Price-based features
-        features.extend(
-            [
-                technical_analysis_data.get("close", 0),
-                technical_analysis_data.get("high", 0),
-                technical_analysis_data.get("low", 0),
-                technical_analysis_data.get("volume", 0),
-            ]
-        )
-
-        # Technical indicators from current_features (last row)
-        if not current_features.empty:
-            latest_features = current_features.iloc[-1]
-            indicator_features = [
-                "ADX",
-                "MACD_HIST",
-                "rsi",
-                "stoch_k",
-                "bb_bandwidth",
-                "volume_delta",
-                "OBV",
-                "CMF",
-                "position_in_range",
-            ]
-
-            for feature in indicator_features:
-                features.append(latest_features.get(feature, 0))
-        else:
-            # Add zeros if no current features available
-            features.extend([0] * 9)
-
-        # SR interaction features
-        features.extend(
-            [
-                technical_analysis_data.get("is_sr_support_interaction", 0),
-                technical_analysis_data.get("is_sr_resistance_interaction", 0),
-            ]
-        )
-
-        # Market regime features
-        if (
-            not current_features.empty
-            and "Market_Regime_Label" in current_features.columns
-        ):
-            regime = current_features.iloc[-1].get("Market_Regime_Label", "UNKNOWN")
-            regime_encoding = {
-                "BULL_TREND": [1, 0, 0, 0],
-                "BEAR_TREND": [0, 1, 0, 0],
-                "SIDEWAYS_RANGE": [0, 0, 1, 0],
-                "HIGH_IMPACT_CANDLE": [0, 0, 0, 1],
-            }
-            features.extend(regime_encoding.get(regime, [0, 0, 0, 0]))
-        else:
-            features.extend([0, 0, 0, 0])
-
-        return np.array(features).reshape(1, -1)
-
-    def _get_model_names(self, signal_type: str) -> Tuple[str, str]:
-        """Get model names for TP and SL prediction."""
-        base_name = signal_type.lower()
-        return f"{base_name}_tp", f"{base_name}_sl"
-
-    def _predict_single_target(
-        self, model_name: str, features: np.ndarray, target_type: str
-    ) -> float:
-        """Predict a single target (TP or SL) using the specified model."""
-        model = self.models.get(model_name)
-        scaler = self.scalers.get(model_name)
-
-        if model is None or scaler is None:
-            self.logger.warning(f"Model {model_name} not available, using fallback")
-            return (
-                self.fallback_tp_multiplier
-                if target_type == "tp"
-                else self.fallback_sl_multiplier
-            )
-
-        try:
-            features_scaled = scaler.transform(features)
-            prediction = model.predict(features_scaled)[0]
-            return float(prediction)
-        except Exception as e:
-            self.logger.error(f"Error predicting with model {model_name}: {e}")
-            return (
-                self.fallback_tp_multiplier
-                if target_type == "tp"
-                else self.fallback_sl_multiplier
-            )
-
-    def _get_entry_price(
-        self, signal_type: str, technical_analysis_data: Dict[str, Any]
-    ) -> Optional[float]:
-        """Get entry price based on signal type."""
-        if signal_type == "SR_FADE_LONG":
-            return technical_analysis_data.get("low")
-        elif signal_type == "SR_FADE_SHORT":
-            return technical_analysis_data.get("high")
-        elif signal_type == "SR_BREAKOUT_LONG":
-            return technical_analysis_data.get("high")
-        elif signal_type == "SR_BREAKOUT_SHORT":
-            return technical_analysis_data.get("low")
-        return technical_analysis_data.get("close")
-
-    def _get_fallback_targets(
-        self,
-        current_atr: float,
-        technical_analysis_data: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, float]:
-        """Return fallback targets when ML prediction fails."""
-        if technical_analysis_data:
-            entry_price = technical_analysis_data.get("close", 0)
-            return {
-                "take_profit": entry_price
-                + (current_atr * self.fallback_tp_multiplier),
-                "stop_loss": entry_price - (current_atr * self.fallback_sl_multiplier),
-                "tp_multiplier": self.fallback_tp_multiplier,
-                "sl_multiplier": self.fallback_sl_multiplier,
-                "entry_price": entry_price,
-                "prediction_confidence": 0.0,
-            }
-        else:
-            return {
-                "tp_multiplier": self.fallback_tp_multiplier,
-                "sl_multiplier": self.fallback_sl_multiplier,
-                "prediction_confidence": 0.0,
-            }
-
-    def _prepare_training_data(
-        self, historical_data: pd.DataFrame
-    ) -> Dict[str, pd.DataFrame]:
-        """Prepare training datasets for each signal type."""
-        # This would analyze historical trades and their outcomes
-        # to create training data for optimal target prediction
-
-        training_datasets = {}
-        signal_types = [
-            "SR_FADE_LONG",
-            "SR_FADE_SHORT",
-            "SR_BREAKOUT_LONG",
-            "SR_BREAKOUT_SHORT",
-        ]
-
-        for signal_type in signal_types:
-            # Filter data for this signal type
-            signal_data = historical_data[
-                historical_data.get("target_sr", "") == signal_type
-            ].copy()
-
-            if len(signal_data) > 0:
-                # Add optimal multiplier calculations based on historical outcomes
-                signal_data = self._calculate_optimal_multipliers(
-                    signal_data, signal_type
+            # Validate configuration
+            if not self._validate_configuration():
+                self.logger.error(
+                    "Invalid configuration for ML dynamic target predictor",
                 )
-                training_datasets[signal_type] = signal_data
-
-        return training_datasets
-
-    def _calculate_optimal_multipliers(
-        self, signal_data: pd.DataFrame, signal_type: str
-    ) -> pd.DataFrame:
-        """Calculate optimal TP/SL multipliers based on historical outcomes."""
-        # This would analyze what TP/SL levels would have been optimal
-        # for each historical trade setup
-
-        optimal_data = signal_data.copy()
-
-        # Simulate different multiplier values and find optimal ones
-        # based on risk-reward ratios and success rates
-
-        # Placeholder implementation - in practice, this would be more sophisticated
-        for idx in optimal_data.index:
-            # row = optimal_data.loc[idx]
-            # atr = row.get("ATR", 1.0)
-
-            # Calculate optimal multipliers based on future price action
-            # This is a simplified version - real implementation would analyze
-            # forward-looking windows to find optimal targets
-
-            optimal_tp_mult = np.random.uniform(1.0, 4.0)  # Placeholder
-            optimal_sl_mult = np.random.uniform(0.3, 1.5)  # Placeholder
-
-            optimal_data.loc[idx, "optimal_tp_multiplier"] = optimal_tp_mult
-            optimal_data.loc[idx, "optimal_sl_multiplier"] = optimal_sl_mult
-
-        return optimal_data
-
-    def _train_signal_models(self, signal_type: str, dataset: pd.DataFrame):
-        """Train models for a specific signal type."""
-        tp_model_name, sl_model_name = self._get_model_names(signal_type)
-
-        # Prepare features
-        features = self._prepare_features_for_training(dataset)
-
-        # Train TP model
-        if "optimal_tp_multiplier" in dataset.columns:
-            y_tp = dataset["optimal_tp_multiplier"].values
-            self._train_single_model(tp_model_name, features, y_tp)
-
-        # Train SL model
-        if "optimal_sl_multiplier" in dataset.columns:
-            y_sl = dataset["optimal_sl_multiplier"].values
-            self._train_single_model(sl_model_name, features, y_sl)
-
-    def _prepare_features_for_training(self, dataset: pd.DataFrame) -> np.ndarray:
-        """Prepare feature matrix for training."""
-        # Extract same features as used in prediction
-        feature_columns = [
-            "ATR",
-            "close",
-            "high",
-            "low",
-            "volume",
-            "ADX",
-            "MACD_HIST",
-            "rsi",
-            "stoch_k",
-            "bb_bandwidth",
-            "volume_delta",
-            "OBV",
-            "CMF",
-            "position_in_range",
-        ]
-
-        features = []
-        for col in feature_columns:
-            if col in dataset.columns:
-                features.append(dataset[col].fillna(0).values)
-            else:
-                features.append(np.zeros(len(dataset)))
-
-        return np.column_stack(features)
-
-    def _train_single_model(self, model_name: str, X: np.ndarray, y: np.ndarray):
-        """Train a single model for target prediction."""
-        try:
-            # Split data
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=self.validation_split, random_state=42
-            )
-
-            # Scale features
-            scaler = self.scalers[model_name]
-            X_train_scaled = scaler.fit_transform(X_train)
-            X_test_scaled = scaler.transform(X_test)
-
-            # Create ensemble of models
-            models = [
-                LGBMRegressor(n_estimators=100, random_state=42, verbose=-1),
-                RandomForestRegressor(n_estimators=50, random_state=42),
-                LinearRegression(),
-            ]
-
-            best_model = None
-            best_score = -np.inf
-
-            for model in models:
-                model.fit(X_train_scaled, y_train)
-                score = model.score(X_test_scaled, y_test)
-
-                if score > best_score:
-                    best_score = score
-                    best_model = model
-
-            self.models[model_name] = best_model
-
-            # Log training results
-            y_pred = best_model.predict(X_test_scaled)
-            mse = mean_squared_error(y_test, y_pred)
-            r2 = r2_score(y_test, y_pred)
+                return False
 
             self.logger.info(
-                f"Trained {model_name}: R2={r2:.3f}, MSE={mse:.4f}, "
-                f"Model: {type(best_model).__name__}"
+                "✅ ML Dynamic Target Predictor initialization completed successfully",
             )
+            return True
 
         except Exception as e:
-            self.logger.error(f"Error training model {model_name}: {e}")
-
-    def _calculate_prediction_confidence(
-        self, tp_model_name: str, sl_model_name: str
-    ) -> float:
-        """Calculate confidence in the current prediction."""
-        # This could be based on model performance metrics, ensemble agreement, etc.
-        # For now, return a placeholder confidence
-        tp_available = self.models.get(tp_model_name) is not None
-        sl_available = self.models.get(sl_model_name) is not None
-
-        if tp_available and sl_available:
-            return 0.8
-        elif tp_available or sl_available:
-            return 0.5
-        else:
-            return 0.0
-
-    def _should_skip_training(self) -> bool:
-        """Check if training should be skipped based on last training time."""
-        if self.last_training_time is None:
+            self.logger.error(
+                f"❌ ML Dynamic Target Predictor initialization failed: {e}",
+            )
             return False
 
-        time_since_training = datetime.now() - self.last_training_time
-        return time_since_training.total_seconds() < (
-            self.retrain_interval_hours * 3600
-        )
-
-    def _save_models(self):
-        """Save all trained models and scalers."""
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="predictor configuration loading",
+    )
+    async def _load_predictor_configuration(self) -> None:
+        """Load predictor configuration."""
         try:
-            for model_name, model in self.models.items():
-                if model is not None:
-                    model_path = os.path.join(
-                        self.model_dir, f"{model_name}_model.joblib"
-                    )
-                    joblib.dump(model, model_path)
+            # Set default predictor parameters
+            self.predictor_config.setdefault(
+                "model_path",
+                "models/dynamic_target_predictor.joblib",
+            )
+            self.predictor_config.setdefault("retrain_interval_hours", 24)
+            self.predictor_config.setdefault("min_samples_for_training", 500)
+            self.predictor_config.setdefault("validation_split", 0.2)
+            self.predictor_config.setdefault("min_tp_multiplier", 0.5)
+            self.predictor_config.setdefault("max_tp_multiplier", 6.0)
+            self.predictor_config.setdefault("min_sl_multiplier", 0.2)
+            self.predictor_config.setdefault("max_sl_multiplier", 2.0)
 
-                    scaler_path = os.path.join(
-                        self.model_dir, f"{model_name}_scaler.joblib"
-                    )
-                    joblib.dump(self.scalers[model_name], scaler_path)
+            # Use centralized lookback window
+            from src.config import get_lookback_window
+            lookback_days = get_lookback_window()
+            self.logger.info(f"📊 Using lookback window: {lookback_days} days")
 
-            # Save metadata
-            metadata = {
-                "last_training_time": self.last_training_time,
-                "model_names": list(self.models.keys()),
-            }
-            metadata_path = os.path.join(self.model_dir, "metadata.joblib")
-            joblib.dump(metadata, metadata_path)
-
-            self.logger.info(f"Saved ML target models to {self.model_dir}")
+            self.logger.info("Predictor configuration loaded successfully")
 
         except Exception as e:
-            self.logger.error(f"Error saving models: {e}")
+            self.logger.error(f"Error loading predictor configuration: {e}")
 
-    def _load_models(self):
-        """Load existing trained models and scalers."""
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="model parameters initialization",
+    )
+    async def _initialize_model_parameters(self) -> None:
+        """Initialize model parameters."""
         try:
-            metadata_path = os.path.join(self.model_dir, "metadata.joblib")
-            if os.path.exists(metadata_path):
-                metadata = joblib.load(metadata_path)
-                self.last_training_time = metadata.get("last_training_time")
+            # Initialize model parameters
+            self.model_path = self.predictor_config["model_path"]
+            self.retrain_interval_hours = self.predictor_config[
+                "retrain_interval_hours"
+            ]
+            # Use centralized lookback window
+            from src.config import get_lookback_window
+            self.lookback_window = get_lookback_window()
+            self.min_samples_for_training = self.predictor_config[
+                "min_samples_for_training"
+            ]
 
-                for model_name in self.models.keys():
-                    model_path = os.path.join(
-                        self.model_dir, f"{model_name}_model.joblib"
-                    )
-                    scaler_path = os.path.join(
-                        self.model_dir, f"{model_name}_scaler.joblib"
-                    )
-
-                    if os.path.exists(model_path) and os.path.exists(scaler_path):
-                        self.models[model_name] = joblib.load(model_path)
-                        self.scalers[model_name] = joblib.load(scaler_path)
-
-                self.logger.info(f"Loaded ML target models from {self.model_dir}")
+            self.logger.info("Model parameters initialized")
 
         except Exception as e:
-            self.logger.error(f"Error loading models: {e}")
+            self.logger.error(f"Error initializing model parameters: {e}")
 
-    def get_model_status(self) -> Dict[str, Any]:
-        """Get status information about the ML target models."""
-        status = {
-            "models_trained": sum(
-                1 for model in self.models.values() if model is not None
-            ),
-            "total_models": len(self.models),
-            "last_training_time": self.last_training_time,
-            "model_details": {},
-        }
+    @handle_file_operations(
+        default_return=None,
+        context="model loading",
+    )
+    async def _load_existing_model(self) -> None:
+        """Load existing trained model."""
+        try:
+            if os.path.exists(self.model_path):
+                self.model = joblib.load(self.model_path)
+                self.is_trained = True
+                self.logger.info(f"Loaded existing model from: {self.model_path}")
+            else:
+                self.logger.info("No existing model found, will train new model")
 
-        for name, model in self.models.items():
-            status["model_details"][name] = {
-                "trained": model is not None,
-                "model_type": type(model).__name__ if model is not None else None,
+        except Exception as e:
+            self.logger.error(f"Error loading existing model: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
+    def _validate_configuration(self) -> bool:
+        """
+        Validate ML dynamic target predictor configuration.
+
+        Returns:
+            bool: True if configuration is valid, False otherwise
+        """
+        try:
+            required_keys = [
+                "model_path",
+                "retrain_interval_hours",
+                "min_samples_for_training",
+            ]
+            for key in required_keys:
+                if key not in self.predictor_config:
+                    self.logger.error(
+                        f"Missing required predictor configuration key: {key}",
+                    )
+                    return False
+
+            # Validate parameter ranges
+            if self.retrain_interval_hours < 1:
+                self.logger.error("retrain_interval_hours must be at least 1")
+                return False
+
+            # Validate lookback window (now handled centrally)
+            from src.config import get_lookback_window
+            lookback_days = get_lookback_window()
+            if lookback_days < 50:
+                self.logger.error("lookback_window must be at least 50")
+                return False
+
+            if self.min_samples_for_training < 100:
+                self.logger.error("min_samples_for_training must be at least 100")
+                return False
+
+            self.logger.info("Configuration validation successful")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
+            return False
+
+    @handle_specific_errors(
+        error_handlers={
+            ConnectionError: (None, "Failed to connect to data source"),
+            TimeoutError: (None, "Model training timed out"),
+            ValueError: (None, "Invalid training data"),
+        },
+        default_return=None,
+        context="model training",
+    )
+    async def train_model(
+        self,
+        training_data: pd.DataFrame,
+    ) -> dict[str, Any] | None:
+        """
+        Train the dynamic target prediction model with enhanced error handling.
+
+        Args:
+            training_data: Training data DataFrame
+
+        Returns:
+            Optional[Dict[str, Any]]: Training results or None if failed
+        """
+        try:
+            if training_data.empty:
+                self.logger.error("Empty training data provided")
+                return None
+
+            if len(training_data) < self.min_samples_for_training:
+                self.logger.error(
+                    f"Insufficient training data: {len(training_data)} < {self.min_samples_for_training}",
+                )
+                return None
+
+            self.logger.info("Starting model training...")
+
+            # Prepare features and targets
+            features, targets = await self._prepare_training_data(training_data)
+            if features is None or targets is None:
+                return None
+
+            # Train model
+            training_result = await self._train_model_internal(features, targets)
+            if not training_result:
+                return None
+
+            # Save model
+            await self._save_model()
+
+            # Update state
+            self.is_trained = True
+            self.last_training_time = datetime.now()
+
+            self.logger.info("✅ Model training completed successfully")
+            return training_result
+
+        except Exception as e:
+            self.logger.error(f"Error training model: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="training data preparation",
+    )
+    async def _prepare_training_data(
+        self,
+        data: pd.DataFrame,
+    ) -> tuple[pd.DataFrame, pd.DataFrame] | None:
+        """
+        Prepare features and targets for training.
+
+        Args:
+            data: Raw training data
+
+        Returns:
+            Optional[Tuple[pd.DataFrame, pd.DataFrame]]: Features and targets or None
+        """
+        try:
+            # Ensure required columns exist
+            required_columns = ["open", "high", "low", "close", "volume"]
+            missing_columns = [
+                col for col in required_columns if col not in data.columns
+            ]
+            if missing_columns:
+                self.logger.error(f"Missing required columns: {missing_columns}")
+                return None
+
+            # Create features
+            features = data.copy()
+
+            # Add technical indicators
+            features["returns"] = data["close"].pct_change()
+            features["volatility"] = features["returns"].rolling(window=20).std()
+            features["rsi"] = self._calculate_rsi(data["close"])
+            features["macd"] = self._calculate_macd(data["close"])
+
+            # Add price-based features
+            features["price_position"] = (data["close"] - data["low"]) / (
+                data["high"] - data["low"]
+            )
+            features["volume_ratio"] = (
+                data["volume"] / data["volume"].rolling(window=20).mean()
+            )
+
+            # Create targets (TP/SL ratios)
+            targets = pd.DataFrame()
+            targets["tp_ratio"] = self._calculate_tp_ratios(data)
+            targets["sl_ratio"] = self._calculate_sl_ratios(data)
+
+            # Remove NaN values
+            features = features.dropna()
+            targets = targets.dropna()
+
+            # Align indices
+            common_index = features.index.intersection(targets.index)
+            features = features.loc[common_index]
+            targets = targets.loc[common_index]
+
+            return features, targets
+
+        except Exception as e:
+            self.logger.error(f"Error preparing training data: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="RSI calculation",
+    )
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+        """
+        Calculate RSI indicator.
+
+        Args:
+            prices: Price series
+            period: RSI period
+
+        Returns:
+            pd.Series: RSI values
+        """
+        try:
+            delta = prices.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            return rsi
+        except Exception as e:
+            self.logger.error(f"Error calculating RSI: {e}")
+            return pd.Series(index=prices.index)
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="MACD calculation",
+    )
+    def _calculate_macd(
+        self,
+        prices: pd.Series,
+        fast: int = 12,
+        slow: int = 26,
+        signal: int = 9,
+    ) -> pd.Series:
+        """
+        Calculate MACD indicator.
+
+        Args:
+            prices: Price series
+            fast: Fast EMA period
+            slow: Slow EMA period
+            signal: Signal line period
+
+        Returns:
+            pd.Series: MACD values
+        """
+        try:
+            ema_fast = prices.ewm(span=fast).mean()
+            ema_slow = prices.ewm(span=slow).mean()
+            macd = ema_fast - ema_slow
+            signal_line = macd.ewm(span=signal).mean()
+            return macd - signal_line
+        except Exception as e:
+            self.logger.error(f"Error calculating MACD: {e}")
+            return pd.Series(index=prices.index)
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="TP ratio calculation",
+    )
+    def _calculate_tp_ratios(self, data: pd.DataFrame) -> pd.Series:
+        """
+        Calculate take profit ratios based on future price movements.
+
+        Args:
+            data: Market data
+
+        Returns:
+            pd.Series: TP ratios
+        """
+        try:
+            # Look ahead for optimal TP levels
+            future_highs = data["high"].shift(-1).rolling(window=5).max()
+            current_price = data["close"]
+            tp_ratios = (future_highs - current_price) / current_price
+
+            # Apply bounds
+            min_tp = self.predictor_config["min_tp_multiplier"]
+            max_tp = self.predictor_config["max_tp_multiplier"]
+            tp_ratios = tp_ratios.clip(min_tp, max_tp)
+
+            return tp_ratios
+
+        except Exception as e:
+            self.logger.error(f"Error calculating TP ratios: {e}")
+            return pd.Series(index=data.index)
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="SL ratio calculation",
+    )
+    def _calculate_sl_ratios(self, data: pd.DataFrame) -> pd.Series:
+        """
+        Calculate stop loss ratios based on future price movements.
+
+        Args:
+            data: Market data
+
+        Returns:
+            pd.Series: SL ratios
+        """
+        try:
+            # Look ahead for optimal SL levels
+            future_lows = data["low"].shift(-1).rolling(window=5).min()
+            current_price = data["close"]
+            sl_ratios = (current_price - future_lows) / current_price
+
+            # Apply bounds
+            min_sl = self.predictor_config["min_sl_multiplier"]
+            max_sl = self.predictor_config["max_sl_multiplier"]
+            sl_ratios = sl_ratios.clip(min_sl, max_sl)
+
+            return sl_ratios
+
+        except Exception as e:
+            self.logger.error(f"Error calculating SL ratios: {e}")
+            return pd.Series(index=data.index)
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="internal model training",
+    )
+    async def _train_model_internal(
+        self,
+        features: pd.DataFrame,
+        targets: pd.DataFrame,
+    ) -> dict[str, Any] | None:
+        """
+        Train the model internally.
+
+        Args:
+            features: Feature DataFrame
+            targets: Target DataFrame
+
+        Returns:
+            Optional[Dict[str, Any]]: Training results or None
+        """
+        try:
+            from sklearn.ensemble import RandomForestRegressor
+            from sklearn.metrics import mean_squared_error, r2_score
+            from sklearn.model_selection import train_test_split
+
+            # Split data
+            X_train, X_test, y_train, y_test = train_test_split(
+                features,
+                targets,
+                test_size=0.2,
+                random_state=42,
+            )
+
+            # Train TP model
+            tp_model = RandomForestRegressor(n_estimators=100, random_state=42)
+            tp_model.fit(X_train, y_train["tp_ratio"])
+            tp_pred = tp_model.predict(X_test)
+            tp_mse = mean_squared_error(y_test["tp_ratio"], tp_pred)
+            tp_r2 = r2_score(y_test["tp_ratio"], tp_pred)
+
+            # Train SL model
+            sl_model = RandomForestRegressor(n_estimators=100, random_state=42)
+            sl_model.fit(X_train, y_train["sl_ratio"])
+            sl_pred = sl_model.predict(X_test)
+            sl_mse = mean_squared_error(y_test["sl_ratio"], sl_pred)
+            sl_r2 = r2_score(y_test["sl_ratio"], sl_pred)
+
+            # Store models
+            self.model = {"tp_model": tp_model, "sl_model": sl_model}
+
+            # Store performance metrics
+            self.model_performance = {
+                "tp_mse": tp_mse,
+                "tp_r2": tp_r2,
+                "sl_mse": sl_mse,
+                "sl_r2": sl_r2,
             }
 
-        return status
+            return {
+                "tp_mse": tp_mse,
+                "tp_r2": tp_r2,
+                "sl_mse": sl_mse,
+                "sl_r2": sl_r2,
+                "training_samples": len(X_train),
+                "test_samples": len(X_test),
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error training model internally: {e}")
+            return None
+
+    @handle_file_operations(
+        default_return=None,
+        context="model saving",
+    )
+    async def _save_model(self) -> None:
+        """Save trained model to file."""
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
+
+            # Save model
+            joblib.dump(self.model, self.model_path)
+            self.logger.info(f"Model saved to: {self.model_path}")
+
+        except Exception as e:
+            self.logger.error(f"Error saving model: {e}")
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (None, "Invalid input data for prediction"),
+            AttributeError: (None, "Model not properly trained"),
+        },
+        default_return=None,
+        context="target prediction",
+    )
+    async def predict_targets(
+        self,
+        market_data: pd.DataFrame,
+        current_price: float,
+    ) -> dict[str, Any] | None:
+        """
+        Predict dynamic targets with enhanced error handling.
+
+        Args:
+            market_data: Recent market data
+            current_price: Current market price
+
+        Returns:
+            Optional[Dict[str, Any]]: Predicted targets or None if failed
+        """
+        try:
+            if not self.is_trained or not self.model:
+                self.logger.error("Model not trained")
+                return None
+
+            if market_data.empty:
+                self.logger.error("Empty market data provided")
+                return None
+
+            self.logger.info("Predicting dynamic targets...")
+
+            # Prepare features
+            features = await self._prepare_prediction_features(market_data)
+            if features is None:
+                return None
+
+            # Make predictions
+            tp_ratio = self.model["tp_model"].predict(features.iloc[-1:])[0]
+            sl_ratio = self.model["sl_model"].predict(features.iloc[-1:])[0]
+
+            # Apply bounds
+            tp_ratio = max(
+                self.predictor_config["min_tp_multiplier"],
+                min(tp_ratio, self.predictor_config["max_tp_multiplier"]),
+            )
+            sl_ratio = max(
+                self.predictor_config["min_sl_multiplier"],
+                min(sl_ratio, self.predictor_config["max_sl_multiplier"]),
+            )
+
+            # Calculate target prices
+            tp_price = current_price * (1 + tp_ratio)
+            sl_price = current_price * (1 - sl_ratio)
+
+            prediction_result = {
+                "take_profit_price": tp_price,
+                "stop_loss_price": sl_price,
+                "tp_ratio": tp_ratio,
+                "sl_ratio": sl_ratio,
+                "current_price": current_price,
+                "prediction_time": datetime.now(),
+                "model_performance": self.model_performance,
+            }
+
+            self.logger.info("✅ Dynamic targets predicted successfully")
+            return prediction_result
+
+        except Exception as e:
+            self.logger.error(f"Error predicting targets: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="prediction features preparation",
+    )
+    async def _prepare_prediction_features(
+        self,
+        data: pd.DataFrame,
+    ) -> pd.DataFrame | None:
+        """
+        Prepare features for prediction.
+
+        Args:
+            data: Market data
+
+        Returns:
+            Optional[pd.DataFrame]: Prepared features or None
+        """
+        try:
+            # Use same feature preparation as training
+            features = data.copy()
+
+            # Add technical indicators
+            features["returns"] = data["close"].pct_change()
+            features["volatility"] = features["returns"].rolling(window=20).std()
+            features["rsi"] = self._calculate_rsi(data["close"])
+            features["macd"] = self._calculate_macd(data["close"])
+
+            # Add price-based features
+            features["price_position"] = (data["close"] - data["low"]) / (
+                data["high"] - data["low"]
+            )
+            features["volume_ratio"] = (
+                data["volume"] / data["volume"].rolling(window=20).mean()
+            )
+
+            # Remove NaN values
+            features = features.dropna()
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error preparing prediction features: {e}")
+            return None
+
+    def get_model_performance(self) -> dict[str, float]:
+        """
+        Get model performance metrics.
+
+        Returns:
+            Dict[str, float]: Model performance scores
+        """
+        return self.model_performance.copy()
+
+    def is_model_trained(self) -> bool:
+        """
+        Check if model is trained.
+
+        Returns:
+            bool: True if model is trained, False otherwise
+        """
+        return self.is_trained
+
+    def get_last_training_time(self) -> datetime | None:
+        """
+        Get last training time.
+
+        Returns:
+            Optional[datetime]: Last training time or None
+        """
+        return self.last_training_time
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="ML dynamic target predictor cleanup",
+    )
+    async def stop(self) -> None:
+        """Stop the ML dynamic target predictor component."""
+        self.logger.info("🛑 Stopping ML Dynamic Target Predictor...")
+
+        try:
+            # Save model if trained
+            if self.is_trained and self.model:
+                await self._save_model()
+
+            self.logger.info("✅ ML Dynamic Target Predictor stopped successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error stopping ML dynamic target predictor: {e}")

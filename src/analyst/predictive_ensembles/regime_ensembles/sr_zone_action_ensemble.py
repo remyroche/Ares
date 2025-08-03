@@ -29,7 +29,10 @@ class SRZoneActionEnsemble(BaseEnsemble):
 
         # Train a general LGBM on all flat features
         lgbm_params = self._tune_hyperparameters(
-            LGBMClassifier, self._get_lgbm_search_space, X_flat, y_encoded
+            LGBMClassifier,
+            self._get_lgbm_search_space,
+            X_flat,
+            y_encoded,
         )
         self.models["sr_lgbm"] = self._train_with_smote(
             LGBMClassifier(**lgbm_params, random_state=42, verbose=-1),
@@ -41,7 +44,11 @@ class SRZoneActionEnsemble(BaseEnsemble):
         try:
             tabnet = TabNetClassifier()
             tabnet.fit(
-                X_flat.values, y_encoded, max_epochs=50, patience=20, batch_size=1024
+                X_flat.values,
+                y_encoded,
+                max_epochs=50,
+                patience=20,
+                batch_size=1024,
             )
             self.models["sr_tabnet"] = tabnet
         except Exception as e:
@@ -50,14 +57,22 @@ class SRZoneActionEnsemble(BaseEnsemble):
         # Train a specialized Order Flow LGBM
         X_of = aligned_data[self.order_flow_features].fillna(0)
         of_params = self._tune_hyperparameters(
-            LGBMClassifier, self._get_lgbm_search_space, X_of, y_encoded
+            LGBMClassifier,
+            self._get_lgbm_search_space,
+            X_of,
+            y_encoded,
         )
         self.models["order_flow_lgbm"] = self._train_with_smote(
-            LGBMClassifier(**of_params, random_state=42, verbose=-1), X_of, y_encoded
+            LGBMClassifier(**of_params, random_state=42, verbose=-1),
+            X_of,
+            y_encoded,
         )
 
     def _get_meta_features(
-        self, df: pd.DataFrame, is_live: bool = False, **kwargs
+        self,
+        df: pd.DataFrame,
+        is_live: bool = False,
+        **kwargs,
     ) -> pd.DataFrame | dict:
         """Generates meta-features from all base models for the S/R zone meta-learner."""
 
@@ -71,35 +86,37 @@ class SRZoneActionEnsemble(BaseEnsemble):
 
             if self.models.get("sr_lgbm"):
                 meta_features["sr_lgbm_prob"] = np.max(
-                    self.models["sr_lgbm"].predict_proba(current_row_flat)
+                    self.models["sr_lgbm"].predict_proba(current_row_flat),
                 )
             if self.models.get("sr_tabnet"):
                 meta_features["sr_tabnet_prob"] = np.max(
-                    self.models["sr_tabnet"].predict_proba(current_row_flat.values)
+                    self.models["sr_tabnet"].predict_proba(current_row_flat.values),
                 )
             if self.models.get("order_flow_lgbm"):
                 meta_features["of_lgbm_prob"] = np.max(
-                    self.models["order_flow_lgbm"].predict_proba(current_row_of)
+                    self.models["order_flow_lgbm"].predict_proba(current_row_of),
                 )
 
             # Add all raw features for the meta-learner to consider
             meta_features.update(current_row_flat.iloc[0].to_dict())
             return meta_features
-        else:
-            meta_df = pd.DataFrame(index=df.index)
-            if self.models.get("sr_lgbm"):
-                meta_df["sr_lgbm_prob"] = np.max(
-                    self.models["sr_lgbm"].predict_proba(X_flat), axis=1
-                )
-            if self.models.get("sr_tabnet"):
-                meta_df["sr_tabnet_prob"] = np.max(
-                    self.models["sr_tabnet"].predict_proba(X_flat.values), axis=1
-                )
-            if self.models.get("order_flow_lgbm"):
-                meta_df["of_lgbm_prob"] = np.max(
-                    self.models["order_flow_lgbm"].predict_proba(X_of), axis=1
-                )
+        meta_df = pd.DataFrame(index=df.index)
+        if self.models.get("sr_lgbm"):
+            meta_df["sr_lgbm_prob"] = np.max(
+                self.models["sr_lgbm"].predict_proba(X_flat),
+                axis=1,
+            )
+        if self.models.get("sr_tabnet"):
+            meta_df["sr_tabnet_prob"] = np.max(
+                self.models["sr_tabnet"].predict_proba(X_flat.values),
+                axis=1,
+            )
+        if self.models.get("order_flow_lgbm"):
+            meta_df["of_lgbm_prob"] = np.max(
+                self.models["order_flow_lgbm"].predict_proba(X_of),
+                axis=1,
+            )
 
-            # Join all raw features
-            meta_df = meta_df.join(X_flat)
-            return meta_df.fillna(0)
+        # Join all raw features
+        meta_df = meta_df.join(X_flat)
+        return meta_df.fillna(0)

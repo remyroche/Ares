@@ -5,7 +5,6 @@ Usage: python scripts/launch_with_gui.py <original_bot_command>
 """
 
 import sys
-import subprocess
 from pathlib import Path
 
 # Add the project root to the Python path
@@ -20,18 +19,22 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python scripts/launch_with_gui.py <original_bot_command>")
         print("Examples:")
-        print("  python scripts/launch_with_gui.py main_launcher.py trade ETHUSDT BINANCE paper")
+        print(
+            "  python scripts/launch_with_gui.py main_launcher.py trade ETHUSDT BINANCE paper",
+        )
         print("  python scripts/launch_with_gui.py main_launcher.py manager")
-        print("  python scripts/launch_with_gui.py scripts/training_cli.py full-test-run ETHUSDT")
+        print(
+            "  python scripts/launch_with_gui.py scripts/training_cli.py full-test-run ETHUSDT",
+        )
         sys.exit(1)
-    
+
     # Get the bot command (everything after the script name)
     bot_command = sys.argv[1:]
-    
+
     # Create GUI launcher and run
     launcher = GUILauncher()
     launcher.run_with_bot(bot_command, auto_gui=True)
 
 
 if __name__ == "__main__":
-    main() 
+    main()

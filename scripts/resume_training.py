@@ -22,11 +22,13 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.training.training_manager import TrainingManager
-from src.utils.logger import setup_logging, system_logger
-from src.database.sqlite_manager import SQLiteManager
 from src.config import CONFIG
-from src.training.steps.step1_data_collection import run_step as run_data_collection_step
+from src.database.sqlite_manager import SQLiteManager
+from src.training.enhanced_training_manager import EnhancedTrainingManager
+from src.training.steps.step1_data_collection import (
+    run_step as run_data_collection_step,
+)
+from src.utils.logger import setup_logging, system_logger
 
 
 async def main():
@@ -63,26 +65,31 @@ async def main():
         logger.error("Data consolidation step failed. Cannot resume training.")
         sys.exit(1)
 
-    logger.info("Data consolidation successful. Proceeding with training pipeline from Step 2.")
+    logger.info(
+        "Data consolidation successful. Proceeding with training pipeline from Step 2.",
+    )
 
     db_manager = None
     try:
-        db_manager = SQLiteManager()
+        db_manager = SQLiteManager({})
         await db_manager.initialize()
 
-        training_manager = TrainingManager(db_manager)
+        training_manager = EnhancedTrainingManager(db_manager)
 
         # This will now start from Step 2, as Step 1 (data part) is complete.
         run_id = await training_manager.resume_training_pipeline(symbol, exchange)
 
         if run_id:
-            logger.info(f"Resumed training pipeline completed successfully for {symbol}. MLflow Run ID: {run_id}")
+            logger.info(
+                f"Resumed training pipeline completed successfully for {symbol}. MLflow Run ID: {run_id}",
+            )
         else:
             logger.error(f"Resumed training pipeline failed for {symbol}.")
             sys.exit(1)
     finally:
         if db_manager:
             await db_manager.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

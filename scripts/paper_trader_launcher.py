@@ -1,38 +1,33 @@
 #!/usr/bin/env python3
 """
-Script to launch the Ares Trading Bot in Paper Trading mode.
+Paper Trading Launcher for Ares Trading Bot
 
-This script allows you to specify the trading symbol and exchange,
-and forces the TRADING_ENVIRONMENT to "PAPER" for this execution.
-
-Usage:
-    python scripts/paper_trader_launcher.py <SYMBOL> <EXCHANGE>
-    Example: python scripts/paper_trader_launcher.py BTCUSDT BINANCE
+This script launches the Ares trading bot in paper trading mode.
+It initializes all necessary components and starts the supervisor.
+For paper trading, it uses Binance's testnet API for actual API calls
+while maintaining a simulated trading environment.
 """
 
-import asyncio
-import signal
-import sys
 import argparse
-from typing import Optional
+import asyncio
+import sys
 from pathlib import Path
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import system_logger, setup_logging
-from src.config import settings, CONFIG
-from src.utils.state_manager import StateManager
+from src.config import CONFIG, settings
 from src.database.sqlite_manager import SQLiteManager
-from src.supervisor.main import Supervisor
-from src.utils.error_handler import (
-    handle_errors,
-)
+from src.exchange.factory import ExchangeFactory
+from src.supervisor.supervisor import Supervisor
+from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
+from src.utils.signal_handler import GracefulShutdown
+from src.utils.state_manager import StateManager
 
 # Global variables for graceful shutdown
-shutdown_event = asyncio.Event()
-supervisor_tasks: list[asyncio.Task] = []
+supervisor_tasks = []
 
 
 @handle_errors(
@@ -43,23 +38,25 @@ supervisor_tasks: list[asyncio.Task] = []
 def signal_handler(signum, frame):
     """Handle shutdown signals gracefully."""
     system_logger.info(f"Received signal {signum}. Initiating graceful shutdown...")
-    shutdown_event.set()
+    # The shutdown will be handled by the GracefulShutdown context manager
 
 
 @handle_errors(
-    exceptions=(Exception,), default_return=False, context="initialize_system"
+    exceptions=(Exception,),
+    default_return=False,
+    context="initialize_system",
 )
 async def initialize_and_start_supervisor(symbol: str, exchange_name: str):
-    """Initialize the trading system components, forcing PAPER mode."""
+    """Initialize the trading system components for shadow trading with testnet APIs."""
     try:
         system_logger.info(
-            f"🚀 Initializing Ares Trading Bot in PAPER mode for {symbol} on {exchange_name}..."
+            f"🚀 Initializing Ares Trading Bot in PAPER mode (shadow trading) for {symbol} on {exchange_name}...",
         )
 
         # Force trading environment to PAPER for this execution path
         settings.trading_environment = "PAPER"
         system_logger.info(
-            f"Trading environment forced to: {settings.trading_environment}"
+            f"Trading environment forced to: {settings.trading_environment}",
         )
 
         # Initialize database manager
@@ -71,22 +68,58 @@ async def initialize_and_start_supervisor(symbol: str, exchange_name: str):
         state_manager = StateManager(state_file=f"data/ares_paper_state_{symbol}.json")
         system_logger.info("✅ State manager initialized")
 
-        # Initialize supervisor
+        # Initialize BinanceExchange with testnet configuration for shadow trading
+        system_logger.info(
+            "🔗 Initializing Binance testnet connection for shadow trading...",
+        )
+
+        # Create configuration for testnet
+        exchange_config = {
+            "binance_exchange": {
+                "use_testnet": True,  # Use testnet APIs
+                "api_key": settings.binance_testnet_api_key,
+                "api_secret": settings.binance_testnet_api_secret,
+                "timeout": 30,
+                "max_retries": 3,
+                "rate_limit_enabled": True,
+                "rate_limit_requests": 1200,
+                "rate_limit_window": 60,
+            },
+        }
+
+        # Initialize the BinanceExchange client
+        exchange_client = await setup_binance_exchange(exchange_config)
+        if not exchange_client:
+            system_logger.error("❌ Failed to initialize Binance testnet client")
+            return False
+
+        # Initialize the exchange client
+        if not await exchange_client.initialize():
+            system_logger.error("❌ Failed to initialize Binance testnet connection")
+            return False
+
+        system_logger.info(
+            "✅ Binance testnet connection established for shadow trading",
+        )
+
+        # Initialize supervisor with the testnet exchange client
         supervisor = Supervisor(
-            symbol=symbol,
-            exchange_name=exchange_name,
-            exchange_client=None,  # Will be initialized by supervisor (PaperTrader)
+            exchange_client=exchange_client,
             state_manager=state_manager,
             db_manager=db_manager,
         )
-        system_logger.info("✅ Supervisor initialized")
+        system_logger.info("✅ Supervisor initialized with testnet exchange client")
 
-        system_logger.info(f"🔄 Starting supervisor for {symbol}...")
+        system_logger.info(
+            f"🔄 Starting supervisor for {symbol} with shadow trading...",
+        )
         await supervisor.start()
         system_logger.info(f"✅ Supervisor for {symbol} has finished its run.")
 
     except Exception as e:
-        system_logger.error(f"❌ Failed to initialize or start supervisor for {symbol}: {e}")
+        system_logger.error(
+            f"❌ Failed to initialize or start supervisor for {symbol}: {e}",
+        )
 
 
 @handle_errors(exceptions=(Exception,), default_return=None, context="shutdown_system")
@@ -108,11 +141,12 @@ async def shutdown_system():
 
 @handle_errors(exceptions=(Exception,), default_return=1, context="main")
 async def main():
-    """Main entry point for the Ares trading bot (PAPER mode)."""
-    setup_logging()  # Ensure logging is set up for this script
+    """Main entry point for the Ares trading bot (PAPER mode with shadow trading)."""
+    # Ensure logging is set up using the centralized system
+    ensure_logging_setup()
 
     parser = argparse.ArgumentParser(
-        description="Launch Ares Trading Bot in Paper Trading mode."
+        description="Launch Ares Trading Bot in Paper Trading mode with shadow trading via Binance testnet.",
     )
     parser.add_argument(
         "symbol",
@@ -130,46 +164,49 @@ async def main():
     )
     args = parser.parse_args()
 
-    try:
-        # Set up signal handlers for graceful shutdown
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-        
-        symbols_to_run = []
-        if args.symbol:
-            symbols_to_run.append((args.symbol.upper(), args.exchange.upper()))
-        else:
-            system_logger.info("No symbol specified, running for all supported tokens.")
-            supported_tokens = CONFIG.get("SUPPORTED_TOKENS", {})
-            for exchange, tokens in supported_tokens.items():
-                for token in tokens:
-                    symbols_to_run.append((token, exchange))
+    # Use centralized signal handling
+    with GracefulShutdown("PaperTraderLauncher") as signal_handler:
+        # Add shutdown callback
+        signal_handler.add_async_shutdown_callback(shutdown_system)
 
-        if not symbols_to_run:
-            system_logger.error("No symbols to run. Check your config or arguments.")
+        try:
+            # Determine which symbols to run
+            if args.symbol:
+                symbols_to_run = [args.symbol]
+            else:
+                # Get all supported tokens from config
+                supported_tokens = CONFIG.get("SUPPORTED_TOKENS", {}).get(
+                    args.exchange,
+                    ["ETHUSDT"],
+                )
+                symbols_to_run = supported_tokens
+
+            system_logger.info(
+                f"📋 Running paper trading with shadow trading for {len(symbols_to_run)} symbols: {symbols_to_run}",
+            )
+
+            # Create tasks for each symbol
+            global supervisor_tasks
+            supervisor_tasks = []
+
+            for symbol in symbols_to_run:
+                task = asyncio.create_task(
+                    initialize_and_start_supervisor(symbol, args.exchange),
+                )
+                supervisor_tasks.append(task)
+
+            # Wait for all tasks to complete or for shutdown signal
+            try:
+                await asyncio.gather(*supervisor_tasks)
+            except asyncio.CancelledError:
+                system_logger.info("Tasks cancelled due to shutdown request")
+
+            return 0
+
+        except Exception as e:
+            system_logger.error(f"❌ Critical error in main: {e}")
+            await shutdown_system()
             return 1
-
-        global supervisor_tasks
-        for symbol, exchange_name in symbols_to_run:
-            task = asyncio.create_task(initialize_and_start_supervisor(symbol, exchange_name))
-            supervisor_tasks.append(task)
-
-        system_logger.info(f"🎉 {len(supervisor_tasks)} Ares Paper Trading Bot instance(s) are now running!")
-        system_logger.info("Press Ctrl+C to stop the bot gracefully")
-
-        # Wait for shutdown signal
-        await shutdown_event.wait()
-
-        # Graceful shutdown
-        system_logger.info("Shutdown event received, cancelling tasks...")
-        await shutdown_system()
-
-        return 0
-
-    except Exception as e:
-        system_logger.error(f"❌ Critical error in main: {e}")
-        await shutdown_system()
-        return 1
 
 
 if __name__ == "__main__":

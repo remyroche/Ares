@@ -1,16 +1,33 @@
 # backtesting/ares_backtester.py
 
-import pandas as pd
-import numpy as np
+import asyncio
 import os
 import sys
 import traceback
-import asyncio
-from typing import Dict, Any
-from src.analyst.analyst import Analyst
+from typing import Any
+
+# Add the project root to the Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, project_root)
+
+import numpy as np
+import pandas as pd
+
+# Import the email function (optional)
+try:
+    from emails.ares_mailer import send_email
+
+    EMAIL_AVAILABLE = True
+except ImportError:
+    EMAIL_AVAILABLE = False
+
+    def send_email(subject, body):
+        print(f"Email would be sent: {subject}")
+        print(f"Body: {body}")
+
+
 from src.config import CONFIG
-from emails.ares_mailer import send_email  # Import the email function
-from src.utils.async_utils import async_file_manager, async_process_manager
+from src.utils.async_utils import async_file_manager, async_processes_manager
 
 
 async def load_prepared_data():
@@ -25,7 +42,9 @@ async def load_prepared_data():
         print(f"Calling data preparer script: '{preparer_script_name}'...")
         try:
             # Use async process manager to run the preparer script
-            result = await async_process_manager.run_python_script(preparer_script_name)
+            result = await async_processes_manager.run_python_script(
+                preparer_script_name,
+            )
             if result and result.get("success"):
                 print("Data preparer script finished successfully.")
             else:
@@ -43,15 +62,16 @@ async def load_prepared_data():
             from io import StringIO
 
             df = pd.read_csv(
-                StringIO(csv_content), index_col="open_time", parse_dates=True
+                StringIO(csv_content),
+                index_col="open_time",
+                parse_dates=True,
             )
             print(f"Loaded {len(df)} labeled candles.\n")
             return df
-        else:
-            print(
-                f"ERROR: Failed to read prepared data file '{prepared_data_filename}'. Exiting."
-            )
-            sys.exit(1)
+        print(
+            f"ERROR: Failed to read prepared data file '{prepared_data_filename}'. Exiting.",
+        )
+        sys.exit(1)
     except Exception as e:
         print(f"ERROR: Failed to load prepared data: {e}")
         sys.exit(1)
@@ -90,15 +110,18 @@ class PortfolioManager:
         return report
 
 
-class Analyst:
+class BacktestAnalyst:
     """A simplified analyst that makes decisions based on a single Confidence Score."""
 
     def __init__(self, params):
         self.params = params
 
-    def get_signal(self, prev):
-        """Generates a trade signal if the confidence score crosses the entry threshold."""
-        score = prev["Confidence_Score"]
+    def get_signal(self, prev: pd.Series) -> int:
+        """Get trading signal based on confidence score."""
+        try:
+            score = prev.get("Confidence_Score", 0.0)  # Default to 0.0 if missing
+        except (KeyError, AttributeError):
+            score = 0.0  # Fallback if column doesn't exist
         threshold = self.params.get("trade_entry_threshold", 0.6)
 
         if score > threshold:
@@ -127,7 +150,7 @@ async def run_backtest(df, params=None):
         params = CONFIG.get("BEST_PARAMS", {})
 
     portfolio = PortfolioManager(CONFIG.get("INITIAL_EQUITY", 10000))
-    analyst = Analyst(params)
+    analyst = BacktestAnalyst(params)
     position, entry_price, trade_info = 0, 0, {}
 
     # Process data in chunks for better performance
@@ -147,15 +170,21 @@ async def run_backtest(df, params=None):
                 exit_signal = None
 
                 # Check stop loss first (prioritized)
-                if position == 1 and row["low"] <= trade_info["sl"]:
-                    exit_signal = {"reason": "stop_loss", "price": trade_info["sl"]}
-                elif position == -1 and row["high"] >= trade_info["sl"]:
+                if (
+                    position == 1
+                    and row["low"] <= trade_info["sl"]
+                    or position == -1
+                    and row["high"] >= trade_info["sl"]
+                ):
                     exit_signal = {"reason": "stop_loss", "price": trade_info["sl"]}
 
                 # Check take profit if no stop loss hit
-                elif position == 1 and row["high"] >= trade_info["tp"]:
-                    exit_signal = {"reason": "take_profit", "price": trade_info["tp"]}
-                elif position == -1 and row["low"] <= trade_info["tp"]:
+                elif (
+                    position == 1
+                    and row["high"] >= trade_info["tp"]
+                    or position == -1
+                    and row["low"] <= trade_info["tp"]
+                ):
                     exit_signal = {"reason": "take_profit", "price": trade_info["tp"]}
 
                 if exit_signal:
@@ -189,7 +218,7 @@ async def run_backtest(df, params=None):
     return portfolio.report()
 
 
-async def save_backtest_results(results: Dict[str, Any], filename: str):
+async def save_backtest_results(results: dict[str, Any], filename: str):
     """Save backtest results asynchronously"""
     try:
         results_json = {
@@ -228,7 +257,7 @@ async def main():
         await save_backtest_results(results, results_file)
 
         # Send email notification if configured
-        if CONFIG.get("SEND_EMAIL_NOTIFICATIONS", False):
+        if CONFIG.get("SEND_EMAIL_NOTIFICATIONS", False) and EMAIL_AVAILABLE:
             email_body = f"Backtest completed successfully.\nResults: {results}"
             await send_email("Backtest Complete", email_body)
 
@@ -239,7 +268,7 @@ async def main():
         traceback.print_exc()
 
         # Send error notification if configured
-        if CONFIG.get("SEND_EMAIL_NOTIFICATIONS", False):
+        if CONFIG.get("SEND_EMAIL_NOTIFICATIONS", False) and EMAIL_AVAILABLE:
             error_body = f"Backtest failed with error: {e}\n\nTraceback:\n{traceback.format_exc()}"
             await send_email("Backtest Failed", error_body)
 

@@ -1,19 +1,21 @@
-import logging
-import imaplib
 import email
-import time
-import subprocess
+import imaplib
+import logging
 import os
+import subprocess
 import sys
+import time
+
 import pandas as pd  # Added import for pandas
+
 from src.utils.logger import system_logger
 
 # Ensure the source directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.utils.state_manager import StateManager
-from src.config import CONFIG
 from emails.ares_mailer import AresMailer
+from src.config import CONFIG
+from src.utils.state_manager import StateManager
 
 
 class EmailCommandListener:
@@ -53,16 +55,17 @@ class EmailCommandListener:
     def listen_for_commands(self):
         """Checks the inbox for new commands from authorized senders."""
         if not self.config.get("enabled", False) or not all(
-            [self.imap_server, self.imap_user, self.imap_password]
+            [self.imap_server, self.imap_user, self.imap_password],
         ):
             self.logger.error(
-                "IMAP configuration incomplete or disabled. Cannot listen for email commands."
+                "IMAP configuration incomplete or disabled. Cannot listen for email commands.",
             )
             return
 
         try:
             with imaplib.IMAP4_SSL(
-                self.imap_server, self.config.get("imap_port")
+                self.imap_server,
+                self.config.get("imap_port"),
             ) as mail:
                 mail.login(self.imap_user, self.imap_password)
                 mail.select("inbox")
@@ -80,11 +83,11 @@ class EmailCommandListener:
 
                         if subject not in self.allowed_commands:
                             self.logger.warning(
-                                f"Unauthorized command '{subject}' from {sender}. Ignoring."
+                                f"Unauthorized command '{subject}' from {sender}. Ignoring.",
                             )
                         else:
                             self.logger.info(
-                                f"Processing command '{subject}' from authorized sender {sender}."
+                                f"Processing command '{subject}' from authorized sender {sender}.",
                             )
                             self._process_command(subject, sender)
 
@@ -103,7 +106,8 @@ class EmailCommandListener:
         elif command == "PAUSE TRADING":
             self.state_manager.pause_trading()
             self.mailer.send_alert(
-                "Trading Paused", f"Trading was paused by remote command from {sender}."
+                "Trading Paused",
+                f"Trading was paused by remote command from {sender}.",
             )
         elif command == "RESUME TRADING":
             self.state_manager.resume_trading()
@@ -113,7 +117,12 @@ class EmailCommandListener:
             )
         elif command == "GIT PULL":
             self.logger.info("Executing 'git pull'...")
-            result = subprocess.run(["git", "pull"], capture_output=True, text=True)
+            result = subprocess.run(
+                ["git", "pull"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
             output = (
                 f"Git Pull Output:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
             )
@@ -123,14 +132,14 @@ class EmailCommandListener:
             self._write_flag_file(self.global_config.get("RESTART_FLAG_FILE"))
         elif command == "PROMOTE CHALLENGER":
             self._write_flag_file(
-                self.global_config.get("PROMOTE_CHALLENGER_FLAG_FILE")
+                self.global_config.get("PROMOTE_CHALLENGER_FLAG_FILE"),
             )
         elif command == "STATUS":
             self._send_status_report(sender)
         # Add placeholders for other commands
         elif command in ["SHUTDOWN", "CANCEL_ALL"]:
             self.logger.warning(
-                f"Command '{command}' received but not yet implemented."
+                f"Command '{command}' received but not yet implemented.",
             )
 
     def _write_flag_file(self, flag_file_path: str):

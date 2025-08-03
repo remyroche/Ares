@@ -1,14 +1,14 @@
-import numpy as np
-import pandas as pd
-from typing import Dict, Optional
 from dataclasses import dataclass
 from enum import Enum
 
-from src.utils.logger import system_logger
+import numpy as np
+import pandas as pd
+
 from src.utils.error_handler import (
-    handle_errors,
     handle_data_processing_errors,
+    handle_errors,
 )
+from src.utils.logger import system_logger
 
 
 class VolatilityMethod(Enum):
@@ -45,11 +45,11 @@ class VolatilityTargetingStrategy:
     helping to stabilize returns and improve risk-adjusted performance.
     """
 
-    def __init__(self, config: Optional[VolatilityTargetingConfig] = None):
+    def __init__(self, config: VolatilityTargetingConfig | None = None):
         self.config = config or VolatilityTargetingConfig()
         self.logger = system_logger.getChild("VolatilityTargeting")
         self.logger.info(
-            f"Initialized volatility targeting strategy with target: {self.config.target_volatility:.1%}"
+            f"Initialized volatility targeting strategy with target: {self.config.target_volatility:.1%}",
         )
 
     @handle_errors(
@@ -58,7 +58,9 @@ class VolatilityTargetingStrategy:
         context="calculate_position_multiplier",
     )
     def calculate_position_multiplier(
-        self, price_data: pd.DataFrame, current_volatility: Optional[float] = None
+        self,
+        price_data: pd.DataFrame,
+        current_volatility: float | None = None,
     ) -> float:
         """
         Calculate the position size multiplier based on current volatility.
@@ -75,7 +77,7 @@ class VolatilityTargetingStrategy:
 
         if current_volatility <= 0 or pd.isna(current_volatility):
             self.logger.warning(
-                "Invalid volatility value, returning neutral multiplier"
+                "Invalid volatility value, returning neutral multiplier",
             )
             return 1.0
 
@@ -90,7 +92,8 @@ class VolatilityTargetingStrategy:
         # Apply regime adjustment if enabled
         if self.config.regime_adjustment:
             regime_factor = self._calculate_regime_factor(
-                price_data, current_volatility
+                price_data,
+                current_volatility,
             )
             multiplier *= regime_factor
 
@@ -101,7 +104,9 @@ class VolatilityTargetingStrategy:
 
         # Clip to configured bounds
         multiplier = np.clip(
-            multiplier, self.config.min_leverage, self.config.max_leverage
+            multiplier,
+            self.config.min_leverage,
+            self.config.max_leverage,
         )
 
         self.logger.debug(f"Calculated position multiplier: {multiplier:.3f}")
@@ -122,16 +127,15 @@ class VolatilityTargetingStrategy:
 
         if method == VolatilityMethod.SIMPLE:
             return self._calculate_simple_volatility(returns)
-        elif method == VolatilityMethod.EWMA:
+        if method == VolatilityMethod.EWMA:
             return self._calculate_ewma_volatility(returns)
-        elif method == VolatilityMethod.GARCH:
+        if method == VolatilityMethod.GARCH:
             return self._calculate_garch_volatility(returns)
-        elif method == VolatilityMethod.PARKINSON:
+        if method == VolatilityMethod.PARKINSON:
             return self._calculate_parkinson_volatility(price_data)
-        elif method == VolatilityMethod.ADAPTIVE:
+        if method == VolatilityMethod.ADAPTIVE:
             return self._calculate_adaptive_volatility(returns, price_data)
-        else:
-            return self._calculate_ewma_volatility(returns)
+        return self._calculate_ewma_volatility(returns)
 
     def _calculate_simple_volatility(self, returns: pd.Series) -> float:
         """Calculate simple historical volatility."""
@@ -182,7 +186,9 @@ class VolatilityTargetingStrategy:
         )
 
     def _calculate_adaptive_volatility(
-        self, returns: pd.Series, price_data: pd.DataFrame
+        self,
+        returns: pd.Series,
+        price_data: pd.DataFrame,
     ) -> float:
         """Calculate adaptive volatility using multiple methods."""
         # Combine multiple volatility estimates
@@ -219,13 +225,14 @@ class VolatilityTargetingStrategy:
         # Reduce exposure during negative momentum
         if price_momentum < -0.05:  # -5% momentum
             return 0.7
-        elif price_momentum > 0.05:  # +5% momentum
+        if price_momentum > 0.05:  # +5% momentum
             return 1.1
-        else:
-            return 1.0
+        return 1.0
 
     def _calculate_regime_factor(
-        self, price_data: pd.DataFrame, current_volatility: float
+        self,
+        price_data: pd.DataFrame,
+        current_volatility: float,
     ) -> float:
         """Calculate regime-based adjustment factor."""
         if len(price_data) < 60:
@@ -243,15 +250,14 @@ class VolatilityTargetingStrategy:
 
         if vol_ratio > 1.5:  # High volatility regime
             return 0.6  # Reduce exposure significantly
-        elif vol_ratio > 1.2:  # Elevated volatility
+        if vol_ratio > 1.2:  # Elevated volatility
             return 0.8  # Moderate reduction
-        elif vol_ratio < 0.7:  # Low volatility regime
+        if vol_ratio < 0.7:  # Low volatility regime
             return 1.3  # Increase exposure
-        else:
-            return 1.0  # Normal regime
+        return 1.0  # Normal regime
 
     def _calculate_kelly_factor(self, price_data: pd.DataFrame) -> float:
-        """Calculate Kelly criterion enhancement factor."""
+        """Calculate Kelly criterion enhancement factor with leverage adjustment."""
         if len(price_data) < self.config.lookback_period:
             return 1.0
 
@@ -268,12 +274,64 @@ class VolatilityTargetingStrategy:
         if variance <= 0 or pd.isna(variance):
             return 1.0
 
-        # Simplified Kelly fraction
+        # Basic Kelly fraction
         kelly_fraction = mean_return / variance
+
+        # Adjust for high leverage (leverage increases risk exponentially)
+        # For leverage > 10x, we need to be more conservative
+        leverage_adjustment = min(1.0, 10.0 / max(1.0, self.config.max_leverage))
+        kelly_fraction *= leverage_adjustment
+
+        # Confidence-based adjustment (higher confidence = higher position size)
+        confidence = self._get_market_confidence(price_data)
+        confidence_multiplier = 0.5 + (confidence * 0.5)  # 0.5 to 1.0 range
+        kelly_fraction *= confidence_multiplier
+
+        # Clip to configured bounds
         kelly_fraction = np.clip(kelly_fraction, 0, self.config.max_kelly_fraction)
 
         # Return as enhancement factor
         return 1.0 + kelly_fraction
+
+    def _get_market_confidence(self, price_data: pd.DataFrame) -> float:
+        """Calculate market confidence based on volatility and trend strength."""
+        if len(price_data) < 20:
+            return 0.5
+
+        # Calculate trend strength using ADX-like measure
+        high_low = price_data["high"] - price_data["low"]
+        high_close = np.abs(price_data["high"] - price_data["close"].shift(1))
+        low_close = np.abs(price_data["low"] - price_data["close"].shift(1))
+
+        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        atr = tr.rolling(14).mean()
+
+        # Calculate directional movement
+        up_move = price_data["high"] - price_data["high"].shift(1)
+        down_move = price_data["low"].shift(1) - price_data["low"]
+
+        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
+
+        plus_di = 100 * pd.Series(plus_dm).rolling(14).mean() / atr
+        minus_di = 100 * pd.Series(minus_dm).rolling(14).mean() / atr
+
+        # ADX calculation
+        dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
+        adx = dx.rolling(14).mean()
+
+        # Volatility-based confidence
+        current_vol = self.calculate_volatility(price_data)
+        vol_confidence = 1.0 - min(1.0, current_vol / self.config.target_volatility)
+
+        # Trend-based confidence
+        trend_confidence = (
+            min(1.0, adx.iloc[-1] / 50.0) if not pd.isna(adx.iloc[-1]) else 0.5
+        )
+
+        # Combined confidence
+        confidence = vol_confidence * 0.4 + trend_confidence * 0.6
+        return np.clip(confidence, 0.1, 0.9)  # Ensure reasonable bounds
 
     @handle_errors(
         exceptions=(Exception,),
@@ -282,9 +340,9 @@ class VolatilityTargetingStrategy:
     )
     def generate_portfolio_allocation(
         self,
-        assets_data: Dict[str, pd.DataFrame],
-        base_weights: Optional[Dict[str, float]] = None,
-    ) -> Dict[str, float]:
+        assets_data: dict[str, pd.DataFrame],
+        base_weights: dict[str, float] | None = None,
+    ) -> dict[str, float]:
         """
         Generate volatility-targeted portfolio allocation.
 
@@ -300,9 +358,7 @@ class VolatilityTargetingStrategy:
 
         # Default equal weights if not provided
         if base_weights is None:
-            base_weights = {
-                asset: 1.0 / len(assets_data) for asset in assets_data.keys()
-            }
+            base_weights = {asset: 1.0 / len(assets_data) for asset in assets_data}
 
         adjusted_weights = {}
         total_adjustment = 0
@@ -328,11 +384,11 @@ class VolatilityTargetingStrategy:
                 adjusted_weights[asset] /= total_adjustment
 
         self.logger.info(
-            f"Generated volatility-targeted allocation: {adjusted_weights}"
+            f"Generated volatility-targeted allocation: {adjusted_weights}",
         )
         return adjusted_weights
 
-    def get_strategy_stats(self, price_data: pd.DataFrame) -> Dict[str, float]:
+    def get_strategy_stats(self, price_data: pd.DataFrame) -> dict[str, float]:
         """Get strategy statistics and diagnostics."""
         current_vol = self.calculate_volatility(price_data)
         multiplier = self.calculate_position_multiplier(price_data, current_vol)
@@ -355,7 +411,7 @@ class VolatilityTargetingStrategy:
                     else 0,
                     "max_drawdown": self._calculate_max_drawdown(price_data["close"]),
                     "win_rate": (returns > 0).mean(),
-                }
+                },
             )
 
         return stats

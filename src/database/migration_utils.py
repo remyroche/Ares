@@ -1,15 +1,15 @@
 # src/database/migration_utils.py
 
 import asyncio
+import hashlib
+import json
 import os
 import shutil
-import json
-import hashlib
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
+from typing import Any
 
-from src.utils.logger import system_logger
 from src.database.sqlite_manager import SQLiteManager
+from src.utils.logger import system_logger
 
 
 class DatabaseMigrationUtils:
@@ -31,7 +31,8 @@ class DatabaseMigrationUtils:
             export_name = f"trading_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
         export_path = os.path.join(
-            self.db_manager.migration_dir, f"{export_name}.sqlite"
+            self.db_manager.migration_dir,
+            f"{export_name}.sqlite",
         )
 
         try:
@@ -64,11 +65,13 @@ class DatabaseMigrationUtils:
             }
 
             await self.db_manager.set_document(
-                "database_migrations", export_name, export_data
+                "database_migrations",
+                export_name,
+                export_data,
             )
 
             self.logger.info(
-                f"Trading export created: {export_path} (checksum: {checksum})"
+                f"Trading export created: {export_path} (checksum: {checksum})",
             )
             return export_path
 
@@ -90,21 +93,25 @@ class DatabaseMigrationUtils:
                 )
                 for result in sorted_results[1:]:
                     await temp_db.delete_document(
-                        "backtest_results", result.get("backtest_id", "")
+                        "backtest_results",
+                        result.get("backtest_id", ""),
                     )
 
             # Mark remaining backtest as migrated
             for result in await temp_db.get_collection("backtest_results"):
                 result["is_migrated"] = 1
                 await temp_db.set_document(
-                    "backtest_results", result.get("backtest_id", ""), result
+                    "backtest_results",
+                    result.get("backtest_id", ""),
+                    result,
                 )
 
             self.logger.info("Database cleaned for trading export")
 
         except Exception as e:
             self.logger.error(
-                f"Error cleaning database for trading: {e}", exc_info=True
+                f"Error cleaning database for trading: {e}",
+                exc_info=True,
             )
 
     async def import_for_trading(self, import_path: str) -> bool:
@@ -145,7 +152,9 @@ class DatabaseMigrationUtils:
                 }
 
                 await self.db_manager.set_document(
-                    "database_migrations", import_name, import_data
+                    "database_migrations",
+                    import_name,
+                    import_data,
                 )
 
                 self.logger.info(f"Trading import completed: {import_path}")
@@ -190,7 +199,7 @@ class DatabaseMigrationUtils:
                 checksum = hashlib.md5(f.read()).hexdigest()
 
             self.logger.info(
-                f"Backtest results exported: {export_path} (checksum: {checksum})"
+                f"Backtest results exported: {export_path} (checksum: {checksum})",
             )
             return export_path
 
@@ -198,7 +207,7 @@ class DatabaseMigrationUtils:
             self.logger.error(f"Failed to export backtest results: {e}", exc_info=True)
             return ""
 
-    async def validate_migration_file(self, file_path: str) -> Dict[str, Any]:
+    async def validate_migration_file(self, file_path: str) -> dict[str, Any]:
         """
         Validates a migration file for integrity and compatibility.
         """
@@ -256,7 +265,7 @@ class DatabaseMigrationUtils:
                 ]
                 if missing_tables:
                     validation_result["errors"].append(
-                        f"Missing required tables: {missing_tables}"
+                        f"Missing required tables: {missing_tables}",
                     )
                 else:
                     validation_result["database_valid"] = True
@@ -265,7 +274,7 @@ class DatabaseMigrationUtils:
 
             except Exception as e:
                 validation_result["errors"].append(
-                    f"Database validation failed: {str(e)}"
+                    f"Database validation failed: {str(e)}",
                 )
 
             validation_result["checksum_valid"] = True
@@ -285,14 +294,16 @@ class DatabaseMigrationUtils:
 
         return validation_result
 
-    async def list_migrations(self) -> List[Dict[str, Any]]:
+    async def list_migrations(self) -> list[dict[str, Any]]:
         """
         Lists all available migrations with their details.
         """
         try:
             migrations = await self.db_manager.get_collection("database_migrations")
             return sorted(
-                migrations, key=lambda x: x.get("created_at", ""), reverse=True
+                migrations,
+                key=lambda x: x.get("created_at", ""),
+                reverse=True,
             )
         except Exception as e:
             self.logger.error(f"Failed to list migrations: {e}", exc_info=True)
@@ -319,7 +330,8 @@ class DatabaseMigrationUtils:
 
                 # Remove migration file
                 migration_file = os.path.join(
-                    self.db_manager.migration_dir, f"{migration_id}.sqlite"
+                    self.db_manager.migration_dir,
+                    f"{migration_id}.sqlite",
                 )
                 if os.path.exists(migration_file):
                     os.remove(migration_file)
@@ -327,7 +339,8 @@ class DatabaseMigrationUtils:
 
                 # Remove migration record
                 await self.db_manager.delete_document(
-                    "database_migrations", migration_id
+                    "database_migrations",
+                    migration_id,
                 )
                 self.logger.info(f"Removed old migration record: {migration_id}")
 
@@ -353,7 +366,8 @@ async def export_database_for_trading(
 
 
 async def import_database_for_trading(
-    import_path: str, db_path: str = "data/ares_local_db.sqlite"
+    import_path: str,
+    db_path: str = "data/ares_local_db.sqlite",
 ) -> bool:
     """Command-line function to import database for trading."""
     db_manager = SQLiteManager(db_path)
@@ -366,7 +380,7 @@ async def import_database_for_trading(
     return success
 
 
-async def validate_migration_file(file_path: str) -> Dict[str, Any]:
+async def validate_migration_file(file_path: str) -> dict[str, Any]:
     """Command-line function to validate a migration file."""
     db_manager = SQLiteManager()
     await db_manager.initialize()

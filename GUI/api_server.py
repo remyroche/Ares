@@ -1,17 +1,25 @@
-import sys
-import os
 import asyncio
 import json
-import pandas as pd
+import logging
+import os
+import random
+import sys
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
+from typing import Any
+
+import psutil
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import random
-import subprocess
-import signal
-import psutil
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 # --- Project Path Setup ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -21,41 +29,52 @@ sys.path.insert(0, os.path.join(project_root, "src"))
 
 # --- Import from your Ares Codebase ---
 try:
-    from src.database.sqlite_manager import SQLiteManager
-    from src.utils.state_manager import StateManager
-    from src.supervisor.performance_reporter import PerformanceReporter
     from src.config import CONFIG
+    from src.database.sqlite_manager import SQLiteManager
+    from src.supervisor.performance_reporter import PerformanceReporter
+    from src.utils.state_manager import StateManager
+
     print("Successfully imported Ares modules.")
 except ImportError as e:
     print(f"Error importing Ares modules: {e}")
-    print("Please ensure the project structure is correct and all dependencies are installed.")
+    print(
+        "Please ensure the project structure is correct and all dependencies are installed.",
+    )
 
     # Define dummy classes if imports fail
     class SQLiteManager:
         def __init__(self, db_path=""):
             pass
+
         async def initialize(self):
             pass
+
         async def get_collection(self, *args, **kwargs):
             return []
+
         async def set_document(self, *args, **kwargs):
             pass
 
     class StateManager:
         def __init__(self):
             pass
+
         def is_kill_switch_active(self):
             return False
+
         async def activate_kill_switch(self, reason):
             pass
+
         async def deactivate_kill_switch(self):
             pass
+
         def get_kill_switch_reason(self):
             return "Kill switch not available"
 
     class PerformanceReporter:
         def __init__(self):
             pass
+
 
 # --- FastAPI App Initialization ---
 app = FastAPI(
@@ -80,9 +99,11 @@ performance_reporter = PerformanceReporter()
 websocket_connections = []
 
 # Add new global variables for token and model management
-token_configs: Dict[str, TokenConfig] = {}
-model_performances: Dict[str, ModelPerformance] = {}
-model_comparisons: Dict[str, ModelComparison] = {}
+token_configs: dict[str, Any] = {}
+model_performances: dict[str, Any] = {}
+model_comparisons: dict[str, Any] = {}
+websocket_manager = None  # Will be initialized later
+
 
 # --- Pydantic Models ---
 class Position(BaseModel):
@@ -94,8 +115,9 @@ class Position(BaseModel):
     currentPrice: float
     pnl: float
     side: str
-    leverage: Optional[float] = 1.0
-    unrealizedPnl: Optional[float] = 0.0
+    leverage: float | None = 1.0
+    unrealizedPnl: float | None = 0.0
+
 
 class Trade(BaseModel):
     id: str
@@ -107,15 +129,17 @@ class Trade(BaseModel):
     pnl: float
     date: str
     side: str
-    exitReason: Optional[str] = None
-    tradeDuration: Optional[float] = None
-    fees: Optional[float] = None
+    exitReason: str | None = None
+    tradeDuration: float | None = None
+    fees: float | None = None
+
 
 class PerformanceDataPoint(BaseModel):
     date: str
     portfolioValue: float
-    drawdown: Optional[float] = None
-    trades: Optional[int] = None
+    drawdown: float | None = None
+    trades: int | None = None
+
 
 class Bot(BaseModel):
     id: int
@@ -124,50 +148,57 @@ class Bot(BaseModel):
     status: str
     model: str
     uptime: str
-    pnl: Optional[float] = 0.0
-    winRate: Optional[float] = 0.0
+    pnl: float | None = 0.0
+    winRate: float | None = 0.0
+
 
 class NewBot(BaseModel):
     pair: str
     exchange: str
     model: str
-    capital: Optional[float] = 10000
+    capital: float | None = 10000
+
 
 class BacktestParams(BaseModel):
     token_pair: str
     exchange: str
     test_type: str
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    capital: Optional[float] = 10000
-    commission: Optional[float] = 0.1
-    model_version: Optional[str] = None
+    start_date: str | None = None
+    end_date: str | None = None
+    capital: float | None = 10000
+    commission: float | None = 0.1
+    model_version: str | None = None
+
 
 class KillSwitchRequest(BaseModel):
     reason: str
     emergency: bool = False
+
 
 class ModelInfo(BaseModel):
     id: str
     name: str
     version: str
     type: str
-    performance: Dict[str, float]
+    performance: dict[str, float]
     last_updated: str
     status: str
 
+
 class TradeAnalysis(BaseModel):
     trade_id: str
-    detailed_data: Dict[str, Any]
-    performance_metrics: Dict[str, float]
-    market_conditions: Dict[str, Any]
+    detailed_data: dict[str, Any]
+    performance_metrics: dict[str, float]
+    market_conditions: dict[str, Any]
+
 
 class TokenConfig(BaseModel):
     symbol: str
     exchange: str
     enabled: bool = True
-    model_version: Optional[str] = None
-    last_updated: Optional[str] = None
+    model_version: str | None = None
+    last_updated: str | None = None
+
 
 class ModelPerformance(BaseModel):
     model_id: str
@@ -189,30 +220,34 @@ class ModelPerformance(BaseModel):
     consecutive_losses: int
     last_updated: str
 
+
 class ModelComparison(BaseModel):
     model_a: str
     model_b: str
     symbol: str
     exchange: str
-    comparison_metrics: Dict[str, Any]
-    winner: Optional[str] = None
+    comparison_metrics: dict[str, Any]
+    winner: str | None = None
     confidence: float = 0.0
+
 
 class TokenManagementRequest(BaseModel):
     symbol: str
     exchange: str
     enabled: bool
-    model_version: Optional[str] = None
+    model_version: str | None = None
+
 
 class ModelSelectionRequest(BaseModel):
     symbol: str
     exchange: str
     model_version: str
 
+
 # --- WebSocket Manager ---
 class WebSocketManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.active_connections: list[WebSocket] = []
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -225,10 +260,12 @@ class WebSocketManager:
         for connection in self.active_connections:
             try:
                 await connection.send_text(json.dumps(message))
-            except:
+            except Exception:
                 pass
 
+
 manager = WebSocketManager()
+
 
 # --- Mock Data Generation ---
 def create_mock_data():
@@ -236,12 +273,12 @@ def create_mock_data():
         Bot(
             id=1,
             pair="BTC/USDT",
-            exchange="Binance",
+            exchange=ares_config.exchange_name,
             status="running",
             model="Performer v1.2",
             uptime="7d 4h 15m",
             pnl=1250.50,
-            winRate=68.5
+            winRate=68.5,
         ),
         Bot(
             id=2,
@@ -251,32 +288,32 @@ def create_mock_data():
             model="Current v3.1",
             uptime="N/A",
             pnl=-320.75,
-            winRate=45.2
+            winRate=45.2,
         ),
         Bot(
             id=3,
             pair="SOL/USDT",
-            exchange="Binance",
+            exchange=ares_config.exchange_name,
             status="error",
             model="Performer v1.1",
             uptime="N/A",
             pnl=0.0,
-            winRate=0.0
+            winRate=0.0,
         ),
     ]
-    
+
     mock_positions = [
         Position(
             id=1,
             pair="BTC/USDT",
-            exchange="Binance",
+            exchange=ares_config.exchange_name,
             size=0.5,
             entryPrice=68500,
             currentPrice=random.uniform(68000, 70000),
             pnl=random.uniform(-500, 500),
             side="long",
             leverage=2.0,
-            unrealizedPnl=random.uniform(-200, 300)
+            unrealizedPnl=random.uniform(-200, 300),
         ),
         Position(
             id=2,
@@ -288,15 +325,15 @@ def create_mock_data():
             pnl=random.uniform(-500, 500),
             side="short",
             leverage=1.5,
-            unrealizedPnl=random.uniform(-150, 250)
+            unrealizedPnl=random.uniform(-150, 250),
         ),
     ]
-    
+
     mock_trades = [
         Trade(
             id=f"trade_{i}",
             pair="BTC/USDT",
-            exchange="Binance",
+            exchange=ares_config.exchange_name,
             size=0.2,
             entryPrice=68000,
             exitPrice=68500,
@@ -305,22 +342,30 @@ def create_mock_data():
             side="long",
             exitReason="take_profit",
             tradeDuration=3600,
-            fees=2.5
+            fees=2.5,
         )
         for i in range(10)
     ]
-    
+
     return mock_bots, mock_positions, mock_trades
 
+
 # --- API Endpoints ---
+
 
 @app.get("/")
 def read_root():
     return {
         "message": "Welcome to the Ares API v2.0. Navigate to /docs for API documentation.",
         "version": "2.0.0",
-        "features": ["kill_switch", "backtesting", "model_management", "trade_analysis"]
+        "features": [
+            "kill_switch",
+            "backtesting",
+            "model_management",
+            "trade_analysis",
+        ],
     }
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -335,6 +380,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
+
 # --- Dashboard Endpoints ---
 @app.get("/api/dashboard-data")
 async def get_dashboard_data(days: int = 7):
@@ -343,9 +389,16 @@ async def get_dashboard_data(days: int = 7):
         # Get real data from database if available
         try:
             await db_manager.initialize()
-            open_positions_raw = await db_manager.get_collection("positions", is_public=False)
-            last_trades_raw = await db_manager.get_collection("trades", is_public=False, query_filters=[("limit", "10")])
-        except:
+            open_positions_raw = await db_manager.get_collection(
+                "positions",
+                is_public=False,
+            )
+            last_trades_raw = await db_manager.get_collection(
+                "trades",
+                is_public=False,
+                query_filters=[("limit", "10")],
+            )
+        except Exception:
             # Fallback to mock data
             mock_bots, mock_positions, mock_trades = create_mock_data()
             open_positions_raw = mock_positions
@@ -362,14 +415,18 @@ async def get_dashboard_data(days: int = 7):
                     date=date.strftime("%Y-%m-%d"),
                     portfolioValue=round(value, 2),
                     drawdown=random.uniform(0, 5),
-                    trades=random.randint(0, 10)
-                )
+                    trades=random.randint(0, 10),
+                ),
             )
 
         # Calculate metrics
         total_pnl = sum(p.pnl for p in open_positions_raw) if open_positions_raw else 0
         win_rate = 68 if last_trades_raw else 0
-        running_bots = len([b for b in mock_bots if b.status == "running"]) if 'mock_bots' in locals() else 0
+        running_bots = (
+            len([b for b in mock_bots if b.status == "running"])
+            if "mock_bots" in locals()
+            else 0
+        )
 
         return {
             "totalPnl": total_pnl,
@@ -380,10 +437,11 @@ async def get_dashboard_data(days: int = 7):
             "openPositions": open_positions_raw,
             "lastTrades": last_trades_raw,
             "killSwitchActive": state_manager.is_kill_switch_active(),
-            "systemStatus": "healthy"
+            "systemStatus": "healthy",
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # --- Kill Switch Endpoints ---
 @app.get("/api/kill-switch/status")
@@ -395,48 +453,55 @@ async def get_kill_switch_status():
         return {
             "active": is_active,
             "reason": reason,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/kill-switch/activate")
 async def activate_kill_switch(request: KillSwitchRequest):
     """Activate the kill switch."""
     try:
         await state_manager.activate_kill_switch(request.reason)
-        
+
         # Broadcast to WebSocket connections
-        await manager.broadcast({
-            "type": "kill_switch_activated",
-            "reason": request.reason,
-            "emergency": request.emergency,
-            "timestamp": datetime.now().isoformat()
-        })
-        
+        await manager.broadcast(
+            {
+                "type": "kill_switch_activated",
+                "reason": request.reason,
+                "emergency": request.emergency,
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
+
         return {
             "message": "Kill switch activated successfully",
             "reason": request.reason,
-            "emergency": request.emergency
+            "emergency": request.emergency,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/kill-switch/deactivate")
 async def deactivate_kill_switch():
     """Deactivate the kill switch."""
     try:
         await state_manager.deactivate_kill_switch()
-        
+
         # Broadcast to WebSocket connections
-        await manager.broadcast({
-            "type": "kill_switch_deactivated",
-            "timestamp": datetime.now().isoformat()
-        })
-        
+        await manager.broadcast(
+            {
+                "type": "kill_switch_deactivated",
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
+
         return {"message": "Kill switch deactivated successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # --- Backtesting Endpoints ---
 @app.post("/api/run-backtest")
@@ -445,7 +510,7 @@ async def start_backtest(params: BacktestParams, background_tasks: BackgroundTas
     try:
         # Simulate backtest execution
         await asyncio.sleep(2)
-        
+
         # Generate detailed mock results
         mock_equity_curve = []
         value = params.capital or 10000
@@ -457,8 +522,8 @@ async def start_backtest(params: BacktestParams, background_tasks: BackgroundTas
                     date=date.strftime("%Y-%m-%d"),
                     portfolioValue=round(value, 2),
                     drawdown=random.uniform(0, 8),
-                    trades=random.randint(0, 15)
-                )
+                    trades=random.randint(0, 15),
+                ),
             )
 
         # Calculate detailed metrics
@@ -466,7 +531,7 @@ async def start_backtest(params: BacktestParams, background_tasks: BackgroundTas
         sharpe_ratio = random.uniform(0.8, 2.5)
         max_drawdown = random.uniform(5, 15)
         win_rate = random.uniform(55, 75)
-        
+
         return {
             "message": "Backtest completed successfully.",
             "results": {
@@ -478,7 +543,7 @@ async def start_backtest(params: BacktestParams, background_tasks: BackgroundTas
                     "totalTrades": random.randint(50, 200),
                     "avgTradeDuration": random.uniform(2, 8),
                     "profitFactor": random.uniform(1.1, 2.5),
-                    "calmarRatio": random.uniform(0.5, 3.0)
+                    "calmarRatio": random.uniform(0.5, 3.0),
                 },
                 "equityCurve": mock_equity_curve,
                 "tradeAnalysis": {
@@ -487,12 +552,13 @@ async def start_backtest(params: BacktestParams, background_tasks: BackgroundTas
                     "avgWin": random.uniform(100, 300),
                     "avgLoss": random.uniform(-200, -50),
                     "largestWinStreak": random.randint(5, 15),
-                    "largestLossStreak": random.randint(2, 8)
-                }
+                    "largestLossStreak": random.randint(2, 8),
+                },
             },
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to run backtest: {str(e)}")
+
 
 @app.get("/api/backtest/comparison")
 async def get_backtest_comparison():
@@ -507,31 +573,32 @@ async def get_backtest_comparison():
                 "sharpeRatio": 2.1,
                 "maxDrawdown": 5.5,
                 "winRate": 68.5,
-                "color": "#8b5cf6"
+                "color": "#8b5cf6",
             },
             {
-                "id": "backtest_2", 
+                "id": "backtest_2",
                 "name": "Optimized Strategy",
                 "totalReturn": 18.7,
                 "sharpeRatio": 2.3,
                 "maxDrawdown": 4.2,
                 "winRate": 72.1,
-                "color": "#06b6d4"
+                "color": "#06b6d4",
             },
             {
                 "id": "backtest_3",
-                "name": "Conservative Strategy", 
+                "name": "Conservative Strategy",
                 "totalReturn": 12.3,
                 "sharpeRatio": 1.8,
                 "maxDrawdown": 3.1,
                 "winRate": 65.2,
-                "color": "#10b981"
-            }
+                "color": "#10b981",
+            },
         ]
-        
+
         return {"comparisons": comparisons}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # --- Model Management Endpoints ---
 @app.get("/api/models")
@@ -548,10 +615,10 @@ async def get_models():
                     "accuracy": 72.5,
                     "precision": 68.3,
                     "recall": 71.2,
-                    "f1_score": 69.7
+                    "f1_score": 69.7,
                 },
                 last_updated="2024-01-15T10:30:00Z",
-                status="active"
+                status="active",
             ),
             ModelInfo(
                 id="model_2",
@@ -562,10 +629,10 @@ async def get_models():
                     "accuracy": 69.8,
                     "precision": 67.1,
                     "recall": 70.5,
-                    "f1_score": 68.8
+                    "f1_score": 68.8,
                 },
                 last_updated="2024-01-10T14:20:00Z",
-                status="active"
+                status="active",
             ),
             ModelInfo(
                 id="model_3",
@@ -576,16 +643,17 @@ async def get_models():
                     "accuracy": 74.2,
                     "precision": 71.8,
                     "recall": 73.5,
-                    "f1_score": 72.6
+                    "f1_score": 72.6,
                 },
                 last_updated="2024-01-20T09:15:00Z",
-                status="testing"
-            )
+                status="testing",
+            ),
         ]
-        
+
         return {"models": models}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/models/{model_id}/deploy")
 async def deploy_model(model_id: str):
@@ -596,10 +664,11 @@ async def deploy_model(model_id: str):
         return {
             "message": f"Model {model_id} deployed successfully",
             "model_id": model_id,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # --- Trade Analysis Endpoints ---
 @app.get("/api/trades/analysis")
@@ -616,25 +685,31 @@ async def get_trade_analysis(days: int = 30, limit: int = 100):
                 "entry_price": random.uniform(20000, 70000),
                 "exit_price": random.uniform(20000, 70000),
                 "pnl": random.uniform(-1000, 2000),
-                "entry_time": (datetime.now() - timedelta(days=random.randint(1, days))).isoformat(),
-                "exit_time": (datetime.now() - timedelta(days=random.randint(0, days-1))).isoformat(),
+                "entry_time": (
+                    datetime.now() - timedelta(days=random.randint(1, days))
+                ).isoformat(),
+                "exit_time": (
+                    datetime.now() - timedelta(days=random.randint(0, days - 1))
+                ).isoformat(),
                 "duration": random.uniform(300, 86400),
                 "fees": random.uniform(1, 10),
                 "slippage": random.uniform(0, 0.5),
                 "market_regime": random.choice(["trending", "ranging", "volatile"]),
                 "confidence": random.uniform(0.5, 0.95),
                 "volume": random.uniform(1000, 50000),
-                "volatility": random.uniform(0.01, 0.05)
+                "volatility": random.uniform(0.01, 0.05),
             }
             trades.append(trade_data)
-        
+
         # Calculate aggregate metrics
         total_trades = len(trades)
         winning_trades = len([t for t in trades if t["pnl"] > 0])
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
         total_pnl = sum(t["pnl"] for t in trades)
-        avg_trade_duration = sum(t["duration"] for t in trades) / total_trades if total_trades > 0 else 0
-        
+        avg_trade_duration = (
+            sum(t["duration"] for t in trades) / total_trades if total_trades > 0 else 0
+        )
+
         return {
             "trades": trades,
             "summary": {
@@ -644,12 +719,18 @@ async def get_trade_analysis(days: int = 30, limit: int = 100):
                 "avgTradeDuration": round(avg_trade_duration, 2),
                 "bestTrade": max(t["pnl"] for t in trades) if trades else 0,
                 "worstTrade": min(t["pnl"] for t in trades) if trades else 0,
-                "avgWin": sum(t["pnl"] for t in trades if t["pnl"] > 0) / winning_trades if winning_trades > 0 else 0,
-                "avgLoss": sum(t["pnl"] for t in trades if t["pnl"] < 0) / (total_trades - winning_trades) if (total_trades - winning_trades) > 0 else 0
-            }
+                "avgWin": sum(t["pnl"] for t in trades if t["pnl"] > 0) / winning_trades
+                if winning_trades > 0
+                else 0,
+                "avgLoss": sum(t["pnl"] for t in trades if t["pnl"] < 0)
+                / (total_trades - winning_trades)
+                if (total_trades - winning_trades) > 0
+                else 0,
+            },
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/trades/{trade_id}/detailed")
 async def get_trade_details(trade_id: str):
@@ -676,28 +757,29 @@ async def get_trade_details(trade_id: str):
                 "rsi": 65.2,
                 "macd": 0.45,
                 "bollinger_position": 0.7,
-                "volume_sma_ratio": 1.2
+                "volume_sma_ratio": 1.2,
             },
             "risk_metrics": {
                 "position_size": 0.5,
                 "leverage": 2.0,
                 "risk_reward_ratio": 2.5,
-                "max_drawdown": 150
+                "max_drawdown": 150,
             },
             "market_conditions": {
                 "trend_strength": 0.8,
                 "volatility_regime": "medium",
                 "liquidity_score": 0.9,
-                "correlation_with_btc": 0.95
-            }
+                "correlation_with_btc": 0.95,
+            },
         }
-        
+
         return trade_details
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # --- Bot Management Endpoints ---
-@app.get("/api/bots", response_model=List[Bot])
+@app.get("/api/bots", response_model=list[Bot])
 async def get_all_bots():
     """Get all configured bots with their status and performance."""
     try:
@@ -705,6 +787,7 @@ async def get_all_bots():
         return mock_bots
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/bots", response_model=Bot)
 async def add_new_bot(bot: NewBot):
@@ -716,10 +799,11 @@ async def add_new_bot(bot: NewBot):
         new_bot_data["id"] = random.randint(100, 999)
         new_bot_data["pnl"] = 0.0
         new_bot_data["winRate"] = 0.0
-        
+
         return Bot(**new_bot_data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.delete("/api/bots/{bot_id}")
 async def remove_bot_endpoint(bot_id: int):
@@ -729,6 +813,7 @@ async def remove_bot_endpoint(bot_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/bots/{bot_id}/toggle")
 async def toggle_bot(bot_id: int):
     """Start or stop a bot."""
@@ -736,6 +821,7 @@ async def toggle_bot(bot_id: int):
         return {"message": f"Bot {bot_id} status toggled."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # --- System Management Endpoints ---
 @app.get("/api/system/status")
@@ -745,22 +831,23 @@ async def get_system_status():
         # Get process info
         process = psutil.Process()
         memory_info = process.memory_info()
-        
+
         return {
             "status": "running",
             "uptime": "7d 4h 15m",
             "memory_usage": {
                 "rss": memory_info.rss,
                 "vms": memory_info.vms,
-                "percent": process.memory_percent()
+                "percent": process.memory_percent(),
             },
             "cpu_usage": process.cpu_percent(),
             "kill_switch_active": state_manager.is_kill_switch_active(),
             "trading_paused": False,
-            "last_heartbeat": datetime.now().isoformat()
+            "last_heartbeat": datetime.now().isoformat(),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/system/restart")
 async def restart_system():
@@ -771,16 +858,18 @@ async def restart_system():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # Add new API endpoints for token and model management
 
-@app.get("/api/tokens", response_model=List[TokenConfig])
+
+@app.get("/api/tokens", response_model=list[TokenConfig])
 async def get_tokens():
     """Get all configured tokens with their settings."""
     try:
         # Try to get real data from config
         supported_tokens = CONFIG.get("SUPPORTED_TOKENS", {})
         tokens = []
-        
+
         for exchange, symbols in supported_tokens.items():
             for symbol in symbols:
                 token_key = f"{symbol}_{exchange}"
@@ -788,14 +877,16 @@ async def get_tokens():
                     tokens.append(token_configs[token_key])
                 else:
                     # Create default config
-                    tokens.append(TokenConfig(
-                        symbol=symbol,
-                        exchange=exchange,
-                        enabled=True,
-                        model_version=None,
-                        last_updated=datetime.now().isoformat()
-                    ))
-        
+                    tokens.append(
+                        TokenConfig(
+                            symbol=symbol,
+                            exchange=exchange,
+                            enabled=True,
+                            model_version=None,
+                            last_updated=datetime.now().isoformat(),
+                        ),
+                    )
+
         return tokens
     except Exception as e:
         logger.error(f"Error getting tokens: {e}")
@@ -803,26 +894,27 @@ async def get_tokens():
         return [
             TokenConfig(
                 symbol="BTCUSDT",
-                exchange="BINANCE",
+                exchange=ares_config.exchange_name.upper(),
                 enabled=True,
                 model_version="v1.2.3",
-                last_updated=datetime.now().isoformat()
+                last_updated=datetime.now().isoformat(),
             ),
             TokenConfig(
                 symbol="ETHUSDT",
-                exchange="BINANCE",
+                exchange=ares_config.exchange_name.upper(),
                 enabled=True,
                 model_version="v1.1.0",
-                last_updated=datetime.now().isoformat()
+                last_updated=datetime.now().isoformat(),
             ),
             TokenConfig(
                 symbol="ADAUSDT",
-                exchange="BINANCE",
+                exchange=ares_config.exchange_name.upper(),
                 enabled=False,
                 model_version=None,
-                last_updated=datetime.now().isoformat()
-            )
+                last_updated=datetime.now().isoformat(),
+            ),
         ]
+
 
 @app.post("/api/tokens")
 async def update_token_config(request: TokenManagementRequest):
@@ -834,19 +926,22 @@ async def update_token_config(request: TokenManagementRequest):
             exchange=request.exchange,
             enabled=request.enabled,
             model_version=request.model_version,
-            last_updated=datetime.now().isoformat()
+            last_updated=datetime.now().isoformat(),
         )
-        
+
         # Broadcast update via WebSocket
-        await websocket_manager.broadcast({
-            "type": "token_config_updated",
-            "data": token_configs[token_key].dict()
-        })
-        
-        return {"success": True, "message": f"Token {request.symbol} on {request.exchange} updated"}
+        await websocket_manager.broadcast(
+            {"type": "token_config_updated", "data": token_configs[token_key].dict()},
+        )
+
+        return {
+            "success": True,
+            "message": f"Token {request.symbol} on {request.exchange} updated",
+        }
     except Exception as e:
         logger.error(f"Error updating token config: {e}")
         return {"success": False, "error": str(e)}
+
 
 @app.delete("/api/tokens/{symbol}/{exchange}")
 async def remove_token(symbol: str, exchange: str):
@@ -856,39 +951,46 @@ async def remove_token(symbol: str, exchange: str):
         if token_key in token_configs:
             token_configs[token_key].enabled = False
             token_configs[token_key].last_updated = datetime.now().isoformat()
-            
+
             # Broadcast update via WebSocket
-            await websocket_manager.broadcast({
-                "type": "token_removed",
-                "data": {"symbol": symbol, "exchange": exchange}
-            })
-            
-            return {"success": True, "message": f"Token {symbol} on {exchange} disabled"}
-        else:
-            return {"success": False, "error": "Token not found"}
+            await websocket_manager.broadcast(
+                {
+                    "type": "token_removed",
+                    "data": {"symbol": symbol, "exchange": exchange},
+                },
+            )
+
+            return {
+                "success": True,
+                "message": f"Token {symbol} on {exchange} disabled",
+            }
+        return {"success": False, "error": "Token not found"}
     except Exception as e:
         logger.error(f"Error removing token: {e}")
         return {"success": False, "error": str(e)}
 
-@app.get("/api/models/available", response_model=List[Dict[str, Any]])
+
+@app.get("/api/models/available", response_model=list[dict[str, Any]])
 async def get_available_models():
     """Get all available models for selection."""
     try:
         # Try to get real model data from MLflow or model directory
         model_configs = CONFIG.get("MODEL_TRAINING", {}).get("model_types", {})
         models = []
-        
+
         for model_name, config in model_configs.items():
             if config.get("enabled", False):
-                models.append({
-                    "model_id": model_name,
-                    "model_name": model_name.upper(),
-                    "description": f"{model_name.upper()} model for trading",
-                    "enabled": True,
-                    "last_trained": datetime.now().isoformat(),
-                    "performance_score": 0.85  # Mock score
-                })
-        
+                models.append(
+                    {
+                        "model_id": model_name,
+                        "model_name": model_name.upper(),
+                        "description": f"{model_name.upper()} model for trading",
+                        "enabled": True,
+                        "last_trained": datetime.now().isoformat(),
+                        "performance_score": 0.85,  # Mock score
+                    },
+                )
+
         return models
     except Exception as e:
         logger.error(f"Error getting available models: {e}")
@@ -900,7 +1002,7 @@ async def get_available_models():
                 "description": "Gradient boosting with LightGBM",
                 "enabled": True,
                 "last_trained": datetime.now().isoformat(),
-                "performance_score": 0.87
+                "performance_score": 0.87,
             },
             {
                 "model_id": "xgboost",
@@ -908,7 +1010,7 @@ async def get_available_models():
                 "description": "Extreme gradient boosting",
                 "enabled": True,
                 "last_trained": datetime.now().isoformat(),
-                "performance_score": 0.85
+                "performance_score": 0.85,
             },
             {
                 "model_id": "neural_network",
@@ -916,17 +1018,21 @@ async def get_available_models():
                 "description": "Deep neural network",
                 "enabled": True,
                 "last_trained": datetime.now().isoformat(),
-                "performance_score": 0.82
-            }
+                "performance_score": 0.82,
+            },
         ]
 
-@app.get("/api/models/performance/{symbol}/{exchange}", response_model=List[ModelPerformance])
+
+@app.get(
+    "/api/models/performance/{symbol}/{exchange}",
+    response_model=list[ModelPerformance],
+)
 async def get_model_performance(symbol: str, exchange: str):
     """Get performance metrics for all models on a specific token/exchange."""
     try:
         # Try to get real performance data from performance_reporter
         performances = []
-        
+
         # Mock performance data based on performance_reporter.py structure
         models = ["lightgbm", "xgboost", "neural_network"]
         for model in models:
@@ -948,41 +1054,47 @@ async def get_model_performance(symbol: str, exchange: str):
                 avg_loss=-(100 + (hash(model) % 80)),
                 consecutive_wins=5 + (hash(model) % 10),
                 consecutive_losses=2 + (hash(model) % 5),
-                last_updated=datetime.now().isoformat()
+                last_updated=datetime.now().isoformat(),
             )
             performances.append(performance)
-        
+
         return performances
     except Exception as e:
         logger.error(f"Error getting model performance: {e}")
         return []
+
 
 @app.post("/api/models/select")
 async def select_model_for_token(request: ModelSelectionRequest):
     """Select a model for a specific token/exchange."""
     try:
         token_key = f"{request.symbol}_{request.exchange}"
-        
+
         if token_key in token_configs:
             token_configs[token_key].model_version = request.model_version
             token_configs[token_key].last_updated = datetime.now().isoformat()
-            
+
             # Broadcast update via WebSocket
-            await websocket_manager.broadcast({
-                "type": "model_selected",
-                "data": {
-                    "symbol": request.symbol,
-                    "exchange": request.exchange,
-                    "model_version": request.model_version
-                }
-            })
-            
-            return {"success": True, "message": f"Model {request.model_version} selected for {request.symbol} on {request.exchange}"}
-        else:
-            return {"success": False, "error": "Token not found"}
+            await websocket_manager.broadcast(
+                {
+                    "type": "model_selected",
+                    "data": {
+                        "symbol": request.symbol,
+                        "exchange": request.exchange,
+                        "model_version": request.model_version,
+                    },
+                },
+            )
+
+            return {
+                "success": True,
+                "message": f"Model {request.model_version} selected for {request.symbol} on {request.exchange}",
+            }
+        return {"success": False, "error": "Token not found"}
     except Exception as e:
         logger.error(f"Error selecting model: {e}")
         return {"success": False, "error": str(e)}
+
 
 @app.get("/api/models/compare/{symbol}/{exchange}", response_model=ModelComparison)
 async def compare_models(symbol: str, exchange: str, model_a: str, model_b: str):
@@ -992,34 +1104,40 @@ async def compare_models(symbol: str, exchange: str, model_a: str, model_b: str)
         performances = await get_model_performance(symbol, exchange)
         model_a_perf = next((p for p in performances if p.model_id == model_a), None)
         model_b_perf = next((p for p in performances if p.model_id == model_b), None)
-        
+
         if not model_a_perf or not model_b_perf:
             return {"error": "One or both models not found"}
-        
+
         # Calculate comparison metrics
         comparison_metrics = {
             "win_rate_diff": model_a_perf.win_rate - model_b_perf.win_rate,
             "pnl_diff": model_a_perf.net_pnl - model_b_perf.net_pnl,
             "sharpe_diff": model_a_perf.sharpe_ratio - model_b_perf.sharpe_ratio,
-            "profit_factor_diff": model_a_perf.profit_factor - model_b_perf.profit_factor,
+            "profit_factor_diff": model_a_perf.profit_factor
+            - model_b_perf.profit_factor,
             "max_drawdown_diff": model_a_perf.max_drawdown - model_b_perf.max_drawdown,
-            "avg_trade_duration_diff": model_a_perf.avg_trade_duration - model_b_perf.avg_trade_duration
+            "avg_trade_duration_diff": model_a_perf.avg_trade_duration
+            - model_b_perf.avg_trade_duration,
         }
-        
+
         # Determine winner based on multiple metrics
-        a_score = (model_a_perf.win_rate * 0.3 + 
-                   (model_a_perf.net_pnl / 1000) * 0.3 + 
-                   model_a_perf.sharpe_ratio * 0.2 + 
-                   model_a_perf.profit_factor * 0.2)
-        
-        b_score = (model_b_perf.win_rate * 0.3 + 
-                   (model_b_perf.net_pnl / 1000) * 0.3 + 
-                   model_b_perf.sharpe_ratio * 0.2 + 
-                   model_b_perf.profit_factor * 0.2)
-        
+        a_score = (
+            model_a_perf.win_rate * 0.3
+            + (model_a_perf.net_pnl / 1000) * 0.3
+            + model_a_perf.sharpe_ratio * 0.2
+            + model_a_perf.profit_factor * 0.2
+        )
+
+        b_score = (
+            model_b_perf.win_rate * 0.3
+            + (model_b_perf.net_pnl / 1000) * 0.3
+            + model_b_perf.sharpe_ratio * 0.2
+            + model_b_perf.profit_factor * 0.2
+        )
+
         winner = model_a if a_score > b_score else model_b
         confidence = abs(a_score - b_score) / max(a_score, b_score) * 100
-        
+
         comparison = ModelComparison(
             model_a=model_a,
             model_b=model_b,
@@ -1027,13 +1145,14 @@ async def compare_models(symbol: str, exchange: str, model_a: str, model_b: str)
             exchange=exchange,
             comparison_metrics=comparison_metrics,
             winner=winner,
-            confidence=confidence
+            confidence=confidence,
         )
-        
+
         return comparison
     except Exception as e:
         logger.error(f"Error comparing models: {e}")
         return {"error": str(e)}
+
 
 @app.get("/api/models/analysis/{symbol}/{exchange}/{model_id}")
 async def get_detailed_model_analysis(symbol: str, exchange: str, model_id: str):
@@ -1042,10 +1161,10 @@ async def get_detailed_model_analysis(symbol: str, exchange: str, model_id: str)
         # Get performance data
         performances = await get_model_performance(symbol, exchange)
         performance = next((p for p in performances if p.model_id == model_id), None)
-        
+
         if not performance:
             return {"error": "Model not found"}
-        
+
         # Create detailed analysis based on performance_reporter.py structure
         analysis = {
             "basic_metrics": {
@@ -1054,7 +1173,7 @@ async def get_detailed_model_analysis(symbol: str, exchange: str, model_id: str)
                 "net_pnl": performance.net_pnl,
                 "max_drawdown": performance.max_drawdown,
                 "sharpe_ratio": performance.sharpe_ratio,
-                "profit_factor": performance.profit_factor
+                "profit_factor": performance.profit_factor,
             },
             "trade_analysis": {
                 "avg_trade_duration": performance.avg_trade_duration,
@@ -1063,35 +1182,41 @@ async def get_detailed_model_analysis(symbol: str, exchange: str, model_id: str)
                 "avg_win": performance.avg_win,
                 "avg_loss": performance.avg_loss,
                 "consecutive_wins": performance.consecutive_wins,
-                "consecutive_losses": performance.consecutive_losses
+                "consecutive_losses": performance.consecutive_losses,
             },
             "risk_metrics": {
                 "var_95": -(performance.max_drawdown * 0.8),  # Mock VaR
                 "max_consecutive_losses": performance.consecutive_losses,
-                "recovery_factor": abs(performance.net_pnl / performance.max_drawdown) if performance.max_drawdown != 0 else 0,
-                "calmar_ratio": performance.net_pnl / abs(performance.max_drawdown) if performance.max_drawdown != 0 else 0
+                "recovery_factor": abs(performance.net_pnl / performance.max_drawdown)
+                if performance.max_drawdown != 0
+                else 0,
+                "calmar_ratio": performance.net_pnl / abs(performance.max_drawdown)
+                if performance.max_drawdown != 0
+                else 0,
             },
             "performance_trends": {
                 "monthly_returns": [2.5, 3.1, -1.2, 4.3, 2.8, 1.9],  # Mock data
                 "rolling_sharpe": [1.1, 1.3, 0.9, 1.4, 1.2, 1.1],
-                "drawdown_periods": [5, 3, 8, 2, 4, 6]
+                "drawdown_periods": [5, 3, 8, 2, 4, 6],
             },
             "model_info": {
                 "model_id": model_id,
                 "model_version": performance.model_version,
                 "last_trained": datetime.now().isoformat(),
                 "training_samples": 50000 + hash(model_id) % 20000,
-                "feature_count": 25 + hash(model_id) % 15
-            }
+                "feature_count": 25 + hash(model_id) % 15,
+            },
         }
-        
+
         return analysis
     except Exception as e:
         logger.error(f"Error getting model analysis: {e}")
         return {"error": str(e)}
 
+
 if __name__ == "__main__":
     import uvicorn
+
     print("Starting Ares API server v2.0...")
     print("API documentation will be available at http://localhost:8000/docs")
     uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True)

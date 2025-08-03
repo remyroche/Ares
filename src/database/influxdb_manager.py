@@ -1,9 +1,10 @@
 # src/database/influxdb_manager.py
 
 import influxdb_client
-from influxdb_client.client.write_api import SYNCHRONOUS
 import pandas as pd
-from src.config import INFLUXDB_URL, INFLUXDB_TOKEN, INFLUXDB_ORG, INFLUXDB_BUCKET
+from influxdb_client.client.write_api import SYNCHRONOUS
+
+from src.config import INFLUXDB_BUCKET, INFLUXDB_ORG, INFLUXDB_TOKEN, INFLUXDB_URL
 from src.utils.logger import logger
 
 
@@ -34,7 +35,9 @@ class InfluxDBManager:
         self.org = org
         self.bucket = bucket
         self.client = influxdb_client.InfluxDBClient(
-            url=self.url, token=self.token, org=self.org
+            url=self.url,
+            token=self.token,
+            org=self.org,
         )
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
         self.query_api = self.client.query_api()
@@ -42,7 +45,11 @@ class InfluxDBManager:
         self.logger.info("InfluxDBManager initialized with synchronous client.")
 
     def write_kline_data(
-        self, df: pd.DataFrame, measurement_name: str, symbol: str, interval: str
+        self,
+        df: pd.DataFrame,
+        measurement_name: str,
+        symbol: str,
+        interval: str,
     ):
         """
         Writes a DataFrame of kline data to InfluxDB.
@@ -74,16 +81,21 @@ class InfluxDBManager:
                 data_frame_tag_columns=["symbol", "interval"],
             )
             self.logger.info(
-                f"Successfully wrote {len(df)} rows for {symbol}/{interval} to InfluxDB."
+                f"Successfully wrote {len(df)} rows for {symbol}/{interval} to InfluxDB.",
             )
         except Exception as e:
             self.logger.error(
-                f"Error writing kline data to InfluxDB: {e}", exc_info=True
+                f"Error writing kline data to InfluxDB: {e}",
+                exc_info=True,
             )
             raise
 
     def query_kline_data(
-        self, symbol: str, interval: str, start_date: str, end_date: str
+        self,
+        symbol: str,
+        interval: str,
+        start_date: str,
+        end_date: str,
     ) -> pd.DataFrame:
         """
         Queries kline data from InfluxDB for a specific symbol and date range.
@@ -97,7 +109,7 @@ class InfluxDBManager:
         Returns:
             pd.DataFrame: A DataFrame containing the queried kline data.
         """
-        query = f'''
+        query = f"""
         from(bucket: "{self.bucket}")
           |> range(start: {start_date}, stop: {end_date})
           |> filter(fn: (r) => r["_measurement"] == "kline_data")
@@ -106,7 +118,7 @@ class InfluxDBManager:
           |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
           |> keep(columns: ["_time", "open", "high", "low", "close", "volume"])
           |> rename(columns: {{_time: "timestamp"}})
-        '''
+        """
         try:
             df = self.query_api.query_data_frame(query=query, org=self.org)
             if isinstance(df, list):
@@ -131,7 +143,8 @@ class InfluxDBManager:
             return df
         except Exception as e:
             self.logger.error(
-                f"Error querying kline data from InfluxDB: {e}", exc_info=True
+                f"Error querying kline data from InfluxDB: {e}",
+                exc_info=True,
             )
             return pd.DataFrame()
 

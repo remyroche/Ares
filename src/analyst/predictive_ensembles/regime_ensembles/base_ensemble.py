@@ -1,17 +1,35 @@
 import logging
+import os  # For path manipulation
 import warnings
+from typing import Any
+
+import joblib  # For saving/loading models
 import numpy as np
-import pandas as pd
 import optuna
+import pandas as pd
+
+# Import SMOTE with fallback
+try:
+    from imblearn.over_sampling import SMOTE
+
+    SMOTE_AVAILABLE = True
+except ImportError:
+    SMOTE_AVAILABLE = False
+
+    # Create a dummy SMOTE class for fallback
+    class SMOTE:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def fit_resample(self, X, y):
+            return X, y
+
+
 from lightgbm import LGBMClassifier
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.model_selection import StratifiedKFold
 from sklearn.linear_model import LogisticRegression
-from imblearn.over_sampling import SMOTE
-import joblib  # For saving/loading models
-import os  # For path manipulation
-from typing import Dict, Any
+from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 warnings.filterwarnings("ignore", category=UserWarning, module="arch")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -28,12 +46,12 @@ class BaseEnsemble:
         self.config = config.get("analyst", {}).get(ensemble_name, {})
         self.ensemble_name = ensemble_name
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.models: Dict[Any, Any] = {}
+        self.models: dict[Any, Any] = {}
         self.meta_learner = None
         self.trained = False
         self.pca = None
         self.meta_feature_scaler = StandardScaler()
-        self.best_meta_params: Dict[Any, Any] = {}
+        self.best_meta_params: dict[Any, Any] = {}
         self.label_encoder = LabelEncoder()
         self.n_pca_components = self.config.get("n_pca_components", 15)
         self.use_smote = self.config.get("use_smote", True)
@@ -134,30 +152,32 @@ class BaseEnsemble:
         ]
 
     def train_ensemble(
-        self, historical_features: pd.DataFrame, historical_targets: pd.Series
+        self,
+        historical_features: pd.DataFrame,
+        historical_targets: pd.Series,
     ):
         self.logger.info(f"Starting full training pipeline for {self.ensemble_name}...")
         if historical_features.empty:
             self.logger.warning(
-                f"No historical features for {self.ensemble_name}. Skipping training."
+                f"No historical features for {self.ensemble_name}. Skipping training.",
             )
             return
 
         # Ensure all expected features are present, fill missing with 0.0
         # Create a union of all features used across different types
         all_expected_features = list(
-            set(self.sequence_features + self.flat_features + self.order_flow_features)
+            set(self.sequence_features + self.flat_features + self.order_flow_features),
         )
         for col in all_expected_features:
             if col not in historical_features.columns:
                 historical_features[col] = 0.0
 
         aligned_data = historical_features.join(
-            historical_targets.rename("target")
+            historical_targets.rename("target"),
         ).dropna()
         if aligned_data.empty:
             self.logger.warning(
-                f"Aligned data is empty for {self.ensemble_name} after dropping NaNs. Skipping training."
+                f"Aligned data is empty for {self.ensemble_name} after dropping NaNs. Skipping training.",
             )
             return
 
@@ -182,7 +202,7 @@ class BaseEnsemble:
             or meta_features_train.empty
         ):
             self.logger.warning(
-                f"Meta-features are empty for {self.ensemble_name}. Cannot train meta-learner."
+                f"Meta-features are empty for {self.ensemble_name}. Cannot train meta-learner.",
             )
             return
 
@@ -197,7 +217,7 @@ class BaseEnsemble:
 
         if X_meta_train.empty or len(np.unique(y_meta_train)) < 2:
             self.logger.warning(
-                f"Insufficient or single-class data for meta-learner in {self.ensemble_name}. Skipping meta-learner training."
+                f"Insufficient or single-class data for meta-learner in {self.ensemble_name}. Skipping meta-learner training.",
             )
             return
 
@@ -210,7 +230,10 @@ class BaseEnsemble:
 
         self.logger.info("Tuning hyperparameters for meta-learner...")
         self.best_meta_params = self._tune_hyperparameters(
-            LGBMClassifier, self._get_lgbm_search_space, X_meta_pca_df, y_meta_train
+            LGBMClassifier,
+            self._get_lgbm_search_space,
+            X_meta_pca_df,
+            y_meta_train,
         )
         self._train_meta_learner(X_meta_pca_df, y_meta_train, self.best_meta_params)
         self.trained = True
@@ -219,20 +242,22 @@ class BaseEnsemble:
     def get_prediction(self, current_features: pd.DataFrame, **kwargs) -> dict:
         if not self.trained:
             self.logger.warning(
-                f"Ensemble {self.ensemble_name} not trained. Returning HOLD."
+                f"Ensemble {self.ensemble_name} not trained. Returning HOLD.",
             )
             return {"prediction": "HOLD", "confidence": 0.0}
 
         # Ensure current_features has all expected columns, fill missing with 0.0
         all_expected_features = list(
-            set(self.sequence_features + self.flat_features + self.order_flow_features)
+            set(self.sequence_features + self.flat_features + self.order_flow_features),
         )
         for col in all_expected_features:
             if col not in current_features.columns:
                 current_features[col] = 0.0
 
         meta_features = self._get_meta_features(
-            current_features, is_live=True, **kwargs
+            current_features,
+            is_live=True,
+            **kwargs,
         )
 
         # Ensure meta_features contains all columns the scaler was fitted on
@@ -240,11 +265,12 @@ class BaseEnsemble:
         meta_input_df = pd.DataFrame([meta_features])
         if hasattr(self.meta_feature_scaler, "feature_names_in_"):
             meta_input_df = meta_input_df.reindex(
-                columns=self.meta_feature_scaler.feature_names_in_, fill_value=0
+                columns=self.meta_feature_scaler.feature_names_in_,
+                fill_value=0,
             )
         else:
             self.logger.error(
-                "Scaler not fitted with feature names. Cannot ensure correct feature order for prediction. Attempting with current columns."
+                "Scaler not fitted with feature names. Cannot ensure correct feature order for prediction. Attempting with current columns.",
             )
             # Fallback: if feature_names_in_ is not available, assume current order is fine, but log warning.
             # This might happen if the scaler was loaded from an older checkpoint.
@@ -260,7 +286,7 @@ class BaseEnsemble:
                 smote = SMOTE(random_state=42)
                 X_res, y_res = smote.fit_resample(X, y)
                 self.logger.info(
-                    f"Applied SMOTE: Original size {X.shape[0]}, Resampled size {X_res.shape[0]}"
+                    f"Applied SMOTE: Original size {X.shape[0]}, Resampled size {X_res.shape[0]}",
                 )
                 model.fit(X_res, y_res)
             except Exception as e:
@@ -291,7 +317,7 @@ class BaseEnsemble:
         study = optuna.create_study(direction="maximize")
         study.optimize(objective, n_trials=n_trials, n_jobs=-1)
         self.logger.info(
-            f"Optuna best params for {model_class.__name__}: {study.best_params}"
+            f"Optuna best params for {model_class.__name__}: {study.best_params}",
         )
         return study.best_params
 
@@ -309,15 +335,17 @@ class BaseEnsemble:
             base_space.update(
                 {
                     "reg_alpha": reg_config.get(
-                        "reg_alpha", 0.01
+                        "reg_alpha",
+                        0.01,
                     ),  # Fixed L1 from config
                     "reg_lambda": reg_config.get(
-                        "reg_lambda", 0.001
+                        "reg_lambda",
+                        0.001,
                     ),  # Fixed L2 from config
-                }
+                },
             )
             self.logger.info(
-                f"Using configured regularization: L1={base_space['reg_alpha']}, L2={base_space['reg_lambda']}"
+                f"Using configured regularization: L1={base_space['reg_alpha']}, L2={base_space['reg_lambda']}",
             )
         else:
             # Fallback to optuna optimization if no config available
@@ -325,9 +353,12 @@ class BaseEnsemble:
                 {
                     "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True),
                     "reg_lambda": trial.suggest_float(
-                        "reg_lambda", 1e-3, 10.0, log=True
+                        "reg_lambda",
+                        1e-3,
+                        10.0,
+                        log=True,
                     ),
-                }
+                },
             )
             self.logger.info("Using optuna-optimized regularization parameters")
 
@@ -348,15 +379,17 @@ class BaseEnsemble:
                 max_iter=1000,
             )
             self.logger.info(
-                f"Created regularized LogisticRegression with C={sklearn_config.get('C')}, l1_ratio={sklearn_config.get('l1_ratio')}"
+                f"Created regularized LogisticRegression with C={sklearn_config.get('C')}, l1_ratio={sklearn_config.get('l1_ratio')}",
             )
         else:
             # Fallback to standard LogisticRegression
             model = LogisticRegression(
-                random_state=42, max_iter=1000, solver="liblinear"
+                random_state=42,
+                max_iter=1000,
+                solver="liblinear",
             )
             self.logger.info(
-                "Created standard LogisticRegression (no regularization config available)"
+                "Created standard LogisticRegression (no regularization config available)",
             )
 
         return model
@@ -401,14 +434,15 @@ class BaseEnsemble:
             self.logger.info(f"Ensemble {self.ensemble_name} model saved to {path}")
         except Exception as e:
             self.logger.error(
-                f"Error saving {self.ensemble_name} model to {path}: {e}", exc_info=True
+                f"Error saving {self.ensemble_name} model to {path}: {e}",
+                exc_info=True,
             )
 
     def load_model(self, path: str) -> bool:
         """Loads the entire ensemble instance from a file."""
         if not os.path.exists(path):
             self.logger.warning(
-                f"Ensemble {self.ensemble_name} model file not found at {path}. Cannot load."
+                f"Ensemble {self.ensemble_name} model file not found at {path}. Cannot load.",
             )
             self.trained = False
             return False
@@ -422,7 +456,8 @@ class BaseEnsemble:
             self.trained = model_data.get("trained", False)
             self.best_meta_params = model_data.get("best_meta_params", {})
             self.ensemble_weights = model_data.get(
-                "ensemble_weights", {self.ensemble_name: 1.0}
+                "ensemble_weights",
+                {self.ensemble_name: 1.0},
             )
             self.logger.info(f"Ensemble {self.ensemble_name} model loaded from {path}")
             return True
@@ -438,6 +473,9 @@ class BaseEnsemble:
         raise NotImplementedError
 
     def _get_meta_features(
-        self, df: pd.DataFrame, is_live: bool = False, **kwargs
+        self,
+        df: pd.DataFrame,
+        is_live: bool = False,
+        **kwargs,
     ) -> pd.DataFrame | dict:
         raise NotImplementedError

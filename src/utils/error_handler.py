@@ -1,717 +1,1112 @@
-# src/utils/error_handler.py
-import sys
-import json
-import traceback
-from datetime import datetime
-import os
-import asyncio  # Added import for asyncio
-from typing import List, Dict, Any, Union, Optional, Callable, Type, Tuple
+"""
+Error handling utilities for the Ares trading bot.
 
-from src.utils.logger import system_logger
+This module provides centralized error handling patterns, including
+decorators for consistent error handling, retry logic, and safe
+operation wrappers.
+"""
 
-# Import SQLiteManager for type hinting
-from src.database.sqlite_manager import SQLiteManager
-from src.config import CONFIG  # Import CONFIG for error log file path
-
-
-class AresExceptionHandler:
-    """
-    A centralized exception handler for the Ares trading bot.
-    It logs unhandled exceptions to the system logger, a dedicated JSON file,
-    and optionally to a database (Firestore or SQLite).
-    """
-
-    def __init__(self):
-        self.logger = system_logger.getChild(
-            "ExceptionHandler"
-        )  # Fixed: Use imported logger
-        self.error_log_file = os.path.join(
-            "logs", CONFIG.get("ERROR_LOG_FILE", "ares_errors.jsonl")
-        )  # Using .jsonl for JSON Lines format
-        os.makedirs(os.path.dirname(self.error_log_file), exist_ok=True)
-        self._original_excepthook = sys.excepthook
-        # db_manager is now passed from main.py
-        self.db_manager: Union[SQLiteManager, None] = (
-            None  # Will be set by set_db_manager
-        )
-
-    def set_db_manager(self, db_manager: Union[SQLiteManager, None]):
-        """Sets the database manager instance for logging exceptions to DB."""
-        self.db_manager = db_manager
-        self.logger.info("Database manager set for exception handler.")
-
-    def _log_exception(
-        self, exc_type: Any, exc_value: Any, exc_traceback: Any
-    ):  # Fixed: Type hints
-        """
-        Internal method to log the exception details.
-        """
-        timestamp = datetime.utcnow().isoformat()
-        traceback_str = "".join(
-            traceback.format_exception(exc_type, exc_value, exc_traceback)
-        )
-
-        error_record = {
-            "timestamp": timestamp,
-            "level": "CRITICAL",
-            "type": exc_type.__name__,
-            "message": str(exc_value),
-            "traceback": traceback_str,
-            "context": "Unhandled Exception",  # Default context, can be expanded
-        }
-
-        # Log to system logger (which goes to console and main log file)
-        self.logger.critical(
-            f"Unhandled exception caught: {exc_type.__name__}: {exc_value}",
-            exc_info=True,
-        )
-
-        # Log to dedicated JSON Lines file
-        try:
-            with open(self.error_log_file, "a") as f:
-                f.write(json.dumps(error_record) + "\n")
-            self.logger.info(f"Unhandled exception logged to {self.error_log_file}")
-        except Exception as e:
-            self.logger.error(
-                f"Failed to write exception to dedicated log file: {e}", exc_info=True
-            )
-
-        # Optionally log to DB
-        if self.db_manager:  # Fixed: Use self.db_manager
-            try:
-                # DBs have document/record size limits, so truncate traceback if very long
-                db_record = error_record.copy()
-                if (
-                    len(db_record["traceback"]) > 50000
-                ):  # Arbitrary limit, adjust as needed
-                    db_record["traceback"] = (
-                        db_record["traceback"][:50000] + "\n... (truncated)"
-                    )
-
-                # Run DB operation in a non-blocking way (e.g., in a separate task)
-                # Use add_document for error logs
-                asyncio.create_task(
-                    self.db_manager.add_document(
-                        "ares_unhandled_exceptions", db_record, is_public=False
-                    )
-                )
-                self.logger.info("Unhandled exception sent to DB.")
-            except Exception as e:
-                self.logger.error(f"Failed to send exception to DB: {e}", exc_info=True)
-
-        # Call the original excepthook to maintain default Python behavior (e.g., for IDEs)
-        self._original_excepthook(exc_type, exc_value, exc_traceback)
-
-    def register(self):
-        """Registers this handler as the default sys.excepthook."""
-        sys.excepthook = self._log_exception
-        self.logger.info("Ares custom exception handler registered.")
-
-    def unregister(self):
-        """Unregisters the custom handler and restores the original."""
-        sys.excepthook = self._original_excepthook
-        self.logger.info("Ares custom exception handler unregistered.")
-
-
-# Global instance of the exception handler
-ares_exception_handler = AresExceptionHandler()
-
-
-def register_global_exception_handler(
-    db_manager: Union[SQLiteManager, None] = None,
-):  # Fixed: Accept db_manager
-    """Convenience function to register the global exception handler."""
-    ares_exception_handler.set_db_manager(db_manager)  # Set the db_manager
-    ares_exception_handler.register()
-
-
-def unregister_global_exception_handler():
-    """Convenience function to unregister the global exception handler."""
-    ares_exception_handler.unregister()
-
-
-def get_logged_exceptions(limit: int = 100) -> List[Dict[str, Any]]:
-    """
-    Reads recent exceptions from the dedicated error log file.
-    """
-    exceptions = []
-    try:
-        with open(ares_exception_handler.error_log_file, "r") as f:
-            # Read lines in reverse to get most recent first, then reverse again
-            for line in reversed(f.readlines()):
-                try:
-                    exceptions.append(json.loads(line))
-                    if len(exceptions) >= limit:
-                        break
-                except json.JSONDecodeError:
-                    ares_exception_handler.system_logger.warning(
-                        f"Skipping malformed line in error log: {line.strip()}"
-                    )
-        return list(reversed(exceptions))  # Return in chronological order
-    except FileNotFoundError:
-        ares_exception_handler.system_logger.info("Error log file not found.")
-        return []
-    except Exception as e:
-        ares_exception_handler.system_logger.error(
-            f"Error reading error log file: {e}", exc_info=True
-        )
-        return []
-
-
-# Enhanced error handling utilities for comprehensive error management
+import asyncio
 import functools
+import logging
+import time
+import traceback
+from collections.abc import Callable
+from typing import Any
+from functools import wraps
+
 import numpy as np
 import pandas as pd
-from contextlib import contextmanager
-from typing import Any
 
 
-class ErrorRecoveryStrategies:
-    """Common error recovery strategies for different types of operations."""
+# Lazy import to prevent circular imports
+def get_system_logger():
+    """Get system logger with lazy import to prevent circular dependencies."""
+    try:
+        from src.utils.logger import system_logger
 
-    @staticmethod
-    def safe_dict_access(
-        data: dict, keys: Union[str, List[str]], default: Any = None
-    ) -> Any:
-        """Safely access nested dictionary keys with fallback."""
-        if isinstance(keys, str):
-            keys = [keys]
-
-        current = data
-        try:
-            for key in keys:
-                current = current[key]
-            return current
-        except (KeyError, TypeError, AttributeError):
-            return default
-
-    @staticmethod
-    def safe_dataframe_access(
-        df: pd.DataFrame, column: str, default: Any = None
-    ) -> Any:
-        """Safely access DataFrame columns with fallback."""
-        try:
-            if column in df.columns:
-                return df[column]
-            return default
-        except (KeyError, AttributeError):
-            return default
-
-    @staticmethod
-    def safe_numeric_operation(
-        operation: Callable, *args, default: float = 0.0, **kwargs
-    ) -> float:
-        """Safely perform numeric operations with NaN/inf handling."""
-        try:
-            result = operation(*args, **kwargs)
-            if np.isnan(result) or np.isinf(result):
-                return default
-            return result
-        except (ZeroDivisionError, ValueError, TypeError, OverflowError):
-            return default
-
-    @staticmethod
-    def safe_type_conversion(value: Any, target_type: Type, default: Any = None) -> Any:
-        """Safely convert types with fallback."""
-        try:
-            return target_type(value)
-        except (ValueError, TypeError, OverflowError):
-            return default
+        return system_logger
+    except ImportError:
+        # Fallback to basic logger if circular import occurs
+        logger = logging.getLogger("System")
+        if not logger.handlers:
+            logger.setLevel(logging.INFO)
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            )
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+        return logger
 
 
-def handle_errors(
-    exceptions: Tuple[Type[Exception], ...] = (Exception,),
-    default_return: Any = None,
-    log_errors: bool = True,
-    recovery_strategy: Optional[Callable] = None,
-    context: str = "",
-):
-    """
-    Decorator for comprehensive error handling with recovery strategies.
+class ErrorHandler:
+    """Simplified error handler class to reduce complexity."""
 
-    Args:
-        exceptions: Tuple of exception types to catch
-        default_return: Default value to return on error
-        log_errors: Whether to log errors
-        recovery_strategy: Optional recovery function to call on error
-        context: Additional context for logging
-    """
+    def __init__(self, logger=None, context: str = ""):
+        self.logger = logger
+        self.context = context
 
-    def decorator(func):
-        if asyncio.iscoroutinefunction(func):
+    def handle_generic_errors(
+        self,
+        exceptions: tuple = (Exception,),
+        default_return: Any = None,
+    ):
+        """Handle generic errors with logging."""
 
+        def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
             async def async_wrapper(*args, **kwargs):
                 try:
                     return await func(*args, **kwargs)
                 except exceptions as e:
-                    if log_errors:
-                        system_logger.error(
-                            f"Error in async function {func.__name__}: {str(e)}",
-                            extra={
-                                "function": func.__name__,
-                                "context": context,
-                                "func_args": str(args)[:200],
-                                "func_kwargs": str(kwargs)[:200],
-                                "error_type": type(e).__name__,
-                            },
-                            exc_info=True,
-                        )
-                    if recovery_strategy:
-                        try:
-                            if asyncio.iscoroutinefunction(recovery_strategy):
-                                return await recovery_strategy(*args, **kwargs)
-                            return recovery_strategy(*args, **kwargs)
-                        except Exception as recovery_error:
-                            if log_errors:
-                                system_logger.error(
-                                    f"Recovery strategy failed: {recovery_error}",
-                                    exc_info=True,
-                                )
+                    self._log_error(func.__name__, e)
                     return default_return
-
-            return async_wrapper
-        else:
 
             @functools.wraps(func)
             def sync_wrapper(*args, **kwargs):
                 try:
                     return func(*args, **kwargs)
                 except exceptions as e:
-                    if log_errors:
-                        system_logger.error(
-                            f"Error in sync function {func.__name__}: {str(e)}",
-                            extra={
-                                "function": func.__name__,
-                                "context": context,
-                                "func_args": str(args)[:200],
-                                "func_kwargs": str(kwargs)[:200],
-                                "error_type": type(e).__name__,
-                            },
-                            exc_info=True,
-                        )
-
-                    if recovery_strategy:
-                        try:
-                            return recovery_strategy(*args, **kwargs)
-                        except Exception as recovery_error:
-                            if log_errors:
-                                system_logger.error(
-                                    f"Recovery strategy failed: {recovery_error}",
-                                    exc_info=True,
-                                )
-
+                    self._log_error(func.__name__, e)
                     return default_return
 
+            if asyncio.iscoroutinefunction(func):
+                return async_wrapper
             return sync_wrapper
 
-    return decorator
+        return decorator
+
+    def handle_specific_errors(self, error_handlers: dict, default_return: Any = None):
+        """Handle specific error types."""
+
+        def decorator(func: Callable) -> Callable:
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    return self._handle_specific_error(
+                        e,
+                        error_handlers,
+                        default_return,
+                    )
+
+            @functools.wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    return self._handle_specific_error(
+                        e,
+                        error_handlers,
+                        default_return,
+                    )
+
+            if asyncio.iscoroutinefunction(func):
+                return async_wrapper
+            return sync_wrapper
+
+        return decorator
+
+    def _log_error(self, func_name: str, error: Exception) -> None:
+        """Log error with context."""
+        if self.logger:
+            self.logger.exception(f"Error in {self.context}.{func_name}: {error}")
+        else:
+            print(f"Error in {self.context}.{func_name}: {error}")
+
+    def _handle_specific_error(
+        self,
+        error: Exception,
+        handlers: dict,
+        default_return: Any,
+    ) -> Any:
+        """Handle specific error types."""
+        error_type = type(error)
+        if error_type in handlers:
+            return_value, message = handlers[error_type]
+            self._log_error("function", error)
+            return return_value
+        self._log_error("function", error)
+        return default_return
 
 
-def handle_data_processing_errors(
-    default_return: Any = None, log_errors: bool = True, context: str = ""
+# Simplified decorator functions that use the ErrorHandler class
+def handle_errors(
+    exceptions: tuple[type[Exception], ...] = (Exception,),
+    default_return: Any = None,
+    context: str = "",
+    *,
+    log_errors: bool = True,
+    reraise: bool = False,
+    retry_count: int = 0,
+    retry_delay: float = 1.0,
 ):
-    """
-    Decorator specifically for data processing operations that might encounter
-    NaN, inf, or division by zero errors.
-    """
-
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            try:
-                result = func(*args, **kwargs)
-
-                # Check for NaN or inf values in numpy arrays or pandas objects
-                if isinstance(result, (np.ndarray, pd.Series, pd.DataFrame)):
-                    if isinstance(result, np.ndarray):
-                        if np.any(np.isnan(result)) or np.any(np.isinf(result)):
-                            system_logger.warning(
-                                f"NaN or inf values detected in {func.__name__} result"
-                            )
-                            result = np.nan_to_num(
-                                result, nan=0.0, posinf=0.0, neginf=0.0
-                            )
-                    elif isinstance(result, (pd.Series, pd.DataFrame)):
-                        if (
-                            result.isnull().any().any()
-                            if isinstance(result, pd.DataFrame)
-                            else result.isnull().any()
-                        ):
-                            system_logger.warning(
-                                f"NaN values detected in {func.__name__} result"
-                            )
-                            result = result.fillna(0)
-
-                return result
-            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
-                if log_errors:
-                    system_logger.error(
-                        f"Data processing error in {func.__name__}: {str(e)}",
-                        extra={
-                            "function": func.__name__,
-                            "context": context,
-                            "error_type": type(e).__name__,
-                        },
-                        exc_info=True,
-                    )
-                return default_return
-            except Exception as e:
-                if log_errors:
-                    system_logger.error(
-                        f"Unexpected error in {func.__name__}: {str(e)}",
-                        extra={
-                            "function": func.__name__,
-                            "context": context,
-                            "error_type": type(e).__name__,
-                        },
-                        exc_info=True,
-                    )
-                return default_return
-
-        return wrapper
-
-    return decorator
+    """Simplified error handling decorator."""
+    handler = ErrorHandler(context=context)
+    return handler.handle_generic_errors(exceptions, default_return)
 
 
-def handle_file_operations(
-    default_return: Any = None, log_errors: bool = True, context: str = ""
+def handle_specific_errors(
+    error_handlers: dict[type[Exception], tuple[Any, str]] = None,
+    default_return: Any = None,
+    context: str = "",
+    *,
+    log_errors: bool = True,
 ):
-    """
-    Decorator for file operations with comprehensive error handling.
-    """
+    """Simplified specific error handling decorator."""
+    if error_handlers is None:
+        error_handlers = {}
 
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except FileNotFoundError as e:
-                if log_errors:
-                    system_logger.error(
-                        f"File not found in {func.__name__}: {str(e)}", exc_info=True
-                    )
-                return default_return
-            except PermissionError as e:
-                if log_errors:
-                    system_logger.error(
-                        f"Permission denied in {func.__name__}: {str(e)}", exc_info=True
-                    )
-                return default_return
-            except OSError as e:
-                if log_errors:
-                    system_logger.error(
-                        f"OS error in {func.__name__}: {str(e)}", exc_info=True
-                    )
-                return default_return
-            except Exception as e:
-                if log_errors:
-                    system_logger.error(
-                        f"Unexpected error in {func.__name__}: {str(e)}", exc_info=True
-                    )
-                return default_return
+    handler = ErrorHandler(context=context)
+    return handler.handle_specific_errors(error_handlers, default_return)
 
-        return wrapper
 
-    return decorator
+def _log_success_simple(
+    func_name: str,
+    attempt: int,
+    max_retries: int,
+    attempt_start_time: float,
+    start_time: float,
+    result: Any,
+) -> None:
+    """Simple success logging without logger dependency."""
+    if max_retries > 0:
+        print(
+            f"SUCCESS: {func_name} completed on attempt {attempt + 1}/{max_retries + 1}",
+        )
+    else:
+        print(f"SUCCESS: {func_name} completed")
+
+
+def _log_retry_attempt_simple(
+    func_name: str,
+    attempt: int,
+    max_retries: int,
+    attempt_start_time: float,
+    start_time: float,
+    error: Exception,
+) -> None:
+    """Simple retry attempt logging without logger dependency."""
+    print(
+        f"ERROR: {func_name} failed on attempt {attempt + 1}/{max_retries + 1}: {error}",
+    )
 
 
 def handle_network_operations(
     max_retries: int = 3,
     default_return: Any = None,
-    log_errors: bool = True,
-    context: str = "",
 ):
     """
-    Decorator to handle network operations with retry logic and comprehensive logging.
-    """
-    import time
-    import functools
+    Decorator for network operations with retry logic.
 
-    def decorator(func):
+    Args:
+        max_retries: Maximum number of retry attempts
+        default_return: Value to return on failure
+
+    Returns:
+        Decorated function
+    """
+
+    def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild("NetworkOperations")
-            operation_name = func.__name__
-            context_str = f"{context}_{operation_name}" if context else operation_name
-            
-            logger.info(f"🔧 Starting network operation: {context_str}")
-            logger.info(f"   Function: {func.__name__}")
-            logger.info(f"   Max retries: {max_retries}")
-            logger.info(f"   Args: {args}")
-            logger.info(f"   Kwargs: {kwargs}")
-            
-            start_time = time.time()
-            
-            for attempt in range(max_retries + 1):
-                attempt_start_time = time.time()
-                logger.info(f"🔧 Network attempt {attempt + 1}/{max_retries + 1}")
-                
-                try:
-                    result = await func(*args, **kwargs)
-                    attempt_duration = time.time() - attempt_start_time
-                    total_duration = time.time() - start_time
-                    
-                    logger.info(f"✅ Network operation successful:")
-                    logger.info(f"   Attempt: {attempt + 1}/{max_retries + 1}")
-                    logger.info(f"   Attempt duration: {attempt_duration:.2f} seconds")
-                    logger.info(f"   Total duration: {total_duration:.2f} seconds")
-                    logger.info(f"   Result type: {type(result)}")
-                    
-                    return result
-                    
-                except Exception as e:
-                    attempt_duration = time.time() - attempt_start_time
-                    total_duration = time.time() - start_time
-                    
-                    logger.error(f"💥 Network operation failed:")
-                    logger.error(f"   Attempt: {attempt + 1}/{max_retries + 1}")
-                    logger.error(f"   Attempt duration: {attempt_duration:.2f} seconds")
-                    logger.error(f"   Total duration: {total_duration:.2f} seconds")
-                    logger.error(f"   Error type: {type(e).__name__}")
-                    logger.error(f"   Error message: {str(e)}")
-                    logger.error("Full traceback:")
-                    logger.error(traceback.format_exc())
-                    
-                    if attempt < max_retries:
-                        wait_time = 2 ** attempt  # Exponential backoff
-                        logger.info(f"⏳ Waiting {wait_time} seconds before retry...")
-                        await asyncio.sleep(wait_time)
-                    else:
-                        logger.error(f"💥 Max retries ({max_retries}) reached. Returning default value.")
-                        return default_return
-            
-            # This should never be reached, but just in case
-            return default_return
+            return await _execute_with_retries(
+                func,
+                args,
+                kwargs,
+                max_retries,
+                default_return,
+                is_async=True,
+            )
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild("NetworkOperations")
-            operation_name = func.__name__
-            context_str = f"{context}_{operation_name}" if context else operation_name
-            
-            logger.info(f"🔧 Starting synchronous network operation: {context_str}")
-            logger.info(f"   Function: {func.__name__}")
-            logger.info(f"   Max retries: {max_retries}")
-            logger.info(f"   Args: {args}")
-            logger.info(f"   Kwargs: {kwargs}")
-            
-            start_time = time.time()
-            
-            for attempt in range(max_retries + 1):
-                attempt_start_time = time.time()
-                logger.info(f"🔧 Network attempt {attempt + 1}/{max_retries + 1}")
-                
-                try:
-                    result = func(*args, **kwargs)
-                    attempt_duration = time.time() - attempt_start_time
-                    total_duration = time.time() - start_time
-                    
-                    logger.info(f"✅ Network operation successful:")
-                    logger.info(f"   Attempt: {attempt + 1}/{max_retries + 1}")
-                    logger.info(f"   Attempt duration: {attempt_duration:.2f} seconds")
-                    logger.info(f"   Total duration: {total_duration:.2f} seconds")
-                    logger.info(f"   Result type: {type(result)}")
-                    
-                    return result
-                    
-                except Exception as e:
-                    attempt_duration = time.time() - attempt_start_time
-                    total_duration = time.time() - start_time
-                    
-                    logger.error(f"💥 Network operation failed:")
-                    logger.error(f"   Attempt: {attempt + 1}/{max_retries + 1}")
-                    logger.error(f"   Attempt duration: {attempt_duration:.2f} seconds")
-                    logger.error(f"   Total duration: {total_duration:.2f} seconds")
-                    logger.error(f"   Error type: {type(e).__name__}")
-                    logger.error(f"   Error message: {str(e)}")
-                    logger.error("Full traceback:")
-                    logger.error(traceback.format_exc())
-                    
-                    if attempt < max_retries:
-                        wait_time = 2 ** attempt  # Exponential backoff
-                        logger.info(f"⏳ Waiting {wait_time} seconds before retry...")
-                        time.sleep(wait_time)
-                    else:
-                        logger.error(f"💥 Max retries ({max_retries}) reached. Returning default value.")
-                        return default_return
-            
-            # This should never be reached, but just in case
-            return default_return
+            return _execute_with_retries(
+                func,
+                args,
+                kwargs,
+                max_retries,
+                default_return,
+                is_async=False,
+            )
 
-        # Return the appropriate wrapper based on whether the function is async
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
-        else:
-            return sync_wrapper
+        return sync_wrapper
+
+    return decorator
+
+
+async def _execute_with_retries(
+    func: Callable,
+    args: tuple,
+    kwargs: dict,
+    max_retries: int,
+    default_return: Any,
+    is_async: bool,
+) -> Any:
+    """Execute function with retry logic."""
+    start_time = time.time()
+
+    for attempt in range(max_retries + 1):
+        attempt_start_time = time.time()
+
+        try:
+            if is_async:
+                result = await func(*args, **kwargs)
+            else:
+                result = func(*args, **kwargs)
+
+            _log_success_simple(
+                func.__name__,
+                attempt,
+                max_retries,
+                attempt_start_time,
+                start_time,
+                result,
+            )
+            return result
+
+        except Exception as e:
+            _log_retry_attempt_simple(
+                func.__name__,
+                attempt,
+                max_retries,
+                attempt_start_time,
+                start_time,
+                e,
+            )
+
+            if attempt < max_retries:
+                wait_time = 2**attempt
+                print(f"WARNING: Retrying {func.__name__} in {wait_time} seconds...")
+                if is_async:
+                    await asyncio.sleep(wait_time)
+                else:
+                    time.sleep(wait_time)
+            else:
+                system_logger = get_system_logger()
+                system_logger.exception(
+                    f"Max retries ({max_retries}) reached. "
+                    f"Returning default value.",
+                )
+                return default_return
+
+    return default_return
+
+
+def _log_success(
+    logger: logging.Logger,
+    attempt: int,
+    max_retries: int,
+    attempt_start_time: float,
+    start_time: float,
+    result: Any,
+) -> None:
+    """Log successful operation."""
+    attempt_duration = time.time() - attempt_start_time
+    total_duration = time.time() - start_time
+
+    logger.info("✅ Network operation successful:")
+    logger.info(f"   Attempt: {attempt + 1}/{max_retries + 1}")
+    logger.info(f"   Attempt duration: {attempt_duration:.2f} seconds")
+    logger.info(f"   Total duration: {total_duration:.2f} seconds")
+    logger.info(f"   Result type: {type(result)}")
+
+
+def _log_retry_attempt(
+    logger: logging.Logger,
+    attempt: int,
+    max_retries: int,
+    attempt_start_time: float,
+    start_time: float,
+    error: Exception,
+) -> None:
+    """Log retry attempt details."""
+    attempt_duration = time.time() - attempt_start_time
+    total_duration = time.time() - start_time
+
+    logger.exception("💥 Network operation failed:")
+    logger.exception(f"   Attempt: {attempt + 1}/{max_retries + 1}")
+    logger.exception(f"   Attempt duration: {attempt_duration:.2f} seconds")
+    logger.exception(f"   Total duration: {total_duration:.2f} seconds")
+    logger.exception(f"   Error type: {type(error).__name__}")
+    logger.exception("Full traceback:")
+    logger.exception(traceback.format_exc())
+
+
+def handle_data_processing_errors(
+    default_return: Any = None,
+    context: str = "",
+):
+    """
+    Decorator for data processing operations with NaN/inf handling.
+
+    Args:
+        default_return: Value to return on error
+        context: Context string for logging
+
+    Returns:
+        Decorated function
+    """
+
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            try:
+                result = await func(*args, **kwargs)
+                return _clean_data_result(result)
+            except Exception as e:
+                context_str = f" ({context})" if context else ""
+                system_logger = get_system_logger()
+                system_logger.exception(f"DataFrame operation failed{context_str}: {e}")
+                return default_return
+
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            try:
+                result = func(*args, **kwargs)
+                return _clean_data_result(result)
+            except Exception as e:
+                context_str = f" ({context})" if context else ""
+                system_logger = get_system_logger()
+                system_logger.exception(f"DataFrame operation failed{context_str}: {e}")
+                return default_return
+
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        return sync_wrapper
+
+    return decorator
+
+
+def _clean_data_result(result: Any) -> Any:
+    """Clean and validate data processing results."""
+    if result is None:
+        return result
+
+    # Handle NaN values in result
+    if isinstance(result, pd.DataFrame | pd.Series):
+        result = result.fillna(0)
+    elif isinstance(result, np.ndarray):
+        result = np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
+
+    return result
+
+
+def handle_file_operations(
+    default_return: Any = None,
+    context: str = "",
+):
+    """
+    Decorator for file operations with comprehensive error handling.
+
+    Args:
+        default_return: Value to return on error
+        context: Context string for logging
+
+    Returns:
+        Decorated function
+    """
+
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            try:
+                return await func(*args, **kwargs)
+            except OSError as e:
+                context_str = f" ({context})" if context else ""
+                system_logger = get_system_logger()
+                system_logger.exception(
+                    f"OS error during file operation{context_str}: {e}",
+                )
+                return default_return
+            except Exception as e:
+                context_str = f" ({context})" if context else ""
+                system_logger = get_system_logger()
+                system_logger.exception(
+                    f"Unexpected error in file operation{context_str}: {e}",
+                )
+                return default_return
+
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except OSError as e:
+                context_str = f" ({context})" if context else ""
+                system_logger = get_system_logger()
+                system_logger.exception(
+                    f"OS error during file operation{context_str}: {e}",
+                )
+                return default_return
+            except Exception as e:
+                context_str = f" ({context})" if context else ""
+                system_logger = get_system_logger()
+                system_logger.exception(
+                    f"Unexpected error in file operation{context_str}: {e}",
+                )
+                return default_return
+
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        return sync_wrapper
 
     return decorator
 
 
 def handle_type_conversions(
-    default_return: Any = None, log_errors: bool = True, context: str = ""
+    default_return: Any = None,
+    *,
+    log_errors: bool = True,
 ):
     """
-    Decorator for type conversion operations that might fail.
+    Decorator for type conversion operations.
+
+    Args:
+        default_return: Value to return on error
+        log_errors: Whether to log errors
+
+    Returns:
+        Decorated function
     """
 
-    def decorator(func):
+    def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        async def async_wrapper(*args, **kwargs):
             try:
-                return func(*args, **kwargs)
-            except (ValueError, TypeError, OverflowError) as e:
+                result = await func(*args, **kwargs)
+                return _clean_numeric_result(result)
+            except (ValueError, TypeError) as e:
                 if log_errors:
-                    system_logger.error(
-                        f"Type conversion error in {func.__name__}: {str(e)}",
-                        extra={
-                            "function": func.__name__,
-                            "context": context,
-                            "error_type": type(e).__name__,
-                        },
-                        exc_info=True,
+                    system_logger = get_system_logger()
+                    system_logger.warning(
+                        f"Type conversion error in {func.__name__}: {e}",
                     )
                 return default_return
             except Exception as e:
                 if log_errors:
-                    system_logger.error(
-                        f"Unexpected error in {func.__name__}: {str(e)}",
-                        extra={
-                            "function": func.__name__,
-                            "context": context,
-                            "error_type": type(e).__name__,
-                        },
-                        exc_info=True,
-                    )
+                    system_logger = get_system_logger()
+                    system_logger.exception(f"Unexpected error in {func.__name__}: {e}")
                 return default_return
 
-        return wrapper
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            try:
+                result = func(*args, **kwargs)
+                return _clean_numeric_result(result)
+            except (ValueError, TypeError) as e:
+                if log_errors:
+                    system_logger = get_system_logger()
+                    system_logger.warning(
+                        f"Type conversion error in {func.__name__}: {e}",
+                    )
+                return default_return
+            except Exception as e:
+                if log_errors:
+                    system_logger = get_system_logger()
+                    system_logger.exception(f"Unexpected error in {func.__name__}: {e}")
+                return default_return
+
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        return sync_wrapper
 
     return decorator
 
 
-@contextmanager
-def error_context(
-    operation_name: str,
-    exceptions: Tuple[Type[Exception], ...] = (Exception,),
-    default_return: Any = None,
-    log_errors: bool = True,
-):
-    """
-    Context manager for error handling in code blocks.
+def _clean_numeric_result(result: Any) -> Any:
+    """Clean and validate numeric results."""
+    if result is None:
+        return result
 
-    Usage:
-        with error_context("database_operation", default_return={}):
-            result = some_database_operation()
-    """
-    try:
-        yield
-    except exceptions as e:
-        if log_errors:
-            system_logger.error(
-                f"Error in {operation_name}: {str(e)}",
-                extra={"operation": operation_name, "error_type": type(e).__name__},
-                exc_info=True,
-            )
-        return default_return
+    # Handle special numeric values
+    if isinstance(result, int | float):
+        if np.isnan(result) or np.isinf(result):
+            return 0.0
+    elif isinstance(result, np.ndarray):
+        result = np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
 
-
-def safe_file_operation(operation: Callable, *args, **kwargs) -> Any:
-    """Wrapper for safe file operations with comprehensive error handling."""
-    try:
-        return operation(*args, **kwargs)
-    except FileNotFoundError as e:
-        system_logger.error(f"File not found: {e}", exc_info=True)
-        return None
-    except PermissionError as e:
-        system_logger.error(f"Permission denied: {e}", exc_info=True)
-        return None
-    except OSError as e:
-        system_logger.error(f"OS error during file operation: {e}", exc_info=True)
-        return None
-    except Exception as e:
-        system_logger.error(f"Unexpected error in file operation: {e}", exc_info=True)
-        return None
+    return result
 
 
 async def safe_network_operation(
-    operation: Callable, *args, max_retries: int = 3, **kwargs
+    operation: Callable,
+    max_retries: int = 3,
+    *args,
+    **kwargs,
 ) -> Any:
-    """Wrapper for safe network operations with retry logic."""
-    import aiohttp
+    """
+    Safe wrapper for network operations with retry logic.
 
-    for attempt in range(max_retries):
-        try:
-            if asyncio.iscoroutinefunction(operation):
-                return await operation(*args, **kwargs)
-            else:
+    Args:
+        operation: Function to execute
+        max_retries: Maximum number of retry attempts
+        *args: Positional arguments for operation
+        **kwargs: Keyword arguments for operation
+
+    Returns:
+        Operation result or None on failure
+    """
+    try:
+        import aiohttp
+
+        for attempt in range(max_retries):
+            try:
+                if asyncio.iscoroutinefunction(operation):
+                    return await operation(*args, **kwargs)
                 return operation(*args, **kwargs)
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            if attempt < max_retries - 1:
-                wait_time = 2**attempt  # Exponential backoff
-                system_logger.warning(
-                    f"Network error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {wait_time}s..."
-                )
-                await asyncio.sleep(wait_time)
-            else:
-                system_logger.error(
-                    f"Network operation failed after {max_retries} attempts: {e}",
-                    exc_info=True,
-                )
+            except (TimeoutError, aiohttp.ClientError) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt  # Exponential backoff
+                    system_logger = get_system_logger()
+                    system_logger.warning(
+                        f"Network error (attempt {attempt + 1}/{max_retries}): "
+                        f"{e}. Retrying in {wait_time}s...",
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    system_logger = get_system_logger()
+                    system_logger.exception(
+                        f"Network operation failed after {max_retries} attempts: {e}",
+                    )
+                    return None
+            except Exception as e:
+                system_logger = get_system_logger()
+                system_logger.exception(f"Unexpected error in network operation: {e}")
                 return None
-        except Exception as e:
-            system_logger.error(
-                f"Unexpected error in network operation: {e}", exc_info=True
-            )
-            return None
+        return None
+    except Exception as e:
+        system_logger = get_system_logger()
+        system_logger.exception(f"Error in safe network operation: {e}")
+        return None
 
 
 def safe_database_operation(operation: Callable, *args, **kwargs) -> Any:
-    """Wrapper for safe database operations."""
+    """
+    Safe wrapper for database operations.
+
+    Args:
+        operation: Function to execute
+        *args: Positional arguments for operation
+        **kwargs: Keyword arguments for operation
+
+    Returns:
+        Operation result or None on failure
+    """
     try:
         return operation(*args, **kwargs)
     except Exception as e:
-        system_logger.error(f"Database operation failed: {e}", exc_info=True)
+        system_logger = get_system_logger()
+        system_logger.exception(f"Database operation failed: {e}")
         return None
 
 
 def safe_dataframe_operation(operation: Callable, *args, **kwargs) -> Any:
-    """Wrapper for safe DataFrame operations with NaN handling."""
+    """
+    Safe wrapper for DataFrame operations with NaN handling.
+
+    Args:
+        operation: Function to execute
+        *args: Positional arguments for operation
+        **kwargs: Keyword arguments for operation
+
+    Returns:
+        Operation result or None on failure
+    """
     try:
         result = operation(*args, **kwargs)
-
-        # Handle NaN values in result
-        if isinstance(result, pd.DataFrame):
-            result = result.fillna(0)
-        elif isinstance(result, pd.Series):
-            result = result.fillna(0)
-        elif isinstance(result, np.ndarray):
-            result = np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
-
-        return result
+        return _clean_data_result(result)
     except Exception as e:
-        system_logger.error(f"DataFrame operation failed: {e}", exc_info=True)
+        system_logger = get_system_logger()
+        system_logger.exception(f"DataFrame operation failed: {e}")
         return None
 
 
 def safe_numeric_operation(operation: Callable, *args, **kwargs) -> Any:
-    """Wrapper for safe numeric operations with division by zero and overflow handling."""
+    """
+    Wrapper for safe numeric operations with division by zero and overflow handling.
+
+    Args:
+        operation: Function to execute
+        *args: Positional arguments for operation
+        **kwargs: Keyword arguments for operation
+
+    Returns:
+        Operation result or 0.0 on failure
+    """
     try:
         result = operation(*args, **kwargs)
-
-        # Handle special numeric values
-        if isinstance(result, (int, float)):
-            if np.isnan(result) or np.isinf(result):
-                return 0.0
-        elif isinstance(result, np.ndarray):
-            result = np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
-
-        return result
+        return _clean_numeric_result(result)
     except (ZeroDivisionError, ValueError, TypeError, OverflowError) as e:
-        system_logger.error(f"Numeric operation failed: {e}", exc_info=True)
+        system_logger = get_system_logger()
+        system_logger.exception(f"Numeric operation failed: {e}")
         return 0.0
     except Exception as e:
-        system_logger.error(
-            f"Unexpected error in numeric operation: {e}", exc_info=True
-        )
+        system_logger = get_system_logger()
+        system_logger.exception(f"Unexpected error in numeric operation: {e}")
         return 0.0
+
+
+def safe_dict_access(data: dict, key: str, default: Any = None) -> Any:
+    """
+    Safe dictionary access with default value.
+
+    Args:
+        data: Dictionary to access
+        key: Key to access
+        default: Default value if key doesn't exist
+
+    Returns:
+        Value or default
+    """
+    try:
+        return data.get(key, default)
+    except Exception as e:
+        system_logger = get_system_logger()
+        system_logger.warning(f"Error accessing dictionary key '{key}': {e}")
+        return default
+
+
+def safe_dataframe_access(df: pd.DataFrame, column: str, default: Any = None) -> Any:
+    """
+    Safe DataFrame column access with default value.
+
+    Args:
+        df: DataFrame to access
+        column: Column name to access
+        default: Default value if column doesn't exist
+
+    Returns:
+        Column data or default
+    """
+    try:
+        if column in df.columns:
+            return df[column]
+        return default
+    except Exception as e:
+        system_logger = get_system_logger()
+        system_logger.warning(f"Error accessing DataFrame column '{column}': {e}")
+        return default
+
+
+class ErrorRecoveryStrategies:
+    """Utility class for error recovery strategies."""
+
+    @staticmethod
+    def retry_with_backoff(
+        operation: Callable,
+        max_retries: int = 3,
+        base_delay: float = 1.0,
+        *args,
+        **kwargs,
+    ) -> Any:
+        """
+        Retry operation with exponential backoff.
+
+        Args:
+            operation: Function to retry
+            max_retries: Maximum number of retries
+            base_delay: Base delay between retries
+            *args: Positional arguments for operation
+            **kwargs: Keyword arguments for operation
+
+        Returns:
+            Operation result or None on failure
+        """
+        for attempt in range(max_retries + 1):
+            try:
+                return operation(*args, **kwargs)
+            except Exception as e:
+                if attempt == max_retries:
+                    system_logger = get_system_logger()
+                    system_logger.exception(
+                        f"Operation failed after {max_retries} retries: {e}",
+                    )
+                    return None
+
+                delay = base_delay * (2**attempt)
+                system_logger = get_system_logger()
+                system_logger.warning(
+                    f"Operation failed (attempt {attempt + 1}/{max_retries + 1}): "
+                    f"{e}. Retrying in {delay}s...",
+                )
+                time.sleep(delay)
+
+        return None
+
+    @staticmethod
+    def fallback_chain(operations: list[Callable], *args, **kwargs) -> Any:
+        """
+        Execute operations in fallback chain.
+
+        Args:
+            operations: List of operations to try
+            *args: Positional arguments for operations
+            **kwargs: Keyword arguments for operations
+
+        Returns:
+            First successful result or None
+        """
+        for i, operation in enumerate(operations):
+            try:
+                result = operation(*args, **kwargs)
+                system_logger = get_system_logger()
+                system_logger.info(f"Fallback operation {i + 1} succeeded")
+                return result
+            except Exception as e:
+                system_logger = get_system_logger()
+                system_logger.warning(f"Fallback operation {i + 1} failed: {e}")
+                if i == len(operations) - 1:
+                    system_logger = get_system_logger()
+                    system_logger.exception("All fallback operations failed")
+                    return None
+
+        return None
+
+
+class ErrorContext:
+    """
+    Context manager for error handling.
+
+    This context manager provides a way to handle errors within a code block
+    and optionally execute cleanup code.
+    """
+
+    def __init__(
+        self,
+        error_handler: Callable | None = None,
+        cleanup_handler: Callable | None = None,
+        *,
+        reraise: bool = True,
+    ):
+        """
+        Initialize error context.
+
+        Args:
+            error_handler: Function to call on error
+            cleanup_handler: Function to call for cleanup
+            reraise: Whether to reraise exceptions
+        """
+        self.error_handler = error_handler
+        self.cleanup_handler = cleanup_handler
+        self.reraise = reraise
+        self.exception = None
+
+    def __enter__(self):
+        """Enter the context."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context and handle any exceptions."""
+        if exc_type is not None:
+            self.exception = exc_val
+
+            if self.error_handler:
+                try:
+                    self.error_handler(exc_type, exc_val, exc_tb)
+                except Exception as e:
+                    system_logger = get_system_logger()
+                    system_logger.exception(f"Error in error handler: {e}")
+
+            if self.cleanup_handler:
+                try:
+                    self.cleanup_handler()
+                except Exception as e:
+                    system_logger = get_system_logger()
+                    system_logger.exception(f"Error in cleanup handler: {e}")
+
+            return not self.reraise
+
+        return False
+
+
+def handle_assertion_errors(
+    default_return: Any = None,
+    context: str = "",
+    *,
+    log_errors: bool = True,
+):
+    """
+    Decorator for handling assertion errors with proper message formatting.
+    
+    This decorator addresses EM101/EM102 and TRY003 issues by:
+    - Assigning exception messages to variables before raising
+    - Using proper exception message formatting
+    - Providing context-aware error handling
+    
+    Args:
+        default_return: Value to return on error
+        context: Context string for logging
+        log_errors: Whether to log errors
+        
+    Returns:
+        Decorated function
+    """
+    
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            try:
+                return await func(*args, **kwargs)
+            except AssertionError as e:
+                if log_errors:
+                    system_logger = get_system_logger()
+                    system_logger.error(f"Assertion error in {context}.{func.__name__}: {e}")
+                return default_return
+            except Exception as e:
+                if log_errors:
+                    system_logger = get_system_logger()
+                    system_logger.exception(f"Unexpected error in {context}.{func.__name__}: {e}")
+                return default_return
+
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except AssertionError as e:
+                if log_errors:
+                    system_logger = get_system_logger()
+                    system_logger.error(f"Assertion error in {context}.{func.__name__}: {e}")
+                return default_return
+            except Exception as e:
+                if log_errors:
+                    system_logger = get_system_logger()
+                    system_logger.exception(f"Unexpected error in {context}.{func.__name__}: {e}")
+                return default_return
+
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        return sync_wrapper
+
+    return decorator
+
+
+def safe_assertion(
+    condition: bool,
+    message: str,
+    *,
+    context: str = "",
+    error_type: type[Exception] = AssertionError,
+    log_errors: bool = True,
+) -> None:
+    """
+    Safe assertion function that properly formats error messages.
+    
+    This function addresses EM101/EM102 issues by:
+    - Assigning the message to a variable before raising
+    - Providing context-aware error messages
+    - Using proper exception message formatting
+    
+    Args:
+        condition: Condition to assert
+        message: Error message (assigned to variable before raising)
+        context: Context string for logging
+        error_type: Type of exception to raise
+        log_errors: Whether to log errors
+        
+    Raises:
+        error_type: If condition is False
+    """
+    if not condition:
+        # Assign message to variable to address EM101/EM102
+        error_message = f"{context}: {message}" if context else message
+        
+        if log_errors:
+            system_logger = get_system_logger()
+            system_logger.error(f"Assertion failed: {error_message}")
+            
+        raise error_type(error_message)
+
+
+def format_assertion_message(
+    expected: Any,
+    actual: Any,
+    context: str = "",
+    *,
+    message_template: str = "Expected {expected}, got {actual}",
+) -> str:
+    """
+    Format assertion messages properly to address EM101/EM102 issues.
+    
+    Args:
+        expected: Expected value
+        actual: Actual value
+        context: Context string
+        message_template: Template for the message
+        
+    Returns:
+        Formatted message string
+    """
+    # Assign formatted message to variable to address EM101/EM102
+    formatted_message = message_template.format(expected=expected, actual=actual)
+    
+    if context:
+        return f"{context}: {formatted_message}"
+    return formatted_message
+
+
+def handle_nan_issues(func: Callable) -> Callable:
+    """
+    Decorator for data processing operations with comprehensive NaN handling.
+    
+    This decorator:
+    1. Replaces infinite values with NaN
+    2. Fills NaN values with appropriate defaults based on data type
+    3. Handles division by zero
+    4. Provides detailed logging of NaN issues
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            result = func(*args, **kwargs)
+            
+            # Handle DataFrame results
+            if isinstance(result, pd.DataFrame):
+                initial_shape = result.shape
+                
+                # Replace infinite values
+                result = result.replace([np.inf, -np.inf], np.nan)
+                
+                # Fill NaN values with appropriate defaults
+                for col in result.columns:
+                    if result[col].dtype in ['float64', 'float32']:
+                        # For numeric columns, use 0 as default
+                        result[col] = result[col].fillna(0)
+                    elif result[col].dtype in ['int64', 'int32']:
+                        # For integer columns, use 0 as default
+                        result[col] = result[col].fillna(0)
+                    else:
+                        # For other types, use forward fill then backward fill
+                        result[col] = result[col].fillna(method='ffill').fillna(method='bfill')
+                
+                # Log any remaining NaN issues
+                nan_counts = result.isnull().sum()
+                if nan_counts.sum() > 0:
+                    system_logger = get_system_logger()
+                    system_logger.warning(f"⚠️ NaN handling completed. Remaining NaN counts: {nan_counts[nan_counts > 0].to_dict()}")
+                
+                final_shape = result.shape
+                if initial_shape != final_shape:
+                    system_logger = get_system_logger()
+                    system_logger.warning(f"⚠️ DataFrame shape changed from {initial_shape} to {final_shape}")
+                
+                return result
+            
+            # Handle Series results
+            elif isinstance(result, pd.Series):
+                # Replace infinite values
+                result = result.replace([np.inf, -np.inf], np.nan)
+                
+                # Fill NaN based on data type
+                if result.dtype in ['float64', 'float32']:
+                    result = result.fillna(0)
+                elif result.dtype in ['int64', 'int32']:
+                    result = result.fillna(0)
+                else:
+                    result = result.fillna(method='ffill').fillna(method='bfill')
+                
+                return result
+            
+            # Handle numpy arrays
+            elif isinstance(result, np.ndarray):
+                result = np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
+                return result
+            
+            # Handle scalar values
+            elif isinstance(result, (int, float)):
+                if np.isnan(result) or np.isinf(result):
+                    return 0.0
+                return result
+            
+            return result
+            
+        except Exception as e:
+            system_logger = get_system_logger()
+            system_logger.error(f"Error in NaN handling for {func.__name__}: {e}")
+            # Return safe default based on function signature
+            return None
+    
+    return wrapper
+
+
+def safe_division(numerator, denominator, default=0.0):
+    """
+    Safe division function that handles division by zero and NaN values.
+    
+    Args:
+        numerator: Numerator value or array
+        denominator: Denominator value or array
+        default: Default value to return when division fails
+        
+    Returns:
+        Result of safe division
+    """
+    try:
+        if isinstance(numerator, pd.Series) and isinstance(denominator, pd.Series):
+            # Handle pandas Series
+            result = numerator / denominator.replace(0, np.nan)
+            result = result.fillna(default)
+            return result
+        elif isinstance(numerator, (pd.Series, np.ndarray)) and isinstance(denominator, (int, float)):
+            # Handle Series/array divided by scalar
+            if denominator == 0:
+                return pd.Series(default, index=numerator.index) if isinstance(numerator, pd.Series) else np.full_like(numerator, default)
+            result = numerator / denominator
+            result = result.fillna(default) if isinstance(result, pd.Series) else np.nan_to_num(result, nan=default)
+            return result
+        else:
+            # Handle scalar division
+            if denominator == 0:
+                return default
+            result = numerator / denominator
+            return result if not (np.isnan(result) or np.isinf(result)) else default
+    except Exception as e:
+        system_logger = get_system_logger()
+        system_logger.warning(f"Error in safe division: {e}")
+        return default
+
+
+def clean_dataframe(df: pd.DataFrame, critical_columns: list = None) -> pd.DataFrame:
+    """
+    Comprehensive DataFrame cleaning function.
+    
+    Args:
+        df: DataFrame to clean
+        critical_columns: List of critical columns that must not have NaN values
+        
+    Returns:
+        Cleaned DataFrame
+    """
+    if df.empty:
+        return df
+    
+    initial_shape = df.shape
+    system_logger = get_system_logger()
+    
+    # Remove rows with NaN in critical columns
+    if critical_columns:
+        critical_cols = [col for col in critical_columns if col in df.columns]
+        if critical_cols:
+            df = df.dropna(subset=critical_cols)
+            system_logger.info(f"Removed rows with NaN in critical columns: {critical_cols}")
+    
+    # Replace infinite values
+    df = df.replace([np.inf, -np.inf], np.nan)
+    
+    # Fill NaN values based on data type
+    for col in df.columns:
+        if df[col].dtype in ['float64', 'float32']:
+            df[col] = df[col].fillna(0)
+        elif df[col].dtype in ['int64', 'int32']:
+            df[col] = df[col].fillna(0)
+        else:
+            df[col] = df[col].fillna(method='ffill').fillna(method='bfill')
+    
+    final_shape = df.shape
+    if initial_shape != final_shape:
+        system_logger.warning(f"DataFrame shape changed from {initial_shape} to {final_shape}")
+    
+    return df

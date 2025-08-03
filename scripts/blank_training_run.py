@@ -13,20 +13,20 @@ Usage:
 import asyncio
 import sys
 import time
-import traceback
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import necessary modules
-from src.database.sqlite_manager import SQLiteManager
-from src.training.training_manager import TrainingManager
-from src.utils.logger import setup_logging, system_logger
-from src.config import CONFIG  # Import the global CONFIG dictionary
 import argparse
+
+from src.config import CONFIG  # Import the global CONFIG dictionary
+from src.database.sqlite_manager import SQLiteManager
+from src.training.enhanced_training_manager import EnhancedTrainingManager
+from src.utils.logger import setup_logging, system_logger
 
 
 async def main():
@@ -37,7 +37,7 @@ async def main():
     start_time = time.time()
     setup_logging()
     logger = system_logger.getChild("BlankTrainingRun")
-    
+
     logger.info("=" * 80)
     logger.info("🚀 BLANK TRAINING RUN INITIALIZATION")
     logger.info("=" * 80)
@@ -47,7 +47,7 @@ async def main():
     logger.info(f"Script path: {Path(__file__).absolute()}")
 
     parser = argparse.ArgumentParser(
-        description="Run a 'blank' training pipeline for testing."
+        description="Run a 'blank' training pipeline for testing.",
     )
     parser.add_argument(
         "--symbol",
@@ -63,65 +63,288 @@ async def main():
     )
     args = parser.parse_args()
 
-    logger.info(f"📋 Command line arguments:")
+    logger.info("📋 Command line arguments:")
     logger.info(f"   Symbol: {args.symbol}")
     logger.info(f"   Exchange: {args.exchange}")
 
     logger.info(
-        f"🚀 Starting 'blank' training pipeline for {args.symbol} on {args.exchange}..."
+        f"🚀 Starting 'blank' training pipeline for {args.symbol} on {args.exchange}...",
+    )
+    print(
+        f"🚀 Starting 'blank' training pipeline for {args.symbol} on {args.exchange}...",
     )
     logger.info("Temporarily overriding CONFIG parameters for quick test run.")
-    
+    print("Temporarily overriding CONFIG parameters for quick test run.")
+
     # For a blank run, we reduce the number of optimization trials to make it run faster.
     # NOTE: The data lookback is now passed as a parameter to the training manager.
     CONFIG["MODEL_TRAINING"]["hyperparameter_tuning"]["max_trials"] = (
-        5  # For Optuna in base_ensemble
+        3  # For Optuna in base_ensemble
     )
     CONFIG["MODEL_TRAINING"]["coarse_hpo"] = {
-        "n_trials": 5
+        "n_trials": 3,
     }  # For CoarseOptimizer's HPO
-    
+
     # Set blank training mode flag for NaN handling
     CONFIG["BLANK_TRAINING_MODE"] = True
 
     db_manager = None
     try:
         logger.info("🔧 Initializing SQLiteManager...")
+        print("🔧 Initializing SQLiteManager...")
         # Initialize SQLiteManager
-        db_manager = SQLiteManager()
+        db_manager = SQLiteManager({})
         await db_manager.initialize()
         logger.info("✅ SQLiteManager initialized successfully")
+        print("✅ SQLiteManager initialized successfully")
 
         logger.info("🔧 Initializing TrainingManager...")
-        # Instantiate TrainingManager
-        training_manager = TrainingManager(db_manager)
+        print("🔧 Initializing TrainingManager...")
+        # Instantiate EnhancedTrainingManager
+        training_manager = EnhancedTrainingManager(db_manager)
         logger.info("✅ TrainingManager initialized successfully")
+        print("✅ TrainingManager initialized successfully")
 
         logger.info("🚀 Starting full training pipeline...")
+        print("🚀 Starting full training pipeline...")
         training_start_time = time.time()
-        
-        # Run the full training pipeline with a short lookback period for a quick test.
-        success = await training_manager.run_full_training(
-            args.symbol, args.exchange, lookback_days_override=60
+
+        # Skip data downloading and use existing data only
+        logger.info("⏭️  Skipping data downloading - using existing data only")
+        print("⏭️  Skipping data downloading - using existing data only")
+
+        # Check if required data files exist (using actual file patterns)
+        klines_filename = f"data_cache/klines_{args.exchange}_{args.symbol}_1m_consolidated_fixed.csv"  # Use fixed 1m consolidated
+        agg_trades_filename = f"data_cache/aggtrades_{args.exchange}_{args.symbol}_2025-07-31.csv"  # Use most recent
+        futures_filename = (
+            f"data_cache/futures_{args.exchange}_{args.symbol}_consolidated.csv"
         )
-        
+
+        # Check if all required data files exist
+        import os
+
+        required_files = [klines_filename, agg_trades_filename, futures_filename]
+        missing_files = [f for f in required_files if not os.path.exists(f)]
+
+        if missing_files:
+            logger.error(f"❌ Missing required data files: {missing_files}")
+            logger.error(
+                "Please run data downloading first or ensure data files exist.",
+            )
+            logger.error("Expected files:")
+            for file in required_files:
+                logger.error(f"  - {file}")
+            sys.exit(1)
+
+        logger.info("✅ All required data files found, proceeding with training")
+        print("✅ All required data files found, proceeding with training")
+
+        # Run the training pipeline stages manually, skipping data collection
+        logger.info(
+            "🚀 Running training pipeline stages manually (skipping data collection)",
+        )
+        print("🚀 Running training pipeline stages manually (skipping data collection)")
+        logger.info(
+            f"   Parameters: symbol={args.symbol}, exchange={args.exchange}, lookback_days_override=60",
+        )
+        print(
+            f"   Parameters: symbol={args.symbol}, exchange={args.exchange}, lookback_days_override=60",
+        )
+
+        try:
+            print("🔄 Starting training pipeline stages...")
+
+            # Stage 1: Setup training environment
+            logger.info("🔧 Stage 1: Setting up training environment...")
+            print("🔧 Stage 1: Setting up training environment...")
+            setup_success = await training_manager._setup_training_environment(
+                args.symbol,
+                args.exchange,
+                "1m",
+            )
+            if not setup_success:
+                raise Exception("Stage 1 (Setup) failed")
+            logger.info("✅ Stage 1 completed successfully")
+            print("✅ Stage 1 completed successfully")
+
+            # Use existing data file instead of collecting new data
+            csv_data_file = f"data_cache/klines_{args.exchange}_{args.symbol}_1m_consolidated_fixed.csv"
+            logger.info(f"📁 Using existing CSV data file: {csv_data_file}")
+            print(f"📁 Using existing CSV data file: {csv_data_file}")
+
+            # Use the existing CSV formatting script to ensure proper data format
+            logger.info(
+                "🔄 Using CSV formatting script to ensure proper data format...",
+            )
+            print("🔄 Using CSV formatting script to ensure proper data format...")
+
+            # Import and run the CSV formatting script
+            from src.training.aggtrades_data_formatting import (
+                auto_reformat_aggtrades_files_for_exchange,
+            )
+
+            # Run the CSV formatting to ensure data files for this exchange/symbol are in correct format
+            logger.info("📋 Running CSV format validation and conversion...")
+            print("📋 Running CSV format validation and conversion...")
+            auto_reformat_aggtrades_files_for_exchange(args.exchange, args.symbol)
+
+            # Create the required pickle file from existing CSV data
+            logger.info("🔄 Creating pickle file from existing CSV data...")
+            print("🔄 Creating pickle file from existing CSV data...")
+
+            import os
+            import pickle
+
+            import pandas as pd
+
+            # Read the CSV data (now properly formatted)
+            if not os.path.exists(csv_data_file):
+                raise Exception(f"CSV data file not found: {csv_data_file}")
+
+            klines_df = pd.read_csv(csv_data_file)
+            logger.info(
+                f"📊 Loaded CSV data: {len(klines_df)} rows, {len(klines_df.columns)} columns",
+            )
+            print(
+                f"📊 Loaded CSV data: {len(klines_df)} rows, {len(klines_df.columns)} columns",
+            )
+
+            # Add quality validation checks
+            logger.info("🔍 Running data quality validation...")
+            print("🔍 Running data quality validation...")
+            
+            from src.training.training_validation_config import validate_data_format, validate_data_quality
+            
+            # Load additional data for validation
+            agg_trades_file = f"data_cache/aggtrades_{args.exchange}_{args.symbol}_consolidated.csv"
+            futures_file = f"data_cache/futures_{args.exchange}_{args.symbol}_consolidated.csv"
+            
+            validation_data = {"klines": klines_df}
+            
+            # Load aggregated trades if available
+            if os.path.exists(agg_trades_file):
+                agg_trades_df = pd.read_csv(agg_trades_file)
+                validation_data["agg_trades"] = agg_trades_df
+                logger.info(f"📊 Loaded agg trades: {len(agg_trades_df)} rows")
+            else:
+                logger.warning("⚠️  Aggregated trades file not found, skipping validation")
+            
+            # Load futures data if available
+            if os.path.exists(futures_file):
+                futures_df = pd.read_csv(futures_file)
+                validation_data["futures"] = futures_df
+                logger.info(f"📊 Loaded futures: {len(futures_df)} rows")
+            else:
+                logger.warning("⚠️  Futures file not found, skipping validation")
+            
+            # Validate data format
+            format_valid, format_errors = validate_data_format(validation_data)
+            if not format_valid:
+                logger.error(f"❌ Data format validation failed: {format_errors}")
+                print(f"❌ Data format validation failed: {format_errors}")
+                raise Exception("Data format validation failed")
+            logger.info("✅ Data format validation passed")
+            print("✅ Data format validation passed")
+            
+            # Validate data quality
+            quality_valid, quality_errors = validate_data_quality(validation_data)
+            if not quality_valid:
+                logger.error(f"❌ Data quality validation failed: {quality_errors}")
+                print(f"❌ Data quality validation failed: {quality_errors}")
+                raise Exception("Data quality validation failed")
+            logger.info("✅ Data quality validation passed")
+            print("✅ Data quality validation passed")
+
+            # Create the pickle file in the expected format
+            pickle_data = {"klines": klines_df}
+            pickle_file = f"data/training/{args.exchange}_{args.symbol}_collected_data.pkl"
+            os.makedirs("data/training", exist_ok=True)
+
+            with open(pickle_file, "wb") as f:
+                pickle.dump(pickle_data, f)
+
+            logger.info(f"✅ Created pickle file: {pickle_file}")
+            print(f"✅ Created pickle file: {pickle_file}")
+
+            # Use the pickle file for training
+            data_file = pickle_file
+
+            # Stage 3: Model Optimization and Training
+            logger.info("🔧 Stage 3: Optimizing and training models...")
+            print("🔧 Stage 3: Optimizing and training models...")
+            training_success = await training_manager._optimize_and_train_models(
+                args.symbol,
+                "1h",
+                data_file,
+            )
+            if not training_success:
+                raise Exception("Stage 3 (Training) failed")
+            logger.info("✅ Stage 3 completed successfully")
+            print("✅ Stage 3 completed successfully")
+
+            # Stage 4: Model Validation and Testing
+            logger.info("🔧 Stage 4: Validating and testing models...")
+            print("🔧 Stage 4: Validating and testing models...")
+            validation_success = await training_manager._validate_and_test_models(
+                args.symbol,
+                data_file,
+            )
+            if not validation_success:
+                raise Exception("Stage 4 (Validation) failed")
+            logger.info("✅ Stage 4 completed successfully")
+            print("✅ Stage 4 completed successfully")
+
+            # Stage 5: Final Setup and Artifact Management
+            session_id = f"{args.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            run_id = "blank_run_" + session_id
+            logger.info("🔧 Stage 5: Finalizing training...")
+            print("🔧 Stage 5: Finalizing training...")
+            finalize_success = await training_manager._finalize_training(
+                args.symbol,
+                session_id,
+                run_id,
+            )
+            if not finalize_success:
+                raise Exception("Stage 5 (Finalization) failed")
+            logger.info("✅ Stage 5 completed successfully")
+            print("✅ Stage 5 completed successfully")
+
+            success = True
+            logger.info("✅ All training stages completed successfully")
+            print("✅ All training stages completed successfully")
+
+        except Exception as e:
+            logger.error(f"❌ Training pipeline failed with exception: {e}")
+            print(f"❌ Training pipeline failed with exception: {e}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            print(f"Exception type: {type(e).__name__}")
+            logger.error("Full traceback:")
+            print("Full traceback:")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            print(traceback.format_exc())
+            raise
+
         training_duration = time.time() - training_start_time
-        logger.info(f"⏱️  Training pipeline completed in {training_duration:.2f} seconds")
+        logger.info(
+            f"⏱️  Training pipeline completed in {training_duration:.2f} seconds",
+        )
 
         if success:
             logger.info("✅ 'Blank' training pipeline completed successfully!")
-            logger.info(f"📊 Training summary:")
+            logger.info("📊 Training summary:")
             logger.info(f"   Symbol: {args.symbol}")
             logger.info(f"   Exchange: {args.exchange}")
             logger.info(f"   Duration: {training_duration:.2f} seconds")
-            logger.info(f"   Status: SUCCESS")
+            logger.info("   Status: SUCCESS")
         else:
             logger.error("❌ 'Blank' training pipeline failed.")
-            logger.error(f"📊 Training summary:")
+            logger.error("📊 Training summary:")
             logger.error(f"   Symbol: {args.symbol}")
             logger.error(f"   Exchange: {args.exchange}")
             logger.error(f"   Duration: {training_duration:.2f} seconds")
-            logger.error(f"   Status: FAILED")
+            logger.error("   Status: FAILED")
             sys.exit(1)
 
     except Exception as e:
@@ -130,14 +353,14 @@ async def main():
         logger.critical(f"Error message: {str(e)}")
         logger.critical("Full traceback:")
         logger.critical(traceback.format_exc())
-        
+
         # Log additional debugging information
-        logger.critical(f"📊 Error context:")
+        logger.critical("📊 Error context:")
         logger.critical(f"   Symbol: {args.symbol}")
         logger.critical(f"   Exchange: {args.exchange}")
         logger.critical(f"   Python path: {sys.path[:3]}...")  # First 3 entries
         logger.critical(f"   Working directory: {Path.cwd()}")
-        
+
         sys.exit(1)
     finally:
         # Ensure database connection is closed
@@ -145,7 +368,7 @@ async def main():
             logger.info("🔧 Closing database connection...")
             await db_manager.close()
             logger.info("✅ Database connection closed")
-        
+
         total_duration = time.time() - start_time
         logger.info("=" * 80)
         logger.info("🏁 BLANK TRAINING RUN COMPLETION")

@@ -1,17 +1,19 @@
-import numpy as np
-import itertools
 import copy
+import itertools
 import traceback
+
+import numpy as np
+
+from backtesting.ares_backtester import run_backtest
+from backtesting.ares_data_preparer import (
+    calculate_features_and_score,
+    get_sr_levels,
+    load_raw_data,
+)
+from emails.ares_mailer import send_email
 
 # Import the main CONFIG dictionary
 from src.config import CONFIG
-from backtesting.ares_data_preparer import (
-    load_raw_data,
-    calculate_features_and_score,
-    get_sr_levels,
-)
-from backtesting.ares_backtester import run_backtest
-from emails.ares_mailer import send_email
 
 # --- Efficient Optimization Configuration ---
 
@@ -22,14 +24,20 @@ COARSE_PARAM_GRID = CONFIG["backtesting"]["optimization"]["params"]
 NUM_TUNING_POINTS = CONFIG.get("fine_tune_num_points", 10)
 TUNING_PERCENTAGE = CONFIG.get("fine_tune_ranges_multiplier", 0.2)
 INTEGER_PARAMS = CONFIG.get(
-    "integer_params", ["adx_period", "atr_period", "sma_period"]
+    "integer_params",
+    ["adx_period", "atr_period", "sma_period"],
 )
 
 TOP_N_RESULTS = 5  # This can be moved to CONFIG if desired
 
 
 def run_grid_search_stage(
-    param_grid, klines_df, agg_trades_df, futures_df, sr_levels, stage_name
+    param_grid,
+    klines_df,
+    agg_trades_df,
+    futures_df,
+    sr_levels,
+    stage_name,
 ):
     """Runs a full grid search for a given parameter grid."""
     print(f"\n--- Starting {stage_name} ---")
@@ -49,7 +57,7 @@ def run_grid_search_stage(
                 flat_param_paths.append(new_key)
                 if v["type"] == "int":
                     flat_param_values.append(
-                        np.linspace(v["low"], v["high"], 5, dtype=int)
+                        np.linspace(v["low"], v["high"], 5, dtype=int),
                     )  # 5 steps for coarse grid
                 elif v["type"] == "float":
                     flat_param_values.append(np.linspace(v["low"], v["high"], 5))
@@ -63,7 +71,9 @@ def run_grid_search_stage(
     keys = flat_param_paths
     values = flat_param_values
 
-    param_combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
+    param_combinations = [
+        dict(zip(keys, v, strict=False)) for v in itertools.product(*values)
+    ]
 
     print(f"Testing {len(param_combinations)} combinations for this stage...")
 
@@ -86,14 +96,15 @@ def run_grid_search_stage(
         )
 
         portfolio_result = run_backtest(
-            prepared_df, current_params
+            prepared_df,
+            current_params,
         )  # Pass current_params to backtest
 
         if len(portfolio_result.trades) == 0:
             print("--> NO TRADES WERE MADE.")
         else:
             print(
-                f"--> Resulting Equity: ${portfolio_result.equity:,.2f} | Total Trades: {len(portfolio_result.trades)}"
+                f"--> Resulting Equity: ${portfolio_result.equity:,.2f} | Total Trades: {len(portfolio_result.trades)}",
             )
 
         results.append({"params": current_params, "portfolio": portfolio_result})
@@ -103,7 +114,11 @@ def run_grid_search_stage(
 
 
 def run_coordinate_descent_stage(
-    best_params, klines_df, agg_trades_df, futures_df, sr_levels
+    best_params,
+    klines_df,
+    agg_trades_df,
+    futures_df,
+    sr_levels,
 ):
     """Performs Stage 2: Fine-tunes each parameter one by one."""
     print("\n--- Starting Stage 2: Coordinate Descent Fine-Tuning ---")
@@ -130,7 +145,7 @@ def run_coordinate_descent_stage(
 
         if best_value is None:
             print(
-                f"Warning: Parameter '{param_to_tune}' not found in current best params. Skipping tuning."
+                f"Warning: Parameter '{param_to_tune}' not found in current best params. Skipping tuning.",
             )
             continue
 
@@ -169,7 +184,7 @@ def run_coordinate_descent_stage(
 
         if best_value_for_param is not None:
             print(
-                f"==> Best value for '{param_to_tune}' is {best_value_for_param}. Updating parameters."
+                f"==> Best value for '{param_to_tune}' is {best_value_for_param}. Updating parameters.",
             )
             set_param_value_at_path(current_best_params, parts, best_value_for_param)
 
@@ -204,19 +219,21 @@ def format_report_to_string(final_results):
             report_lines.append("No trades were made with this parameter set.")
             continue
         sorted_report = sorted(
-            report.items(), key=lambda item: item[1].get("num_trades", 0), reverse=True
+            report.items(),
+            key=lambda item: item[1].get("num_trades", 0),
+            reverse=True,
         )
         report_lines.append(
-            f"\n{'Trade Source':<25} | {'Num Trades':>12} | {'Sharpe Ratio':>15} | {'Avg Profit/Loss (%)':>20}"
+            f"\n{'Trade Source':<25} | {'Num Trades':>12} | {'Sharpe Ratio':>15} | {'Avg Profit/Loss (%)':>20}",
         )
         report_lines.append("-" * 80)
         for source, metrics in sorted_report:
             report_lines.append(
-                f"{source:<25} | {metrics['num_trades']:>12} | {metrics['sharpe']:>15.2f} | {metrics['avg_profit_pct']:>20.2f}%"
+                f"{source:<25} | {metrics['num_trades']:>12} | {metrics['sharpe']:>15.2f} | {metrics['avg_profit_pct']:>20.2f}%",
             )
     report_lines.append("\n" + separator)
     report_lines.append(
-        "RECOMMENDATION: Update the best_params dictionary in config.py with the final tuned values."
+        "RECOMMENDATION: Update the best_params dictionary in config.py with the final tuned values.",
     )
     report_lines.append(separator)
     return "\n".join(report_lines)
@@ -260,7 +277,7 @@ if __name__ == "__main__":
                 "low": "min",
                 "close": "last",
                 "volume": "sum",
-            }
+            },
         )
         sr_levels = get_sr_levels(daily_df)
 
@@ -285,11 +302,15 @@ if __name__ == "__main__":
         else:
             best_coarse_params = coarse_results[0]["params"]
             print(
-                f"\nBest result from Coarse Search: ${coarse_results[0]['portfolio'].equity:,.2f}"
+                f"\nBest result from Coarse Search: ${coarse_results[0]['portfolio'].equity:,.2f}",
             )
             print(f"Best Coarse Params: {best_coarse_params}")
             final_results = run_coordinate_descent_stage(
-                best_coarse_params, klines_df, agg_trades_df, futures_df, sr_levels
+                best_coarse_params,
+                klines_df,
+                agg_trades_df,
+                futures_df,
+                sr_levels,
             )
             report_string = format_report_to_string(final_results)
             print("\n" + report_string)

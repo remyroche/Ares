@@ -1,11 +1,16 @@
 import asyncio
 import time
-from typing import Dict, Any, Optional, List
 from datetime import datetime
-import pandas as pd
+from typing import Any
+
 import numpy as np
+import pandas as pd
 
 from src.analyst.ml_dynamic_target_predictor import MLDynamicTargetPredictor
+from src.utils.error_handler import (
+    handle_errors,
+    handle_network_operations,
+)
 from src.utils.logger import system_logger
 
 
@@ -25,7 +30,7 @@ class MLTargetUpdater:
         ml_target_predictor: MLDynamicTargetPredictor,
         exchange_client,
         state_manager,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ):
         self.ml_target_predictor = ml_target_predictor
         self.exchange = exchange_client
@@ -35,38 +40,59 @@ class MLTargetUpdater:
 
         # Update configuration
         self.update_interval_seconds = self.config.get(
-            "update_interval_seconds", 300
+            "update_interval_seconds",
+            300,
         )  # 5 minutes
         self.min_time_between_updates = self.config.get(
-            "min_time_between_updates_seconds", 60
+            "min_time_between_updates_seconds",
+            60,
         )  # 1 minute
         self.confidence_threshold_for_update = self.config.get(
-            "confidence_threshold_for_update", 0.6
+            "confidence_threshold_for_update",
+            0.6,
         )
         self.max_target_change_percent = self.config.get(
-            "max_target_change_percent", 0.25
+            "max_target_change_percent",
+            0.25,
         )  # 25% max change
         self.enable_stop_loss_updates = self.config.get(
-            "enable_stop_loss_updates", True
+            "enable_stop_loss_updates",
+            True,
         )
         self.enable_take_profit_updates = self.config.get(
-            "enable_take_profit_updates", True
+            "enable_take_profit_updates",
+            True,
         )
         self.trailing_stop_enabled = self.config.get("trailing_stop_enabled", True)
 
         # Risk management settings
         self.max_sl_distance_from_entry = self.config.get(
-            "max_sl_distance_from_entry", 0.05
-        )  # 5%
+            "max_sl_distance_from_entry",
+            0.03,
+        )  # 3% for high leverage
         self.min_tp_distance_from_current = self.config.get(
-            "min_tp_distance_from_current", 0.01
-        )  # 1%
+            "min_tp_distance_from_current",
+            0.005,
+        )  # 0.5% for high leverage
+
+        # High leverage optimizations
+        self.high_leverage_mode = self.config.get("high_leverage_mode", True)
+        self.emergency_update_threshold = self.config.get(
+            "emergency_update_threshold",
+            0.02,
+        )
+        self.volatility_scaling = self.config.get("volatility_scaling", True)
 
         # State tracking
         self.last_update_time = {}
         self.update_history = {}
         self.is_running = False
 
+    @handle_errors(
+        exceptions=(asyncio.CancelledError,),
+        default_return=None,
+        context="target updater start",
+    )
     async def start_monitoring(self):
         """Start the continuous target monitoring and updating process."""
         if self.is_running:
@@ -82,7 +108,8 @@ class MLTargetUpdater:
                 await asyncio.sleep(self.update_interval_seconds)
         except Exception as e:
             self.logger.error(
-                f"Error in target updater monitoring loop: {e}", exc_info=True
+                f"Error in target updater monitoring loop: {e}",
+                exc_info=True,
             )
         finally:
             self.is_running = False
@@ -92,6 +119,11 @@ class MLTargetUpdater:
         self.is_running = False
         self.logger.info("Stopped ML target updater monitoring")
 
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="target update cycle",
+    )
     async def _update_cycle(self):
         """Single update cycle - check and update targets for active positions."""
         try:
@@ -105,7 +137,16 @@ class MLTargetUpdater:
             position_id = current_position.get("trade_id", "unknown")
             last_update = self.last_update_time.get(position_id, 0)
 
-            if time.time() - last_update < self.min_time_between_updates:
+            # Check for emergency update conditions
+            should_emergency_update = await self._check_emergency_update_conditions(
+                current_position,
+                last_update,
+            )
+
+            if (
+                not should_emergency_update
+                and time.time() - last_update < self.min_time_between_updates
+            ):
                 return  # Too soon to update
 
             # Get current market data
@@ -120,7 +161,9 @@ class MLTargetUpdater:
 
             # Get ML prediction for current conditions
             ml_targets = await self._get_ml_targets(
-                signal_type, current_market_data, current_position
+                signal_type,
+                current_market_data,
+                current_position,
             )
 
             if not ml_targets:
@@ -128,12 +171,17 @@ class MLTargetUpdater:
 
             # Evaluate if targets should be updated
             update_decision = self._evaluate_target_update(
-                current_position, ml_targets, current_market_data
+                current_position,
+                ml_targets,
+                current_market_data,
             )
 
             if update_decision.get("should_update", False):
                 await self._execute_target_update(
-                    current_position, update_decision, ml_targets, current_market_data
+                    current_position,
+                    update_decision,
+                    ml_targets,
+                    current_market_data,
                 )
 
                 # Record update time
@@ -142,12 +190,70 @@ class MLTargetUpdater:
         except Exception as e:
             self.logger.error(f"Error in update cycle: {e}", exc_info=True)
 
-    async def _get_current_market_data(self) -> Optional[Dict[str, Any]]:
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="emergency update check",
+    )
+    async def _check_emergency_update_conditions(
+        self,
+        position: dict[str, Any],
+        last_update: float,
+    ) -> bool:
+        """Check if emergency update is needed due to significant price movement."""
+        if not self.high_leverage_mode:
+            return False
+
+        try:
+            # Get current market data
+            market_data = await self._get_current_market_data()
+            if not market_data:
+                return False
+
+            current_price = market_data.get("current_price", 0)
+            entry_price = position.get("entry_price", 0)
+
+            if entry_price <= 0:
+                return False
+
+            # Calculate price movement since entry
+            price_movement = abs(current_price - entry_price) / entry_price
+
+            # Emergency update if price moved more than threshold
+            if price_movement > self.emergency_update_threshold:
+                self.logger.warning(
+                    f"Emergency update triggered: Price moved {price_movement:.2%} "
+                    f"(threshold: {self.emergency_update_threshold:.2%})",
+                )
+                return True
+
+            # Emergency update if too much time has passed (volatility scaling)
+            if self.volatility_scaling:
+                time_since_update = time.time() - last_update
+                if (
+                    time_since_update > self.update_interval_seconds * 2
+                ):  # Double the normal interval
+                    self.logger.info(
+                        "Emergency update triggered: Too much time since last update",
+                    )
+                    return True
+
+            return False
+
+        except Exception as e:
+            self.logger.error(f"Error checking emergency update conditions: {e}")
+            return False
+
+    @handle_network_operations(
+        max_retries=3,
+        default_return=None,
+    )
+    async def _get_current_market_data(self) -> dict[str, Any] | None:
         """Get current market data needed for ML predictions."""
         try:
             # Get current price data
             ticker = await self.exchange.get_ticker(
-                self.state_manager.get_state("trade_symbol", "BTCUSDT")
+                self.state_manager.get_state("trade_symbol", "BTCUSDT"),
             )
 
             # Get recent klines for technical analysis
@@ -200,7 +306,7 @@ class MLTargetUpdater:
             self.logger.error(f"Error getting current market data: {e}")
             return None
 
-    def _determine_signal_type(self, position: Dict[str, Any]) -> Optional[str]:
+    def _determine_signal_type(self, position: dict[str, Any]) -> str | None:
         """Determine the signal type from position data."""
         direction = position.get("direction")
         entry_context = position.get("entry_context", {})
@@ -220,14 +326,22 @@ class MLTargetUpdater:
         if direction == "long":
             # Default to breakout long if we can't determine
             return "SR_BREAKOUT_LONG"
-        elif direction == "short":
+        if direction == "short":
             return "SR_BREAKOUT_SHORT"
 
         return None
 
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="ML target predictions",
+    )
     async def _get_ml_targets(
-        self, signal_type: str, market_data: Dict[str, Any], position: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+        self,
+        signal_type: str,
+        market_data: dict[str, Any],
+        position: dict[str, Any],
+    ) -> dict[str, Any] | None:
         """Get ML target predictions for current conditions."""
         try:
             # Calculate current ATR from recent data
@@ -251,7 +365,7 @@ class MLTargetUpdater:
                     "low": [market_data["low"]],
                     "volume": [market_data["volume"]],
                     "ATR": [current_atr],
-                }
+                },
             )
 
             # Get ML predictions
@@ -268,38 +382,140 @@ class MLTargetUpdater:
             self.logger.error(f"Error getting ML targets: {e}")
             return None
 
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="target update evaluation",
+    )
     def _evaluate_target_update(
         self,
-        position: Dict[str, Any],
-        ml_targets: Dict[str, Any],
-        market_data: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        position: dict[str, Any],
+        ml_targets: dict[str, Any],
+        market_data: dict[str, Any],
+    ) -> dict[str, Any]:
         """Evaluate whether targets should be updated and how."""
+        update_decision = self._initialize_update_decision(position, ml_targets)
 
-        current_tp = position.get("take_profit", 0)
-        current_sl = position.get("stop_loss", 0)
-        entry_price = position.get("entry_price", 0)
-        current_price = market_data.get("current_price", 0)
-        direction = position.get("direction")
+        # Early exit if confidence is too low
+        if not self._check_confidence_threshold(update_decision):
+            return update_decision
 
-        new_tp = ml_targets.get("take_profit", current_tp)
-        new_sl = ml_targets.get("stop_loss", current_sl)
-        confidence = ml_targets.get("prediction_confidence", 0)
+        # Process target updates through validation pipeline
+        update_decision = self._process_target_updates(
+            position,
+            ml_targets,
+            market_data,
+            update_decision,
+        )
 
-        update_decision = {
+        # Finalize update decision
+        update_decision = self._finalize_update_decision(update_decision)
+
+        return update_decision
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="target update application",
+    )
+    def _process_target_updates(
+        self,
+        position: dict[str, Any],
+        ml_targets: dict[str, Any],
+        market_data: dict[str, Any],
+        update_decision: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Process target updates through validation pipeline."""
+        # Apply change limits
+        new_tp, new_sl = self._apply_change_limits(
+            position,
+            ml_targets,
+            update_decision,
+        )
+
+        # Apply risk management rules
+        new_tp, new_sl = self._apply_risk_management_rules(
+            position,
+            new_tp,
+            new_sl,
+            market_data,
+            update_decision,
+        )
+
+        # Evaluate update opportunities
+        self._evaluate_update_opportunities(position, new_tp, new_sl, update_decision)
+
+        # Store processed targets
+        update_decision["new_tp"] = new_tp
+        update_decision["new_sl"] = new_sl
+
+        return update_decision
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="target update finalization",
+    )
+    def _finalize_update_decision(
+        self,
+        update_decision: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Finalize the update decision."""
+        if update_decision["update_tp"] or update_decision["update_sl"]:
+            update_decision["should_update"] = True
+
+        return update_decision
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="target update initialization",
+    )
+    def _initialize_update_decision(
+        self,
+        position: dict[str, Any],
+        ml_targets: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Initialize the update decision structure."""
+        return {
             "should_update": False,
             "update_tp": False,
             "update_sl": False,
-            "new_tp": new_tp,
-            "new_sl": new_sl,
-            "confidence": confidence,
+            "new_tp": ml_targets.get("take_profit", position.get("take_profit", 0)),
+            "new_sl": ml_targets.get("stop_loss", position.get("stop_loss", 0)),
+            "confidence": ml_targets.get("prediction_confidence", 0),
             "reasons": [],
         }
 
-        # Check confidence threshold
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=False,
+        context="confidence threshold check",
+    )
+    def _check_confidence_threshold(self, update_decision: dict[str, Any]) -> bool:
+        """Check if confidence meets the threshold for updates."""
+        confidence = update_decision["confidence"]
         if confidence < self.confidence_threshold_for_update:
             update_decision["reasons"].append(f"Low confidence: {confidence:.2f}")
-            return update_decision
+            return False
+        return True
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="change limits application",
+    )
+    def _apply_change_limits(
+        self,
+        position: dict[str, Any],
+        ml_targets: dict[str, Any],
+        update_decision: dict[str, Any],
+    ) -> tuple[float, float]:
+        """Apply change limits to prevent excessive updates."""
+        current_tp = position.get("take_profit", 0)
+        current_sl = position.get("stop_loss", 0)
+        new_tp = ml_targets.get("take_profit", current_tp)
+        new_sl = ml_targets.get("stop_loss", current_sl)
 
         # Calculate percentage changes
         tp_change_percent = (
@@ -309,86 +525,224 @@ class MLTargetUpdater:
             abs(new_sl - current_sl) / current_sl if current_sl > 0 else 0
         )
 
-        # Check if changes are within acceptable limits
-        if tp_change_percent > self.max_target_change_percent:
-            update_decision["reasons"].append(
-                f"TP change too large: {tp_change_percent:.2%}"
-            )
-            new_tp = current_tp  # Don't update
+        # Apply limits with high leverage considerations
+        if self.high_leverage_mode:
+            # For high leverage, allow larger changes but with safety checks
+            max_change = self.max_target_change_percent
 
-        if sl_change_percent > self.max_target_change_percent:
-            update_decision["reasons"].append(
-                f"SL change too large: {sl_change_percent:.2%}"
-            )
-            new_sl = current_sl  # Don't update
+            # Allow larger changes for stop loss (risk management)
+            if sl_change_percent > max_change * 1.5:  # 75% for SL
+                update_decision["reasons"].append(
+                    f"SL change too large: {sl_change_percent:.2%}",
+                )
+                new_sl = current_sl
+            elif tp_change_percent > max_change:
+                update_decision["reasons"].append(
+                    f"TP change too large: {tp_change_percent:.2%}",
+                )
+                new_tp = current_tp
+        else:
+            # Standard limits for non-high leverage
+            if tp_change_percent > self.max_target_change_percent:
+                update_decision["reasons"].append(
+                    f"TP change too large: {tp_change_percent:.2%}",
+                )
+                new_tp = current_tp
 
-        # Risk management checks
+            if sl_change_percent > self.max_target_change_percent:
+                update_decision["reasons"].append(
+                    f"SL change too large: {sl_change_percent:.2%}",
+                )
+                new_sl = current_sl
+
+        return new_tp, new_sl
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="risk management application",
+    )
+    def _apply_risk_management_rules(
+        self,
+        position: dict[str, Any],
+        new_tp: float,
+        new_sl: float,
+        market_data: dict[str, Any],
+        update_decision: dict[str, Any],
+    ) -> tuple[float, float]:
+        """Apply risk management rules to target updates."""
+        direction = position.get("direction")
+        entry_price = position.get("entry_price", 0)
+        current_price = market_data.get("current_price", 0)
+
         if direction == "long":
-            # For long positions
-            sl_distance_from_entry = abs(entry_price - new_sl) / entry_price
-            tp_distance_from_current = abs(current_price - new_tp) / current_price
-
-            # Don't move SL too far from entry
-            if sl_distance_from_entry > self.max_sl_distance_from_entry:
-                new_sl = entry_price * (1 - self.max_sl_distance_from_entry)
-                update_decision["reasons"].append("SL capped due to risk limits")
-
-            # Don't set TP too close to current price
-            if (
-                new_tp > current_tp
-                and tp_distance_from_current < self.min_tp_distance_from_current
-            ):
-                new_tp = current_price * (1 + self.min_tp_distance_from_current)
-                update_decision["reasons"].append("TP adjusted for minimum distance")
-
-            # Trailing stop logic
-            if self.trailing_stop_enabled and new_sl > current_sl:
-                update_decision["update_sl"] = True
-                update_decision["reasons"].append("Trailing stop adjustment")
-
-            # Take profit improvement
-            if self.enable_take_profit_updates and new_tp > current_tp:
-                update_decision["update_tp"] = True
-                update_decision["reasons"].append("TP improvement opportunity")
-
+            new_tp, new_sl = self._apply_long_position_rules(
+                entry_price,
+                current_price,
+                new_tp,
+                new_sl,
+                update_decision,
+            )
         else:  # short position
-            # Similar logic for short positions
-            sl_distance_from_entry = abs(new_sl - entry_price) / entry_price
-            tp_distance_from_current = abs(new_tp - current_price) / current_price
+            new_tp, new_sl = self._apply_short_position_rules(
+                entry_price,
+                current_price,
+                new_tp,
+                new_sl,
+                update_decision,
+            )
 
-            if sl_distance_from_entry > self.max_sl_distance_from_entry:
-                new_sl = entry_price * (1 + self.max_sl_distance_from_entry)
-                update_decision["reasons"].append("SL capped due to risk limits")
+        return new_tp, new_sl
 
-            if (
-                new_tp < current_tp
-                and tp_distance_from_current < self.min_tp_distance_from_current
-            ):
-                new_tp = current_price * (1 - self.min_tp_distance_from_current)
-                update_decision["reasons"].append("TP adjusted for minimum distance")
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="long position risk management",
+    )
+    def _apply_long_position_rules(
+        self,
+        entry_price: float,
+        current_price: float,
+        new_tp: float,
+        new_sl: float,
+        update_decision: dict[str, Any],
+    ) -> tuple[float, float]:
+        """Apply risk management rules for long positions."""
+        # Don't move SL too far from entry
+        sl_distance_from_entry = abs(entry_price - new_sl) / entry_price
+        if sl_distance_from_entry > self.max_sl_distance_from_entry:
+            new_sl = entry_price * (1 - self.max_sl_distance_from_entry)
+            update_decision["reasons"].append("SL capped due to risk limits")
 
-            if self.trailing_stop_enabled and new_sl < current_sl:
-                update_decision["update_sl"] = True
-                update_decision["reasons"].append("Trailing stop adjustment")
+        # Don't set TP too close to current price
+        tp_distance_from_current = abs(current_price - new_tp) / current_price
+        if tp_distance_from_current < self.min_tp_distance_from_current:
+            new_tp = current_price * (1 + self.min_tp_distance_from_current)
+            update_decision["reasons"].append("TP adjusted for minimum distance")
 
-            if self.enable_take_profit_updates and new_tp < current_tp:
-                update_decision["update_tp"] = True
-                update_decision["reasons"].append("TP improvement opportunity")
+        return new_tp, new_sl
 
-        # Final decision
-        if update_decision["update_tp"] or update_decision["update_sl"]:
-            update_decision["should_update"] = True
-            update_decision["new_tp"] = new_tp
-            update_decision["new_sl"] = new_sl
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="short position risk management",
+    )
+    def _apply_short_position_rules(
+        self,
+        entry_price: float,
+        current_price: float,
+        new_tp: float,
+        new_sl: float,
+        update_decision: dict[str, Any],
+    ) -> tuple[float, float]:
+        """Apply risk management rules for short positions."""
+        # Don't move SL too far from entry
+        sl_distance_from_entry = abs(new_sl - entry_price) / entry_price
+        if sl_distance_from_entry > self.max_sl_distance_from_entry:
+            new_sl = entry_price * (1 + self.max_sl_distance_from_entry)
+            update_decision["reasons"].append("SL capped due to risk limits")
 
-        return update_decision
+        # Don't set TP too close to current price
+        tp_distance_from_current = abs(new_tp - current_price) / current_price
+        if tp_distance_from_current < self.min_tp_distance_from_current:
+            new_tp = current_price * (1 - self.min_tp_distance_from_current)
+            update_decision["reasons"].append("TP adjusted for minimum distance")
 
+        return new_tp, new_sl
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="update opportunity evaluation",
+    )
+    def _evaluate_update_opportunities(
+        self,
+        position: dict[str, Any],
+        new_tp: float,
+        new_sl: float,
+        update_decision: dict[str, Any],
+    ) -> None:
+        """Evaluate specific update opportunities."""
+        direction = position.get("direction")
+        current_tp = position.get("take_profit", 0)
+        current_sl = position.get("stop_loss", 0)
+
+        if direction == "long":
+            self._evaluate_long_position_updates(
+                new_tp,
+                new_sl,
+                current_tp,
+                current_sl,
+                update_decision,
+            )
+        else:  # short position
+            self._evaluate_short_position_updates(
+                new_tp,
+                new_sl,
+                current_tp,
+                current_sl,
+                update_decision,
+            )
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="long position update evaluation",
+    )
+    def _evaluate_long_position_updates(
+        self,
+        new_tp: float,
+        new_sl: float,
+        current_tp: float,
+        current_sl: float,
+        update_decision: dict[str, Any],
+    ) -> None:
+        """Evaluate update opportunities for long positions."""
+        # Trailing stop logic
+        if self.trailing_stop_enabled and new_sl > current_sl:
+            update_decision["update_sl"] = True
+            update_decision["reasons"].append("Trailing stop adjustment")
+
+        # Take profit improvement
+        if self.enable_take_profit_updates and new_tp > current_tp:
+            update_decision["update_tp"] = True
+            update_decision["reasons"].append("TP improvement opportunity")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="short position update evaluation",
+    )
+    def _evaluate_short_position_updates(
+        self,
+        new_tp: float,
+        new_sl: float,
+        current_tp: float,
+        current_sl: float,
+        update_decision: dict[str, Any],
+    ) -> None:
+        """Evaluate update opportunities for short positions."""
+        # Trailing stop logic
+        if self.trailing_stop_enabled and new_sl < current_sl:
+            update_decision["update_sl"] = True
+            update_decision["reasons"].append("Trailing stop adjustment")
+
+        # Take profit improvement
+        if self.enable_take_profit_updates and new_tp < current_tp:
+            update_decision["update_tp"] = True
+            update_decision["reasons"].append("TP improvement opportunity")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="target update execution",
+    )
     async def _execute_target_update(
         self,
-        position: Dict[str, Any],
-        update_decision: Dict[str, Any],
-        ml_targets: Dict[str, Any],
-        market_data: Dict[str, Any],
+        position: dict[str, Any],
+        update_decision: dict[str, Any],
+        ml_targets: dict[str, Any],
+        market_data: dict[str, Any],
     ):
         """Execute the target update by modifying position orders."""
         try:
@@ -432,24 +786,33 @@ class MLTargetUpdater:
                 self.logger.info(
                     f"ML Target Update for {trade_id}: {', '.join(updates_made)}. "
                     f"Confidence: {update_decision['confidence']:.2f}. "
-                    f"Reasons: {', '.join(update_decision['reasons'])}"
+                    f"Reasons: {', '.join(update_decision['reasons'])}",
                 )
 
                 # Record in update history
                 self._record_update_history(
-                    trade_id, update_decision, ml_targets, market_data, updates_made
+                    trade_id,
+                    update_decision,
+                    ml_targets,
+                    market_data,
+                    updates_made,
                 )
 
         except Exception as e:
             self.logger.error(f"Error executing target update: {e}", exc_info=True)
 
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, TypeError),
+        default_return=None,
+        context="update history recording",
+    )
     def _record_update_history(
         self,
         trade_id: str,
-        update_decision: Dict[str, Any],
-        ml_targets: Dict[str, Any],
-        market_data: Dict[str, Any],
-        updates_made: List[str],
+        update_decision: dict[str, Any],
+        ml_targets: dict[str, Any],
+        market_data: dict[str, Any],
+        updates_made: list[str],
     ):
         """Record the update in history for analysis."""
         if trade_id not in self.update_history:
@@ -471,7 +834,7 @@ class MLTargetUpdater:
         if len(self.update_history[trade_id]) > 50:
             self.update_history[trade_id] = self.update_history[trade_id][-50:]
 
-    def get_update_statistics(self) -> Dict[str, Any]:
+    def get_update_statistics(self) -> dict[str, Any]:
         """Get statistics about target updates."""
         total_updates = sum(len(history) for history in self.update_history.values())
 

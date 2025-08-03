@@ -13,7 +13,10 @@ class SpecializedModels:
         )
 
     def get_sr_interaction_signal(
-        self, current_price: float, sr_levels: list, current_atr: float
+        self,
+        current_price: float,
+        sr_levels: list,
+        current_atr: float,
     ):
         """
         Checks if the current price is interacting with any significant S/R level.
@@ -28,7 +31,8 @@ class SpecializedModels:
         # Use the proximity multiplier from the main config's analyst section or BEST_PARAMS
         # Prioritize from BEST_PARAMS if available, otherwise from analyst.high_impact_candle_model
         proximity_multiplier = self.global_config["best_params"].get(
-            "proximity_multiplier", self.config.get("proximity_multiplier", 0.25)
+            "proximity_multiplier",
+            self.config.get("proximity_multiplier", 0.25),
         )
 
         for level in sr_levels:
@@ -53,7 +57,7 @@ class SpecializedModels:
 
         if closest_sr:
             print(
-                f"S/R Interaction Signal: Price near {closest_sr['type']} at {closest_sr['level_price']:.2f}"
+                f"S/R Interaction Signal: Price near {closest_sr['type']} at {closest_sr['level_price']:.2f}",
             )
         return closest_sr
 
@@ -103,7 +107,8 @@ class SpecializedModels:
             high_prev_close = abs(prev_candles["high"] - prev_candles["close"].shift(1))
             low_prev_close = abs(prev_candles["low"] - prev_candles["close"].shift(1))
             true_range = pd.concat(
-                [high_low, high_prev_close, low_prev_close], axis=1
+                [high_low, high_prev_close, low_prev_close],
+                axis=1,
             ).max(axis=1)
             atr_series = true_range.ewm(span=atr_sma_period, adjust=False).mean()
             avg_atr = atr_series.iloc[-1] if not atr_series.empty else 0
@@ -130,8 +135,7 @@ class SpecializedModels:
             )
             print(f"High-Impact Candle Signal: {reason}")
             return {"is_high_impact": True, "reason": reason}
-        else:
-            return {
-                "is_high_impact": False,
-                "reason": "No high-impact candle detected.",
-            }
+        return {
+            "is_high_impact": False,
+            "reason": "No high-impact candle detected.",
+        }

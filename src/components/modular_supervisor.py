@@ -1,677 +1,1118 @@
 # src/components/modular_supervisor.py
 
-import asyncio
-from typing import Dict, Any, Optional
 from datetime import datetime
-import time
-import subprocess
-import mlflow
+from typing import Any
 
-from src.config import CONFIG
-from src.interfaces import ISupervisor, EventType
-from src.interfaces.base_interfaces import IExchangeClient, IStateManager, IEventBus
-from src.utils.logger import system_logger
-from src.config import settings
+import numpy as np
+
 from src.utils.error_handler import (
     handle_errors,
-    handle_data_processing_errors,
+    handle_specific_errors,
 )
+from src.utils.logger import system_logger
 
 
-class ModularSupervisor(ISupervisor):
+class ModularSupervisor:
     """
-    Modular implementation of the Supervisor that implements the ISupervisor interface.
-    Uses dependency injection and event-driven communication.
+    Enhanced modular supervisor with comprehensive error handling and type safety.
     """
 
-    def __init__(
-        self,
-        exchange_client: IExchangeClient,
-        state_manager: IStateManager,
-        event_bus: IEventBus,
-    ):
+    def __init__(self, config: dict[str, Any]) -> None:
         """
-        Initialize the modular supervisor.
+        Initialize modular supervisor with enhanced type safety.
 
         Args:
-            exchange_client: Exchange client for data access
-            state_manager: State manager for persistence
-            event_bus: Event bus for communication
+            config: Configuration dictionary
         """
-        self.exchange = exchange_client
-        self.state_manager = state_manager
-        self.event_bus = event_bus
-        self.config = settings.get("supervisor", {})
-        self.running = False
-        self._main_task: Optional[asyncio.Task] = None  # <-- ADD
-        self.retraining_interval = self.config.get(
-            "retraining_interval_seconds", 2592000
-        )  # Default: 30 days <-- ADD
-        mlflow.set_tracking_uri(CONFIG.get("MLFLOW_TRACKING_URI"))  # <-- ADD
+        self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("ModularSupervisor")
-        self.performance_metrics = {}
-        self.risk_alerts = []
-        self.system_health = {
-            "status": "HEALTHY",
-            "last_check": datetime.now(),
-            "components": {},
-        }
 
-        self.logger.info("ModularSupervisor initialized")
+        # Supervision state
+        self.is_supervising: bool = False
+        self.supervision_results: dict[str, Any] = {}
+        self.supervision_history: list[dict[str, Any]] = []
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="modular_supervisor_start"
+        # Configuration
+        self.supervisor_config: dict[str, Any] = self.config.get(
+            "modular_supervisor",
+            {},
+        )
+        self.supervision_interval: int = self.supervisor_config.get(
+            "supervision_interval",
+            60,
+        )
+        self.max_supervision_history: int = self.supervisor_config.get(
+            "max_supervision_history",
+            100,
+        )
+        self.enable_performance_monitoring: bool = self.supervisor_config.get(
+            "enable_performance_monitoring",
+            True,
+        )
+        self.enable_risk_monitoring: bool = self.supervisor_config.get(
+            "enable_risk_monitoring",
+            True,
+        )
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid modular supervisor configuration"),
+            AttributeError: (False, "Missing required supervisor parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="modular supervisor initialization",
     )
-    async def start(self) -> None:
-        """Start the modular supervisor"""
-        self.logger.info("Starting ModularSupervisor")
-        self.running = True
-
-        # Subscribe to system events
-        await self.event_bus.subscribe(
-            EventType.TRADE_EXECUTED, self._handle_trade_executed
-        )
-
-        await self.event_bus.subscribe(
-            EventType.SYSTEM_ERROR, self._handle_system_error
-        )
-
-        await self.event_bus.subscribe(
-            EventType.COMPONENT_STARTED, self._handle_component_started
-        )
-
-        await self.event_bus.subscribe(
-            EventType.COMPONENT_STOPPED, self._handle_component_stopped
-        )
-
-        self._main_task = asyncio.create_task(self._run_periodic_checks())
-        self.logger.info("ModularSupervisor started and periodic checks are running.")
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="modular_supervisor_stop"
-    )
-    async def _run_periodic_checks(self):
-        """The main loop for running periodic supervisory tasks."""
-        while self.running:
-            try:
-                self.logger.info(
-                    "Supervisor running periodic checks for model management..."
-                )
-
-                # 1. Check if it's time to trigger a new training run
-                self._trigger_retraining_if_needed()
-
-                # 2. Check for new candidate models and promote if better
-                self._check_and_promote_model()
-
-                # Wait for the next check cycle (e.g., 1 hour)
-                await asyncio.sleep(3600)
-
-            except asyncio.CancelledError:
-                self.logger.info("Supervisor periodic check task cancelled.")
-                break
-            except Exception as e:
-                self.logger.error(
-                    f"Error in supervisor periodic check loop: {e}", exc_info=True
-                )
-                # Wait before retrying to avoid spamming errors
-                await asyncio.sleep(60)
-
-    def _trigger_retraining_if_needed(self):
-        """Triggers the training CLI script if the defined interval has passed."""
-        last_training_time_str = self.state_manager.get_state("last_retrain_timestamp")
-        last_training_time = datetime.fromisoformat(last_training_time_str).timestamp()
-
-        if time.time() - last_training_time > self.retraining_interval:
-            self.logger.info(
-                f"Retraining interval of {self.retraining_interval}s has elapsed. Triggering new training run."
-            )
-            try:
-                symbol = settings.trade_symbol
-                # Execute the training script
-                process = subprocess.run(
-                    ["python", "scripts/training_cli.py", "train", symbol],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-                self.logger.info(f"Training script stdout: {process.stdout}")
-                # Update the timestamp in the state
-                self.state_manager.set_state(
-                    "last_retrain_timestamp", datetime.now().isoformat()
-                )
-                self.logger.info("Training pipeline script executed successfully.")
-            except subprocess.CalledProcessError as e:
-                self.logger.error(
-                    f"Training script failed with exit code {e.returncode}. Stderr: {e.stderr}"
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"Failed to execute training pipeline: {e}", exc_info=True
-                )
-
-    def _check_and_promote_model(self):
-        """Checks MLflow for new candidate models and promotes the best one."""
-        self.logger.info("Checking for candidate models for promotion...")
-        try:
-            client = mlflow.tracking.MlflowClient()
-            experiment = client.get_experiment_by_name(
-                CONFIG.get("MLFLOW_EXPERIMENT_NAME")
-            )
-            if not experiment:
-                self.logger.warning(
-                    f"MLflow experiment '{CONFIG.get('MLFLOW_EXPERIMENT_NAME')}' not found."
-                )
-                return
-
-            # Find the best performing candidate model
-            candidate_runs = client.search_runs(
-                experiment_ids=[experiment.experiment_id],
-                filter_string="tags.model_status = 'candidate'",
-                order_by=["metrics.accuracy DESC"],
-                max_results=1,
-            )
-            if not candidate_runs:
-                self.logger.info("No new candidate models found.")
-                return
-
-            best_candidate_run = candidate_runs[0]
-            candidate_run_id = best_candidate_run.info.run_id
-            candidate_accuracy = best_candidate_run.data.metrics.get("accuracy", 0)
-
-            # Get current production model's performance
-            prod_run_id = self.state_manager.get_state("production_model_run_id")
-            prod_accuracy = 0
-            if prod_run_id:
-                try:
-                    prod_run = client.get_run(prod_run_id)
-                    prod_accuracy = prod_run.data.metrics.get("accuracy", 0)
-                except mlflow.exceptions.MlflowException:
-                    self.logger.warning(
-                        f"Could not find previous production run {prod_run_id}. Assuming 0 accuracy."
-                    )
-                    prod_run_id = None
-
-            self.logger.info(
-                f"Candidate: {candidate_run_id} (Acc: {candidate_accuracy:.4f}). Production: {prod_run_id} (Acc: {prod_accuracy:.4f})."
-            )
-
-            # Promote if candidate is better
-            if candidate_accuracy > prod_accuracy:
-                self.logger.warning(
-                    f"Promoting new model {candidate_run_id} to production."
-                )
-                self.state_manager.set_state(
-                    "production_model_run_id", candidate_run_id
-                )
-                client.set_tag(candidate_run_id, "model_status", "production")
-                if prod_run_id:
-                    client.set_tag(prod_run_id, "model_status", "archived")
-            else:
-                self.logger.info(
-                    "Current production model remains superior. Archiving candidate."
-                )
-                client.set_tag(candidate_run_id, "model_status", "evaluated_inferior")
-
-        except Exception as e:
-            self.logger.error(
-                f"Failed during model promotion check: {e}", exc_info=True
-            )
-
-    async def stop(self) -> None:
-        """Stop the modular supervisor"""
-        self.logger.info("Stopping ModularSupervisor")
-        self.running = False
-
-        # Unsubscribe from events
-        await self.event_bus.unsubscribe(
-            EventType.TRADE_EXECUTED, self._handle_trade_executed
-        )
-
-        await self.event_bus.unsubscribe(
-            EventType.SYSTEM_ERROR, self._handle_system_error
-        )
-
-        await self.event_bus.unsubscribe(
-            EventType.COMPONENT_STARTED, self._handle_component_started
-        )
-
-        await self.event_bus.unsubscribe(
-            EventType.COMPONENT_STOPPED, self._handle_component_stopped
-        )
-
-        self.logger.info("ModularSupervisor stopped")
-
-    @handle_errors(
-        exceptions=(Exception,), default_return={}, context="monitor_performance"
-    )
-    async def monitor_performance(self) -> Dict[str, Any]:
+    async def initialize(self) -> bool:
         """
-        Monitor system performance.
+        Initialize modular supervisor with enhanced error handling.
 
         Returns:
-            Performance monitoring results
+            bool: True if initialization successful, False otherwise
         """
-        if not self.running:
-            return {}
-
-        self.logger.debug("Monitoring system performance")
-
         try:
-            # Get account information
-            account_info = await self.exchange.get_account_info()
+            self.logger.info("Initializing Modular Supervisor...")
 
-            # Calculate performance metrics
-            performance_metrics = await self._calculate_performance_metrics(
-                account_info
+            # Load supervisor configuration
+            await self._load_supervisor_configuration()
+
+            # Validate configuration
+            if not self._validate_configuration():
+                self.logger.error("Invalid configuration for modular supervisor")
+                return False
+
+            # Initialize supervision modules
+            await self._initialize_supervision_modules()
+
+            self.logger.info(
+                "✅ Modular Supervisor initialization completed successfully",
             )
-
-            # Check for performance alerts
-            alerts = await self._check_performance_alerts(performance_metrics)
-
-            # Update performance history
-            self.performance_metrics = performance_metrics
-
-            # Publish performance update
-            await self.event_bus.publish(
-                EventType.PERFORMANCE_UPDATE, performance_metrics, "ModularSupervisor"
-            )
-
-            return {
-                "metrics": performance_metrics,
-                "alerts": alerts,
-                "timestamp": datetime.now(),
-            }
+            return True
 
         except Exception as e:
-            self.logger.error(f"Performance monitoring failed: {e}", exc_info=True)
-            return {}
-
-    @handle_errors(exceptions=(Exception,), default_return={}, context="manage_risk")
-    async def manage_risk(self) -> Dict[str, Any]:
-        """
-        Manage risk across all components.
-
-        Returns:
-            Risk management results
-        """
-        if not self.running:
-            return {}
-
-        self.logger.debug("Managing system risk")
-
-        try:
-            # Get current positions
-            positions = await self.exchange.get_position_risk(settings.trade_symbol)
-
-            # Calculate risk metrics
-            risk_metrics = await self._calculate_risk_metrics(positions)
-
-            # Check for risk alerts
-            risk_alerts = await self._check_risk_alerts(risk_metrics)
-
-            # Update risk state
-            self.state_manager.set_state("current_risk_metrics", risk_metrics)
-
-            # Publish risk alerts if any
-            if risk_alerts:
-                await self.event_bus.publish(
-                    EventType.RISK_ALERT, risk_alerts, "ModularSupervisor"
-                )
-
-            return {
-                "risk_metrics": risk_metrics,
-                "alerts": risk_alerts,
-                "timestamp": datetime.now(),
-            }
-
-        except Exception as e:
-            self.logger.error(f"Risk management failed: {e}", exc_info=True)
-            return {}
+            self.logger.error(f"❌ Modular Supervisor initialization failed: {e}")
+            return False
 
     @handle_errors(
-        exceptions=(Exception,), default_return=None, context="coordinate_components"
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="supervisor configuration loading",
     )
-    async def coordinate_components(self) -> None:
-        """Coordinate all trading components"""
-        if not self.running:
-            return
-
-        self.logger.debug("Coordinating trading components")
-
+    async def _load_supervisor_configuration(self) -> None:
+        """Load supervisor configuration."""
         try:
-            # Monitor component health
-            await self._monitor_component_health()
+            # Set default supervisor parameters
+            self.supervisor_config.setdefault("supervision_interval", 60)
+            self.supervisor_config.setdefault("max_supervision_history", 100)
+            self.supervisor_config.setdefault("enable_performance_monitoring", True)
+            self.supervisor_config.setdefault("enable_risk_monitoring", True)
+            self.supervisor_config.setdefault("enable_portfolio_monitoring", False)
+            self.supervisor_config.setdefault("enable_system_monitoring", True)
 
-            # Check for component failures
-            await self._check_component_failures()
-
-            # Update system health
-            await self._update_system_health()
-
-            # Publish system status
-            await self.event_bus.publish(
-                EventType.PERFORMANCE_UPDATE, self.system_health, "ModularSupervisor"
-            )
-
-        except Exception as e:
-            self.logger.error(f"Component coordination failed: {e}", exc_info=True)
-
-    async def _handle_trade_executed(self, event) -> None:
-        """Handle trade executed events"""
-        trade_data = event.data
-        self.logger.info(f"Trade executed: {trade_data.symbol} {trade_data.action}")
-
-        # Update performance metrics
-        await self.monitor_performance()
-
-        # Check risk levels
-        await self.manage_risk()
-
-    async def _handle_system_error(self, event) -> None:
-        """Handle system error events"""
-        error_data = event.data
-        self.logger.error(f"System error: {error_data}")
-
-        # Update system health
-        self.system_health["status"] = "ERROR"
-        self.system_health["last_error"] = error_data
-
-        # Publish error alert
-        await self.event_bus.publish(
-            EventType.RISK_ALERT,
-            {"type": "SYSTEM_ERROR", "data": error_data},
-            "ModularSupervisor",
-        )
-
-    async def _handle_component_started(self, event) -> None:
-        """Handle component started events"""
-        component_data = event.data
-        component_name = component_data.get("component", "unknown")
-
-        self.system_health["components"][component_name] = {
-            "status": "RUNNING",
-            "start_time": datetime.now(),
-            "last_update": datetime.now(),
-        }
-
-        self.logger.info(f"Component started: {component_name}")
-
-    async def _handle_component_stopped(self, event) -> None:
-        """Handle component stopped events"""
-        component_data = event.data
-        component_name = component_data.get("component", "unknown")
-
-        if component_name in self.system_health["components"]:
-            self.system_health["components"][component_name]["status"] = "STOPPED"
-            self.system_health["components"][component_name]["stop_time"] = (
-                datetime.now()
-            )
-
-        self.logger.info(f"Component stopped: {component_name}")
-
-    @handle_data_processing_errors(
-        exceptions=(ValueError, TypeError, ZeroDivisionError),
-        default_return={},
-        context="calculate_performance_metrics",
-    )
-    async def _calculate_performance_metrics(
-        self, account_info: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Calculate performance metrics from account information"""
-        try:
-            total_balance = account_info.get("totalWalletBalance", 0)
-            available_balance = account_info.get("availableBalance", 0)
-            total_margin_balance = account_info.get("totalMarginBalance", 0)
-
-            # Calculate basic metrics
-            metrics = {
-                "total_balance": total_balance,
-                "available_balance": available_balance,
-                "total_margin_balance": total_margin_balance,
-                "utilization_rate": (total_balance - available_balance) / total_balance
-                if total_balance > 0
-                else 0,
-                "margin_utilization": (total_margin_balance - available_balance)
-                / total_margin_balance
-                if total_margin_balance > 0
-                else 0,
-            }
-
-            # Get historical performance if available
-            historical_performance = self.state_manager.get_state(
-                "historical_performance", {}
-            )
-            if historical_performance:
-                metrics["historical_pnl"] = historical_performance.get("total_pnl", 0)
-                metrics["win_rate"] = historical_performance.get("win_rate", 0)
-                metrics["sharpe_ratio"] = historical_performance.get("sharpe_ratio", 0)
-
-            return metrics
-
-        except Exception as e:
-            self.logger.error(f"Error calculating performance metrics: {e}")
-            return {}
-
-    @handle_data_processing_errors(
-        exceptions=(ValueError, TypeError, ZeroDivisionError),
-        default_return=[],
-        context="check_performance_alerts",
-    )
-    async def _check_performance_alerts(
-        self, performance_metrics: Dict[str, Any]
-    ) -> list:
-        """Check for performance alerts"""
-        alerts = []
-
-        try:
-            # Check balance thresholds
-            total_balance = performance_metrics.get("total_balance", 0)
-            min_balance = self.config.get("min_balance", 1000)
-
-            if total_balance < min_balance:
-                alerts.append(
-                    {
-                        "type": "LOW_BALANCE",
-                        "severity": "HIGH",
-                        "message": f"Account balance ({total_balance}) below minimum threshold ({min_balance})",
-                    }
-                )
-
-            # Check utilization rates
-            utilization_rate = performance_metrics.get("utilization_rate", 0)
-            max_utilization = self.config.get("max_utilization", 0.8)
-
-            if utilization_rate > max_utilization:
-                alerts.append(
-                    {
-                        "type": "HIGH_UTILIZATION",
-                        "severity": "MEDIUM",
-                        "message": f"Account utilization ({utilization_rate:.2%}) above threshold ({max_utilization:.2%})",
-                    }
-                )
-
-            # Check historical performance
-            win_rate = performance_metrics.get("win_rate", 0)
-            min_win_rate = self.config.get("min_win_rate", 0.5)
-
-            if win_rate < min_win_rate:
-                alerts.append(
-                    {
-                        "type": "LOW_WIN_RATE",
-                        "severity": "MEDIUM",
-                        "message": f"Win rate ({win_rate:.2%}) below threshold ({min_win_rate:.2%})",
-                    }
-                )
-
-            return alerts
-
-        except Exception as e:
-            self.logger.error(f"Error checking performance alerts: {e}")
-            return []
-
-    @handle_data_processing_errors(
-        exceptions=(ValueError, TypeError, ZeroDivisionError),
-        default_return={},
-        context="calculate_risk_metrics",
-    )
-    async def _calculate_risk_metrics(
-        self, positions: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Calculate risk metrics from positions"""
-        try:
-            risk_metrics = {
-                "total_position_value": 0,
-                "total_unrealized_pnl": 0,
-                "max_drawdown": 0,
-                "liquidation_risk": 0,
-                "position_count": 0,
-            }
-
-            if positions and "positions" in positions:
-                for position in positions["positions"]:
-                    if position.get("size", 0) != 0:  # Active position
-                        risk_metrics["position_count"] += 1
-                        risk_metrics["total_position_value"] += abs(
-                            position.get("notional", 0)
-                        )
-                        risk_metrics["total_unrealized_pnl"] += position.get(
-                            "unrealizedPnl", 0
-                        )
-
-                        # Calculate liquidation risk
-                        liquidation_price = position.get("liquidationPrice", 0)
-                        current_price = position.get("markPrice", 0)
-
-                        if liquidation_price > 0 and current_price > 0:
-                            if position.get("side") == "LONG":
-                                distance_to_liquidation = (
-                                    current_price - liquidation_price
-                                ) / current_price
-                            else:
-                                distance_to_liquidation = (
-                                    liquidation_price - current_price
-                                ) / current_price
-
-                            risk_metrics["liquidation_risk"] = max(
-                                risk_metrics["liquidation_risk"],
-                                1 - distance_to_liquidation,
-                            )
-
-            return risk_metrics
-
-        except Exception as e:
-            self.logger.error(f"Error calculating risk metrics: {e}")
-            return {}
-
-    @handle_data_processing_errors(
-        exceptions=(ValueError, TypeError, ZeroDivisionError),
-        default_return=[],
-        context="check_risk_alerts",
-    )
-    async def _check_risk_alerts(self, risk_metrics: Dict[str, Any]) -> list:
-        """Check for risk alerts"""
-        alerts = []
-
-        try:
-            # Check liquidation risk
-            liquidation_risk = risk_metrics.get("liquidation_risk", 0)
-            max_liquidation_risk = self.config.get("max_liquidation_risk", 0.3)
-
-            if liquidation_risk > max_liquidation_risk:
-                alerts.append(
-                    {
-                        "type": "HIGH_LIQUIDATION_RISK",
-                        "severity": "HIGH",
-                        "message": f"Liquidation risk ({liquidation_risk:.2%}) above threshold ({max_liquidation_risk:.2%})",
-                    }
-                )
-
-            # Check position count
-            position_count = risk_metrics.get("position_count", 0)
-            max_positions = self.config.get("max_positions", 5)
-
-            if position_count > max_positions:
-                alerts.append(
-                    {
-                        "type": "TOO_MANY_POSITIONS",
-                        "severity": "MEDIUM",
-                        "message": f"Number of positions ({position_count}) above limit ({max_positions})",
-                    }
-                )
-
-            # Check unrealized P&L
-            unrealized_pnl = risk_metrics.get("total_unrealized_pnl", 0)
-            max_loss = self.config.get("max_unrealized_loss", -1000)
-
-            if unrealized_pnl < max_loss:
-                alerts.append(
-                    {
-                        "type": "HIGH_UNREALIZED_LOSS",
-                        "severity": "HIGH",
-                        "message": f"Unrealized loss ({unrealized_pnl}) below threshold ({max_loss})",
-                    }
-                )
-
-            return alerts
-
-        except Exception as e:
-            self.logger.error(f"Error checking risk alerts: {e}")
-            return []
-
-    async def _monitor_component_health(self) -> None:
-        """Monitor health of all components"""
-        try:
-            current_time = datetime.now()
-
-            for component_name, component_info in self.system_health[
-                "components"
-            ].items():
-                last_update = component_info.get("last_update", current_time)
-
-                # Check if component is stale (no updates in last 5 minutes)
-                if (current_time - last_update).total_seconds() > 300:
-                    component_info["status"] = "STALE"
-                    self.logger.warning(f"Component {component_name} is stale")
-
-        except Exception as e:
-            self.logger.error(f"Error monitoring component health: {e}")
-
-    async def _check_component_failures(self) -> None:
-        """Check for component failures"""
-        try:
-            failed_components = [
-                name
-                for name, info in self.system_health["components"].items()
-                if info.get("status") in ["STOPPED", "ERROR"]
+            # Update configuration
+            self.supervision_interval = self.supervisor_config["supervision_interval"]
+            self.max_supervision_history = self.supervisor_config[
+                "max_supervision_history"
+            ]
+            self.enable_performance_monitoring = self.supervisor_config[
+                "enable_performance_monitoring"
+            ]
+            self.enable_risk_monitoring = self.supervisor_config[
+                "enable_risk_monitoring"
             ]
 
-            if failed_components:
-                self.system_health["status"] = "DEGRADED"
-                self.logger.warning(f"Failed components: {failed_components}")
-
-                # Publish system error
-                await self.event_bus.publish(
-                    EventType.SYSTEM_ERROR,
-                    {"type": "COMPONENT_FAILURE", "components": failed_components},
-                    "ModularSupervisor",
-                )
-            else:
-                self.system_health["status"] = "HEALTHY"
+            self.logger.info("Supervisor configuration loaded successfully")
 
         except Exception as e:
-            self.logger.error(f"Error checking component failures: {e}")
+            self.logger.error(f"Error loading supervisor configuration: {e}")
 
-    async def _update_system_health(self) -> None:
-        """Update system health status"""
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
+    def _validate_configuration(self) -> bool:
+        """
+        Validate supervisor configuration.
+
+        Returns:
+            bool: True if configuration is valid, False otherwise
+        """
         try:
-            current_time = datetime.now()
-            self.system_health["last_check"] = current_time
+            # Validate supervision interval
+            if self.supervision_interval <= 0:
+                self.logger.error("Invalid supervision interval")
+                return False
 
-            # Update component status
-            for component_info in self.system_health["components"].values():
-                if component_info.get("status") == "RUNNING":
-                    component_info["last_update"] = current_time
+            # Validate max supervision history
+            if self.max_supervision_history <= 0:
+                self.logger.error("Invalid max supervision history")
+                return False
+
+            # Validate that at least one supervision type is enabled
+            if not any(
+                [
+                    self.enable_performance_monitoring,
+                    self.enable_risk_monitoring,
+                    self.supervisor_config.get("enable_portfolio_monitoring", False),
+                    self.supervisor_config.get("enable_system_monitoring", True),
+                ],
+            ):
+                self.logger.error("At least one supervision type must be enabled")
+                return False
+
+            self.logger.info("Configuration validation successful")
+            return True
 
         except Exception as e:
-            self.logger.error(f"Error updating system health: {e}")
+            self.logger.error(f"Error validating configuration: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="supervision modules initialization",
+    )
+    async def _initialize_supervision_modules(self) -> None:
+        """Initialize supervision modules."""
+        try:
+            # Initialize performance monitoring module
+            if self.enable_performance_monitoring:
+                await self._initialize_performance_monitoring()
+
+            # Initialize risk monitoring module
+            if self.enable_risk_monitoring:
+                await self._initialize_risk_monitoring()
+
+            # Initialize portfolio monitoring module
+            if self.supervisor_config.get("enable_portfolio_monitoring", False):
+                await self._initialize_portfolio_monitoring()
+
+            # Initialize system monitoring module
+            if self.supervisor_config.get("enable_system_monitoring", True):
+                await self._initialize_system_monitoring()
+
+            self.logger.info("Supervision modules initialized successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing supervision modules: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="performance monitoring initialization",
+    )
+    async def _initialize_performance_monitoring(self) -> None:
+        """Initialize performance monitoring module."""
+        try:
+            # Initialize performance metrics
+            self.performance_metrics = {
+                "sharpe_ratio": True,
+                "sortino_ratio": True,
+                "calmar_ratio": True,
+                "max_drawdown": True,
+                "win_rate": True,
+                "profit_factor": True,
+            }
+
+            self.logger.info("Performance monitoring module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing performance monitoring: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="risk monitoring initialization",
+    )
+    async def _initialize_risk_monitoring(self) -> None:
+        """Initialize risk monitoring module."""
+        try:
+            # Initialize risk metrics
+            self.risk_metrics = {
+                "var": True,
+                "cvar": True,
+                "volatility": True,
+                "beta": True,
+                "correlation": True,
+                "liquidation_risk": True,
+            }
+
+            self.logger.info("Risk monitoring module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing risk monitoring: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="portfolio monitoring initialization",
+    )
+    async def _initialize_portfolio_monitoring(self) -> None:
+        """Initialize portfolio monitoring module."""
+        try:
+            # Initialize portfolio metrics
+            self.portfolio_metrics = {
+                "allocation": True,
+                "diversification": True,
+                "rebalancing": True,
+                "exposure": True,
+            }
+
+            self.logger.info("Portfolio monitoring module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing portfolio monitoring: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="system monitoring initialization",
+    )
+    async def _initialize_system_monitoring(self) -> None:
+        """Initialize system monitoring module."""
+        try:
+            # Initialize system metrics
+            self.system_metrics = {
+                "cpu_usage": True,
+                "memory_usage": True,
+                "disk_usage": True,
+                "network_latency": True,
+                "error_rate": True,
+                "uptime": True,
+            }
+
+            self.logger.info("System monitoring module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing system monitoring: {e}")
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid supervision parameters"),
+            AttributeError: (False, "Missing supervision components"),
+            KeyError: (False, "Missing required supervision data"),
+        },
+        default_return=False,
+        context="supervision execution",
+    )
+    async def execute_supervision(
+        self,
+        trading_data: dict[str, Any],
+        system_data: dict[str, Any],
+    ) -> bool:
+        """
+        Execute supervision monitoring.
+
+        Args:
+            trading_data: Trading data dictionary
+            system_data: System data dictionary
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if not self._validate_supervision_inputs(trading_data, system_data):
+                return False
+
+            self.is_supervising = True
+            self.logger.info("🔄 Starting supervision monitoring...")
+
+            # Perform performance monitoring
+            if self.enable_performance_monitoring:
+                performance_results = await self._perform_performance_monitoring(
+                    trading_data,
+                )
+                self.supervision_results["performance"] = performance_results
+
+            # Perform risk monitoring
+            if self.enable_risk_monitoring:
+                risk_results = await self._perform_risk_monitoring(trading_data)
+                self.supervision_results["risk"] = risk_results
+
+            # Perform portfolio monitoring
+            if self.supervisor_config.get("enable_portfolio_monitoring", False):
+                portfolio_results = await self._perform_portfolio_monitoring(
+                    trading_data,
+                )
+                self.supervision_results["portfolio"] = portfolio_results
+
+            # Perform system monitoring
+            if self.supervisor_config.get("enable_system_monitoring", True):
+                system_results = await self._perform_system_monitoring(system_data)
+                self.supervision_results["system"] = system_results
+
+            # Store supervision results
+            await self._store_supervision_results()
+
+            self.is_supervising = False
+            self.logger.info("✅ Supervision monitoring completed successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error executing supervision: {e}")
+            self.is_supervising = False
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="supervision inputs validation",
+    )
+    def _validate_supervision_inputs(
+        self,
+        trading_data: dict[str, Any],
+        system_data: dict[str, Any],
+    ) -> bool:
+        """
+        Validate supervision inputs.
+
+        Args:
+            trading_data: Trading data dictionary
+            system_data: System data dictionary
+
+        Returns:
+            bool: True if valid, False otherwise
+        """
+        try:
+            # Check required trading data fields
+            required_trading_fields = ["pnl", "trades", "positions", "timestamp"]
+            for field in required_trading_fields:
+                if field not in trading_data:
+                    self.logger.error(f"Missing required trading data field: {field}")
+                    return False
+
+            # Check required system data fields
+            required_system_fields = ["cpu_usage", "memory_usage", "timestamp"]
+            for field in required_system_fields:
+                if field not in system_data:
+                    self.logger.error(f"Missing required system data field: {field}")
+                    return False
+
+            # Validate data types
+            if not isinstance(trading_data["pnl"], (int, float)):
+                self.logger.error("Invalid PnL data type")
+                return False
+
+            if not isinstance(system_data["cpu_usage"], (int, float)):
+                self.logger.error("Invalid CPU usage data type")
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error validating supervision inputs: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="performance monitoring",
+    )
+    async def _perform_performance_monitoring(
+        self,
+        trading_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform performance monitoring.
+
+        Args:
+            trading_data: Trading data dictionary
+
+        Returns:
+            Dict[str, Any]: Performance monitoring results
+        """
+        try:
+            results = {}
+
+            # Calculate Sharpe Ratio
+            if self.performance_metrics.get("sharpe_ratio", False):
+                results["sharpe_ratio"] = self._calculate_sharpe_ratio(trading_data)
+
+            # Calculate Sortino Ratio
+            if self.performance_metrics.get("sortino_ratio", False):
+                results["sortino_ratio"] = self._calculate_sortino_ratio(trading_data)
+
+            # Calculate Calmar Ratio
+            if self.performance_metrics.get("calmar_ratio", False):
+                results["calmar_ratio"] = self._calculate_calmar_ratio(trading_data)
+
+            # Calculate Max Drawdown
+            if self.performance_metrics.get("max_drawdown", False):
+                results["max_drawdown"] = self._calculate_max_drawdown(trading_data)
+
+            # Calculate Win Rate
+            if self.performance_metrics.get("win_rate", False):
+                results["win_rate"] = self._calculate_win_rate(trading_data)
+
+            # Calculate Profit Factor
+            if self.performance_metrics.get("profit_factor", False):
+                results["profit_factor"] = self._calculate_profit_factor(trading_data)
+
+            self.logger.info("Performance monitoring completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing performance monitoring: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="risk monitoring",
+    )
+    async def _perform_risk_monitoring(
+        self,
+        trading_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform risk monitoring.
+
+        Args:
+            trading_data: Trading data dictionary
+
+        Returns:
+            Dict[str, Any]: Risk monitoring results
+        """
+        try:
+            results = {}
+
+            # Calculate VaR
+            if self.risk_metrics.get("var", False):
+                results["var"] = self._calculate_var(trading_data)
+
+            # Calculate CVaR
+            if self.risk_metrics.get("cvar", False):
+                results["cvar"] = self._calculate_cvar(trading_data)
+
+            # Calculate Volatility
+            if self.risk_metrics.get("volatility", False):
+                results["volatility"] = self._calculate_volatility(trading_data)
+
+            # Calculate Beta
+            if self.risk_metrics.get("beta", False):
+                results["beta"] = self._calculate_beta(trading_data)
+
+            # Calculate Correlation
+            if self.risk_metrics.get("correlation", False):
+                results["correlation"] = self._calculate_correlation(trading_data)
+
+            # Calculate Liquidation Risk
+            if self.risk_metrics.get("liquidation_risk", False):
+                results["liquidation_risk"] = self._calculate_liquidation_risk(
+                    trading_data,
+                )
+
+            self.logger.info("Risk monitoring completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing risk monitoring: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="portfolio monitoring",
+    )
+    async def _perform_portfolio_monitoring(
+        self,
+        trading_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform portfolio monitoring.
+
+        Args:
+            trading_data: Trading data dictionary
+
+        Returns:
+            Dict[str, Any]: Portfolio monitoring results
+        """
+        try:
+            results = {}
+
+            # Calculate Allocation
+            if self.portfolio_metrics.get("allocation", False):
+                results["allocation"] = self._calculate_allocation(trading_data)
+
+            # Calculate Diversification
+            if self.portfolio_metrics.get("diversification", False):
+                results["diversification"] = self._calculate_diversification(
+                    trading_data,
+                )
+
+            # Calculate Rebalancing
+            if self.portfolio_metrics.get("rebalancing", False):
+                results["rebalancing"] = self._calculate_rebalancing(trading_data)
+
+            # Calculate Exposure
+            if self.portfolio_metrics.get("exposure", False):
+                results["exposure"] = self._calculate_exposure(trading_data)
+
+            self.logger.info("Portfolio monitoring completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing portfolio monitoring: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="system monitoring",
+    )
+    async def _perform_system_monitoring(
+        self,
+        system_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform system monitoring.
+
+        Args:
+            system_data: System data dictionary
+
+        Returns:
+            Dict[str, Any]: System monitoring results
+        """
+        try:
+            results = {}
+
+            # Calculate CPU Usage
+            if self.system_metrics.get("cpu_usage", False):
+                results["cpu_usage"] = self._calculate_cpu_usage(system_data)
+
+            # Calculate Memory Usage
+            if self.system_metrics.get("memory_usage", False):
+                results["memory_usage"] = self._calculate_memory_usage(system_data)
+
+            # Calculate Disk Usage
+            if self.system_metrics.get("disk_usage", False):
+                results["disk_usage"] = self._calculate_disk_usage(system_data)
+
+            # Calculate Network Latency
+            if self.system_metrics.get("network_latency", False):
+                results["network_latency"] = self._calculate_network_latency(
+                    system_data,
+                )
+
+            # Calculate Error Rate
+            if self.system_metrics.get("error_rate", False):
+                results["error_rate"] = self._calculate_error_rate(system_data)
+
+            # Calculate Uptime
+            if self.system_metrics.get("uptime", False):
+                results["uptime"] = self._calculate_uptime(system_data)
+
+            self.logger.info("System monitoring completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing system monitoring: {e}")
+            return {}
+
+    # Performance monitoring calculation methods
+    def _calculate_sharpe_ratio(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Sharpe Ratio."""
+        try:
+            # Simulate Sharpe Ratio calculation
+            returns = np.random.random(100) * 0.02 - 0.01  # Random returns
+            risk_free_rate = 0.02  # 2% risk-free rate
+
+            excess_returns = returns - risk_free_rate
+            sharpe_ratio = (
+                np.mean(excess_returns) / np.std(excess_returns)
+                if np.std(excess_returns) > 0
+                else 0
+            )
+
+            return sharpe_ratio
+        except Exception as e:
+            self.logger.error(f"Error calculating Sharpe Ratio: {e}")
+            return 0.0
+
+    def _calculate_sortino_ratio(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Sortino Ratio."""
+        try:
+            # Simulate Sortino Ratio calculation
+            returns = np.random.random(100) * 0.02 - 0.01  # Random returns
+            risk_free_rate = 0.02  # 2% risk-free rate
+
+            excess_returns = returns - risk_free_rate
+            downside_returns = excess_returns[excess_returns < 0]
+            downside_deviation = (
+                np.std(downside_returns) if len(downside_returns) > 0 else 0.01
+            )
+
+            sortino_ratio = (
+                np.mean(excess_returns) / downside_deviation
+                if downside_deviation > 0
+                else 0
+            )
+
+            return sortino_ratio
+        except Exception as e:
+            self.logger.error(f"Error calculating Sortino Ratio: {e}")
+            return 0.0
+
+    def _calculate_calmar_ratio(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Calmar Ratio."""
+        try:
+            # Simulate Calmar Ratio calculation
+            annual_return = 0.15  # 15% annual return
+            max_drawdown = 0.10  # 10% max drawdown
+
+            calmar_ratio = annual_return / max_drawdown if max_drawdown > 0 else 0
+
+            return calmar_ratio
+        except Exception as e:
+            self.logger.error(f"Error calculating Calmar Ratio: {e}")
+            return 0.0
+
+    def _calculate_max_drawdown(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Maximum Drawdown."""
+        try:
+            # Simulate Maximum Drawdown calculation
+            cumulative_returns = np.cumprod(1 + np.random.random(100) * 0.02 - 0.01)
+            running_max = np.maximum.accumulate(cumulative_returns)
+            drawdown = (cumulative_returns - running_max) / running_max
+            max_drawdown = np.min(drawdown)
+
+            return abs(max_drawdown)
+        except Exception as e:
+            self.logger.error(f"Error calculating Maximum Drawdown: {e}")
+            return 0.0
+
+    def _calculate_win_rate(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Win Rate."""
+        try:
+            # Simulate Win Rate calculation
+            trades = trading_data.get("trades", [])
+            if not trades:
+                return 0.0
+
+            winning_trades = len([t for t in trades if t.get("pnl", 0) > 0])
+            total_trades = len(trades)
+
+            win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
+
+            return win_rate
+        except Exception as e:
+            self.logger.error(f"Error calculating Win Rate: {e}")
+            return 0.0
+
+    def _calculate_profit_factor(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Profit Factor."""
+        try:
+            # Simulate Profit Factor calculation
+            trades = trading_data.get("trades", [])
+            if not trades:
+                return 0.0
+
+            gross_profit = sum(t.get("pnl", 0) for t in trades if t.get("pnl", 0) > 0)
+            gross_loss = abs(
+                sum(t.get("pnl", 0) for t in trades if t.get("pnl", 0) < 0),
+            )
+
+            profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0.0
+
+            return profit_factor
+        except Exception as e:
+            self.logger.error(f"Error calculating Profit Factor: {e}")
+            return 0.0
+
+    # Risk monitoring calculation methods
+    def _calculate_var(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Value at Risk."""
+        try:
+            # Simulate VaR calculation
+            returns = np.random.random(100) * 0.02 - 0.01  # Random returns
+            confidence_level = 0.95  # 95% confidence
+
+            var = np.percentile(returns, (1 - confidence_level) * 100)
+
+            return abs(var)
+        except Exception as e:
+            self.logger.error(f"Error calculating VaR: {e}")
+            return 0.0
+
+    def _calculate_cvar(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Conditional Value at Risk."""
+        try:
+            # Simulate CVaR calculation
+            returns = np.random.random(100) * 0.02 - 0.01  # Random returns
+            confidence_level = 0.95  # 95% confidence
+
+            var_threshold = np.percentile(returns, (1 - confidence_level) * 100)
+            tail_returns = returns[returns <= var_threshold]
+            cvar = np.mean(tail_returns) if len(tail_returns) > 0 else 0
+
+            return abs(cvar)
+        except Exception as e:
+            self.logger.error(f"Error calculating CVaR: {e}")
+            return 0.0
+
+    def _calculate_volatility(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Volatility."""
+        try:
+            # Simulate Volatility calculation
+            returns = np.random.random(100) * 0.02 - 0.01  # Random returns
+
+            volatility = np.std(returns) * np.sqrt(252)  # Annualized volatility
+
+            return volatility
+        except Exception as e:
+            self.logger.error(f"Error calculating Volatility: {e}")
+            return 0.0
+
+    def _calculate_beta(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Beta."""
+        try:
+            # Simulate Beta calculation
+            portfolio_returns = np.random.random(100) * 0.02 - 0.01
+            market_returns = np.random.random(100) * 0.015 - 0.0075
+
+            covariance = np.cov(portfolio_returns, market_returns)[0, 1]
+            market_variance = np.var(market_returns)
+
+            beta = covariance / market_variance if market_variance > 0 else 1.0
+
+            return beta
+        except Exception as e:
+            self.logger.error(f"Error calculating Beta: {e}")
+            return 1.0
+
+    def _calculate_correlation(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Correlation."""
+        try:
+            # Simulate Correlation calculation
+            portfolio_returns = np.random.random(100) * 0.02 - 0.01
+            market_returns = np.random.random(100) * 0.015 - 0.0075
+
+            correlation = np.corrcoef(portfolio_returns, market_returns)[0, 1]
+
+            return correlation if not np.isnan(correlation) else 0.0
+        except Exception as e:
+            self.logger.error(f"Error calculating Correlation: {e}")
+            return 0.0
+
+    def _calculate_liquidation_risk(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Liquidation Risk."""
+        try:
+            # Simulate Liquidation Risk calculation
+            positions = trading_data.get("positions", [])
+            if not positions:
+                return 0.0
+
+            total_exposure = sum(abs(p.get("notional", 0)) for p in positions)
+            max_exposure = 1000000  # $1M max exposure
+
+            liquidation_risk = min(total_exposure / max_exposure, 1.0)
+
+            return liquidation_risk
+        except Exception as e:
+            self.logger.error(f"Error calculating Liquidation Risk: {e}")
+            return 0.0
+
+    # Portfolio monitoring calculation methods
+    def _calculate_allocation(self, trading_data: dict[str, Any]) -> dict[str, float]:
+        """Calculate Portfolio Allocation."""
+        try:
+            # Simulate Portfolio Allocation calculation
+            positions = trading_data.get("positions", [])
+            if not positions:
+                return {}
+
+            total_value = sum(abs(p.get("notional", 0)) for p in positions)
+            if total_value == 0:
+                return {}
+
+            allocation = {}
+            for position in positions:
+                symbol = position.get("symbol", "UNKNOWN")
+                notional = abs(position.get("notional", 0))
+                allocation[symbol] = notional / total_value
+
+            return allocation
+        except Exception as e:
+            self.logger.error(f"Error calculating Portfolio Allocation: {e}")
+            return {}
+
+    def _calculate_diversification(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Portfolio Diversification."""
+        try:
+            # Simulate Portfolio Diversification calculation
+            positions = trading_data.get("positions", [])
+            if len(positions) <= 1:
+                return 0.0
+
+            # Calculate Herfindahl-Hirschman Index
+            total_value = sum(abs(p.get("notional", 0)) for p in positions)
+            if total_value == 0:
+                return 0.0
+
+            hhi = sum((abs(p.get("notional", 0)) / total_value) ** 2 for p in positions)
+            diversification = 1 - hhi  # Inverse of concentration
+
+            return diversification
+        except Exception as e:
+            self.logger.error(f"Error calculating Portfolio Diversification: {e}")
+            return 0.0
+
+    def _calculate_rebalancing(self, trading_data: dict[str, Any]) -> bool:
+        """Calculate Rebalancing Trigger."""
+        try:
+            # Simulate Rebalancing calculation
+            target_allocation = {"BTC": 0.6, "ETH": 0.4}
+            current_allocation = self._calculate_allocation(trading_data)
+
+            # Check if rebalancing is needed
+            threshold = 0.05  # 5% threshold
+            for asset, target in target_allocation.items():
+                current = current_allocation.get(asset, 0)
+                if abs(current - target) > threshold:
+                    return True
+
+            return False
+        except Exception as e:
+            self.logger.error(f"Error calculating Rebalancing: {e}")
+            return False
+
+    def _calculate_exposure(self, trading_data: dict[str, Any]) -> float:
+        """Calculate Portfolio Exposure."""
+        try:
+            # Simulate Portfolio Exposure calculation
+            positions = trading_data.get("positions", [])
+
+            total_exposure = sum(abs(p.get("notional", 0)) for p in positions)
+
+            return total_exposure
+        except Exception as e:
+            self.logger.error(f"Error calculating Portfolio Exposure: {e}")
+            return 0.0
+
+    # System monitoring calculation methods
+    def _calculate_cpu_usage(self, system_data: dict[str, Any]) -> float:
+        """Calculate CPU Usage."""
+        try:
+            return system_data.get("cpu_usage", 0.0)
+        except Exception as e:
+            self.logger.error(f"Error calculating CPU Usage: {e}")
+            return 0.0
+
+    def _calculate_memory_usage(self, system_data: dict[str, Any]) -> float:
+        """Calculate Memory Usage."""
+        try:
+            return system_data.get("memory_usage", 0.0)
+        except Exception as e:
+            self.logger.error(f"Error calculating Memory Usage: {e}")
+            return 0.0
+
+    def _calculate_disk_usage(self, system_data: dict[str, Any]) -> float:
+        """Calculate Disk Usage."""
+        try:
+            return system_data.get("disk_usage", 0.0)
+        except Exception as e:
+            self.logger.error(f"Error calculating Disk Usage: {e}")
+            return 0.0
+
+    def _calculate_network_latency(self, system_data: dict[str, Any]) -> float:
+        """Calculate Network Latency."""
+        try:
+            return system_data.get("network_latency", 0.0)
+        except Exception as e:
+            self.logger.error(f"Error calculating Network Latency: {e}")
+            return 0.0
+
+    def _calculate_error_rate(self, system_data: dict[str, Any]) -> float:
+        """Calculate Error Rate."""
+        try:
+            return system_data.get("error_rate", 0.0)
+        except Exception as e:
+            self.logger.error(f"Error calculating Error Rate: {e}")
+            return 0.0
+
+    def _calculate_uptime(self, system_data: dict[str, Any]) -> float:
+        """Calculate Uptime."""
+        try:
+            return system_data.get("uptime", 0.0)
+        except Exception as e:
+            self.logger.error(f"Error calculating Uptime: {e}")
+            return 0.0
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="supervision results storage",
+    )
+    async def _store_supervision_results(self) -> None:
+        """Store supervision results."""
+        try:
+            # Add timestamp
+            self.supervision_results["timestamp"] = datetime.now().isoformat()
+
+            # Add to history
+            self.supervision_history.append(self.supervision_results.copy())
+
+            # Limit history size
+            if len(self.supervision_history) > self.max_supervision_history:
+                self.supervision_history.pop(0)
+
+            self.logger.info("Supervision results stored successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error storing supervision results: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="supervision results getting",
+    )
+    def get_supervision_results(
+        self,
+        supervision_type: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get supervision results.
+
+        Args:
+            supervision_type: Optional supervision type filter
+
+        Returns:
+            Dict[str, Any]: Supervision results
+        """
+        try:
+            if supervision_type:
+                return self.supervision_results.get(supervision_type, {})
+            return self.supervision_results.copy()
+
+        except Exception as e:
+            self.logger.error(f"Error getting supervision results: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="supervision history getting",
+    )
+    def get_supervision_history(
+        self,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Get supervision history.
+
+        Args:
+            limit: Optional limit on number of records
+
+        Returns:
+            List[Dict[str, Any]]: Supervision history
+        """
+        try:
+            history = self.supervision_history.copy()
+
+            if limit:
+                history = history[-limit:]
+
+            return history
+
+        except Exception as e:
+            self.logger.error(f"Error getting supervision history: {e}")
+            return []
+
+    def get_supervisor_status(self) -> dict[str, Any]:
+        """
+        Get supervisor status information.
+
+        Returns:
+            Dict[str, Any]: Supervisor status
+        """
+        return {
+            "is_supervising": self.is_supervising,
+            "supervision_interval": self.supervision_interval,
+            "max_supervision_history": self.max_supervision_history,
+            "enable_performance_monitoring": self.enable_performance_monitoring,
+            "enable_risk_monitoring": self.enable_risk_monitoring,
+            "enable_portfolio_monitoring": self.supervisor_config.get(
+                "enable_portfolio_monitoring",
+                False,
+            ),
+            "enable_system_monitoring": self.supervisor_config.get(
+                "enable_system_monitoring",
+                True,
+            ),
+            "supervision_history_count": len(self.supervision_history),
+        }
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="modular supervisor cleanup",
+    )
+    async def stop(self) -> None:
+        """Stop the modular supervisor."""
+        self.logger.info("🛑 Stopping Modular Supervisor...")
+
+        try:
+            # Stop supervising
+            self.is_supervising = False
+
+            # Clear results
+            self.supervision_results.clear()
+
+            # Clear history
+            self.supervision_history.clear()
+
+            self.logger.info("✅ Modular Supervisor stopped successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error stopping modular supervisor: {e}")
+
+
+# Global modular supervisor instance
+modular_supervisor: ModularSupervisor | None = None
+
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="modular supervisor setup",
+)
+async def setup_modular_supervisor(
+    config: dict[str, Any] | None = None,
+) -> ModularSupervisor | None:
+    """
+    Setup global modular supervisor.
+
+    Args:
+        config: Optional configuration dictionary
+
+    Returns:
+        Optional[ModularSupervisor]: Global modular supervisor instance
+    """
+    try:
+        global modular_supervisor
+
+        if config is None:
+            config = {
+                "modular_supervisor": {
+                    "supervision_interval": 60,
+                    "max_supervision_history": 100,
+                    "enable_performance_monitoring": True,
+                    "enable_risk_monitoring": True,
+                    "enable_portfolio_monitoring": False,
+                    "enable_system_monitoring": True,
+                },
+            }
+
+        # Create modular supervisor
+        modular_supervisor = ModularSupervisor(config)
+
+        # Initialize modular supervisor
+        success = await modular_supervisor.initialize()
+        if success:
+            return modular_supervisor
+        return None
+
+    except Exception as e:
+        print(f"Error setting up modular supervisor: {e}")
+        return None

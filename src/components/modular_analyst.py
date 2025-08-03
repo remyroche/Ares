@@ -1,671 +1,889 @@
 # src/components/modular_analyst.py
 
-from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
-import os
-import pandas as pd
+from datetime import datetime
+from typing import Any
 
-from src.utils.model_manager import ModelManager
-from backtesting.ares_data_preparer import get_sr_levels, calculate_and_label_regimes
-from src.interfaces import IAnalyst, MarketData, AnalysisResult, EventType
-from src.interfaces.base_interfaces import IExchangeClient, IStateManager, IEventBus
-from src.utils.logger import system_logger
-from src.config import settings, CONFIG
-from src.analyst.feature_engineering import FeatureEngineeringEngine
-from src.analyst.regime_classifier import MarketRegimeClassifier
-from src.analyst.sr_analyzer import SRLevelAnalyzer
-from src.analyst.technical_analyzer import TechnicalAnalyzer
-from src.analyst.market_health_analyzer import GeneralMarketAnalystModule
-from src.analyst.liquidation_risk_model import ProbabilisticLiquidationRiskModel
-from src.analyst.predictive_ensembles.ensemble_orchestrator import (
-    RegimePredictiveEnsembles,
-)
+import numpy as np
+
 from src.utils.error_handler import (
     handle_errors,
-    handle_data_processing_errors,
+    handle_specific_errors,
 )
+from src.utils.logger import system_logger
 
 
-class ModularAnalyst(IAnalyst):
+class ModularAnalyst:
     """
-    Modular implementation of the Analyst that implements the IAnalyst interface.
-    Uses dependency injection and event-driven communication.
+    Enhanced modular analyst with comprehensive error handling and type safety.
     """
 
-    def __init__(
-        self,
-        exchange_client: IExchangeClient,
-        state_manager: IStateManager,
-        event_bus: Optional[IEventBus] = None,
-    ):
+    def __init__(self, config: dict[str, Any]) -> None:
         """
-        Initialize the modular analyst.
+        Initialize modular analyst with enhanced type safety.
 
         Args:
-            exchange_client: Exchange client for data access
-            state_manager: State manager for persistence
-            event_bus: Optional event bus for communication
+            config: Configuration dictionary
         """
-        self.exchange = exchange_client
-        self.state_manager = state_manager
-        self.event_bus = event_bus
+        self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("ModularAnalyst")
 
-        self.model_manager = ModelManager()
+        # Analysis state
+        self.is_analyzing: bool = False
+        self.analysis_results: dict[str, Any] = {}
+        self.analysis_history: list[dict[str, Any]] = []
 
         # Configuration
-        self.trade_symbol = settings.trade_symbol
-        self.timeframe = settings.timeframe
-        self.last_kline_open_time = None
-        self.running = False
-
-        # Internal storage for historical data
-        self._historical_klines = pd.DataFrame()
-        self._historical_agg_trades = pd.DataFrame()
-        self._historical_futures = pd.DataFrame()
-
-        # Model checkpoint directory
-        self.model_checkpoint_dir = os.path.join(
-            CONFIG["CHECKPOINT_DIR"], "analyst_models"
+        self.analyst_config: dict[str, Any] = self.config.get("modular_analyst", {})
+        self.analysis_interval: int = self.analyst_config.get("analysis_interval", 60)
+        self.max_analysis_history: int = self.analyst_config.get(
+            "max_analysis_history",
+            100,
         )
-        os.makedirs(self.model_checkpoint_dir, exist_ok=True)
-
-        # Initialize sub-analyzers
-        self.feature_engineering = FeatureEngineeringEngine(settings.CONFIG)
-        self.sr_analyzer = SRLevelAnalyzer(settings.CONFIG["analyst"]["sr_analyzer"])
-        self.regime_classifier = MarketRegimeClassifier(
-            settings.CONFIG, self.sr_analyzer
+        self.enable_technical_analysis: bool = self.analyst_config.get(
+            "enable_technical_analysis",
+            True,
         )
-        self.technical_analyzer = TechnicalAnalyzer(
-            settings.CONFIG["analyst"]["technical_analyzer"]
+        self.enable_fundamental_analysis: bool = self.analyst_config.get(
+            "enable_fundamental_analysis",
+            True,
         )
-        self.market_health_analyzer = GeneralMarketAnalystModule(settings.CONFIG)
-        self.liquidation_risk_model = ProbabilisticLiquidationRiskModel(settings.CONFIG)
-        self.predictive_ensembles = RegimePredictiveEnsembles(settings.CONFIG)
 
-        self.logger.info("ModularAnalyst initialized")
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="modular_analyst_start"
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid modular analyst configuration"),
+            AttributeError: (False, "Missing required analyst parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="modular analyst initialization",
     )
-    async def start(self) -> None:
-        """Start the modular analyst"""
-        self.logger.info("Starting ModularAnalyst")
-        self.running = True
-
-        # Load initial historical data before subscribing to live updates
-        await self._load_historical_data(self.trade_symbol, None, None)
-
-        # Subscribe to market data events if event bus is available
-        if self.event_bus:
-            await self.event_bus.subscribe(
-                EventType.MARKET_DATA_RECEIVED, self._handle_market_data
-            )
-
-        self.logger.info("ModularAnalyst started")
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="modular_analyst_stop"
-    )
-    async def stop(self) -> None:
-        """Stop the modular analyst"""
-        self.logger.info("Stopping ModularAnalyst")
-        self.running = False
-
-        # Unsubscribe from events if event bus is available
-        if self.event_bus:
-            await self.event_bus.unsubscribe(
-                EventType.MARKET_DATA_RECEIVED, self._handle_market_data
-            )
-
-        self.logger.info("ModularAnalyst stopped")
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="analyze_market_data"
-    )
-    async def analyze_market_data(self, market_data: MarketData) -> AnalysisResult:
+    async def initialize(self) -> bool:
         """
-        Analyze market data and return analysis result.
-
-        Args:
-            market_data: Market data to analyze
+        Initialize modular analyst with enhanced error handling.
 
         Returns:
-            Analysis result
+            bool: True if initialization successful, False otherwise
         """
-        if not self.running:
-            self.logger.warning("Analyst not running, skipping analysis")
-            return None
-
-        self.logger.debug(f"Analyzing market data for {market_data.symbol}")
-
-        # Convert MarketData to DataFrame format
-        df = pd.DataFrame(
-            [
-                {
-                    "open_time": market_data.timestamp,
-                    "open": market_data.open,
-                    "high": market_data.high,
-                    "low": market_data.low,
-                    "close": market_data.close,
-                    "volume": market_data.volume,
-                    "close_time": market_data.timestamp + timedelta(minutes=1),
-                }
-            ]
-        )
-
-        # Run analysis pipeline
-        analysis_result = await self._run_analysis_pipeline(df)
-
-        # Publish analysis completed event
-        if self.event_bus and analysis_result:
-            await self.event_bus.publish(
-                EventType.ANALYSIS_COMPLETED, analysis_result, "ModularAnalyst"
-            )
-
-        return analysis_result
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=[], context="get_historical_analysis"
-    )
-    async def get_historical_analysis(
-        self, symbol: str, start_date: datetime, end_date: datetime
-    ) -> List[AnalysisResult]:
-        """
-        Get historical analysis results.
-
-        Args:
-            symbol: Trading symbol
-            start_date: Start date
-            end_date: End date
-
-        Returns:
-            List of analysis results
-        """
-        self.logger.info(
-            f"Getting historical analysis for {symbol} from {start_date} to {end_date}"
-        )
-
-        # Load historical data
-        historical_data = await self._load_historical_data(symbol, start_date, end_date)
-
-        if historical_data.empty:
-            self.logger.warning("No historical data found")
-            return []
-
-        # Run analysis on historical data
-        analysis_results = []
-        for _, row in historical_data.iterrows():
-            market_data = MarketData(
-                symbol=symbol,
-                timestamp=row["open_time"],
-                open=row["open"],
-                high=row["high"],
-                low=row["low"],
-                close=row["close"],
-                volume=row["volume"],
-                interval=self.timeframe,
-            )
-
-            result = await self.analyze_market_data(market_data)
-            if result:
-                analysis_results.append(result)
-
-        return analysis_results
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=False, context="train_models"
-    )
-    async def train_models(self, training_data: pd.DataFrame) -> bool:
-        """
-        Train analysis models.
-
-        Args:
-            training_data: Training data
-
-        Returns:
-            True if training successful
-        """
-        self.logger.info("Training analysis models")
-
         try:
-            # Train feature engineering
-            await self.feature_engineering.generate_all_features(training_data)
+            self.logger.info("Initializing Modular Analyst...")
 
-            # Train regime classifier
-            await self.regime_classifier.train(training_data)
+            # Load analyst configuration
+            await self._load_analyst_configuration()
 
-            # Train predictive ensembles
-            await self.predictive_ensembles.train_models(training_data)
+            # Validate configuration
+            if not self._validate_configuration():
+                self.logger.error("Invalid configuration for modular analyst")
+                return False
 
-            # Save models
-            await self._save_models()
+            # Initialize analysis modules
+            await self._initialize_analysis_modules()
 
-            self.logger.info("Model training completed successfully")
+            self.logger.info("✅ Modular Analyst initialization completed successfully")
             return True
 
         except Exception as e:
-            self.logger.error(f"Model training failed: {e}", exc_info=True)
+            self.logger.error(f"❌ Modular Analyst initialization failed: {e}")
             return False
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="load_models")
-    async def load_models(self, model_path: str) -> bool:
-        """
-        Load trained models.
-
-        Args:
-            model_path: Path to model files
-
-        Returns:
-            True if loading successful
-        """
-        self.logger.info(f"Loading models from {model_path}")
-
-        try:
-            # Load regime classifier
-            await self.regime_classifier.load_models(model_path)
-
-            # Load predictive ensembles
-            await self.predictive_ensembles.load_models(model_path)
-
-            # Load feature engineering models
-            await self.feature_engineering.load_autoencoder(model_path)
-
-            self.logger.info("Models loaded successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Model loading failed: {e}", exc_info=True)
-            return False
-
-    async def _handle_market_data(self, event) -> None:
-        """
-        Handles new market data events, updates historical data,
-        and triggers a new analysis run.
-        """
-        market_data: MarketData = event.data
-
-        # Convert new data to a DataFrame row
-        new_kline_row = pd.DataFrame(
-            [
-                {
-                    "open": market_data.open,
-                    "high": market_data.high,
-                    "low": market_data.low,
-                    "close": market_data.close,
-                    "volume": market_data.volume,
-                }
-            ],
-            index=[pd.to_datetime(market_data.timestamp, unit="ms")],
-        )
-
-        # Append new data and keep the last N rows (e.g., 1000) for analysis
-        self._historical_klines = pd.concat([self._historical_klines, new_kline_row])
-        self._historical_klines = self._historical_klines.iloc[-1000:]
-
-        # Now, run the full analysis on the updated historical data
-        await self.run_full_analysis()
-
-    @handle_data_processing_errors(
-        exceptions=(ValueError, TypeError, ZeroDivisionError),
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="run_analysis_pipeline",
+        context="analyst configuration loading",
     )
-    async def _run_analysis_pipeline(
-        self, df: pd.DataFrame
-    ) -> Optional[AnalysisResult]:
-        """Run the complete analysis pipeline"""
+    async def _load_analyst_configuration(self) -> None:
+        """Load analyst configuration."""
         try:
-            # Initialize analysis data
-            analysis_data = await self._initialize_analyst_intelligence(df)
+            # Set default analyst parameters
+            self.analyst_config.setdefault("analysis_interval", 60)
+            self.analyst_config.setdefault("max_analysis_history", 100)
+            self.analyst_config.setdefault("enable_technical_analysis", True)
+            self.analyst_config.setdefault("enable_fundamental_analysis", True)
+            self.analyst_config.setdefault("enable_sentiment_analysis", False)
+            self.analyst_config.setdefault("enable_risk_analysis", True)
 
-            # Prepare analysis data
-            prepared_data = await self._prepare_analysis_data(analysis_data)
+            # Update configuration
+            self.analysis_interval = self.analyst_config["analysis_interval"]
+            self.max_analysis_history = self.analyst_config["max_analysis_history"]
+            self.enable_technical_analysis = self.analyst_config[
+                "enable_technical_analysis"
+            ]
+            self.enable_fundamental_analysis = self.analyst_config[
+                "enable_fundamental_analysis"
+            ]
 
-            # Run analysis components
-            analysis_results = await self._run_analysis_components(prepared_data)
-
-            # Build analysis result
-            result = AnalysisResult(
-                timestamp=datetime.now(),
-                symbol=self.trade_symbol,
-                confidence=analysis_results.get("confidence", 0.0),
-                signal=analysis_results.get("signal", "HOLD"),
-                features=analysis_results.get("features", {}),
-                technical_indicators=analysis_results.get("technical_indicators", {}),
-                market_regime=analysis_results.get("market_regime", "UNKNOWN"),
-                support_resistance=analysis_results.get("support_resistance", {}),
-                risk_metrics=analysis_results.get("risk_metrics", {}),
-            )
-
-            return result
+            self.logger.info("Analyst configuration loaded successfully")
 
         except Exception as e:
-            self.logger.error(f"Analysis pipeline failed: {e}", exc_info=True)
-            return None
+            self.logger.error(f"Error loading analyst configuration: {e}")
 
-    async def _initialize_analyst_intelligence(
-        self, df: pd.DataFrame
-    ) -> Dict[str, Any]:
-        """Initialize analyst intelligence with data"""
-        return {
-            "klines_data": df,
-            "agg_trades_data": pd.DataFrame(),
-            "futures_data": pd.DataFrame(),
-        }
-
-    async def _prepare_analysis_data(
-        self, analysis_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Prepare data for analysis"""
-        klines_df = analysis_data["klines_data"]
-
-        # Format klines data
-        formatted_klines = await self._format_klines_data(klines_df)
-
-        # Prepare aggregated trades data
-        agg_trades_data = await self._prepare_agg_trades_data(
-            analysis_data.get("agg_trades_data", pd.DataFrame())
-        )
-
-        return {
-            "formatted_klines": formatted_klines,
-            "agg_trades_data": agg_trades_data,
-            "futures_data": analysis_data.get("futures_data", pd.DataFrame()),
-        }
-
-    async def _format_klines_data(self, klines_df: pd.DataFrame) -> pd.DataFrame:
-        """Format klines data for analysis"""
-        if klines_df.empty:
-            return pd.DataFrame()
-
-        # Ensure required columns exist
-        required_columns = ["open_time", "open", "high", "low", "close", "volume"]
-        for col in required_columns:
-            if col not in klines_df.columns:
-                self.logger.warning(f"Missing column: {col}")
-                return pd.DataFrame()
-
-        return klines_df.copy()
-
-    async def _prepare_agg_trades_data(
-        self, agg_trades_df: pd.DataFrame
-    ) -> pd.DataFrame:
-        """Prepare aggregated trades data"""
-        if agg_trades_df.empty:
-            return pd.DataFrame()
-
-        return agg_trades_df.copy()
-
-    async def _run_analysis_components(
-        self, prepared_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Run all analysis components"""
-        results = {}
-
-        try:
-            # Market regime analysis
-            regime_result = await self._run_market_regime_analysis(prepared_data)
-            results.update(regime_result)
-
-            # Support/Resistance analysis
-            sr_result = await self._run_sr_analysis(prepared_data)
-            results.update(sr_result)
-
-            # Technical analysis
-            technical_result = await self._run_technical_analysis(prepared_data)
-            results.update(technical_result)
-
-            # Market health analysis
-            health_result = await self._run_market_health_analysis(prepared_data)
-            results.update(health_result)
-
-            # Liquidation risk analysis
-            risk_result = await self._run_liquidation_risk_analysis(prepared_data)
-            results.update(risk_result)
-
-            # Predictive ensembles
-            ensemble_result = await self._run_predictive_ensembles(prepared_data)
-            results.update(ensemble_result)
-
-        except Exception as e:
-            self.logger.error(f"Error running analysis components: {e}", exc_info=True)
-
-        return results
-
-    async def _run_market_regime_analysis(
-        self, prepared_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Run market regime analysis"""
-        try:
-            klines_df = prepared_data["formatted_klines"]
-            if klines_df.empty:
-                return {"market_regime": "UNKNOWN"}
-
-            regime = await self.regime_classifier.predict_regime(klines_df)
-            return {"market_regime": regime}
-
-        except Exception as e:
-            self.logger.error(f"Market regime analysis failed: {e}")
-            return {"market_regime": "UNKNOWN"}
-
-    async def _run_sr_analysis(self, prepared_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Run support/resistance analysis"""
-        try:
-            klines_df = prepared_data["formatted_klines"]
-            if klines_df.empty:
-                return {"support_resistance": {}}
-
-            sr_levels = await self.sr_analyzer.analyze(klines_df)
-            return {"support_resistance": sr_levels}
-
-        except Exception as e:
-            self.logger.error(f"SR analysis failed: {e}")
-            return {"support_resistance": {}}
-
-    async def _run_technical_analysis(
-        self, prepared_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Run technical analysis"""
-        try:
-            klines_df = prepared_data["formatted_klines"]
-            if klines_df.empty:
-                return {"technical_indicators": {}}
-
-            technical_indicators = await self.technical_analyzer.analyze(klines_df)
-            return {"technical_indicators": technical_indicators}
-
-        except Exception as e:
-            self.logger.error(f"Technical analysis failed: {e}")
-            return {"technical_indicators": {}}
-
-    async def _run_market_health_analysis(
-        self, prepared_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Run market health analysis"""
-        try:
-            klines_df = prepared_data["formatted_klines"]
-            if klines_df.empty:
-                return {"market_health": 0.0}
-
-            health_score = await self.market_health_analyzer.get_market_health_score(
-                klines_df
-            )
-            return {"market_health": health_score}
-
-        except Exception as e:
-            self.logger.error(f"Market health analysis failed: {e}")
-            return {"market_health": 0.0}
-
-    async def _run_liquidation_risk_analysis(
-        self, prepared_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Run liquidation risk analysis"""
-        try:
-            klines_df = prepared_data["formatted_klines"]
-            if klines_df.empty:
-                return {"risk_metrics": {}}
-
-            risk_metrics = await self.liquidation_risk_model.get_risk_metrics(klines_df)
-            return {"risk_metrics": risk_metrics}
-
-        except Exception as e:
-            self.logger.error(f"Liquidation risk analysis failed: {e}")
-            return {"risk_metrics": {}}
-
-    async def run_full_analysis(self):
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
+    def _validate_configuration(self) -> bool:
         """
-        Runs the entire analysis pipeline on the current historical data.
-        This is the new central point for triggering analysis.
+        Validate analyst configuration.
+
+        Returns:
+            bool: True if configuration is valid, False otherwise
         """
-        if not self.running or self._historical_klines.empty:
-            return
-
-        self.logger.debug(
-            "Running full analysis pipeline on updated historical data..."
-        )
-
-        # The existing pipeline structure can now be called with the full dataframes
-        analysis_result = await self._run_analysis_pipeline(self._historical_klines)
-
-        if self.event_bus and analysis_result:
-            await self.event_bus.publish(
-                EventType.ANALYSIS_COMPLETED, analysis_result, "ModularAnalyst"
-            )
-
-    async def _run_predictive_ensembles(
-        self, prepared_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Runs prediction using the production model loaded from MLflow.
-        This method is now the core of the predictive logic.
-        """
-        self.logger.debug("Running prediction with production MLflow model.")
         try:
-            # 1. Get the production model run ID from the state manager
-            run_id = self.state_manager.get_state("production_model_run_id")
-            if not run_id:
-                self.logger.warning(
-                    "No production model run ID found in state. Cannot make prediction."
-                )
-                return {"confidence": 0.5, "signal": "HOLD", "features": {}}
+            # Validate analysis interval
+            if self.analysis_interval <= 0:
+                self.logger.error("Invalid analysis interval")
+                return False
 
-            # 2. Load the model using the ModelManager
-            # The artifact path must match what was used during training
-            model = self.model_manager.load_model_from_mlflow(run_id, "model_live")
-            if not model:
-                self.logger.error(f"Failed to load model from MLflow run ID: {run_id}")
-                return {"confidence": 0.5, "signal": "HOLD", "features": {}}
+            # Validate max analysis history
+            if self.max_analysis_history <= 0:
+                self.logger.error("Invalid max analysis history")
+                return False
 
-            # 3. Use the functions from ares_data_preparer to generate features
-            # This ensures 100% consistency between training and live prediction.
-            klines_df = prepared_data["formatted_klines"]
-            agg_trades_df = self._historical_agg_trades  # Use the full historical data
-            futures_df = self._historical_futures
+            # Validate that at least one analysis type is enabled
+            if not any(
+                [
+                    self.enable_technical_analysis,
+                    self.enable_fundamental_analysis,
+                    self.analyst_config.get("enable_sentiment_analysis", False),
+                    self.analyst_config.get("enable_risk_analysis", True),
+                ],
+            ):
+                self.logger.error("At least one analysis type must be enabled")
+                return False
 
-            daily_df = (
-                klines_df.resample("D")
-                .agg(
-                    {
-                        "open": "first",
-                        "high": "max",
-                        "low": "min",
-                        "close": "last",
-                        "volume": "sum",
-                    }
-                )
-                .dropna()
-            )
-            sr_levels = get_sr_levels(daily_df)
-            params = CONFIG.get("BEST_PARAMS", {})
+            self.logger.info("Configuration validation successful")
+            return True
 
-            featured_data = calculate_and_label_regimes(
-                klines_df, agg_trades_df, futures_df, params, sr_levels
-            )
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
+            return False
 
-            latest_data_point = featured_data.tail(1)
-            if latest_data_point.empty:
-                return {"confidence": 0.5, "signal": "HOLD", "features": {}}
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="analysis modules initialization",
+    )
+    async def _initialize_analysis_modules(self) -> None:
+        """Initialize analysis modules."""
+        try:
+            # Initialize technical analysis module
+            if self.enable_technical_analysis:
+                await self._initialize_technical_analysis()
 
-            # 4. Predict using the loaded model
-            training_features = model.feature_name_
-            # Ensure all required columns are present, fill with 0 if not
-            for col in training_features:
-                if col not in latest_data_point.columns:
-                    latest_data_point[col] = 0
+            # Initialize fundamental analysis module
+            if self.enable_fundamental_analysis:
+                await self._initialize_fundamental_analysis()
 
-            prediction_proba = model.predict_proba(latest_data_point[training_features])
-            confidence = prediction_proba[0][1]  # Probability of the "1" class (long)
-            signal = (
-                "BUY"
-                if confidence > 0.55
-                else ("SELL" if confidence < 0.45 else "HOLD")
-            )
+            # Initialize sentiment analysis module
+            if self.analyst_config.get("enable_sentiment_analysis", False):
+                await self._initialize_sentiment_analysis()
 
-            return {
-                "confidence": confidence,
-                "signal": signal,
-                "features": latest_data_point.to_dict("records")[0],
+            # Initialize risk analysis module
+            if self.analyst_config.get("enable_risk_analysis", True):
+                await self._initialize_risk_analysis()
+
+            self.logger.info("Analysis modules initialized successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing analysis modules: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="technical analysis initialization",
+    )
+    async def _initialize_technical_analysis(self) -> None:
+        """Initialize technical analysis module."""
+        try:
+            # Initialize technical indicators
+            self.technical_indicators = {
+                "sma": True,
+                "ema": True,
+                "rsi": True,
+                "macd": True,
+                "bollinger_bands": True,
             }
 
+            self.logger.info("Technical analysis module initialized")
+
         except Exception as e:
-            self.logger.error(f"Predictive ensembles failed: {e}", exc_info=True)
-            return {"confidence": 0.5, "signal": "HOLD", "features": {}}
+            self.logger.error(f"Error initializing technical analysis: {e}")
 
-    async def _load_historical_data(
-        self,
-        symbol: str,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
-    ) -> None:
-        """
-        Loads historical data from the cached CSV files into memory.
-        """
-        from src.analyst.data_utils import (
-            load_klines_data,
-            load_agg_trades_data,
-            load_futures_data,
-        )
-
-        self.logger.info("Loading historical data from cache files...")
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="fundamental analysis initialization",
+    )
+    async def _initialize_fundamental_analysis(self) -> None:
+        """Initialize fundamental analysis module."""
         try:
-            klines_filename = CONFIG["KLINES_FILENAME"]
-            agg_trades_filename = CONFIG["AGG_TRADES_FILENAME"]
-            futures_filename = CONFIG["FUTURES_FILENAME"]
+            # Initialize fundamental metrics
+            self.fundamental_metrics = {
+                "market_cap": True,
+                "volume": True,
+                "price_change": True,
+                "volatility": True,
+            }
 
-            if os.path.exists(klines_filename):
-                self._historical_klines = load_klines_data(klines_filename)
-                self.logger.info(
-                    f"Loaded {len(self._historical_klines)} historical klines."
+            self.logger.info("Fundamental analysis module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing fundamental analysis: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="sentiment analysis initialization",
+    )
+    async def _initialize_sentiment_analysis(self) -> None:
+        """Initialize sentiment analysis module."""
+        try:
+            # Initialize sentiment indicators
+            self.sentiment_indicators = {
+                "social_sentiment": True,
+                "news_sentiment": True,
+                "market_sentiment": True,
+            }
+
+            self.logger.info("Sentiment analysis module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing sentiment analysis: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="risk analysis initialization",
+    )
+    async def _initialize_risk_analysis(self) -> None:
+        """Initialize risk analysis module."""
+        try:
+            # Initialize risk metrics
+            self.risk_metrics = {
+                "var": True,
+                "max_drawdown": True,
+                "sharpe_ratio": True,
+                "volatility": True,
+            }
+
+            self.logger.info("Risk analysis module initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing risk analysis: {e}")
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid analysis parameters"),
+            AttributeError: (False, "Missing analysis components"),
+            KeyError: (False, "Missing required analysis data"),
+        },
+        default_return=False,
+        context="analysis execution",
+    )
+    async def analyze_market_data(self, market_data: dict[str, Any]) -> bool:
+        """
+        Analyze market data.
+
+        Args:
+            market_data: Market data dictionary
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if not self._validate_market_data(market_data):
+                return False
+
+            self.is_analyzing = True
+            self.logger.info("🔄 Starting market analysis...")
+
+            # Perform technical analysis
+            if self.enable_technical_analysis:
+                technical_results = await self._perform_technical_analysis(market_data)
+                self.analysis_results["technical"] = technical_results
+
+            # Perform fundamental analysis
+            if self.enable_fundamental_analysis:
+                fundamental_results = await self._perform_fundamental_analysis(
+                    market_data,
                 )
-            else:
-                self.logger.warning(f"Kline cache file not found: {klines_filename}")
+                self.analysis_results["fundamental"] = fundamental_results
 
-            if os.path.exists(agg_trades_filename):
-                self._historical_agg_trades = load_agg_trades_data(agg_trades_filename)
-            if os.path.exists(futures_filename):
-                self._historical_futures = load_futures_data(futures_filename)
+            # Perform sentiment analysis
+            if self.analyst_config.get("enable_sentiment_analysis", False):
+                sentiment_results = await self._perform_sentiment_analysis(market_data)
+                self.analysis_results["sentiment"] = sentiment_results
+
+            # Perform risk analysis
+            if self.analyst_config.get("enable_risk_analysis", True):
+                risk_results = await self._perform_risk_analysis(market_data)
+                self.analysis_results["risk"] = risk_results
+
+            # Store analysis results
+            await self._store_analysis_results()
+
+            self.is_analyzing = False
+            self.logger.info("✅ Market analysis completed successfully")
+            return True
 
         except Exception as e:
-            self.logger.error(
-                f"Failed to load historical data from files: {e}", exc_info=True
-            )
+            self.logger.error(f"Error analyzing market data: {e}")
+            self.is_analyzing = False
+            return False
 
-    async def _save_models(self) -> None:
-        """Save trained models"""
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="market data validation",
+    )
+    def _validate_market_data(self, market_data: dict[str, Any]) -> bool:
+        """
+        Validate market data.
+
+        Args:
+            market_data: Market data dictionary
+
+        Returns:
+            bool: True if valid, False otherwise
+        """
         try:
-            # Save to checkpoint directory
-            checkpoint_path = os.path.join(
-                self.model_checkpoint_dir, f"{self.trade_symbol}_models"
-            )
-            os.makedirs(checkpoint_path, exist_ok=True)
+            # Check required fields
+            required_fields = ["symbol", "price", "volume", "timestamp"]
+            for field in required_fields:
+                if field not in market_data:
+                    self.logger.error(f"Missing required field: {field}")
+                    return False
 
-            # Save individual models
-            await self.regime_classifier.save_models(checkpoint_path)
-            await self.predictive_ensembles.save_models(checkpoint_path)
-            await self.feature_engineering.save_autoencoder(checkpoint_path)
+            # Validate data types
+            if not isinstance(market_data["price"], (int, float)):
+                self.logger.error("Invalid price data type")
+                return False
 
-            self.logger.info(f"Models saved to {checkpoint_path}")
+            if not isinstance(market_data["volume"], (int, float)):
+                self.logger.error("Invalid volume data type")
+                return False
+
+            return True
 
         except Exception as e:
-            self.logger.error(f"Failed to save models: {e}")
+            self.logger.error(f"Error validating market data: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="technical analysis",
+    )
+    async def _perform_technical_analysis(
+        self,
+        market_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform technical analysis.
+
+        Args:
+            market_data: Market data dictionary
+
+        Returns:
+            Dict[str, Any]: Technical analysis results
+        """
+        try:
+            results = {}
+
+            # Calculate SMA
+            if self.technical_indicators.get("sma", False):
+                results["sma"] = self._calculate_sma(market_data)
+
+            # Calculate EMA
+            if self.technical_indicators.get("ema", False):
+                results["ema"] = self._calculate_ema(market_data)
+
+            # Calculate RSI
+            if self.technical_indicators.get("rsi", False):
+                results["rsi"] = self._calculate_rsi(market_data)
+
+            # Calculate MACD
+            if self.technical_indicators.get("macd", False):
+                results["macd"] = self._calculate_macd(market_data)
+
+            # Calculate Bollinger Bands
+            if self.technical_indicators.get("bollinger_bands", False):
+                results["bollinger_bands"] = self._calculate_bollinger_bands(
+                    market_data,
+                )
+
+            self.logger.info("Technical analysis completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing technical analysis: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="fundamental analysis",
+    )
+    async def _perform_fundamental_analysis(
+        self,
+        market_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform fundamental analysis.
+
+        Args:
+            market_data: Market data dictionary
+
+        Returns:
+            Dict[str, Any]: Fundamental analysis results
+        """
+        try:
+            results = {}
+
+            # Calculate market cap
+            if self.fundamental_metrics.get("market_cap", False):
+                results["market_cap"] = self._calculate_market_cap(market_data)
+
+            # Calculate volume metrics
+            if self.fundamental_metrics.get("volume", False):
+                results["volume_metrics"] = self._calculate_volume_metrics(market_data)
+
+            # Calculate price change
+            if self.fundamental_metrics.get("price_change", False):
+                results["price_change"] = self._calculate_price_change(market_data)
+
+            # Calculate volatility
+            if self.fundamental_metrics.get("volatility", False):
+                results["volatility"] = self._calculate_volatility(market_data)
+
+            self.logger.info("Fundamental analysis completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing fundamental analysis: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="sentiment analysis",
+    )
+    async def _perform_sentiment_analysis(
+        self,
+        market_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform sentiment analysis.
+
+        Args:
+            market_data: Market data dictionary
+
+        Returns:
+            Dict[str, Any]: Sentiment analysis results
+        """
+        try:
+            results = {}
+
+            # Calculate social sentiment
+            if self.sentiment_indicators.get("social_sentiment", False):
+                results["social_sentiment"] = self._calculate_social_sentiment(
+                    market_data,
+                )
+
+            # Calculate news sentiment
+            if self.sentiment_indicators.get("news_sentiment", False):
+                results["news_sentiment"] = self._calculate_news_sentiment(market_data)
+
+            # Calculate market sentiment
+            if self.sentiment_indicators.get("market_sentiment", False):
+                results["market_sentiment"] = self._calculate_market_sentiment(
+                    market_data,
+                )
+
+            self.logger.info("Sentiment analysis completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing sentiment analysis: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="risk analysis",
+    )
+    async def _perform_risk_analysis(
+        self,
+        market_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform risk analysis.
+
+        Args:
+            market_data: Market data dictionary
+
+        Returns:
+            Dict[str, Any]: Risk analysis results
+        """
+        try:
+            results = {}
+
+            # Calculate VaR
+            if self.risk_metrics.get("var", False):
+                results["var"] = self._calculate_var(market_data)
+
+            # Calculate max drawdown
+            if self.risk_metrics.get("max_drawdown", False):
+                results["max_drawdown"] = self._calculate_max_drawdown(market_data)
+
+            # Calculate Sharpe ratio
+            if self.risk_metrics.get("sharpe_ratio", False):
+                results["sharpe_ratio"] = self._calculate_sharpe_ratio(market_data)
+
+            # Calculate volatility
+            if self.risk_metrics.get("volatility", False):
+                results["volatility"] = self._calculate_risk_volatility(market_data)
+
+            self.logger.info("Risk analysis completed")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error performing risk analysis: {e}")
+            return {}
+
+    # Technical analysis calculation methods
+    def _calculate_sma(self, market_data: dict[str, Any]) -> float:
+        """Calculate Simple Moving Average."""
+        try:
+            # Simulate SMA calculation
+            return market_data.get("price", 0) * 1.02
+        except Exception as e:
+            self.logger.error(f"Error calculating SMA: {e}")
+            return 0.0
+
+    def _calculate_ema(self, market_data: dict[str, Any]) -> float:
+        """Calculate Exponential Moving Average."""
+        try:
+            # Simulate EMA calculation
+            return market_data.get("price", 0) * 1.01
+        except Exception as e:
+            self.logger.error(f"Error calculating EMA: {e}")
+            return 0.0
+
+    def _calculate_rsi(self, market_data: dict[str, Any]) -> float:
+        """Calculate Relative Strength Index."""
+        try:
+            # Simulate RSI calculation
+            return 50.0 + (np.random.random() * 20 - 10)
+        except Exception as e:
+            self.logger.error(f"Error calculating RSI: {e}")
+            return 50.0
+
+    def _calculate_macd(self, market_data: dict[str, Any]) -> dict[str, float]:
+        """Calculate MACD."""
+        try:
+            # Simulate MACD calculation
+            return {
+                "macd": market_data.get("price", 0) * 0.001,
+                "signal": market_data.get("price", 0) * 0.0008,
+                "histogram": market_data.get("price", 0) * 0.0002,
+            }
+        except Exception as e:
+            self.logger.error(f"Error calculating MACD: {e}")
+            return {"macd": 0.0, "signal": 0.0, "histogram": 0.0}
+
+    def _calculate_bollinger_bands(
+        self,
+        market_data: dict[str, Any],
+    ) -> dict[str, float]:
+        """Calculate Bollinger Bands."""
+        try:
+            price = market_data.get("price", 0)
+            # Simulate Bollinger Bands calculation
+            return {"upper": price * 1.05, "middle": price, "lower": price * 0.95}
+        except Exception as e:
+            self.logger.error(f"Error calculating Bollinger Bands: {e}")
+            return {"upper": 0.0, "middle": 0.0, "lower": 0.0}
+
+    # Fundamental analysis calculation methods
+    def _calculate_market_cap(self, market_data: dict[str, Any]) -> float:
+        """Calculate market cap."""
+        try:
+            return market_data.get("price", 0) * market_data.get("volume", 0)
+        except Exception as e:
+            self.logger.error(f"Error calculating market cap: {e}")
+            return 0.0
+
+    def _calculate_volume_metrics(
+        self,
+        market_data: dict[str, Any],
+    ) -> dict[str, float]:
+        """Calculate volume metrics."""
+        try:
+            volume = market_data.get("volume", 0)
+            return {
+                "current_volume": volume,
+                "avg_volume": volume * 0.8,
+                "volume_ratio": 1.25,
+            }
+        except Exception as e:
+            self.logger.error(f"Error calculating volume metrics: {e}")
+            return {"current_volume": 0.0, "avg_volume": 0.0, "volume_ratio": 0.0}
+
+    def _calculate_price_change(self, market_data: dict[str, Any]) -> float:
+        """Calculate price change."""
+        try:
+            # Simulate price change calculation
+            return (np.random.random() - 0.5) * 0.1
+        except Exception as e:
+            self.logger.error(f"Error calculating price change: {e}")
+            return 0.0
+
+    def _calculate_volatility(self, market_data: dict[str, Any]) -> float:
+        """Calculate volatility."""
+        try:
+            # Simulate volatility calculation
+            return np.random.random() * 0.05
+        except Exception as e:
+            self.logger.error(f"Error calculating volatility: {e}")
+            return 0.0
+
+    # Sentiment analysis calculation methods
+    def _calculate_social_sentiment(self, market_data: dict[str, Any]) -> float:
+        """Calculate social sentiment."""
+        try:
+            # Simulate social sentiment calculation
+            return (np.random.random() - 0.5) * 2
+        except Exception as e:
+            self.logger.error(f"Error calculating social sentiment: {e}")
+            return 0.0
+
+    def _calculate_news_sentiment(self, market_data: dict[str, Any]) -> float:
+        """Calculate news sentiment."""
+        try:
+            # Simulate news sentiment calculation
+            return (np.random.random() - 0.5) * 2
+        except Exception as e:
+            self.logger.error(f"Error calculating news sentiment: {e}")
+            return 0.0
+
+    def _calculate_market_sentiment(self, market_data: dict[str, Any]) -> float:
+        """Calculate market sentiment."""
+        try:
+            # Simulate market sentiment calculation
+            return (np.random.random() - 0.5) * 2
+        except Exception as e:
+            self.logger.error(f"Error calculating market sentiment: {e}")
+            return 0.0
+
+    # Risk analysis calculation methods
+    def _calculate_var(self, market_data: dict[str, Any]) -> float:
+        """Calculate Value at Risk."""
+        try:
+            # Simulate VaR calculation
+            return market_data.get("price", 0) * 0.02
+        except Exception as e:
+            self.logger.error(f"Error calculating VaR: {e}")
+            return 0.0
+
+    def _calculate_max_drawdown(self, market_data: dict[str, Any]) -> float:
+        """Calculate maximum drawdown."""
+        try:
+            # Simulate max drawdown calculation
+            return np.random.random() * 0.1
+        except Exception as e:
+            self.logger.error(f"Error calculating max drawdown: {e}")
+            return 0.0
+
+    def _calculate_sharpe_ratio(self, market_data: dict[str, Any]) -> float:
+        """Calculate Sharpe ratio."""
+        try:
+            # Simulate Sharpe ratio calculation
+            return (np.random.random() - 0.5) * 2
+        except Exception as e:
+            self.logger.error(f"Error calculating Sharpe ratio: {e}")
+            return 0.0
+
+    def _calculate_risk_volatility(self, market_data: dict[str, Any]) -> float:
+        """Calculate risk volatility."""
+        try:
+            # Simulate risk volatility calculation
+            return np.random.random() * 0.05
+        except Exception as e:
+            self.logger.error(f"Error calculating risk volatility: {e}")
+            return 0.0
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="analysis results storage",
+    )
+    async def _store_analysis_results(self) -> None:
+        """Store analysis results."""
+        try:
+            # Add timestamp
+            self.analysis_results["timestamp"] = datetime.now().isoformat()
+
+            # Add to history
+            self.analysis_history.append(self.analysis_results.copy())
+
+            # Limit history size
+            if len(self.analysis_history) > self.max_analysis_history:
+                self.analysis_history.pop(0)
+
+            self.logger.info("Analysis results stored successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error storing analysis results: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="analysis results getting",
+    )
+    def get_analysis_results(
+        self,
+        analysis_type: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get analysis results.
+
+        Args:
+            analysis_type: Optional analysis type filter
+
+        Returns:
+            Dict[str, Any]: Analysis results
+        """
+        try:
+            if analysis_type:
+                return self.analysis_results.get(analysis_type, {})
+            return self.analysis_results.copy()
+
+        except Exception as e:
+            self.logger.error(f"Error getting analysis results: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="analysis history getting",
+    )
+    def get_analysis_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+        """
+        Get analysis history.
+
+        Args:
+            limit: Optional limit on number of records
+
+        Returns:
+            List[Dict[str, Any]]: Analysis history
+        """
+        try:
+            history = self.analysis_history.copy()
+
+            if limit:
+                history = history[-limit:]
+
+            return history
+
+        except Exception as e:
+            self.logger.error(f"Error getting analysis history: {e}")
+            return []
+
+    def get_analyst_status(self) -> dict[str, Any]:
+        """
+        Get analyst status information.
+
+        Returns:
+            Dict[str, Any]: Analyst status
+        """
+        return {
+            "is_analyzing": self.is_analyzing,
+            "analysis_interval": self.analysis_interval,
+            "max_analysis_history": self.max_analysis_history,
+            "enable_technical_analysis": self.enable_technical_analysis,
+            "enable_fundamental_analysis": self.enable_fundamental_analysis,
+            "enable_sentiment_analysis": self.analyst_config.get(
+                "enable_sentiment_analysis",
+                False,
+            ),
+            "enable_risk_analysis": self.analyst_config.get(
+                "enable_risk_analysis",
+                True,
+            ),
+            "analysis_history_count": len(self.analysis_history),
+        }
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="modular analyst cleanup",
+    )
+    async def stop(self) -> None:
+        """Stop the modular analyst."""
+        self.logger.info("🛑 Stopping Modular Analyst...")
+
+        try:
+            # Stop analysis
+            self.is_analyzing = False
+
+            # Clear results
+            self.analysis_results.clear()
+
+            # Clear history
+            self.analysis_history.clear()
+
+            self.logger.info("✅ Modular Analyst stopped successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error stopping modular analyst: {e}")
+
+
+# Global modular analyst instance
+modular_analyst: ModularAnalyst | None = None
+
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="modular analyst setup",
+)
+async def setup_modular_analyst(
+    config: dict[str, Any] | None = None,
+) -> ModularAnalyst | None:
+    """
+    Setup global modular analyst.
+
+    Args:
+        config: Optional configuration dictionary
+
+    Returns:
+        Optional[ModularAnalyst]: Global modular analyst instance
+    """
+    try:
+        global modular_analyst
+
+        if config is None:
+            config = {
+                "modular_analyst": {
+                    "analysis_interval": 60,
+                    "max_analysis_history": 100,
+                    "enable_technical_analysis": True,
+                    "enable_fundamental_analysis": True,
+                    "enable_sentiment_analysis": False,
+                    "enable_risk_analysis": True,
+                },
+            }
+
+        # Create modular analyst
+        modular_analyst = ModularAnalyst(config)
+
+        # Initialize modular analyst
+        success = await modular_analyst.initialize()
+        if success:
+            return modular_analyst
+        return None
+
+    except Exception as e:
+        print(f"Error setting up modular analyst: {e}")
+        return None

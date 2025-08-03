@@ -1,268 +1,619 @@
+from datetime import datetime, timedelta
+from typing import Any
+
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Optional
 
+from src.utils.error_handler import (
+    handle_errors,
+    handle_specific_errors,
+)
 from src.utils.logger import system_logger
-from src.config import CONFIG
 
 
 class MLTargetGenerator:
     """
-    CHANGE: Implemented a new S/R-based target generation strategy.
-    This class generates a dedicated 'target_sr' column with specific labels
-    for S/R Fade (Reversal) and Breakout scenarios. This allows the SRZoneActionEnsemble
-    to be trained to identify these precise, actionable trading setups.
-    ADDED: Barrier caps and a fixed risk-reward ratio for high-leverage trading.
+    Enhanced ML target generator with comprehensive error handling and type safety.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        if config is None:
-            config = CONFIG
-        self.config = config.get("analyst", {}).get("ml_target_generator", {})
-        self.logger = system_logger.getChild(self.__class__.__name__)
+    def __init__(self, config: dict[str, Any]) -> None:
+        """
+        Initialize ML target generator with enhanced type safety.
 
-        # --- Main Configuration ---
-        self.forward_window = self.config.get("forward_window", 60)
-        self.atr_period = self.config.get("atr_period", 14)
-        self.atr_multiplier_tp = self.config.get("atr_multiplier_tp", 2.0)
-        self.max_drawdown_pct_of_risk = self.config.get(
-            "max_drawdown_pct_of_risk", 0.75
+        Args:
+            config: Configuration dictionary
+        """
+        self.config: dict[str, Any] = config
+        self.logger = system_logger.getChild("MLTargetGenerator")
+
+        # Target generation state
+        self.current_targets: dict[str, Any] | None = None
+        self.target_history: list[dict[str, Any]] = []
+        self.last_target_update: datetime | None = None
+
+        # Configuration
+        self.target_config: dict[str, Any] = self.config.get("ml_target_generator", {})
+        self.min_samples: int = self.target_config.get("min_samples", 100)
+        # Import the centralized lookback window function
+        from src.config import get_lookback_window
+        self.lookback_window: int = get_lookback_window()
+        self.confidence_threshold: float = self.target_config.get(
+            "confidence_threshold",
+            0.6,
         )
 
-        # --- New Barrier Constraints ---
-        # The upper barrier (take profit) is capped at 1.25% of the price.
-        self.max_upper_barrier_pct = self.config.get("max_upper_barrier_pct", 0.0125)
-        # The lower barrier (stop loss) is now 50% of the upper barrier distance, enforcing a 2:1 RR.
-        self.risk_reward_ratio = self.config.get("risk_reward_ratio", 2.0)
-
-    def generate_targets(
-        self, features_df: pd.DataFrame, leverage: int = 50
-    ) -> pd.DataFrame:
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid ML target generator configuration"),
+            AttributeError: (False, "Missing required target parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="ML target generator initialization",
+    )
+    async def initialize(self) -> bool:
         """
-        Main orchestration method for generating all target types.
-        """
-        self.logger.info(
-            "Generating all ML target types with new 2:1 RR barrier constraints..."
-        )
+        Initialize ML target generator with enhanced error handling.
 
-        if "ATR" not in features_df.columns:
-            features_df["ATR"] = (
-                (features_df["high"] - features_df["low"])
-                .rolling(window=self.atr_period)
-                .mean()
+        Returns:
+            bool: True if initialization successful, False otherwise
+        """
+        try:
+            self.logger.info("Initializing ML Target Generator...")
+
+            # Load target configuration
+            await self._load_target_configuration()
+
+            # Initialize target parameters
+            await self._initialize_target_parameters()
+
+            # Validate configuration
+            if not self._validate_configuration():
+                self.logger.error("Invalid configuration for ML target generator")
+                return False
+
+            self.logger.info(
+                "✅ ML Target Generator initialization completed successfully",
+            )
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ ML Target Generator initialization failed: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="target configuration loading",
+    )
+    async def _load_target_configuration(self) -> None:
+        """Load target generation configuration."""
+        try:
+            # Set default target parameters
+            self.target_config.setdefault("min_samples", 100)
+            self.target_config.setdefault("confidence_threshold", 0.6)
+            self.target_config.setdefault("min_tp_distance", 0.005)
+            self.target_config.setdefault("max_tp_distance", 0.05)
+            self.target_config.setdefault("min_sl_distance", 0.002)
+            self.target_config.setdefault("max_sl_distance", 0.03)
+
+            # Use centralized lookback window
+            from src.config import get_lookback_window
+            lookback_days = get_lookback_window()
+            self.logger.info(f"📊 Using lookback window: {lookback_days} days")
+
+            self.logger.info("Target configuration loaded successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error loading target configuration: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="target parameters initialization",
+    )
+    async def _initialize_target_parameters(self) -> None:
+        """Initialize target generation parameters."""
+        try:
+            # Initialize target parameters
+            self.min_samples = self.target_config["min_samples"]
+            # Use centralized lookback window
+            from src.config import get_lookback_window
+            self.lookback_window = get_lookback_window()
+            self.confidence_threshold = self.target_config["confidence_threshold"]
+
+            self.logger.info("Target parameters initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing target parameters: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
+    def _validate_configuration(self) -> bool:
+        """
+        Validate ML target generator configuration.
+
+        Returns:
+            bool: True if configuration is valid, False otherwise
+        """
+        try:
+            required_keys = ["min_samples", "confidence_threshold"]
+            for key in required_keys:
+                if key not in self.target_config:
+                    self.logger.error(
+                        f"Missing required target configuration key: {key}",
+                    )
+                    return False
+
+            # Validate parameter ranges
+            if self.min_samples < 10:
+                self.logger.error("min_samples must be at least 10")
+                return False
+
+            # Validate lookback window (now handled centrally)
+            from src.config import get_lookback_window
+            lookback_days = get_lookback_window()
+            if lookback_days < 5:
+                self.logger.error("lookback_window must be at least 5")
+                return False
+
+            if not 0 < self.confidence_threshold < 1:
+                self.logger.error("confidence_threshold must be between 0 and 1")
+                return False
+
+            self.logger.info("Configuration validation successful")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
+            return False
+
+    @handle_specific_errors(
+        error_handlers={
+            ConnectionError: (None, "Failed to connect to data source"),
+            TimeoutError: (None, "Target generation timed out"),
+            ValueError: (None, "Invalid market data"),
+        },
+        default_return=None,
+        context="target generation",
+    )
+    async def generate_targets(
+        self,
+        data: pd.DataFrame,
+        current_price: float,
+    ) -> dict[str, Any] | None:
+        """
+        Generate ML targets with enhanced error handling.
+
+        Args:
+            data: Historical market data
+            current_price: Current market price
+
+        Returns:
+            Optional[Dict[str, Any]]: Generated targets or None if failed
+        """
+        try:
+            if data.empty:
+                self.logger.error("Empty data provided for target generation")
+                return None
+
+            self.logger.info("Generating ML targets...")
+
+            # Validate data structure
+            if not self._validate_data_structure(data):
+                self.logger.error("Invalid data structure for target generation")
+                return None
+
+            # Generate target components
+            take_profit_targets = await self._generate_take_profit_targets(
+                data,
+                current_price,
+            )
+            stop_loss_targets = await self._generate_stop_loss_targets(
+                data,
+                current_price,
             )
 
-        data = features_df.dropna(subset=["ATR", "close", "high", "low"]).copy()
+            # Calculate confidence scores
+            tp_confidence = self._calculate_target_confidence(take_profit_targets, data)
+            sl_confidence = self._calculate_target_confidence(stop_loss_targets, data)
 
-        # 1. Generate standard liquidation-aware trend targets
-        trend_pnl_data = self._get_liquidation_aware_labels(data, leverage)
-        data[["target_trend", "reward", "risk"]] = trend_pnl_data
+            # Generate target results
+            targets = {
+                "take_profit_targets": take_profit_targets,
+                "stop_loss_targets": stop_loss_targets,
+                "tp_confidence": tp_confidence,
+                "sl_confidence": sl_confidence,
+                "current_price": current_price,
+                "generation_time": datetime.now(),
+                "valid_until": datetime.now() + timedelta(minutes=15),
+            }
 
-        # 2. Generate specialized S/R strategy targets
-        sr_labels = self._get_sr_strategy_labels(data)
-        data["target_sr"] = sr_labels
+            # Validate targets
+            if not self._validate_targets(targets):
+                self.logger.error("Generated targets validation failed")
+                return None
 
-        data.rename(columns={"target_trend": "target"}, inplace=True)
+            # Update state
+            self.current_targets = targets
+            self.target_history.append(targets)
+            self.last_target_update = datetime.now()
 
-        self.logger.info(
-            f"Generated Trend labels: \n{data['target'].value_counts(dropna=False)}"
-        )
-        self.logger.info(
-            f"Generated S/R labels: \n{data['target_sr'].value_counts(dropna=False)}"
-        )
-        return data
+            self.logger.info("✅ ML targets generated successfully")
+            return targets
 
-    def _get_sr_strategy_labels(self, df: pd.DataFrame) -> pd.Series:
+        except Exception as e:
+            self.logger.error(f"Error generating ML targets: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="data structure validation",
+    )
+    def _validate_data_structure(self, data: pd.DataFrame) -> bool:
         """
-        Generates labels for S/R Fade and Breakout strategies, applying new constraints.
+        Validate data structure for target generation.
+
+        Args:
+            data: DataFrame to validate
+
+        Returns:
+            bool: True if valid, False otherwise
         """
-        labels = pd.Series("SR_HOLD", index=df.index)
-        interacting_indices = df[df["Is_SR_Interacting"] == 1].index
+        try:
+            required_columns = ["open", "high", "low", "close", "volume"]
+            missing_columns = [
+                col for col in required_columns if col not in data.columns
+            ]
 
-        for idx in interacting_indices:
-            row = df.loc[idx]
-            future_candles = df.loc[idx:].iloc[1 : self.forward_window + 1]
-            if len(future_candles) < self.forward_window:
-                continue
+            if missing_columns:
+                self.logger.error(f"Missing required columns: {missing_columns}")
+                return False
 
-            atr = row["ATR"]
+            # Check for sufficient data
+            if len(data) < self.lookback_window:
+                self.logger.warning(
+                    f"Insufficient data: {len(data)} < {self.lookback_window}",
+                )
+                return False
 
-            # --- FADE (Reversal) Check ---
-            if row["Is_SR_Support_Interacting"] == 1:  # Fade Long
-                entry_price = row["low"]
-                reward_atr = atr * self.atr_multiplier_tp
-                reward_cap = entry_price * self.max_upper_barrier_pct
-                final_reward = min(reward_atr, reward_cap)
-                final_risk = final_reward / self.risk_reward_ratio
+            # Check for valid price data
+            if (data[["open", "high", "low", "close"]] <= 0).any().any():
+                self.logger.error("Invalid price data (non-positive values)")
+                return False
 
-                tp_price = entry_price + final_reward
-                sl_price = entry_price - final_risk
+            return True
 
-                tp_hit_time = future_candles[
-                    future_candles["high"] >= tp_price
-                ].index.min()
-                sl_hit_time = future_candles[
-                    future_candles["low"] <= sl_price
-                ].index.min()
+        except Exception as e:
+            self.logger.error(f"Error validating data structure: {e}")
+            return False
 
-                if pd.notna(tp_hit_time) and (
-                    pd.isna(sl_hit_time) or tp_hit_time < sl_hit_time
-                ):
-                    labels.loc[idx] = "SR_FADE_LONG"
-                    continue
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="take profit target generation",
+    )
+    async def _generate_take_profit_targets(
+        self,
+        data: pd.DataFrame,
+        current_price: float,
+    ) -> list[dict[str, Any]] | None:
+        """
+        Generate take profit targets.
 
-            if row["Is_SR_Resistance_Interacting"] == 1:  # Fade Short
-                entry_price = row["high"]
-                reward_atr = atr * self.atr_multiplier_tp
-                reward_cap = entry_price * self.max_upper_barrier_pct
-                final_reward = min(reward_atr, reward_cap)
-                final_risk = final_reward / self.risk_reward_ratio
+        Args:
+            data: Market data
+            current_price: Current price
 
-                tp_price = entry_price - final_reward
-                sl_price = entry_price + final_risk
+        Returns:
+            Optional[List[Dict[str, Any]]]: Take profit targets or None
+        """
+        try:
+            targets = []
 
-                tp_hit_time = future_candles[
-                    future_candles["low"] <= tp_price
-                ].index.min()
-                sl_hit_time = future_candles[
-                    future_candles["high"] >= sl_price
-                ].index.min()
+            # Use recent data for analysis
+            recent_data = data.tail(self.lookback_window)
 
-                if pd.notna(tp_hit_time) and (
-                    pd.isna(sl_hit_time) or tp_hit_time < sl_hit_time
-                ):
-                    labels.loc[idx] = "SR_FADE_SHORT"
-                    continue
+            # Calculate volatility-based targets
+            volatility = recent_data["close"].pct_change().std()
 
-            # --- BREAKOUT Check ---
-            breakout_threshold = atr * 0.5
-            if row["Is_SR_Resistance_Interacting"] == 1 and row["close"] > (
-                row["high"] + breakout_threshold
-            ):  # Breakout Long
-                entry_price = row["close"]
-                reward_atr = atr * self.atr_multiplier_tp
-                reward_cap = entry_price * self.max_upper_barrier_pct
-                final_reward = min(reward_atr, reward_cap)
-                final_risk = final_reward / self.risk_reward_ratio
+            # Generate multiple TP levels
+            tp_levels = [
+                {"distance": 0.01, "weight": 0.4},  # 1% - 40% weight
+                {"distance": 0.02, "weight": 0.3},  # 2% - 30% weight
+                {"distance": 0.03, "weight": 0.2},  # 3% - 20% weight
+                {"distance": 0.05, "weight": 0.1},  # 5% - 10% weight
+            ]
 
-                tp_price = entry_price + final_reward
-                sl_price = entry_price - final_risk
+            for level in tp_levels:
+                # Adjust distance based on volatility
+                adjusted_distance = level["distance"] * (1 + volatility * 10)
 
-                tp_hit_time = future_candles[
-                    future_candles["high"] >= tp_price
-                ].index.min()
-                sl_hit_time = future_candles[
-                    future_candles["low"] <= sl_price
-                ].index.min()
+                # Ensure distance is within bounds
+                adjusted_distance = max(
+                    self.target_config["min_tp_distance"],
+                    min(adjusted_distance, self.target_config["max_tp_distance"]),
+                )
 
-                if pd.notna(tp_hit_time) and (
-                    pd.isna(sl_hit_time) or tp_hit_time < sl_hit_time
-                ):
-                    labels.loc[idx] = "SR_BREAKOUT_LONG"
-                    continue
+                target_price = current_price * (1 + adjusted_distance)
 
-            if row["Is_SR_Support_Interacting"] == 1 and row["close"] < (
-                row["low"] - breakout_threshold
-            ):  # Breakout Short
-                entry_price = row["close"]
-                reward_atr = atr * self.atr_multiplier_tp
-                reward_cap = entry_price * self.max_upper_barrier_pct
-                final_reward = min(reward_atr, reward_cap)
-                final_risk = final_reward / self.risk_reward_ratio
+                targets.append(
+                    {
+                        "price": target_price,
+                        "distance": adjusted_distance,
+                        "weight": level["weight"],
+                        "type": "take_profit",
+                        "confidence": self._calculate_level_confidence(
+                            adjusted_distance,
+                            volatility,
+                        ),
+                    },
+                )
 
-                tp_price = entry_price - final_reward
-                sl_price = entry_price + final_risk
+            return targets
 
-                tp_hit_time = future_candles[
-                    future_candles["low"] <= tp_price
-                ].index.min()
-                sl_hit_time = future_candles[
-                    future_candles["high"] >= sl_price
-                ].index.min()
+        except Exception as e:
+            self.logger.error(f"Error generating take profit targets: {e}")
+            return None
 
-                if pd.notna(tp_hit_time) and (
-                    pd.isna(sl_hit_time) or tp_hit_time < sl_hit_time
-                ):
-                    labels.loc[idx] = "SR_BREAKOUT_SHORT"
-                    continue
-        return labels
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="stop loss target generation",
+    )
+    async def _generate_stop_loss_targets(
+        self,
+        data: pd.DataFrame,
+        current_price: float,
+    ) -> list[dict[str, Any]] | None:
+        """
+        Generate stop loss targets.
 
-    def _get_liquidation_aware_labels(
-        self, df: pd.DataFrame, leverage: int
-    ) -> pd.DataFrame:
-        prices = df[["high", "low", "open", "close", "ATR"]].to_numpy()
-        n = len(prices)
-        labels_pnl = np.array([["HOLD", 0.0, 0.0]] * n, dtype=object)
+        Args:
+            data: Market data
+            current_price: Current price
 
-        for i in range(n - self.forward_window):
-            entry_price, atr = prices[i, 3], prices[i, 4]
-            if entry_price == 0:
-                continue  # Avoid division by zero
+        Returns:
+            Optional[List[Dict[str, Any]]]: Stop loss targets or None
+        """
+        try:
+            targets = []
 
-            future_highs = prices[i + 1 : i + 1 + self.forward_window, 0]
-            future_lows = prices[i + 1 : i + 1 + self.forward_window, 1]
+            # Use recent data for analysis
+            recent_data = data.tail(self.lookback_window)
 
-            # --- Long Position ---
-            long_tp_atr = entry_price + (atr * self.atr_multiplier_tp)
-            long_tp_capped = entry_price * (1 + self.max_upper_barrier_pct)
-            long_tp = min(long_tp_atr, long_tp_capped)
+            # Calculate volatility-based targets
+            volatility = recent_data["close"].pct_change().std()
 
-            long_reward = long_tp - entry_price
-            long_risk = long_reward / self.risk_reward_ratio
-            long_sl = entry_price - long_risk
+            # Generate multiple SL levels
+            sl_levels = [
+                {"distance": 0.005, "weight": 0.5},  # 0.5% - 50% weight
+                {"distance": 0.01, "weight": 0.3},  # 1% - 30% weight
+                {"distance": 0.02, "weight": 0.2},  # 2% - 20% weight
+            ]
 
-            # Liquidation Guardrail
-            long_liq_price = entry_price * (1 - (1 / leverage) * 0.95)  # 0.95 buffer
-            if long_sl <= long_liq_price:
-                continue  # Skip if stop-loss is beyond liquidation point
+            for level in sl_levels:
+                # Adjust distance based on volatility
+                adjusted_distance = level["distance"] * (1 + volatility * 5)
 
-            tp_hit, sl_hit, max_dd_ok = False, False, True
-            for j in range(self.forward_window):
-                if future_lows[j] <= long_sl:
-                    sl_hit = True
-                    break
-                if (entry_price - future_lows[j]) >= (
-                    long_risk * self.max_drawdown_pct_of_risk
-                ):
-                    max_dd_ok = False
-                    break
-                if future_highs[j] >= long_tp:
-                    tp_hit = True
-                    break
-            if tp_hit and not sl_hit and max_dd_ok:
-                labels_pnl[i] = ["BUY", long_reward, long_risk]
-                continue
+                # Ensure distance is within bounds
+                adjusted_distance = max(
+                    self.target_config["min_sl_distance"],
+                    min(adjusted_distance, self.target_config["max_sl_distance"]),
+                )
 
-            # --- Short Position ---
-            short_tp_atr = entry_price - (atr * self.atr_multiplier_tp)
-            short_tp_capped = entry_price * (1 - self.max_upper_barrier_pct)
-            short_tp = max(short_tp_atr, short_tp_capped)
+                target_price = current_price * (1 - adjusted_distance)
 
-            short_reward = entry_price - short_tp
-            short_risk = short_reward / self.risk_reward_ratio
-            short_sl = entry_price + short_risk
+                targets.append(
+                    {
+                        "price": target_price,
+                        "distance": adjusted_distance,
+                        "weight": level["weight"],
+                        "type": "stop_loss",
+                        "confidence": self._calculate_level_confidence(
+                            adjusted_distance,
+                            volatility,
+                        ),
+                    },
+                )
 
-            # Liquidation Guardrail
-            short_liq_price = entry_price * (1 + (1 / leverage) * 0.95)  # 0.95 buffer
-            if short_sl >= short_liq_price:
-                continue  # Skip if stop-loss is beyond liquidation point
+            return targets
 
-            tp_hit, sl_hit, max_dd_ok = False, False, True
-            for j in range(self.forward_window):
-                if future_highs[j] >= short_sl:
-                    sl_hit = True
-                    break
-                if (future_highs[j] - entry_price) >= (
-                    short_risk * self.max_drawdown_pct_of_risk
-                ):
-                    max_dd_ok = False
-                    break
-                if future_lows[j] <= short_tp:
-                    tp_hit = True
-                    break
-            if tp_hit and not sl_hit and max_dd_ok:
-                labels_pnl[i] = ["SELL", short_reward, short_risk]
+        except Exception as e:
+            self.logger.error(f"Error generating stop loss targets: {e}")
+            return None
 
-        return pd.DataFrame(
-            labels_pnl, index=df.index, columns=["target", "reward", "risk"]
-        )
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=0.5,
+        context="level confidence calculation",
+    )
+    def _calculate_level_confidence(self, distance: float, volatility: float) -> float:
+        """
+        Calculate confidence for a target level.
+
+        Args:
+            distance: Target distance
+            volatility: Market volatility
+
+        Returns:
+            float: Confidence score between 0 and 1
+        """
+        try:
+            # Base confidence
+            confidence = 0.5
+
+            # Adjust based on distance appropriateness
+            if 0.005 <= distance <= 0.02:  # Optimal range
+                confidence += 0.2
+            elif distance > 0.05:  # Too far
+                confidence -= 0.1
+
+            # Adjust based on volatility
+            if volatility < 0.01:  # Low volatility
+                confidence += 0.1
+            elif volatility > 0.03:  # High volatility
+                confidence -= 0.1
+
+            return max(0.0, min(1.0, confidence))
+
+        except Exception as e:
+            self.logger.error(f"Error calculating level confidence: {e}")
+            return 0.5
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=0.0,
+        context="target confidence calculation",
+    )
+    def _calculate_target_confidence(
+        self,
+        targets: list[dict[str, Any]],
+        data: pd.DataFrame,
+    ) -> float:
+        """
+        Calculate overall confidence for target set.
+
+        Args:
+            targets: List of targets
+            data: Market data
+
+        Returns:
+            float: Overall confidence score
+        """
+        try:
+            if not targets:
+                return 0.0
+
+            # Calculate average confidence
+            avg_confidence = np.mean([target["confidence"] for target in targets])
+
+            # Adjust based on data quality
+            data_quality = min(len(data) / self.min_samples, 1.0)
+
+            # Weighted combination
+            final_confidence = (avg_confidence * 0.7) + (data_quality * 0.3)
+
+            return max(0.0, min(1.0, final_confidence))
+
+        except Exception as e:
+            self.logger.error(f"Error calculating target confidence: {e}")
+            return 0.0
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="target validation",
+    )
+    def _validate_targets(self, targets: dict[str, Any]) -> bool:
+        """
+        Validate generated targets.
+
+        Args:
+            targets: Targets to validate
+
+        Returns:
+            bool: True if targets are valid, False otherwise
+        """
+        try:
+            required_keys = [
+                "take_profit_targets",
+                "stop_loss_targets",
+                "tp_confidence",
+                "sl_confidence",
+            ]
+            for key in required_keys:
+                if key not in targets:
+                    self.logger.error(f"Missing required target key: {key}")
+                    return False
+
+            # Validate confidence scores
+            tp_confidence = targets.get("tp_confidence", 0)
+            sl_confidence = targets.get("sl_confidence", 0)
+
+            if (
+                tp_confidence < self.confidence_threshold
+                or sl_confidence < self.confidence_threshold
+            ):
+                self.logger.warning(
+                    f"Target confidence too low: TP={tp_confidence}, SL={sl_confidence}",
+                )
+                return False
+
+            # Validate target prices
+            current_price = targets.get("current_price", 0)
+            if current_price <= 0:
+                self.logger.error("Invalid current price")
+                return False
+
+            # Validate TP targets
+            for tp in targets.get("take_profit_targets", []):
+                if tp["price"] <= current_price:
+                    self.logger.error("Take profit target must be above current price")
+                    return False
+
+            # Validate SL targets
+            for sl in targets.get("stop_loss_targets", []):
+                if sl["price"] >= current_price:
+                    self.logger.error("Stop loss target must be below current price")
+                    return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error validating targets: {e}")
+            return False
+
+    def get_current_targets(self) -> dict[str, Any] | None:
+        """
+        Get current ML targets.
+
+        Returns:
+            Optional[Dict[str, Any]]: Current targets or None
+        """
+        return self.current_targets.copy() if self.current_targets else None
+
+    def get_target_history(self) -> list[dict[str, Any]]:
+        """
+        Get target generation history.
+
+        Returns:
+            List[Dict[str, Any]]: Target history
+        """
+        return self.target_history.copy()
+
+    def get_last_target_update(self) -> datetime | None:
+        """
+        Get last target update time.
+
+        Returns:
+            Optional[datetime]: Last update time or None
+        """
+        return self.last_target_update
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="ML target generator cleanup",
+    )
+    async def stop(self) -> None:
+        """Stop the ML target generator component."""
+        self.logger.info("🛑 Stopping ML Target Generator...")
+
+        try:
+            # Save target history
+            if self.target_history:
+                self.logger.info(f"Saving {len(self.target_history)} target records")
+
+            # Clear current state
+            self.current_targets = None
+            self.last_target_update = None
+
+            self.logger.info("✅ ML Target Generator stopped successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error stopping ML target generator: {e}")

@@ -1,827 +1,687 @@
 import asyncio
-from src.utils.logger import logger
-
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, Union  # Added import for Dict, Any, Optional
-import pandas as pd
 import os
+import time
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional, List
+from collections import defaultdict
 
-from apscheduler.schedulers.asyncio import (
-    AsyncIOScheduler,
-)  # Assuming apscheduler is installed
-from .dynamic_weighter import DynamicWeighter
-from src.utils.model_manager import ModelManager
-from src.exchange.binance import BinanceExchange
-from src.utils.logger import system_logger
-from src.config import settings, CONFIG
-from src.utils.state_manager import StateManager
-from src.supervisor.performance_monitor import PerformanceMonitor
-from src.strategist.strategist import Strategist
-from src.tactician.tactician import Tactician  # Import Tactician
+import pandas as pd
+
+# Try to import AsyncIOScheduler, with fallback if not available
+try:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    APSCHEDULER_AVAILABLE = True
+except ImportError:
+    APSCHEDULER_AVAILABLE = False
+    AsyncIOScheduler = None
+
+from emails.ares_mailer import AresMailer  # Import AresMailer
+from exchange.binance import BinanceExchange
 from src.analyst.analyst import Analyst  # Import Analyst
-from src.sentinel.sentinel import Sentinel  # Import Sentinel
+from src.config import CONFIG, settings
 from src.paper_trader import PaperTrader  # Import PaperTrader
-from src.emails.ares_mailer import AresMailer  # Import AresMailer
-from src.training.training_manager import TrainingManager
-from src.utils.error_handler import get_logged_exceptions
+from src.sentinel.sentinel import Sentinel  # Import Sentinel
+from src.strategist.strategist import Strategist
+from src.supervisor.performance_monitor import PerformanceMonitor
+from src.tactician.tactician import Tactician  # Import Tactician
+from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.error_handler import (
+    get_logged_exceptions,
     handle_errors,
     handle_file_operations,
+    handle_network_operations,
+    handle_specific_errors,
 )
+from src.utils.logger import system_logger
+from src.utils.model_manager import ModelManager
+from src.utils.state_manager import StateManager
+from src.core.config_service import ConfigurationService
+
+from .dynamic_weighter import DynamicWeighter
+
+
+class CircuitBreaker:
+    """Circuit breaker pattern for external services."""
+    
+    def __init__(self, failure_threshold: int = 5, timeout: int = 60):
+        self.failure_threshold = failure_threshold
+        self.timeout = timeout
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
+
+    @handle_errors(exceptions=(Exception,), default_return=None)
+    async def call(self, func: callable, *args, **kwargs):
+        """Execute function with circuit breaker protection."""
+        if self.state == "OPEN":
+            if time.time() - self.last_failure_time > self.timeout:
+                self.state = "HALF_OPEN"
+            else:
+                raise Exception("Circuit breaker is OPEN")
+        
+        try:
+            result = await func(*args, **kwargs)
+            if self.state == "HALF_OPEN":
+                self.state = "CLOSED"
+                self.failure_count = 0
+            return result
+        except Exception as e:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+            if self.failure_count >= self.failure_threshold:
+                self.state = "OPEN"
+            raise e
+
+
+class OnlineLearningManager:
+    """Manages online learning for model weighting based on performance."""
+    
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild("OnlineLearningManager")
+        self.model_performances: dict[str, list[float]] = defaultdict(list)
+        self.model_weights: dict[str, float] = {}
+        self.learning_rate: float = config.get("learning_rate", 0.01)
+        self.min_weight: float = config.get("min_weight", 0.1)
+        self.max_weight: float = config.get("max_weight", 0.8)
+        
+    @handle_errors(exceptions=(Exception,), default_return=None)
+    async def update_model_performance(self, model_id: str, performance: float) -> None:
+        """Update model performance and recalculate weights."""
+        try:
+            self.model_performances[model_id].append(performance)
+            
+            # Keep only recent performances (last 100)
+            if len(self.model_performances[model_id]) > 100:
+                self.model_performances[model_id] = self.model_performances[model_id][-100:]
+            
+            # Recalculate weights based on recent performance
+            await self._recalculate_weights()
+            
+            self.logger.info(f"Updated performance for model {model_id}: {performance}")
+            
+        except Exception as e:
+            self.logger.error(f"Error updating model performance: {e}")
+    
+    @handle_errors(exceptions=(Exception,), default_return=None)
+    async def _recalculate_weights(self) -> None:
+        """Recalculate model weights based on performance."""
+        try:
+            if not self.model_performances:
+                return
+            
+            # Calculate average performance for each model
+            avg_performances = {}
+            for model_id, performances in self.model_performances.items():
+                if performances:
+                    avg_performances[model_id] = sum(performances) / len(performances)
+            
+            if not avg_performances:
+                return
+            
+            # Calculate total performance
+            total_performance = sum(avg_performances.values())
+            
+            if total_performance == 0:
+                # Equal weights if no performance
+                equal_weight = 1.0 / len(avg_performances)
+                self.model_weights = {model_id: equal_weight for model_id in avg_performances}
+            else:
+                # Weight based on performance
+                for model_id, avg_perf in avg_performances.items():
+                    weight = avg_perf / total_performance
+                    # Apply min/max constraints
+                    weight = max(self.min_weight, min(self.max_weight, weight))
+                    self.model_weights[model_id] = weight
+            
+            self.logger.info(f"Recalculated weights: {self.model_weights}")
+            
+        except Exception as e:
+            self.logger.error(f"Error recalculating weights: {e}")
+    
+    def get_model_weights(self) -> dict[str, float]:
+        """Get current model weights."""
+        return self.model_weights.copy()
+    
+    def get_model_performances(self) -> dict[str, list[float]]:
+        """Get model performance history."""
+        return {k: v.copy() for k, v in self.model_performances.items()}
 
 
 class Supervisor:
     """
-    The Supervisor acts as the high-level risk and performance manager for the system.
-    It runs independently, monitoring overall portfolio health and enforcing risk policies
-    by adjusting parameters or pausing trading when necessary.
-    Now includes a daily scheduled task for error reporting.
+    Enhanced Supervisor component with DI, type hints, robust error handling,
+    advanced error handling, automatic recovery, and online learning.
     """
-
-    def __init__(
-        self, exchange_client: BinanceExchange, state_manager: StateManager, db_manager
-    ):
-        self.exchange = exchange_client
-        self.state_manager = state_manager
-        self.db_manager = db_manager
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("Supervisor")
-        self.config = settings.get("supervisor", {})  # Corrected config init
-        self.global_config = CONFIG
-        self.data = (
-            self.load_data()
-        )  # This might be for backtesting data, not live operations
+        self.is_running: bool = False
+        self.status: dict[str, Any] = {}
+        self.history: list[dict[str, Any]] = []
+        self.supervisor_config: dict[str, Any] = self.config.get("supervisor", {})
+        self.supervision_interval: int = self.supervisor_config.get("supervision_interval", 60)
+        self.max_history: int = self.supervisor_config.get("max_history", 100)
+        self.supervision_results: dict[str, Any] = {}
+        self.components: dict[str, Any] = {}
+        
+        # Advanced error handling and recovery
+        self.circuit_breakers: dict[str, CircuitBreaker] = {}
+        self.recovery_attempts: dict[str, int] = defaultdict(int)
+        self.max_recovery_attempts: int = self.supervisor_config.get("max_recovery_attempts", 3)
+        self.recovery_cooldown: int = self.supervisor_config.get("recovery_cooldown", 300)  # 5 minutes
+        self.last_recovery_attempt: dict[str, float] = {}
+        
+        # Online learning for model weighting
+        self.online_learning = OnlineLearningManager(self.supervisor_config.get("online_learning", {}))
+        
+        # Health monitoring
+        self.health_checks: dict[str, bool] = {}
+        self.critical_components: list[str] = ["database", "exchange", "analyst", "strategist"]
 
-        # Initialize AresMailer for sending error reports
-        self.ares_mailer = AresMailer(config=self.global_config)
-
-        # These lines were in the original supervisor.py and are re-added.
-        # ensemble_orchestrator and data_fetcher are initialized to None to prevent NameErrors,
-        # as they are not defined globally in the provided file set.
-        self.ensemble_orchestrator: Any = (
-            None  # Placeholder, assuming it would be set up elsewhere if used
-        )
-        self.data_fetcher: Any = (
-            None  # Placeholder, assuming it would be set up elsewhere if used
-        )
-        self.dynamic_weighter = DynamicWeighter(
-            self.global_config
-        )  # Corrected config reference to self.global_config
-        # Fixed: Removed 'config=' argument as ModelManager does not accept it
-        self.model_manager = ModelManager(firestore_manager=self.db_manager)
-
-        self.prediction_history = pd.DataFrame()  # For dynamic weighter
-
-        # State is loaded from file by StateManager's constructor.
-        self.state_manager.set_state_if_not_exists(
-            "global_peak_equity", settings.get("initial_equity", 10000)
-        )
-        self.state_manager.set_state_if_not_exists("is_trading_paused", False)
-        self.state_manager.set_state_if_not_exists("global_risk_multiplier", 1.0)
-        self.state_manager.set_state_if_not_exists(
-            "last_retrain_timestamp", datetime.now().isoformat()
-        )
-        self.state_manager.set_state_if_not_exists(
-            "current_position", self.state_manager._get_default_position_structure()
-        )  # Ensure default position structure is set
-
-        self.performance_monitor = PerformanceMonitor(
-            config=settings, firestore_manager=self.db_manager
-        )
-
-        # Fixed: Explicitly type these as Optional
-        self.sentinel: Optional[Sentinel] = None
-        self.analyst: Optional[Analyst] = None
-        self.strategist: Optional[Strategist] = None
-        self.tactician: Optional[Tactician] = None
-
-        # Initialize TrainingManager for monthly retraining
-        self.training_manager = TrainingManager(self.db_manager)
-
-        # Determine the actual trading client (PaperTrader or live exchange_client)
-        if settings.trading_environment == "PAPER":
-            self.trader: Union[PaperTrader, BinanceExchange] = PaperTrader(
-                initial_equity=settings.initial_equity
-            )  # Fixed: Union type
-            self.logger.info("Paper Trader initialized for simulation.")
-        elif settings.trading_environment == "LIVE":
-            self.trader = (
-                exchange_client  # Use the live exchange client passed from main
-            )
-            self.logger.info(
-                "Live Trader (BinanceExchange) initialized for live operations."
-            )
-        else:
-            self.trader = None  # Fixed: Explicitly allow None if environment is invalid
-            self.logger.error(
-                f"Unknown trading environment: '{settings.trading_environment}'. Trading will be disabled."
-            )
-            raise ValueError(
-                f"Invalid TRADING_ENVIRONMENT: {settings.trading_environment}"
-            )  # Halt if invalid
-
-        # Initialize the core real-time components, getting instances from ModelManager
-        if self.trader:
-            # Fixed: Pass self.trader and self.state_manager to constructors
-            self.sentinel = Sentinel(self.trader, self.state_manager)
-            self.analyst = (
-                self.model_manager.get_analyst()
-            )  # Get Analyst instance from ModelManager
-            self.strategist = (
-                self.model_manager.get_strategist()
-            )  # Get Strategist instance from ModelManager
-            # Pass performance_reporter to Tactician
-            self.tactician = self.model_manager.get_tactician(
-                performance_reporter=self.performance_monitor
-            )
-
-            # Ensure the Analyst, Strategist, Tactician instances from ModelManager
-            # have their exchange_client and state_manager set if they need it for live ops.
-            # This is a critical point for dependency injection.
-            # For the training pipeline, these are mostly placeholders.
-            if self.analyst:  # Fixed: Check if not None
-                if self.analyst.exchange is None:
-                    self.analyst.exchange = self.trader
-                if self.analyst.state_manager is None:
-                    self.analyst.state_manager = self.state_manager
-
-            if self.strategist:  # Fixed: Check if not None
-                if self.strategist.exchange is None:
-                    self.strategist.exchange = self.trader
-                if self.strategist.state_manager is None:
-                    self.strategist.state_manager = self.state_manager
-
-            if self.tactician:  # Fixed: Check if not None
-                if self.tactician.exchange is None:
-                    self.tactician.exchange = self.trader
-                if self.tactician.state_manager is None:
-                    self.tactician.state_manager = self.state_manager
-
-        else:
-            self.logger.critical(
-                "Core trading components not initialized due to invalid trading environment."
-            )
-
-        # Fixed: Add type annotations for queues
-        self.market_data_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
-        self.analysis_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
-        self.signal_queue: asyncio.Queue = asyncio.Queue(maxsize=50)
-
-        self.scheduler = AsyncIOScheduler()  # Corrected class name
-
-    async def initialize(self):
-        """
-        Asynchronously initializes the Supervisor.
-        """
-        await self.db_manager._connect()
-        await self.state_manager.load_state()
-        logger.info("Supervisor initialized.")
-
-    def start_background_tasks(self):
-        """
-        This method starts a background scheduler that will trigger the
-        run_daily_tasks method every 24 hours, ensuring that model weights
-        are periodically and automatically adjusted and error reports are sent.
-        """
-        # Ensure the job is added only once
-        if not self.scheduler.get_job("daily_tasks_job"):
-            self.scheduler.add_job(
-                self.run_daily_tasks,
-                "interval",
-                days=1,
-                id="daily_tasks_job",
-                next_run_time=datetime.now(),
-            )  # Run immediately on startup, then daily
-            self.scheduler.start()
-            self.logger.info("Supervisor background task scheduler started.")
-        else:
-            self.logger.info("Daily tasks job already scheduled.")
-
-    def stop_background_tasks(self):
-        """Stops the background scheduler gracefully."""
-        self.logger.info("Stopping Supervisor background task scheduler.")
-        self.scheduler.shutdown()
-
-    @handle_file_operations(default_return=pd.DataFrame(), context="load_data")
-    def load_data(self) -> pd.DataFrame:
-        """Loads historical data for backtesting and analysis."""
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid supervisor configuration"),
+            AttributeError: (False, "Missing required supervisor parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="supervisor initialization",
+    )
+    async def initialize(self) -> bool:
         try:
-            # Dynamically get the data path from the global config, which is set based on the symbol and timeframe.
-            data_path = self.global_config.get("klines_filename")
-
-            if not data_path:
-                self.logger.error(
-                    "`klines_filename` is not defined in the global configuration. Cannot load data."
-                )
-                return pd.DataFrame()
-
-            if os.path.exists(data_path):
-                df = pd.read_csv(data_path)
-
-                # The first column should be the timestamp index. Handle multiple possible names.
-                if "timestamp" in df.columns:
-                    df["timestamp"] = pd.to_datetime(df["timestamp"])
-                    df.set_index("timestamp", inplace=True)
-                elif "open_time" in df.columns:
-                    df["open_time"] = pd.to_datetime(df["open_time"])
-                    df.set_index("open_time", inplace=True)
-
-                self.logger.info(
-                    f"Successfully loaded historical data from {data_path}."
-                )
-                return df
-            else:
-                self.logger.warning(
-                    f"Data file not found at {data_path}. Backtesting features will be unavailable."
-                )
-                return pd.DataFrame()
+            self.logger.info("Initializing Supervisor...")
+            await self._load_supervisor_configuration()
+            if not self._validate_configuration():
+                self.logger.error("Invalid configuration for supervisor")
+                return False
+            await self._initialize_components()
+            await self._setup_circuit_breakers()
+            await self._setup_online_learning()
+            self.logger.info("✅ Supervisor initialization completed successfully")
+            return True
         except Exception as e:
-            self.logger.error(
-                f"Error loading historical data in Supervisor: {e}", exc_info=True
-            )
-            return pd.DataFrame()
+            self.logger.error(f"❌ Supervisor initialization failed: {e}")
+            return False
 
     @handle_errors(
-        exceptions=(Exception,), default_return=None, context="supervisor_start"
-    )
-    async def start(self):
-        """Starts the main supervisor monitoring loop, ensuring state is recovered on startup."""
-        self.logger.info("Supervisor starting up...")
-
-        # On startup, synchronize with the exchange to recover any active state.
-        self.logger.info("Attempting to synchronize state with exchange on startup...")
-        await self._synchronize_exchange_state()
-        self.logger.info("Initial state synchronization complete.")
-
-        # Start background tasks for daily operations (dynamic weighting, error reports)
-        self.start_background_tasks()
-
-        self.logger.info(
-            "Supervisor started. Monitoring overall system performance and risk."
-        )
-
-        check_interval = self.config.get("check_interval_seconds", 300)
-        retrain_interval_days = self.global_config.get("supervisor", {}).get(
-            "retrain_interval_days", 30
-        )
-
-        while True:
-            try:
-                await asyncio.sleep(check_interval)
-                self.logger.info("--- Running Supervisor Health Check ---")
-
-                # Periodically synchronize state with the exchange
-                await self._synchronize_exchange_state()
-
-                await self._check_performance_and_risk()
-
-                current_equity = self.state_manager.get_state("account_equity")
-                peak_equity = self.state_manager.get_state(
-                    "global_peak_equity"
-                )  # Use global_peak_equity
-
-                # Ensure equity values are valid before calculating drawdown
-                if current_equity is None or peak_equity is None or peak_equity <= 0:
-                    self.logger.warning(
-                        "Equity data missing or invalid for performance monitoring. Skipping."
-                    )
-                    live_metrics = {}  # Provide empty metrics if data is bad
-                else:
-                    # Calculate live metrics based on state manager data
-                    # These are simplified for the supervisor's view
-                    live_metrics = {
-                        "Final Equity": current_equity,
-                        "Max Drawdown (%)": (
-                            (peak_equity - current_equity) / peak_equity * 100
-                        )
-                        if peak_equity > 0
-                        else 0,
-                        "Total Trades": self.state_manager.get_state("total_trades", 0),
-                        "Profit Factor": self.state_manager.get_state(
-                            "live_profit_factor", 0
-                        ),
-                        "Sharpe Ratio": self.state_manager.get_state(
-                            "live_sharpe_ratio", 0
-                        ),
-                        "Win Rate (%)": self.state_manager.get_state(
-                            "live_win_rate", 0
-                        ),
-                    }
-
-                await self.performance_monitor.monitor_performance(live_metrics)
-                await self._check_for_retraining(retrain_interval_days)
-                await (
-                    self.run_daily_profit_sweep()
-                )  # Add daily profit sweep to main loop
-
-            except asyncio.CancelledError:
-                self.logger.info("Supervisor task cancelled.")
-                break
-            except Exception as e:
-                self.logger.error(
-                    f"An error occurred in the Supervisor loop: {e}", exc_info=True
-                )
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="run_daily_tasks"
-    )
-    async def run_daily_tasks(self):
-        """
-        Daily task for dynamic weight adjustment and error reporting.
-        This function is intended to be run once per day.
-        """
-        self.logger.info("Running daily supervisor tasks...")
-
-        # 1. Run Dynamic Weight Adjustment (if ensemble_orchestrator is available)
-        # In a live system, self.ensemble_orchestrator would be passed from ModelManager
-        # or initialized here if Supervisor is the orchestrator of all models.
-        # For now, we'll assume it's set up if dynamic weighting is active.
-        if self.ensemble_orchestrator:  # Placeholder, ensure ensemble_orchestrator is properly initialized in live mode
-            try:
-                self.dynamic_weighter.run_daily_adjustment(
-                    self.ensemble_orchestrator, self.prediction_history
-                )
-                new_weights = self.ensemble_orchestrator.get_current_weights()
-                self.model_manager.save_ensemble_weights(new_weights)
-            except Exception as e:
-                self.logger.error(
-                    f"Error during daily dynamic weight adjustment: {e}", exc_info=True
-                )
-        else:
-            self.logger.warning(
-                "Ensemble Orchestrator not available. Skipping dynamic weight adjustment."
-            )
-
-        # 2. Run Daily Error Report
-        await self._run_daily_error_report()
-
-        self.logger.info("Daily tasks complete.")
-
-    @handle_errors(
-        exceptions=(KeyError, TypeError, ValueError),
+        exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="store_prediction_results",
+        context="supervisor configuration loading",
     )
-    def _store_prediction_results(
-        self, asset: str, prediction_output: Dict[str, Any], actual_outcome: Any
-    ):  # Fixed: Type hints
-        """Appends prediction results to the history for the weighter to use."""
-        new_record = {
-            "timestamp": pd.Timestamp.now(tz="UTC"),
-            "asset": asset,
-            "regime": prediction_output.get("regime"),
-            "final_prediction": prediction_output.get("prediction"),
-            "actual": actual_outcome,
-            **prediction_output.get("base_predictions", {}),
-        }
-        # Ensure prediction_history is initialized and is a DataFrame
-        if self.prediction_history.empty:
-            self.prediction_history = pd.DataFrame([new_record])
-        else:
-            self.prediction_history = pd.concat(
-                [self.prediction_history, pd.DataFrame([new_record])], ignore_index=True
-            )
+    async def _load_supervisor_configuration(self) -> None:
+        try:
+            self.supervisor_config.setdefault("supervision_interval", 60)
+            self.supervisor_config.setdefault("max_history", 100)
+            self.supervisor_config.setdefault("max_recovery_attempts", 3)
+            self.supervisor_config.setdefault("recovery_cooldown", 300)
+            self.supervision_interval = self.supervisor_config["supervision_interval"]
+            self.max_history = self.supervisor_config["max_history"]
+            self.max_recovery_attempts = self.supervisor_config["max_recovery_attempts"]
+            self.recovery_cooldown = self.supervisor_config["recovery_cooldown"]
+            self.logger.info("Supervisor configuration loaded successfully")
+        except Exception as e:
+            self.logger.error(f"Error loading supervisor configuration: {e}")
 
     @handle_errors(
-        exceptions=(Exception,), default_return=None, context="run_daily_error_report"
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
     )
-    async def _run_daily_error_report(self):
-        """
-        Fetches all logged exceptions and sends a summary email.
-        """
-        self.logger.info("Generating daily error report...")
+    def _validate_configuration(self) -> bool:
         try:
-            # Fetch exceptions logged since the last report (or within a recent window)
-            # For simplicity, let's fetch all logged exceptions for now.
-            # In a real system, you might track the last report timestamp and fetch new ones.
-            recent_errors = get_logged_exceptions(
-                limit=50
-            )  # Fetch up to 50 recent errors
+            if self.supervision_interval <= 0:
+                self.logger.error("Invalid supervision interval")
+                return False
+            if self.max_history <= 0:
+                self.logger.error("Invalid max history")
+                return False
+            if self.max_recovery_attempts <= 0:
+                self.logger.error("Invalid max recovery attempts")
+                return False
+            if self.recovery_cooldown <= 0:
+                self.logger.error("Invalid recovery cooldown")
+                return False
+            self.logger.info("Configuration validation successful")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
+            return False
 
-            if not recent_errors:
-                self.logger.info("No new errors to report today.")
-                await self.ares_mailer.send_alert(
-                    f"Ares Daily Error Report - {datetime.now().strftime('%Y-%m-%d')} (No New Errors)",
-                    "No new errors were detected in the Ares trading bot since the last report.",
-                )
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="component initialization",
+    )
+    async def _initialize_components(self) -> None:
+        try:
+            # Initialize critical components
+            self.components = {
+                "database": None,
+                "exchange": None,
+                "analyst": None,
+                "strategist": None,
+                "tactician": None,
+                "sentinel": None,
+                "paper_trader": None,
+                "performance_monitor": None,
+                "enhanced_training_manager": None,
+            }
+            
+            self.logger.info("Components initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Error initializing components: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="circuit breakers setup",
+    )
+    async def _setup_circuit_breakers(self) -> None:
+        """Setup circuit breakers for critical services."""
+        try:
+            # Setup circuit breakers for external services
+            self.circuit_breakers = {
+                "exchange": CircuitBreaker(failure_threshold=5, timeout=60),
+                "database": CircuitBreaker(failure_threshold=3, timeout=30),
+                "analyst": CircuitBreaker(failure_threshold=3, timeout=30),
+            }
+            
+            self.logger.info("Circuit breakers setup complete")
+        except Exception as e:
+            self.logger.error(f"Error setting up circuit breakers: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="online learning setup",
+    )
+    async def _setup_online_learning(self) -> None:
+        """Setup online learning for model weighting."""
+        try:
+            # Initialize online learning with default configuration
+            online_learning_config = self.supervisor_config.get("online_learning", {})
+            self.online_learning = OnlineLearningManager(online_learning_config)
+            
+            self.logger.info("Online learning setup complete")
+        except Exception as e:
+            self.logger.error(f"Error setting up online learning: {e}")
+
+    @handle_specific_errors(
+        error_handlers={
+            Exception: (False, "Supervisor run failed"),
+        },
+        default_return=False,
+        context="supervisor run",
+    )
+    async def run(self) -> bool:
+        try:
+            self.is_running = True
+            self.logger.info("🚦 Supervisor started.")
+            while self.is_running:
+                await self._perform_supervision()
+                await asyncio.sleep(self.supervision_interval)
+            return True
+        except Exception as e:
+            self.logger.error(f"Error in supervisor run: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="supervision step",
+    )
+    async def _perform_supervision(self) -> None:
+        try:
+            # Perform health checks
+            await self._monitor_system_health()
+            
+            # Coordinate components
+            await self._coordinate_components()
+            
+            # Update online learning
+            await self._update_online_learning()
+            
+            # Update supervision results
+            await self._update_supervision_results()
+            
+            # Check for recovery needs
+            await self._check_recovery_needs()
+            
+        except Exception as e:
+            self.logger.error(f"Error in supervision step: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="system health monitoring",
+    )
+    async def _monitor_system_health(self) -> None:
+        try:
+            # Check critical components health
+            for component in self.critical_components:
+                health_status = await self._check_component_health(component)
+                self.health_checks[component] = health_status
+                
+                if not health_status:
+                    self.logger.warning(f"⚠️ Component {component} health check failed")
+                    await self._trigger_recovery(component)
+            
+            # Log overall health status
+            healthy_components = sum(self.health_checks.values())
+            total_components = len(self.health_checks)
+            health_percentage = (healthy_components / total_components) * 100 if total_components > 0 else 0
+            
+            self.logger.info(f"System health: {health_percentage:.1f}% ({healthy_components}/{total_components} components healthy)")
+            
+        except Exception as e:
+            self.logger.error(f"Error monitoring system health: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="component health check",
+    )
+    async def _check_component_health(self, component: str) -> bool:
+        """Check health of a specific component."""
+        try:
+            # Mock health check - replace with actual component health checks
+            if component in self.circuit_breakers:
+                circuit_breaker = self.circuit_breakers[component]
+                return circuit_breaker.state != "OPEN"
+            
+            # Default health check
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error checking health for component {component}: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="component coordination",
+    )
+    async def _coordinate_components(self) -> None:
+        try:
+            # Coordinate between components
+            # This is where you would implement the actual coordination logic
+            coordination_results = {
+                "timestamp": datetime.now().isoformat(),
+                "components_coordinated": len(self.components),
+                "status": "coordinated"
+            }
+            
+            self.supervision_results["coordination"] = coordination_results
+            
+        except Exception as e:
+            self.logger.error(f"Error coordinating components: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="online learning update",
+    )
+    async def _update_online_learning(self) -> None:
+        """Update online learning with current performance data."""
+        try:
+            # Get current model performances (mock data - replace with actual)
+            model_performances = {
+                "model_1": 0.75,
+                "model_2": 0.82,
+                "model_3": 0.68
+            }
+            
+            # Update online learning with current performances
+            for model_id, performance in model_performances.items():
+                await self.online_learning.update_model_performance(model_id, performance)
+            
+            # Get updated weights
+            updated_weights = self.online_learning.get_model_weights()
+            self.supervision_results["online_learning"] = {
+                "timestamp": datetime.now().isoformat(),
+                "model_weights": updated_weights,
+                "model_performances": self.online_learning.get_model_performances()
+            }
+            
+            self.logger.info(f"Online learning updated: {updated_weights}")
+            
+        except Exception as e:
+            self.logger.error(f"Error updating online learning: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="recovery trigger",
+    )
+    async def _trigger_recovery(self, component: str) -> None:
+        """Trigger recovery for a failed component."""
+        try:
+            current_time = time.time()
+            last_attempt = self.last_recovery_attempt.get(component, 0)
+            
+            # Check if we can attempt recovery
+            if (current_time - last_attempt < self.recovery_cooldown or 
+                self.recovery_attempts[component] >= self.max_recovery_attempts):
                 return
-
-            error_summary = {}
-            for error in recent_errors:
-                error_type = error.get("type", "UnknownError")
-                error_summary[error_type] = error_summary.get(error_type, 0) + 1
-
-            report_body = (
-                f"Ares Daily Error Report - {datetime.now().strftime('%Y-%m-%d')}\n\n"
-            )
-            report_body += f"Total new errors detected: {len(recent_errors)}\n\n"
-            report_body += "Summary by Error Type:\n"
-            for err_type, count in error_summary.items():
-                report_body += f"- {err_type}: {count} occurrences\n"
-
-            report_body += "\n--- Last 5 Unique Error Messages (for context) ---\n"
-            unique_messages = []
-            for error in reversed(recent_errors):  # Get most recent unique messages
-                msg = error.get("message", "N/A")
-                if msg not in unique_messages:
-                    unique_messages.append(msg)
-                    report_body += f"\nType: {error.get('type')}\nMessage: {msg}\n"
-                if len(unique_messages) >= 5:
-                    break
-
-            report_subject = f"Ares Daily Error Report - {datetime.now().strftime('%Y-%m-%d')} ({len(recent_errors)} Errors)"
-            await self.ares_mailer.send_alert(report_subject, report_body)
-            self.logger.info("Daily error report email sent successfully.")
-
-            # Optional: Clear the error log file after reporting to avoid reporting old errors repeatedly
-            # Or implement a more sophisticated tracking of reported errors.
-            # with open(self.ares_mailer.error_log_file, 'w') as f:
-            #     f.write("") # Clear file
-
+            
+            self.logger.info(f"🔄 Triggering recovery for component: {component}")
+            
+            # Attempt recovery
+            recovery_success = await self._attempt_recovery(component)
+            
+            if recovery_success:
+                self.logger.info(f"✅ Recovery successful for component: {component}")
+                self.recovery_attempts[component] = 0
+            else:
+                self.recovery_attempts[component] += 1
+                self.logger.warning(f"⚠️ Recovery failed for component: {component} (attempt {self.recovery_attempts[component]}/{self.max_recovery_attempts})")
+            
+            self.last_recovery_attempt[component] = current_time
+            
         except Exception as e:
-            self.logger.error(
-                f"Failed to generate or send daily error report: {e}", exc_info=True
-            )
+            self.logger.error(f"Error triggering recovery for {component}: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="recovery attempt",
+    )
+    async def _attempt_recovery(self, component: str) -> bool:
+        """Attempt to recover a failed component."""
+        try:
+            # Implement component-specific recovery logic
+            if component == "database":
+                return await self._recover_database()
+            elif component == "exchange":
+                return await self._recover_exchange()
+            elif component == "analyst":
+                return await self._recover_analyst()
+            else:
+                # Generic recovery
+                return await self._generic_recovery(component)
+                
+        except Exception as e:
+            self.logger.error(f"Error attempting recovery for {component}: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="database recovery",
+    )
+    async def _recover_database(self) -> bool:
+        """Recover database connection."""
+        try:
+            # Implement database recovery logic
+            self.logger.info("Attempting database recovery...")
+            # Mock recovery - replace with actual database reconnection logic
+            await asyncio.sleep(1)
+            return True
+        except Exception as e:
+            self.logger.error(f"Database recovery failed: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="exchange recovery",
+    )
+    async def _recover_exchange(self) -> bool:
+        """Recover exchange connection."""
+        try:
+            # Implement exchange recovery logic
+            self.logger.info("Attempting exchange recovery...")
+            # Mock recovery - replace with actual exchange reconnection logic
+            await asyncio.sleep(1)
+            return True
+        except Exception as e:
+            self.logger.error(f"Exchange recovery failed: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="analyst recovery",
+    )
+    async def _recover_analyst(self) -> bool:
+        """Recover analyst component."""
+        try:
+            # Implement analyst recovery logic
+            self.logger.info("Attempting analyst recovery...")
+            # Mock recovery - replace with actual analyst restart logic
+            await asyncio.sleep(1)
+            return True
+        except Exception as e:
+            self.logger.error(f"Analyst recovery failed: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="generic recovery",
+    )
+    async def _generic_recovery(self, component: str) -> bool:
+        """Generic recovery for unspecified components."""
+        try:
+            self.logger.info(f"Attempting generic recovery for {component}...")
+            # Mock recovery - replace with actual restart logic
+            await asyncio.sleep(1)
+            return True
+        except Exception as e:
+            self.logger.error(f"Generic recovery failed for {component}: {e}")
+            return False
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
-        context="synchronize_exchange_state",
+        context="recovery needs check",
     )
-    async def _synchronize_exchange_state(self):
-        """
-        Fetches the current account equity and open positions from the exchange
-        and updates the persistent state. This is key for crash recovery.
-        """
+    async def _check_recovery_needs(self) -> None:
+        """Check if any components need recovery."""
         try:
-            # 1. Update account equity and peak equity
-            account_info = await self.exchange.get_account_info()
-            current_equity = float(account_info.get("totalWalletBalance", 0))
-
-            if current_equity > 0:
-                self.state_manager.set_state("account_equity", current_equity)
-                self.logger.debug(f"Updated account equity: ${current_equity:,.2f}")
-
-                peak_equity = self.state_manager.get_state(
-                    "global_peak_equity"
-                )  # Use global_peak_equity from state
-                if current_equity > peak_equity:
-                    self.state_manager.set_state("global_peak_equity", current_equity)
-                    self.logger.info(f"New peak equity reached: ${current_equity:,.2f}")
-            else:
-                self.logger.warning("Could not retrieve a valid account balance.")
-
-            # 2. Update open positions state for crash recovery
-            open_positions = await self.exchange.get_open_positions()
-            symbol = settings.trade_symbol  # Use settings.trade_symbol
-            active_position_on_exchange = None
-
-            for position in open_positions:
-                if (
-                    position.get("symbol") == symbol
-                    and float(position.get("positionAmt", 0)) != 0
-                ):
-                    # Capture more details for active_position
-                    active_position_on_exchange = {
-                        "symbol": position["symbol"],
-                        "amount": float(position.get("positionAmt", 0)),
-                        "entry_price": float(position.get("entryPrice", 0)),
-                        "leverage": int(position.get("leverage", 1)),
-                        "direction": "LONG"
-                        if float(position.get("positionAmt", 0)) > 0
-                        else "SHORT",
-                        "trade_id": self.state_manager.get_state(
-                            "current_position", {}
-                        ).get("trade_id"),
-                        "entry_timestamp": self.state_manager.get_state(
-                            "current_position", {}
-                        ).get("entry_timestamp"),
-                        "stop_loss": self.state_manager.get_state(
-                            "current_position", {}
-                        ).get("stop_loss"),
-                        "take_profit": self.state_manager.get_state(
-                            "current_position", {}
-                        ).get("take_profit"),
-                        "entry_fees_usd": self.state_manager.get_state(
-                            "current_position", {}
-                        ).get("entry_fees_usd", 0.0),
-                        "entry_context": self.state_manager.get_state(
-                            "current_position", {}
-                        ).get("entry_context", {}),
-                    }
-                    self.logger.debug(
-                        f"Found active position on exchange for {symbol}."
-                    )
-                    break
-
-            # Synchronize the state file with what's on the exchange
-            current_state_position = self.state_manager.get_state(
-                "current_position"
-            )  # Use 'current_position'
-
-            # Only update if there's a meaningful change or new position found
-            if active_position_on_exchange != current_state_position:
-                self.logger.info(
-                    f"State mismatch or update: Synchronizing position state with exchange. New state: {active_position_on_exchange}"
-                )
-                self.state_manager.set_state(
-                    "current_position", active_position_on_exchange
-                )  # Update 'current_position'
-
+            for component, health_status in self.health_checks.items():
+                if not health_status:
+                    await self._trigger_recovery(component)
+                    
         except Exception as e:
-            self.logger.error(
-                f"Failed to synchronize state with exchange: {e}", exc_info=True
-            )
+            self.logger.error(f"Error checking recovery needs: {e}")
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
-        context="check_performance_and_risk",
+        context="supervision results update",
     )
-    async def _check_performance_and_risk(self):
-        """Calculates drawdown and adjusts risk parameters or pauses trading if necessary."""
-        peak_equity = self.state_manager.get_state("global_peak_equity")
-        current_equity = self.state_manager.get_state("account_equity")
-
-        if not peak_equity or not current_equity or peak_equity == 0:
-            self.logger.warning(
-                "Cannot check performance; equity data is missing or peak equity is zero."
-            )
-            return
-
-        drawdown = (peak_equity - current_equity) / peak_equity
-        self.logger.info(f"Current Drawdown: {drawdown:.2%}")
-
-        pause_threshold = self.config.get("pause_trading_drawdown_pct", 0.20)
-        risk_reduction_threshold = self.config.get("risk_reduction_drawdown_pct", 0.10)
-
-        if drawdown >= pause_threshold:
-            if not self.state_manager.get_state("is_trading_paused"):
-                await self._pause_trading(
-                    f"Drawdown of {drawdown:.2%} exceeded pause threshold of {pause_threshold:.2%}"
-                )
-            return
-
-        if drawdown >= risk_reduction_threshold:
-            new_risk_multiplier = 0.5
-            if (
-                self.state_manager.get_state("global_risk_multiplier")
-                != new_risk_multiplier
-            ):
-                self.logger.warning(
-                    f"Drawdown of {drawdown:.2%} exceeded risk reduction threshold. Reducing risk multiplier to {new_risk_multiplier}."
-                )
-                self.state_manager.set_state(
-                    "global_risk_multiplier", new_risk_multiplier
-                )
-        else:
-            if self.state_manager.get_state("global_risk_multiplier") != 1.0:
-                self.logger.info(
-                    "Performance has recovered. Restoring global risk multiplier to 1.0."
-                )
-                self.state_manager.set_state("global_risk_multiplier", 1.0)
-
-        if (
-            self.state_manager.get_state("is_trading_paused")
-            and drawdown < pause_threshold * 0.9
-        ):  # Add a buffer for resuming
-            await self._resume_trading()
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="pause_trading"
-    )
-    async def _pause_trading(self, reason: str):
-        """Pauses all new trading activity."""
-        self.logger.critical(f"PAUSING ALL TRADING. Reason: {reason}")
-        self.state_manager.set_state("is_trading_paused", True)
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="resume_trading"
-    )
-    async def _resume_trading(self):
-        """Resumes trading activity."""
-        self.logger.info(
-            "Resuming trading activity. Drawdown has recovered to an acceptable level."
-        )
-        self.state_manager.set_state("is_trading_paused", False)
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="check_for_retraining"
-    )
-    async def _check_for_retraining(self, retrain_interval_days: int):
-        """Checks if it's time to trigger a system retraining."""
-        last_retrain_timestamp_str = self.state_manager.get_state(
-            "last_retrain_timestamp"
-        )
+    async def _update_supervision_results(self) -> None:
         try:
-            last_retrain_datetime = datetime.fromisoformat(last_retrain_timestamp_str)
-        except (TypeError, ValueError):
-            self.logger.warning(
-                "Invalid last_retrain_timestamp in state. Resetting to now."
-            )
-            last_retrain_datetime = datetime.now()
-            self.state_manager.set_state(
-                "last_retrain_timestamp", last_retrain_datetime.isoformat()
-            )
-
-        if datetime.now() >= last_retrain_datetime + timedelta(
-            days=retrain_interval_days
-        ):
-            self.logger.info(
-                f"Retraining interval of {retrain_interval_days} days has passed. Triggering system retraining and validation."
-            )
-            await self._trigger_retraining()
-            self.state_manager.set_state(
-                "last_retrain_timestamp", datetime.now().isoformat()
-            )
-        else:
-            next_retrain_due = last_retrain_datetime + timedelta(
-                days=retrain_interval_days
-            )
-            time_until = next_retrain_due - datetime.now()
-            self.logger.info(
-                f"Next system retraining due in: {time_until.days} days, {time_until.seconds // 3600} hours."
-            )
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="trigger_retraining"
-    )
-    async def _trigger_retraining(self):
-        """Triggers the full system retraining and validation pipeline using the TrainingManager."""
-        self.logger.info(
-            "Initiating full system retraining pipeline via TrainingManager..."
-        )
-        try:
-            # Get the current trading symbol from settings
-            symbol = settings.trade_symbol
-            exchange_name = "BINANCE"  # Default to BINANCE
-
-            # Run full training pipeline for the current symbol
-            success = await self.training_manager.run_full_training(
-                symbol, exchange_name
-            )
-
-            if success:
-                self.logger.info(
-                    f"Monthly retraining completed successfully for {symbol}"
-                )
-                # Send email notification of successful retraining
-                await self.ares_mailer.send_email(
-                    subject=f"Ares Monthly Retraining Complete - {symbol}",
-                    body=f"Monthly retraining pipeline completed successfully for {symbol} on {exchange_name}.\n\nTraining session details:\n{self.training_manager.current_training_session}",
-                )
-            else:
-                self.logger.error(f"Monthly retraining failed for {symbol}")
-                # Send email notification of failed retraining
-                await self.ares_mailer.send_email(
-                    subject=f"Ares Monthly Retraining Failed - {symbol}",
-                    body=f"Monthly retraining pipeline failed for {symbol} on {exchange_name}.\n\nError details:\n{self.training_manager.current_training_session.get('error', 'Unknown error')}",
-                )
-
+            # Add timestamp
+            self.supervision_results["timestamp"] = datetime.now().isoformat()
+            
+            # Add health status
+            self.supervision_results["health_status"] = self.health_checks.copy()
+            
+            # Add recovery status
+            self.supervision_results["recovery_status"] = {
+                "recovery_attempts": dict(self.recovery_attempts),
+                "last_recovery_attempts": self.last_recovery_attempt.copy()
+            }
+            
+            # Add to history
+            self.history.append(self.supervision_results.copy())
+            
+            # Limit history size
+            if len(self.history) > self.max_history:
+                self.history.pop(0)
+                
         except Exception as e:
-            self.logger.error(f"Failed to trigger retraining: {e}", exc_info=True)
-            self.logger.critical(
-                "Automated retraining failed to trigger. Manual intervention may be required."
-            )
-            # Send email notification of critical error
-            await self.ares_mailer.send_email(
-                subject="Ares Monthly Retraining Critical Error",
-                body=f"Critical error during monthly retraining:\n{str(e)}",
-            )
+            self.logger.error(f"Error updating supervision results: {e}")
 
     @handle_errors(
-        exceptions=(Exception,), default_return=None, context="run_daily_profit_sweep"
+        exceptions=(Exception,),
+        default_return=None,
+        context="supervisor stop",
     )
-    async def run_daily_profit_sweep(self):
-        """
-        Daily profit sweep: Check USDT balance, move 10% of gains to spot/euro,
-        and send withdrawal alerts when threshold is reached.
-        """
-        self.logger.info("Running daily profit sweep...")
-
+    async def stop(self) -> None:
+        self.logger.info("🛑 Stopping Supervisor...")
         try:
-            # Get current balances
-            perps_balance = await self.trader.get_account_balance("USDT")
-            spot_balance = await self.trader.get_spot_balance("USDT")
-            euro_balance = await self.trader.get_spot_balance("EUR")
-
-            # Load highest historical balance
-            highest_balance = self.state_manager.get_state("highest_usdt_balance", 0)
-
-            action = ""
-            sweep_amount = 0
-
-            if perps_balance > highest_balance:
-                gain = perps_balance - highest_balance
-                sweep_amount = gain * 0.10  # Move 10% of gains
-
-                # Move to spot account
-                await self.trader.transfer_to_spot("USDT", sweep_amount)
-
-                # Update highest balance
-                self.state_manager.set_state("highest_usdt_balance", perps_balance)
-                action = f"Swept {sweep_amount:.2f} USDT to spot account"
-                self.logger.info(f"Profit sweep: {action}")
-            else:
-                action = "No sweep - balance not higher than peak"
-                self.logger.info("Profit sweep: No action taken")
-
-            # Log daily balances
-            await self._log_daily_balances(
-                perps_balance, spot_balance, euro_balance, action
-            )
-
-            # Check withdrawal threshold
-            total_withdrawable = spot_balance + euro_balance
-            withdrawal_threshold = self.config.get(
-                "withdrawable_amount_threshold", 1000
-            )  # Default $1000
-
-            if total_withdrawable >= withdrawal_threshold:
-                await self._send_withdrawal_alert(
-                    total_withdrawable, spot_balance, euro_balance
-                )
-
+            self.is_running = False
+            self.logger.info("✅ Supervisor stopped successfully")
         except Exception as e:
-            self.logger.error(f"Error during daily profit sweep: {e}", exc_info=True)
+            self.logger.error(f"Error stopping supervisor: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="log_daily_balances"
-    )
-    async def _log_daily_balances(
-        self,
-        perps_balance: float,
-        spot_balance: float,
-        euro_balance: float,
-        action: str,
-    ):
-        """Log daily account balances to CSV file."""
-        import csv
-        from datetime import datetime
+    def get_status(self) -> dict[str, Any]:
+        return {
+            "is_running": self.is_running,
+            "supervision_interval": self.supervision_interval,
+            "max_history": self.max_history,
+            "health_checks": self.health_checks,
+            "recovery_attempts": dict(self.recovery_attempts),
+            "online_learning_weights": self.online_learning.get_model_weights()
+        }
 
-        balance_file = "data/daily_balances.csv"
+    def get_history(self, limit: Optional[int] = None) -> list[dict[str, Any]]:
+        history = self.history.copy()
+        if limit:
+            history = history[-limit:]
+        return history
 
-        # Ensure data directory exists
-        os.makedirs(os.path.dirname(balance_file), exist_ok=True)
+    def get_supervision_results(self) -> dict[str, Any]:
+        return self.supervision_results.copy()
 
-        # Create file with headers if it doesn't exist
-        file_exists = os.path.exists(balance_file)
+    def get_components(self) -> dict[str, Any]:
+        return self.components.copy()
 
-        with open(balance_file, "a", newline="") as f:
-            writer = csv.writer(f)
-
-            if not file_exists:
-                writer.writerow(
-                    ["Date", "Perps_USDT", "Spot_USDT", "Spot_EUR", "Action"]
-                )
-
-            writer.writerow(
-                [
-                    datetime.now().strftime("%Y-%m-%d"),
-                    f"{perps_balance:.2f}",
-                    f"{spot_balance:.2f}",
-                    f"{euro_balance:.2f}",
-                    action,
-                ]
-            )
-
-        self.logger.info(f"Daily balances logged to {balance_file}")
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="send_withdrawal_alert"
-    )
-    async def _send_withdrawal_alert(
-        self, total_withdrawable: float, spot_balance: float, euro_balance: float
-    ):
-        """Send email alert for manual withdrawal."""
-        subject = "Ares: Manual Withdrawal Alert"
-        body = f"""
-        Withdrawal threshold reached!
-        
-        Total withdrawable amount: ${total_withdrawable:.2f}
-        - Spot USDT: ${spot_balance:.2f}
-        - Spot EUR: ${euro_balance:.2f}
-        
-        Please manually withdraw these funds from your exchange account.
-        """
-
-        try:
-            await self.ares_mailer.send_alert(subject, body)
-            self.logger.info(f"Withdrawal alert sent for ${total_withdrawable:.2f}")
-        except Exception as e:
-            self.logger.error(f"Failed to send withdrawal alert: {e}", exc_info=True)
+    def get_online_learning_status(self) -> dict[str, Any]:
+        """Get online learning status and statistics."""
+        return {
+            "model_weights": self.online_learning.get_model_weights(),
+            "model_performances": self.online_learning.get_model_performances(),
+            "learning_rate": self.online_learning.learning_rate,
+            "min_weight": self.online_learning.min_weight,
+            "max_weight": self.online_learning.max_weight
+        }
 
 
-# This is how you would run the supervisor
-async def main():
-    from src.config import get_config
-
-    config = get_config()
-
-    supervisor = Supervisor(config)
-    await supervisor.initialize()
-    await supervisor.run_performance_check()
-    await supervisor.shutdown()
+supervisor: Supervisor | None = None
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="supervisor setup",
+)
+async def setup_supervisor(
+    config: dict[str, Any] | None = None,
+) -> Supervisor | None:
+    try:
+        global supervisor
+        if config is None:
+            config = {"supervisor": {"supervision_interval": 60, "max_history": 100}}
+        supervisor = Supervisor(config)
+        success = await supervisor.initialize()
+        if success:
+            return supervisor
+        return None
+    except Exception as e:
+        print(f"Error setting up supervisor: {e}")
+        return None

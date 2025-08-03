@@ -203,40 +203,123 @@ const Dashboard = ({ killSwitchStatus, systemStatus }) => {
             <h3 className="text-lg font-semibold text-white">Portfolio Performance</h3>
             <p className="text-sm text-gray-400">Last {performanceDays} days</p>
           </div>
-          <div className="flex flex-col items-end">
-            <p className={`text-xl font-bold ${performanceMetrics.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {performanceMetrics.change >= 0 ? '+' : ''}${performanceMetrics.change}
+          <div className="text-right">
+            <p className={`text-lg font-bold ${performanceMetrics.changePercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {performanceMetrics.changePercent >= 0 ? '+' : ''}{performanceMetrics.changePercent}%
             </p>
-            <p className={`text-sm ${performanceMetrics.changePercent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              ({performanceMetrics.changePercent >= 0 ? '+' : ''}{performanceMetrics.changePercent}%)
-            </p>
+            <p className="text-sm text-gray-400">${performanceMetrics.change}</p>
           </div>
         </div>
-        <div className="h-72 w-full">
-          <ResponsiveContainer>
-            <LineChart data={dashboardData.performanceCurve} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
-              <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-              <YAxis stroke="#9ca3af" fontSize={12} domain={['dataMin - 100', 'dataMax + 100']} />
-              <Tooltip contentStyle={{ backgroundColor: 'rgba(31, 41, 55, 0.8)', borderColor: '#4b5563', borderRadius: '0.5rem' }} />
-              <Legend />
-              <Line type="monotone" dataKey="portfolioValue" name="Portfolio Value" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="mt-4">
-          <label htmlFor="days-slider" className="block text-sm font-medium text-gray-400 mb-2">
-            Performance Period: {performanceDays} days
-          </label>
-          <input 
-            id="days-slider" 
-            type="range" 
-            min="1" 
-            max="30" 
-            value={performanceDays} 
-            onChange={(e) => setPerformanceDays(parseInt(e.target.value))} 
-            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
-          />
+        
+        {/* Performance Chart */}
+        <PerformanceChart 
+          data={dashboardData?.performanceCurve} 
+          title="Portfolio Performance Over Time" 
+        />
+      </Card>
+
+      {/* Advanced Analytics Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Performance Attribution */}
+        <Card title="Performance Attribution">
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-gray-700/30 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-gray-300">Market Timing</h4>
+                <p className="text-2xl font-bold text-blue-400">
+                  {dashboardData?.attribution?.market_timing?.contribution?.toFixed(2) || '0.00'}%
+                </p>
+              </div>
+              <div className="bg-gray-700/30 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-gray-300">Stock Selection</h4>
+                <p className="text-2xl font-bold text-green-400">
+                  {dashboardData?.attribution?.stock_selection?.contribution?.toFixed(2) || '0.00'}%
+                </p>
+              </div>
+              <div className="bg-gray-700/30 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-gray-300">Risk Management</h4>
+                <p className="text-2xl font-bold text-yellow-400">
+                  {dashboardData?.attribution?.risk_management?.contribution?.toFixed(2) || '0.00'}%
+                </p>
+              </div>
+              <div className="bg-gray-700/30 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-gray-300">Leverage Usage</h4>
+                <p className="text-2xl font-bold text-purple-400">
+                  {dashboardData?.attribution?.leverage_usage?.contribution?.toFixed(2) || '0.00'}%
+                </p>
+              </div>
+            </div>
+            
+            {/* Attribution Chart */}
+            <AttributionChart 
+              data={dashboardData?.attribution} 
+              title="Performance Attribution Breakdown" 
+            />
+          </div>
+        </Card>
+
+        {/* Risk Metrics */}
+        <Card title="Risk Metrics">
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-gray-700/30 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-gray-300">VaR (95%)</h4>
+                <p className="text-2xl font-bold text-red-400">
+                  {dashboardData?.risk_metrics?.var_95?.toFixed(2) || '0.00'}%
+                </p>
+              </div>
+              <div className="bg-gray-700/30 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-gray-300">Expected Shortfall</h4>
+                <p className="text-2xl font-bold text-orange-400">
+                  {dashboardData?.risk_metrics?.expected_shortfall?.toFixed(2) || '0.00'}%
+                </p>
+              </div>
+              <div className="bg-gray-700/30 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-gray-300">Max Drawdown</h4>
+                <p className="text-2xl font-bold text-red-400">
+                  {dashboardData?.risk_metrics?.max_drawdown?.toFixed(2) || '0.00'}%
+                </p>
+              </div>
+              <div className="bg-gray-700/30 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-gray-300">Sharpe Ratio</h4>
+                <p className="text-2xl font-bold text-green-400">
+                  {dashboardData?.risk_metrics?.sharpe_ratio?.toFixed(2) || '0.00'}
+                </p>
+              </div>
+            </div>
+            
+            {/* Risk Chart */}
+            <RiskMetricsChart 
+              data={dashboardData?.risk_metrics} 
+              title="Risk Metrics Over Time" 
+            />
+          </div>
+        </Card>
+      </div>
+
+      {/* Concept Drift Monitoring */}
+      <Card title="Model Health & Concept Drift">
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {dashboardData?.model_health?.map((model, index) => (
+              <div key={index} className={`rounded-lg p-4 ${
+                model.drift_detected ? 'bg-red-500/20 border border-red-500/30' : 'bg-green-500/20 border border-green-500/30'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-white">{model.name}</h4>
+                  <div className={`w-2 h-2 rounded-full ${
+                    model.drift_detected ? 'bg-red-400 animate-pulse' : 'bg-green-400'
+                  }`}></div>
+                </div>
+                <p className="text-sm text-gray-400 mt-1">Accuracy: {model.accuracy?.toFixed(2) || '0.00'}%</p>
+                {model.drift_detected && (
+                  <p className="text-xs text-red-400 mt-1">Drift detected</p>
+                )}
+              </div>
+            )) || (
+              <div className="text-gray-400">No model health data available</div>
+            )}
+          </div>
         </div>
       </Card>
       
@@ -570,10 +653,57 @@ const ErrorMessage = ({ message, details }) => (
   </div>
 );
 
-// Import components
-import Backtesting from './components/Backtesting.jsx';
-import TradeAnalysis from './components/TradeAnalysis.jsx';
-import ModelManagement from './components/ModelManagement.jsx';
-import BotManagement from './components/BotManagement.jsx';
-import ABTesting from './components/ABTesting.jsx';
-import TokenManagement from './components/TokenManagement';
+// Loading Spinner Component
+
+
+// Advanced Chart Components
+const PerformanceChart = ({ data, title }) => {
+  if (!data || data.length === 0) return <div className="text-gray-400">No data available</div>;
+  
+  return (
+    <div className="space-y-4">
+      <h4 className="text-white font-medium">{title}</h4>
+      <div className="h-64 bg-gray-900/50 rounded-lg p-4">
+        {/* Placeholder for actual chart implementation */}
+        <div className="flex items-center justify-center h-full text-gray-400">
+          <LineChart size={48} />
+          <span className="ml-2">Performance Chart</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AttributionChart = ({ data, title }) => {
+  if (!data || Object.keys(data).length === 0) return <div className="text-gray-400">No attribution data available</div>;
+  
+  return (
+    <div className="space-y-4">
+      <h4 className="text-white font-medium">{title}</h4>
+      <div className="h-64 bg-gray-900/50 rounded-lg p-4">
+        {/* Placeholder for actual chart implementation */}
+        <div className="flex items-center justify-center h-full text-gray-400">
+          <PieChart size={48} />
+          <span className="ml-2">Attribution Chart</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const RiskMetricsChart = ({ data, title }) => {
+  if (!data || Object.keys(data).length === 0) return <div className="text-gray-400">No risk data available</div>;
+  
+  return (
+    <div className="space-y-4">
+      <h4 className="text-white font-medium">{title}</h4>
+      <div className="h-64 bg-gray-900/50 rounded-lg p-4">
+        {/* Placeholder for actual chart implementation */}
+        <div className="flex items-center justify-center h-full text-gray-400">
+          <BarChart3 size={48} />
+          <span className="ml-2">Risk Metrics Chart</span>
+        </div>
+      </div>
+    </div>
+  );
+};

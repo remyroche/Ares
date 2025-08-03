@@ -1,776 +1,781 @@
 # src/analyst/regime_classifier.py
-import pandas as pd
-import numpy as np
-import pandas_ta as ta
-from scipy.signal import find_peaks
-from sklearn.cluster import KMeans  # Using standard KMeans for clustering on features
-from sklearn.preprocessing import StandardScaler
-from lightgbm import LGBMClassifier  # For real-time classification
-import joblib  # For saving/loading models
 import os  # For path manipulation
-import sys  # Import sys for sys.exit() in example usage
+from datetime import datetime
+from typing import Any
+
+import joblib  # For saving/loading models
+import numpy as np
+import pandas as pd
+
 from src.analyst.sr_analyzer import (
     SRLevelAnalyzer,
 )  # Assuming sr_analyzer.py is accessible
+from src.utils.error_handler import (
+    handle_errors,
+    handle_file_operations,
+    handle_specific_errors,
+)
 from src.utils.logger import system_logger  # Centralized logger
-from src.config import CONFIG  # Import CONFIG to get checkpoint paths
-from typing import Optional
 
 
 class MarketRegimeClassifier:
     """
-    Classifies the current market into one of four primary states:
-    BULL_TREND, BEAR_TREND, SIDEWAYS_RANGE, or SR_ZONE_ACTION.
-    Also provides a Trend Strength Score.
-
-    This enhanced version adds more advanced statistical and time-series derived features
-    to improve the LightGBM classifier's ability to distinguish regimes.
-    It also uses KMeans clustering on these features, with cluster labels serving as
-    additional input for the LightGBM.
+    Enhanced market regime classifier with comprehensive error handling and type safety.
     """
 
-    def __init__(self, config, sr_analyzer: SRLevelAnalyzer):
-        self.config = config.get("analyst", {}).get("market_regime_classifier", {})
-        self.global_config = config  # Store global config to access other sections
-        self.sr_analyzer = sr_analyzer
-        self.kmeans_model = None  # KMeans model for feature-based clustering
-        self.lgbm_classifier = None
-        self.scaler = None
-        self.logger = system_logger.getChild(
-            "MarketRegimeClassifier"
-        )  # Child logger for classifier
-
-        self.regime_map = {
-            "BULL_TREND": "BULL_TREND",
-            "BEAR_TREND": "BEAR_TREND",
-            "SIDEWAYS_RANGE": "SIDEWAYS_RANGE",
-            "SR_ZONE_ACTION": "SR_ZONE_ACTION",  # SR_ZONE_ACTION will be determined separately
-        }
-        self.trained = False
-        # Default model path, can be overridden by save/load methods
-        # Using the new CHECKPOINT_DIR from CONFIG
-        self.default_model_path = os.path.join(
-            CONFIG["CHECKPOINT_DIR"], "analyst_models", "regime_classifier.joblib"
-        )
-        os.makedirs(
-            os.path.dirname(self.default_model_path), exist_ok=True
-        )  # Ensure model storage path exists
-
-    def calculate_trend_strength(self, klines_df: pd.DataFrame):
+    def __init__(self, config: dict[str, Any], sr_analyzer: SRLevelAnalyzer) -> None:
         """
-        Calculates the Composite Trend Strength Indicator.
-        Ranges from -1.0 (Maximum Bearish Trend) to +1.0 (Maximum Bullish Trend).
+        Initialize market regime classifier with enhanced type safety.
+
+        Args:
+            config: Configuration dictionary
+            sr_analyzer: Support/resistance analyzer component
         """
-        if klines_df.empty or len(klines_df) < max(
-            self.config["adx_period"], self.config["macd_fast_period"]
-        ):
-            return 0.0, 0.0  # Return 0 if insufficient data
+        self.config: dict[str, Any] = config
+        self.sr_analyzer: SRLevelAnalyzer = sr_analyzer
+        self.logger = system_logger.getChild("MarketRegimeClassifier")
 
-        # Directional Component (MACD)
-        macd = klines_df.ta.macd(
-            fast=self.config["macd_fast_period"],
-            slow=self.config["macd_slow_period"],
-            signal=self.config["macd_signal_period"],
-            append=False,
-        )
-        # Ensure MACDh_12_26_9 exists, adjust column name if periods are different
-        macd_hist_col = f"MACDh_{self.config['macd_fast_period']}_{self.config['macd_slow_period']}_{self.config['macd_signal_period']}"
+        # Model state
+        self.models: dict[str, Any] = {}
+        self.is_trained: bool = False
+        self.last_training_time: datetime | None = None
+        self.model_performance: dict[str, float] = {}
 
-        if macd_hist_col not in macd.columns or klines_df["close"].iloc[-1] == 0:
-            direction_score = 0.0
-        else:
-            normalized_hist = macd[macd_hist_col].iloc[-1] / klines_df["close"].iloc[-1]
-            scaling_factor = self.config.get("trend_scaling_factor", 100)
-            direction_score = np.clip(normalized_hist * scaling_factor, -1, 1)
-
-        # Momentum Component (ADX)
-        # Ensure ADX is calculated on the klines_df
-        klines_df_copy = (
-            klines_df.copy()
-        )  # Avoid modifying original DataFrame passed in
-        klines_df_copy.ta.adx(
-            length=self.config["adx_period"],
-            append=True,
-            col_names=("ADX", "DMP", "DMN"),
-        )
-        current_adx = (
-            klines_df_copy["ADX"].iloc[-1]
-            if "ADX" in klines_df_copy.columns
-            and not klines_df_copy["ADX"].isnull().all()
-            else 0
+        # Configuration
+        self.checkpoint_dir: str = self.config.get("CHECKPOINT_DIR", "checkpoints")
+        self.model_prefix: str = self.config.get(
+            "REGIME_CLASSIFIER_MODEL_PREFIX",
+            "regime_classifier_",
         )
 
-        trend_threshold = self.config.get("trend_threshold", 20)
-        max_strength_threshold = self.config.get("max_strength_threshold", 60)
-
-        if max_strength_threshold - trend_threshold > 0:
-            momentum_score = np.clip(
-                (current_adx - trend_threshold)
-                / (max_strength_threshold - trend_threshold),
-                0,
-                1,
-            )
-        else:
-            momentum_score = 0.0
-
-        final_trend_strength = direction_score * momentum_score
-        return final_trend_strength, current_adx
-
-    def _calculate_advanced_features(self, klines_df: pd.DataFrame) -> pd.DataFrame:
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid regime classifier configuration"),
+            AttributeError: (False, "Missing required classifier parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="regime classifier initialization",
+    )
+    async def initialize(self) -> bool:
         """
-        Calculates additional statistical and time-series derived features for regime classification.
+        Initialize regime classifier with enhanced error handling.
+
+        Returns:
+            bool: True if initialization successful, False otherwise
         """
-        if (
-            klines_df.empty or len(klines_df) < 50
-        ):  # Need sufficient history for rolling features
-            self.logger.warning(
-                "Insufficient data for advanced feature calculation. Returning empty DataFrame."
-            )
-            return pd.DataFrame(index=klines_df.index)
-
-        features = pd.DataFrame(index=klines_df.index)
-
-        # Ensure 'close' is numeric
-        klines_df["close"] = pd.to_numeric(klines_df["close"], errors="coerce")
-        klines_df["volume"] = pd.to_numeric(klines_df["volume"], errors="coerce")
-
-        # Rolling Returns and Volatility
-        features["log_returns"] = np.log(
-            klines_df["close"] / klines_df["close"].shift(1)
-        )
-        features["volatility_20"] = features["log_returns"].rolling(
-            window=20
-        ).std() * np.sqrt(252)  # Annualized daily vol
-        features["volatility_50"] = features["log_returns"].rolling(
-            window=50
-        ).std() * np.sqrt(252)
-
-        # Statistical Moments of Returns
-        features["skewness_20"] = features["log_returns"].rolling(window=20).skew()
-        features["kurtosis_20"] = features["log_returns"].rolling(window=20).kurt()
-
-        # Price Action Features (e.g., average candle body/wick size)
-        features["candle_body"] = abs(klines_df["open"] - klines_df["close"])
-        features["candle_range"] = klines_df["high"] - klines_df["low"]
-
-        # Avoid division by zero for normalization
-        features["avg_body_size_20"] = (
-            features["candle_body"].rolling(window=20).mean() / klines_df["close"]
-        ).fillna(0)
-        features["avg_range_size_20"] = (
-            features["candle_range"].rolling(window=20).mean() / klines_df["close"]
-        ).fillna(0)
-
-        # Volume-based features
-        features["volume_ma_20"] = klines_df["volume"].rolling(window=20).mean()
-        features["volume_change"] = (
-            klines_df["volume"] - features["volume_ma_20"]
-        ) / features["volume_ma_20"].replace(0, np.nan)
-
-        # Clean up NaNs from rolling windows
-        features.fillna(0, inplace=True)
-
-        return features
-
-    def train_classifier(
-        self,
-        historical_features: pd.DataFrame,
-        historical_klines: pd.DataFrame,
-        model_path: Optional[str] = None,
-    ):
-        """
-        Trains the Market Regime Classifier using a pseudo-labeling approach.
-        The `SR_ZONE_ACTION` regime is determined dynamically and not part of the clustering.
-        """
-        self.logger.info(
-            "Training Market Regime Classifier (Pseudo-Labeling + LightGBM)..."
-        )
-
-        if historical_features.empty or historical_klines.empty:
-            self.logger.warning("No historical features or klines to train classifier.")
-            return
-
-        # Calculate advanced features from historical klines
-        advanced_features = self._calculate_advanced_features(historical_klines.copy())
-
-        # Merge all features
-        combined_data = (
-            historical_klines.join(historical_features, how="inner")
-            .join(advanced_features, how="inner")
-            .dropna()
-        )
-
-        if combined_data.empty:
-            self.logger.warning(
-                "Insufficient aligned data for training classifier after dropping NaNs."
-            )
-            return
-
-        # --- Pseudo-Labeling for Market Regimes ---
-        # 1. Calculate SMA_50 for overall trend direction
-        combined_data["SMA_50"] = combined_data["close"].rolling(window=50).mean()
-
-        # 2. Use ADX from features for trend strength
-        adx_col = "ADX"
-
-        # 3. Use MACD Histogram from features for short-term momentum
-        macd_hist_col = [col for col in combined_data.columns if "MACDh_" in col]
-        if not macd_hist_col:
-            self.logger.warning(
-                "MACD Histogram column not found for pseudo-labeling. Skipping training."
-            )
-            return
-        macd_hist_col = macd_hist_col[0]
-
-        # Initialize pseudo-labels
-        combined_data["simulated_label"] = "SIDEWAYS_RANGE"  # Default to sideways
-
-        # Define thresholds from config
-        trend_threshold = self.config.get(
-            "trend_threshold", 20
-        )  # ADX value for strong trend
-
-        # Apply pseudo-labeling rules
-        # Bull Trend: ADX > threshold, MACD_HIST > 0, Close > SMA_50
-        bull_condition = (
-            (combined_data[adx_col] > trend_threshold)
-            & (combined_data[macd_hist_col] > 0)
-            & (combined_data["close"] > combined_data["SMA_50"])
-        )
-        combined_data.loc[bull_condition, "simulated_label"] = "BULL_TREND"
-
-        # Bear Trend: ADX > threshold, MACD_HIST < 0, Close < SMA_50
-        bear_condition = (
-            (combined_data[adx_col] > trend_threshold)
-            & (combined_data[macd_hist_col] < 0)
-            & (combined_data["close"] < combined_data["SMA_50"])
-        )
-        combined_data.loc[bear_condition, "simulated_label"] = "BEAR_TREND"
-
-        # Features for LightGBM training (include new advanced features)
-        # Ensure all necessary columns are present before slicing
-        required_features_for_lgbm = [
-            "ADX",
-            macd_hist_col,
-            "ATR",
-            "volume_delta",
-            "autoencoder_reconstruction_error",
-            "Is_SR_Interacting",
-            "log_returns",
-            "volatility_20",
-            "skewness_20",
-            "kurtosis_20",
-            "avg_body_size_20",
-            "avg_range_size_20",
-            "volume_change",
-        ]
-
-        # Filter to only existing columns to avoid KeyError if some features are missing
-        actual_features_for_lgbm = [
-            col for col in required_features_for_lgbm if col in combined_data.columns
-        ]
-
-        features_for_lgbm = combined_data[actual_features_for_lgbm].dropna()
-        labels_for_lgbm = combined_data.loc[features_for_lgbm.index, "simulated_label"]
-
-        if features_for_lgbm.empty or labels_for_lgbm.empty:
-            self.logger.warning(
-                "Insufficient features or labels for training LightGBM after pseudo-labeling and dropping NaNs."
-            )
-            return
-
-        self.scaler = StandardScaler()
-        scaled_features = self.scaler.fit_transform(features_for_lgbm)
-
-        # --- Train KMeans Clustering Model ---
-        # Use KMeans on a subset of scaled features to identify underlying market clusters
-        # These cluster labels will then be used as an additional feature for the LightGBM
-        n_clusters = self.config.get(
-            "kmeans_n_clusters", 4
-        )  # Configurable number of clusters
-        if scaled_features.shape[0] >= n_clusters:
-            try:
-                self.kmeans_model = KMeans(
-                    n_clusters=n_clusters, random_state=42, n_init=10
-                )
-                cluster_labels = self.kmeans_model.fit_predict(scaled_features)
-                features_for_lgbm["cluster_label"] = pd.Series(
-                    cluster_labels, index=features_for_lgbm.index
-                )
-                self.logger.info(
-                    f"KMeans clustering trained with {n_clusters} clusters."
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"Error training KMeans clustering: {e}. Skipping cluster feature.",
-                    exc_info=True,
-                )
-                features_for_lgbm[
-                    "cluster_label"
-                ] = -1  # Default to a neutral/unknown cluster
-        else:
-            self.logger.warning(
-                f"Not enough data ({scaled_features.shape[0]} samples) to train KMeans with {n_clusters} clusters. Skipping cluster feature."
-            )
-            features_for_lgbm["cluster_label"] = -1
-
-        # Train LightGBM classifier on pseudo-labels
-        self.lgbm_classifier = LGBMClassifier(
-            random_state=42, verbose=-1
-        )  # verbose=-1 suppresses training output
-        self.lgbm_classifier.fit(
-            features_for_lgbm, labels_for_lgbm
-        )  # Pass DataFrame directly
-        self.trained = True
-        self.logger.info(
-            "Market Regime Classifier training completed with pseudo-labeling and advanced features."
-        )
-
-        # Save the model after training if a path is provided
-        if model_path:
-            self.save_model(model_path)
-
-    def predict_regime(
-        self,
-        current_features: pd.DataFrame,
-        current_klines: pd.DataFrame,
-        sr_levels: list,
-    ):
-        """
-        Predicts the current market regime and provides the Trend Strength Score.
-        Dynamically checks for SR_ZONE_ACTION.
-        """
-        if not self.trained:
-            self.logger.warning(
-                "Warning: Classifier not trained. Attempting to load default model..."
-            )
-            if not self.load_model(model_path=self.default_model_path):
-                self.logger.error(
-                    "Classifier not trained and failed to load model. Returning default regime."
-                )
-                trend_strength, current_adx = self.calculate_trend_strength(
-                    current_klines
-                )
-                return "UNKNOWN", trend_strength, current_adx
-
-        # Calculate Trend Strength Score and ADX first
-        trend_strength, current_adx = self.calculate_trend_strength(current_klines)
-
-        # Check for SR_ZONE_ACTION
-        if self._is_sr_zone_action(current_klines, sr_levels):
-            self.logger.info("Detected SR_ZONE_ACTION.")
-            return "SR_ZONE_ACTION", trend_strength, current_adx
-
-        # If not SR_ZONE_ACTION, proceed with LightGBM classification
-        predicted_regime = self._predict_with_lgbm(current_features, current_klines)
-
-        self.logger.info(
-            f"Predicted Regime: {predicted_regime}, Trend Strength: {trend_strength:.2f}, ADX: {current_adx:.2f}"
-        )
-        return predicted_regime, trend_strength, current_adx
-
-    def _is_sr_zone_action(self, current_klines: pd.DataFrame, sr_levels: list) -> bool:
-        """Check if current market conditions indicate SR_ZONE_ACTION."""
-        current_price = current_klines["close"].iloc[-1]
-        current_atr = (
-            current_klines["ATR"].iloc[-1]
-            if "ATR" in current_klines.columns
-            and not current_klines["ATR"].isnull().all()
-            else 0
-        )
-        proximity_multiplier = self.global_config["best_params"].get(
-            "proximity_multiplier", 0.25
-        )
-
-        if not sr_levels or current_atr <= 0:
-            return False
-
-        for level_info in sr_levels:
-            if not self._is_relevant_sr_level(level_info):
-                continue
-
-            if self._is_price_interacting_with_sr_level(
-                current_price, level_info, current_atr, proximity_multiplier
-            ):
-                return True
-
-        return False
-
-    def _is_relevant_sr_level(self, level_info: dict) -> bool:
-        """Check if the SR level is relevant for analysis."""
-        return level_info["current_expectation"] in [
-            "Very Strong",
-            "Strong",
-            "Moderate",
-        ]
-
-    def _is_price_interacting_with_sr_level(
-        self,
-        current_price: float,
-        level_info: dict,
-        current_atr: float,
-        proximity_multiplier: float,
-    ) -> bool:
-        """Check if price is interacting with a specific SR level."""
-        level_price = level_info["level_price"]
-        level_type = level_info["type"]  # "Support" or "Resistance"
-
-        tolerance_abs = current_atr * proximity_multiplier
-
-        # Check directional condition
-        directional_condition_met = False
-        if level_type == "Resistance" and current_price <= level_price:
-            directional_condition_met = True
-        elif level_type == "Support" and current_price >= level_price:
-            directional_condition_met = True
-
-        if not directional_condition_met:
-            return False
-
-        # Check for proximity within the tolerance band
-        return (current_price <= level_price + tolerance_abs) and (
-            current_price >= level_price - tolerance_abs
-        )
-
-    def _predict_with_lgbm(
-        self, current_features: pd.DataFrame, current_klines: pd.DataFrame
-    ) -> str:
-        """Predict regime using LightGBM classifier."""
-        # Find MACD histogram column
-        macd_hist_col = self._find_macd_histogram_column(current_features)
-        if not macd_hist_col:
-            self.logger.warning(
-                "MACD Histogram column not found in current_features. Cannot predict regime."
-            )
-            return "UNKNOWN"
-
-        # Prepare features for prediction
-        combined_features = self._prepare_features_for_prediction(
-            current_features, current_klines, macd_hist_col
-        )
-        if combined_features.empty:
-            self.logger.warning(
-                "Insufficient features for regime prediction after filtering and dropping NaNs."
-            )
-            return "UNKNOWN"
-
-        # Predict cluster label if KMeans was trained
-        combined_features = self._predict_cluster_label(combined_features)
-
-        # Make LGBM prediction
-        return self._make_lgbm_prediction(combined_features)
-
-    def _find_macd_histogram_column(
-        self, current_features: pd.DataFrame
-    ) -> Optional[str]:
-        """Find the MACD histogram column name."""
-        macd_hist_cols = [col for col in current_features.columns if "MACDh_" in col]
-        return macd_hist_cols[0] if macd_hist_cols else None
-
-    def _prepare_features_for_prediction(
-        self,
-        current_features: pd.DataFrame,
-        current_klines: pd.DataFrame,
-        macd_hist_col: str,
-    ) -> pd.DataFrame:
-        """Prepare features for LGBM prediction."""
-        # Calculate advanced features
-        current_advanced_features = self._calculate_advanced_features(
-            current_klines.copy()
-        )
-
-        # Merge all current features
-        combined_current_features = current_features.copy()
-        combined_current_features = combined_current_features.merge(
-            current_advanced_features,
-            left_index=True,
-            right_index=True,
-            how="left",
-            suffixes=("", "_adv"),
-        )
-
-        # Define required features
-        required_features = [
-            "ADX",
-            macd_hist_col,
-            "ATR",
-            "volume_delta",
-            "autoencoder_reconstruction_error",
-            "Is_SR_Interacting",
-            "log_returns",
-            "volatility_20",
-            "skewness_20",
-            "kurtosis_20",
-            "avg_body_size_20",
-            "avg_range_size_20",
-            "volume_change",
-        ]
-
-        # Add cluster_label if KMeans was trained
-        if self.kmeans_model:
-            required_features.append("cluster_label")
-
-        # Filter to only existing columns
-        actual_features = [
-            col for col in required_features if col in combined_current_features.columns
-        ]
-
-        return combined_current_features[actual_features].dropna()
-
-    def _predict_cluster_label(self, features_df: pd.DataFrame) -> pd.DataFrame:
-        """Predict cluster label for current features if KMeans was trained."""
-        if not self.kmeans_model or "cluster_label" not in features_df.columns:
-            return features_df
-
-        if not features_df.empty:
-            try:
-                scaler_fitted_cols = (
-                    self.scaler.feature_names_in_
-                    if hasattr(self.scaler, "feature_names_in_")
-                    else features_df.columns.tolist()
-                )
-                current_scaled_input = self.scaler.transform(
-                    features_df.reindex(columns=scaler_fitted_cols, fill_value=0).tail(
-                        1
-                    )
-                )
-                predicted_cluster = self.kmeans_model.predict(current_scaled_input)[0]
-                features_df.loc[features_df.index[-1], "cluster_label"] = (
-                    predicted_cluster
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"Error predicting cluster for current features: {e}. Setting cluster_label to -1.",
-                    exc_info=True,
-                )
-                features_df.loc[features_df.index[-1], "cluster_label"] = -1
-        else:
-            features_df.loc[features_df.index[-1], "cluster_label"] = -1
-
-        return features_df
-
-    def _make_lgbm_prediction(self, features_df: pd.DataFrame) -> str:
-        """Make prediction using LightGBM classifier."""
-        if self.scaler is None:
-            self.logger.error(
-                "Scaler not fitted. Cannot predict regime. Returning UNKNOWN."
-            )
-            return "UNKNOWN"
-
-        # Ensure cluster_label is present if needed
-        lgbm_input_cols = (
-            self.lgbm_classifier.feature_name_
-            if hasattr(self.lgbm_classifier, "feature_name_")
-            else features_df.columns.tolist()
-        )
-        if (
-            "cluster_label" in lgbm_input_cols
-            and "cluster_label" not in features_df.columns
-        ):
-            features_df["cluster_label"] = -1
-
-        # Reindex to match training feature order
-        features_reindexed = features_df.reindex(
-            columns=lgbm_input_cols, fill_value=0
-        ).tail(1)
-
-        # Scale features and predict
-        scaled_features = self.scaler.transform(features_reindexed)
-        predicted_regime = self.lgbm_classifier.predict(scaled_features)[0]
-
-        return predicted_regime
-
-    def save_model(self, model_path: Optional[str] = None):
-        """Saves the trained LGBM classifier, scaler, and KMeans model using joblib."""
-        path_to_save = model_path if model_path else self.default_model_path
         try:
-            model_data = {
-                "lgbm_classifier": self.lgbm_classifier,
-                "scaler": self.scaler,
-                "kmeans_model": self.kmeans_model,  # Save KMeans model
-                "lgbm_feature_names": self.lgbm_classifier.feature_name_
-                if hasattr(self.lgbm_classifier, "feature_name_")
-                else None,
-                "scaler_feature_names": self.scaler.feature_names_in_
-                if hasattr(self.scaler, "feature_names_in_")
-                else None,
-            }
-            joblib.dump(model_data, path_to_save)
-            self.logger.info(f"Market Regime Classifier model saved to {path_to_save}")
-        except Exception as e:
-            self.logger.error(
-                f"Error saving Market Regime Classifier model to {path_to_save}: {e}",
-                exc_info=True,
-            )
+            self.logger.info("Initializing Market Regime Classifier...")
 
-    def load_model(self, model_path: Optional[str] = None):
-        """Loads the trained LGBM classifier, scaler, and KMeans model from file."""
-        path_to_load = model_path if model_path else self.default_model_path
-        if not os.path.exists(path_to_load):
-            self.logger.warning(
-                f"Market Regime Classifier model file not found at {path_to_load}. Cannot load."
-            )
-            self.trained = False
-            return False
-        try:
-            model_data = joblib.load(path_to_load)
-            self.lgbm_classifier = model_data["lgbm_classifier"]
-            self.scaler = model_data["scaler"]
-            self.kmeans_model = model_data.get("kmeans_model")  # Load KMeans model
+            # Load existing models if available
+            await self._load_existing_models()
 
-            # Restore feature names if saved (for robust reindexing)
-            if (
-                "lgbm_feature_names" in model_data
-                and model_data["lgbm_feature_names"] is not None
-            ):
-                self.lgbm_classifier.feature_name_ = model_data["lgbm_feature_names"]
-            if (
-                "scaler_feature_names" in model_data
-                and model_data["scaler_feature_names"] is not None
-            ):
-                self.scaler.feature_names_in_ = model_data["scaler_feature_names"]
+            # Initialize feature engineering
+            await self._initialize_feature_engineering()
 
-            self.trained = True
+            # Validate configuration
+            if not self._validate_configuration():
+                self.logger.error("Invalid configuration for regime classifier")
+                return False
+
             self.logger.info(
-                f"Market Regime Classifier model loaded from {path_to_load}"
+                "✅ Market Regime Classifier initialization completed successfully",
             )
             return True
+
         except Exception as e:
-            self.logger.error(
-                f"Error loading Market Regime Classifier model from {path_to_load}: {e}",
-                exc_info=True,
-            )
-            self.trained = False
+            self.logger.error(f"❌ Market Regime Classifier initialization failed: {e}")
             return False
 
-
-# --- Example Usage (Main execution block for demonstration) ---
-if __name__ == "__main__":
-    # This block is for standalone testing of the MarketRegimeClassifier
-    # In the full pipeline, it will be orchestrated by Analyst.
-
-    # Ensure dummy data exists for loading
-    from src.analyst.data_utils import (
-        create_dummy_data,
-        load_klines_data,
-        load_agg_trades_data,
-        load_futures_data,
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
     )
-    from src.config import CONFIG  # Import the main CONFIG dictionary
+    def _validate_configuration(self) -> bool:
+        """
+        Validate regime classifier configuration.
 
-    klines_filename = CONFIG["KLINES_FILENAME"]
-    agg_trades_filename = CONFIG["AGG_TRADES_FILENAME"]
-    futures_filename = CONFIG["FUTURES_FILENAME"]
+        Returns:
+            bool: True if configuration is valid, False otherwise
+        """
+        try:
+            required_keys = ["CHECKPOINT_DIR", "REGIME_CLASSIFIER_MODEL_PREFIX"]
+            for key in required_keys:
+                if key not in self.config:
+                    self.logger.error(f"Missing required configuration key: {key}")
+                    return False
 
-    create_dummy_data(klines_filename, "klines", num_records=1000)
-    create_dummy_data(agg_trades_filename, "agg_trades", num_records=5000)
-    create_dummy_data(futures_filename, "futures", num_records=500)
+            # Validate checkpoint directory
+            if not os.path.exists(self.checkpoint_dir):
+                os.makedirs(self.checkpoint_dir, exist_ok=True)
+                self.logger.info(f"Created checkpoint directory: {self.checkpoint_dir}")
 
-    # Load raw data
-    klines_df = load_klines_data(klines_filename)
-    agg_trades_df = load_agg_trades_data(agg_trades_filename)
-    futures_df = load_futures_data(futures_filename)
+            return True
 
-    if klines_df.empty:
-        print("Failed to load klines data for demo. Exiting.")
-        sys.exit(1)
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
+            return False
 
-    # Simulate SR levels (normally from SRLevelAnalyzer)
-    from src.analyst.sr_analyzer import SRLevelAnalyzer
+    @handle_file_operations(
+        default_return=None,
+        context="model loading",
+    )
+    async def _load_existing_models(self) -> None:
+        """Load existing trained models from checkpoint directory."""
+        try:
+            if not os.path.exists(self.checkpoint_dir):
+                self.logger.info("No checkpoint directory found, will train new models")
+                return
 
-    sr_analyzer_demo = SRLevelAnalyzer(CONFIG["analyst"]["sr_analyzer"])
-    daily_df_for_sr = (
-        klines_df.resample("D")
-        .agg(
-            {
-                "open": "first",
-                "high": "max",
-                "low": "min",
-                "close": "last",
-                "volume": "sum",
+            # Look for existing model files
+            model_files = [
+                f
+                for f in os.listdir(self.checkpoint_dir)
+                if f.startswith(self.model_prefix) and f.endswith(".joblib")
+            ]
+
+            for model_file in model_files:
+                model_path = os.path.join(self.checkpoint_dir, model_file)
+                try:
+                    model = joblib.load(model_path)
+                    model_name = model_file.replace(self.model_prefix, "").replace(
+                        ".joblib",
+                        "",
+                    )
+                    self.models[model_name] = model
+                    self.logger.info(f"Loaded existing model: {model_name}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to load model {model_file}: {e}")
+
+            if self.models:
+                self.is_trained = True
+                self.logger.info(f"Loaded {len(self.models)} existing models")
+
+        except Exception as e:
+            self.logger.error(f"Error loading existing models: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="feature engineering initialization",
+    )
+    async def _initialize_feature_engineering(self) -> None:
+        """Initialize feature engineering components."""
+        try:
+            # Initialize feature engineering parameters
+            from src.config import get_lookback_window
+            self.feature_params = {
+                "lookback_window": get_lookback_window(),
+                "volatility_window": self.config.get("volatility_window", 20),
+                "momentum_window": self.config.get("momentum_window", 14),
             }
-        )
-        .dropna()
-    )
-    daily_df_for_sr.rename(
-        columns={
-            "open": "Open",
-            "high": "High",
-            "low": "Low",
-            "close": "Close",
-            "volume": "Volume",
+
+            self.logger.info(f"📊 Using lookback window: {self.feature_params['lookback_window']} days")
+            self.logger.info("Feature engineering initialized")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing feature engineering: {e}")
+
+    @handle_specific_errors(
+        error_handlers={
+            ConnectionError: (None, "Failed to connect to data source"),
+            TimeoutError: (None, "Training operation timed out"),
+            ValueError: (None, "Invalid training data"),
         },
-        inplace=True,
+        default_return=None,
+        context="regime classification training",
     )
-    sr_levels_demo = sr_analyzer_demo.analyze(daily_df_for_sr)
+    async def train_models(
+        self,
+        training_data: pd.DataFrame,
+    ) -> dict[str, Any] | None:
+        """
+        Train regime classification models with enhanced error handling.
 
-    # Simulate historical features (normally from FeatureEngineeringEngine)
-    from src.analyst.feature_engineering import FeatureEngineeringEngine
+        Args:
+            training_data: Training data DataFrame
 
-    feature_engine_demo = FeatureEngineeringEngine(CONFIG)
-    # Ensure ATR is calculated before passing to classifier
-    klines_df_for_features = klines_df.copy()
-    klines_df_for_features.ta.atr(
-                    length=CONFIG["best_params"]["atr_period"], append=True, col_names=("ATR")
+        Returns:
+            Optional[Dict[str, Any]]: Training results or None if failed
+        """
+        try:
+            if training_data.empty:
+                self.logger.error("Training data is empty")
+                return None
+
+            self.logger.info("Starting regime classification model training...")
+
+            # Prepare features
+            features = await self._prepare_features(training_data)
+            if features is None:
+                return None
+
+            # Train multiple models
+            training_results = {}
+
+            # Train Random Forest
+            rf_results = await self._train_random_forest(features)
+            if rf_results:
+                training_results["random_forest"] = rf_results
+
+            # Train SVM
+            svm_results = await self._train_svm(features)
+            if svm_results:
+                training_results["svm"] = svm_results
+
+            # Train Neural Network
+            nn_results = await self._train_neural_network(features)
+            if nn_results:
+                training_results["neural_network"] = nn_results
+
+            # Save models
+            await self._save_models()
+
+            self.is_trained = True
+            self.last_training_time = datetime.now()
+
+            self.logger.info(
+                "✅ Regime classification model training completed successfully",
+            )
+            return training_results
+
+        except Exception as e:
+            self.logger.error(f"Error training regime classification models: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="feature preparation",
     )
-    historical_features_demo = feature_engine_demo.generate_all_features(
-        klines_df_for_features, agg_trades_df, futures_df, sr_levels_demo
+    async def _prepare_features(self, data: pd.DataFrame) -> pd.DataFrame | None:
+        """
+        Prepare features for regime classification.
+
+        Args:
+            data: Input data DataFrame
+
+        Returns:
+            Optional[pd.DataFrame]: Prepared features or None if failed
+        """
+        try:
+            # Ensure required columns exist
+            required_columns = ["open", "high", "low", "close", "volume"]
+            missing_columns = [
+                col for col in required_columns if col not in data.columns
+            ]
+            if missing_columns:
+                self.logger.error(f"Missing required columns: {missing_columns}")
+                return None
+
+            # Calculate technical indicators
+            features = data.copy()
+
+            # Price-based features
+            features["returns"] = data["close"].pct_change()
+            features["log_returns"] = np.log(data["close"] / data["close"].shift(1))
+            features["volatility"] = (
+                features["returns"]
+                .rolling(window=self.feature_params["volatility_window"])
+                .std()
+            )
+
+            # Volume-based features
+            features["volume_ma"] = data["volume"].rolling(window=20).mean()
+            features["volume_ratio"] = data["volume"] / features["volume_ma"]
+
+            # Momentum features
+            features["rsi"] = self._calculate_rsi(data["close"])
+            features["macd"] = self._calculate_macd(data["close"])
+
+            # Support/Resistance features
+            sr_features = await self._get_sr_features(data)
+            if sr_features is not None:
+                features = pd.concat([features, sr_features], axis=1)
+
+            # Remove NaN values
+            features = features.dropna()
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error preparing features: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="RSI calculation",
     )
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+        """
+        Calculate RSI indicator.
 
-    if historical_features_demo.empty:
-        print("Failed to generate historical features for demo. Exiting.")
-        sys.exit(1)
+        Args:
+            prices: Price series
+            period: RSI period
 
-    # Initialize and train the classifier
-    classifier = MarketRegimeClassifier(CONFIG, sr_analyzer_demo)
+        Returns:
+            pd.Series: RSI values
+        """
+        try:
+            delta = prices.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            return rsi
+        except Exception as e:
+            self.logger.error(f"Error calculating RSI: {e}")
+            return pd.Series(index=prices.index)
 
-    # Define a temporary model path for the demo
-    demo_model_path = os.path.join(
-        CONFIG["CHECKPOINT_DIR"], "analyst_models", "demo_regime_classifier.joblib"
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="MACD calculation",
     )
+    def _calculate_macd(
+        self,
+        prices: pd.Series,
+        fast: int = 12,
+        slow: int = 26,
+        signal: int = 9,
+    ) -> pd.Series:
+        """
+        Calculate MACD indicator.
 
-    # Train and save the model using the new model_path argument
-    classifier.train_classifier(
-        historical_features_demo.copy(), klines_df.copy(), model_path=demo_model_path
-    )  # Pass copies for training
+        Args:
+            prices: Price series
+            fast: Fast EMA period
+            slow: Slow EMA period
+            signal: Signal line period
 
-    # Test prediction
-    print("\n--- Testing Regime Prediction ---")
-    # Get the last few data points for prediction
-    test_features = historical_features_demo.tail(5)
-    test_klines = klines_df.tail(5)
+        Returns:
+            pd.Series: MACD values
+        """
+        try:
+            ema_fast = prices.ewm(span=fast).mean()
+            ema_slow = prices.ewm(span=slow).mean()
+            macd = ema_fast - ema_slow
+            signal_line = macd.ewm(span=signal).mean()
+            return macd - signal_line
+        except Exception as e:
+            self.logger.error(f"Error calculating MACD: {e}")
+            return pd.Series(index=prices.index)
 
-    for i in range(len(test_features)):
-        current_feat = test_features.iloc[[i]]
-        current_kline = test_klines.iloc[[i]]
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="SR features",
+    )
+    async def _get_sr_features(self, data: pd.DataFrame) -> pd.DataFrame | None:
+        """
+        Get support/resistance features.
 
-        # Ensure 'ATR' is in current_kline for predict_regime
-        if "ATR" not in current_kline.columns and "ATR" in current_feat.columns:
-            current_kline["ATR"] = current_feat["ATR"]
+        Args:
+            data: Market data
 
-        regime, trend_strength, adx = classifier.predict_regime(
-            current_feat, current_kline, sr_levels_demo
-        )
-        print(
-            f"Timestamp: {current_feat.index[0]} | Price: {current_feat['close'].iloc[0]:.2f} | Predicted Regime: {regime} | Trend Strength: {trend_strength:.2f} | ADX: {adx:.2f}"
-        )
+        Returns:
+            Optional[pd.DataFrame]: SR features or None
+        """
+        try:
+            if self.sr_analyzer:
+                sr_analysis = self.sr_analyzer.analyze(data)
+                if sr_analysis:
+                    # Extract SR features
+                    sr_features = pd.DataFrame(index=data.index)
+                    sr_features["sr_levels_count"] = len(sr_analysis.get("levels", []))
+                    sr_features["price_to_sr_distance"] = 0.0  # Placeholder
+                    return sr_features
+            return None
+        except Exception as e:
+            self.logger.error(f"Error getting SR features: {e}")
+            return None
 
-    # Test loading the model
-    print("\n--- Testing Model Loading ---")
-    new_classifier_instance = MarketRegimeClassifier(CONFIG, sr_analyzer_demo)
-    # Load the model using the new model_path argument
-    if new_classifier_instance.load_model(model_path=demo_model_path):
-        print("Model loaded successfully. Testing prediction with loaded model:")
-        current_feat = historical_features_demo.tail(1)
-        current_kline = klines_df.tail(1)
-        if "ATR" not in current_kline.columns and "ATR" in current_feat.columns:
-            current_kline["ATR"] = current_feat["ATR"]
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="random forest training",
+    )
+    async def _train_random_forest(
+        self,
+        features: pd.DataFrame,
+    ) -> dict[str, Any] | None:
+        """
+        Train Random Forest model.
 
-        regime, trend_strength, adx = new_classifier_instance.predict_regime(
-            current_feat, current_kline, sr_levels_demo
-        )
-        print(
-            f"Loaded Model Prediction: Timestamp: {current_feat.index[0]} | Price: {current_feat['close'].iloc[0]:.2f} | Predicted Regime: {regime} | Trend Strength: {trend_strength:.2f} | ADX: {adx:.2f}"
-        )
-    else:
-        print("Failed to load model for testing.")
+        Args:
+            features: Feature DataFrame
+
+        Returns:
+            Optional[Dict[str, Any]]: Training results
+        """
+        try:
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.model_selection import train_test_split
+
+            # Prepare target variable (regime labels)
+            target = self._generate_regime_labels(features)
+
+            # Split data
+            X_train, X_test, y_train, y_test = train_test_split(
+                features.drop(["target"], axis=1, errors="ignore"),
+                target,
+                test_size=0.2,
+                random_state=42,
+            )
+
+            # Train model
+            rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+            rf_model.fit(X_train, y_train)
+
+            # Evaluate model
+            train_score = rf_model.score(X_train, y_train)
+            test_score = rf_model.score(X_test, y_test)
+
+            # Store model
+            self.models["random_forest"] = rf_model
+            self.model_performance["random_forest"] = test_score
+
+            return {
+                "train_score": train_score,
+                "test_score": test_score,
+                "feature_importance": dict(
+                    zip(X_train.columns, rf_model.feature_importances_, strict=False),
+                ),
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error training Random Forest: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="SVM training",
+    )
+    async def _train_svm(self, features: pd.DataFrame) -> dict[str, Any] | None:
+        """
+        Train SVM model.
+
+        Args:
+            features: Feature DataFrame
+
+        Returns:
+            Optional[Dict[str, Any]]: Training results
+        """
+        try:
+            from sklearn.model_selection import train_test_split
+            from sklearn.svm import SVC
+
+            # Prepare target variable
+            target = self._generate_regime_labels(features)
+
+            # Split data
+            X_train, X_test, y_train, y_test = train_test_split(
+                features.drop(["target"], axis=1, errors="ignore"),
+                target,
+                test_size=0.2,
+                random_state=42,
+            )
+
+            # Train model
+            svm_model = SVC(kernel="rbf", random_state=42)
+            svm_model.fit(X_train, y_train)
+
+            # Evaluate model
+            train_score = svm_model.score(X_train, y_train)
+            test_score = svm_model.score(X_test, y_test)
+
+            # Store model
+            self.models["svm"] = svm_model
+            self.model_performance["svm"] = test_score
+
+            return {"train_score": train_score, "test_score": test_score}
+
+        except Exception as e:
+            self.logger.error(f"Error training SVM: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="neural network training",
+    )
+    async def _train_neural_network(
+        self,
+        features: pd.DataFrame,
+    ) -> dict[str, Any] | None:
+        """
+        Train Neural Network model.
+
+        Args:
+            features: Feature DataFrame
+
+        Returns:
+            Optional[Dict[str, Any]]: Training results
+        """
+        try:
+            from sklearn.model_selection import train_test_split
+            from sklearn.neural_network import MLPClassifier
+
+            # Prepare target variable
+            target = self._generate_regime_labels(features)
+
+            # Split data
+            X_train, X_test, y_train, y_test = train_test_split(
+                features.drop(["target"], axis=1, errors="ignore"),
+                target,
+                test_size=0.2,
+                random_state=42,
+            )
+
+            # Train model
+            nn_model = MLPClassifier(
+                hidden_layer_sizes=(100, 50),
+                random_state=42,
+                max_iter=500,
+            )
+            nn_model.fit(X_train, y_train)
+
+            # Evaluate model
+            train_score = nn_model.score(X_train, y_train)
+            test_score = nn_model.score(X_test, y_test)
+
+            # Store model
+            self.models["neural_network"] = nn_model
+            self.model_performance["neural_network"] = test_score
+
+            return {"train_score": train_score, "test_score": test_score}
+
+        except Exception as e:
+            self.logger.error(f"Error training Neural Network: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="regime label generation",
+    )
+    def _generate_regime_labels(self, features: pd.DataFrame) -> pd.Series:
+        """
+        Generate regime labels based on market conditions.
+
+        Args:
+            features: Feature DataFrame
+
+        Returns:
+            pd.Series: Regime labels
+        """
+        try:
+            # Simple regime classification based on volatility and returns
+            volatility = features["volatility"]
+            returns = features["returns"]
+
+            # Define regime thresholds
+            high_vol = volatility.quantile(0.75)
+            low_vol = volatility.quantile(0.25)
+
+            # Generate labels
+            labels = pd.Series(index=features.index, data="normal")
+            labels[(volatility > high_vol) & (returns > 0)] = "bull_volatile"
+            labels[(volatility > high_vol) & (returns < 0)] = "bear_volatile"
+            labels[(volatility < low_vol) & (returns > 0)] = "bull_calm"
+            labels[(volatility < low_vol) & (returns < 0)] = "bear_calm"
+
+            return labels
+
+        except Exception as e:
+            self.logger.error(f"Error generating regime labels: {e}")
+            return pd.Series(index=features.index, data="normal")
+
+    @handle_file_operations(
+        default_return=None,
+        context="model saving",
+    )
+    async def _save_models(self) -> None:
+        """Save trained models to checkpoint directory."""
+        try:
+            for model_name, model in self.models.items():
+                model_path = os.path.join(
+                    self.checkpoint_dir,
+                    f"{self.model_prefix}{model_name}.joblib",
+                )
+                joblib.dump(model, model_path)
+                self.logger.info(f"Saved model: {model_name}")
+
+        except Exception as e:
+            self.logger.error(f"Error saving models: {e}")
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (None, "Invalid input data for classification"),
+            AttributeError: (None, "Model not properly trained"),
+        },
+        default_return=None,
+        context="regime classification",
+    )
+    async def classify_regime(self, data: pd.DataFrame) -> dict[str, Any] | None:
+        """
+        Classify market regime with enhanced error handling.
+
+        Args:
+            data: Market data DataFrame
+
+        Returns:
+            Optional[Dict[str, Any]]: Classification results or None if failed
+        """
+        try:
+            if not self.is_trained or not self.models:
+                self.logger.error("Models not trained")
+                return None
+
+            # Prepare features
+            features = await self._prepare_features(data)
+            if features is None:
+                return None
+
+            # Make predictions with all models
+            predictions = {}
+            probabilities = {}
+
+            for model_name, model in self.models.items():
+                try:
+                    # Remove target column if present
+                    X = features.drop(["target"], axis=1, errors="ignore")
+
+                    # Make prediction
+                    pred = model.predict(X.iloc[-1:])[0]
+                    prob = (
+                        model.predict_proba(X.iloc[-1:])[0]
+                        if hasattr(model, "predict_proba")
+                        else None
+                    )
+
+                    predictions[model_name] = pred
+                    if prob is not None:
+                        probabilities[model_name] = prob
+
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error making prediction with {model_name}: {e}",
+                    )
+
+            # Ensemble prediction (majority vote)
+            if predictions:
+                ensemble_pred = max(
+                    set(predictions.values()),
+                    key=list(predictions.values()).count,
+                )
+
+                result = {
+                    "ensemble_prediction": ensemble_pred,
+                    "individual_predictions": predictions,
+                    "probabilities": probabilities,
+                    "confidence": self._calculate_confidence(
+                        predictions,
+                        probabilities,
+                    ),
+                    "timestamp": datetime.now(),
+                }
+
+                return result
+
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Error classifying regime: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=0.0,
+        context="confidence calculation",
+    )
+    def _calculate_confidence(
+        self,
+        predictions: dict[str, str],
+        probabilities: dict[str, list[float]],
+    ) -> float:
+        """
+        Calculate confidence in ensemble prediction.
+
+        Args:
+            predictions: Individual model predictions
+            probabilities: Model prediction probabilities
+
+        Returns:
+            float: Confidence score
+        """
+        try:
+            if not predictions:
+                return 0.0
+
+            # Calculate agreement among models
+            unique_predictions = set(predictions.values())
+            if len(unique_predictions) == 1:
+                # All models agree
+                base_confidence = 0.9
+            else:
+                # Models disagree
+                base_confidence = 0.5
+
+            # Adjust confidence based on probabilities if available
+            if probabilities:
+                avg_max_prob = np.mean([max(prob) for prob in probabilities.values()])
+                final_confidence = (base_confidence + avg_max_prob) / 2
+            else:
+                final_confidence = base_confidence
+
+            return min(1.0, max(0.0, final_confidence))
+
+        except Exception as e:
+            self.logger.error(f"Error calculating confidence: {e}")
+            return 0.5
+
+    def get_model_performance(self) -> dict[str, float]:
+        """
+        Get model performance metrics.
+
+        Returns:
+            Dict[str, float]: Model performance scores
+        """
+        return self.model_performance.copy()
+
+    def is_model_trained(self) -> bool:
+        """
+        Check if models are trained.
+
+        Returns:
+            bool: True if models are trained, False otherwise
+        """
+        return self.is_trained
+
+    def get_last_training_time(self) -> datetime | None:
+        """
+        Get last training time.
+
+        Returns:
+            Optional[datetime]: Last training time or None
+        """
+        return self.last_training_time
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="regime classifier cleanup",
+    )
+    async def stop(self) -> None:
+        """Stop the regime classifier component."""
+        self.logger.info("🛑 Stopping Market Regime Classifier...")
+
+        try:
+            # Save models if not already saved
+            if self.models and self.is_trained:
+                await self._save_models()
+
+            self.logger.info("✅ Market Regime Classifier stopped successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error stopping regime classifier: {e}")

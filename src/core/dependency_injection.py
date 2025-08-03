@@ -1,20 +1,21 @@
 # src/core/dependency_injection.py
 
 import asyncio
-from typing import Dict, Any, Optional, Type, TypeVar
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any, TypeVar
 
 from src.interfaces import (
-    IAnalyst,
-    IStrategist,
-    ITactician,
-    ISupervisor,
-    IExchangeClient,
-    IStateManager,
-    IPerformanceReporter,
-    IEventBus,
     EventBus,
     EventType,
+    IAnalyst,
+    IEventBus,
+    IExchangeClient,
+    IPerformanceReporter,
+    IStateManager,
+    IStrategist,
+    ISupervisor,
+    ITactician,
 )
 from src.utils.logger import system_logger
 
@@ -23,172 +24,261 @@ T = TypeVar("T")
 
 @dataclass
 class ServiceRegistration:
-    """Service registration information"""
+    """Enhanced service registration with configuration support."""
 
-    interface: Type
-    implementation: Type
+    service_type: type
+    implementation: type | None = None
     singleton: bool = True
-    dependencies: Dict[str, str] = None
-    instance: Any = None
+    config: dict[str, Any] | None = None
+    factory_method: str | None = None
+    dependencies: dict[str, str] | None = None
 
 
 class DependencyContainer:
     """
-    Dependency injection container for managing component dependencies.
-    Provides singleton and transient service registration and resolution.
+    Enhanced dependency injection container with configuration management.
     """
 
-    def __init__(self):
+    def __init__(self, config: dict[str, Any] | None = None):
+        self._services: dict[str, ServiceRegistration] = {}
+        self._instances: dict[str, Any] = {}
+        self._config: dict[str, Any] = config or {}
+        self._factories: dict[str, Callable] = {}
         self.logger = system_logger.getChild("DependencyContainer")
-        self._services: Dict[str, ServiceRegistration] = {}
-        self._singleton_instances: Dict[str, Any] = {}
 
-    def register_singleton(
+    def register(
         self,
-        interface: Type[T],
-        implementation: Type[T],
-        dependencies: Optional[Dict[str, str]] = None,
+        service_name: str,
+        service_type: type,
+        implementation: type | None = None,
+        singleton: bool = True,
+        config: dict[str, Any] | None = None,
+        dependencies: dict[str, str] | None = None,
     ) -> None:
-        """
-        Register a singleton service
-
-        Args:
-            interface: Interface type
-            implementation: Implementation type
-            dependencies: Optional dependency mapping
-        """
-        service_name = interface.__name__
+        """Register a service with enhanced configuration support."""
         self._services[service_name] = ServiceRegistration(
-            interface=interface,
-            implementation=implementation,
-            singleton=True,
-            dependencies=dependencies or {},
+            service_type=service_type,
+            implementation=implementation or service_type,
+            singleton=singleton,
+            config=config,
+            dependencies=dependencies,
         )
-        self.logger.debug(f"Registered singleton: {service_name}")
+        self.logger.debug(
+            f"Registered service: {service_name} -> {service_type.__name__}",
+        )
 
-    def register_transient(
+    def register_factory(self, service_name: str, factory_func: Callable) -> None:
+        """Register a factory function for service creation."""
+        self._factories[service_name] = factory_func
+        self.logger.debug(f"Registered factory for: {service_name}")
+
+    def get_config(self, key: str, default: Any = None) -> Any:
+        """Get configuration value with fallback."""
+        return self._config.get(key, default)
+
+    def set_config(self, key: str, value: Any) -> None:
+        """Set configuration value."""
+        self._config[key] = value
+        self.logger.debug(f"Set config: {key} = {value}")
+
+    def get_service_config(self, service_name: str) -> dict[str, Any]:
+        """Get service-specific configuration."""
+        service = self._services.get(service_name)
+        if service and service.config:
+            return service.config
+        return {}
+
+    def resolve(self, service_name: str) -> Any:
+        """Resolve a service with enhanced error handling."""
+        try:
+            # Check if instance already exists (for singletons)
+            if service_name in self._instances:
+                return self._instances[service_name]
+
+            # Get service registration
+            service_reg = self._services.get(service_name)
+            if not service_reg:
+                raise ValueError(f"Service '{service_name}' not registered")
+
+            # Create instance
+            instance = self._create_instance(service_name, service_reg)
+
+            # Store instance if singleton
+            if service_reg.singleton:
+                self._instances[service_name] = instance
+
+            return instance
+
+        except Exception as e:
+            self.logger.error(f"Failed to resolve service '{service_name}': {e}")
+            raise
+
+    def _create_instance(
         self,
-        interface: Type[T],
-        implementation: Type[T],
-        dependencies: Optional[Dict[str, str]] = None,
-    ) -> None:
-        """
-        Register a transient service
+        service_name: str,
+        service_reg: ServiceRegistration,
+    ) -> Any:
+        """Create service instance with dependency injection."""
+        try:
+            # Use factory method if available
+            if service_reg.factory_method and service_name in self._factories:
+                factory_func = self._factories[service_name]
+                return factory_func(self._config)
 
-        Args:
-            interface: Interface type
-            implementation: Implementation type
-            dependencies: Optional dependency mapping
-        """
-        service_name = interface.__name__
-        self._services[service_name] = ServiceRegistration(
-            interface=interface,
-            implementation=implementation,
-            singleton=False,
-            dependencies=dependencies or {},
-        )
-        self.logger.debug(f"Registered transient: {service_name}")
+            # Get constructor parameters
+            constructor_params = self._get_constructor_params(service_name, service_reg)
 
-    def register_instance(self, interface: Type[T], instance: T) -> None:
-        """
-        Register an existing instance
+            # Create instance
+            if constructor_params:
+                instance = service_reg.implementation(**constructor_params)
+            else:
+                instance = service_reg.implementation()
 
-        Args:
-            interface: Interface type
-            instance: Existing instance
-        """
-        service_name = interface.__name__
-        self._services[service_name] = ServiceRegistration(
-            interface=interface,
-            implementation=type(instance),
-            singleton=True,
-            instance=instance,
-        )
-        self._singleton_instances[service_name] = instance
-        self.logger.debug(f"Registered instance: {service_name}")
+            # Inject service-specific configuration if available
+            if service_reg.config:
+                self._inject_config(instance, service_reg.config)
 
-    def resolve(self, interface: Type[T]) -> T:
-        """
-        Resolve a service instance
+            return instance
 
-        Args:
-            interface: Interface type to resolve
+        except Exception as e:
+            self.logger.error(f"Failed to create instance for '{service_name}': {e}")
+            raise
 
-        Returns:
-            Service instance
-        """
-        service_name = interface.__name__
-
-        if service_name not in self._services:
-            raise ValueError(f"Service not registered: {service_name}")
-
-        registration = self._services[service_name]
-
-        # Return existing singleton instance if available
-        if registration.singleton and service_name in self._singleton_instances:
-            return self._singleton_instances[service_name]
-
-        # Return existing instance if available
-        if registration.instance is not None:
-            return registration.instance
-
-        # Create new instance
-        instance = self._create_instance(registration)
-
-        # Store singleton instance
-        if registration.singleton:
-            self._singleton_instances[service_name] = instance
-
-        return instance
-
-    def _create_instance(self, registration: ServiceRegistration) -> Any:
-        """Create a new instance with dependencies"""
-        implementation = registration.implementation
-
-        # Get constructor parameters
-        import inspect
-
-        sig = inspect.signature(implementation.__init__)
+    def _get_constructor_params(
+        self,
+        service_name: str,
+        service_reg: ServiceRegistration,
+    ) -> dict[str, Any]:
+        """Get constructor parameters for service creation."""
         params = {}
 
-        for param_name, param in sig.parameters.items():
-            if param_name == "self":
-                continue
+        # Add service-specific config if available
+        if service_reg.config:
+            params["config"] = service_reg.config
 
-            # Check if parameter is a registered service
-            if param_name in registration.dependencies:
-                dependency_interface = registration.dependencies[param_name]
-                dependency_type = self._get_type_by_name(dependency_interface)
-                params[param_name] = self.resolve(dependency_type)
-            elif param.annotation != inspect.Parameter.empty:
-                # Try to resolve by type annotation
+        # Resolve dependencies if specified
+        if service_reg.dependencies:
+            for param_name, dep_service_name in service_reg.dependencies.items():
                 try:
-                    params[param_name] = self.resolve(param.annotation)
-                except ValueError:
-                    # Parameter not registered, use default
-                    if param.default != inspect.Parameter.empty:
-                        params[param_name] = param.default
-                    else:
-                        self.logger.warning(f"Unresolved dependency: {param_name}")
+                    params[param_name] = self.resolve(dep_service_name)
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to resolve dependency '{dep_service_name}' for '{param_name}': {e}",
+                    )
 
-        return implementation(**params)
+        return params
 
-    def _get_type_by_name(self, type_name: str) -> Type:
-        """Get type by name"""
-        for registration in self._services.values():
-            if registration.interface.__name__ == type_name:
-                return registration.interface
-        raise ValueError(f"Type not found: {type_name}")
+    def _inject_config(self, instance: Any, config: dict[str, Any]) -> None:
+        """Inject configuration into service instance."""
+        try:
+            if hasattr(instance, "config"):
+                instance.config = config
+            elif hasattr(instance, "_config"):
+                instance._config = config
+        except Exception as e:
+            self.logger.warning(f"Failed to inject config into instance: {e}")
 
-    def get_registered_services(self) -> Dict[str, ServiceRegistration]:
-        """Get all registered services"""
+    def register_config_service(self, config: dict[str, Any]) -> None:
+        """Register configuration as a service."""
+        self._config.update(config)
+        self.logger.info(f"Registered configuration with {len(config)} keys")
+
+    def get_all_services(self) -> dict[str, ServiceRegistration]:
+        """Get all registered services."""
         return self._services.copy()
 
-    def clear(self):
-        """Clear all registrations and instances"""
+    def clear(self) -> None:
+        """Clear all registered services and instances."""
         self._services.clear()
-        self._singleton_instances.clear()
-        self.logger.info("Dependency container cleared")
+        self._instances.clear()
+        self._factories.clear()
+        self.logger.info("Cleared all services and instances")
+
+
+class ServiceLocator:
+    """Service locator pattern implementation."""
+
+    def __init__(self, container: DependencyContainer):
+        self.container = container
+        self.logger = system_logger.getChild("ServiceLocator")
+
+    def get_service(self, service_name: str) -> Any:
+        """Get service from container."""
+        return self.container.resolve(service_name)
+
+    def get_config(self, key: str, default: Any = None) -> Any:
+        """Get configuration value."""
+        return self.container.get_config(key, default)
+
+
+class AsyncServiceContainer(DependencyContainer):
+    """Async-aware dependency container."""
+
+    async def resolve_async(self, service_name: str) -> Any:
+        """Resolve service asynchronously."""
+        try:
+            # Check if instance already exists
+            if service_name in self._instances:
+                return self._instances[service_name]
+
+            # Get service registration
+            service_reg = self._services.get(service_name)
+            if not service_reg:
+                raise ValueError(f"Service '{service_name}' not registered")
+
+            # Create instance (potentially async)
+            instance = await self._create_instance_async(service_name, service_reg)
+
+            # Store instance if singleton
+            if service_reg.singleton:
+                self._instances[service_name] = instance
+
+            return instance
+
+        except Exception as e:
+            self.logger.error(f"Failed to resolve async service '{service_name}': {e}")
+            raise
+
+    async def _create_instance_async(
+        self,
+        service_name: str,
+        service_reg: ServiceRegistration,
+    ) -> Any:
+        """Create service instance asynchronously."""
+        try:
+            # Use factory method if available
+            if service_reg.factory_method and service_name in self._factories:
+                factory_func = self._factories[service_name]
+                if asyncio.iscoroutinefunction(factory_func):
+                    return await factory_func(self._config)
+                return factory_func(self._config)
+
+            # Get constructor parameters
+            constructor_params = self._get_constructor_params(service_name, service_reg)
+
+            # Create instance
+            if constructor_params:
+                instance = service_reg.implementation(**constructor_params)
+            else:
+                instance = service_reg.implementation()
+
+            # Initialize async if needed
+            if hasattr(instance, "initialize") and asyncio.iscoroutinefunction(
+                instance.initialize,
+            ):
+                await instance.initialize()
+
+            # Inject service-specific configuration
+            if service_reg.config:
+                self._inject_config(instance, service_reg.config)
+
+            return instance
+
+        except Exception as e:
+            self.logger.error(
+                f"Failed to create async instance for '{service_name}': {e}",
+            )
+            raise
 
 
 class ComponentFactory:
@@ -201,7 +291,9 @@ class ComponentFactory:
         self.logger = system_logger.getChild("ComponentFactory")
 
     def create_analyst(
-        self, exchange_client: IExchangeClient, state_manager: IStateManager
+        self,
+        exchange_client: IExchangeClient,
+        state_manager: IStateManager,
     ) -> IAnalyst:
         """Create analyst instance"""
         # Register dependencies
@@ -211,7 +303,9 @@ class ComponentFactory:
         return self.container.resolve(IAnalyst)
 
     def create_strategist(
-        self, exchange_client: IExchangeClient, state_manager: IStateManager
+        self,
+        exchange_client: IExchangeClient,
+        state_manager: IStateManager,
     ) -> IStrategist:
         """Create strategist instance"""
         # Register dependencies
@@ -258,7 +352,7 @@ class ModularTradingSystem:
         self.container = DependencyContainer()
         self.factory = ComponentFactory(self.container)
         self.event_bus = EventBus()
-        self.components: Dict[str, Any] = {}
+        self.components: dict[str, Any] = {}
         self.logger = system_logger.getChild("ModularTradingSystem")
 
     async def initialize(
@@ -281,16 +375,22 @@ class ModularTradingSystem:
 
         # Create components
         self.components["analyst"] = self.factory.create_analyst(
-            exchange_client, state_manager
+            exchange_client,
+            state_manager,
         )
         self.components["strategist"] = self.factory.create_strategist(
-            exchange_client, state_manager
+            exchange_client,
+            state_manager,
         )
         self.components["tactician"] = self.factory.create_tactician(
-            exchange_client, state_manager, performance_reporter
+            exchange_client,
+            state_manager,
+            performance_reporter,
         )
         self.components["supervisor"] = self.factory.create_supervisor(
-            exchange_client, state_manager, self.event_bus
+            exchange_client,
+            state_manager,
+            self.event_bus,
         )
 
         # Set up event subscriptions
@@ -320,7 +420,8 @@ class ModularTradingSystem:
 
         # Supervisor monitors all events
         await self.event_bus.subscribe(
-            EventType.TRADE_EXECUTED, self.components["supervisor"].monitor_performance
+            EventType.TRADE_EXECUTED,
+            self.components["supervisor"].monitor_performance,
         )
 
     async def start(self):
@@ -353,6 +454,6 @@ class ModularTradingSystem:
         """Get a component by name"""
         return self.components.get(name)
 
-    def get_all_components(self) -> Dict[str, Any]:
+    def get_all_components(self) -> dict[str, Any]:
         """Get all components"""
         return self.components.copy()

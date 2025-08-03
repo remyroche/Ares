@@ -19,16 +19,16 @@ Usage:
 """
 
 import asyncio
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.database.sqlite_manager import SQLiteManager
 from src.database.migration_utils import DatabaseMigrationUtils
+from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import setup_logging, system_logger
 
 
@@ -61,7 +61,7 @@ async def export_database(db_path: str = "data/ares_local_db.sqlite"):
             print("\n📋 Next steps:")
             print("   1. Copy the export file to your trading computer")
             print(
-                f"   2. Run: python scripts/database_migration.py import {export_path}"
+                f"   2. Run: python scripts/database_migration.py import {export_path}",
             )
         else:
             print("❌ Database export failed!")
@@ -127,17 +127,17 @@ async def validate_file(file_path: str):
         print(f"   File exists: {'✅' if validation_result['file_exists'] else '❌'}")
         print(f"   Size valid: {'✅' if validation_result['size_valid'] else '❌'}")
         print(
-            f"   Checksum valid: {'✅' if validation_result['checksum_valid'] else '❌'}"
+            f"   Checksum valid: {'✅' if validation_result['checksum_valid'] else '❌'}",
         )
         print(
-            f"   Database valid: {'✅' if validation_result['database_valid'] else '❌'}"
+            f"   Database valid: {'✅' if validation_result['database_valid'] else '❌'}",
         )
 
         if validation_result["checksum"]:
             print(f"   Checksum: {validation_result['checksum']}")
         if validation_result["file_size"]:
             print(
-                f"   File size: {validation_result['file_size'] / 1024 / 1024:.2f} MB"
+                f"   File size: {validation_result['file_size'] / 1024 / 1024:.2f} MB",
             )
 
         if validation_result["errors"]:
@@ -243,23 +243,23 @@ def print_usage():
     print("\nExamples:")
     print("  # Export database from backtesting computer")
     print("  python scripts/database_migration.py export")
-    print("")
+    print()
     print("  # Import database on trading computer")
     print(
-        "  python scripts/database_migration.py import data/migrations/trading_export_20231201_143022.sqlite"
+        "  python scripts/database_migration.py import data/migrations/trading_export_20231201_143022.sqlite",
     )
-    print("")
+    print()
     print("  # Validate a migration file")
     print(
-        "  python scripts/database_migration.py validate data/migrations/trading_export_20231201_143022.sqlite"
+        "  python scripts/database_migration.py validate data/migrations/trading_export_20231201_143022.sqlite",
     )
-    print("")
+    print()
     print("  # Create a backup")
     print("  python scripts/database_migration.py backup")
-    print("")
+    print()
     print("  # List all migrations")
     print("  python scripts/database_migration.py list-migrations")
-    print("")
+    print()
     print("  # Clean up old migrations")
     print("  python scripts/database_migration.py cleanup")
 

@@ -241,29 +241,23 @@ class AresLauncher:
         lookback_days: int,
         with_gui: bool = False,
     ):
-        """Unified training method for both blank and backtesting modes."""
-        mode_display = "blank training" if training_mode == "blank" else "backtesting"
-        self.logger.info(f"🧪 Running {mode_display} for {symbol} on {exchange}")
-        print(f"🧪 Running {mode_display} for {symbol} on {exchange}")
-        print("=" * 80)
-
-        if with_gui:
-            if not self.launch_gui(training_mode, symbol, exchange):
-                return False
-
+        """Run unified training with enhanced training manager."""
         try:
-            # Import and use EnhancedTrainingManager directly
-            import asyncio
-            from datetime import datetime
-
-            from src.database.sqlite_manager import SQLiteManager
-            from src.training.enhanced_training_manager import EnhancedTrainingManager
-
-            print("🔄 Initializing training components...")
+            # Set environment variable for blank training mode
+            import os
+            if training_mode == "blank":
+                os.environ['BLANK_TRAINING_MODE'] = '1'
+                print(f"🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1")
+            
+            mode_display = f"{training_mode} training"
+            print(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
+            self.logger.info(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
 
             async def run_enhanced_training():
                 # Initialize database manager
                 print("   📊 Setting up database manager...")
+                from src.database.sqlite_manager import SQLiteManager
+                
                 # Create default config for SQLiteManager
                 default_config = {
                     "database": {
@@ -275,6 +269,7 @@ class AresLauncher:
                     },
                 }
                 db_manager = SQLiteManager(default_config)
+                await db_manager.initialize()
 
                 # Initialize enhanced training manager
                 print("   🤖 Initializing enhanced training manager...")
@@ -289,6 +284,7 @@ class AresLauncher:
                     },
                     "database": default_config["database"],
                 }
+                from src.training.enhanced_training_manager import EnhancedTrainingManager
                 training_manager = EnhancedTrainingManager(training_config)
 
                 print("   🚀 Starting enhanced training pipeline...")
@@ -861,310 +857,77 @@ class AresLauncher:
         default_return=False,
         context="run_data_loading",
     )
-    def run_data_loading(self, symbol: str, exchange: str, interval: str = "1m", optimized: bool = True, blank_mode: bool = False):
+    def run_data_loading(self, symbol: str, exchange: str, lookback_days: int = 730) -> bool:
         """Run data loading and consolidation for the specified symbol and exchange."""
-        start_time = datetime.now()
-        
-        print(f"🚀 Starting data loading and consolidation for {symbol} on {exchange}")
-        self.logger.info(f"📊 Running data loading and consolidation for {symbol} on {exchange}")
-        self.logger.info(f"⏰ Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        self.logger.info(f"🔧 Parameters: symbol={symbol}, exchange={exchange}, interval={interval}, optimized={optimized}, blank_mode={blank_mode}")
-        
-        # Step 1: Download raw data
-        print("📥 Step 1: Downloading raw data...")
-        self.logger.info("🔄 Step 1: Downloading raw data...")
-        self.logger.info("📋 Step 1.1: Preparing download environment...")
-        
-        # Choose downloader based on optimization preference
-        if optimized:
+        try:
+            self.logger.info(f"🔄 Starting data loading for {symbol} on {exchange}")
+            
+            # Set environment variable for blank training mode
+            import os
+            os.environ['BLANK_TRAINING_MODE'] = '1'
+            
+            # Step 1: Download data using optimized downloader
+            self.logger.info("📥 Step 1: Downloading data...")
             download_script = "backtesting/ares_data_downloader_optimized.py"
-            print("🚀 Using optimized data downloader with parallel processing")
-            print("   📊 Features: Concurrent downloads, smart caching, incremental saves")
-            print("   ⚡ Performance: High-speed parallel processing")
-            self.logger.info("🚀 Using optimized data downloader with parallel processing")
-        else:
-            download_script = "backtesting/ares_data_downloader.py"
-            print("📥 Using standard data downloader")
-            print("   📊 Features: Sequential downloads, basic caching")
-            print("   ⚡ Performance: Standard sequential processing")
-            self.logger.info("📥 Using standard data downloader")
-        
-        # Set lookback period based on mode
-        if blank_mode:
-            # For blank training, use 30 days of data (approximately 0.082 years)
-            lookback_years = int(30 / 365)  # Convert 30 days to years, ensure integer
-            print(f"🧪 Blank mode detected: Using {30} days of data for quick testing")
-            self.logger.info(f"🧪 Blank mode detected: Using {30} days of data for quick testing")
-        else:
-            # For comprehensive data collection, use 2 years of data (730 days)
-            lookback_years = 2  # 2 years for comprehensive historical data
-            print(f"📊 Standard mode: Using {lookback_years} years of data for comprehensive analysis")
-            self.logger.info(f"📊 Standard mode: Using {lookback_years} years of data for comprehensive analysis")
-        
-        download_cmd = [
-            sys.executable,
-            download_script,
-            "--symbol", symbol,
-            "--exchange", exchange,
-            "--interval", interval,
-            "--lookback-years", str(lookback_years)
-        ]
-        
-        print(f"🔧 Running download command: {' '.join(download_cmd)}")
-        self.logger.info(f"🔧 Running download command: {' '.join(download_cmd)}")
-        self.logger.info(f"📁 Working directory: {project_root}")
-        self.logger.info(f"🐍 Python executable: {sys.executable}")
-        
-        try:
-            print("⏳ Starting download process...")
-            self.logger.info("⏳ Starting download process...")
-            self.logger.info(f"⏱️ Download start time: {datetime.now().strftime('%H:%M:%S')}")
-            print(f"🔧 Command being executed: {' '.join(download_cmd)}")
-            print(f"📁 Working directory: {project_root}")
-            print(f"🐍 Python executable: {sys.executable}")
             
-            download_start = datetime.now()
-            print(f"⏱️ Download process started at: {download_start.strftime('%H:%M:%S')}")
-            
-            # Run the download process
-            print("🔄 Executing download subprocess...")
-            print(f"⏱️ Subprocess execution started at: {datetime.now().strftime('%H:%M:%S')}")
-            print(f"🔍 Subprocess PID will be created...")
-            
-            try:
-                print("🔄 Starting optimized downloader subprocess...")
-                self.logger.info("🔄 Starting optimized downloader subprocess...")
-                
-                # Run the download process with real-time output
-                download_process = subprocess.run(
-                    download_cmd,
-                    capture_output=False,  # Don't capture output, let it flow through
-                    text=True,
-                    check=True,
-                    cwd=project_root  # Set working directory to project root
-                )
-                print(f"⏱️ Subprocess execution completed at: {datetime.now().strftime('%H:%M:%S')}")
-                print(f"✅ Subprocess returned successfully with code: {download_process.returncode}")
-            except subprocess.CalledProcessError as e:
-                print(f"❌ Subprocess failed with return code: {e.returncode}")
-                print(f"📋 Subprocess stderr: {e.stderr}")
-                raise
-            except Exception as e:
-                print(f"❌ Unexpected error during subprocess execution: {e}")
-                print(f"📋 Exception type: {type(e).__name__}")
-                raise
-            
-            download_end = datetime.now()
-            download_duration = (download_end - download_start).total_seconds()
-            
-            print(f"⏱️ Download process ended at: {download_end.strftime('%H:%M:%S')}")
-            print(f"⏱️ Download duration: {download_duration:.2f} seconds")
-            print("✅ Data download completed successfully")
-            self.logger.info("✅ Data download completed successfully")
-            self.logger.info(f"⏱️ Download duration: {download_duration:.2f} seconds")
-            self.logger.info(f"⏱️ Download end time: {download_end.strftime('%H:%M:%S')}")
-            
-            # Since we're not capturing output, just log completion
-            print("📊 Download process completed with real-time output display")
-            self.logger.info("📊 Download process completed with real-time output display")
-                        
-        except subprocess.CalledProcessError as e:
-            print(f"❌ Data downloading failed with return code: {e.returncode}")
-            print(f"📋 Download error output:\n{e.stderr}")
-            print(f"⏱️ Download failed at: {datetime.now().strftime('%H:%M:%S')}")
-            self.logger.error(f"❌ Data downloading failed with return code: {e.returncode}")
-            self.logger.error(f"📋 Download error output:\n{e.stderr}")
-            self.logger.error(f"⏱️ Download failed at: {datetime.now().strftime('%H:%M:%S')}")
-            return False
-        
-        # Step 2: Consolidate and validate data
-        print("📦 Step 2: Consolidating and validating data...")
-        self.logger.info("🔄 Step 2: Consolidating and validating data...")
-        self.logger.info("📋 Step 2.1: Preparing consolidation environment...")
-        
-        consolidate_script = "src/training/steps/step1_data_collection.py"
-        # Calculate lookback days based on mode
-        if blank_mode:
-            lookback_days = 30  # 30 days for blank mode
-        else:
-            lookback_days = 730  # 2 years for standard mode
-        
-        consolidate_cmd = [
-            sys.executable,
-            consolidate_script,
-            symbol,
-            exchange,
-            "1000",  # min_data_points
-            "data_cache",  # data_dir
-            str(lookback_days)  # Pass lookback period as positional argument
-        ]
-        
-        self.logger.info(f"🔧 Running consolidation command: {' '.join(consolidate_cmd)}")
-        self.logger.info(f"📁 Consolidation script: {consolidate_script}")
-        
-        try:
-            print("⏳ Starting consolidation process...")
-            self.logger.info("⏳ Starting consolidation process...")
-            self.logger.info(f"⏱️ Consolidation start time: {datetime.now().strftime('%H:%M:%S')}")
-            print(f"🔧 Consolidation command: {' '.join(consolidate_cmd)}")
-            print(f"📁 Consolidation script: {consolidate_script}")
-            print(f"📁 Working directory: {project_root}")
-            
-            consolidate_start = datetime.now()
-            print(f"⏱️ Consolidation process started at: {consolidate_start.strftime('%H:%M:%S')}")
-            
-            # Run the consolidation process with proper Python path
-            print("🔄 Executing consolidation subprocess...")
-            consolidate_process = subprocess.run(
-                consolidate_cmd,
-                capture_output=True,
-                text=True,
-                check=True,
-                cwd=project_root,  # Set working directory to project root
-                env={**os.environ, 'PYTHONPATH': f"{project_root}:{os.environ.get('PYTHONPATH', '')}"}  # Properly set Python path
-            )
-            
-            consolidate_end = datetime.now()
-            consolidate_duration = (consolidate_end - consolidate_start).total_seconds()
-            
-            print(f"⏱️ Consolidation process ended at: {consolidate_end.strftime('%H:%M:%S')}")
-            print(f"⏱️ Consolidation duration: {consolidate_duration:.2f} seconds")
-            print("✅ Data consolidation completed successfully")
-            self.logger.info("✅ Data consolidation completed successfully")
-            self.logger.info(f"⏱️ Consolidation duration: {consolidate_duration:.2f} seconds")
-            self.logger.info(f"⏱️ Consolidation end time: {consolidate_end.strftime('%H:%M:%S')}")
-            
-            # Print consolidation output
-            print("📊 Consolidation process output:")
-            print("=" * 60)
-            if consolidate_process.stdout:
-                print(consolidate_process.stdout)
-                self.logger.info(f"📊 Consolidation output:\n{consolidate_process.stdout}")
-                
-                # Log consolidation statistics
-                lines = consolidate_process.stdout.split('\n')
-                print(f"📈 Consolidation output lines: {len(lines)}")
-                self.logger.info(f"📈 Consolidation output lines: {len(lines)}")
-                
-                # Show last 10 lines
-                print("📋 Last 10 lines of consolidation output:")
-                for line in lines[-10:]:
-                    if line.strip():
-                        print(f"   {line}")
-                        self.logger.info(f"📋 Consolidation log: {line}")
-            else:
-                print("⚠️ No output from consolidation process")
-                self.logger.warning("⚠️ No output from consolidation process")
-            print("=" * 60)
-                        
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"❌ Data consolidation failed with return code: {e.returncode}")
-            self.logger.error(f"📋 Consolidation error output:\n{e.stderr}")
-            self.logger.error(f"⏱️ Consolidation failed at: {datetime.now().strftime('%H:%M:%S')}")
-            return False
-        
-        # Step 3: Validate consolidated data integrity
-        print("🔍 Step 3: Validating consolidated data integrity...")
-        self.logger.info("🔄 Step 3: Validating consolidated data integrity...")
-        
-        try:
-            # Check if consolidated files exist and have valid data
-            data_cache_dir = "data_cache"
-            consolidated_files = []
-            
-            # Look for consolidated files
-            for file_pattern in [
-                f"klines_{exchange}_{symbol}_{interval}_consolidated.csv",
-                f"aggtrades_{exchange}_{symbol}_consolidated.csv",
-                f"futures_{exchange}_{symbol}_consolidated.csv"
-            ]:
-                file_path = os.path.join(data_cache_dir, file_pattern)
-                if os.path.exists(file_path):
-                    file_size = os.path.getsize(file_path)
-                    if file_size > 0:
-                        consolidated_files.append((file_pattern, file_path, file_size))
-                        print(f"✅ Found consolidated file: {file_pattern} ({file_size:,} bytes)")
-                        self.logger.info(f"✅ Found consolidated file: {file_pattern} ({file_size:,} bytes)")
-                    else:
-                        print(f"⚠️ Empty consolidated file: {file_pattern}")
-                        self.logger.warning(f"⚠️ Empty consolidated file: {file_pattern}")
-                else:
-                    print(f"❌ Missing consolidated file: {file_pattern}")
-                    self.logger.warning(f"❌ Missing consolidated file: {file_pattern}")
-            
-            if not consolidated_files:
-                print("❌ No valid consolidated files found!")
-                self.logger.error("❌ No valid consolidated files found!")
+            if not os.path.exists(download_script):
+                self.logger.error(f"❌ Download script not found: {download_script}")
                 return False
             
-            # Validate data integrity for each consolidated file
-            for file_pattern, file_path, file_size in consolidated_files:
-                print(f"🔍 Validating {file_pattern}...")
-                self.logger.info(f"🔍 Validating {file_pattern}...")
-                
-                try:
-                    # Read a sample to validate
-                    df = pd.read_csv(file_path, nrows=1000)
-                    print(f"   📊 Sample shape: {df.shape}")
-                    print(f"   📋 Columns: {list(df.columns)}")
-                    
-                    # Check for basic data quality
-                    if df.empty:
-                        print(f"   ❌ File is empty: {file_pattern}")
-                        self.logger.error(f"   ❌ File is empty: {file_pattern}")
-                        continue
-                    
-                    # Check for reasonable data ranges
-                    if 'close' in df.columns or 'Close' in df.columns:
-                        close_col = 'close' if 'close' in df.columns else 'Close'
-                        prices = pd.to_numeric(df[close_col], errors='coerce')
-                        valid_prices = prices.dropna()
-                        
-                        if len(valid_prices) > 0:
-                            min_price = valid_prices.min()
-                            max_price = valid_prices.max()
-                            print(f"   💰 Price range: ${min_price:.2f} to ${max_price:.2f}")
-                            
-                            if min_price < 100 or max_price > 50000:
-                                print(f"   ⚠️ Unreasonable price range: ${min_price:.2f} to ${max_price:.2f}")
-                                self.logger.warning(f"   ⚠️ Unreasonable price range: ${min_price:.2f} to ${max_price:.2f}")
-                            else:
-                                print(f"   ✅ Price range is reasonable")
-                        else:
-                            print(f"   ❌ No valid prices found")
-                            self.logger.error(f"   ❌ No valid prices found")
-                    
-                    print(f"   ✅ File validation passed: {file_pattern}")
-                    self.logger.info(f"   ✅ File validation passed: {file_pattern}")
-                    
-                except Exception as e:
-                    print(f"   ❌ File validation failed: {file_pattern} - {e}")
-                    self.logger.error(f"   ❌ File validation failed: {file_pattern} - {e}")
-                    continue
+            # Run the download script
+            download_cmd = [
+                sys.executable,
+                download_script,
+                symbol,
+                exchange,
+                str(lookback_days)
+            ]
             
-            print("✅ Data integrity validation completed")
-            self.logger.info("✅ Data integrity validation completed")
+            self.logger.info(f"🔧 Running download command: {' '.join(download_cmd)}")
+            # Pass environment with BLANK_TRAINING_MODE set
+            env = os.environ.copy()
+            env['BLANK_TRAINING_MODE'] = '1'
+            download_result = subprocess.run(download_cmd, capture_output=True, text=True, env=env)
+            
+            if download_result.returncode != 0:
+                self.logger.error(f"❌ Download failed: {download_result.stderr}")
+                return False
+            
+            self.logger.info("✅ Data download completed successfully")
+            
+            # Step 2: Consolidate data using step1_data_collection
+            self.logger.info("🔄 Step 2: Consolidating data...")
+            consolidate_script = "src/training/steps/step1_data_collection.py"
+            
+            if not os.path.exists(consolidate_script):
+                self.logger.error(f"❌ Consolidation script not found: {consolidate_script}")
+                return False
+            
+            # Run the consolidation script
+            consolidate_cmd = [
+                sys.executable,
+                consolidate_script,
+                symbol,
+                exchange,  # This should be BINANCE
+                "1000",  # min_data_points
+                "data_cache",  # data_dir
+                str(lookback_days)  # Pass lookback period as positional argument
+            ]
+            
+            self.logger.info(f"🔧 Running consolidation command: {' '.join(consolidate_cmd)}")
+            # Pass environment with BLANK_TRAINING_MODE set
+            consolidate_result = subprocess.run(consolidate_cmd, capture_output=True, text=True, env=env)
+            
+            if consolidate_result.returncode != 0:
+                self.logger.error(f"❌ Consolidation failed: {consolidate_result.stderr}")
+                return False
+            
+            self.logger.info("✅ Data consolidation completed successfully")
+            return True
             
         except Exception as e:
-            print(f"❌ Data validation failed: {e}")
-            self.logger.error(f"❌ Data validation failed: {e}")
+            self.logger.error(f"❌ Data loading failed: {e}")
             return False
-        
-        # Final summary
-        end_time = datetime.now()
-        total_duration = (end_time - start_time).total_seconds()
-        
-        print("🎉 Data loading and consolidation completed successfully!")
-        self.logger.info("🎉 Data loading and consolidation completed successfully!")
-        self.logger.info(f"⏰ End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        self.logger.info(f"⏱️ Total duration: {total_duration:.2f} seconds")
-        self.logger.info(f"📊 Summary for {exchange} {symbol}:")
-        self.logger.info(f"   ✅ Download: {download_duration:.2f}s")
-        self.logger.info(f"   ✅ Consolidation: {consolidate_duration:.2f}s")
-        self.logger.info(f"   ✅ Validation: {(end_time - consolidate_end).total_seconds():.2f}s")
-        self.logger.info(f"   ✅ Total: {total_duration:.2f}s")
-        
-        return True
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1233,8 +996,8 @@ class AresLauncher:
                     return False
                     
             elif subcommand == "train_blank":
-                print(f"🚀 Starting ML model training for {symbol} on {exchange} (30 days data)...")
-                success = await hmm_classifier.train_ml_model(symbol, exchange, lookback_years=0.08)  # ~30 days
+                print(f"🚀 Starting ML model training for {symbol} on {exchange} (2 months data)...")
+                success = await hmm_classifier.train_ml_model(symbol, exchange, lookback_years=0.167, training_min_data_points=500)  # ~2 months with reduced minimum
                 
                 if success:
                     self.logger.info("✅ ML model training completed successfully")
@@ -1443,9 +1206,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
         "load": lambda: launcher.run_data_loading(
             args.symbol,
             args.exchange,
-            args.interval,
-            optimized=not args.no_optimized,  # Use optimized unless --no-optimized is specified
-            blank_mode=args.blank_mode,  # Pass blank mode parameter
+            lookback_days=730 if not args.blank_mode else 30, # Use 730 for standard, 30 for blank
         ),
         "regime": lambda: asyncio.run(launcher.run_regime_operations(
             args.symbol,

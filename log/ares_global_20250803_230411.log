@@ -1,0 +1,177 @@
+2025-08-03 23:04:11,352 - AresGlobal - INFO - ================================================================================
+2025-08-03 23:04:11,352 - AresGlobal - INFO - 📊 SESSION SUMMARY
+2025-08-03 23:04:11,352 - AresGlobal - INFO - Session started: 2025-08-03 23:04:11
+2025-08-03 23:04:11,353 - AresGlobal - INFO - Global log file: ares_global_20250803_230411.log
+2025-08-03 23:04:11,353 - AresGlobal - INFO - This file contains ALL logs for this session
+2025-08-03 23:04:11,353 - AresGlobal - INFO - ================================================================================
+2025-08-03 23:04:11,353 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-03 23:04:11,353 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION
+2025-08-03 23:04:11,353 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-03 23:04:11
+2025-08-03 23:04:11,353 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-03 23:04:11,353 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-03 23:04:11,353 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-03 23:04:11,353 - AresGlobal.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-08-03 23:04:11,353 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-03 23:04:11,353 - AresGlobal.AresLauncher - INFO - Start time: 2025-08-03 23:04:11
+2025-08-03 23:04:11,353 - AresGlobal.AresLauncher - INFO - Log directory: log
+2025-08-03 23:04:11,353 - AresGlobal.AresLauncher - INFO - Log level: INFO
+2025-08-03 23:04:11,353 - AresGlobal.AresLauncher - INFO - Global log file: ares_global_20250803_230411.log
+2025-08-03 23:04:11,353 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-03 23:04:11,353 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-03 23:04:11,353 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: regime - Symbol: ETHUSDT - Exchange: BINANCE
+2025-08-03 23:04:11,353 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-03 23:04:11
+2025-08-03 23:04:11,354 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-03 23:04:11,354 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-03 23:04:11,354 - AresGlobal.AresLauncher - INFO - 🧠 Running regime operations for ETHUSDT on BINANCE
+2025-08-03 23:04:11,354 - AresGlobal.AresLauncher - INFO - 📋 Subcommand: train_blank
+2025-08-03 23:04:11,354 - AresGlobal.AresLauncher - INFO - 🖥️ GUI mode: False
+2025-08-03 23:04:11,354 - AresGlobal.AresLauncher - INFO - ⏰ Start time: 2025-08-03 23:04:11
+2025-08-03 23:04:11,354 - AresGlobal.AresLauncher - INFO - 📦 Importing required modules...
+2025-08-03 23:04:12,566 - AresGlobal.AresLauncher - INFO - ✅ Modules imported successfully
+2025-08-03 23:04:12,566 - AresGlobal.AresLauncher - INFO - 🔧 Initializing HMM classifier...
+2025-08-03 23:04:12,566 - AresGlobal.AresLauncher - INFO - ✅ HMM classifier initialized successfully
+2025-08-03 23:04:12,566 - AresGlobal.HMMRegimeClassifier - INFO - 🤖 Starting ML model training for ETHUSDT on BINANCE (last 0.08 years)
+2025-08-03 23:04:12,566 - AresGlobal.HMMRegimeClassifier - INFO - 📊 Configuration:
+2025-08-03 23:04:12,566 - AresGlobal.HMMRegimeClassifier - INFO -    - Target timeframe: 1h
+2025-08-03 23:04:12,567 - AresGlobal.HMMRegimeClassifier - INFO -    - Volatility period: 10
+2025-08-03 23:04:12,567 - AresGlobal.HMMRegimeClassifier - INFO -    - Min data points: 1000
+2025-08-03 23:04:12,567 - AresGlobal.HMMRegimeClassifier - INFO -    - HMM states: 4
+2025-08-03 23:04:12,567 - AresGlobal.HMMRegimeClassifier - INFO -    - HMM iterations: 100
+2025-08-03 23:04:12,646 - AresGlobal.HMMRegimeClassifier - INFO - 📊 Loading existing 1m consolidated data...
+2025-08-03 23:04:12,647 - AresGlobal.HMMRegimeClassifier - INFO - ✅ Found consolidated data: data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.csv
+2025-08-03 23:04:12,647 - AresGlobal.HMMRegimeClassifier - INFO - 📅 Using data from 2025-07-05 to 2025-08-03
+2025-08-03 23:04:13,692 - AresGlobal.HMMRegimeClassifier - INFO - ✅ Loaded 41913 1m klines records from last 0.08 years
+2025-08-03 23:04:13,692 - AresGlobal.HMMRegimeClassifier - INFO - 🔄 Resampling 1m data to 1h data...
+2025-08-03 23:04:13,697 - AresGlobal.HMMRegimeClassifier - INFO - ✅ Resampled 41913 1m records to 699 1h records
+2025-08-03 23:04:13,697 - AresGlobal.HMMRegimeClassifier - INFO - ✅ Resampled to 699 1h klines records
+2025-08-03 23:04:13,697 - AresGlobal.HMMRegimeClassifier - INFO - 🔍 Calculating support and resistance levels...
+2025-08-03 23:04:13,698 - AresGlobal.SRLevelAnalyzer - INFO - Initializing SR Level Analyzer...
+2025-08-03 23:04:13,698 - AresGlobal.SRLevelAnalyzer - INFO - SR configuration loaded successfully
+2025-08-03 23:04:13,698 - AresGlobal.SRLevelAnalyzer - INFO - Analysis parameters initialized
+2025-08-03 23:04:13,698 - AresGlobal.SRLevelAnalyzer - INFO - Configuration validation successful
+2025-08-03 23:04:13,698 - AresGlobal.SRLevelAnalyzer - INFO - ✅ SR Level Analyzer initialization completed successfully
+2025-08-03 23:04:13,698 - AresGlobal.SRLevelAnalyzer - INFO - Starting SR level analysis...
+2025-08-03 23:04:13,731 - AresGlobal.SRLevelAnalyzer - INFO - SR: VPVR levels found: 101
+2025-08-03 23:04:13,731 - AresGlobal.SRLevelAnalyzer - INFO - SR: VPVR Price Levels (ALL):
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -     1. Price: $3736.52, Type: resistance, Strength: 0.900, Method: vpvr_poc
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -     2. Price: $2546.46, Type: support, Strength: 1.000, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -     3. Price: $2770.67, Type: support, Strength: 1.000, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -     4. Price: $2960.39, Type: support, Strength: 1.000, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -     5. Price: $3046.63, Type: support, Strength: 1.000, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -     6. Price: $3391.57, Type: support, Strength: 1.000, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -     7. Price: $3495.05, Type: resistance, Strength: 1.000, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -     8. Price: $3615.79, Type: resistance, Strength: 1.000, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -     9. Price: $3736.52, Type: resistance, Strength: 1.000, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -    10. Price: $3771.01, Type: resistance, Strength: 1.000, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -    11. Price: $3857.25, Type: resistance, Strength: 1.000, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -    12. Price: $3339.83, Type: support, Strength: 0.751, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -    13. Price: $3219.10, Type: support, Strength: 0.609, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -    14. Price: $3132.86, Type: support, Strength: 0.563, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -    15. Price: $2529.21, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -    16. Price: $2563.70, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,732 - AresGlobal.SRLevelAnalyzer - INFO -    17. Price: $2580.95, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    18. Price: $2787.92, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    19. Price: $2908.65, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    20. Price: $2943.14, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    21. Price: $2977.64, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    22. Price: $2994.88, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    23. Price: $3012.13, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    24. Price: $3029.38, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    25. Price: $3063.87, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    26. Price: $3408.82, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    27. Price: $3443.31, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    28. Price: $3460.56, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    29. Price: $3477.81, Type: support, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    30. Price: $3546.80, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    31. Price: $3564.04, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    32. Price: $3581.29, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    33. Price: $3598.54, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    34. Price: $3633.03, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,733 - AresGlobal.SRLevelAnalyzer - INFO -    35. Price: $3650.28, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    36. Price: $3667.53, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    37. Price: $3684.77, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    38. Price: $3702.02, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    39. Price: $3719.27, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    40. Price: $3753.76, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    41. Price: $3788.26, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    42. Price: $3805.50, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    43. Price: $3822.75, Type: resistance, Strength: 0.428, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    44. Price: $3874.49, Type: resistance, Strength: 0.404, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    45. Price: $2753.42, Type: support, Strength: 0.389, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    46. Price: $2598.20, Type: support, Strength: 0.368, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    47. Price: $3926.24, Type: resistance, Strength: 0.364, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    48. Price: $3305.33, Type: support, Strength: 0.359, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    49. Price: $3426.07, Type: support, Strength: 0.359, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    50. Price: $3512.30, Type: resistance, Strength: 0.336, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    51. Price: $3840.00, Type: resistance, Strength: 0.334, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    52. Price: $3270.84, Type: support, Strength: 0.320, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    53. Price: $2615.45, Type: support, Strength: 0.319, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    54. Price: $2649.94, Type: support, Strength: 0.309, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    55. Price: $3357.08, Type: support, Strength: 0.288, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    56. Price: $3374.32, Type: support, Strength: 0.266, Method: vpvr_hvn
+2025-08-03 23:04:13,734 - AresGlobal.SRLevelAnalyzer - INFO -    57. Price: $2822.41, Type: support, Strength: 0.253, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    58. Price: $2511.96, Type: support, Strength: 0.222, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    59. Price: $3529.55, Type: resistance, Strength: 0.219, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    60. Price: $3167.36, Type: support, Strength: 0.167, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    61. Price: $3115.62, Type: support, Strength: 0.157, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    62. Price: $2805.16, Type: support, Strength: 0.157, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    63. Price: $3891.74, Type: resistance, Strength: 0.156, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    64. Price: $2925.90, Type: support, Strength: 0.148, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    65. Price: $2632.69, Type: support, Strength: 0.145, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    66. Price: $3236.35, Type: support, Strength: 0.145, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    67. Price: $2684.43, Type: support, Strength: 0.140, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    68. Price: $2667.19, Type: support, Strength: 0.131, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    69. Price: $3150.11, Type: support, Strength: 0.079, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    70. Price: $3184.60, Type: support, Strength: 0.068, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    71. Price: $2356.74, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    72. Price: $2373.98, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    73. Price: $2391.23, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,735 - AresGlobal.SRLevelAnalyzer - INFO -    74. Price: $2408.48, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,736 - AresGlobal.SRLevelAnalyzer - INFO -    75. Price: $2425.73, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,736 - AresGlobal.SRLevelAnalyzer - INFO -    76. Price: $2442.97, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,736 - AresGlobal.SRLevelAnalyzer - INFO -    77. Price: $2460.22, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,736 - AresGlobal.SRLevelAnalyzer - INFO -    78. Price: $2477.47, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,736 - AresGlobal.SRLevelAnalyzer - INFO -    79. Price: $2701.68, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,736 - AresGlobal.SRLevelAnalyzer - INFO -    80. Price: $2718.93, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,736 - AresGlobal.SRLevelAnalyzer - INFO -    81. Price: $2736.18, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,736 - AresGlobal.SRLevelAnalyzer - INFO -    82. Price: $2839.66, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,736 - AresGlobal.SRLevelAnalyzer - INFO -    83. Price: $2856.91, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,736 - AresGlobal.SRLevelAnalyzer - INFO -    84. Price: $2874.15, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,736 - AresGlobal.SRLevelAnalyzer - INFO -    85. Price: $2891.40, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,736 - AresGlobal.SRLevelAnalyzer - INFO -    86. Price: $3098.37, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,736 - AresGlobal.SRLevelAnalyzer - INFO -    87. Price: $3201.85, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,737 - AresGlobal.SRLevelAnalyzer - INFO -    88. Price: $3253.59, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,737 - AresGlobal.SRLevelAnalyzer - INFO -    89. Price: $3288.09, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,737 - AresGlobal.SRLevelAnalyzer - INFO -    90. Price: $3322.58, Type: support, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,737 - AresGlobal.SRLevelAnalyzer - INFO -    91. Price: $3908.99, Type: resistance, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,737 - AresGlobal.SRLevelAnalyzer - INFO -    92. Price: $3943.48, Type: resistance, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,737 - AresGlobal.SRLevelAnalyzer - INFO -    93. Price: $3960.73, Type: resistance, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO -    94. Price: $3977.98, Type: resistance, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO -    95. Price: $3995.22, Type: resistance, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO -    96. Price: $4012.47, Type: resistance, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO -    97. Price: $4029.72, Type: resistance, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO -    98. Price: $4046.97, Type: resistance, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO -    99. Price: $4064.21, Type: resistance, Strength: 0.000, Method: vpvr_hvn
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO -   100. Price: $2494.71, Type: support, Strength: -0.014, Method: vpvr_hvn
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO -   101. Price: $3081.12, Type: support, Strength: -0.032, Method: vpvr_hvn
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO - SR: Total VPVR levels found: 101
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO - SR: Levels after consolidation: 1
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO - SR: Levels after strength filtering (>=0.4): 1
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO - SR: Levels after strength-based filtering: 1
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO - SR: Levels after consolidation: 1 (time decay skipped)
+2025-08-03 23:04:13,738 - AresGlobal.SRLevelAnalyzer - INFO - SR: Final Consolidated Price Levels (ALL):
+2025-08-03 23:04:13,739 - AresGlobal.SRLevelAnalyzer - INFO -     1. Price: $3323.17, Type: support, Strength: 32.806
+2025-08-03 23:04:13,739 - AresGlobal.SRLevelAnalyzer - INFO - SR: Total consolidated levels: 1
+2025-08-03 23:04:13,739 - AresGlobal.SRLevelAnalyzer - INFO - ✅ SR analysis completed successfully
+2025-08-03 23:04:13,739 - AresGlobal.SRLevelAnalyzer - INFO - 📊 SR Levels Detected: 1 total (1 support, 0 resistance)
+2025-08-03 23:04:13,739 - AresGlobal.HMMRegimeClassifier - INFO - SR: Found 1 support and 0 resistance levels
+2025-08-03 23:04:13,739 - AresGlobal.HMMRegimeClassifier - INFO - 🔧 Calculating features and preparing data...
+2025-08-03 23:04:13,740 - AresGlobal.HMMRegimeClassifier - WARNING - Insufficient data after cleaning. Got 699, need 1000
+2025-08-03 23:04:13,740 - AresGlobal.HMMRegimeClassifier - ERROR - ❌ Failed to calculate features
+2025-08-03 23:04:13,740 - AresGlobal.AresLauncher - ERROR - ❌ ML model training failed
+2025-08-03 23:04:13,740 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-03 23:04:13,740 - AresGlobal - INFO - [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1
+2025-08-03 23:04:13,741 - AresGlobal - INFO - [SYSTEM] End time: 2025-08-03 23:04:13
+2025-08-03 23:04:13,741 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-03 23:04:13,741 - AresGlobal.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-08-03 23:04:13,741 - AresGlobal.AresLauncher - INFO - ✅ Cleanup completed

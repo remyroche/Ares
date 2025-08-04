@@ -31,8 +31,6 @@ class VolatilityTargetingConfig:
     max_leverage: float = 3.0
     min_leverage: float = 0.1
     rebalance_frequency: str = "daily"  # daily, weekly, monthly
-    momentum_filter: bool = True
-    regime_adjustment: bool = True
     kelly_enhancement: bool = False
     max_kelly_fraction: float = 0.25
 
@@ -83,19 +81,6 @@ class VolatilityTargetingStrategy:
 
         # Basic volatility targeting formula
         multiplier = self.config.target_volatility / current_volatility
-
-        # Apply momentum filter if enabled
-        if self.config.momentum_filter:
-            momentum_factor = self._calculate_momentum_factor(price_data)
-            multiplier *= momentum_factor
-
-        # Apply regime adjustment if enabled
-        if self.config.regime_adjustment:
-            regime_factor = self._calculate_regime_factor(
-                price_data,
-                current_volatility,
-            )
-            multiplier *= regime_factor
 
         # Apply Kelly enhancement if enabled
         if self.config.kelly_enhancement:

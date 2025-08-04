@@ -9,6 +9,10 @@ from src.utils.error_handler import (
 )
 from src.utils.logger import system_logger
 
+# Add multi-timeframe feature engineering and regime integration imports
+from src.analyst.multi_timeframe_feature_engineering import MultiTimeframeFeatureEngineering
+from src.analyst.multi_timeframe_regime_integration import MultiTimeframeRegimeIntegration
+
 
 class MultiTimeframeTrainingManager:
     """
@@ -52,6 +56,10 @@ class MultiTimeframeTrainingManager:
             True,
         )
 
+        # Initialize multi-timeframe feature engineering and regime integration
+        self.mtf_feature_engine = MultiTimeframeFeatureEngineering(config)
+        self.mtf_regime_integration = MultiTimeframeRegimeIntegration(config)
+
     @handle_specific_errors(
         error_handlers={
             ValueError: (
@@ -89,6 +97,9 @@ class MultiTimeframeTrainingManager:
 
             # Initialize multi-timeframe training modules
             await self._initialize_multi_timeframe_training_modules()
+
+            # Initialize multi-timeframe feature engineering and regime integration
+            await self._initialize_multi_timeframe_components()
 
             self.logger.info(
                 "✅ Multi-Timeframe Training Manager initialization completed successfully",
@@ -299,16 +310,91 @@ class MultiTimeframeTrainingManager:
         try:
             # Initialize timeframe optimization components
             self.timeframe_optimization_components = {
-                "optimization_search": True,
-                "optimization_evaluation": True,
-                "optimization_selection": True,
-                "optimization_validation": True,
+                "hyperparameter_optimization": True,
+                "feature_selection": True,
+                "model_selection": True,
+                "ensemble_optimization": True,
             }
 
             self.logger.info("Timeframe optimization module initialized")
 
         except Exception as e:
             self.logger.error(f"Error initializing timeframe optimization: {e}")
+
+    async def _initialize_multi_timeframe_components(self) -> None:
+        """Initialize multi-timeframe feature engineering and regime integration components."""
+        try:
+            self.logger.info("Initializing Multi-Timeframe Components...")
+
+            # Initialize multi-timeframe feature engineering
+            if self.config.get("multi_timeframe_feature_engineering", {}).get("enable_mtf_features", True):
+                self.logger.info("✅ Multi-Timeframe Feature Engineering initialized")
+            else:
+                self.logger.info("⚠️ Multi-Timeframe Feature Engineering disabled")
+
+            # Initialize multi-timeframe regime integration
+            if self.config.get("multi_timeframe_regime_integration", {}).get("enable_propagation", True):
+                await self.mtf_regime_integration.initialize()
+                self.logger.info("✅ Multi-Timeframe Regime Integration initialized")
+            else:
+                self.logger.info("⚠️ Multi-Timeframe Regime Integration disabled")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing multi-timeframe components: {e}")
+
+    async def generate_multi_timeframe_features_for_training(
+        self,
+        data_dict: dict[str, Any],
+        symbol: str,
+    ) -> dict[str, Any]:
+        """
+        Generate multi-timeframe features for training data.
+
+        Args:
+            data_dict: Dictionary with timeframe -> DataFrame mapping
+            symbol: Trading symbol
+
+        Returns:
+            Dictionary with timeframe -> features DataFrame mapping
+        """
+        try:
+            self.logger.info(f"🎯 Generating multi-timeframe features for {symbol}")
+
+            # Generate multi-timeframe features
+            features_dict = await self.mtf_feature_engine.generate_multi_timeframe_features(
+                data_dict=data_dict,
+                agg_trades_dict=data_dict.get("agg_trades", {}),
+                futures_dict=data_dict.get("futures", {}),
+                sr_levels=data_dict.get("sr_levels", []),
+            )
+
+            # Get regime information for each timeframe
+            regime_dict = {}
+            if "1h" in data_dict:  # Strategic timeframe for regime classification
+                for timeframe in data_dict.keys():
+                    if timeframe != "1h":
+                        regime_info = await self.mtf_regime_integration.get_regime_for_timeframe(
+                            timeframe=timeframe,
+                            current_data=data_dict[timeframe],
+                            data_1h=data_dict["1h"],
+                        )
+                        regime_dict[timeframe] = regime_info
+
+            # Add regime information to features
+            for timeframe, features in features_dict.items():
+                if timeframe in regime_dict:
+                    # Add regime features to the DataFrame
+                    regime_info = regime_dict[timeframe]
+                    features["regime"] = regime_info.get("regime", "UNKNOWN")
+                    features["regime_confidence"] = regime_info.get("confidence", 0.5)
+                    features["regime_source"] = regime_info.get("regime_source", "unknown")
+
+            self.logger.info(f"✅ Generated multi-timeframe features for {len(features_dict)} timeframes")
+            return features_dict
+
+        except Exception as e:
+            self.logger.error(f"Error generating multi-timeframe features: {e}")
+            return {}
 
     @handle_specific_errors(
         error_handlers={
@@ -1138,3 +1224,4 @@ async def setup_multi_timeframe_training_manager(
     except Exception as e:
         print(f"Error setting up multi-timeframe training manager: {e}")
         return None
+

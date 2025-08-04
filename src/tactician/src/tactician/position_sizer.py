@@ -13,7 +13,6 @@ class PositionSizer:
     Enhanced position sizing system that incorporates multiple indicators:
     - Confidence scores from ML models
     - Volatility measures (ATR, realized volatility)
-    - Market regime classification
     - Liquidation risk assessment
     - Dynamic risk management based on performance
     """
@@ -90,15 +89,8 @@ class PositionSizer:
                 market_conditions,
             )
 
-            # Apply regime-based adjustment
-            regime_size = self._apply_regime_adjustment(
-                volatility_size,
-                market_conditions,
-            )
-
             # Apply liquidation risk adjustment
             liquidation_size = self._apply_liquidation_risk_adjustment(
-                regime_size,
                 current_price,
                 leverage,
                 side,

@@ -46,7 +46,8 @@ async def run_multi_timeframe_training(
     await db_manager.initialize()
 
     # Initialize multi-timeframe training manager
-    mtf_manager = MultiTimeframeTrainingManager(db_manager)
+    mtf_manager = MultiTimeframeTrainingManager(CONFIG)
+    await mtf_manager.initialize()
 
     # Update configuration for parallel training
     if not parallel:
@@ -58,7 +59,7 @@ async def run_multi_timeframe_training(
         exchange_name="BINANCE",
         timeframes=timeframes,
         lookback_days=lookback_days,
-        enable_ensemble=enable_ensemble,
+        use_multi_timeframe_features=True,  # Enable multi-timeframe features
     )
 
     # Display results

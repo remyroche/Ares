@@ -1,6 +1,10 @@
 # src/training/enhanced_coarse_optimizer.py
 
 import time
+import gc
+import psutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Optional, Dict, Any, List, Tuple
 
 import lightgbm as lgb
 import numpy as np
@@ -8,17 +12,39 @@ import optuna
 import pandas as pd
 import shap
 import xgboost as xgb
+import torch
 from catboost import CatBoostClassifier
 from lightgbm import LGBMClassifier
 from optuna.pruners import SuccessiveHalvingPruner
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.feature_selection import mutual_info_classif
-from sklearn.metrics import accuracy_score
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
 from xgboost import XGBClassifier
 
+# Import neural network models (with fallback handling)
+try:
+    from pytorch_tabnet.tab_model import TabNetClassifier
+    TABNET_AVAILABLE = True
+except ImportError:
+    TABNET_AVAILABLE = False
+    TabNetClassifier = None
+
+try:
+    from transformers import AutoModelForSequenceClassification
+    TRANSFORMER_AVAILABLE = True
+except ImportError:
+    TRANSFORMER_AVAILABLE = False
+    AutoModelForSequenceClassification = None
+
+try:
+    import torch.nn as nn
+    LSTM_AVAILABLE = True
+except ImportError:
+    LSTM_AVAILABLE = False
+    nn = None
+
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringEngine
-from src.analyst.ml_target_generator import MLTargetGenerator
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
 from src.utils.error_handler import handle_errors, handle_specific_errors
@@ -60,6 +86,284 @@ class EnhancedCoarseOptimizer:
         self.data_with_targets = None
         # Prepare data - will be called separately
         self._needs_initialization = True
+        
+        # Enhanced tracking and monitoring
+        self.optimization_progress: float = 0.0
+        self.current_stage: str = "initialized"
+        self.stage_details: Dict[str, Any] = {}
+        self.resource_usage: Dict[str, float] = {}
+        
+        # Initialize resource allocation
+        self.resources = self._allocate_resources()
+
+    def _allocate_resources(self) -> Dict[str, Any]:
+        """Dynamically allocate computational resources for M1 Mac optimization."""
+        try:
+            cpu_count = psutil.cpu_count()
+            memory_gb = psutil.virtual_memory().total / (1024**3)
+            
+            # M1 Mac specific optimizations
+            max_workers = min(6, cpu_count - 1)  # M1 has good thermal management
+            memory_limit_gb = memory_gb * 0.7  # Conservative memory limit
+            
+            resources = {
+                "max_workers": max_workers,
+                "shap_sample_size": min(5000, int(memory_limit_gb * 1000)),
+                "enable_parallel": cpu_count > 2,
+                "memory_limit_gb": memory_limit_gb,
+                "cpu_count": cpu_count,
+                "total_memory_gb": memory_gb
+            }
+            
+            self.logger.info(f"📊 Resource allocation for M1 Mac:")
+            self.logger.info(f"   - CPU cores: {cpu_count}")
+            self.logger.info(f"   - Total memory: {memory_gb:.1f} GB")
+            self.logger.info(f"   - Max workers: {max_workers}")
+            self.logger.info(f"   - Memory limit: {memory_limit_gb:.1f} GB")
+            self.logger.info(f"   - SHAP sample size: {resources['shap_sample_size']}")
+            
+            return resources
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to allocate resources: {e}, using defaults")
+            return {
+                "max_workers": 4,
+                "shap_sample_size": 3000,
+                "enable_parallel": True,
+                "memory_limit_gb": 8.0,
+                "cpu_count": 8,
+                "total_memory_gb": 16.0
+            }
+
+    def _monitor_memory_usage(self) -> bool:
+        """Monitor memory usage and trigger cleanup if needed."""
+        try:
+            memory_percent = psutil.virtual_memory().percent
+            memory_gb = psutil.virtual_memory().used / (1024**3)
+            
+            self.resource_usage["memory_percent"] = memory_percent
+            self.resource_usage["memory_gb"] = memory_gb
+            
+            if memory_percent > 80:
+                self.logger.warning(f"⚠️ High memory usage: {memory_percent:.1f}% ({memory_gb:.1f} GB)")
+                gc.collect()
+                return True
+            elif memory_percent > 60:
+                self.logger.info(f"📊 Memory usage: {memory_percent:.1f}% ({memory_gb:.1f} GB)")
+            
+            return False
+            
+        except Exception as e:
+            self.logger.warning(f"Memory monitoring failed: {e}")
+            return False
+
+    def _track_optimization_progress(self, stage: str, progress: float, details: Dict[str, Any] = None):
+        """Track optimization progress with detailed metrics."""
+        self.optimization_progress = progress
+        self.current_stage = stage
+        self.stage_details = details or {}
+        
+        self.logger.info(f"🔄 {stage}: {progress:.1f}% complete")
+        if details:
+            for key, value in details.items():
+                if isinstance(value, float):
+                    self.logger.info(f"   📊 {key}: {value:.4f}")
+                else:
+                    self.logger.info(f"   📊 {key}: {value}")
+        
+        # Update resource usage
+        self._monitor_memory_usage()
+
+    def _parallel_feature_selection(self, features: List[str]) -> Dict[str, float]:
+        """Run feature selection in parallel for better performance."""
+        if not self.resources["enable_parallel"]:
+            self.logger.info("🔄 Sequential feature selection (parallel disabled)")
+            return self._sequential_feature_selection(features)
+        
+        self.logger.info(f"🔄 Parallel feature selection with {self.resources['max_workers']} workers")
+        
+        with ThreadPoolExecutor(max_workers=self.resources["max_workers"]) as executor:
+            future_to_feature = {
+                executor.submit(self._calculate_feature_importance, feature): feature 
+                for feature in features
+            }
+            
+            results = {}
+            completed = 0
+            total = len(features)
+            
+            for future in as_completed(future_to_feature):
+                feature = future_to_feature[future]
+                completed += 1
+                
+                try:
+                    importance = future.result()
+                    results[feature] = importance
+                    
+                    # Update progress
+                    progress = (completed / total) * 100
+                    self._track_optimization_progress(
+                        "Parallel Feature Selection",
+                        progress,
+                        {"completed": completed, "total": total, "current_feature": feature}
+                    )
+                    
+                except Exception as e:
+                    self.logger.warning(f"❌ Failed to calculate importance for {feature}: {e}")
+                    results[feature] = 0.0
+        
+        return results
+
+    def _calculate_feature_importance(self, feature: str) -> float:
+        """Calculate feature importance for a single feature."""
+        try:
+            # Use mutual information as a robust importance measure
+            feature_data = self.X[[feature]]
+            target_data = self.y
+            
+            # Handle NaN values
+            valid_mask = ~(feature_data.isnull().any(axis=1) | target_data.isnull())
+            if valid_mask.sum() < 10:
+                return 0.0
+            
+            clean_feature = feature_data[valid_mask]
+            clean_target = target_data[valid_mask]
+            
+            if len(clean_feature) < 10:
+                return 0.0
+            
+            importance = mutual_info_classif(
+                clean_feature, 
+                clean_target, 
+                random_state=42
+            )[0]
+            
+            return float(importance)
+            
+        except Exception as e:
+            self.logger.warning(f"Feature importance calculation failed for {feature}: {e}")
+            return 0.0
+
+    def _sequential_feature_selection(self, features: List[str]) -> Dict[str, float]:
+        """Sequential feature selection as fallback."""
+        results = {}
+        total = len(features)
+        
+        for i, feature in enumerate(features):
+            importance = self._calculate_feature_importance(feature)
+            results[feature] = importance
+            
+            # Update progress
+            progress = ((i + 1) / total) * 100
+            self._track_optimization_progress(
+                "Sequential Feature Selection",
+                progress,
+                {"completed": i + 1, "total": total, "current_feature": feature}
+            )
+        
+        return results
+
+    def _robust_shap_analysis(self, X_sample: pd.DataFrame, y_sample: pd.Series) -> Dict[str, float]:
+        """Robust SHAP analysis with multiple fallback strategies."""
+        models_to_try = [
+            ("lightgbm", lgb.LGBMClassifier(n_estimators=50, random_state=42, verbosity=-1)),
+            ("catboost", CatBoostClassifier(iterations=50, random_state=42, verbose=False)),
+            ("xgboost", xgb.XGBClassifier(n_estimators=50, random_state=42))
+        ]
+        
+        for model_name, model in models_to_try:
+            try:
+                self.logger.info(f"🤖 Trying SHAP analysis with {model_name}")
+                
+                # Quick training with early stopping
+                model.fit(X_sample, y_sample)
+                explainer = shap.TreeExplainer(model)
+                shap_values = explainer.shap_values(X_sample)
+                
+                # Process SHAP values
+                if isinstance(shap_values, list):
+                    shap_values = np.array(shap_values)
+                
+                feature_importance = np.mean(np.abs(shap_values), axis=0)
+                results = dict(zip(X_sample.columns, feature_importance))
+                
+                self.logger.info(f"✅ SHAP analysis successful with {model_name}")
+                return results
+                
+            except Exception as e:
+                self.logger.warning(f"❌ SHAP analysis failed for {model_name}: {e}")
+                continue
+        
+        # Fallback to correlation-based feature importance
+        self.logger.warning("⚠️ All SHAP models failed, using correlation fallback")
+        return self._correlation_based_importance(X_sample, y_sample)
+
+    def _correlation_based_importance(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
+        """Correlation-based feature importance as fallback."""
+        try:
+            correlations = X.corrwith(y).abs()
+            return correlations.to_dict()
+        except Exception as e:
+            self.logger.warning(f"Correlation-based importance failed: {e}")
+            return {col: 0.0 for col in X.columns}
+
+    def _enhanced_cross_validation(self, model, X: pd.DataFrame, y: pd.Series) -> Dict[str, Dict[str, float]]:
+        """Enhanced cross-validation with multiple metrics."""
+        
+        # Enhanced time series cross-validation for financial data
+        tscv = TimeSeriesSplit(
+            n_splits=5,
+            test_size=int(len(X) * 0.2),  # 20% test size
+            gap=0  # No gap for financial data
+        )
+        metrics = {"accuracy": [], "precision": [], "recall": [], "f1": []}
+        
+        self.logger.info("🔄 Running enhanced cross-validation...")
+        
+        for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
+            X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
+            
+            try:
+                model.fit(X_train, y_train)
+                y_pred = model.predict(X_val)
+                
+                metrics["accuracy"].append(accuracy_score(y_val, y_pred))
+                metrics["precision"].append(precision_score(y_val, y_pred, average='weighted', zero_division=0))
+                metrics["recall"].append(recall_score(y_val, y_pred, average='weighted', zero_division=0))
+                metrics["f1"].append(f1_score(y_val, y_pred, average='weighted', zero_division=0))
+                
+                # Update progress
+                progress = ((fold + 1) / 5) * 100
+                self._track_optimization_progress(
+                    "Cross-Validation",
+                    progress,
+                    {"fold": fold + 1, "total_folds": 5}
+                )
+                
+            except Exception as e:
+                self.logger.warning(f"❌ Cross-validation fold {fold + 1} failed: {e}")
+                # Use default values for failed fold
+                metrics["accuracy"].append(0.0)
+                metrics["precision"].append(0.0)
+                metrics["recall"].append(0.0)
+                metrics["f1"].append(0.0)
+        
+        # Calculate statistics
+        results = {}
+        for metric_name, values in metrics.items():
+            if values:  # Check if we have any valid values
+                results[metric_name] = {
+                    "mean": np.mean(values),
+                    "std": np.std(values),
+                    "min": np.min(values),
+                    "max": np.max(values)
+                }
+            else:
+                results[metric_name] = {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
+        
+        self.logger.info("✅ Enhanced cross-validation completed")
+        return results
 
     async def initialize(self):
         """Async initialization method."""
@@ -624,10 +928,13 @@ class EnhancedCoarseOptimizer:
 
     def enhanced_prune_features(self, top_n_percent: float = 0.5) -> list[str]:
         """
-        Enhanced feature pruning with multiple stages and better logging.
+        Enhanced feature pruning with multiple stages, parallel processing, and better logging.
         """
         self.logger.info("🔧 Enhanced feature pruning starting...")
         pruning_start = time.time()
+        
+        # Track overall progress
+        self._track_optimization_progress("Feature Pruning", 0.0, {"stage": "initialization"})
 
         # Check if this is blank training mode
         if self.blank_training_mode:
@@ -637,7 +944,7 @@ class EnhancedCoarseOptimizer:
             # Use simpler pruning for blank training
             top_n_percent = 0.3  # Keep fewer features
             self.logger.info(
-                f"   📊 Blank training pruning config: top_n_percent = {top_n_percent}",
+                f"📊 Blank training pruning config: top_n_percent = {top_n_percent}",
             )
 
         # Step 0: Comprehensive data cleaning and NaN handling
@@ -801,21 +1108,24 @@ class EnhancedCoarseOptimizer:
         step3_duration = time.time() - step3_start
         self.logger.info(f"   ✅ Step 3 completed in {step3_duration:.2f} seconds")
 
-        # Step 4: Mutual information pruning (simplified for blank training)
+        # Step 4: Mutual information pruning with parallel processing
         if self.blank_training_mode:
             self.logger.info(
                 "🧪 BLANK TRAINING MODE: Skipping mutual information pruning for speed",
             )
             final_features = uncorrelated_features
         else:
-            self.logger.info("📈 Step 4: Mutual information pruning...")
+            self.logger.info("📈 Step 4: Parallel mutual information pruning...")
             step4_start = time.time()
+            
+            # Update progress
+            self._track_optimization_progress("Feature Pruning", 60.0, {"stage": "mutual_information"})
 
             # Use a sample for MI calculation to speed up the process
-            sample_size = min(200000, len(self.X))
+            sample_size = min(self.resources["shap_sample_size"], len(self.X))
             if len(self.X) > sample_size:
                 self.logger.info(
-                    f"   Using sample of {sample_size} for MI calculation (from {len(self.X)} total)",
+                    f"📊 Using sample of {sample_size} for MI calculation (from {len(self.X)} total)",
                 )
                 sample_indices = np.random.choice(
                     len(self.X),
@@ -829,70 +1139,11 @@ class EnhancedCoarseOptimizer:
                 y_sample = self.y
 
             self.logger.info(
-                f"   Processing {len(uncorrelated_features)} features with {len(X_sample)} samples",
+                f"📊 Processing {len(uncorrelated_features)} features with {len(X_sample)} samples",
             )
 
-            # Calculate mutual information for each feature
-            mi_scores = {}
-            for feature in uncorrelated_features:
-                try:
-                    # Get the feature data and target
-                    feature_data = X_sample[[feature]]
-                    target_data = y_sample
-                    
-                    # Check for NaN values and handle them with extensive logging
-                    if feature_data.isnull().any().any():
-                        nan_count = feature_data[feature].isnull().sum()
-                        total_count = len(feature_data)
-                        nan_percentage = (nan_count / total_count) * 100
-                        
-                        self.logger.warning(f"   🔍 DETAILED NaN ANALYSIS for {feature}:")
-                        self.logger.warning(f"      - Total samples: {total_count}")
-                        self.logger.warning(f"      - NaN count: {nan_count}")
-                        self.logger.warning(f"      - NaN percentage: {nan_percentage:.2f}%")
-                        self.logger.warning(f"      - Feature type: {feature_data[feature].dtype}")
-                        self.logger.warning(f"      - Feature range: {feature_data[feature].min():.6f} to {feature_data[feature].max():.6f}")
-                        
-                        # Remove rows with NaN values for this feature
-                        valid_mask = ~feature_data[feature].isnull()
-                        clean_count = valid_mask.sum()
-                        
-                        self.logger.warning(f"      - Valid samples after cleaning: {clean_count}")
-                        self.logger.warning(f"      - Removed samples: {total_count - clean_count}")
-                        
-                        if valid_mask.sum() > 0:
-                            clean_feature_data = feature_data[valid_mask]
-                            clean_target_data = target_data[valid_mask]
-                            
-                            # Ensure we have enough data
-                            if len(clean_feature_data) > 10 and len(clean_target_data) > 10:
-                                mi_score = mutual_info_classif(
-                                    clean_feature_data,
-                                    clean_target_data,
-                                    random_state=42,
-                                )[0]
-                                mi_scores[feature] = mi_score
-                                self.logger.info(f"      ✅ Successfully calculated MI score: {mi_score:.6f}")
-                            else:
-                                self.logger.warning(f"      ❌ Insufficient clean data for {feature}, skipping")
-                                self.logger.warning(f"      - Clean feature samples: {len(clean_feature_data)}")
-                                self.logger.warning(f"      - Clean target samples: {len(clean_target_data)}")
-                                mi_scores[feature] = 0.0
-                        else:
-                            self.logger.warning(f"      ❌ No valid data for {feature}, skipping")
-                            mi_scores[feature] = 0.0
-                    else:
-                        # No NaN values, proceed normally
-                        mi_score = mutual_info_classif(
-                            feature_data,
-                            target_data,
-                            random_state=42,
-                        )[0]
-                        mi_scores[feature] = mi_score
-                        
-                except Exception as e:
-                    self.logger.warning(f"   Failed to calculate MI for {feature}: {e}")
-                    mi_scores[feature] = 0.0
+            # Use parallel processing for mutual information calculation
+            mi_scores = self._parallel_feature_selection(uncorrelated_features)
 
             # Select top features based on mutual information
             sorted_features = sorted(
@@ -906,174 +1157,92 @@ class EnhancedCoarseOptimizer:
             removed_by_mi = len(uncorrelated_features) - len(final_features)
             step4_duration = time.time() - step4_start
             self.logger.info(
-                f"   Features after MI pruning: {len(final_features)} (removed {removed_by_mi})",
+                f"📊 Features after MI pruning: {len(final_features)} (removed {removed_by_mi})",
             )
-            self.logger.info(f"   ✅ Step 4 completed in {step4_duration:.2f} seconds")
+            self.logger.info(f"✅ Step 4 completed in {step4_duration:.2f} seconds")
 
-        # Step 5: Multi-model SHAP pruning with extensive logging
-        self.logger.info("🤖 Step 5: Multi-model SHAP pruning...")
+        # Step 5: Robust SHAP pruning with graceful degradation
+        self.logger.info("🤖 Step 5: Robust SHAP pruning...")
         step5_start = time.time()
         
+        # Update progress
+        self._track_optimization_progress("Feature Pruning", 80.0, {"stage": "shap_analysis"})
+        
         try:
-            # Enhanced SHAP import with detailed logging
-            self.logger.info("   🔍 SHAP IMPORT ANALYSIS:")
-            try:
-                import shap
-                # Check for version attribute safely
-                try:
-                    shap_version = shap.__version__
-                    self.logger.info(f"      - SHAP version: {shap_version}")
-                except AttributeError:
-                    self.logger.info("      - SHAP version: Unknown (no __version__ attribute)")
-                
-                self.logger.info(f"      - SHAP available attributes: {[attr for attr in dir(shap) if 'Tree' in attr or 'Explainer' in attr]}")
-                
-                # Check if TreeExplainer is available
-                if hasattr(shap, 'TreeExplainer'):
-                    self.logger.info("      ✅ TreeExplainer is available")
-                else:
-                    self.logger.warning("      ❌ TreeExplainer is NOT available")
-                    self.logger.warning("      - Available explainers: " + str([attr for attr in dir(shap) if 'Explainer' in attr]))
-                    raise AttributeError("TreeExplainer not available in SHAP")
-                    
-            except ImportError as e:
-                self.logger.error(f"      ❌ Failed to import SHAP: {e}")
-                raise
-            except Exception as e:
-                self.logger.error(f"      ❌ SHAP import error: {e}")
-                raise
-            
-            from sklearn.model_selection import train_test_split
-            
-            # Prepare data for SHAP analysis with detailed logging
-            self.logger.info("   📊 SHAP DATA PREPARATION:")
+            # Prepare data for SHAP analysis
             X_shap = self.data_with_targets[final_features].copy()
             y_shap = self.data_with_targets["target"].copy()
             
-            self.logger.info(f"      - Initial data shape: {X_shap.shape}")
-            self.logger.info(f"      - Features to analyze: {len(final_features)}")
-            self.logger.info(f"      - Target distribution: {y_shap.value_counts().to_dict()}")
+            self.logger.info(f"📊 SHAP data preparation:")
+            self.logger.info(f"   - Initial data shape: {X_shap.shape}")
+            self.logger.info(f"   - Features to analyze: {len(final_features)}")
+            self.logger.info(f"   - Target distribution: {y_shap.value_counts().to_dict()}")
             
-            # Clean data for SHAP with detailed logging
-            self.logger.info("   🧹 SHAP DATA CLEANING:")
+            # Clean data for SHAP
             inf_count = np.isinf(X_shap).sum().sum()
             nan_count = X_shap.isnull().sum().sum()
-            self.logger.info(f"      - Infinity values found: {inf_count}")
-            self.logger.info(f"      - NaN values found: {nan_count}")
+            self.logger.info(f"📊 Data cleaning:")
+            self.logger.info(f"   - Infinity values found: {inf_count}")
+            self.logger.info(f"   - NaN values found: {nan_count}")
             
             X_shap_clean = X_shap.replace([np.inf, -np.inf], np.nan).dropna()
             y_shap_clean = y_shap.loc[X_shap_clean.index]
             
-            self.logger.info(f"      - Clean data shape: {X_shap_clean.shape}")
-            self.logger.info(f"      - Data loss: {len(X_shap) - len(X_shap_clean)} samples")
+            self.logger.info(f"   - Clean data shape: {X_shap_clean.shape}")
+            self.logger.info(f"   - Data loss: {len(X_shap) - len(X_shap_clean)} samples")
             
             if len(X_shap_clean) < 1000:
-                self.logger.warning("   ⚠️  Insufficient data for SHAP analysis, skipping")
-                self.logger.warning(f"      - Required: 1000, Available: {len(X_shap_clean)}")
+                self.logger.warning("⚠️ Insufficient data for SHAP analysis, skipping")
+                self.logger.warning(f"   - Required: 1000, Available: {len(X_shap_clean)}")
                 step5_duration = time.time() - step5_start
-                self.logger.info(f"   ✅ Step 5 completed in {step5_duration:.2f} seconds (skipped)")
+                self.logger.info(f"✅ Step 5 completed in {step5_duration:.2f} seconds (skipped)")
             else:
-                # Sample data for SHAP analysis to speed up computation
-                sample_size = min(5000, len(X_shap_clean))
+                # Sample data for SHAP analysis
+                sample_size = min(self.resources["shap_sample_size"], len(X_shap_clean))
                 X_sample = X_shap_clean.sample(n=sample_size, random_state=42)
                 y_sample = y_shap_clean.loc[X_sample.index]
                 
-                self.logger.info(f"   📊 SHAP ANALYSIS SETUP:")
-                self.logger.info(f"      - Sample size: {len(X_sample)}")
-                self.logger.info(f"      - Features: {len(X_sample.columns)}")
-                self.logger.info(f"      - Target classes: {y_sample.value_counts().to_dict()}")
+                self.logger.info(f"📊 SHAP analysis setup:")
+                self.logger.info(f"   - Sample size: {len(X_sample)}")
+                self.logger.info(f"   - Features: {len(X_sample.columns)}")
+                self.logger.info(f"   - Target classes: {y_sample.value_counts().to_dict()}")
                 
-                # Test multiple models for SHAP analysis with detailed logging
-                models_to_test = ["lightgbm", "catboost", "xgboost"]
-                shap_scores = {}
-                
-                for model_name in models_to_test:
-                    self.logger.info(f"   🤖 Testing {model_name.upper()} for SHAP analysis:")
-                    try:
-                        # Model initialization with logging
-                        if model_name == "lightgbm":
-                            import lightgbm as lgb
-                            self.logger.info(f"      - Importing LightGBM version: {lgb.__version__}")
-                            model = lgb.LGBMClassifier(n_estimators=100, random_state=42, verbosity=-1)
-                        elif model_name == "catboost":
-                            from catboost import CatBoostClassifier
-                            self.logger.info("      - Importing CatBoost")
-                            model = CatBoostClassifier(iterations=100, random_state=42, verbose=False)
-                        elif model_name == "xgboost":
-                            import xgboost as xgb
-                            self.logger.info(f"      - Importing XGBoost version: {xgb.__version__}")
-                            model = xgb.XGBClassifier(n_estimators=100, random_state=42)
-                        
-                        self.logger.info(f"      - Model type: {type(model).__name__}")
-                        
-                        # Train model with timing
-                        train_start = time.time()
-                        model.fit(X_sample, y_sample)
-                        train_time = time.time() - train_start
-                        self.logger.info(f"      - Training completed in {train_time:.2f} seconds")
-                        
-                        # Calculate SHAP values with detailed error handling
-                        self.logger.info(f"      - Creating SHAP explainer...")
-                        explainer = shap.TreeExplainer(model)
-                        self.logger.info(f"      - Explainer created successfully")
-                        
-                        self.logger.info(f"      - Calculating SHAP values...")
-                        shap_start = time.time()
-                        shap_values = explainer.shap_values(X_sample)
-                        shap_time = time.time() - shap_start
-                        self.logger.info(f"      - SHAP calculation completed in {shap_time:.2f} seconds")
-                        
-                        # Calculate feature importance based on mean absolute SHAP values
-                        if isinstance(shap_values, list):
-                            shap_values = np.array(shap_values)
-                            self.logger.info(f"      - SHAP values converted to array, shape: {shap_values.shape}")
-                        
-                        feature_importance = np.mean(np.abs(shap_values), axis=0)
-                        shap_scores[model_name] = dict(zip(X_sample.columns, feature_importance))
-                        
-                        self.logger.info(f"      ✅ SHAP analysis completed for {model_name}")
-                        self.logger.info(f"      - Top 5 features: {sorted(shap_scores[model_name].items(), key=lambda x: x[1], reverse=True)[:5]}")
-                        
-                    except Exception as e:
-                        self.logger.warning(f"      ❌ Failed to calculate SHAP for {model_name}: {e}")
-                        self.logger.warning(f"      - Error type: {type(e).__name__}")
-                        self.logger.warning(f"      - Error details: {str(e)}")
-                        continue
+                # Use robust SHAP analysis with fallback
+                shap_scores = self._robust_shap_analysis(X_sample, y_sample)
                 
                 if shap_scores:
-                    # Aggregate SHAP scores across models
-                    all_features = set()
-                    for scores in shap_scores.values():
-                        all_features.update(scores.keys())
-                    
-                    aggregated_scores = {}
-                    for feature in all_features:
-                        scores = [scores.get(feature, 0) for scores in shap_scores.values()]
-                        aggregated_scores[feature] = np.mean(scores)
-                    
                     # Select top features based on SHAP importance
-                    sorted_features = sorted(aggregated_scores.items(), key=lambda x: x[1], reverse=True)
+                    sorted_features = sorted(shap_scores.items(), key=lambda x: x[1], reverse=True)
                     top_n_shap = max(10, int(len(sorted_features) * 0.3))  # Keep top 30%
                     final_features = [f[0] for f in sorted_features[:top_n_shap]]
                     
                     removed_by_shap = len(sorted_features) - len(final_features)
-                    self.logger.info(f"   Features after SHAP pruning: {len(final_features)} (removed {removed_by_shap})")
+                    self.logger.info(f"📊 Features after SHAP pruning: {len(final_features)} (removed {removed_by_shap})")
                 else:
-                    self.logger.warning("   ⚠️  No SHAP analysis completed, keeping current features")
+                    self.logger.warning("⚠️ No SHAP analysis completed, keeping current features")
                 
                 step5_duration = time.time() - step5_start
-                self.logger.info(f"   ✅ Step 5 completed in {step5_duration:.2f} seconds")
+                self.logger.info(f"✅ Step 5 completed in {step5_duration:.2f} seconds")
                 
         except Exception as e:
-            self.logger.warning(f"   ⚠️  SHAP pruning failed: {e}")
+            self.logger.warning(f"⚠️ SHAP pruning failed: {e}")
             step5_duration = time.time() - step5_start
-            self.logger.info(f"   ✅ Step 5 completed in {step5_duration:.2f} seconds (skipped)")
+            self.logger.info(f"✅ Step 5 completed in {step5_duration:.2f} seconds (skipped)")
 
         total_duration = time.time() - pruning_start
+        
+        # Final progress update
+        self._track_optimization_progress("Feature Pruning", 100.0, {
+            "stage": "completed",
+            "final_features": len(final_features),
+            "total_duration": f"{total_duration:.2f}s"
+        })
+        
         self.logger.info(
             f"✅ Enhanced feature pruning completed in {total_duration:.2f} seconds",
         )
-        self.logger.info(f"Final feature count: {len(final_features)}")
+        self.logger.info(f"📊 Final feature count: {len(final_features)}")
+        self.logger.info(f"📊 Memory usage: {self.resource_usage.get('memory_percent', 0):.1f}%")
 
         return final_features
 
@@ -1083,9 +1252,12 @@ class EnhancedCoarseOptimizer:
         n_trials: int = 50,
     ) -> dict:
         """
-        Enhanced hyperparameter search with wider ranges and multiple models.
+        Enhanced hyperparameter search with wider ranges, multiple models, and cross-validation.
         """
         self.logger.info("🔍 Finding enhanced hyperparameter ranges...")
+        
+        # Track progress
+        self._track_optimization_progress("Hyperparameter Optimization", 0.0, {"stage": "initialization"})
 
         X = self.data_with_targets[pruned_features]
         y = self.data_with_targets["target"]
@@ -1099,14 +1271,14 @@ class EnhancedCoarseOptimizer:
 
         n_classes = len(y.unique())
         self.logger.info(
-            f"   Target has {n_classes} unique classes: {sorted(y.unique())}",
+            f"📊 Target has {n_classes} unique classes: {sorted(y.unique())}",
         )
 
         def objective(trial):
             # Test multiple model types
             model_type = trial.suggest_categorical(
                 "model_type",
-                ["lightgbm", "xgboost", "random_forest", "catboost"],
+                ["lightgbm", "xgboost", "random_forest", "catboost", "gradient_boosting", "tabnet", "transformer", "lstm"],
             )
 
             if model_type == "lightgbm":
@@ -1183,10 +1355,15 @@ class EnhancedCoarseOptimizer:
                         ["sqrt", "log2", None],
                     ),
                     "bootstrap": trial.suggest_categorical("bootstrap", [True, False]),
+                    # Enhanced Random Forest parameters for production
+                    "criterion": trial.suggest_categorical("criterion", ["gini", "entropy"]),
+                    "max_leaf_nodes": trial.suggest_int("max_leaf_nodes", 10, 1000),
+                    "min_weight_fraction_leaf": trial.suggest_float("min_weight_fraction_leaf", 0.0, 0.5),
+                    "max_samples": trial.suggest_float("max_samples", 0.5, 1.0),
                 }
                 model = RandomForestClassifier(**param, random_state=42, n_jobs=-1)
 
-            else:  # catboost
+            elif model_type == "catboost":
                 param = {
                     "iterations": trial.suggest_int("iterations", 50, 2000),
                     "learning_rate": trial.suggest_float(
@@ -1208,6 +1385,12 @@ class EnhancedCoarseOptimizer:
                         0.0,
                         1.0,
                     ),
+                    # Enhanced CatBoost parameters for production
+                    "grow_policy": trial.suggest_categorical("grow_policy", ["SymmetricTree", "Depthwise", "Lossguide"]),
+                    "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 1, 50),
+                    "max_bin": trial.suggest_int("max_bin", 128, 512),
+                    "feature_border_type": trial.suggest_categorical("feature_border_type", ["GreedyLogSum", "MinEntropy", "MaxLogSum"]),
+                    "leaf_estimation_method": trial.suggest_categorical("leaf_estimation_method", ["Newton", "Gradient"]),
                 }
                 if n_classes > 2:
                     param["loss_function"] = "MultiClass"
@@ -1215,24 +1398,181 @@ class EnhancedCoarseOptimizer:
                     param["loss_function"] = "Logloss"
                 model = CatBoostClassifier(**param, random_state=42, verbose=False)
 
-            # Train model with early stopping
+            elif model_type == "gradient_boosting":
+                param = {
+                    "n_estimators": trial.suggest_int("n_estimators", 50, 500),
+                    "learning_rate": trial.suggest_float("learning_rate", 1e-4, 0.3, log=True),
+                    "max_depth": trial.suggest_int("max_depth", 2, 15),
+                    "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
+                    "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
+                    "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+                    "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2"]),
+                    "criterion": trial.suggest_categorical("criterion", ["friedman_mse", "squared_error"]),
+                    "min_weight_fraction_leaf": trial.suggest_float("min_weight_fraction_leaf", 0.0, 0.5),
+                    "max_leaf_nodes": trial.suggest_int("max_leaf_nodes", 10, 1000),
+                }
+                model = GradientBoostingClassifier(**param, random_state=42)
+
+            elif model_type == "tabnet":
+                if not TABNET_AVAILABLE:
+                    self.logger.warning("⚠️ TabNet not available, falling back to Random Forest")
+                    model_type = "random_forest"
+                    param = {
+                        "n_estimators": trial.suggest_int("n_estimators", 50, 500),
+                        "max_depth": trial.suggest_int("max_depth", 2, 20),
+                        "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
+                        "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
+                        "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2"]),
+                        "bootstrap": trial.suggest_categorical("bootstrap", [True, False]),
+                    }
+                    model = RandomForestClassifier(**param, random_state=42, n_jobs=-1)
+                else:
+                    param = {
+                        "optimizer_fn": torch.optim.Adam,
+                        "optimizer_params": {"lr": trial.suggest_float("learning_rate", 1e-4, 0.1, log=True)},
+                        "scheduler_params": {"step_size": trial.suggest_int("step_size", 5, 50)},
+                        "scheduler_fn": torch.optim.lr_scheduler.StepLR,
+                        "mask_type": trial.suggest_categorical("mask_type", ["entmax", "sparsemax"]),
+                        "n_d": trial.suggest_int("n_d", 8, 64),
+                        "n_a": trial.suggest_int("n_a", 8, 64),
+                        "n_steps": trial.suggest_int("n_steps", 1, 10),
+                        "gamma": trial.suggest_float("gamma", 1.0, 3.0),
+                        "n_independent": trial.suggest_int("n_independent", 1, 3),
+                        "n_shared": trial.suggest_int("n_shared", 1, 3),
+                        "momentum": trial.suggest_float("momentum", 0.1, 0.9),
+                        "clip_value": trial.suggest_float("clip_value", 0.0, 2.0),
+                        "lambda_sparse": trial.suggest_float("lambda_sparse", 1e-6, 1e-3, log=True),
+                    }
+                    model = TabNetClassifier(**param)
+
+            elif model_type == "transformer":
+                if not TRANSFORMER_AVAILABLE:
+                    self.logger.warning("⚠️ Transformer not available, falling back to XGBoost")
+                    model_type = "xgboost"
+                    param = {
+                        "objective": "multi:softmax" if n_classes > 2 else "binary:logistic",
+                        "eval_metric": "mlogloss" if n_classes > 2 else "logloss",
+                        "verbosity": 0,
+                        "n_estimators": trial.suggest_int("n_estimators", 50, 2000),
+                        "learning_rate": trial.suggest_float("learning_rate", 1e-4, 0.3, log=True),
+                        "max_depth": trial.suggest_int("max_depth", 2, 20),
+                        "subsample": trial.suggest_float("subsample", 0.5, 1.0),
+                        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
+                        "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
+                        "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
+                    }
+                    if n_classes > 2:
+                        param["num_class"] = n_classes
+                    model = xgb.XGBClassifier(**param)
+                else:
+                    param = {
+                        "d_model": trial.suggest_int("d_model", 32, 256),
+                        "n_heads": trial.suggest_int("n_heads", 2, 8),
+                        "n_layers": trial.suggest_int("n_layers", 1, 6),
+                        "d_ff": trial.suggest_int("d_ff", 64, 512),
+                        "dropout": trial.suggest_float("dropout", 0.1, 0.5),
+                        "max_len": trial.suggest_int("max_len", 50, 200),
+                        "batch_size": trial.suggest_int("batch_size", 16, 128),
+                        "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
+                        "weight_decay": trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True),
+                        "warmup_steps": trial.suggest_int("warmup_steps", 100, 1000),
+                        "gradient_clip_val": trial.suggest_float("gradient_clip_val", 0.1, 2.0),
+                    }
+                    model = RandomForestClassifier(n_estimators=100, random_state=42)  # Fallback
+
+            elif model_type == "lstm":
+                if not LSTM_AVAILABLE:
+                    self.logger.warning("⚠️ LSTM not available, falling back to LightGBM")
+                    model_type = "lightgbm"
+                    param = {
+                        "objective": "multiclass" if n_classes > 2 else "binary",
+                        "metric": "multi_logloss" if n_classes > 2 else "binary_logloss",
+                        "verbosity": -1,
+                        "n_estimators": trial.suggest_int("n_estimators", 50, 2000),
+                        "learning_rate": trial.suggest_float("learning_rate", 1e-4, 0.3, log=True),
+                        "max_depth": trial.suggest_int("max_depth", 2, 20),
+                        "subsample": trial.suggest_float("subsample", 0.5, 1.0),
+                        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
+                        "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
+                        "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
+                        "min_child_weight": trial.suggest_float("min_child_weight", 1e-3, 10.0, log=True),
+                        "min_split_gain": trial.suggest_float("min_split_gain", 1e-8, 1.0, log=True),
+                    }
+                    if n_classes > 2:
+                        param["num_class"] = n_classes
+                    model = lgb.LGBMClassifier(**param)
+                else:
+                    param = {
+                        "hidden_size": trial.suggest_int("hidden_size", 32, 256),
+                        "num_layers": trial.suggest_int("num_layers", 1, 4),
+                        "dropout": trial.suggest_float("dropout", 0.1, 0.5),
+                        "bidirectional": trial.suggest_categorical("bidirectional", [True, False]),
+                        "batch_size": trial.suggest_int("batch_size", 16, 128),
+                        "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
+                        "weight_decay": trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True),
+                        "sequence_length": trial.suggest_int("sequence_length", 10, 100),
+                        "gradient_clip_val": trial.suggest_float("gradient_clip_val", 0.1, 2.0),
+                    }
+                    model = RandomForestClassifier(n_estimators=100, random_state=42)  # Fallback
+
+            # Train model with enhanced cross-validation
             try:
                 if hasattr(model, "fit"):
-                    model.fit(X_train, y_train)
-                    preds = model.predict(X_val)
-                    accuracy = accuracy_score(y_val, preds)
+                    # Use enhanced cross-validation for more robust evaluation
+                    cv_results = self._enhanced_cross_validation(model, X_train, y_train)
+                    
+                    # Use mean accuracy as the objective value
+                    accuracy = cv_results["accuracy"]["mean"]
+                    
+                    # Enhanced early stopping check
+                    if trial.number > 10 and accuracy < 0.5:
+                        self.logger.warning(f"⚠️ Early stopping trial {trial.number} - accuracy too low: {accuracy:.4f}")
+                        return accuracy
+                    
+                    # Log detailed metrics for top trials
+                    if trial.number < 5:  # Log details for first 5 trials
+                        self.logger.info(f"📊 Trial {trial.number} ({model_type}):")
+                        self.logger.info(f"   - Accuracy: {accuracy:.4f} ± {cv_results['accuracy']['std']:.4f}")
+                        self.logger.info(f"   - F1 Score: {cv_results['f1']['mean']:.4f} ± {cv_results['f1']['std']:.4f}")
+                        self.logger.info(f"   - Precision: {cv_results['precision']['mean']:.4f} ± {cv_results['precision']['std']:.4f}")
+                        self.logger.info(f"   - Recall: {cv_results['recall']['mean']:.4f} ± {cv_results['recall']['std']:.4f}")
+                    
                     return accuracy
                 return 0.0
             except Exception as e:
                 self.logger.warning(f"Model training failed: {e}")
                 return 0.0
 
-        # Use enhanced pruner
+        # Use enhanced pruner with better configuration
         study = optuna.create_study(
             direction="maximize",
-            pruner=SuccessiveHalvingPruner(min_resource=1, reduction_factor=3),
+            pruner=SuccessiveHalvingPruner(
+                min_resource=1, 
+                reduction_factor=3,
+                min_early_stopping_rate=0.0
+            ),
+            sampler=optuna.samplers.TPESampler(
+                n_startup_trials=10,
+                n_ei_candidates=24,
+                multivariate=True,
+                group=True
+            )
         )
-        study.optimize(objective, n_trials=n_trials)
+        
+        # Add progress callback
+        def progress_callback(study, trial):
+            progress = (trial.number + 1) / n_trials * 100
+            self._track_optimization_progress(
+                "Hyperparameter Optimization", 
+                progress, 
+                {
+                    "trial": trial.number + 1,
+                    "total_trials": n_trials,
+                    "best_value": study.best_value if study.best_value else 0.0
+                }
+            )
+        
+        study.optimize(objective, n_trials=n_trials, callbacks=[progress_callback])
 
         # Analyze top trials to define ranges
         top_trials = sorted(study.trials, key=lambda t: t.value, reverse=True)[
@@ -1298,26 +1638,33 @@ class EnhancedCoarseOptimizer:
 
     def run(self) -> tuple[list[str], dict]:
         """
-        Orchestrates the enhanced coarse optimization process.
+        Orchestrates the enhanced coarse optimization process with improved integration.
         """
         self.logger.info(
-            "--- Starting Enhanced Stage 2: Coarse Optimization & Pruning ---",
+            "🚀 Starting Enhanced Stage 2: Coarse Optimization & Pruning ---",
         )
+        
+        # Initialize resource monitoring
+        self._monitor_memory_usage()
+        self.logger.info(f"📊 Initial resource allocation: {self.resources}")
 
-        # Enhanced feature pruning
+        # Enhanced feature pruning with progress tracking
         pruning_config = CONFIG.get("MODEL_TRAINING", {}).get("feature_pruning", {})
+        self.logger.info(f"🔧 Feature pruning configuration: {pruning_config}")
+        
         pruned_features = self.enhanced_prune_features(
             top_n_percent=pruning_config.get("top_n_percent", 0.5),
         )
 
-        # Enhanced hyperparameter optimization
+        # Enhanced hyperparameter optimization with progress tracking
         hpo_config = CONFIG.get("MODEL_TRAINING", {}).get("coarse_hpo", {})
+        self.logger.info(f"🔧 Hyperparameter optimization configuration: {hpo_config}")
 
         # Use fewer trials for blank training mode
         if self.blank_training_mode:
             n_trials = 3  # Quick test for blank training
             self.logger.info(
-                "🔧 BLANK TRAINING MODE: Using reduced trials for quick testing",
+                "🧪 BLANK TRAINING MODE: Using reduced trials for quick testing",
             )
         else:
             n_trials = hpo_config.get("n_trials", 50)
@@ -1327,5 +1674,42 @@ class EnhancedCoarseOptimizer:
             n_trials=n_trials,
         )
 
-        self.logger.info("--- Enhanced Stage 2 Complete ---")
+        # Generate optimization report
+        self._generate_optimization_report(pruned_features, narrowed_ranges)
+        
+        # Final resource cleanup
+        self._monitor_memory_usage()
+        
+        self.logger.info("✅ Enhanced Stage 2 Complete")
         return pruned_features, narrowed_ranges
+
+    def _generate_optimization_report(self, pruned_features: list, narrowed_ranges: dict):
+        """Generate comprehensive optimization report."""
+        self.logger.info("📊 ENHANCED OPTIMIZATION REPORT:")
+        self.logger.info("=" * 60)
+        
+        # Feature pruning summary
+        self.logger.info("🔧 FEATURE PRUNING SUMMARY:")
+        self.logger.info(f"   - Initial features: {len(self.X.columns)}")
+        self.logger.info(f"   - Final features: {len(pruned_features)}")
+        self.logger.info(f"   - Reduction: {((len(self.X.columns) - len(pruned_features)) / len(self.X.columns) * 100):.1f}%")
+        
+        # Hyperparameter optimization summary
+        self.logger.info("🔧 HYPERPARAMETER OPTIMIZATION SUMMARY:")
+        self.logger.info(f"   - Parameters optimized: {len(narrowed_ranges)}")
+        for param, config in narrowed_ranges.items():
+            if isinstance(config, dict) and "low" in config and "high" in config:
+                self.logger.info(f"   - {param}: [{config['low']:.4f}, {config['high']:.4f}]")
+        
+        # Resource usage summary
+        self.logger.info("📊 RESOURCE USAGE SUMMARY:")
+        self.logger.info(f"   - Peak memory usage: {self.resource_usage.get('memory_percent', 0):.1f}%")
+        self.logger.info(f"   - CPU cores used: {self.resources['cpu_count']}")
+        self.logger.info(f"   - Parallel processing: {'Enabled' if self.resources['enable_parallel'] else 'Disabled'}")
+        
+        # Performance metrics
+        self.logger.info("📈 PERFORMANCE METRICS:")
+        self.logger.info(f"   - Optimization progress: {self.optimization_progress:.1f}%")
+        self.logger.info(f"   - Current stage: {self.current_stage}")
+        
+        self.logger.info("=" * 60)

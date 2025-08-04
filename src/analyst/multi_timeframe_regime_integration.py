@@ -27,7 +27,7 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.analyst.hmm_regime_classifier import HMMRegimeClassifier
+from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from src.config import CONFIG
 from src.training.regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
 from src.utils.error_handler import handle_errors, handle_specific_errors
@@ -55,8 +55,8 @@ class MultiTimeframeRegimeIntegration:
         self.config = config
         self.logger = system_logger.getChild("MultiTimeframeRegimeIntegration")
 
-        # Initialize HMM classifier (1h only)
-        self.hmm_classifier = HMMRegimeClassifier(config)
+        # Initialize Unified regime classifier (1h only)
+        self.regime_classifier = UnifiedRegimeClassifier(config)
 
         # Initialize regime-specific TP/SL optimizer
         self.regime_tpsl_optimizer = RegimeSpecificTPSLOptimizer(config)
@@ -118,7 +118,7 @@ class MultiTimeframeRegimeIntegration:
             self.logger.info("Initializing Multi-Timeframe Regime Integration...")
 
             # Initialize HMM classifier
-            if not await self._initialize_hmm_classifier():
+            if not await self._initialize_regime_classifier():
                 self.logger.error("Failed to initialize HMM classifier")
                 return False
 
@@ -140,7 +140,7 @@ class MultiTimeframeRegimeIntegration:
             )
             return False
 
-    async def _initialize_hmm_classifier(self) -> bool:
+    async def _initialize_regime_classifier(self) -> bool:
         """
         Initialize the HMM regime classifier.
 
@@ -156,7 +156,7 @@ class MultiTimeframeRegimeIntegration:
             )
 
             if os.path.exists(model_path):
-                if self.hmm_classifier.load_model(model_path):
+                if self.regime_classifier.load_models():
                     self.logger.info("✅ Loaded existing HMM regime classifier")
                     return True
                 self.logger.warning("Failed to load existing HMM model")
@@ -202,7 +202,7 @@ class MultiTimeframeRegimeIntegration:
 
             # Check if we need to update regime (cache management)
             if self._should_update_regime():
-                regime, confidence, info = self.hmm_classifier.predict_regime(data_1h)
+                regime, confidence, info = self.regime_classifier.predict_regime(data_1h)
 
                 # Update cache
                 self.current_regime = regime
@@ -299,7 +299,7 @@ class MultiTimeframeRegimeIntegration:
                 "regime_info": regime_info,
                 "timeframe": timeframe,
                 "strategic_timeframe": "1h",
-                "regime_source": "1h_hmm_classifier",
+                "regime_source": "1h_unified_classifier",
                 "timestamp": datetime.now().isoformat(),
             }
 
@@ -465,7 +465,7 @@ class MultiTimeframeRegimeIntegration:
                 "error": str(e),
             }
 
-    async def train_hmm_classifier(self, historical_data_1h: pd.DataFrame) -> bool:
+    async def train_regime_classifier(self, historical_data_1h: pd.DataFrame) -> bool:
         """
         Train the HMM classifier using 1h historical data.
 
@@ -482,12 +482,12 @@ class MultiTimeframeRegimeIntegration:
                 self.logger.error("Invalid 1h data provided for training")
                 return False
 
-            success = self.hmm_classifier.train_classifier(historical_data_1h)
+            success = await self.regime_classifier.train_complete_system(historical_data_1h)
 
             if success:
                 self.logger.info("✅ HMM regime classifier trained successfully")
                 # Save the model
-                self.hmm_classifier.save_model()
+                # Model saving is handled automatically by UnifiedRegimeClassifier
                 return True
             self.logger.error("❌ Failed to train HMM regime classifier")
             return False
@@ -507,7 +507,7 @@ class MultiTimeframeRegimeIntegration:
             "current_regime": self.current_regime,
             "regime_confidence": self.regime_confidence,
             "last_regime_update": self.last_regime_update,
-            "hmm_trained": self.hmm_classifier.trained,
+            "regime_trained": self.regime_classifier.trained,
             "active_timeframes": self.active_timeframes,
             "strategic_timeframe": "1h",
             "regime_cache_duration_minutes": self.regime_cache_duration.total_seconds()

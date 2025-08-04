@@ -26,7 +26,7 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.analyst.feature_engineering import FeatureEngineeringEngine
+from src.analyst.feature_engineering_orchestrator import FeatureEngineeringEngine
 from src.config import CONFIG
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger

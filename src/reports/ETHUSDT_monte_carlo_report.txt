@@ -2,10 +2,14 @@
         Monte Carlo Simulation Report
         ============================
         
-        Data Points: 43058
+        Data Points: 41591
         Parameters: 13 parameters
         
         Base Portfolio Results:
         - Status: Completed
-        - Data Processed: 43058 rows
+        - Data Processed: 41591 rows
+        - Final Equity: 10000.00
+        - Total Trades: 0
+        - Sharpe Ratio: 0.00
+        - Max Drawdown: 0.00%
         

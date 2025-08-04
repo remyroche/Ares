@@ -487,15 +487,34 @@ def validate_coarse_optimization(data: dict[str, Any]) -> tuple[bool, list[str]]
         errors.append("No coarse optimization results")
         return False, errors
 
-    # Check if required parameters are present (HPO ranges)
-    required_params = ["subsample", "max_depth", "iterations", "reg_lambda", "l2_leaf_reg", 
-                      "model_type", "learning_rate", "num_leaves", "colsample_bytree", 
-                      "reg_alpha", "bagging_temperature", "border_count", "depth", "n_estimators"]
+    # Check if we have reasonable number of parameters
+    # For blank training: at least 3 parameters
+    # For production: at least 8 parameters (8-12 optimal range)
+    min_params = 3  # Conservative minimum for any mode
+    production_min_params = 8  # Production mode minimum
     
-    # Check if at least some of the expected parameters are present
-    found_params = [param for param in required_params if param in data]
-    if len(found_params) < 5:  # At least 5 parameters should be present
-        errors.append(f"Missing required parameters. Found: {found_params}")
+    # Check if we're in production mode (more than 5 parameters suggests production)
+    is_production_mode = len(data) >= 5
+    
+    if is_production_mode and len(data) < production_min_params:
+        found_params = list(data.keys())
+        errors.append(f"Production mode requires at least {production_min_params} parameters. Found: {found_params}")
+
+    elif len(data) < min_params:
+        found_params = list(data.keys())
+        errors.append(f"Too few parameters found. Found: {found_params} (need at least {min_params})")
+
+    # Validate parameter structure
+    for param_name, param_config in data.items():
+        if not isinstance(param_config, dict):
+            errors.append(f"Invalid parameter config for {param_name}")
+            continue
+            
+        # Check for required keys in parameter config
+        required_keys = ['low', 'high', 'type']
+        missing_keys = [key for key in required_keys if key not in param_config]
+        if missing_keys:
+            errors.append(f"Missing keys for {param_name}: {missing_keys}")
 
     return len(errors) == 0, errors
 

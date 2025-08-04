@@ -1,1 +1,18 @@
-Walk-forward analysis failed: 'dict' object has no attribute 'trades'
+
+        Walk-Forward Analysis Report
+        ===========================
+        
+        Data Points: 41590
+        Trading Days: 28.88
+        
+        Performance Metrics:
+        - Total Return: 0.00%
+        - Sharpe Ratio: 0.00
+        - Max Drawdown: 0.00%
+        - Win Rate: 0.00%
+        
+        Portfolio Summary:
+        - Initial Equity: 0.00
+        - Final Equity: 0.00
+        - Total Trades: 0
+        

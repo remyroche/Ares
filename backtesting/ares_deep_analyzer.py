@@ -164,6 +164,10 @@ async def run_monte_carlo_simulation(data: pd.DataFrame, params: dict) -> tuple:
         # Run base backtest
         base_portfolio = await run_backtest(data, params)
 
+        # Calculate metrics for the base portfolio
+        num_days = len(data) / 1440  # Assuming 1-minute data
+        metrics = calculate_detailed_metrics(base_portfolio, num_days)
+
         # For now, return simplified results
         mc_curves = []
         mc_report = f"""
@@ -176,6 +180,10 @@ async def run_monte_carlo_simulation(data: pd.DataFrame, params: dict) -> tuple:
         Base Portfolio Results:
         - Status: Completed
         - Data Processed: {len(data)} rows
+        - Final Equity: {metrics.get('Final Equity', 0):.2f}
+        - Total Trades: {metrics.get('Total Trades', 0)}
+        - Sharpe Ratio: {metrics.get('Sharpe Ratio', 0):.2f}
+        - Max Drawdown: {metrics.get('Max Drawdown (%)', 0):.2f}%
         """
 
         return mc_curves, base_portfolio, mc_report

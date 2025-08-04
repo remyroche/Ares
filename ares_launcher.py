@@ -34,11 +34,10 @@ Usage:
     python ares_launcher.py load --symbol ETHUSDT --exchange MEXC
     python ares_launcher.py load --symbol ETHUSDT --exchange GATEIO
 
-    # HMM regime labeling of historical data
+    # Unified Regime Classifier operations
     python ares_launcher.py regime --regime-subcommand load --symbol ETHUSDT --exchange BINANCE
-
-    # ML model training based on HMM-labeled data
     python ares_launcher.py regime --regime-subcommand train --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py regime --regime-subcommand train_blank --symbol ETHUSDT --exchange BINANCE
 
     # Live trading for all tokens + portfolio manager
     python ares_launcher.py portfolio
@@ -878,9 +877,9 @@ class AresLauncher:
             download_cmd = [
                 sys.executable,
                 download_script,
-                symbol,
-                exchange,
-                str(lookback_days)
+                "--symbol", symbol,
+                "--exchange", exchange,
+                "--lookback-years", str(lookback_days // 365)
             ]
             
             self.logger.info(f"🔧 Running download command: {' '.join(download_cmd)}")
@@ -953,59 +952,108 @@ class AresLauncher:
 
         try:
             self.logger.info(f"📦 Importing required modules...")
-            # Import HMMRegimeClassifier
-            from src.analyst.hmm_regime_classifier import HMMRegimeClassifier
+            # Import UnifiedRegimeClassifier
+            from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
             from src.config import CONFIG
             self.logger.info(f"✅ Modules imported successfully")
             
-            self.logger.info(f"🔧 Initializing HMM classifier...")
-            # Initialize HMM classifier
-            hmm_classifier = HMMRegimeClassifier(CONFIG)
-            self.logger.info(f"✅ HMM classifier initialized successfully")
+            self.logger.info(f"🔧 Initializing unified regime classifier...")
+            # Initialize unified regime classifier
+            regime_classifier = UnifiedRegimeClassifier(CONFIG)
+            self.logger.info(f"✅ Unified regime classifier initialized successfully")
             
             if subcommand == "load":
-                print(f"🚀 Starting HMM labeling for {symbol} on {exchange}...")
-                success = await hmm_classifier.label_historical_data(symbol, exchange)
+                print(f"🚀 Starting unified regime classifier training for {symbol} on {exchange}...")
+                
+                # Load historical data from data directory
+                data_file = f"data/{symbol}_1h.csv"
+                if not os.path.exists(data_file):
+                    self.logger.error(f"❌ Data file not found: {data_file}")
+                    print(f"❌ Data file not found: {data_file}")
+                    print("Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE")
+                    return False
+                
+                from src.analyst.data_utils import load_klines_data
+                historical_data = load_klines_data(data_file)
+                
+                if historical_data is None or historical_data.empty:
+                    self.logger.error("❌ Failed to load historical data")
+                    print("❌ Failed to load historical data")
+                    return False
+                
+                # Train unified regime classifier
+                success = await regime_classifier.train_complete_system(historical_data)
                 
                 if success:
-                    self.logger.info("✅ HMM labeling completed successfully")
-                    print("✅ HMM labeling completed successfully")
+                    self.logger.info("✅ Unified regime classifier training completed successfully")
+                    print("✅ Unified regime classifier training completed successfully")
                     return True
                 else:
-                    self.logger.error("❌ HMM labeling failed")
-                    print("❌ HMM labeling failed")
+                    self.logger.error("❌ Unified regime classifier training failed")
+                    print("❌ Unified regime classifier training failed")
                     return False
 
             elif subcommand == "train":
-                self.logger.info(f"🚀 Starting ML model training for {symbol} on {exchange} (2 years data)...")
+                self.logger.info(f"🚀 Starting unified regime classifier training for {symbol} on {exchange} (2 years data)...")
                 self.logger.info(f"📊 Training configuration:")
                 self.logger.info(f"   - Symbol: {symbol}")
                 self.logger.info(f"   - Exchange: {exchange}")
                 self.logger.info(f"   - Lookback years: 2")
                 self.logger.info(f"   - Target timeframe: 1h")
-                print(f"🚀 Starting ML model training for {symbol} on {exchange} (2 years data)...")
-                success = await hmm_classifier.train_ml_model(symbol, exchange, lookback_years=2)
+                print(f"🚀 Starting unified regime classifier training for {symbol} on {exchange} (2 years data)...")
+                
+                # Load historical data from data directory
+                data_file = f"data/{symbol}_1h.csv"
+                if not os.path.exists(data_file):
+                    self.logger.error(f"❌ Data file not found: {data_file}")
+                    print(f"❌ Data file not found: {data_file}")
+                    print("Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE")
+                    return False
+                
+                from src.analyst.data_utils import load_klines_data
+                historical_data = load_klines_data(data_file)
+                
+                if historical_data is None or historical_data.empty:
+                    self.logger.error("❌ Failed to load historical data")
+                    print("❌ Failed to load historical data")
+                    return False
+                
+                # Train unified regime classifier
+                success = await regime_classifier.train_complete_system(historical_data)
                 
                 if success:
-                    self.logger.info("✅ ML model training completed successfully")
-                    print("✅ ML model training completed successfully")
+                    self.logger.info("✅ Unified regime classifier training completed successfully")
+                    print("✅ Unified regime classifier training completed successfully")
                     return True
                 else:
-                    self.logger.error("❌ ML model training failed")
-                    print("❌ ML model training failed")
+                    self.logger.error("❌ Unified regime classifier training failed")
+                    print("❌ Unified regime classifier training failed")
                     return False
                     
             elif subcommand == "train_blank":
-                print(f"🚀 Starting ML model training for {symbol} on {exchange} (2 months data)...")
-                success = await hmm_classifier.train_ml_model(symbol, exchange, lookback_years=0.167, training_min_data_points=500)  # ~2 months with reduced minimum
+                print(f"🚀 Starting unified regime classifier training for {symbol} on {exchange} (30 days data)...")
+                
+                # Load historical data
+                from src.analyst.data_utils import load_klines_data
+                
+                # Load 30 days of data for quick training
+                historical_data = await load_klines_data(symbol, exchange, lookback_days=30)
+                
+                if historical_data is None or historical_data.empty:
+                    self.logger.error("❌ Failed to load historical data")
+                    print("❌ Failed to load historical data")
+                    return False
+                
+                # Train unified regime classifier
+                success = await regime_classifier.train_complete_system(historical_data)
                 
                 if success:
-                    self.logger.info("✅ ML model training completed successfully")
-                    print("✅ ML model training completed successfully")
+                    self.logger.info("✅ Unified regime classifier training completed successfully")
+                    print("✅ Unified regime classifier training completed successfully")
                     return True
                 else:
-                    self.logger.error("❌ ML model training failed")
-                    print("❌ ML model training failed")
+                    self.logger.error("❌ Unified regime classifier training failed")
+                    print("❌ Unified regime classifier training failed")
                     return False
 
             else:
@@ -1101,7 +1149,7 @@ Examples:
         "--regime-subcommand",
         type=str,
         choices=["load", "train", "train_blank"],
-        help="Regime subcommand: 'load' to label historical data using HMM, 'train' to train ML model on 2 years data, 'train_blank' to train on 30 days data",
+        help="Regime subcommand: 'load' to train unified regime classifier on 2 years data, 'train' to train on 2 years data, 'train_blank' to train on 30 days data",
     )
 
     parser.add_argument(

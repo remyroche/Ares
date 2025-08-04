@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
-from pandas.core.dtypes.dtypes import datetime  # Ensure Union is imported
+import pandas as pd
+import numpy as np
 
 from src.utils.error_handler import (
     handle_errors,
@@ -12,7 +13,15 @@ from src.utils.logger import system_logger
 
 class Strategist:
     """
-    Enhanced strategist with comprehensive error handling and type safety.
+    Enhanced strategist that orchestrates ML regime classification and model selection.
+    
+    Main responsibilities:
+    1. Run ML regime classifying model
+    2. Determine market regimes (bullish, bearish, sideways, SR, candle)
+    3. Based on regime, run proper ML model with ml_confidence_predictor.py
+    4. Pass information to Analyst and collect volatility data for tactician/position_sizer.py
+    
+    Note: Position sizing is entirely handled by tactician/position_sizer.py
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -29,6 +38,8 @@ class Strategist:
         self.current_strategy: dict[str, Any] | None = None
         self.strategy_history: list[dict[str, Any]] = []
         self.last_strategy_update: datetime | None = None
+        self.current_regime: str | None = None
+        self.regime_confidence: float = 0.0
 
         # Configuration
         self.strategy_config: dict[str, Any] = self.config.get("strategist", {})
@@ -42,17 +53,17 @@ class Strategist:
             "max_drawdown": 0.0,
         }
         
-        # SR Analyzer integration
-        self.sr_analyzer = None
-        self.enable_sr_strategy: bool = self.strategy_config.get("enable_sr_strategy", True)
+        # ML Regime Classifier integration
+        self.regime_classifier = None
+        self.enable_regime_classification: bool = self.strategy_config.get("enable_regime_classification", True)
         
-        # SR Breakout Predictor integration
-        self.sr_breakout_predictor = None
-        self.enable_sr_breakout_strategy: bool = self.strategy_config.get("enable_sr_breakout_strategy", True)
+        # ML Confidence Predictor integration
+        self.ml_confidence_predictor = None
+        self.enable_ml_predictions: bool = self.strategy_config.get("enable_ml_predictions", True)
         
-        # ML Prediction integration
-        self.ml_predictions = None
-        self.enable_ml_strategy: bool = self.strategy_config.get("enable_ml_strategy", True)
+        # Volatility targeting information (passed to tactician)
+        self.volatility_info = None
+        self.enable_volatility_targeting: bool = self.strategy_config.get("enable_volatility_targeting", True)
 
     @handle_specific_errors(
         error_handlers={
@@ -79,17 +90,16 @@ class Strategist:
             # Initialize risk management
             await self._initialize_risk_management()
 
-            # Initialize SR analyzer
-            if self.enable_sr_strategy:
-                await self._initialize_sr_analyzer()
+            # Initialize ML Regime Classifier
+            if self.enable_regime_classification:
+                await self._initialize_regime_classifier()
                 
-            # Initialize SR Breakout Predictor
-            if self.enable_sr_breakout_strategy:
-                await self._initialize_sr_breakout_predictor()
+            # Initialize ML Confidence Predictor
+            if self.enable_ml_predictions:
+                await self._initialize_ml_confidence_predictor()
 
-            # Initialize ML strategy
-            if self.enable_ml_strategy:
-                await self._initialize_ml_strategy()
+            # Note: Volatility targeting is handled by tactician/position_sizer.py
+            # Strategist only collects volatility information to pass to tactician
 
             # Validate configuration
             if not self._validate_configuration():
@@ -116,6 +126,7 @@ class Strategist:
             self.strategy_config.setdefault("max_daily_trades", 10)
             self.strategy_config.setdefault("min_confidence_threshold", 0.6)
             self.strategy_config.setdefault("strategy_timeout_seconds", 30)
+            self.strategy_config.setdefault("regime_update_interval", 300)  # 5 minutes
 
             self.logger.info("Strategy configuration loaded successfully")
 
@@ -125,53 +136,46 @@ class Strategist:
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="SR analyzer initialization",
+        context="ML regime classifier initialization",
     )
-    async def _initialize_sr_analyzer(self) -> None:
-        """Initialize SR analyzer for strategy generation."""
+    async def _initialize_regime_classifier(self) -> None:
+        """Initialize ML Regime Classifier for market regime determination."""
         try:
-            from src.analyst.sr_analyzer import SRLevelAnalyzer
+            from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
             
-            self.sr_analyzer = SRLevelAnalyzer(self.config)
-            await self.sr_analyzer.initialize()
-            self.logger.info("✅ SR analyzer initialized for strategy generation")
-        except Exception as e:
-            self.logger.error(f"Error initializing SR analyzer: {e}")
-            self.sr_analyzer = None
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="SR breakout predictor initialization",
-    )
-    async def _initialize_sr_breakout_predictor(self) -> None:
-        """Initialize SR Breakout Predictor for strategy generation."""
-        try:
-            from src.analyst.sr_breakout_predictor import SRBreakoutPredictor
-            self.sr_breakout_predictor = SRBreakoutPredictor(self.config)
-            await self.sr_breakout_predictor.initialize()
-            self.logger.info("✅ SR Breakout Predictor initialized for strategy generation")
-        except Exception as e:
-            self.logger.error(f"Error initializing SR Breakout Predictor: {e}")
-            self.sr_breakout_predictor = None
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="ML strategy initialization",
-    )
-    async def _initialize_ml_strategy(self) -> None:
-        """Initialize ML strategy for strategy generation."""
-        try:
-            self.logger.info("Initializing ML strategy...")
-            
-            # ML strategy will be initialized when predictions are received
-            self.ml_predictions = {}
-            self.logger.info("✅ ML strategy initialized for strategy generation")
+            self.regime_classifier = UnifiedRegimeClassifier(self.config)
+            if not self.regime_classifier.load_models():
+                self.logger.info("No existing regime classifier models found. Will train when needed.")
+            else:
+                self.logger.info("✅ ML Regime Classifier initialized successfully")
                 
         except Exception as e:
-            self.logger.error(f"Error initializing ML strategy: {e}")
-            self.ml_predictions = None
+            self.logger.error(f"Error initializing ML Regime Classifier: {e}")
+            self.regime_classifier = None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="ML confidence predictor initialization",
+    )
+    async def _initialize_ml_confidence_predictor(self) -> None:
+        """Initialize ML Confidence Predictor for regime-specific predictions."""
+        try:
+            from src.analyst.ml_confidence_predictor import setup_ml_confidence_predictor
+            
+            self.ml_confidence_predictor = await setup_ml_confidence_predictor(self.config)
+            if self.ml_confidence_predictor:
+                await self.ml_confidence_predictor.initialize()
+                self.logger.info("✅ ML Confidence Predictor initialized successfully")
+            else:
+                self.logger.error("❌ Failed to initialize ML Confidence Predictor")
+                
+        except Exception as e:
+            self.logger.error(f"Error initializing ML Confidence Predictor: {e}")
+            self.ml_confidence_predictor = None
+
+    # Volatility targeting is handled by tactician/position_sizer.py
+    # This method is removed as volatility targeting decisions belong to the tactician
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -245,13 +249,15 @@ class Strategist:
     )
     async def generate_strategy(
         self,
-        market_intelligence: dict[str, Any] | None = None,
+        market_data: pd.DataFrame,
+        current_price: float,
     ) -> dict[str, Any] | None:
         """
-        Generate trading strategy with enhanced error handling.
+        Generate trading strategy based on ML regime classification and predictions.
 
         Args:
-            market_intelligence: Optional market intelligence data
+            market_data: Market data DataFrame with OHLCV
+            current_price: Current market price
 
         Returns:
             Optional[Dict[str, Any]]: Generated strategy or None if failed
@@ -259,54 +265,31 @@ class Strategist:
         try:
             self.logger.info("Generating trading strategy...")
 
-            # Validate market intelligence
-            if not self._validate_market_intelligence(market_intelligence):
-                self.logger.warning(
-                    "Invalid market intelligence, using default strategy",
-                )
-                market_intelligence = self._get_default_market_intelligence()
-
-            # Generate strategy components
-            entry_signals = await self._generate_entry_signals(market_intelligence)
-            exit_signals = await self._generate_exit_signals(market_intelligence)
-            risk_parameters = await self._calculate_risk_parameters(market_intelligence)
-            position_sizing = await self._calculate_position_sizing(market_intelligence)
-
-            # Generate SR-based strategy components
-            sr_strategy = None
-            if self.enable_sr_strategy and self.sr_analyzer:
-                sr_strategy = await self._generate_sr_strategy(market_intelligence)
-                
-            # Generate SR Breakout strategy components
-            sr_breakout_strategy = None
-            if self.enable_sr_breakout_strategy and self.sr_breakout_predictor:
-                sr_breakout_strategy = await self._generate_sr_breakout_strategy(market_intelligence)
-
-            # Generate ML strategy components
-            ml_strategy = None
-            if self.enable_ml_strategy:
-                ml_strategy = await self._generate_ml_strategy(market_intelligence)
-
-            # Combine into comprehensive strategy
-            strategy = {
-                "entry_signals": entry_signals,
-                "exit_signals": exit_signals,
-                "risk_parameters": risk_parameters,
-                "position_sizing": position_sizing,
-                "sr_strategy": sr_strategy,
-                "sr_breakout_strategy": sr_breakout_strategy,
-                "ml_strategy": ml_strategy,
-                "confidence_score": self._calculate_confidence_score(
-                    market_intelligence,
-                ),
-                "generation_time": datetime.now(),
-                "valid_until": datetime.now() + timedelta(minutes=30),
-            }
-
-            # Validate strategy
-            if not self._validate_strategy(strategy):
-                self.logger.error("Generated strategy validation failed")
+            # Step 1: Run ML regime classification
+            regime_info = await self._classify_market_regime(market_data)
+            if not regime_info:
+                self.logger.error("Failed to classify market regime")
                 return None
+
+            # Step 2: Determine market regime and update state
+            self.current_regime = regime_info["regime"]
+            self.regime_confidence = regime_info["confidence"]
+            
+            self.logger.info(f"📊 Current market regime: {self.current_regime} (confidence: {self.regime_confidence:.2f})")
+
+            # Step 3: Run appropriate ML model based on regime
+            ml_predictions = await self._run_regime_specific_ml_model(market_data, current_price, regime_info)
+            if not ml_predictions:
+                self.logger.warning("No ML predictions available, using fallback strategy")
+                ml_predictions = self._generate_fallback_predictions(current_price)
+
+            # Step 4: Collect volatility information for tactician
+            volatility_info = await self._collect_volatility_info(market_data)
+
+            # Step 5: Generate comprehensive strategy (volatility decisions handled by tactician)
+            strategy = await self._generate_comprehensive_strategy(
+                regime_info, ml_predictions, volatility_info, current_price
+            )
 
             # Update strategy state
             self.current_strategy = strategy
@@ -322,71 +305,481 @@ class Strategist:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="market intelligence validation",
+        default_return=None,
+        context="market regime classification",
     )
-    def _validate_market_intelligence(
-        self,
-        market_intelligence: dict[str, Any] | None,
-    ) -> bool:
+    async def _classify_market_regime(self, market_data: pd.DataFrame) -> dict[str, Any] | None:
         """
-        Validate market intelligence data.
+        Classify the current market regime using ML regime classifier.
 
         Args:
-            market_intelligence: Market intelligence data to validate
+            market_data: Market data DataFrame
 
         Returns:
-            bool: True if valid, False otherwise
+            Optional[Dict[str, Any]]: Regime classification results
         """
         try:
-            if not market_intelligence:
-                return False
+            if not self.regime_classifier:
+                self.logger.error("Regime classifier not initialized")
+                return None
 
-            required_keys = [
-                "market_regime",
-                "volatility",
-                "trend_direction",
-                "support_resistance",
-            ]
-            for key in required_keys:
-                if key not in market_intelligence:
-                    self.logger.warning(f"Missing market intelligence key: {key}")
-                    return False
+            # Check if regime classifier is trained
+            if not self.regime_classifier.trained:
+                self.logger.info("Regime classifier not trained. Training now...")
+                success = await self.regime_classifier.train_complete_system(market_data)
+                if not success:
+                    self.logger.error("Failed to train regime classifier")
+                    return None
 
-            return True
+            # Predict regime
+            regime, confidence, additional_info = self.regime_classifier.predict_regime(market_data)
+            
+            regime_info = {
+                "regime": regime,
+                "confidence": confidence,
+                "additional_info": additional_info,
+                "classification_time": datetime.now(),
+                "system_status": self.regime_classifier.get_system_status()
+            }
+
+            self.logger.info(f"🎯 Market regime classified as: {regime} (confidence: {confidence:.2f})")
+            return regime_info
 
         except Exception as e:
-            self.logger.error(f"Error validating market intelligence: {e}")
-            return False
+            self.logger.error(f"Error classifying market regime: {e}")
+            return None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="default market intelligence",
+        context="regime-specific ML model execution",
     )
-    def _get_default_market_intelligence(self) -> dict[str, Any]:
+    async def _run_regime_specific_ml_model(
+        self, 
+        market_data: pd.DataFrame, 
+        current_price: float,
+        regime_info: dict[str, Any]
+    ) -> dict[str, Any] | None:
         """
-        Get default market intelligence when actual data is unavailable.
+        Run the appropriate ML model based on the current market regime.
+
+        Args:
+            market_data: Market data DataFrame
+            current_price: Current market price
+            regime_info: Regime classification information
 
         Returns:
-            Dict[str, Any]: Default market intelligence
+            Optional[Dict[str, Any]]: ML predictions
         """
         try:
-            return {
-                "market_regime": "neutral",
-                "volatility": 0.02,
-                "trend_direction": "sideways",
-                "support_resistance": {"support_levels": [], "resistance_levels": []},
-                "technical_indicators": {
-                    "rsi": 50.0,
-                    "macd": 0.0,
-                    "bollinger_bands": {"upper": 1.0, "middle": 1.0, "lower": 1.0},
-                },
-            }
+            if not self.ml_confidence_predictor:
+                self.logger.error("ML confidence predictor not initialized")
+                return None
+
+            regime = regime_info["regime"]
+            confidence = regime_info["confidence"]
+
+            # Adjust prediction parameters based on regime
+            prediction_params = self._get_regime_specific_prediction_params(regime, confidence)
+            
+            # Run ML confidence prediction
+            ml_predictions = await self.ml_confidence_predictor.predict_confidence_table(
+                market_data, current_price
+            )
+
+            if ml_predictions:
+                # Add regime-specific adjustments
+                ml_predictions["regime"] = regime
+                ml_predictions["regime_confidence"] = confidence
+                ml_predictions["prediction_params"] = prediction_params
+                ml_predictions["regime_adjustments"] = self._apply_regime_adjustments(
+                    ml_predictions, regime, confidence
+                )
+
+            return ml_predictions
 
         except Exception as e:
-            self.logger.error(f"Error creating default market intelligence: {e}")
+            self.logger.error(f"Error running regime-specific ML model: {e}")
+            return None
+
+    def _get_regime_specific_prediction_params(self, regime: str, confidence: float) -> dict[str, Any]:
+        """
+        Get regime-specific prediction parameters.
+
+        Args:
+            regime: Current market regime
+            confidence: Regime classification confidence
+
+        Returns:
+            Dict[str, Any]: Regime-specific parameters
+        """
+        try:
+            base_params = {
+                "confidence_threshold": 0.6,
+                "risk_adjustment": 1.0,
+                "position_size_multiplier": 1.0,
+                "stop_loss_multiplier": 1.0,
+                "take_profit_multiplier": 1.0,
+            }
+
+            # Adjust parameters based on regime
+            if regime == "BULL":
+                base_params.update({
+                    "confidence_threshold": 0.5,  # Lower threshold for bullish markets
+                    "position_size_multiplier": 1.2,
+                    "take_profit_multiplier": 1.3,
+                })
+            elif regime == "BEAR":
+                base_params.update({
+                    "confidence_threshold": 0.7,  # Higher threshold for bearish markets
+                    "risk_adjustment": 0.8,
+                    "position_size_multiplier": 0.8,
+                    "stop_loss_multiplier": 0.8,
+                })
+            elif regime == "SIDEWAYS":
+                base_params.update({
+                    "confidence_threshold": 0.65,
+                    "position_size_multiplier": 0.9,
+                    "take_profit_multiplier": 0.9,
+                })
+            elif regime == "HUGE_CANDLE":
+                base_params.update({
+                    "confidence_threshold": 0.8,  # Very high threshold for huge candle regimes
+                    "risk_adjustment": 0.6,
+                    "position_size_multiplier": 0.5,
+                    "stop_loss_multiplier": 0.7,
+                })
+            elif regime == "SR_ZONE_ACTION":
+                base_params.update({
+                    "confidence_threshold": 0.75,
+                    "position_size_multiplier": 1.1,
+                    "take_profit_multiplier": 1.2,
+                })
+
+            # Adjust based on confidence
+            if confidence < 0.5:
+                base_params["position_size_multiplier"] *= 0.8
+                base_params["risk_adjustment"] *= 0.8
+
+            return base_params
+
+        except Exception as e:
+            self.logger.error(f"Error getting regime-specific parameters: {e}")
+            return {"confidence_threshold": 0.6, "risk_adjustment": 1.0}
+
+    def _apply_regime_adjustments(
+        self, 
+        ml_predictions: dict[str, Any], 
+        regime: str, 
+        confidence: float
+    ) -> dict[str, Any]:
+        """
+        Apply regime-specific adjustments to ML predictions.
+
+        Args:
+            ml_predictions: Original ML predictions
+            regime: Current market regime
+            confidence: Regime confidence
+
+        Returns:
+            Dict[str, Any]: Adjusted predictions
+        """
+        try:
+            adjustments = {
+                "confidence_scores_adjusted": {},
+                "expected_decreases_adjusted": {},
+                "position_sizing_adjusted": {},
+                "risk_parameters_adjusted": {},
+            }
+
+            # Adjust confidence scores based on regime
+            confidence_scores = ml_predictions.get("confidence_scores", {})
+            for level, score in confidence_scores.items():
+                if regime == "BULL":
+                    adjusted_score = min(1.0, score * 1.1)  # Boost confidence in bullish regime
+                elif regime == "BEAR":
+                    adjusted_score = score * 0.9  # Reduce confidence in bearish regime
+                elif regime == "HUGE_CANDLE":
+                    adjusted_score = score * 0.8  # Significantly reduce confidence
+                else:
+                    adjusted_score = score
+                
+                adjustments["confidence_scores_adjusted"][level] = adjusted_score
+
+            # Adjust expected decreases based on regime
+            expected_decreases = ml_predictions.get("expected_decreases", {})
+            for level, prob in expected_decreases.items():
+                if regime == "BEAR":
+                    adjusted_prob = min(1.0, prob * 1.2)  # Increase bearish probability
+                elif regime == "BULL":
+                    adjusted_prob = prob * 0.8  # Decrease bearish probability
+                else:
+                    adjusted_prob = prob
+                
+                adjustments["expected_decreases_adjusted"][level] = adjusted_prob
+
+            # Apply confidence multiplier
+            confidence_multiplier = confidence if confidence > 0.5 else 0.5
+            for key in ["confidence_scores_adjusted", "expected_decreases_adjusted"]:
+                for level in adjustments[key]:
+                    adjustments[key][level] *= confidence_multiplier
+
+            return adjustments
+
+        except Exception as e:
+            self.logger.error(f"Error applying regime adjustments: {e}")
             return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="volatility information collection",
+    )
+    async def _collect_volatility_info(self, market_data: pd.DataFrame) -> dict[str, Any] | None:
+        """
+        Collect volatility information for tactician/position_sizer.py.
+        Note: Actual volatility targeting decisions are made by the tactician.
+
+        Args:
+            market_data: Market data DataFrame
+
+        Returns:
+            Optional[Dict[str, Any]]: Volatility information for tactician
+        """
+        try:
+            # Calculate basic volatility metrics for tactician
+            returns = market_data['close'].pct_change().dropna()
+            current_volatility = returns.std() * np.sqrt(252)  # Annualized volatility
+            
+            # Calculate additional volatility metrics
+            volatility_info = {
+                "current_volatility": current_volatility,
+                "volatility_percentile": self._calculate_volatility_percentile(returns),
+                "volatility_trend": self._calculate_volatility_trend(returns),
+                "market_data": {
+                    "returns": returns.tolist()[-20:],  # Last 20 returns
+                    "price_data": market_data[['open', 'high', 'low', 'close', 'volume']].tail(20).to_dict('records'),
+                },
+                "calculation_time": datetime.now(),
+                "note": "Volatility targeting decisions handled by tactician/position_sizer.py"
+            }
+
+            self.logger.info(f"📊 Collected volatility info - Current volatility: {current_volatility:.3f}")
+            return volatility_info
+
+        except Exception as e:
+            self.logger.error(f"Error collecting volatility info: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="comprehensive strategy generation",
+    )
+    async def _generate_comprehensive_strategy(
+        self,
+        regime_info: dict[str, Any],
+        ml_predictions: dict[str, Any],
+        volatility_info: dict[str, Any],
+        current_price: float,
+    ) -> dict[str, Any] | None:
+        """
+        Generate comprehensive strategy combining all components.
+
+        Args:
+            regime_info: Market regime information
+            ml_predictions: ML predictions
+            volatility_info: Volatility targeting information
+            current_price: Current market price
+
+        Returns:
+            Optional[Dict[str, Any]]: Comprehensive strategy
+        """
+        try:
+            # Calculate risk parameters
+            risk_parameters = await self._calculate_risk_parameters(regime_info, volatility_info)
+            
+            # Note: All position sizing handled by tactician/position_sizer.py
+            
+            # Generate entry signals
+            entry_signals = await self._generate_entry_signals(regime_info, ml_predictions)
+            
+            # Generate exit signals
+            exit_signals = await self._generate_exit_signals(regime_info, ml_predictions)
+
+            # Combine into comprehensive strategy
+            strategy = {
+                "regime_info": regime_info,
+                "ml_predictions": ml_predictions,
+                "volatility_info": volatility_info,  # Passed to tactician for position sizing
+                "entry_signals": entry_signals,
+                "exit_signals": exit_signals,
+                "risk_parameters": risk_parameters,
+                "position_sizing_note": "All position sizing handled by tactician/position_sizer.py",
+                "confidence_score": self._calculate_confidence_score(regime_info, ml_predictions),
+                "generation_time": datetime.now(),
+                "valid_until": datetime.now() + timedelta(minutes=30),
+                "strategy_metadata": {
+                    "regime": regime_info["regime"],
+                    "regime_confidence": regime_info["confidence"],
+                    "ml_model_used": "ml_confidence_predictor",
+                    "volatility_info_collected": self.enable_volatility_targeting,
+                    "note": "Volatility targeting decisions handled by tactician/position_sizer.py"
+                }
+            }
+
+            # Validate strategy
+            if not self._validate_strategy(strategy):
+                self.logger.error("Generated strategy validation failed")
+                return None
+
+            return strategy
+
+        except Exception as e:
+            self.logger.error(f"Error generating comprehensive strategy: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="risk parameter calculation",
+    )
+    async def _calculate_risk_parameters(
+        self,
+        regime_info: dict[str, Any],
+        volatility_info: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """
+        Calculate risk parameters based on regime and volatility.
+
+        Args:
+            regime_info: Market regime information
+            volatility_info: Volatility targeting information
+
+        Returns:
+            Optional[Dict[str, Any]]: Risk parameters
+        """
+        try:
+            regime = regime_info["regime"]
+            regime_confidence = regime_info["confidence"]
+
+            # Base risk parameters
+            risk_params = {
+                "max_daily_loss": self.risk_config["max_daily_loss"],
+                "stop_loss_distance": 0.01,  # 1% base stop loss
+                "take_profit_distance": 0.02,  # 2% base take profit
+                "max_correlation": self.risk_config["max_correlation"],
+                "note": "Position sizing handled by tactician/position_sizer.py"
+            }
+
+            # Adjust based on regime
+            if regime == "BEAR":
+                risk_params["stop_loss_distance"] *= 0.8  # Tighter stop loss
+                risk_params["take_profit_distance"] *= 0.7  # Lower take profit
+            elif regime == "BULL":
+                risk_params["take_profit_distance"] *= 1.3  # Higher take profit
+            elif regime == "HUGE_CANDLE":
+                risk_params["stop_loss_distance"] *= 0.6  # Very tight stop loss
+                risk_params["take_profit_distance"] *= 0.5  # Lower take profit
+
+            # Note: Volatility-based position sizing handled by tactician/position_sizer.py
+            # This provides basic risk parameters for the tactician to use
+
+            # Adjust based on regime confidence
+            if regime_confidence < 0.5:
+                risk_params["stop_loss_distance"] *= 0.9
+
+            return risk_params
+
+        except Exception as e:
+            self.logger.error(f"Error calculating risk parameters: {e}")
+            return None
+
+    # Position sizing is entirely handled by tactician/position_sizer.py
+    # This method is removed as position sizing decisions belong to the tactician
+
+    def _calculate_volatility_percentile(self, returns: pd.Series) -> float:
+        """
+        Calculate volatility percentile based on historical data.
+        
+        Args:
+            returns: Price returns series
+            
+        Returns:
+            float: Volatility percentile (0-1)
+        """
+        try:
+            if len(returns) < 20:
+                return 0.5  # Default to median if insufficient data
+                
+            # Calculate rolling volatility
+            rolling_vol = returns.rolling(window=20).std() * np.sqrt(252)
+            current_vol = rolling_vol.iloc[-1]
+            
+            # Calculate percentile
+            percentile = (rolling_vol < current_vol).mean()
+            return float(percentile)
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating volatility percentile: {e}")
+            return 0.5
+
+    def _calculate_volatility_trend(self, returns: pd.Series) -> str:
+        """
+        Calculate volatility trend direction.
+        
+        Args:
+            returns: Price returns series
+            
+        Returns:
+            str: Trend direction ('increasing', 'decreasing', 'stable')
+        """
+        try:
+            if len(returns) < 40:
+                return 'stable'  # Default if insufficient data
+                
+            # Calculate rolling volatility
+            rolling_vol = returns.rolling(window=20).std() * np.sqrt(252)
+            
+            # Compare recent vs earlier volatility
+            recent_vol = rolling_vol.tail(10).mean()
+            earlier_vol = rolling_vol.head(10).mean()
+            
+            if recent_vol > earlier_vol * 1.1:
+                return 'increasing'
+            elif recent_vol < earlier_vol * 0.9:
+                return 'decreasing'
+            else:
+                return 'stable'
+                
+        except Exception as e:
+            self.logger.error(f"Error calculating volatility trend: {e}")
+            return 'stable'
+
+    def _get_regime_adjustment(self, regime: str) -> float:
+        """
+        Get position size adjustment based on market regime.
+
+        Args:
+            regime: Market regime string
+
+        Returns:
+            float: Position size adjustment multiplier
+        """
+        try:
+            regime_adjustments = {
+                "BULL": 1.2,  # Increase position size in bullish regime
+                "BEAR": 0.8,  # Decrease position size in bearish regime
+                "SIDEWAYS": 1.0,  # No adjustment in sideways regime
+                "HUGE_CANDLE": 0.5,  # Significantly reduce position size
+                "SR_ZONE_ACTION": 1.1,  # Slight increase for SR action
+            }
+
+            return regime_adjustments.get(regime, 1.0)
+
+        except Exception as e:
+            self.logger.error(f"Error calculating regime adjustment: {e}")
+            return 1.0
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -395,21 +788,23 @@ class Strategist:
     )
     async def _generate_entry_signals(
         self,
-        market_intelligence: dict[str, Any],
+        regime_info: dict[str, Any],
+        ml_predictions: dict[str, Any],
     ) -> dict[str, Any] | None:
         """
-        Generate entry signals based on market intelligence.
+        Generate entry signals based on regime and ML predictions.
 
         Args:
-            market_intelligence: Market intelligence data
+            regime_info: Market regime information
+            ml_predictions: ML predictions
 
         Returns:
-            Optional[Dict[str, Any]]: Entry signals or None
+            Optional[Dict[str, Any]]: Entry signals
         """
         try:
-            regime = market_intelligence.get("market_regime", "neutral")
-            trend = market_intelligence.get("trend_direction", "sideways")
-            volatility = market_intelligence.get("volatility", 0.02)
+            regime = regime_info["regime"]
+            confidence_scores = ml_predictions.get("confidence_scores", {})
+            expected_decreases = ml_predictions.get("expected_decreases", {})
 
             entry_signals = {
                 "long_conditions": [],
@@ -418,31 +813,33 @@ class Strategist:
                 "timeframe": "1m",
             }
 
-            # Generate long entry conditions
-            if trend == "bullish" and regime in ["bull", "neutral"]:
-                entry_signals["long_conditions"].append(
-                    {
-                        "type": "trend_following",
-                        "condition": "price_above_ma",
-                        "confidence": 0.7,
-                    },
-                )
+            # Generate long entry conditions based on ML confidence
+            for increase_level, confidence in confidence_scores.items():
+                if confidence >= 0.7:  # High confidence threshold
+                    entry_signals["long_conditions"].append({
+                        "type": "ml_high_confidence",
+                        "confidence": confidence,
+                        "price_increase_target": float(increase_level),
+                        "regime": regime,
+                    })
 
-            # Generate short entry conditions
-            if trend == "bearish" and regime in ["bear", "neutral"]:
-                entry_signals["short_conditions"].append(
-                    {
-                        "type": "trend_following",
-                        "condition": "price_below_ma",
-                        "confidence": 0.7,
-                    },
-                )
+            # Generate short entry conditions based on expected decreases
+            for decrease_level, probability in expected_decreases.items():
+                if probability >= 0.7:  # High probability threshold
+                    entry_signals["short_conditions"].append({
+                        "type": "ml_high_probability_decrease",
+                        "probability": probability,
+                        "price_decrease_target": float(decrease_level),
+                        "regime": regime,
+                    })
 
-            # Adjust confidence based on volatility
-            if volatility > 0.03:
-                entry_signals["confidence"] *= (
-                    0.8  # Reduce confidence in high volatility
-                )
+            # Adjust confidence based on regime
+            if regime == "BULL":
+                entry_signals["confidence"] *= 1.1
+            elif regime == "BEAR":
+                entry_signals["confidence"] *= 0.9
+            elif regime == "HUGE_CANDLE":
+                entry_signals["confidence"] *= 0.7
 
             return entry_signals
 
@@ -457,19 +854,22 @@ class Strategist:
     )
     async def _generate_exit_signals(
         self,
-        market_intelligence: dict[str, Any],
+        regime_info: dict[str, Any],
+        ml_predictions: dict[str, Any],
     ) -> dict[str, Any] | None:
         """
-        Generate exit signals based on market intelligence.
+        Generate exit signals based on regime and ML predictions.
 
         Args:
-            market_intelligence: Market intelligence data
+            regime_info: Market regime information
+            ml_predictions: ML predictions
 
         Returns:
-            Optional[Dict[str, Any]]: Exit signals or None
+            Optional[Dict[str, Any]]: Exit signals
         """
         try:
-            volatility = market_intelligence.get("volatility", 0.02)
+            regime = regime_info["regime"]
+            expected_decreases = ml_predictions.get("expected_decreases", {})
 
             exit_signals = {
                 "take_profit_levels": [],
@@ -478,37 +878,29 @@ class Strategist:
                 "time_based_exit": False,
             }
 
-            # Calculate take profit levels
-            base_tp_distance = 0.02  # 2% base take profit
-            volatility_multiplier = min(volatility * 100, 3.0)  # Cap at 3x
+            # Calculate take profit levels based on ML predictions
+            confidence_scores = ml_predictions.get("confidence_scores", {})
+            for increase_level, confidence in confidence_scores.items():
+                if confidence >= 0.6:
+                    exit_signals["take_profit_levels"].append({
+                        "level": 1 + (float(increase_level) / 100),
+                        "weight": confidence,
+                        "regime": regime,
+                    })
 
-            exit_signals["take_profit_levels"] = [
-                {
-                    "level": 1 + (base_tp_distance * volatility_multiplier),
-                    "weight": 0.6,
-                },
-                {
-                    "level": 1 + (base_tp_distance * volatility_multiplier * 1.5),
-                    "weight": 0.3,
-                },
-                {
-                    "level": 1 + (base_tp_distance * volatility_multiplier * 2.0),
-                    "weight": 0.1,
-                },
-            ]
+            # Calculate stop loss levels based on expected decreases
+            for decrease_level, probability in expected_decreases.items():
+                if probability >= 0.6:
+                    exit_signals["stop_loss_levels"].append({
+                        "level": 1 - (float(decrease_level) / 100),
+                        "weight": probability,
+                        "regime": regime,
+                    })
 
-            # Calculate stop loss levels
-            base_sl_distance = 0.01  # 1% base stop loss
-            exit_signals["stop_loss_levels"] = [
-                {
-                    "level": 1 - (base_sl_distance * volatility_multiplier),
-                    "weight": 0.8,
-                },
-                {
-                    "level": 1 - (base_sl_distance * volatility_multiplier * 1.5),
-                    "weight": 0.2,
-                },
-            ]
+            # Adjust based on regime
+            if regime == "HUGE_CANDLE":
+                exit_signals["trailing_stop"] = True
+                exit_signals["time_based_exit"] = True
 
             return exit_signals
 
@@ -518,134 +910,20 @@ class Strategist:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="risk parameter calculation",
-    )
-    async def _calculate_risk_parameters(
-        self,
-        market_intelligence: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """
-        Calculate risk parameters based on market intelligence.
-
-        Args:
-            market_intelligence: Market intelligence data
-
-        Returns:
-            Optional[Dict[str, Any]]: Risk parameters or None
-        """
-        try:
-            volatility = market_intelligence.get("volatility", 0.02)
-            regime = market_intelligence.get("market_regime", "neutral")
-
-            risk_params = {
-                "max_position_size": self.strategy_config["max_position_size"],
-                "max_daily_loss": self.risk_config["max_daily_loss"],
-                "stop_loss_distance": max(0.005, volatility * 2),  # Minimum 0.5%
-                "take_profit_distance": max(0.01, volatility * 3),  # Minimum 1%
-                "max_correlation": self.risk_config["max_correlation"],
-                "regime_adjustment": self._get_regime_adjustment(regime),
-            }
-
-            return risk_params
-
-        except Exception as e:
-            self.logger.error(f"Error calculating risk parameters: {e}")
-            return None
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=1.0,
-        context="regime adjustment calculation",
-    )
-    def _get_regime_adjustment(self, regime: str) -> float:
-        """
-        Get position size adjustment based on market regime.
-
-        Args:
-            regime: Market regime string
-
-        Returns:
-            float: Position size adjustment multiplier
-        """
-        try:
-            regime_adjustments = {
-                "bull": 1.2,  # Increase position size in bullish regime
-                "bear": 0.8,  # Decrease position size in bearish regime
-                "neutral": 1.0,  # No adjustment in neutral regime
-                "volatile": 0.7,  # Reduce position size in volatile regime
-            }
-
-            return regime_adjustments.get(regime, 1.0)
-
-        except Exception as e:
-            self.logger.error(f"Error calculating regime adjustment: {e}")
-            return 1.0
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="position sizing calculation",
-    )
-    async def _calculate_position_sizing(
-        self,
-        market_intelligence: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """
-        Calculate position sizing parameters.
-
-        Args:
-            market_intelligence: Market intelligence data
-
-        Returns:
-            Optional[Dict[str, Any]]: Position sizing parameters or None
-        """
-        try:
-            volatility = market_intelligence.get("volatility", 0.02)
-            regime = market_intelligence.get("market_regime", "neutral")
-
-            # Base position size
-            base_size = self.strategy_config["max_position_size"]
-
-            # Adjust for volatility
-            volatility_adjustment = max(
-                0.5,
-                1 - (volatility * 10),
-            )  # Reduce size in high volatility
-
-            # Adjust for regime
-            regime_adjustment = self._get_regime_adjustment(regime)
-
-            # Calculate final position size
-            final_size = base_size * volatility_adjustment * regime_adjustment
-
-            position_sizing = {
-                "position_size": min(
-                    final_size,
-                    self.strategy_config["max_position_size"],
-                ),
-                "volatility_adjustment": volatility_adjustment,
-                "regime_adjustment": regime_adjustment,
-                "max_trades_per_day": self.strategy_config["max_daily_trades"],
-            }
-
-            return position_sizing
-
-        except Exception as e:
-            self.logger.error(f"Error calculating position sizing: {e}")
-            return None
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
         default_return=0.5,
         context="confidence score calculation",
     )
-    def _calculate_confidence_score(self, market_intelligence: dict[str, Any]) -> float:
+    def _calculate_confidence_score(
+        self, 
+        regime_info: dict[str, Any], 
+        ml_predictions: dict[str, Any]
+    ) -> float:
         """
         Calculate confidence score for the strategy.
 
         Args:
-            market_intelligence: Market intelligence data
+            regime_info: Market regime information
+            ml_predictions: ML predictions
 
         Returns:
             float: Confidence score between 0 and 1
@@ -653,26 +931,24 @@ class Strategist:
         try:
             confidence = 0.5  # Base confidence
 
-            # Adjust based on market regime clarity
-            regime = market_intelligence.get("market_regime", "neutral")
-            if regime in ["bull", "bear"]:
-                confidence += 0.2
-            elif regime == "volatile":
-                confidence -= 0.1
+            # Adjust based on regime confidence
+            regime_confidence = regime_info.get("confidence", 0.5)
+            confidence += (regime_confidence - 0.5) * 0.3
 
-            # Adjust based on volatility
-            volatility = market_intelligence.get("volatility", 0.02)
-            if volatility < 0.015:  # Low volatility
+            # Adjust based on ML predictions
+            confidence_scores = ml_predictions.get("confidence_scores", {})
+            if confidence_scores:
+                avg_ml_confidence = sum(confidence_scores.values()) / len(confidence_scores)
+                confidence += (avg_ml_confidence - 0.5) * 0.4
+
+            # Adjust based on regime type
+            regime = regime_info.get("regime", "SIDEWAYS")
+            if regime == "BULL":
                 confidence += 0.1
-            elif volatility > 0.04:  # High volatility
+            elif regime == "BEAR":
+                confidence -= 0.1
+            elif regime == "HUGE_CANDLE":
                 confidence -= 0.2
-
-            # Adjust based on trend clarity
-            trend = market_intelligence.get("trend_direction", "sideways")
-            if trend in ["bullish", "bearish"]:
-                confidence += 0.1
-            elif trend == "sideways":
-                confidence -= 0.1
 
             return max(0.0, min(1.0, confidence))
 
@@ -680,459 +956,34 @@ class Strategist:
             self.logger.error(f"Error calculating confidence score: {e}")
             return 0.5
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="SR strategy generation",
-    )
-    async def _generate_sr_strategy(
-        self,
-        market_intelligence: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Generate SR-based strategy components."""
-        try:
-            if not self.sr_analyzer:
-                return None
-
-            # Get market data from intelligence
-            market_data = market_intelligence.get("market_data", {})
-            if not market_data:
-                return None
-
-            # Convert to DataFrame if needed
-            if isinstance(market_data, dict):
-                import pandas as pd
-                df = pd.DataFrame([market_data])
-            else:
-                df = market_data
-
-            # Perform SR analysis
-            sr_analysis = await self.sr_analyzer.analyze(df)
-            
-            if not sr_analysis:
-                return None
-
-            # Generate SR-based strategy
-            sr_strategy = {
-                "support_levels": sr_analysis.get("support_levels", []),
-                "resistance_levels": sr_analysis.get("resistance_levels", []),
-                "sr_entry_signals": self._generate_sr_entry_signals(sr_analysis),
-                "sr_exit_signals": self._generate_sr_exit_signals(sr_analysis),
-                "sr_risk_levels": self._calculate_sr_risk_levels(sr_analysis),
-                "sr_confidence": sr_analysis.get("support_confidence", 0.0) + 
-                               sr_analysis.get("resistance_confidence", 0.0) / 2,
-            }
-
-            return sr_strategy
-
-        except Exception as e:
-            self.logger.error(f"Error generating SR strategy: {e}")
-            return None
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="ML strategy generation",
-    )
-    async def _generate_ml_strategy(
-        self,
-        market_intelligence: dict[str, Any],
-    ) -> dict[str, Any] | None:
+    def _generate_fallback_predictions(self, current_price: float) -> dict[str, Any]:
         """
-        Generate ML-based strategy components.
+        Generate fallback predictions when ML model is unavailable.
 
         Args:
-            market_intelligence: Market intelligence data
+            current_price: Current market price
 
         Returns:
-            Optional[Dict[str, Any]]: ML strategy components
+            Dict[str, Any]: Fallback predictions
         """
         try:
-            # Get ML predictions from market intelligence
-            ml_predictions = market_intelligence.get("ml_predictions", {})
-            
-            if not ml_predictions:
-                self.logger.warning("No ML predictions available for strategy generation")
-                return None
-
-            # Generate ML-based entry signals
-            ml_entry_signals = self._generate_ml_entry_signals(ml_predictions)
-            
-            # Generate ML-based exit signals
-            ml_exit_signals = self._generate_ml_exit_signals(ml_predictions)
-            
-            # Generate ML-based position sizing
-            ml_position_sizing = self._generate_ml_position_sizing(ml_predictions)
-            
-            # Generate ML-based risk parameters
-            ml_risk_parameters = self._generate_ml_risk_parameters(ml_predictions)
-
             return {
-                "ml_entry_signals": ml_entry_signals,
-                "ml_exit_signals": ml_exit_signals,
-                "ml_position_sizing": ml_position_sizing,
-                "ml_risk_parameters": ml_risk_parameters,
-                "ml_confidence_scores": ml_predictions.get("confidence_scores", {}),
-                "ml_expected_decreases": ml_predictions.get("expected_decreases", {}),
+                "confidence_scores": {
+                    "0.5": 0.6,  # 0.5% increase with 60% confidence
+                    "1.0": 0.5,  # 1.0% increase with 50% confidence
+                    "1.5": 0.4,  # 1.5% increase with 40% confidence
+                },
+                "expected_decreases": {
+                    "0.5": 0.4,  # 0.5% decrease with 40% probability
+                    "1.0": 0.3,  # 1.0% decrease with 30% probability
+                    "1.5": 0.2,  # 1.5% decrease with 20% probability
+                },
+                "fallback": True,
                 "generation_time": datetime.now(),
             }
 
         except Exception as e:
-            self.logger.error(f"Error generating ML strategy: {e}")
-            return None
-
-    def _generate_ml_entry_signals(self, ml_predictions: dict[str, Any]) -> list[dict[str, Any]]:
-        """Generate ML-based entry signals."""
-        try:
-            entry_signals = []
-            confidence_scores = ml_predictions.get("confidence_scores", {})
-            
-            for increase_level, confidence in confidence_scores.items():
-                if confidence >= 0.7:  # High confidence threshold
-                    entry_signals.append({
-                        "signal_type": "ml_high_confidence_entry",
-                        "confidence": confidence,
-                        "price_increase_target": float(increase_level),
-                        "action": "enter_long",
-                        "reason": f"High ML confidence ({confidence:.2f}) for {increase_level}% increase"
-                    })
-                elif confidence >= 0.5:  # Medium confidence threshold
-                    entry_signals.append({
-                        "signal_type": "ml_medium_confidence_entry",
-                        "confidence": confidence,
-                        "price_increase_target": float(increase_level),
-                        "action": "enter_long_cautious",
-                        "reason": f"Medium ML confidence ({confidence:.2f}) for {increase_level}% increase"
-                    })
-            
-            return entry_signals
-            
-        except Exception as e:
-            self.logger.error(f"Error generating ML entry signals: {e}")
-            return []
-
-    def _generate_ml_exit_signals(self, ml_predictions: dict[str, Any]) -> list[dict[str, Any]]:
-        """Generate ML-based exit signals."""
-        try:
-            exit_signals = []
-            expected_decreases = ml_predictions.get("expected_decreases", {})
-            
-            for decrease_level, probability in expected_decreases.items():
-                if probability >= 0.7:  # High probability threshold
-                    exit_signals.append({
-                        "signal_type": "ml_high_probability_exit",
-                        "probability": probability,
-                        "price_decrease_target": float(decrease_level),
-                        "action": "exit_position",
-                        "reason": f"High ML probability ({probability:.2f}) for {decrease_level}% decrease"
-                    })
-                elif probability >= 0.5:  # Medium probability threshold
-                    exit_signals.append({
-                        "signal_type": "ml_medium_probability_exit",
-                        "probability": probability,
-                        "price_decrease_target": float(decrease_level),
-                        "action": "reduce_position",
-                        "reason": f"Medium ML probability ({probability:.2f}) for {decrease_level}% decrease"
-                    })
-            
-            return exit_signals
-            
-        except Exception as e:
-            self.logger.error(f"Error generating ML exit signals: {e}")
-            return []
-
-    def _generate_ml_position_sizing(self, ml_predictions: dict[str, Any]) -> dict[str, Any]:
-        """Generate ML-based position sizing."""
-        try:
-            position_sizing = {}
-            confidence_scores = ml_predictions.get("confidence_scores", {})
-            
-            for increase_level, confidence in confidence_scores.items():
-                # Calculate position size based on confidence
-                base_size = 0.1  # 10% base position size
-                confidence_multiplier = confidence
-                position_size = base_size * confidence_multiplier
-                
-                position_sizing[f"size_{increase_level}"] = {
-                    "position_size": min(position_size, 0.5),  # Cap at 50%
-                    "confidence": confidence,
-                    "sizing_reason": f"ML-based position size {position_size:.2f} based on confidence {confidence:.2f}"
-                }
-            
-            return position_sizing
-            
-        except Exception as e:
-            self.logger.error(f"Error generating ML position sizing: {e}")
-            return {}
-
-    def _generate_ml_risk_parameters(self, ml_predictions: dict[str, Any]) -> dict[str, Any]:
-        """Generate ML-based risk parameters."""
-        try:
-            risk_parameters = {}
-            confidence_scores = ml_predictions.get("confidence_scores", {})
-            expected_decreases = ml_predictions.get("expected_decreases", {})
-            
-            # Calculate average confidence
-            avg_confidence = sum(confidence_scores.values()) / len(confidence_scores) if confidence_scores else 0.5
-            
-            # Calculate average decrease probability
-            avg_decrease_prob = sum(expected_decreases.values()) / len(expected_decreases) if expected_decreases else 0.3
-            
-            # Adjust risk parameters based on ML predictions
-            risk_parameters = {
-                "stop_loss_adjustment": 1.0 - avg_confidence,  # Lower confidence = tighter stop loss
-                "take_profit_adjustment": avg_confidence,  # Higher confidence = higher take profit
-                "position_risk_adjustment": avg_decrease_prob,  # Higher decrease prob = lower position risk
-                "leverage_adjustment": avg_confidence,  # Higher confidence = higher leverage
-                "ml_confidence": avg_confidence,
-                "ml_decrease_probability": avg_decrease_prob,
-            }
-            
-            return risk_parameters
-            
-        except Exception as e:
-            self.logger.error(f"Error generating ML risk parameters: {e}")
-            return {}
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="SR breakout strategy generation",
-    )
-    async def _generate_sr_breakout_strategy(
-        self,
-        market_intelligence: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Generate SR breakout strategy components."""
-        try:
-            # Extract market data for prediction
-            market_data = market_intelligence.get("market_data", {})
-            current_price = market_data.get("current_price", 2000.0)
-            
-            # Create sample market data for prediction (in real implementation, this would come from market feed)
-            import pandas as pd
-            sample_data = {
-                "close": [1950, 1960, 1970, 1980, 1990, 2000],
-                "high": [1960, 1970, 1980, 1990, 2000, 2010],
-                "low": [1940, 1950, 1960, 1970, 1980, 1990],
-                "volume": [1000, 1100, 1200, 1300, 1400, 1500]
-            }
-            df = pd.DataFrame(sample_data)
-            
-            # Get breakout prediction
-            prediction = await self.sr_breakout_predictor.predict_breakout_probability(df, current_price)
-            
-            if prediction and prediction.get("near_sr_zone", False):
-                # Generate breakout-based strategy components
-                breakout_strategy = {
-                    "breakout_prediction": prediction,
-                    "entry_signals": self._generate_sr_breakout_entry_signals(prediction),
-                    "exit_signals": self._generate_sr_breakout_exit_signals(prediction),
-                    "risk_levels": self._calculate_sr_breakout_risk_levels(prediction),
-                    "position_adjustment": self._calculate_sr_breakout_position_adjustment(prediction),
-                }
-                
-                self.logger.info(f"SR Breakout Strategy: {prediction.get('recommendation', 'UNKNOWN')}")
-                return breakout_strategy
-            else:
-                self.logger.info("No SR breakout prediction available")
-                return None
-                
-        except Exception as e:
-            self.logger.error(f"Error generating SR breakout strategy: {e}")
-            return None
-
-    def _generate_sr_breakout_entry_signals(self, prediction: dict[str, Any]) -> list[dict[str, Any]]:
-        """Generate entry signals based on SR breakout prediction."""
-        try:
-            signals = []
-            breakout_prob = prediction.get("breakout_probability", 0.5)
-            bounce_prob = prediction.get("bounce_probability", 0.5)
-            confidence = prediction.get("confidence", 0.0)
-            
-            if confidence > 0.7:
-                if breakout_prob > 0.7:
-                    signals.append({
-                        "type": "breakout_long",
-                        "strength": breakout_prob,
-                        "confidence": confidence,
-                        "reason": "High probability breakout above resistance"
-                    })
-                elif bounce_prob > 0.7:
-                    signals.append({
-                        "type": "bounce_long",
-                        "strength": bounce_prob,
-                        "confidence": confidence,
-                        "reason": "High probability bounce from support"
-                    })
-                    
-            return signals
-            
-        except Exception as e:
-            self.logger.error(f"Error generating SR breakout entry signals: {e}")
-            return []
-
-    def _generate_sr_breakout_exit_signals(self, prediction: dict[str, Any]) -> list[dict[str, Any]]:
-        """Generate exit signals based on SR breakout prediction."""
-        try:
-            signals = []
-            breakout_prob = prediction.get("breakout_probability", 0.5)
-            bounce_prob = prediction.get("bounce_probability", 0.5)
-            confidence = prediction.get("confidence", 0.0)
-            
-            if confidence > 0.7:
-                if breakout_prob > 0.7:
-                    signals.append({
-                        "type": "breakout_exit_short",
-                        "strength": breakout_prob,
-                        "confidence": confidence,
-                        "reason": "Exit short positions on breakout"
-                    })
-                elif bounce_prob > 0.7:
-                    signals.append({
-                        "type": "bounce_exit_long",
-                        "strength": bounce_prob,
-                        "confidence": confidence,
-                        "reason": "Exit long positions on bounce"
-                    })
-                    
-            return signals
-            
-        except Exception as e:
-            self.logger.error(f"Error generating SR breakout exit signals: {e}")
-            return []
-
-    def _calculate_sr_breakout_risk_levels(self, prediction: dict[str, Any]) -> dict[str, Any]:
-        """Calculate risk levels based on SR breakout prediction."""
-        try:
-            breakout_prob = prediction.get("breakout_probability", 0.5)
-            bounce_prob = prediction.get("bounce_probability", 0.5)
-            confidence = prediction.get("confidence", 0.0)
-            
-            # Adjust risk based on prediction confidence
-            base_risk = 0.02  # 2% base risk
-            confidence_multiplier = confidence if confidence > 0.5 else 0.5
-            
-            risk_levels = {
-                "stop_loss_adjustment": confidence_multiplier,
-                "position_size_multiplier": confidence_multiplier,
-                "risk_score": base_risk * confidence_multiplier,
-                "prediction_confidence": confidence,
-            }
-            
-            return risk_levels
-            
-        except Exception as e:
-            self.logger.error(f"Error calculating SR breakout risk levels: {e}")
-            return {}
-
-    def _calculate_sr_breakout_position_adjustment(self, prediction: dict[str, Any]) -> dict[str, Any]:
-        """Calculate position adjustment based on SR breakout prediction."""
-        try:
-            breakout_prob = prediction.get("breakout_probability", 0.5)
-            bounce_prob = prediction.get("bounce_probability", 0.5)
-            confidence = prediction.get("confidence", 0.0)
-            
-            # Adjust position size based on prediction confidence
-            base_position_size = 1.0
-            confidence_multiplier = confidence if confidence > 0.5 else 0.5
-            
-            position_adjustment = {
-                "size_multiplier": confidence_multiplier,
-                "direction": "long" if bounce_prob > breakout_prob else "short",
-                "confidence": confidence,
-                "prediction_strength": max(breakout_prob, bounce_prob),
-            }
-            
-            return position_adjustment
-            
-        except Exception as e:
-            self.logger.error(f"Error calculating SR breakout position adjustment: {e}")
-            return {}
-
-    def _generate_sr_entry_signals(self, sr_analysis: dict[str, Any]) -> list[dict[str, Any]]:
-        """Generate entry signals based on SR levels."""
-        try:
-            entry_signals = []
-            
-            # Support level entry signals
-            for level in sr_analysis.get("support_levels", []):
-                if level.get("strength", 0) > 0.7:  # Strong support
-                    entry_signals.append({
-                        "type": "support_bounce",
-                        "price": level.get("price"),
-                        "strength": level.get("strength"),
-                        "confidence": 0.8,
-                        "stop_loss": level.get("price") * 0.98,  # 2% below support
-                    })
-
-            # Resistance breakout signals
-            for level in sr_analysis.get("resistance_levels", []):
-                if level.get("strength", 0) > 0.7:  # Strong resistance
-                    entry_signals.append({
-                        "type": "resistance_breakout",
-                        "price": level.get("price"),
-                        "strength": level.get("strength"),
-                        "confidence": 0.7,
-                        "stop_loss": level.get("price") * 0.99,  # 1% below breakout
-                    })
-
-            return entry_signals
-
-        except Exception as e:
-            self.logger.error(f"Error generating SR entry signals: {e}")
-            return []
-
-    def _generate_sr_exit_signals(self, sr_analysis: dict[str, Any]) -> list[dict[str, Any]]:
-        """Generate exit signals based on SR levels."""
-        try:
-            exit_signals = []
-            
-            # Support breakdown signals
-            for level in sr_analysis.get("support_levels", []):
-                if level.get("strength", 0) > 0.7:
-                    exit_signals.append({
-                        "type": "support_breakdown",
-                        "price": level.get("price"),
-                        "strength": level.get("strength"),
-                        "confidence": 0.9,
-                    })
-
-            # Resistance rejection signals
-            for level in sr_analysis.get("resistance_levels", []):
-                if level.get("strength", 0) > 0.7:
-                    exit_signals.append({
-                        "type": "resistance_rejection",
-                        "price": level.get("price"),
-                        "strength": level.get("strength"),
-                        "confidence": 0.8,
-                    })
-
-            return exit_signals
-
-        except Exception as e:
-            self.logger.error(f"Error generating SR exit signals: {e}")
-            return []
-
-    def _calculate_sr_risk_levels(self, sr_analysis: dict[str, Any]) -> dict[str, Any]:
-        """Calculate risk levels based on SR analysis."""
-        try:
-            return {
-                "high_risk_zones": [
-                    level.get("price") for level in sr_analysis.get("resistance_levels", [])
-                    if level.get("strength", 0) > 0.8
-                ],
-                "low_risk_zones": [
-                    level.get("price") for level in sr_analysis.get("support_levels", [])
-                    if level.get("strength", 0) > 0.8
-                ],
-                "risk_score": min(
-                    len(sr_analysis.get("resistance_levels", [])) / 10.0, 1.0
-                ),
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error calculating SR risk levels: {e}")
+            self.logger.error(f"Error generating fallback predictions: {e}")
             return {}
 
     @handle_errors(
@@ -1152,6 +1003,8 @@ class Strategist:
         """
         try:
             required_keys = [
+                "regime_info",
+                "ml_predictions",
                 "entry_signals",
                 "exit_signals",
                 "risk_parameters",
@@ -1169,14 +1022,7 @@ class Strategist:
                 self.logger.warning(f"Strategy confidence too low: {confidence}")
                 return False
 
-            # Validate position sizing
-            position_size = strategy.get("position_sizing", {}).get("position_size", 0)
-            if (
-                position_size <= 0
-                or position_size > self.strategy_config["max_position_size"]
-            ):
-                self.logger.error(f"Invalid position size: {position_size}")
-                return False
+            # Note: Position sizing validation handled by tactician/position_sizer.py
 
             return True
 
@@ -1211,6 +1057,15 @@ class Strategist:
         """
         return self.last_strategy_update
 
+    def get_current_regime(self) -> tuple[str | None, float]:
+        """
+        Get current market regime and confidence.
+
+        Returns:
+            Tuple[str | None, float]: Current regime and confidence
+        """
+        return self.current_regime, self.regime_confidence
+
     def get_strategy_performance(self) -> dict[str, float]:
         """
         Get strategy performance metrics.
@@ -1239,6 +1094,8 @@ class Strategist:
             # Clear current state
             self.current_strategy = None
             self.last_strategy_update = None
+            self.current_regime = None
+            self.regime_confidence = 0.0
 
             self.logger.info("✅ Strategist stopped successfully")
 

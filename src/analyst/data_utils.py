@@ -1113,12 +1113,12 @@ def load_klines_data(filename):
         )
         print(df.head())
 
-        # Convert timestamp with flexible parsing
-        df["open_time"] = pd.to_datetime(df["open_time"], format="mixed", errors="coerce")
+        # Convert index to datetime if needed
+        df.index = pd.to_datetime(df.index, format="mixed", errors="coerce")
 
         # Remove rows with invalid timestamps
         initial_rows = len(df)
-        df = df.dropna(subset=["open_time"])
+        df = df.dropna()
         if len(df) < initial_rows:
             print(f"⚠️ Warning: Removed {initial_rows - len(df)} rows with invalid timestamps")
 
@@ -1126,9 +1126,8 @@ def load_klines_data(filename):
             print("❌ CRITICAL: No valid data after timestamp processing")
             return pd.DataFrame()
 
-        # Set timestamp as index
-        df.set_index("open_time", inplace=True)
-        df = df[~df.index.duplicated(keep="first")]  # Remove duplicates
+        # Remove duplicates
+        df = df[~df.index.duplicated(keep="first")]
 
         # Ensure numeric columns are actually numeric
         numeric_cols = ["open", "high", "low", "close", "volume"]

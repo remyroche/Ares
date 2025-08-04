@@ -6,6 +6,7 @@ from typing import Any, Optional
 from src.analyst.liquidation_risk_model import ProbabilisticLiquidationRiskModel
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.config_loader import load_leverage_sizing_config
 
 
 class PositionSizer:

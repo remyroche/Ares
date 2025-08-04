@@ -43,6 +43,10 @@ class Tactician:
         self.leverage_sizer = None
         self.enable_position_sizing: bool = self.tactician_config.get("enable_position_sizing", True)
         self.enable_leverage_sizing: bool = self.tactician_config.get("enable_leverage_sizing", True)
+        
+        # ML Prediction integration
+        self.ml_predictions = None
+        self.enable_ml_tactics: bool = self.tactician_config.get("enable_ml_tactics", True)
 
     @handle_specific_errors(
         error_handlers={
@@ -76,6 +80,10 @@ class Tactician:
                 
             if self.enable_leverage_sizing:
                 await self._initialize_leverage_sizer()
+                
+            # Initialize ML tactics
+            if self.enable_ml_tactics:
+                await self._initialize_ml_tactics()
                 
             self.logger.info("✅ Tactician initialization completed successfully")
             return True
@@ -196,6 +204,24 @@ class Tactician:
             self.logger.error(f"Error initializing Leverage Sizer: {e}")
             self.leverage_sizer = None
 
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="ML tactics initialization",
+    )
+    async def _initialize_ml_tactics(self) -> None:
+        """Initialize ML tactics for position entry and sizing decisions."""
+        try:
+            self.logger.info("Initializing ML tactics...")
+            
+            # ML tactics will be initialized when predictions are received
+            self.ml_predictions = {}
+            self.logger.info("✅ ML tactics initialized for tactical decisions")
+                
+        except Exception as e:
+            self.logger.error(f"Error initializing ML tactics: {e}")
+            self.ml_predictions = None
+
     @handle_specific_errors(
         error_handlers={
             Exception: (False, "Tactician run failed"),
@@ -247,6 +273,10 @@ class Tactician:
                 
             if self.enable_leverage_sizing and self.leverage_sizer:
                 await self._monitor_leverage_sizing()
+                
+            # Monitor ML tactics
+            if self.enable_ml_tactics:
+                await self._monitor_ml_tactics()
                 
             await self._update_tactics_results()
             self.logger.info(f"Tactics execution tick at {now}")
@@ -668,6 +698,389 @@ class Tactician:
         except Exception as e:
             self.logger.error(f"Error determining SR breakout tactical action: {e}")
             return "no_action"
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="ML tactics monitoring",
+    )
+    async def _monitor_ml_tactics(self) -> None:
+        """Monitor ML tactics for position entry and sizing decisions."""
+        try:
+            # Get ML predictions from governance or analyst
+            ml_predictions = self._get_ml_predictions()
+            
+            if ml_predictions:
+                # Make tactical decisions based on ML predictions
+                entry_decisions = self._make_ml_entry_decisions(ml_predictions)
+                directional_decisions = self._make_ml_directional_decisions(ml_predictions)
+                liquidation_risk_decisions = self._make_ml_liquidation_risk_decisions(ml_predictions)
+                
+                # Use position and leverage sizers for sizing decisions
+                if self.position_sizer and self.leverage_sizer:
+                    sizing_decisions = await self._calculate_position_size(ml_predictions)
+                    leverage_decisions = await self._calculate_leverage(ml_predictions)
+                else:
+                    sizing_decisions = self._make_ml_sizing_decisions(ml_predictions)
+                    leverage_decisions = self._make_ml_leverage_decisions(ml_predictions)
+                
+                self.tactics_results["ml_tactics"] = {
+                    "entry_decisions": entry_decisions,
+                    "sizing_decisions": sizing_decisions,
+                    "leverage_decisions": leverage_decisions,
+                    "directional_decisions": directional_decisions,
+                    "liquidation_risk_decisions": liquidation_risk_decisions,
+                    "timestamp": datetime.now(),
+                }
+                
+                self.logger.info("ML tactics monitoring completed")
+            else:
+                self.logger.warning("No ML predictions available for tactics")
+                
+        except Exception as e:
+            self.logger.error(f"Error in ML tactics monitoring: {e}")
+
+    def _get_ml_predictions(self) -> dict[str, Any] | None:
+        """Get ML predictions from governance or analyst."""
+        try:
+            # This would typically get predictions from the Governor or Analyst
+            # For now, return a mock prediction structure
+            return {
+                "confidence_scores": {
+                    0.3: 0.7,
+                    0.4: 0.6,
+                    0.5: 0.5,
+                    0.6: 0.4,
+                    0.7: 0.3,
+                    0.8: 0.2,
+                    0.9: 0.1,
+                    1.0: 0.05,
+                },
+                "expected_decreases": {
+                    0.1: 0.3,
+                    0.2: 0.4,
+                    0.3: 0.5,
+                    0.4: 0.6,
+                    0.5: 0.7,
+                    0.6: 0.8,
+                    0.7: 0.9,
+                },
+            }
+        except Exception as e:
+            self.logger.error(f"Error getting ML predictions: {e}")
+            return None
+
+    def _make_ml_entry_decisions(self, ml_predictions: dict[str, Any]) -> dict[str, Any]:
+        """
+        Make entry decisions based on ML confidence scores.
+
+        Args:
+            ml_predictions: ML prediction data
+
+        Returns:
+            dict[str, Any]: Entry decisions
+        """
+        try:
+            entry_decisions = {}
+            confidence_scores = ml_predictions.get("confidence_scores", {})
+            
+            for increase_level, confidence in confidence_scores.items():
+                if confidence >= 0.7:  # High confidence threshold
+                    entry_decisions[f"enter_{increase_level}"] = {
+                        "should_enter": True,
+                        "confidence": confidence,
+                        "action": "enter_position",
+                        "reason": f"High confidence ({confidence:.2f}) for {increase_level}% increase"
+                    }
+                elif confidence >= 0.5:  # Medium confidence threshold
+                    entry_decisions[f"enter_{increase_level}"] = {
+                        "should_enter": True,
+                        "confidence": confidence,
+                        "action": "enter_position_cautious",
+                        "reason": f"Medium confidence ({confidence:.2f}) for {increase_level}% increase"
+                    }
+                else:
+                    entry_decisions[f"enter_{increase_level}"] = {
+                        "should_enter": False,
+                        "confidence": confidence,
+                        "action": "hold",
+                        "reason": f"Low confidence ({confidence:.2f}) for {increase_level}% increase"
+                    }
+            
+            return entry_decisions
+            
+        except Exception as e:
+            self.logger.error(f"Error making ML entry decisions: {e}")
+            return {}
+
+    def _make_ml_sizing_decisions(self, ml_predictions: dict[str, Any]) -> dict[str, Any]:
+        """
+        Make position sizing decisions based on ML confidence scores.
+
+        Args:
+            ml_predictions: ML prediction data
+
+        Returns:
+            dict[str, Any]: Sizing decisions
+        """
+        try:
+            sizing_decisions = {}
+            confidence_scores = ml_predictions.get("confidence_scores", {})
+            
+            for increase_level, confidence in confidence_scores.items():
+                # Calculate position size based on confidence
+                base_size = 0.1  # 10% base position size
+                confidence_multiplier = confidence
+                position_size = base_size * confidence_multiplier
+                
+                sizing_decisions[f"size_{increase_level}"] = {
+                    "position_size": min(position_size, 0.5),  # Cap at 50%
+                    "confidence": confidence,
+                    "sizing_reason": f"Position size {position_size:.2f} based on confidence {confidence:.2f}"
+                }
+            
+            return sizing_decisions
+            
+        except Exception as e:
+            self.logger.error(f"Error making ML sizing decisions: {e}")
+            return {}
+
+    def _make_ml_leverage_decisions(self, ml_predictions: dict[str, Any]) -> dict[str, Any]:
+        """
+        Make leverage decisions based on ML confidence scores.
+
+        Args:
+            ml_predictions: ML prediction data
+
+        Returns:
+            dict[str, Any]: Leverage decisions
+        """
+        try:
+            leverage_decisions = {}
+            confidence_scores = ml_predictions.get("confidence_scores", {})
+            
+            for increase_level, confidence in confidence_scores.items():
+                # Calculate leverage based on confidence
+                base_leverage = 1.0
+                confidence_multiplier = confidence
+                leverage = base_leverage + (confidence_multiplier * 2)  # Max 3x leverage
+                
+                leverage_decisions[f"leverage_{increase_level}"] = {
+                    "leverage": min(leverage, 3.0),  # Cap at 3x
+                    "confidence": confidence,
+                    "leverage_reason": f"Leverage {leverage:.2f} based on confidence {confidence:.2f}"
+                }
+            
+            return leverage_decisions
+            
+        except Exception as e:
+            self.logger.error(f"Error making ML leverage decisions: {e}")
+            return {}
+
+    def _make_ml_directional_decisions(self, ml_predictions: dict[str, Any]) -> dict[str, Any]:
+        """
+        Make directional decisions based on ML directional confidence analysis.
+
+        Args:
+            ml_predictions: ML prediction data
+
+        Returns:
+            dict[str, Any]: Directional decisions
+        """
+        try:
+            directional_decisions = {}
+            directional_confidence = ml_predictions.get("directional_confidence", {})
+            target_reach_confidence = directional_confidence.get("target_reach_confidence", {})
+            directional_safety_score = directional_confidence.get("directional_safety_score", {})
+            
+            for target_level, data in target_reach_confidence.items():
+                confidence = data.get("confidence", 0.0)
+                safety_data = directional_safety_score.get(target_level, {})
+                safety_score = safety_data.get("safety_score", 0.0)
+                
+                if confidence >= 0.7 and safety_score >= 0.6:
+                    directional_decisions[f"target_{target_level}"] = {
+                        "should_target": True,
+                        "confidence": confidence,
+                        "safety_score": safety_score,
+                        "target_price": data.get("target_price", 0.0),
+                        "action": "enter_position",
+                        "reason": f"High confidence ({confidence:.2f}) and safety ({safety_score:.2f}) for {target_level}% target"
+                    }
+                elif confidence >= 0.5 and safety_score >= 0.4:
+                    directional_decisions[f"target_{target_level}"] = {
+                        "should_target": True,
+                        "confidence": confidence,
+                        "safety_score": safety_score,
+                        "target_price": data.get("target_price", 0.0),
+                        "action": "enter_position_cautious",
+                        "reason": f"Moderate confidence ({confidence:.2f}) and safety ({safety_score:.2f}) for {target_level}% target"
+                    }
+                else:
+                    directional_decisions[f"target_{target_level}"] = {
+                        "should_target": False,
+                        "confidence": confidence,
+                        "safety_score": safety_score,
+                        "target_price": data.get("target_price", 0.0),
+                        "action": "avoid_position",
+                        "reason": f"Low confidence ({confidence:.2f}) or safety ({safety_score:.2f}) for {target_level}% target"
+                    }
+            
+            return directional_decisions
+            
+        except Exception as e:
+            self.logger.error(f"Error making ML directional decisions: {e}")
+            return {}
+
+    def _make_ml_liquidation_risk_decisions(self, ml_predictions: dict[str, Any]) -> dict[str, Any]:
+        """
+        Make liquidation risk decisions based on ML directional confidence analysis.
+
+        Args:
+            ml_predictions: ML prediction data
+
+        Returns:
+            dict[str, Any]: Liquidation risk decisions
+        """
+        try:
+            liquidation_risk_decisions = {}
+            directional_confidence = ml_predictions.get("directional_confidence", {})
+            liquidation_risk_assessment = directional_confidence.get("liquidation_risk_assessment", {})
+            recommended_leverage = directional_confidence.get("recommended_leverage", {})
+            
+            for target_level, risk_data in liquidation_risk_assessment.items():
+                liquidation_risk = risk_data.get("liquidation_risk", 0.0)
+                safe_leverage = risk_data.get("safe_leverage", 1.0)
+                risk_level = risk_data.get("risk_level", "medium")
+                
+                leverage_data = recommended_leverage.get(target_level, {})
+                recommended_leverage_value = leverage_data.get("leverage", 1.0)
+                max_safe_leverage = leverage_data.get("max_safe_leverage", 1.0)
+                
+                # Determine position action based on liquidation risk
+                if liquidation_risk <= 0.3:
+                    action = "enter_position"
+                    position_size_multiplier = 1.0
+                elif liquidation_risk <= 0.6:
+                    action = "enter_position_cautious"
+                    position_size_multiplier = 0.5
+                else:
+                    action = "avoid_position"
+                    position_size_multiplier = 0.0
+                
+                liquidation_risk_decisions[f"risk_{target_level}"] = {
+                    "action": action,
+                    "liquidation_risk": liquidation_risk,
+                    "risk_level": risk_level,
+                    "safe_leverage": safe_leverage,
+                    "recommended_leverage": recommended_leverage_value,
+                    "max_safe_leverage": max_safe_leverage,
+                    "position_size_multiplier": position_size_multiplier,
+                    "reason": f"Liquidation risk {liquidation_risk:.2f} for {target_level}% target",
+                }
+            
+            return liquidation_risk_decisions
+            
+        except Exception as e:
+            self.logger.error(f"Error making ML liquidation risk decisions: {e}")
+            return {}
+
+    async def _calculate_position_size(self, ml_predictions: dict[str, Any]) -> dict[str, Any]:
+        """
+        Calculate position size using the position sizer.
+        
+        Args:
+            ml_predictions: ML confidence predictions
+            
+        Returns:
+            dict[str, Any]: Position sizing analysis
+        """
+        try:
+            if not self.position_sizer:
+                self.logger.warning("Position sizer not available, using fallback")
+                return self._make_ml_sizing_decisions(ml_predictions)
+            
+            # Get component results for position sizing
+            strategist_results = self.tactics_results.get("strategist_results", {})
+            analyst_results = self.tactics_results.get("analyst_results", {})
+            governor_results = self.tactics_results.get("governor_results", {})
+            
+            # Calculate position size
+            position_analysis = await self.position_sizer.calculate_position_size(
+                ml_predictions=ml_predictions,
+                strategist_results=strategist_results,
+                analyst_results=analyst_results,
+                governor_results=governor_results,
+                current_price=ml_predictions.get("current_price", 0.0),
+                account_balance=1000.0,  # Default account balance
+            )
+            
+            if position_analysis:
+                return {
+                    "position_size": position_analysis.get("final_position_size", 0.1),
+                    "kelly_position_size": position_analysis.get("kelly_position_size", 0.1),
+                    "weighted_position_size": position_analysis.get("weighted_position_size", 0.1),
+                    "sizing_reason": position_analysis.get("sizing_reason", "Position size calculated"),
+                    "component_indicators": position_analysis.get("component_indicators", {}),
+                }
+            else:
+                return self._make_ml_sizing_decisions(ml_predictions)
+                
+        except Exception as e:
+            self.logger.error(f"Error calculating position size: {e}")
+            return self._make_ml_sizing_decisions(ml_predictions)
+
+    async def _calculate_leverage(self, ml_predictions: dict[str, Any]) -> dict[str, Any]:
+        """
+        Calculate leverage using the leverage sizer.
+        
+        Args:
+            ml_predictions: ML confidence predictions
+            
+        Returns:
+            dict[str, Any]: Leverage sizing analysis
+        """
+        try:
+            if not self.leverage_sizer:
+                self.logger.warning("Leverage sizer not available, using fallback")
+                return self._make_ml_leverage_decisions(ml_predictions)
+            
+            # Get component results for leverage sizing
+            strategist_results = self.tactics_results.get("strategist_results", {})
+            analyst_results = self.tactics_results.get("analyst_results", {})
+            governor_results = self.tactics_results.get("governor_results", {})
+            
+            # Get liquidation risk analysis (if available)
+            liquidation_risk_analysis = None
+            if "liquidation_risk_analysis" in self.tactics_results:
+                liquidation_risk_analysis = self.tactics_results["liquidation_risk_analysis"]
+            
+            # Calculate leverage
+            leverage_analysis = await self.leverage_sizer.calculate_leverage(
+                ml_predictions=ml_predictions,
+                liquidation_risk_analysis=liquidation_risk_analysis,
+                strategist_results=strategist_results,
+                analyst_results=analyst_results,
+                governor_results=governor_results,
+                current_price=ml_predictions.get("current_price", 0.0),
+                target_direction="long",  # Default direction
+            )
+            
+            if leverage_analysis:
+                return {
+                    "leverage": leverage_analysis.get("final_leverage", 1.0),
+                    "ml_leverage": leverage_analysis.get("ml_leverage", 1.0),
+                    "liquidation_leverage": leverage_analysis.get("liquidation_leverage", 1.0),
+                    "weighted_leverage": leverage_analysis.get("weighted_leverage", 1.0),
+                    "leverage_reason": leverage_analysis.get("leverage_reason", "Leverage calculated"),
+                    "component_indicators": leverage_analysis.get("component_indicators", {}),
+                }
+            else:
+                return self._make_ml_leverage_decisions(ml_predictions)
+                
+        except Exception as e:
+            self.logger.error(f"Error calculating leverage: {e}")
+            return self._make_ml_leverage_decisions(ml_predictions)
 
     @handle_errors(
         exceptions=(Exception,),

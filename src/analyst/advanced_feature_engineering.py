@@ -88,7 +88,7 @@ class AdvancedFeatureEngineering:
         default_return=pd.DataFrame(),
         context="advanced feature generation",
     )
-    async def generate_features(
+    def generate_features(
         self,
         klines_df: pd.DataFrame,
         agg_trades_df: pd.DataFrame | None = None,
@@ -105,6 +105,7 @@ class AdvancedFeatureEngineering:
         features = self._calculate_advanced_momentum_volume_features(features, agg_trades_df)
         features = self._calculate_volatility_risk_features(features)
         features = self._calculate_sr_channel_features(features)
+        features = self._calculate_pivot_points(features) # New
 
         if self.enable_divergence_detection:
             features = self._calculate_divergence_features(features)
@@ -113,11 +114,9 @@ class AdvancedFeatureEngineering:
         if self.enable_volume_profile and agg_trades_df is not None:
             features = self._calculate_volume_profile_features(features, agg_trades_df)
         if self.enable_market_microstructure and order_book_df is not None:
-             features = self._calculate_market_microstructure_features(features, order_book_df)
+            features = self._calculate_market_microstructure_features(features, order_book_df)
         
         features = self._calculate_advanced_order_flow_funding_features(features, agg_trades_df)
-
-            
 
         features.replace([np.inf, -np.inf], np.nan, inplace=True)
         self.logger.info(f"✅ Generated {len(features.columns)} total features")
@@ -133,6 +132,10 @@ class AdvancedFeatureEngineering:
         df['SMA_50'] = talib.SMA(df['close'], timeperiod=50)
         df['SMA_200'] = talib.SMA(df['close'], timeperiod=200)
         df['EMA_20'] = talib.EMA(df['close'], timeperiod=20)
+        # New: Stochastic RSI
+        stoch_rsi_k, stoch_rsi_d = talib.STOCHRSI(df['close'])
+        df['STOCHRSI_k'] = stoch_rsi_k
+        df['STOCHRSI_d'] = stoch_rsi_d
         return df
 
     # --- Category 2: Advanced Momentum & Volume Indicators ---
@@ -146,6 +149,11 @@ class AdvancedFeatureEngineering:
         df['volume_MA_10'] = df['volume'].rolling(window=10).mean()
         df['VROC'] = df['volume'].pct_change(periods=14) * 100
         
+        # New: Chaikin Money Flow (CMF)
+        money_flow_multiplier = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low'] + 1e-9)
+        money_flow_volume = money_flow_multiplier * df['volume']
+        df['CMF_20'] = money_flow_volume.rolling(window=20).sum() / df['volume'].rolling(window=20).sum()
+
         # VWAP Calculation
         vwap_data = df.copy()
         vwap_data['tpv'] = ((vwap_data['high'] + vwap_data['low'] + vwap_data['close']) / 3) * vwap_data['volume']
@@ -171,6 +179,13 @@ class AdvancedFeatureEngineering:
         target_vol = self.advanced_config.get("target_volatility", 0.15)
         df['volatility_position_size'] = target_vol / (df['realized_volatility_30d'] + 1e-9)
         df['volatility_regime'] = pd.cut(df['realized_volatility_30d'], bins=[0, target_vol*0.75, target_vol*1.5, np.inf], labels=['low', 'medium', 'high'])
+        
+        # New: Ulcer Index
+        period = self.advanced_config.get("ulcer_period", 14)
+        highest_close = df['close'].rolling(window=period).max()
+        percentage_drawdown = ((df['close'] - highest_close) / highest_close) * 100
+        squared_drawdown = percentage_drawdown ** 2
+        df['ulcer_index'] = np.sqrt(squared_drawdown.rolling(window=period).mean())
         return df
 
     # --- Category 4: Support, Resistance, and Channel Features ---
@@ -200,6 +215,23 @@ class AdvancedFeatureEngineering:
             df["distance_to_resistance"] = df["close"].apply(lambda x: min([abs(x - df["high"].iloc[p]) for p in peaks]) / x)
         if len(troughs) > 0:
             df["distance_to_support"] = df["close"].apply(lambda x: min([abs(x - df["low"].iloc[t]) for t in troughs]) / x)
+        return df
+        
+    # --- New Category: Pivot Points ---
+    def _calculate_pivot_points(self, df: pd.DataFrame) -> pd.DataFrame:
+        self.logger.info("Calculating Pivot Points...")
+        prev_high = df['high'].shift(1)
+        prev_low = df['low'].shift(1)
+        prev_close = df['close'].shift(1)
+        
+        pivot = (prev_high + prev_low + prev_close) / 3
+        df['pivot'] = pivot
+        df['pivot_s1'] = (pivot * 2) - prev_high
+        df['pivot_r1'] = (pivot * 2) - prev_low
+        df['pivot_s2'] = pivot - (prev_high - prev_low)
+        df['pivot_r2'] = pivot + (prev_high - prev_low)
+        df['pivot_s3'] = prev_low - 2 * (prev_high - pivot)
+        df['pivot_r3'] = prev_high + 2 * (pivot - prev_low)
         return df
 
     # --- Category 5: Divergence Detection ---
@@ -235,6 +267,11 @@ class AdvancedFeatureEngineering:
         df['CDLDOJI'] = talib.CDLDOJI(df['open'], df['high'], df['low'], df['close'])
         df['CDLENGULFING'] = talib.CDLENGULFING(df['open'], df['high'], df['low'], df['close'])
         df['CDLHAMMER'] = talib.CDLHAMMER(df['open'], df['high'], df['low'], df['close'])
+        # New Candlestick Patterns
+        df['CDLMORNINGSTAR'] = talib.CDLMORNINGSTAR(df['open'], df['high'], df['low'], df['close'])
+        df['CDLEVENINGSTAR'] = talib.CDLEVENINGSTAR(df['open'], df['high'], df['low'], df['close'])
+        df['CDL3WHITESOLDIERS'] = talib.CDL3WHITESOLDIERS(df['open'], df['high'], df['low'], df['close'])
+        df['CDL3BLACKCROWS'] = talib.CDL3BLACKCROWS(df['open'], df['high'], df['low'], df['close'])
         # Chart Patterns
         df = self._calculate_double_patterns(df)
         df = self._calculate_head_shoulders(df)

@@ -296,13 +296,47 @@ def consolidate_files(
                         logger.info(f"      ✅ File is valid and ready for processing")
                         valid_df_list.append(df)
                     else:
-                        logger.warning(
-                            f"      ❌ Skipping file {os.path.basename(f)}: missing '{unique_col}' or empty.",
-                        )
-                        if unique_col not in df.columns:
-                            logger.warning(f"         Missing column: {unique_col}")
-                        if df.empty:
-                            logger.warning(f"         DataFrame is empty")
+                        # Special handling for aggtrades files that might have different column names
+                        if "aggtrades" in os.path.basename(f).lower():
+                            # Check if this is an aggtrades file and try to map columns
+                            if "timestamp" not in df.columns and not df.empty:
+                                # Try to find alternative timestamp columns
+                                possible_timestamp_cols = ["time", "date", "datetime", "T", "timestamp"]
+                                found_timestamp_col = None
+                                for col in possible_timestamp_cols:
+                                    if col in df.columns:
+                                        found_timestamp_col = col
+                                        break
+                                
+                                if found_timestamp_col:
+                                    logger.info(f"🔄 Mapping '{found_timestamp_col}' to 'timestamp' for aggtrades file")
+                                    df = df.rename(columns={found_timestamp_col: "timestamp"})
+                                    # Update unique_col to use the mapped timestamp
+                                    unique_col = "timestamp"
+                                    logger.info(f"✅ File is valid and ready for processing after column mapping")
+                                    valid_df_list.append(df)
+                                else:
+                                    logger.warning(
+                                        f"❌ Skipping file {os.path.basename(f)}: missing 'timestamp' or empty.",
+                                    )
+                                    logger.warning(f"         Available columns: {list(df.columns)}")
+                            else:
+                                logger.warning(
+                                    f"❌ Skipping file {os.path.basename(f)}: missing '{unique_col}' or empty.",
+                                )
+                                if unique_col not in df.columns:
+                                    logger.warning(f"Missing column: {unique_col}")
+                                if df.empty:
+                                    logger.warning(f"DataFrame is empty")
+                        else:
+                            logger.warning(
+                                f"❌ Skipping file {os.path.basename(f)}: missing '{unique_col}' or empty.",
+                            )
+                            if unique_col not in df.columns:
+                                logger.warning(f"Missing column: {unique_col}")
+                            if df.empty:
+                                logger.warning(f"DataFrame is empty")
+                
                 except Exception as e:
                     logger.warning(
                         f"      ❌ Could not read or process file {os.path.basename(f)}: {e}. Skipping.",

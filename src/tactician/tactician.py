@@ -1,7 +1,11 @@
+# src/tactician/tactician.py
+
 import asyncio
 from datetime import datetime
 from typing import Any
 
+from src.tactician.position_sizer import PositionSizer
+from src.tactician.leverage_sizer import LeverageSizer
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
@@ -33,6 +37,12 @@ class Tactician:
         # SR Breakout Predictor integration
         self.sr_breakout_predictor = None
         self.enable_sr_breakout_tactics: bool = self.tactician_config.get("enable_sr_breakout_tactics", True)
+        
+        # Position and Leverage Sizing integration
+        self.position_sizer = None
+        self.leverage_sizer = None
+        self.enable_position_sizing: bool = self.tactician_config.get("enable_position_sizing", True)
+        self.enable_leverage_sizing: bool = self.tactician_config.get("enable_leverage_sizing", True)
 
     @handle_specific_errors(
         error_handlers={
@@ -59,6 +69,13 @@ class Tactician:
             # Initialize SR Breakout Predictor
             if self.enable_sr_breakout_tactics:
                 await self._initialize_sr_breakout_predictor()
+                
+            # Initialize Position and Leverage Sizers
+            if self.enable_position_sizing:
+                await self._initialize_position_sizer()
+                
+            if self.enable_leverage_sizing:
+                await self._initialize_leverage_sizer()
                 
             self.logger.info("✅ Tactician initialization completed successfully")
             return True
@@ -151,6 +168,34 @@ class Tactician:
             self.logger.error(f"Error initializing SR Breakout Predictor: {e}")
             self.sr_breakout_predictor = None
 
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="position sizer initialization",
+    )
+    async def _initialize_position_sizer(self) -> None:
+        """Initialize Position Sizer for tactical position sizing decisions."""
+        try:
+            self.position_sizer = PositionSizer(self.config)
+            self.logger.info("✅ Position Sizer initialized for tactical decisions")
+        except Exception as e:
+            self.logger.error(f"Error initializing Position Sizer: {e}")
+            self.position_sizer = None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="leverage sizer initialization",
+    )
+    async def _initialize_leverage_sizer(self) -> None:
+        """Initialize Leverage Sizer for tactical leverage decisions."""
+        try:
+            self.leverage_sizer = LeverageSizer(self.config)
+            self.logger.info("✅ Leverage Sizer initialized for tactical decisions")
+        except Exception as e:
+            self.logger.error(f"Error initializing Leverage Sizer: {e}")
+            self.leverage_sizer = None
+
     @handle_specific_errors(
         error_handlers={
             Exception: (False, "Tactician run failed"),
@@ -195,6 +240,13 @@ class Tactician:
             # Monitor SR breakout predictions
             if self.enable_sr_breakout_tactics and self.sr_breakout_predictor:
                 await self._monitor_sr_breakout_predictions()
+                
+            # Monitor position and leverage sizing
+            if self.enable_position_sizing and self.position_sizer:
+                await self._monitor_position_sizing()
+                
+            if self.enable_leverage_sizing and self.leverage_sizer:
+                await self._monitor_leverage_sizing()
                 
             await self._update_tactics_results()
             self.logger.info(f"Tactics execution tick at {now}")
@@ -377,6 +429,213 @@ class Tactician:
                 
         except Exception as e:
             self.logger.error(f"Error monitoring SR breakout predictions: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="position sizing monitoring",
+    )
+    async def _monitor_position_sizing(self) -> None:
+        """Monitor position sizing decisions and update tactical recommendations."""
+        try:
+            # Get current market conditions (this would come from your market data source)
+            market_conditions = {
+                "current_price": 50000.0,  # Example BTC price
+                "atr": 2500.0,  # Average True Range
+                "realized_volatility_30d": 0.04,  # 4% daily volatility
+                "market_regime": "BULL_TREND",  # Market regime classification
+                "opportunity_type": "SR_BREAKOUT",  # Opportunity type
+                "near_sr_zone": True,
+                "huge_candle": False,
+                "strong_momentum": True,
+            }
+
+            # Get current portfolio state (this would come from your state manager)
+            portfolio_value = 100000.0  # Example portfolio value
+            current_exposure = 0.15  # 15% current exposure
+            daily_pnl = 0.02  # 2% daily PnL
+            max_drawdown = 0.05  # 5% max drawdown
+
+            # Update position sizer performance metrics
+            self.position_sizer.update_performance_metrics(daily_pnl, max_drawdown)
+            self.position_sizer.update_exposure(current_exposure)
+
+            # Calculate position size for a sample trade
+            position_result = self.position_sizer.calculate_position_size(
+                current_price=market_conditions["current_price"],
+                stop_loss_price=market_conditions["current_price"] * 0.95,  # 5% stop loss
+                leverage=10,
+                confidence=0.85,  # High confidence signal
+                market_conditions=market_conditions,
+                portfolio_value=portfolio_value,
+                existing_positions=[],  # No existing positions
+                side="long",
+            )
+
+            # Store position sizing results
+            self.tactics_results["position_sizing"] = {
+                "position_size": position_result.get("position_size", 0.0),
+                "confidence_score": position_result.get("confidence_score", 0.0),
+                "liquidation_safety_score": position_result.get("liquidation_safety_score", 50.0),
+                "distance_to_liquidation": position_result.get("distance_to_liquidation", 0.0),
+                "total_exposure_after": position_result.get("total_exposure_after", 0.0),
+                "multipliers": {
+                    "confidence": position_result.get("confidence_multiplier", 1.0),
+                    "volatility": position_result.get("volatility_multiplier", 1.0),
+                    "regime": position_result.get("regime_multiplier", 1.0),
+                    "liquidation": position_result.get("liquidation_multiplier", 1.0),
+                    "risk": position_result.get("risk_multiplier", 1.0),
+                },
+                "successive_positions_allowed": position_result.get("successive_positions_allowed", False),
+                "calculation_time": position_result.get("calculation_time", ""),
+            }
+
+            # Determine tactical action based on position sizing
+            tactical_action = self._determine_position_sizing_tactical_action(position_result)
+            self.tactics_results["position_sizing_tactical_action"] = tactical_action
+
+            self.logger.info(
+                f"Position Sizing: {position_result.get('position_size', 0.0):.4f} "
+                f"(LSS: {position_result.get('liquidation_safety_score', 50.0):.1f}, "
+                f"Action: {tactical_action})"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Error monitoring position sizing: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="leverage sizing monitoring",
+    )
+    async def _monitor_leverage_sizing(self) -> None:
+        """Monitor leverage sizing decisions and update tactical recommendations."""
+        try:
+            # Get current market conditions (this would come from your market data source)
+            market_conditions = {
+                "current_price": 50000.0,  # Example BTC price
+                "atr": 2500.0,  # Average True Range
+                "realized_volatility_30d": 0.04,  # 4% daily volatility
+                "market_regime": "BULL_TREND",  # Market regime classification
+                "opportunity_type": "SR_BREAKOUT",  # Opportunity type
+                "near_sr_zone": True,
+                "huge_candle": False,
+                "strong_momentum": True,
+            }
+
+            # Get current portfolio state (this would come from your state manager)
+            portfolio_value = 100000.0  # Example portfolio value
+            current_exposure = 0.15  # 15% current exposure
+            daily_pnl = 0.02  # 2% daily PnL
+            max_drawdown = 0.05  # 5% max drawdown
+
+            # Update leverage sizer performance metrics
+            self.leverage_sizer.update_performance_metrics(daily_pnl, max_drawdown)
+            self.leverage_sizer.update_exposure(current_exposure)
+
+            # Calculate leverage for a sample trade
+            leverage_result = self.leverage_sizer.calculate_leverage(
+                base_leverage=10,
+                max_leverage_cap=50,
+                confidence=0.85,  # High confidence signal
+                market_conditions=market_conditions,
+                position_size=5000.0,  # Example position size
+                current_price=market_conditions["current_price"],
+                side="long",
+            )
+
+            # Store leverage sizing results
+            self.tactics_results["leverage_sizing"] = {
+                "leverage": leverage_result.get("leverage", 1),
+                "confidence_score": leverage_result.get("confidence_score", 0.0),
+                "liquidation_safety_score": leverage_result.get("liquidation_safety_score", 50.0),
+                "distance_to_liquidation": leverage_result.get("distance_to_liquidation", 0.0),
+                "max_leverage_cap": leverage_result.get("max_leverage_cap", 50),
+                "multipliers": {
+                    "confidence": leverage_result.get("confidence_multiplier", 1.0),
+                    "volatility": leverage_result.get("volatility_multiplier", 1.0),
+                    "regime": leverage_result.get("regime_multiplier", 1.0),
+                    "opportunity": leverage_result.get("opportunity_multiplier", 1.0),
+                    "liquidation": leverage_result.get("liquidation_multiplier", 1.0),
+                    "risk": leverage_result.get("risk_multiplier", 1.0),
+                },
+                "calculation_time": leverage_result.get("calculation_time", ""),
+            }
+
+            # Determine tactical action based on leverage sizing
+            tactical_action = self._determine_leverage_sizing_tactical_action(leverage_result)
+            self.tactics_results["leverage_sizing_tactical_action"] = tactical_action
+
+            self.logger.info(
+                f"Leverage Sizing: {leverage_result.get('leverage', 1)}x "
+                f"(LSS: {leverage_result.get('liquidation_safety_score', 50.0):.1f}, "
+                f"Action: {tactical_action})"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Error monitoring leverage sizing: {e}")
+
+    def _determine_position_sizing_tactical_action(self, position_result: dict[str, Any]) -> str:
+        """Determine tactical action based on position sizing results."""
+        try:
+            position_size = position_result.get("position_size", 0.0)
+            lss = position_result.get("liquidation_safety_score", 50.0)
+            confidence = position_result.get("confidence_score", 0.0)
+            total_exposure = position_result.get("total_exposure_after", 0.0)
+
+            # High confidence with good safety score
+            if confidence > 0.8 and lss > 70:
+                if position_size > 0:
+                    return "strong_position_signal"
+                else:
+                    return "no_position_signal"
+
+            # Moderate confidence with acceptable safety
+            elif confidence > 0.6 and lss > 50:
+                if position_size > 0:
+                    return "moderate_position_signal"
+                else:
+                    return "no_position_signal"
+
+            # Low confidence or poor safety
+            else:
+                return "avoid_position_signal"
+
+        except Exception as e:
+            self.logger.error(f"Error determining position sizing tactical action: {e}")
+            return "no_action"
+
+    def _determine_leverage_sizing_tactical_action(self, leverage_result: dict[str, Any]) -> str:
+        """Determine tactical action based on leverage sizing results."""
+        try:
+            leverage = leverage_result.get("leverage", 1)
+            lss = leverage_result.get("liquidation_safety_score", 50.0)
+            confidence = leverage_result.get("confidence_score", 0.0)
+            max_cap = leverage_result.get("max_leverage_cap", 50)
+
+            # High confidence with good safety score
+            if confidence > 0.8 and lss > 70:
+                if leverage > 10:
+                    return "high_leverage_signal"
+                elif leverage > 5:
+                    return "moderate_leverage_signal"
+                else:
+                    return "low_leverage_signal"
+
+            # Moderate confidence with acceptable safety
+            elif confidence > 0.6 and lss > 50:
+                if leverage > 5:
+                    return "moderate_leverage_signal"
+                else:
+                    return "low_leverage_signal"
+
+            # Low confidence or poor safety
+            else:
+                return "minimal_leverage_signal"
+
+        except Exception as e:
+            self.logger.error(f"Error determining leverage sizing tactical action: {e}")
+            return "no_action"
 
     def _determine_sr_breakout_tactical_action(self, prediction: dict[str, Any]) -> str:
         """Determine tactical action based on SR breakout prediction."""

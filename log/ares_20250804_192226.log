@@ -1,0 +1,41 @@
+2025-08-04 19:22:26,802 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-04 19:22:26,929 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎯 Step 1: Training HMM-based labeler...
+2025-08-04 19:22:26,954 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Calculated 16 features for 8760 periods
+2025-08-04 19:22:28,299 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 0: BULL (mean_return=0.0130, mean_vol=0.0198)
+2025-08-04 19:22:28,300 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 1: BULL (mean_return=0.0001, mean_vol=0.0102)
+2025-08-04 19:22:28,300 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 2: BEAR (mean_return=-0.0187, mean_vol=0.0198)
+2025-08-04 19:22:28,300 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 3: BULL (mean_return=0.0298, mean_vol=0.0127)
+2025-08-04 19:22:28,301 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ HMM labeler trained successfully
+2025-08-04 19:22:28,301 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎯 Step 2: Training basic regime ensemble...
+2025-08-04 19:22:28,314 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Calculated 16 features for 8760 periods
+2025-08-04 19:22:41,558 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Basic ensemble trained - Train: 1.000, Test: 0.975
+2025-08-04 19:22:41,558 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎯 Step 3: Training advanced regime classifier...
+2025-08-04 19:22:41,571 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Calculated 16 features for 8760 periods
+2025-08-04 19:22:42,991 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Advanced classifier trained - Train: 1.000, Test: 0.998
+2025-08-04 19:22:42,992 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🚀 Training complete unified regime classification system...
+2025-08-04 19:22:42,992 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎯 Step 1: Training HMM-based labeler...
+2025-08-04 19:22:43,005 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Calculated 16 features for 8760 periods
+2025-08-04 19:22:44,028 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 0: BULL (mean_return=0.0130, mean_vol=0.0198)
+2025-08-04 19:22:44,029 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 1: BULL (mean_return=0.0001, mean_vol=0.0102)
+2025-08-04 19:22:44,029 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 2: BEAR (mean_return=-0.0187, mean_vol=0.0198)
+2025-08-04 19:22:44,029 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 3: BULL (mean_return=0.0298, mean_vol=0.0127)
+2025-08-04 19:22:44,029 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ HMM labeler trained successfully
+2025-08-04 19:22:44,030 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎯 Step 2: Training basic regime ensemble...
+2025-08-04 19:22:44,042 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Calculated 16 features for 8760 periods
+2025-08-04 19:22:57,440 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Basic ensemble trained - Train: 1.000, Test: 0.975
+2025-08-04 19:22:57,441 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎯 Step 3: Training advanced regime classifier...
+2025-08-04 19:22:57,454 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Calculated 16 features for 8760 periods
+2025-08-04 19:22:58,772 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Advanced classifier trained - Train: 1.000, Test: 0.998
+2025-08-04 19:22:58,774 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - HMM model saved to checkpoints/analyst_models/unified_hmm_model_1h.joblib
+2025-08-04 19:22:58,803 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Basic ensemble saved to checkpoints/analyst_models/unified_ensemble_model_1h.joblib
+2025-08-04 19:22:58,806 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Advanced classifier saved to checkpoints/analyst_models/unified_advanced_model_1h.joblib
+2025-08-04 19:22:58,806 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Complete unified regime classification system trained successfully
+2025-08-04 19:22:58,807 - AresTradingSystem.System.UnifiedRegimeClassifier - WARNING - Insufficient data: 100 < 1000
+2025-08-04 19:22:58,808 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - HMM model saved to checkpoints/analyst_models/unified_hmm_model_1h.joblib
+2025-08-04 19:22:58,912 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Basic ensemble saved to checkpoints/analyst_models/unified_ensemble_model_1h.joblib
+2025-08-04 19:22:58,915 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Advanced classifier saved to checkpoints/analyst_models/unified_advanced_model_1h.joblib
+2025-08-04 19:22:58,916 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - HMM model loaded successfully
+2025-08-04 19:22:58,967 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Basic ensemble loaded successfully
+2025-08-04 19:22:58,969 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Advanced classifier loaded successfully
+2025-08-04 19:22:58,969 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - All models loaded successfully
+2025-08-04 19:22:58,970 - AresTradingSystem.System.UnifiedRegimeClassifier - WARNING - Insufficient data: 100 < 1000

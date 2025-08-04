@@ -1,0 +1,21 @@
+2025-08-04 20:42:15,966 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-04 20:42:17,489 - AresTradingSystem.System.DualModelSystem - INFO - Initializing Dual Model System...
+2025-08-04 20:42:17,489 - AresTradingSystem.System.DualModelSystem - INFO - Dual model configuration loaded successfully
+2025-08-04 20:42:17,489 - AresTradingSystem.System.DualModelSystem - INFO - Configuration validation successful
+2025-08-04 20:42:17,490 - AresTradingSystem.System.MLConfidencePredictor - INFO - Initializing ML Confidence Predictor...
+2025-08-04 20:42:17,490 - AresTradingSystem.System.MLConfidencePredictor - ERROR - Missing required parameter: retrain_interval_hours
+2025-08-04 20:42:17,490 - AresTradingSystem.System.MLConfidencePredictor - ERROR - Invalid configuration for ML confidence predictor
+2025-08-04 20:42:17,490 - AresTradingSystem.System.DualModelSystem - INFO - ML Confidence Predictor initialized successfully
+2025-08-04 20:42:17,490 - AresTradingSystem.System.DualModelSystem - WARNING - Analyst model not found, will use ML Confidence Predictor
+2025-08-04 20:42:17,490 - AresTradingSystem.System.DualModelSystem - WARNING - Tactician model not found, will use ML Confidence Predictor
+2025-08-04 20:42:17,490 - AresTradingSystem.System.DualModelSystem - INFO - ✅ Dual Model System initialization completed successfully
+2025-08-04 20:42:17,491 - AresTradingSystem.System.DualModelSystem - INFO - 🎯 Making Dual Model Trading Decision
+2025-08-04 20:42:17,491 - AresTradingSystem.System.MLConfidencePredictor - INFO - Generating price target confidence predictions...
+2025-08-04 20:42:17,491 - AresTradingSystem.System.MLConfidencePredictor - ERROR - Error in price target confidence prediction: Price target confidence models not trained
+2025-08-04 20:42:17,491 - AresTradingSystem.System.DualModelSystem - INFO - 🎯 Making Dual Model Trading Decision
+2025-08-04 20:42:17,491 - AresTradingSystem.System.MLConfidencePredictor - INFO - Generating price target confidence predictions...
+2025-08-04 20:42:17,492 - AresTradingSystem.System.MLConfidencePredictor - ERROR - Error in price target confidence prediction: Price target confidence models not trained
+2025-08-04 20:42:17,492 - AresTradingSystem.System.DualModelSystem - INFO - 🛑 Stopping Dual Model System...
+2025-08-04 20:42:17,492 - AresTradingSystem.System.MLConfidencePredictor - INFO - Stopping ML Confidence Predictor...
+2025-08-04 20:42:17,492 - AresTradingSystem.System.MLConfidencePredictor - INFO - ✅ ML Confidence Predictor stopped successfully
+2025-08-04 20:42:17,492 - AresTradingSystem.System.DualModelSystem - INFO - ✅ Dual Model System stopped successfully

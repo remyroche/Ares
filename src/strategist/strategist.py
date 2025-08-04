@@ -49,6 +49,10 @@ class Strategist:
         # SR Breakout Predictor integration
         self.sr_breakout_predictor = None
         self.enable_sr_breakout_strategy: bool = self.strategy_config.get("enable_sr_breakout_strategy", True)
+        
+        # ML Prediction integration
+        self.ml_predictions = None
+        self.enable_ml_strategy: bool = self.strategy_config.get("enable_ml_strategy", True)
 
     @handle_specific_errors(
         error_handlers={
@@ -82,6 +86,10 @@ class Strategist:
             # Initialize SR Breakout Predictor
             if self.enable_sr_breakout_strategy:
                 await self._initialize_sr_breakout_predictor()
+
+            # Initialize ML strategy
+            if self.enable_ml_strategy:
+                await self._initialize_ml_strategy()
 
             # Validate configuration
             if not self._validate_configuration():
@@ -146,6 +154,24 @@ class Strategist:
         except Exception as e:
             self.logger.error(f"Error initializing SR Breakout Predictor: {e}")
             self.sr_breakout_predictor = None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="ML strategy initialization",
+    )
+    async def _initialize_ml_strategy(self) -> None:
+        """Initialize ML strategy for strategy generation."""
+        try:
+            self.logger.info("Initializing ML strategy...")
+            
+            # ML strategy will be initialized when predictions are received
+            self.ml_predictions = {}
+            self.logger.info("✅ ML strategy initialized for strategy generation")
+                
+        except Exception as e:
+            self.logger.error(f"Error initializing ML strategy: {e}")
+            self.ml_predictions = None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -256,6 +282,11 @@ class Strategist:
             if self.enable_sr_breakout_strategy and self.sr_breakout_predictor:
                 sr_breakout_strategy = await self._generate_sr_breakout_strategy(market_intelligence)
 
+            # Generate ML strategy components
+            ml_strategy = None
+            if self.enable_ml_strategy:
+                ml_strategy = await self._generate_ml_strategy(market_intelligence)
+
             # Combine into comprehensive strategy
             strategy = {
                 "entry_signals": entry_signals,
@@ -264,6 +295,7 @@ class Strategist:
                 "position_sizing": position_sizing,
                 "sr_strategy": sr_strategy,
                 "sr_breakout_strategy": sr_breakout_strategy,
+                "ml_strategy": ml_strategy,
                 "confidence_score": self._calculate_confidence_score(
                     market_intelligence,
                 ),
@@ -638,7 +670,7 @@ class Strategist:
             # Adjust based on trend clarity
             trend = market_intelligence.get("trend_direction", "sideways")
             if trend in ["bullish", "bearish"]:
-                confidence += 0.15
+                confidence += 0.1
             elif trend == "sideways":
                 confidence -= 0.1
 
@@ -696,6 +728,171 @@ class Strategist:
         except Exception as e:
             self.logger.error(f"Error generating SR strategy: {e}")
             return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="ML strategy generation",
+    )
+    async def _generate_ml_strategy(
+        self,
+        market_intelligence: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """
+        Generate ML-based strategy components.
+
+        Args:
+            market_intelligence: Market intelligence data
+
+        Returns:
+            Optional[Dict[str, Any]]: ML strategy components
+        """
+        try:
+            # Get ML predictions from market intelligence
+            ml_predictions = market_intelligence.get("ml_predictions", {})
+            
+            if not ml_predictions:
+                self.logger.warning("No ML predictions available for strategy generation")
+                return None
+
+            # Generate ML-based entry signals
+            ml_entry_signals = self._generate_ml_entry_signals(ml_predictions)
+            
+            # Generate ML-based exit signals
+            ml_exit_signals = self._generate_ml_exit_signals(ml_predictions)
+            
+            # Generate ML-based position sizing
+            ml_position_sizing = self._generate_ml_position_sizing(ml_predictions)
+            
+            # Generate ML-based risk parameters
+            ml_risk_parameters = self._generate_ml_risk_parameters(ml_predictions)
+
+            return {
+                "ml_entry_signals": ml_entry_signals,
+                "ml_exit_signals": ml_exit_signals,
+                "ml_position_sizing": ml_position_sizing,
+                "ml_risk_parameters": ml_risk_parameters,
+                "ml_confidence_scores": ml_predictions.get("confidence_scores", {}),
+                "ml_expected_decreases": ml_predictions.get("expected_decreases", {}),
+                "generation_time": datetime.now(),
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error generating ML strategy: {e}")
+            return None
+
+    def _generate_ml_entry_signals(self, ml_predictions: dict[str, Any]) -> list[dict[str, Any]]:
+        """Generate ML-based entry signals."""
+        try:
+            entry_signals = []
+            confidence_scores = ml_predictions.get("confidence_scores", {})
+            
+            for increase_level, confidence in confidence_scores.items():
+                if confidence >= 0.7:  # High confidence threshold
+                    entry_signals.append({
+                        "signal_type": "ml_high_confidence_entry",
+                        "confidence": confidence,
+                        "price_increase_target": float(increase_level),
+                        "action": "enter_long",
+                        "reason": f"High ML confidence ({confidence:.2f}) for {increase_level}% increase"
+                    })
+                elif confidence >= 0.5:  # Medium confidence threshold
+                    entry_signals.append({
+                        "signal_type": "ml_medium_confidence_entry",
+                        "confidence": confidence,
+                        "price_increase_target": float(increase_level),
+                        "action": "enter_long_cautious",
+                        "reason": f"Medium ML confidence ({confidence:.2f}) for {increase_level}% increase"
+                    })
+            
+            return entry_signals
+            
+        except Exception as e:
+            self.logger.error(f"Error generating ML entry signals: {e}")
+            return []
+
+    def _generate_ml_exit_signals(self, ml_predictions: dict[str, Any]) -> list[dict[str, Any]]:
+        """Generate ML-based exit signals."""
+        try:
+            exit_signals = []
+            expected_decreases = ml_predictions.get("expected_decreases", {})
+            
+            for decrease_level, probability in expected_decreases.items():
+                if probability >= 0.7:  # High probability threshold
+                    exit_signals.append({
+                        "signal_type": "ml_high_probability_exit",
+                        "probability": probability,
+                        "price_decrease_target": float(decrease_level),
+                        "action": "exit_position",
+                        "reason": f"High ML probability ({probability:.2f}) for {decrease_level}% decrease"
+                    })
+                elif probability >= 0.5:  # Medium probability threshold
+                    exit_signals.append({
+                        "signal_type": "ml_medium_probability_exit",
+                        "probability": probability,
+                        "price_decrease_target": float(decrease_level),
+                        "action": "reduce_position",
+                        "reason": f"Medium ML probability ({probability:.2f}) for {decrease_level}% decrease"
+                    })
+            
+            return exit_signals
+            
+        except Exception as e:
+            self.logger.error(f"Error generating ML exit signals: {e}")
+            return []
+
+    def _generate_ml_position_sizing(self, ml_predictions: dict[str, Any]) -> dict[str, Any]:
+        """Generate ML-based position sizing."""
+        try:
+            position_sizing = {}
+            confidence_scores = ml_predictions.get("confidence_scores", {})
+            
+            for increase_level, confidence in confidence_scores.items():
+                # Calculate position size based on confidence
+                base_size = 0.1  # 10% base position size
+                confidence_multiplier = confidence
+                position_size = base_size * confidence_multiplier
+                
+                position_sizing[f"size_{increase_level}"] = {
+                    "position_size": min(position_size, 0.5),  # Cap at 50%
+                    "confidence": confidence,
+                    "sizing_reason": f"ML-based position size {position_size:.2f} based on confidence {confidence:.2f}"
+                }
+            
+            return position_sizing
+            
+        except Exception as e:
+            self.logger.error(f"Error generating ML position sizing: {e}")
+            return {}
+
+    def _generate_ml_risk_parameters(self, ml_predictions: dict[str, Any]) -> dict[str, Any]:
+        """Generate ML-based risk parameters."""
+        try:
+            risk_parameters = {}
+            confidence_scores = ml_predictions.get("confidence_scores", {})
+            expected_decreases = ml_predictions.get("expected_decreases", {})
+            
+            # Calculate average confidence
+            avg_confidence = sum(confidence_scores.values()) / len(confidence_scores) if confidence_scores else 0.5
+            
+            # Calculate average decrease probability
+            avg_decrease_prob = sum(expected_decreases.values()) / len(expected_decreases) if expected_decreases else 0.3
+            
+            # Adjust risk parameters based on ML predictions
+            risk_parameters = {
+                "stop_loss_adjustment": 1.0 - avg_confidence,  # Lower confidence = tighter stop loss
+                "take_profit_adjustment": avg_confidence,  # Higher confidence = higher take profit
+                "position_risk_adjustment": avg_decrease_prob,  # Higher decrease prob = lower position risk
+                "leverage_adjustment": avg_confidence,  # Higher confidence = higher leverage
+                "ml_confidence": avg_confidence,
+                "ml_decrease_probability": avg_decrease_prob,
+            }
+            
+            return risk_parameters
+            
+        except Exception as e:
+            self.logger.error(f"Error generating ML risk parameters: {e}")
+            return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

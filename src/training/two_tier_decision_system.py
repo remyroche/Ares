@@ -1,19 +1,10 @@
-# src/tactician/two_tier_decision_system.py
-
-"""
-Two-Tier Decision System for High Leverage Trading
-
-Tier 1: All timeframes decide trade direction
-Tier 2: Only 1m+5m decide exact entry timing
-"""
-
-from datetime import datetime
-from typing import Any
-
-from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
 from src.training.multi_timeframe_training_manager import MultiTimeframeTrainingManager
 from src.utils.logger import system_logger
+
+# Add multi-timeframe feature engineering and regime integration imports
+from src.analyst.multi_timeframe_feature_engineering import MultiTimeframeFeatureEngineering
+from src.analyst.multi_timeframe_regime_integration import MultiTimeframeRegimeIntegration
 
 
 class TwoTierDecisionSystem:
@@ -49,6 +40,10 @@ class TwoTierDecisionSystem:
         self.mtf_manager = MultiTimeframeTrainingManager(db_manager)
         self.timing_manager = None  # Will be initialized for 1m+5m only
 
+        # Initialize multi-timeframe feature engineering and regime integration
+        self.mtf_feature_engine = MultiTimeframeFeatureEngineering(CONFIG)
+        self.mtf_regime_integration = MultiTimeframeRegimeIntegration(CONFIG)
+
     async def train_two_tier_system(self, symbol: str) -> dict[str, Any]:
         """Train both tiers of the decision system."""
         self.logger.info("🚀 Training Two-Tier Decision System")
@@ -69,6 +64,58 @@ class TwoTierDecisionSystem:
 
         self.logger.info("✅ Two-tier system training completed")
         return results
+
+    async def generate_multi_timeframe_features_for_decision(
+        self,
+        current_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Generate multi-timeframe features for decision making.
+
+        Args:
+            current_data: Dictionary with timeframe -> DataFrame mapping
+
+        Returns:
+            Dictionary with timeframe -> features DataFrame mapping
+        """
+        try:
+            self.logger.info("🎯 Generating multi-timeframe features for decision making")
+
+            # Generate multi-timeframe features
+            features_dict = await self.mtf_feature_engine.generate_multi_timeframe_features(
+                data_dict=current_data,
+                agg_trades_dict=current_data.get("agg_trades", {}),
+                futures_dict=current_data.get("futures", {}),
+                sr_levels=current_data.get("sr_levels", []),
+            )
+
+            # Get regime information for each timeframe
+            regime_dict = {}
+            if "1h" in current_data:  # Strategic timeframe for regime classification
+                for timeframe in current_data.keys():
+                    if timeframe != "1h":
+                        regime_info = await self.mtf_regime_integration.get_regime_for_timeframe(
+                            timeframe=timeframe,
+                            current_data=current_data[timeframe],
+                            data_1h=current_data["1h"],
+                        )
+                        regime_dict[timeframe] = regime_info
+
+            # Add regime information to features
+            for timeframe, features in features_dict.items():
+                if timeframe in regime_dict:
+                    # Add regime features to the DataFrame
+                    regime_info = regime_dict[timeframe]
+                    features["regime"] = regime_info.get("regime", "UNKNOWN")
+                    features["regime_confidence"] = regime_info.get("confidence", 0.5)
+                    features["regime_source"] = regime_info.get("regime_source", "unknown")
+
+            self.logger.info(f"✅ Generated multi-timeframe features for {len(features_dict)} timeframes")
+            return features_dict
+
+        except Exception as e:
+            self.logger.error(f"Error generating multi-timeframe features for decision: {e}")
+            return {}
 
     async def _train_tier1_direction_models(self, symbol: str) -> dict[str, Any]:
         """Train Tier 1: Direction models using all timeframes."""
@@ -236,32 +283,60 @@ class TwoTierDecisionSystem:
         current_data: dict[str, Any],
     ) -> dict[str, Any]:
         """Get trade direction and strategy classification from all timeframes."""
-        # Simulate ensemble prediction from all timeframes
-        # In practice, this would use the trained ensemble model
+        try:
+            # Generate multi-timeframe features
+            features_dict = await self.generate_multi_timeframe_features_for_decision(current_data)
 
-        ensemble_prediction = 0.65  # Example: 65% bullish
-        threshold = self.config["direction_threshold"]
+            # Get regime information for strategic decision making
+            regime_info = None
+            if "1h" in current_data:
+                regime_info = await self.mtf_regime_integration.get_regime_for_timeframe(
+                    timeframe="1h",
+                    current_data=current_data["1h"],
+                    data_1h=current_data["1h"],
+                )
 
-        # Strategy classification based on all timeframes
-        strategy = self._classify_strategy(current_data, ensemble_prediction)
+            # Simulate ensemble prediction from all timeframes
+            # In practice, this would use the trained ensemble model with multi-timeframe features
+            ensemble_prediction = 0.65  # Example: 65% bullish
+            threshold = self.config["direction_threshold"]
 
-        if ensemble_prediction > threshold:
-            direction = "LONG"
-            should_trade = True
-        elif ensemble_prediction < (1 - threshold):
-            direction = "SHORT"
-            should_trade = True
-        else:
-            direction = "HOLD"
-            should_trade = False
+            # Strategy classification based on all timeframes and regime
+            strategy = self._classify_strategy_with_regime(
+                current_data, 
+                ensemble_prediction, 
+                regime_info
+            )
 
-        return {
-            "direction": direction,
-            "strategy": strategy,
-            "confidence": ensemble_prediction,
-            "should_trade": should_trade,
-            "ensemble_prediction": ensemble_prediction,
-        }
+            if ensemble_prediction > threshold:
+                direction = "LONG"
+                should_trade = True
+            elif ensemble_prediction < (1 - threshold):
+                direction = "SHORT"
+                should_trade = True
+            else:
+                direction = "HOLD"
+                should_trade = False
+
+            return {
+                "direction": direction,
+                "should_trade": should_trade,
+                "confidence": ensemble_prediction,
+                "strategy": strategy,
+                "regime_info": regime_info,
+                "multi_timeframe_features": features_dict,
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error in tier1 direction decision: {e}")
+            return {
+                "direction": "HOLD",
+                "should_trade": False,
+                "confidence": 0.5,
+                "strategy": "UNKNOWN",
+                "regime_info": None,
+                "multi_timeframe_features": {},
+            }
 
     def _classify_strategy(
         self,
@@ -425,6 +500,78 @@ class TwoTierDecisionSystem:
             "entry_type": "WAIT",
             "timing_reason": "No clear strategy timing",
         }
+
+    def _classify_strategy_with_regime(
+        self,
+        current_data: dict[str, Any],
+        ensemble_prediction: float,
+        regime_info: dict[str, Any] | None = None,
+    ) -> str:
+        """
+        Classify trading strategy based on ensemble prediction and regime information.
+        
+        Args:
+            current_data: Current market data
+            ensemble_prediction: Ensemble prediction value
+            regime_info: Regime information from 1h timeframe
+            
+        Returns:
+            Strategy classification string
+        """
+        try:
+            # Base strategy classification
+            base_strategy = self._classify_strategy(current_data, ensemble_prediction)
+            
+            # If no regime info, return base strategy
+            if not regime_info:
+                return base_strategy
+            
+            # Get regime information
+            regime = regime_info.get("regime", "UNKNOWN")
+            regime_confidence = regime_info.get("confidence", 0.5)
+            
+            # Adjust strategy based on regime
+            if regime == "BULL_TREND" and ensemble_prediction > 0.6:
+                if base_strategy == "TREND_FOLLOWING":
+                    return "BULL_TREND_FOLLOWING"
+                elif base_strategy == "BREAKOUT":
+                    return "BULL_BREAKOUT"
+                else:
+                    return "BULL_MOMENTUM"
+                    
+            elif regime == "BEAR_TREND" and ensemble_prediction < 0.4:
+                if base_strategy == "TREND_FOLLOWING":
+                    return "BEAR_TREND_FOLLOWING"
+                elif base_strategy == "BREAKOUT":
+                    return "BEAR_BREAKOUT"
+                else:
+                    return "BEAR_MOMENTUM"
+                    
+            elif regime == "SIDEWAYS_RANGE":
+                if base_strategy == "BREAKOUT":
+                    return "RANGE_BREAKOUT"
+                elif base_strategy == "MEAN_REVERSION":
+                    return "RANGE_MEAN_REVERSION"
+                else:
+                    return "RANGE_BOUND"
+                    
+            elif regime == "SR_ZONE_ACTION":
+                if base_strategy == "BREAKOUT":
+                    return "SR_BREAKOUT"
+                elif base_strategy == "MEAN_REVERSION":
+                    return "SR_MEAN_REVERSION"
+                else:
+                    return "SR_BOUND"
+                    
+            elif regime == "HIGH_IMPACT_CANDLE":
+                return "HIGH_IMPACT_MOMENTUM"
+                
+            # Default to base strategy if regime doesn't match
+            return base_strategy
+            
+        except Exception as e:
+            self.logger.error(f"Error in strategy classification with regime: {e}")
+            return "UNKNOWN"
 
     def _calculate_position_size(
         self,

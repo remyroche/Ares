@@ -13,7 +13,6 @@ class LeverageSizer:
     Enhanced leverage sizing system that incorporates multiple indicators:
     - Confidence scores from ML models
     - Volatility measures (ATR, realized volatility)
-    - Market regime classification
     - Liquidation risk assessment
     - Dynamic risk management based on performance
     - Opportunity type detection (S/R levels, breakouts, etc.)
@@ -83,15 +82,8 @@ class LeverageSizer:
                 market_conditions,
             )
 
-            # Apply regime-based leverage adjustment
-            regime_leverage = self._apply_regime_leverage_adjustment(
-                volatility_leverage,
-                market_conditions,
-            )
-
             # Apply opportunity-based leverage adjustment
             opportunity_leverage = self._apply_opportunity_leverage_adjustment(
-                regime_leverage,
                 market_conditions,
             )
 
@@ -131,7 +123,6 @@ class LeverageSizer:
                 "volatility_multiplier": self._get_volatility_leverage_multiplier(
                     market_conditions,
                 ),
-                "regime_multiplier": self._get_regime_leverage_multiplier(market_conditions),
                 "opportunity_multiplier": self._get_opportunity_leverage_multiplier(
                     market_conditions,
                 ),
@@ -230,30 +221,6 @@ class LeverageSizer:
 
         return leverage * multiplier
 
-    def _apply_regime_leverage_adjustment(
-        self,
-        leverage: float,
-        market_conditions: dict[str, Any],
-    ) -> float:
-        """Apply regime-based leverage adjustment."""
-        if not self.leverage_config.get("regime_based_leverage", {}).get(
-            "enable_regime_adjustment",
-            True,
-        ):
-            return leverage
-
-        regime = (
-            market_conditions.get("market_regime", "SIDEWAYS_RANGE")
-            if market_conditions
-            else "SIDEWAYS_RANGE"
-        )
-        multipliers = self.leverage_config.get("regime_based_leverage", {}).get(
-            "regime_multipliers",
-            {},
-        )
-
-        multiplier = multipliers.get(regime, 1.0)
-        return leverage * multiplier
 
     def _apply_opportunity_leverage_adjustment(
         self,
@@ -451,18 +418,6 @@ class LeverageSizer:
             return multipliers.get("medium_volatility", 1.0)
         return multipliers.get("high_volatility", 0.6)
 
-    def _get_regime_leverage_multiplier(self, market_conditions: dict[str, Any]) -> float:
-        """Get regime-based leverage multiplier."""
-        regime = (
-            market_conditions.get("market_regime", "SIDEWAYS_RANGE")
-            if market_conditions
-            else "SIDEWAYS_RANGE"
-        )
-        multipliers = self.leverage_config.get("regime_based_leverage", {}).get(
-            "regime_multipliers",
-            {},
-        )
-        return multipliers.get(regime, 1.0)
 
     def _get_opportunity_leverage_multiplier(self, market_conditions: dict[str, Any]) -> float:
         """Get opportunity-based leverage multiplier."""

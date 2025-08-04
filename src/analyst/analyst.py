@@ -1,4 +1,19 @@
-from datetime import datetime
+# src/analyst/analyst.py 
+
+from typing import (
+    Any,
+)
+
+from src.utils.error_handler import (
+    handle_errors,
+    handle_specific_errors,
+)
+from src.utils.logger import system_logger
+
+
+class Analyst:
+    """
+    Analyst with comprehensive error handling and type safety.from datetime import datetime
 from typing import (
     Any,
 )
@@ -41,14 +56,15 @@ class Analyst:
             "enable_technical_analysis",
             True,
         )
-        self.enable_fundamental_analysis: bool = self.analyst_config.get(
-            "enable_fundamental_analysis",
-            True,
-        )
+
         
         # SR Analyzer integration
         self.sr_analyzer = None
         self.enable_sr_analysis: bool = self.analyst_config.get("enable_sr_analysis", True)
+        
+        # ML Confidence Predictor integration
+        self.ml_confidence_predictor = None
+        self.enable_ml_predictions: bool = self.analyst_config.get("enable_ml_predictions", True)
 
     @handle_specific_errors(
         error_handlers={
@@ -82,6 +98,10 @@ class Analyst:
         # Initialize SR analyzer
         if self.enable_sr_analysis:
             await self._initialize_sr_analyzer()
+            
+        # Initialize ML Confidence Predictor
+        if self.enable_ml_predictions:
+            await self._initialize_ml_confidence_predictor()
 
         self.logger.info("✅ Analyst initialization completed successfully")
         return True
@@ -97,19 +117,11 @@ class Analyst:
         self.analyst_config.setdefault("analysis_interval", 3600)
         self.analyst_config.setdefault("max_analysis_history", 100)
         self.analyst_config.setdefault("enable_technical_analysis", True)
-        self.analyst_config.setdefault("enable_fundamental_analysis", True)
-        self.analyst_config.setdefault("enable_sentiment_analysis", True)
         self.analyst_config.setdefault("enable_risk_analysis", True)
-
-        # Update configuration
         self.analysis_interval = self.analyst_config["analysis_interval"]
         self.max_analysis_history = self.analyst_config["max_analysis_history"]
-        self.enable_technical_analysis = self.analyst_config[
-            "enable_technical_analysis"
-        ]
-        self.enable_fundamental_analysis = self.analyst_config[
-            "enable_fundamental_analysis"
-        ]
+        self.enable_technical_analysis = self.analyst_config["enable_technical_analysis"]
+
 
         self.logger.info("Analyst configuration loaded successfully")
 
@@ -139,8 +151,6 @@ class Analyst:
         if not any(
             [
                 self.enable_technical_analysis,
-                self.enable_fundamental_analysis,
-                self.analyst_config.get("enable_sentiment_analysis", True),
                 self.analyst_config.get("enable_risk_analysis", True),
             ],
         ):
@@ -161,14 +171,6 @@ class Analyst:
             # Initialize technical analysis module
             if self.enable_technical_analysis:
                 await self._initialize_technical_analysis()
-
-            # Initialize fundamental analysis module
-            if self.enable_fundamental_analysis:
-                await self._initialize_fundamental_analysis()
-
-            # Initialize sentiment analysis module
-            if self.analyst_config.get("enable_sentiment_analysis", True):
-                await self._initialize_sentiment_analysis()
 
             # Initialize risk analysis module
             if self.analyst_config.get("enable_risk_analysis", True):
@@ -199,48 +201,6 @@ class Analyst:
 
         except Exception as e:
             self.logger.error(f"Error initializing technical analysis: {e}")
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="fundamental analysis initialization",
-    )
-    async def _initialize_fundamental_analysis(self) -> None:
-        """Initialize fundamental analysis module."""
-        try:
-            # Initialize fundamental analysis components
-            self.fundamental_analysis_components = {
-                "financial_analysis": True,
-                "economic_analysis": True,
-                "market_analysis": True,
-                "sector_analysis": True,
-            }
-
-            self.logger.info("Fundamental analysis module initialized")
-
-        except Exception as e:
-            self.logger.error(f"Error initializing fundamental analysis: {e}")
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="sentiment analysis initialization",
-    )
-    async def _initialize_sentiment_analysis(self) -> None:
-        """Initialize sentiment analysis module."""
-        try:
-            # Initialize sentiment analysis components
-            self.sentiment_analysis_components = {
-                "news_analysis": True,
-                "social_analysis": True,
-                "market_sentiment": True,
-                "sentiment_scoring": True,
-            }
-
-            self.logger.info("Sentiment analysis module initialized")
-
-        except Exception as e:
-            self.logger.error(f"Error initializing sentiment analysis: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -280,6 +240,27 @@ class Analyst:
             self.logger.error(f"Error initializing SR analyzer: {e}")
             self.sr_analyzer = None
 
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="ML confidence predictor initialization",
+    )
+    async def _initialize_ml_confidence_predictor(self) -> None:
+        """Initialize ML confidence predictor module."""
+        try:
+            from src.analyst.ml_confidence_predictor import setup_ml_confidence_predictor
+            
+            self.ml_confidence_predictor = await setup_ml_confidence_predictor(self.config)
+            if self.ml_confidence_predictor:
+                await self.ml_confidence_predictor.initialize()
+                self.logger.info("✅ ML confidence predictor initialized successfully")
+            else:
+                self.logger.error("❌ Failed to initialize ML confidence predictor")
+                
+        except Exception as e:
+            self.logger.error(f"Error initializing ML confidence predictor: {e}")
+            self.ml_confidence_predictor = None
+
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid analysis parameters"),
@@ -313,19 +294,6 @@ class Analyst:
                 )
                 self.analysis_results["technical_analysis"] = technical_results
 
-            # Perform fundamental analysis
-            if self.enable_fundamental_analysis:
-                fundamental_results = await self._perform_fundamental_analysis(
-                    analysis_input,
-                )
-                self.analysis_results["fundamental_analysis"] = fundamental_results
-
-            # Perform sentiment analysis
-            if self.analyst_config.get("enable_sentiment_analysis", True):
-                sentiment_results = await self._perform_sentiment_analysis(
-                    analysis_input,
-                )
-                self.analysis_results["sentiment_analysis"] = sentiment_results
 
             # Perform risk analysis
             if self.analyst_config.get("enable_risk_analysis", True):
@@ -336,6 +304,11 @@ class Analyst:
             if self.enable_sr_analysis and self.sr_analyzer:
                 sr_results = await self._perform_sr_analysis(analysis_input)
                 self.analysis_results["sr_analysis"] = sr_results
+
+            # Perform ML confidence predictions
+            if self.enable_ml_predictions and self.ml_confidence_predictor:
+                ml_results = await self._perform_ml_predictions(analysis_input)
+                self.analysis_results["ml_predictions"] = ml_results
 
             # Store analysis results
             await self._store_analysis_results()
@@ -437,107 +410,7 @@ class Analyst:
             self.logger.error(f"Error performing technical analysis: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="fundamental analysis",
-    )
-    async def _perform_fundamental_analysis(
-        self,
-        analysis_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Perform fundamental analysis.
 
-        Args:
-            analysis_input: Analysis input dictionary
-
-        Returns:
-            dict[str, Any]: Fundamental analysis results
-        """
-        try:
-            results = {}
-
-            # Perform financial analysis
-            if self.fundamental_analysis_components.get("financial_analysis", False):
-                results["financial_analysis"] = self._perform_financial_analysis(
-                    analysis_input,
-                )
-
-            # Perform economic analysis
-            if self.fundamental_analysis_components.get("economic_analysis", False):
-                results["economic_analysis"] = self._perform_economic_analysis(
-                    analysis_input,
-                )
-
-            # Perform market analysis
-            if self.fundamental_analysis_components.get("market_analysis", False):
-                results["market_analysis"] = self._perform_market_analysis(
-                    analysis_input,
-                )
-
-            # Perform sector analysis
-            if self.fundamental_analysis_components.get("sector_analysis", False):
-                results["sector_analysis"] = self._perform_sector_analysis(
-                    analysis_input,
-                )
-
-            self.logger.info("Fundamental analysis completed")
-            return results
-
-        except Exception as e:
-            self.logger.error(f"Error performing fundamental analysis: {e}")
-            return {}
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="sentiment analysis",
-    )
-    async def _perform_sentiment_analysis(
-        self,
-        analysis_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Perform sentiment analysis.
-
-        Args:
-            analysis_input: Analysis input dictionary
-
-        Returns:
-            dict[str, Any]: Sentiment analysis results
-        """
-        try:
-            results = {}
-
-            # Perform news analysis
-            if self.sentiment_analysis_components.get("news_analysis", False):
-                results["news_analysis"] = self._perform_news_analysis(analysis_input)
-
-            # Perform social analysis
-            if self.sentiment_analysis_components.get("social_analysis", False):
-                results["social_analysis"] = self._perform_social_analysis(
-                    analysis_input,
-                )
-
-            # Perform market sentiment
-            if self.sentiment_analysis_components.get("market_sentiment", False):
-                results["market_sentiment"] = self._perform_market_sentiment(
-                    analysis_input,
-                )
-
-            # Perform sentiment scoring
-            if self.sentiment_analysis_components.get("sentiment_scoring", False):
-                results["sentiment_scoring"] = self._perform_sentiment_scoring(
-                    analysis_input,
-                )
-
-            self.logger.info("Sentiment analysis completed")
-            return results
-
-        except Exception as e:
-            self.logger.error(f"Error performing sentiment analysis: {e}")
-            return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -659,148 +532,6 @@ class Analyst:
             self.logger.error(f"Error performing pattern analysis: {e}")
             return {}
 
-    # Fundamental analysis methods
-    def _perform_financial_analysis(
-        self,
-        analysis_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Perform financial analysis."""
-        try:
-            # Simulate financial analysis
-            return {
-                "financial_analysis_completed": True,
-                "pe_ratio": 15.2,
-                "pb_ratio": 2.1,
-                "debt_to_equity": 0.3,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing financial analysis: {e}")
-            return {}
-
-    def _perform_economic_analysis(
-        self,
-        analysis_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Perform economic analysis."""
-        try:
-            # Simulate economic analysis
-            return {
-                "economic_analysis_completed": True,
-                "gdp_growth": 2.5,
-                "inflation_rate": 2.1,
-                "interest_rate": 1.75,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing economic analysis: {e}")
-            return {}
-
-    def _perform_market_analysis(
-        self,
-        analysis_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Perform market analysis."""
-        try:
-            # Simulate market analysis
-            return {
-                "market_analysis_completed": True,
-                "market_cap": 5000000000,
-                "market_sentiment": "neutral",
-                "sector_performance": "outperforming",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing market analysis: {e}")
-            return {}
-
-    def _perform_sector_analysis(
-        self,
-        analysis_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Perform sector analysis."""
-        try:
-            # Simulate sector analysis
-            return {
-                "sector_analysis_completed": True,
-                "sector_trend": "bullish",
-                "sector_rotation": "inflow",
-                "sector_correlation": 0.75,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing sector analysis: {e}")
-            return {}
-
-    # Sentiment analysis methods
-    def _perform_news_analysis(self, analysis_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform news analysis."""
-        try:
-            # Simulate news analysis
-            return {
-                "news_analysis_completed": True,
-                "news_sentiment": "positive",
-                "news_volume": 150,
-                "news_impact": "medium",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing news analysis: {e}")
-            return {}
-
-    def _perform_social_analysis(
-        self,
-        analysis_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Perform social analysis."""
-        try:
-            # Simulate social analysis
-            return {
-                "social_analysis_completed": True,
-                "social_sentiment": "neutral",
-                "social_volume": 5000,
-                "social_momentum": "increasing",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing social analysis: {e}")
-            return {}
-
-    def _perform_market_sentiment(
-        self,
-        analysis_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Perform market sentiment."""
-        try:
-            # Simulate market sentiment
-            return {
-                "market_sentiment_completed": True,
-                "fear_greed_index": 65,
-                "market_mood": "greed",
-                "sentiment_score": 0.7,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing market sentiment: {e}")
-            return {}
-
-    def _perform_sentiment_scoring(
-        self,
-        analysis_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Perform sentiment scoring."""
-        try:
-            # Simulate sentiment scoring
-            return {
-                "sentiment_scoring_completed": True,
-                "overall_sentiment": "positive",
-                "sentiment_score": 0.75,
-                "confidence_level": 0.85,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing sentiment scoring: {e}")
-            return {}
 
     # Risk analysis methods
     def _perform_volatility_analysis(
@@ -871,6 +602,53 @@ class Analyst:
         except Exception as e:
             self.logger.error(f"Error performing risk scoring: {e}")
             return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="ML predictions",
+    )
+    async def _perform_ml_predictions(
+        self,
+        analysis_input: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Perform ML confidence predictions.
+
+        Args:
+            analysis_input: Analysis input data
+
+        Returns:
+            dict[str, Any]: ML prediction results
+        """
+        try:
+            if not self.ml_confidence_predictor:
+                return {"error": "ML confidence predictor not initialized"}
+
+            # Extract market data and current price
+            market_data = analysis_input.get("market_data", {})
+            current_price = analysis_input.get("current_price", 0.0)
+
+            if not market_data or current_price <= 0:
+                return {"error": "Invalid market data or current price"}
+
+            # Generate ML predictions
+            predictions = await self.ml_confidence_predictor.predict_confidence_table(
+                market_data, current_price
+            )
+
+            if predictions:
+                return {
+                    "status": "success",
+                    "predictions": predictions,
+                    "timestamp": datetime.now(),
+                }
+            else:
+                return {"error": "Failed to generate ML predictions"}
+
+        except Exception as e:
+            self.logger.error(f"Error performing ML predictions: {e}")
+            return {"error": f"ML prediction error: {e}"}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -1006,11 +784,6 @@ class Analyst:
             "analysis_interval": self.analysis_interval,
             "max_analysis_history": self.max_analysis_history,
             "enable_technical_analysis": self.enable_technical_analysis,
-            "enable_fundamental_analysis": self.enable_fundamental_analysis,
-            "enable_sentiment_analysis": self.analyst_config.get(
-                "enable_sentiment_analysis",
-                True,
-            ),
             "enable_risk_analysis": self.analyst_config.get(
                 "enable_risk_analysis",
                 True,
@@ -1071,8 +844,6 @@ async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
                     "analysis_interval": 3600,
                     "max_analysis_history": 100,
                     "enable_technical_analysis": True,
-                    "enable_fundamental_analysis": True,
-                    "enable_sentiment_analysis": True,
                     "enable_risk_analysis": True,
                 },
             }
@@ -1089,3 +860,4 @@ async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
     except Exception as e:
         print(f"Error setting up analyst: {e}")
         return None
+

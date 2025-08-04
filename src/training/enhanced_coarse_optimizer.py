@@ -17,7 +17,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
 
-from src.analyst.feature_engineering import FeatureEngineeringEngine
+from src.analyst.feature_engineering_orchestrator import FeatureEngineeringEngine
 from src.analyst.ml_target_generator import MLTargetGenerator
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager

@@ -1,514 +1,598 @@
 # src/tactician/leverage_sizer.py
 
+"""
+Leverage Sizer for high leverage trading.
+Uses ML confidence scores, liquidation risk model, and intelligence from other components.
+"""
+
+import asyncio
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
-from src.analyst.liquidation_risk_model import ProbabilisticLiquidationRiskModel
-from src.utils.error_handler import handle_errors
+import pandas as pd
+import yaml
+
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.config_loader import load_leverage_sizing_config
-
 
 
 class LeverageSizer:
     """
-    Enhanced leverage sizing system that incorporates multiple indicators:
-    - Confidence scores from ML models
-    - Volatility measures (ATR, realized volatility)
-    - Liquidation risk assessment
-    - Dynamic risk management based on performance
-    - Opportunity type detection (S/R levels, breakouts, etc.)
+    Leverage sizer that uses ML confidence scores, liquidation risk model, and intelligence
+    from Strategist, Analyst, and Governor components.
     """
 
-    def __init__(self, config: dict[str, Any], state_manager=None):
-        self.config = config
-        self.state_manager = state_manager
-        self.risk_config = config.get("risk_management", {})
-        self.leverage_config = self.risk_config.get("leverage_sizing", {})
-        self.dynamic_config = self.risk_config.get("dynamic_risk_management", {})
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("LeverageSizer")
 
-        # Initialize liquidation risk model
-        self.liquidation_risk_model = ProbabilisticLiquidationRiskModel(
-            self.risk_config.get("liquidation_risk", {})
-        )
+        # Load configuration
+        self.leverage_config: dict[str, Any] = self.config.get("leverage_sizing", {})
+        self.max_leverage: float = self.leverage_config.get("max_leverage", 10.0)
+        self.min_leverage: float = self.leverage_config.get("min_leverage", 1.0)
+        self.confidence_threshold: float = self.leverage_config.get("confidence_threshold", 0.7)
+        self.risk_tolerance: float = self.leverage_config.get("risk_tolerance", 0.3)
+        
+        # Load combined sizing configuration
+        self.combined_sizing_config: dict[str, Any] = self._load_combined_sizing_config()
+        
+        # Component weights
+        self.ml_weight: float = self.leverage_config.get("ml_weight", 0.4)
+        self.liquidation_risk_weight: float = self.leverage_config.get("liquidation_risk_weight", 0.3)
+        self.strategist_weight: float = self.leverage_config.get("strategist_weight", 0.2)
+        self.analyst_weight: float = self.leverage_config.get("analyst_weight", 0.1)
+        
+        self.is_initialized: bool = False
+        self.leverage_sizing_history: List[dict[str, Any]] = []
 
-        # Performance tracking
-        self.daily_pnl = 0.0
-        self.max_drawdown = 0.0
-        self.current_exposure = 0.0
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid leverage sizer configuration"),
+            AttributeError: (False, "Missing required leverage parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="leverage sizer initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize the leverage sizer."""
+        try:
+            self.logger.info("Initializing leverage sizer...")
+
+            # Validate configuration
+            if not self._validate_configuration():
+                return False
+
+            # Validate combined sizing config
+            if not self._validate_combined_sizing_config():
+                return False
+
+            self.is_initialized = True
+            self.logger.info("✅ Leverage sizer initialized successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error initializing leverage sizer: {e}")
+            return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=1,
-        context="leverage calculation",
+        default_return=None,
+        context="configuration validation",
     )
-    def calculate_leverage(
+    def _validate_configuration(self) -> bool:
+        """Validate leverage sizer configuration."""
+        try:
+            required_keys = ["max_leverage", "min_leverage", "confidence_threshold"]
+            for key in required_keys:
+                if key not in self.leverage_config:
+                    self.logger.error(f"Missing required configuration key: {key}")
+                    return False
+
+            if self.max_leverage <= self.min_leverage:
+                self.logger.error("max_leverage must be greater than min_leverage")
+                return False
+
+            if self.confidence_threshold <= 0 or self.confidence_threshold > 1:
+                self.logger.error("confidence_threshold must be between 0 and 1")
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="combined sizing config loading",
+    )
+    def _load_combined_sizing_config(self) -> dict[str, Any]:
+        """Load combined sizing configuration from YAML file."""
+        try:
+            config_path = "config/combined_sizing.yaml"
+            with open(config_path, 'r') as file:
+                config = yaml.safe_load(file)
+            self.logger.info(f"Loaded combined sizing config from {config_path}")
+            return config
+        except Exception as e:
+            self.logger.error(f"Error loading combined sizing config: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="combined sizing config validation",
+    )
+    def _validate_combined_sizing_config(self) -> bool:
+        """Validate combined sizing configuration."""
+        try:
+            if not self.combined_sizing_config:
+                self.logger.error("Combined sizing config is empty")
+                return False
+
+            # Check for required sections
+            required_sections = ["indicators", "weights", "thresholds"]
+            for section in required_sections:
+                if section not in self.combined_sizing_config:
+                    self.logger.error(f"Missing required section in combined sizing config: {section}")
+                    return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error validating combined sizing config: {e}")
+            return False
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (None, "Invalid input data for leverage sizing"),
+            AttributeError: (None, "Sizer not properly initialized"),
+        },
+        default_return=None,
+        context="leverage sizing calculation",
+    )
+    async def calculate_leverage(
         self,
-        base_leverage: float,
-        max_leverage_cap: int,
-        confidence: float = 0.0,
-        market_conditions: dict[str, Any] = None,
-        position_size: float = None,
-        current_price: float = None,
-        side: str = "long",
+        ml_predictions: dict[str, Any],
+        liquidation_risk_analysis: Optional[dict[str, Any]] = None,
+        strategist_results: Optional[dict[str, Any]] = None,
+        analyst_results: Optional[dict[str, Any]] = None,
+        governor_results: Optional[dict[str, Any]] = None,
+        current_price: float = 0.0,
+        target_direction: str = "long",
     ) -> dict[str, Any]:
         """
-        Calculate optimal leverage based on multiple indicators.
-
+        Calculate leverage using ML confidence scores, liquidation risk analysis, and component intelligence.
+        
         Args:
-            base_leverage: Base leverage to start with
-            max_leverage_cap: Maximum allowed leverage
-            confidence: ML confidence score (0.0 to 1.0)
-            market_conditions: Market data including volatility indicators
-            position_size: Position size for liquidation risk calculation
-            current_price: Current asset price for liquidation risk calculation
-            side: 'long' or 'short'
-
+            ml_predictions: ML confidence predictions from ml_confidence_predictor
+            liquidation_risk_analysis: Liquidation risk analysis from liquidation_risk_model
+            strategist_results: Results from Strategist component
+            analyst_results: Results from Analyst component
+            governor_results: Results from Governor component
+            current_price: Current market price
+            target_direction: Target direction ("long" or "short")
+            
         Returns:
-            Dict containing leverage and metadata
+            dict[str, Any]: Leverage sizing analysis
         """
         try:
-            # Start with base leverage
-            leverage = base_leverage
+            if not self.is_initialized:
+                self.logger.error("Leverage sizer not initialized")
+                return None
 
-            # Apply confidence-based leverage adjustments
-            confidence_leverage = self._apply_confidence_leverage_adjustment(
-                leverage,
-                confidence,
-            )
+            self.logger.info(f"Calculating leverage for {target_direction} position...")
 
-            # Apply volatility-based leverage adjustment
-            volatility_leverage = self._apply_volatility_leverage_adjustment(
-                confidence_leverage,
-                market_conditions,
-            )
+            # Extract ML confidence scores
+            movement_confidence = ml_predictions.get("movement_confidence_scores", {})
+            adverse_movement_risks = ml_predictions.get("adverse_movement_risks", {})
+            directional_confidence = ml_predictions.get("directional_confidence", {})
 
-            # Apply opportunity-based leverage adjustment
-            opportunity_leverage = self._apply_opportunity_leverage_adjustment(
-                market_conditions,
-            )
+            # Calculate base leverage from ML confidence
+            ml_leverage = self._calculate_ml_leverage(movement_confidence, adverse_movement_risks)
 
-            # Apply liquidation risk-based leverage adjustment
-            liquidation_leverage = self._apply_liquidation_risk_leverage_adjustment(
-                opportunity_leverage,
-                position_size,
-                current_price,
-                side,
-                market_conditions,
-            )
+            # Get liquidation risk leverage recommendations
+            liquidation_leverage = self._extract_liquidation_leverage(liquidation_risk_analysis)
 
-            # Apply dynamic risk management to leverage
-            dynamic_leverage = self._apply_dynamic_risk_leverage_adjustment(
+            # Get component indicators
+            strategist_indicators = self._extract_strategist_leverage_indicators(strategist_results)
+            analyst_indicators = self._extract_analyst_leverage_indicators(analyst_results)
+            governor_indicators = self._extract_governor_leverage_indicators(governor_results)
+
+            # Calculate weighted leverage
+            weighted_leverage = self._calculate_weighted_leverage(
+                ml_leverage,
                 liquidation_leverage,
+                strategist_indicators,
+                analyst_indicators,
+                governor_indicators,
             )
 
-            # Ensure leverage doesn't exceed maximum cap
-            final_leverage = min(int(dynamic_leverage), max_leverage_cap)
+            # Apply combined sizing indicators
+            final_leverage = self._apply_combined_leverage_indicators(
+                weighted_leverage,
+                strategist_indicators,
+                analyst_indicators,
+                governor_indicators,
+            )
 
-            # Calculate liquidation safety score if position size is provided
-            lss_metrics = {}
-            if position_size and current_price:
-                lss_metrics = self._calculate_liquidation_safety(
-                    current_price,
-                    position_size,
-                    final_leverage,
-                    side,
-                    market_conditions,
-                )
-
-            return {
-                "leverage": final_leverage,
-                "confidence_score": confidence,
-                "base_leverage": base_leverage,
-                "confidence_multiplier": self._get_confidence_leverage_multiplier(confidence),
-                "volatility_multiplier": self._get_volatility_leverage_multiplier(
-                    market_conditions,
+            # Create leverage sizing analysis
+            leverage_analysis = {
+                "timestamp": datetime.now(),
+                "current_price": current_price,
+                "target_direction": target_direction,
+                "ml_leverage": ml_leverage,
+                "liquidation_leverage": liquidation_leverage,
+                "weighted_leverage": weighted_leverage,
+                "final_leverage": final_leverage,
+                "component_indicators": {
+                    "strategist": strategist_indicators,
+                    "analyst": analyst_indicators,
+                    "governor": governor_indicators,
+                },
+                "ml_confidence_scores": movement_confidence,
+                "adverse_movement_risks": adverse_movement_risks,
+                "directional_confidence": directional_confidence,
+                "leverage_reason": self._generate_leverage_reason(
+                    final_leverage, ml_leverage, liquidation_leverage, movement_confidence, adverse_movement_risks
                 ),
-                "opportunity_multiplier": self._get_opportunity_leverage_multiplier(
-                    market_conditions,
-                ),
-                "liquidation_multiplier": self._get_liquidation_leverage_multiplier(
-                    lss_metrics,
-                ),
-                "risk_multiplier": self._get_risk_leverage_multiplier(),
-                "max_leverage_cap": max_leverage_cap,
-                "liquidation_safety_score": lss_metrics.get("lss", 50.0),
-                "distance_to_liquidation": lss_metrics.get("distance_to_liquidation", 0.0),
-                "calculation_time": datetime.now().isoformat(),
             }
+
+            # Store in history
+            self.leverage_sizing_history.append(leverage_analysis)
+            if len(self.leverage_sizing_history) > 100:  # Keep last 100 entries
+                self.leverage_sizing_history = self.leverage_sizing_history[-100:]
+
+            self.logger.info(f"✅ Leverage calculated: {final_leverage:.2f}x")
+            return leverage_analysis
 
         except Exception as e:
             self.logger.error(f"Error calculating leverage: {e}")
-            return {"leverage": 1, "error": str(e)}
+            return None
 
-    def _apply_confidence_leverage_adjustment(
-        self,
-        leverage: float,
-        confidence: float,
+    def _calculate_ml_leverage(
+        self, movement_confidence: dict[str, float], adverse_movement_risks: dict[str, float]
     ) -> float:
-        """Apply confidence-based leverage adjustments."""
-        if not self.leverage_config.get("confidence_based_leverage", {}).get(
-            "enable_confidence_scaling",
-            True,
-        ):
-            return leverage
+        """Calculate leverage based on ML confidence scores."""
+        try:
+            # Get average confidence for target levels (0.5% to 2.0%)
+            target_levels = [0.5, 1.0, 1.5, 2.0]
+            confidences = []
+            
+            for level in target_levels:
+                closest_level = min(movement_confidence.keys(), key=lambda x: abs(float(x) - level))
+                confidence = movement_confidence.get(closest_level, 0.5)
+                confidences.append(confidence)
+            
+            # Calculate average confidence
+            avg_confidence = sum(confidences) / len(confidences)
+            
+            # Get average adverse risk
+            adverse_risks = []
+            for level in target_levels:
+                closest_level = min(adverse_movement_risks.keys(), key=lambda x: abs(float(x) - level))
+                risk = adverse_movement_risks.get(closest_level, 0.3)
+                adverse_risks.append(risk)
+            
+            avg_adverse_risk = sum(adverse_risks) / len(adverse_risks)
+            
+            # Calculate leverage based on confidence and risk
+            # Higher confidence and lower risk = higher leverage
+            confidence_factor = avg_confidence / self.confidence_threshold
+            risk_factor = 1.0 - avg_adverse_risk
+            
+            # Base leverage calculation
+            base_leverage = self.min_leverage + (self.max_leverage - self.min_leverage) * confidence_factor * risk_factor
+            
+            # Apply risk tolerance adjustment
+            risk_adjusted_leverage = base_leverage * (1.0 - self.risk_tolerance)
+            
+            return max(self.min_leverage, min(self.max_leverage, risk_adjusted_leverage))
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating ML leverage: {e}")
+            return self.min_leverage
 
-        thresholds = self.leverage_config.get("confidence_based_leverage", {}).get(
-            "confidence_thresholds",
-            {},
-        )
-        multipliers = self.leverage_config.get("confidence_based_leverage", {}).get(
-            "leverage_multipliers",
-            {},
-        )
+    def _extract_liquidation_leverage(self, liquidation_risk_analysis: Optional[dict[str, Any]]) -> float:
+        """Extract leverage recommendations from liquidation risk analysis."""
+        try:
+            if not liquidation_risk_analysis:
+                return self.min_leverage
+            
+            # Get safe leverage levels
+            safe_leverage_levels = liquidation_risk_analysis.get("safe_leverage_levels", {})
+            
+            if not safe_leverage_levels:
+                return self.min_leverage
+            
+            # Get average safe leverage
+            safe_leverages = []
+            for leverage_data in safe_leverage_levels.values():
+                safe_leverage = leverage_data.get("safe_leverage", self.min_leverage)
+                safe_leverages.append(safe_leverage)
+            
+            if safe_leverages:
+                avg_safe_leverage = sum(safe_leverages) / len(safe_leverages)
+                return max(self.min_leverage, min(self.max_leverage, avg_safe_leverage))
+            else:
+                return self.min_leverage
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting liquidation leverage: {e}")
+            return self.min_leverage
 
-        # Determine confidence level
-        if confidence >= thresholds.get("very_high_confidence", 0.95):
-            multiplier = multipliers.get("very_high_confidence", 2.0)
-        elif confidence >= thresholds.get("high_confidence", 0.85):
-            multiplier = multipliers.get("high_confidence", 1.8)
-        elif confidence >= thresholds.get("medium_confidence", 0.75):
-            multiplier = multipliers.get("medium_confidence", 1.5)
-        else:
-            multiplier = multipliers.get("low_confidence", 1.0)
+    def _extract_strategist_leverage_indicators(self, strategist_results: Optional[dict[str, Any]]) -> dict[str, float]:
+        """Extract leverage indicators from Strategist results."""
+        try:
+            if not strategist_results:
+                return {}
+            
+            indicators = {}
+            
+            # Extract strategy confidence
+            strategy = strategist_results.get("strategy", {})
+            indicators["strategy_confidence"] = strategy.get("confidence", 0.5)
+            indicators["risk_score"] = strategy.get("risk_score", 0.5)
+            
+            # Extract leverage recommendations
+            ml_strategy = strategy.get("ml_strategy", {})
+            leverage_recommendations = ml_strategy.get("leverage_recommendations", {})
+            indicators["recommended_leverage"] = leverage_recommendations.get("recommended_leverage", self.min_leverage)
+            indicators["max_safe_leverage"] = leverage_recommendations.get("max_safe_leverage", self.max_leverage)
+            
+            return indicators
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting Strategist leverage indicators: {e}")
+            return {}
 
-        return leverage * multiplier
+    def _extract_analyst_leverage_indicators(self, analyst_results: Optional[dict[str, Any]]) -> dict[str, float]:
+        """Extract leverage indicators from Analyst results."""
+        try:
+            if not analyst_results:
+                return {}
+            
+            indicators = {}
+            
+            # Extract market analysis
+            market_analysis = analyst_results.get("market_analysis", {})
+            indicators["market_sentiment"] = market_analysis.get("sentiment", 0.5)
+            indicators["trend_strength"] = market_analysis.get("trend_strength", 0.5)
+            indicators["volatility"] = market_analysis.get("volatility", 0.02)
+            
+            # Extract volatility-based leverage adjustment
+            volatility = indicators["volatility"]
+            if volatility > 0.05:  # High volatility
+                indicators["volatility_leverage_factor"] = 0.5
+            elif volatility > 0.03:  # Medium volatility
+                indicators["volatility_leverage_factor"] = 0.8
+            else:  # Low volatility
+                indicators["volatility_leverage_factor"] = 1.0
+            
+            return indicators
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting Analyst leverage indicators: {e}")
+            return {}
 
-    def _apply_volatility_leverage_adjustment(
+    def _extract_governor_leverage_indicators(self, governor_results: Optional[dict[str, Any]]) -> dict[str, float]:
+        """Extract leverage indicators from Governor results."""
+        try:
+            if not governor_results:
+                return {}
+            
+            indicators = {}
+            
+            # Extract governance decisions
+            governance_decisions = governor_results.get("governance_decisions", {})
+            
+            # Extract leverage decisions
+            leverage_decisions = governance_decisions.get("leverage_decisions", {})
+            if leverage_decisions:
+                # Get average recommended leverage
+                leverages = [decision.get("recommended_leverage", self.min_leverage) for decision in leverage_decisions.values()]
+                indicators["governor_recommended_leverage"] = sum(leverages) / len(leverages) if leverages else self.min_leverage
+            else:
+                indicators["governor_recommended_leverage"] = self.min_leverage
+            
+            # Extract liquidation risk decisions
+            liquidation_risk_decisions = governance_decisions.get("liquidation_risk_decisions", {})
+            if liquidation_risk_decisions:
+                # Count safe leverage decisions
+                safe_decisions = sum(1 for decision in liquidation_risk_decisions.values() 
+                                  if decision.get("action", "") in ["enter_position", "enter_position_cautious"])
+                total_decisions = len(liquidation_risk_decisions)
+                indicators["liquidation_safety_ratio"] = safe_decisions / total_decisions if total_decisions > 0 else 0.5
+            else:
+                indicators["liquidation_safety_ratio"] = 0.5
+            
+            return indicators
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting Governor leverage indicators: {e}")
+            return {}
+
+    def _calculate_weighted_leverage(
         self,
-        leverage: float,
-        market_conditions: dict[str, Any],
+        ml_leverage: float,
+        liquidation_leverage: float,
+        strategist_indicators: dict[str, float],
+        analyst_indicators: dict[str, float],
+        governor_indicators: dict[str, float],
     ) -> float:
-        """Apply volatility-based leverage adjustment."""
-        if not self.leverage_config.get("volatility_based_leverage", {}).get(
-            "enable_volatility_scaling",
-            True,
-        ):
-            return leverage
+        """Calculate weighted leverage using component indicators."""
+        try:
+            # Base leverage from ML and liquidation risk
+            base_leverage = (ml_leverage * self.ml_weight + liquidation_leverage * self.liquidation_risk_weight) / (self.ml_weight + self.liquidation_risk_weight)
+            
+            # Strategist adjustment
+            strategist_adjustment = 1.0
+            if strategist_indicators:
+                strategy_confidence = strategist_indicators.get("strategy_confidence", 0.5)
+                recommended_leverage = strategist_indicators.get("recommended_leverage", self.min_leverage)
+                strategist_adjustment = (strategy_confidence * 0.7) + (recommended_leverage / self.max_leverage * 0.3)
+            
+            # Analyst adjustment
+            analyst_adjustment = 1.0
+            if analyst_indicators:
+                volatility_factor = analyst_indicators.get("volatility_leverage_factor", 1.0)
+                market_sentiment = analyst_indicators.get("market_sentiment", 0.5)
+                analyst_adjustment = volatility_factor * (0.7 + market_sentiment * 0.3)
+            
+            # Governor adjustment
+            governor_adjustment = 1.0
+            if governor_indicators:
+                governor_recommended = governor_indicators.get("governor_recommended_leverage", self.min_leverage)
+                liquidation_safety = governor_indicators.get("liquidation_safety_ratio", 0.5)
+                governor_adjustment = (governor_recommended / self.max_leverage * 0.6) + (liquidation_safety * 0.4)
+            
+            # Calculate weighted leverage
+            weighted_leverage = base_leverage * (
+                self.ml_weight +
+                self.liquidation_risk_weight +
+                self.strategist_weight * strategist_adjustment +
+                self.analyst_weight * analyst_adjustment +
+                self.governor_weight * governor_adjustment
+            )
+            
+            return max(self.min_leverage, min(self.max_leverage, weighted_leverage))
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating weighted leverage: {e}")
+            return ml_leverage
 
-        # Get ATR or volatility measure
-        atr = market_conditions.get("atr", 0.0) if market_conditions else 0.0
-        current_price = (
-            market_conditions.get("current_price", 1.0) if market_conditions else 1.0
-        )
-        atr_ratio = atr / current_price if current_price > 0 else 0.0
-
-        # Get realized volatility if available
-        realized_vol = (
-            market_conditions.get("realized_volatility_30d", 0.0)
-            if market_conditions
-            else 0.0
-        )
-
-        # Use the higher of ATR ratio or realized volatility
-        volatility_measure = max(atr_ratio, realized_vol)
-
-        thresholds = self.leverage_config.get("volatility_based_leverage", {}).get(
-            "volatility_thresholds",
-            {},
-        )
-        multipliers = self.leverage_config.get("volatility_based_leverage", {}).get(
-            "leverage_multipliers",
-            {},
-        )
-
-        # Determine volatility level
-        if volatility_measure <= thresholds.get("low_volatility", 0.02):
-            multiplier = multipliers.get("low_volatility", 1.3)  # Higher leverage in low vol
-        elif volatility_measure <= thresholds.get("medium_volatility", 0.05):
-            multiplier = multipliers.get("medium_volatility", 1.0)
-        else:
-            multiplier = multipliers.get("high_volatility", 0.6)  # Lower leverage in high vol
-
-        return leverage * multiplier
-
-
-    def _apply_opportunity_leverage_adjustment(
+    def _apply_combined_leverage_indicators(
         self,
-        leverage: float,
-        market_conditions: dict[str, Any],
+        weighted_leverage: float,
+        strategist_indicators: dict[str, float],
+        analyst_indicators: dict[str, float],
+        governor_indicators: dict[str, float],
     ) -> float:
-        """Apply opportunity-based leverage adjustment."""
-        if not self.leverage_config.get("opportunity_based_leverage", {}).get(
-            "enable_opportunity_scaling",
-            True,
-        ):
-            return leverage
+        """Apply combined leverage indicators from config."""
+        try:
+            final_leverage = weighted_leverage
+            
+            # Apply volatility adjustment
+            if analyst_indicators:
+                volatility = analyst_indicators.get("volatility", 0.02)
+                volatility_threshold = self.combined_sizing_config.get("thresholds", {}).get("volatility", 0.03)
+                if volatility > volatility_threshold:
+                    # Reduce leverage for high volatility
+                    volatility_factor = volatility_threshold / volatility
+                    final_leverage *= volatility_factor
+            
+            # Apply risk score adjustment
+            if strategist_indicators:
+                risk_score = strategist_indicators.get("risk_score", 0.5)
+                risk_threshold = self.combined_sizing_config.get("thresholds", {}).get("risk_score", 0.7)
+                if risk_score > risk_threshold:
+                    # Reduce leverage for high risk
+                    risk_factor = risk_threshold / risk_score
+                    final_leverage *= risk_factor
+            
+            # Apply liquidation safety adjustment
+            if governor_indicators:
+                liquidation_safety = governor_indicators.get("liquidation_safety_ratio", 0.5)
+                safety_threshold = self.combined_sizing_config.get("thresholds", {}).get("liquidation_safety", 0.6)
+                if liquidation_safety < safety_threshold:
+                    # Reduce leverage for low liquidation safety
+                    safety_factor = liquidation_safety / safety_threshold
+                    final_leverage *= safety_factor
+            
+            return max(self.min_leverage, min(self.max_leverage, final_leverage))
+            
+        except Exception as e:
+            self.logger.error(f"Error applying combined leverage indicators: {e}")
+            return weighted_leverage
 
-        opportunity_type = (
-            market_conditions.get("opportunity_type", "STANDARD")
-            if market_conditions
-            else "STANDARD"
-        )
-        multipliers = self.leverage_config.get("opportunity_based_leverage", {}).get(
-            "opportunity_multipliers",
-            {},
-        )
-
-        # Enhanced leverage for specific opportunity types
-        if opportunity_type in ["SR_FADE", "SR_BREAKOUT"]:
-            multiplier = multipliers.get("sr_opportunity", 2.0)
-        elif opportunity_type == "BREAKOUT":
-            multiplier = multipliers.get("breakout", 1.8)
-        elif opportunity_type == "REVERSAL":
-            multiplier = multipliers.get("reversal", 1.5)
-        else:
-            multiplier = multipliers.get("standard", 1.0)
-
-        # Additional adjustments for specific market conditions
-        if market_conditions:
-            # S/R zone leverage boost
-            if market_conditions.get("near_sr_zone", False):
-                sr_boost = multipliers.get("sr_zone", 1.5)
-                multiplier *= sr_boost
-
-            # Huge candle leverage boost
-            if market_conditions.get("huge_candle", False):
-                huge_candle_boost = multipliers.get("huge_candle", 2.0)
-                multiplier *= huge_candle_boost
-
-            # Momentum leverage boost
-            if market_conditions.get("strong_momentum", False):
-                momentum_boost = multipliers.get("momentum", 1.3)
-                multiplier *= momentum_boost
-
-        return leverage * multiplier
-
-    def _apply_liquidation_risk_leverage_adjustment(
+    def _generate_leverage_reason(
         self,
-        leverage: float,
-        position_size: float,
-        current_price: float,
-        side: str,
-        market_conditions: dict[str, Any],
-    ) -> float:
-        """Apply liquidation risk-based leverage adjustment."""
-        if not self.leverage_config.get("liquidation_risk_leverage", {}).get(
-            "enable_liquidation_scaling",
-            True,
-        ):
-            return leverage
+        final_leverage: float,
+        ml_leverage: float,
+        liquidation_leverage: float,
+        movement_confidence: dict[str, float],
+        adverse_movement_risks: dict[str, float],
+    ) -> str:
+        """Generate reason for leverage decision."""
+        try:
+            # Get average confidence and risk
+            key_levels = [0.5, 1.0, 1.5, 2.0]
+            confidences = []
+            risks = []
+            
+            for level in key_levels:
+                closest_confidence = min(movement_confidence.keys(), key=lambda x: abs(float(x) - level))
+                closest_risk = min(adverse_movement_risks.keys(), key=lambda x: abs(float(x) - level))
+                confidences.append(movement_confidence.get(closest_confidence, 0.5))
+                risks.append(adverse_movement_risks.get(closest_risk, 0.3))
+            
+            avg_confidence = sum(confidences) / len(confidences)
+            avg_risk = sum(risks) / len(risks)
+            
+            if final_leverage >= self.max_leverage * 0.8:
+                return f"Maximum leverage due to high confidence ({avg_confidence:.2f}) and low risk ({avg_risk:.2f})"
+            elif final_leverage >= self.max_leverage * 0.5:
+                return f"High leverage based on ML confidence ({ml_leverage:.2f}x) and liquidation safety ({liquidation_leverage:.2f}x)"
+            elif final_leverage >= self.min_leverage * 2:
+                return f"Moderate leverage with balanced risk-reward profile"
+            else:
+                return f"Conservative leverage due to low confidence ({avg_confidence:.2f}) or high risk ({avg_risk:.2f})"
+                
+        except Exception as e:
+            self.logger.error(f"Error generating leverage reason: {e}")
+            return "Leverage calculated using ML intelligence and liquidation risk analysis"
 
-        if not position_size or not current_price:
-            return leverage
+    def get_leverage_sizing_history(self, limit: Optional[int] = None) -> List[dict[str, Any]]:
+        """Get leverage sizing history."""
+        if limit:
+            return self.leverage_sizing_history[-limit:]
+        return self.leverage_sizing_history.copy()
 
-        # Calculate liquidation safety score
-        atr = market_conditions.get("atr", 0.0) if market_conditions else 0.0
-        lss = self.liquidation_risk_model.calculate_lss(
-            current_price,
-            position_size,
-            leverage,
-            side,
-            atr,
-        )
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="leverage sizer cleanup",
+    )
+    async def stop(self) -> None:
+        """Stop the leverage sizer."""
+        try:
+            self.logger.info("Stopping leverage sizer...")
+            self.is_initialized = False
+            self.logger.info("✅ Leverage sizer stopped successfully")
+        except Exception as e:
+            self.logger.error(f"Error stopping leverage sizer: {e}")
 
-        # Apply LSS-based adjustment
-        thresholds = self.leverage_config.get("liquidation_risk_leverage", {}).get(
-            "lss_thresholds",
-            {},
-        )
-        multipliers = self.leverage_config.get("liquidation_risk_leverage", {}).get(
-            "lss_multipliers",
-            {},
-        )
 
-        if lss >= thresholds.get("very_safe", 80):
-            multiplier = multipliers.get("very_safe", 1.2)
-        elif lss >= thresholds.get("safe", 60):
-            multiplier = multipliers.get("safe", 1.0)
-        elif lss >= thresholds.get("moderate", 40):
-            multiplier = multipliers.get("moderate", 0.8)
-        else:
-            multiplier = multipliers.get("dangerous", 0.5)
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="leverage sizer setup",
+)
+async def setup_leverage_sizer(
+    config: dict[str, Any] | None = None,
+) -> LeverageSizer | None:
+    """
+    Setup leverage sizer.
 
-        return leverage * multiplier
+    Args:
+        config: Configuration dictionary
 
-    def _apply_dynamic_risk_leverage_adjustment(self, leverage: float) -> float:
-        """Apply dynamic risk management to leverage calculation."""
-        if not self.dynamic_config.get("enable_dynamic_risk", True):
-            return leverage
+    Returns:
+        Optional[LeverageSizer]: Initialized leverage sizer or None
+    """
+    try:
+        if config is None:
+            config = {}
 
-        # Apply drawdown-based leverage reduction
-        if self.max_drawdown >= 0.4:
-            leverage *= 0.2
-        elif self.max_drawdown >= 0.3:
-            leverage *= 0.5
-        elif self.max_drawdown >= 0.2:
-            leverage *= 0.7
-        elif self.max_drawdown >= 0.1:
-            leverage *= 0.9
-
-        # Apply daily loss-based leverage reduction
-        if self.daily_pnl <= -0.10:
-            leverage *= 0.2
-        elif self.daily_pnl <= -0.08:
-            leverage *= 0.5
-        elif self.daily_pnl <= -0.05:
-            leverage *= 0.8
-
-        return leverage
-
-    def _calculate_liquidation_safety(
-        self,
-        current_price: float,
-        position_size: float,
-        leverage: int,
-        side: str,
-        market_conditions: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Calculate liquidation safety metrics."""
-        atr = market_conditions.get("atr", 0.0) if market_conditions else 0.0
+        leverage_sizer = LeverageSizer(config)
         
-        return self.liquidation_risk_model.get_risk_metrics(
-            current_price,
-            position_size,
-            leverage,
-            side,
-            atr,
-        )
+        if await leverage_sizer.initialize():
+            return leverage_sizer
+        else:
+            return None
 
-    def _get_confidence_leverage_multiplier(self, confidence: float) -> float:
-        """Get confidence-based leverage multiplier."""
-        thresholds = self.leverage_config.get("confidence_based_leverage", {}).get(
-            "confidence_thresholds",
-            {},
-        )
-        multipliers = self.leverage_config.get("confidence_based_leverage", {}).get(
-            "leverage_multipliers",
-            {},
-        )
-
-        if confidence >= thresholds.get("very_high_confidence", 0.95):
-            return multipliers.get("very_high_confidence", 2.0)
-        if confidence >= thresholds.get("high_confidence", 0.85):
-            return multipliers.get("high_confidence", 1.8)
-        if confidence >= thresholds.get("medium_confidence", 0.75):
-            return multipliers.get("medium_confidence", 1.5)
-        return multipliers.get("low_confidence", 1.0)
-
-    def _get_volatility_leverage_multiplier(self, market_conditions: dict[str, Any]) -> float:
-        """Get volatility-based leverage multiplier."""
-        atr = market_conditions.get("atr", 0.0) if market_conditions else 0.0
-        current_price = (
-            market_conditions.get("current_price", 1.0) if market_conditions else 1.0
-        )
-        atr_ratio = atr / current_price if current_price > 0 else 0.0
-
-        # Get realized volatility if available
-        realized_vol = (
-            market_conditions.get("realized_volatility_30d", 0.0)
-            if market_conditions
-            else 0.0
-        )
-
-        # Use the higher of ATR ratio or realized volatility
-        volatility_measure = max(atr_ratio, realized_vol)
-
-        thresholds = self.leverage_config.get("volatility_based_leverage", {}).get(
-            "volatility_thresholds",
-            {},
-        )
-        multipliers = self.leverage_config.get("volatility_based_leverage", {}).get(
-            "leverage_multipliers",
-            {},
-        )
-
-        if volatility_measure <= thresholds.get("low_volatility", 0.02):
-            return multipliers.get("low_volatility", 1.3)
-        if volatility_measure <= thresholds.get("medium_volatility", 0.05):
-            return multipliers.get("medium_volatility", 1.0)
-        return multipliers.get("high_volatility", 0.6)
-
-
-    def _get_opportunity_leverage_multiplier(self, market_conditions: dict[str, Any]) -> float:
-        """Get opportunity-based leverage multiplier."""
-        opportunity_type = (
-            market_conditions.get("opportunity_type", "STANDARD")
-            if market_conditions
-            else "STANDARD"
-        )
-        multipliers = self.leverage_config.get("opportunity_based_leverage", {}).get(
-            "opportunity_multipliers",
-            {},
-        )
-
-        base_multiplier = multipliers.get(opportunity_type, 1.0)
-        
-        # Apply additional adjustments
-        if market_conditions:
-            if market_conditions.get("near_sr_zone", False):
-                base_multiplier *= multipliers.get("sr_zone", 1.5)
-            if market_conditions.get("huge_candle", False):
-                base_multiplier *= multipliers.get("huge_candle", 2.0)
-            if market_conditions.get("strong_momentum", False):
-                base_multiplier *= multipliers.get("momentum", 1.3)
-
-        return base_multiplier
-
-    def _get_liquidation_leverage_multiplier(self, lss_metrics: dict[str, Any]) -> float:
-        """Get liquidation risk-based leverage multiplier."""
-        lss = lss_metrics.get("lss", 50.0)
-        
-        thresholds = self.leverage_config.get("liquidation_risk_leverage", {}).get(
-            "lss_thresholds",
-            {},
-        )
-        multipliers = self.leverage_config.get("liquidation_risk_leverage", {}).get(
-            "lss_multipliers",
-            {},
-        )
-
-        if lss >= thresholds.get("very_safe", 80):
-            return multipliers.get("very_safe", 1.2)
-        if lss >= thresholds.get("safe", 60):
-            return multipliers.get("safe", 1.0)
-        if lss >= thresholds.get("moderate", 40):
-            return multipliers.get("moderate", 0.8)
-        return multipliers.get("dangerous", 0.5)
-
-    def _get_risk_leverage_multiplier(self) -> float:
-        """Get current risk-based leverage multiplier."""
-        # This would be calculated based on current drawdown and daily loss
-        drawdown_multiplier = 1.0
-        daily_loss_multiplier = 1.0
-
-        # Apply drawdown adjustment
-        if self.max_drawdown >= 0.4:
-            drawdown_multiplier = 0.2
-        elif self.max_drawdown >= 0.3:
-            drawdown_multiplier = 0.5
-        elif self.max_drawdown >= 0.2:
-            drawdown_multiplier = 0.7
-        elif self.max_drawdown >= 0.1:
-            drawdown_multiplier = 0.9
-
-        # Apply daily loss adjustment
-        if self.daily_pnl <= -0.10:
-            daily_loss_multiplier = 0.2
-        elif self.daily_pnl <= -0.08:
-            daily_loss_multiplier = 0.5
-        elif self.daily_pnl <= -0.05:
-            daily_loss_multiplier = 0.8
-
-        return min(drawdown_multiplier, daily_loss_multiplier)
-
-    def update_performance_metrics(self, daily_pnl: float, max_drawdown: float):
-        """Update performance metrics for dynamic risk management."""
-        self.daily_pnl = daily_pnl
-        self.max_drawdown = max_drawdown
-
-    def update_exposure(self, new_exposure: float):
-        """Update current total exposure."""
-        self.current_exposure = new_exposure
-
-    def get_leverage_summary(self) -> dict[str, Any]:
-        """Get summary of leverage sizing rules and current state."""
-        return {
-            "current_exposure": self.current_exposure,
-            "daily_pnl": self.daily_pnl,
-            "max_drawdown": self.max_drawdown,
-            "risk_multiplier": self._get_risk_leverage_multiplier(),
-            "leverage_config": self.leverage_config,
-            "dynamic_config": self.dynamic_config,
-        }
+    except Exception as e:
+        system_logger.error(f"Error setting up leverage sizer: {e}")
+        return None

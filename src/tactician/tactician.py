@@ -2,10 +2,13 @@
 
 import asyncio
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
 
 from src.tactician.position_sizer import PositionSizer
 from src.tactician.leverage_sizer import LeverageSizer
+from src.tactician.position_division_strategy import PositionDivisionStrategy
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
@@ -34,15 +37,17 @@ class Tactician:
         self.sr_analyzer = None
         self.enable_sr_tactics: bool = self.tactician_config.get("enable_sr_tactics", True)
         
-        # SR Breakout Predictor integration
+        # SR Breakout Predictor integration (DEPRECATED - Replaced with enhanced predictive ensembles)
         self.sr_breakout_predictor = None
         self.enable_sr_breakout_tactics: bool = self.tactician_config.get("enable_sr_breakout_tactics", True)
         
         # Position and Leverage Sizing integration
         self.position_sizer = None
         self.leverage_sizer = None
+        self.position_division_strategy = None
         self.enable_position_sizing: bool = self.tactician_config.get("enable_position_sizing", True)
         self.enable_leverage_sizing: bool = self.tactician_config.get("enable_leverage_sizing", True)
+        self.enable_position_division: bool = self.tactician_config.get("enable_position_division", True)
         
         # ML Prediction integration
         self.ml_predictions = None
@@ -81,9 +86,15 @@ class Tactician:
             if self.enable_leverage_sizing:
                 await self._initialize_leverage_sizer()
                 
+            if self.enable_position_division:
+                await self._initialize_position_division_strategy()
+                
             # Initialize ML tactics
             if self.enable_ml_tactics:
                 await self._initialize_ml_tactics()
+                
+            # Initialize Position Monitor for real-time monitoring
+            await self._initialize_position_monitor()
                 
             self.logger.info("✅ Tactician initialization completed successfully")
             return True
@@ -166,14 +177,13 @@ class Tactician:
         context="SR breakout predictor initialization",
     )
     async def _initialize_sr_breakout_predictor(self) -> None:
-        """Initialize SR Breakout Predictor for tactical decisions."""
+        """Initialize SR Breakout Predictor for tactical decisions (DEPRECATED)."""
         try:
-            from src.analyst.sr_breakout_predictor import SRBreakoutPredictor
-            self.sr_breakout_predictor = SRBreakoutPredictor(self.config)
-            await self.sr_breakout_predictor.initialize()
-            self.logger.info("✅ SR Breakout Predictor initialized for tactical decisions")
+            # SR Breakout Predictor has been replaced with enhanced predictive ensembles
+            self.logger.info("SR Breakout Predictor deprecated - using enhanced predictive ensembles")
+            self.sr_breakout_predictor = None
         except Exception as e:
-            self.logger.error(f"Error initializing SR Breakout Predictor: {e}")
+            self.logger.error(f"Error in deprecated SR Breakout Predictor initialization: {e}")
             self.sr_breakout_predictor = None
 
     @handle_errors(
@@ -207,6 +217,20 @@ class Tactician:
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
+        context="position division strategy initialization",
+    )
+    async def _initialize_position_division_strategy(self) -> None:
+        """Initialize Position Division Strategy for tactical position management."""
+        try:
+            self.position_division_strategy = PositionDivisionStrategy(self.config)
+            self.logger.info("✅ Position Division Strategy initialized for tactical decisions")
+        except Exception as e:
+            self.logger.error(f"Error initializing Position Division Strategy: {e}")
+            self.position_division_strategy = None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
         context="ML tactics initialization",
     )
     async def _initialize_ml_tactics(self) -> None:
@@ -221,6 +245,30 @@ class Tactician:
         except Exception as e:
             self.logger.error(f"Error initializing ML tactics: {e}")
             self.ml_predictions = None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="position monitor initialization",
+    )
+    async def _initialize_position_monitor(self) -> None:
+        """Initialize position monitor for real-time position monitoring."""
+        try:
+            from src.tactician.position_monitor import setup_position_monitor
+            
+            # Setup position monitor with tactician config
+            self.position_monitor = await setup_position_monitor(self.config)
+            
+            if self.position_monitor:
+                # Start position monitoring in background
+                asyncio.create_task(self.position_monitor.start_monitoring())
+                self.logger.info("✅ Position Monitor initialized and started")
+            else:
+                self.logger.warning("⚠️ Position Monitor initialization failed")
+                
+        except Exception as e:
+            self.logger.error(f"Error initializing position monitor: {e}")
+            self.position_monitor = None
 
     @handle_specific_errors(
         error_handlers={
@@ -273,6 +321,9 @@ class Tactician:
                 
             if self.enable_leverage_sizing and self.leverage_sizer:
                 await self._monitor_leverage_sizing()
+                
+            if self.enable_position_division and self.position_division_strategy:
+                await self._monitor_position_division()
                 
             # Monitor ML tactics
             if self.enable_ml_tactics:
@@ -328,17 +379,143 @@ class Tactician:
     )
     async def _monitor_positions(self) -> None:
         try:
-            # Monitor positions
-            position_status = {
-                "active_positions": 3,
-                "position_sizes": "optimal",
-                "position_health": "good",
-                "position_returns": 0.125,
-            }
-            self.tactics_results["position_status"] = position_status
-            self.logger.info("Position monitoring completed")
+            # Use the enhanced position monitor if available
+            if hasattr(self, 'position_monitor') and self.position_monitor:
+                # The position monitor handles its own monitoring loop
+                # This method now just updates position data for the monitor
+                await self._update_position_monitor_data()
+            else:
+                # Fallback to basic position monitoring
+                position_status = {
+                    "active_positions": 3,
+                    "position_sizes": "optimal",
+                    "position_health": "good",
+                    "position_returns": 0.125,
+                }
+                self.tactics_results["position_status"] = position_status
+                self.logger.info("Position monitoring completed (basic mode)")
         except Exception as e:
             self.logger.error(f"Error monitoring positions: {e}")
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="position monitor data update",
+    )
+    async def _update_position_monitor_data(self) -> None:
+        """Update position data for the position monitor."""
+        try:
+            if not hasattr(self, 'position_monitor') or not self.position_monitor:
+                return
+            
+            # Get current positions from state manager or trading system
+            current_positions = self._get_current_positions()
+            
+            # Update position monitor with current data
+            for position_id, position_data in current_positions.items():
+                # Add market data to position data
+                enhanced_position_data = await self._enhance_position_data(position_data)
+                self.position_monitor.add_position(position_id, enhanced_position_data)
+            
+            # Get position status from monitor
+            active_positions = self.position_monitor.get_active_positions()
+            assessment_history = self.position_monitor.get_assessment_history(limit=10)
+            
+            # Update tactics results
+            self.tactics_results["position_status"] = {
+                "active_positions": len(active_positions),
+                "monitored_positions": list(active_positions.keys()),
+                "latest_assessments": [
+                    {
+                        "position_id": assessment.position_id,
+                        "confidence": assessment.current_confidence,
+                        "confidence_change": assessment.confidence_change,
+                        "action": assessment.recommended_action.value,
+                        "reason": assessment.action_reason,
+                        "timestamp": assessment.assessment_timestamp.isoformat()
+                    }
+                    for assessment in assessment_history
+                ]
+            }
+            
+            self.logger.info(f"Position monitoring updated: {len(active_positions)} active positions")
+            
+        except Exception as e:
+            self.logger.error(f"Error updating position monitor data: {e}")
+    
+    def _get_current_positions(self) -> Dict[str, Dict[str, Any]]:
+        """Get current positions from state manager or trading system."""
+        try:
+            # This would integrate with the actual trading system
+            # For now, return simulated positions
+            return {
+                "pos_001": {
+                    "symbol": "ETHUSDT",
+                    "direction": "LONG",
+                    "entry_price": 1850.0,
+                    "current_price": 1860.0,
+                    "position_size": 0.1,
+                    "leverage": 1.0,
+                    "entry_confidence": 0.75,
+                    "entry_timestamp": datetime.now().isoformat(),
+                    "time_in_position_hours": 2.5,
+                    "market_volatility": 0.15,
+                    "trend_strength": 0.6,
+                    "base_confidence": 0.7,
+                },
+                "pos_002": {
+                    "symbol": "BTCUSDT",
+                    "direction": "SHORT",
+                    "entry_price": 42000.0,
+                    "current_price": 41800.0,
+                    "position_size": 0.05,
+                    "leverage": 2.0,
+                    "entry_confidence": 0.65,
+                    "entry_timestamp": datetime.now().isoformat(),
+                    "time_in_position_hours": 1.0,
+                    "market_volatility": 0.12,
+                    "trend_strength": 0.4,
+                    "base_confidence": 0.6,
+                }
+            }
+        except Exception as e:
+            self.logger.error(f"Error getting current positions: {e}")
+            return {}
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="position data enhancement",
+    )
+    async def _enhance_position_data(self, position_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Enhance position data with additional market information."""
+        try:
+            # Add real-time market data
+            symbol = position_data.get("symbol", "")
+            current_price = position_data.get("current_price", 0.0)
+            
+            # Get ML predictions for confidence assessment
+            ml_predictions = self._get_ml_predictions()
+            if ml_predictions:
+                confidence_scores = ml_predictions.get("confidence_scores", {})
+                movement_confidence = ml_predictions.get("movement_confidence_scores", {})
+                
+                # Update confidence based on ML predictions
+                if confidence_scores:
+                    position_data["ml_confidence"] = confidence_scores
+                
+                if movement_confidence:
+                    position_data["movement_confidence"] = movement_confidence
+            
+            # Add market volatility and trend data
+            position_data["market_volatility"] = position_data.get("market_volatility", 0.1)
+            position_data["trend_strength"] = position_data.get("trend_strength", 0.5)
+            
+            return position_data
+            
+        except Exception as e:
+            self.logger.error(f"Error enhancing position data: {e}")
+            return position_data
 
     @handle_errors(
         exceptions=(Exception,),
@@ -439,8 +616,8 @@ class Tactician:
             import pandas as pd
             df = pd.DataFrame(market_data)
             
-            # Get breakout prediction
-            prediction = await self.sr_breakout_predictor.predict_breakout_probability(df, current_price)
+            # Get breakout prediction using enhanced predictive ensembles (Phase 2)
+            prediction = await self._get_sr_breakout_prediction_enhanced(df, current_price)
             
             if prediction:
                 # Store prediction results
@@ -468,67 +645,41 @@ class Tactician:
     async def _monitor_position_sizing(self) -> None:
         """Monitor position sizing decisions and update tactical recommendations."""
         try:
-            # Get current market conditions (this would come from your market data source)
-            market_conditions = {
-                "current_price": 50000.0,  # Example BTC price
-                "atr": 2500.0,  # Average True Range
-                "realized_volatility_30d": 0.04,  # 4% daily volatility
-                "market_regime": "BULL_TREND",  # Market regime classification
-                "opportunity_type": "SR_BREAKOUT",  # Opportunity type
-                "near_sr_zone": True,
-                "huge_candle": False,
-                "strong_momentum": True,
+            # Get ML predictions (this would come from ml_confidence_predictor)
+            ml_predictions = {
+                "movement_confidence_scores": {0.5: 0.8, 1.0: 0.75, 1.5: 0.7, 2.0: 0.65},
+                "adverse_movement_risks": {0.5: 0.2, 1.0: 0.25, 1.5: 0.3, 2.0: 0.35},
+                "directional_confidence": {"target_reach_confidence": {1.0: {"confidence": 0.8}}},
             }
 
-            # Get current portfolio state (this would come from your state manager)
-            portfolio_value = 100000.0  # Example portfolio value
-            current_exposure = 0.15  # 15% current exposure
-            daily_pnl = 0.02  # 2% daily PnL
-            max_drawdown = 0.05  # 5% max drawdown
-
-            # Update position sizer performance metrics
-            self.position_sizer.update_performance_metrics(daily_pnl, max_drawdown)
-            self.position_sizer.update_exposure(current_exposure)
-
-            # Calculate position size for a sample trade
-            position_result = self.position_sizer.calculate_position_size(
-                current_price=market_conditions["current_price"],
-                stop_loss_price=market_conditions["current_price"] * 0.95,  # 5% stop loss
-                leverage=10,
-                confidence=0.85,  # High confidence signal
-                market_conditions=market_conditions,
-                portfolio_value=portfolio_value,
-                existing_positions=[],  # No existing positions
-                side="long",
+            # Calculate position size
+            position_result = await self.position_sizer.calculate_position_size(
+                ml_predictions=ml_predictions,
+                current_price=50000.0,
+                account_balance=100000.0,
             )
 
-            # Store position sizing results
-            self.tactics_results["position_sizing"] = {
-                "position_size": position_result.get("position_size", 0.0),
-                "confidence_score": position_result.get("confidence_score", 0.0),
-                "liquidation_safety_score": position_result.get("liquidation_safety_score", 50.0),
-                "distance_to_liquidation": position_result.get("distance_to_liquidation", 0.0),
-                "total_exposure_after": position_result.get("total_exposure_after", 0.0),
-                "multipliers": {
-                    "confidence": position_result.get("confidence_multiplier", 1.0),
-                    "volatility": position_result.get("volatility_multiplier", 1.0),
-                    "regime": position_result.get("regime_multiplier", 1.0),
-                    "liquidation": position_result.get("liquidation_multiplier", 1.0),
-                    "risk": position_result.get("risk_multiplier", 1.0),
-                },
-                "successive_positions_allowed": position_result.get("successive_positions_allowed", False),
-                "calculation_time": position_result.get("calculation_time", ""),
-            }
+            if position_result:
+                # Store position sizing results
+                self.tactics_results["position_sizing"] = {
+                    "position_size": position_result.get("final_position_size", 0.0),
+                    "kelly_position_size": position_result.get("kelly_position_size", 0.0),
+                    "ml_position_size": position_result.get("ml_position_size", 0.0),
+                    "sizing_reason": position_result.get("sizing_reason", ""),
+                }
 
-            # Determine tactical action based on position sizing
-            tactical_action = self._determine_position_sizing_tactical_action(position_result)
-            self.tactics_results["position_sizing_tactical_action"] = tactical_action
+                # Determine tactical action based on position sizing
+                tactical_action = self._determine_position_sizing_tactical_action(position_result)
+                self.tactics_results["position_sizing_tactical_action"] = tactical_action
 
-            self.logger.info(
-                f"Position Sizing: {position_result.get('position_size', 0.0):.4f} "
-                f"(LSS: {position_result.get('liquidation_safety_score', 50.0):.1f}, "
-                f"Action: {tactical_action})"
-            )
+                self.logger.info(
+                    f"Position Sizing: {position_result.get('final_position_size', 0.0):.4f} "
+                    f"(Kelly: {position_result.get('kelly_position_size', 0.0):.4f}, "
+                    f"ML: {position_result.get('ml_position_size', 0.0):.4f}, "
+                    f"Action: {tactical_action})"
+                )
+            else:
+                self.logger.warning("No position sizing result available")
 
         except Exception as e:
             self.logger.error(f"Error monitoring position sizing: {e}")
@@ -541,93 +692,151 @@ class Tactician:
     async def _monitor_leverage_sizing(self) -> None:
         """Monitor leverage sizing decisions and update tactical recommendations."""
         try:
-            # Get current market conditions (this would come from your market data source)
-            market_conditions = {
-                "current_price": 50000.0,  # Example BTC price
-                "atr": 2500.0,  # Average True Range
-                "realized_volatility_30d": 0.04,  # 4% daily volatility
-                "market_regime": "BULL_TREND",  # Market regime classification
-                "opportunity_type": "SR_BREAKOUT",  # Opportunity type
-                "near_sr_zone": True,
-                "huge_candle": False,
-                "strong_momentum": True,
+            # Get ML predictions (this would come from ml_confidence_predictor)
+            ml_predictions = {
+                "movement_confidence_scores": {0.5: 0.8, 1.0: 0.75, 1.5: 0.7, 2.0: 0.65},
+                "adverse_movement_risks": {0.5: 0.2, 1.0: 0.25, 1.5: 0.3, 2.0: 0.35},
+                "directional_confidence": {"target_reach_confidence": {1.0: {"confidence": 0.8}}},
             }
 
-            # Get current portfolio state (this would come from your state manager)
-            portfolio_value = 100000.0  # Example portfolio value
-            current_exposure = 0.15  # 15% current exposure
-            daily_pnl = 0.02  # 2% daily PnL
-            max_drawdown = 0.05  # 5% max drawdown
-
-            # Update leverage sizer performance metrics
-            self.leverage_sizer.update_performance_metrics(daily_pnl, max_drawdown)
-            self.leverage_sizer.update_exposure(current_exposure)
-
-            # Calculate leverage for a sample trade
-            leverage_result = self.leverage_sizer.calculate_leverage(
-                base_leverage=10,
-                max_leverage_cap=50,
-                confidence=0.85,  # High confidence signal
-                market_conditions=market_conditions,
-                position_size=5000.0,  # Example position size
-                current_price=market_conditions["current_price"],
-                side="long",
-            )
-
-            # Store leverage sizing results
-            self.tactics_results["leverage_sizing"] = {
-                "leverage": leverage_result.get("leverage", 1),
-                "confidence_score": leverage_result.get("confidence_score", 0.0),
-                "liquidation_safety_score": leverage_result.get("liquidation_safety_score", 50.0),
-                "distance_to_liquidation": leverage_result.get("distance_to_liquidation", 0.0),
-                "max_leverage_cap": leverage_result.get("max_leverage_cap", 50),
-                "multipliers": {
-                    "confidence": leverage_result.get("confidence_multiplier", 1.0),
-                    "volatility": leverage_result.get("volatility_multiplier", 1.0),
-                    "regime": leverage_result.get("regime_multiplier", 1.0),
-                    "opportunity": leverage_result.get("opportunity_multiplier", 1.0),
-                    "liquidation": leverage_result.get("liquidation_multiplier", 1.0),
-                    "risk": leverage_result.get("risk_multiplier", 1.0),
-                },
-                "calculation_time": leverage_result.get("calculation_time", ""),
+            # Get liquidation risk analysis (this would come from liquidation_risk_model)
+            liquidation_risk_analysis = {
+                "safe_leverage_levels": {
+                    "conservative": {"safe_leverage": 20.0},
+                    "moderate": {"safe_leverage": 50.0},
+                    "aggressive": {"safe_leverage": 80.0},
+                }
             }
 
-            # Determine tactical action based on leverage sizing
-            tactical_action = self._determine_leverage_sizing_tactical_action(leverage_result)
-            self.tactics_results["leverage_sizing_tactical_action"] = tactical_action
+            # Get market health analysis (this would come from market_health_analyzer)
+            market_health_analysis = {
+                "volatility_analysis": {"current_volatility": 0.03},
+                "liquidity_analysis": {"liquidity_score": 0.7},
+                "stress_analysis": {"stress_level": 0.3},
+            }
 
-            self.logger.info(
-                f"Leverage Sizing: {leverage_result.get('leverage', 1)}x "
-                f"(LSS: {leverage_result.get('liquidation_safety_score', 50.0):.1f}, "
-                f"Action: {tactical_action})"
+            # Calculate leverage
+            leverage_result = await self.leverage_sizer.calculate_leverage(
+                ml_predictions=ml_predictions,
+                liquidation_risk_analysis=liquidation_risk_analysis,
+                market_health_analysis=market_health_analysis,
+                current_price=50000.0,
+                target_direction="long",
             )
+
+            if leverage_result:
+                # Store leverage sizing results
+                self.tactics_results["leverage_sizing"] = {
+                    "leverage": leverage_result.get("final_leverage", 10.0),
+                    "ml_leverage": leverage_result.get("ml_leverage", 10.0),
+                    "liquidation_leverage": leverage_result.get("liquidation_leverage", 10.0),
+                    "market_health_leverage": leverage_result.get("market_health_leverage", 10.0),
+                    "leverage_reason": leverage_result.get("leverage_reason", ""),
+                }
+
+                # Determine tactical action based on leverage sizing
+                tactical_action = self._determine_leverage_sizing_tactical_action(leverage_result)
+                self.tactics_results["leverage_sizing_tactical_action"] = tactical_action
+
+                self.logger.info(
+                    f"Leverage Sizing: {leverage_result.get('final_leverage', 10.0):.1f}x "
+                    f"(ML: {leverage_result.get('ml_leverage', 10.0):.1f}x, "
+                    f"Action: {tactical_action})"
+                )
+            else:
+                self.logger.warning("No leverage sizing result available")
 
         except Exception as e:
             self.logger.error(f"Error monitoring leverage sizing: {e}")
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="position division monitoring",
+    )
+    async def _monitor_position_division(self) -> None:
+        """Monitor position division strategy and update tactical recommendations."""
+        try:
+            # Get ML predictions (this would come from ml_confidence_predictor)
+            ml_predictions = {
+                "movement_confidence_scores": {0.5: 0.8, 1.0: 0.75, 1.5: 0.7, 2.0: 0.65},
+                "adverse_movement_risks": {0.5: 0.2, 1.0: 0.25, 1.5: 0.3, 2.0: 0.35},
+                "directional_confidence": {"target_reach_confidence": {1.0: {"confidence": 0.8}}},
+            }
+
+            # Get current positions (this would come from your position manager)
+            current_positions = [
+                {
+                    "position_id": "pos_001",
+                    "entry_price": 50000.0,
+                    "position_size": 0.1,
+                    "entry_confidence": 0.8,
+                },
+                {
+                    "position_id": "pos_002", 
+                    "entry_price": 51000.0,
+                    "position_size": 0.05,
+                    "entry_confidence": 0.7,
+                }
+            ]
+
+            # Get short-term ML confidence analysis (this would come from your short-term ML analyzer)
+            short_term_analysis = {
+                "ml_confidence_scores": {
+                    "1m": {"confidence": 0.75, "direction": "up"},
+                    "5m": {"confidence": 0.8, "direction": "up"},
+                }
+            }
+
+            # Analyze position division
+            division_result = await self.position_division_strategy.analyze_position_division(
+                ml_predictions=ml_predictions,
+                current_positions=current_positions,
+                current_price=52000.0,
+                short_term_analysis=short_term_analysis,
+            )
+
+            if division_result:
+                # Store position division results
+                self.tactics_results["position_division"] = {
+                    "entry_recommendation": division_result.get("entry_recommendation", {}),
+                    "take_profit_recommendation": division_result.get("take_profit_recommendation", {}),
+                    "stop_loss_recommendation": division_result.get("stop_loss_recommendation", {}),
+                    "full_close_recommendation": division_result.get("full_close_recommendation", {}),
+                    "average_confidence": division_result.get("average_confidence", 0.0),
+                    "short_term_score": division_result.get("short_term_score", 0.0),
+                    "division_reason": division_result.get("division_reason", ""),
+                }
+
+                # Determine tactical action based on position division
+                tactical_action = self._determine_position_division_tactical_action(division_result)
+                self.tactics_results["position_division_tactical_action"] = tactical_action
+
+                self.logger.info(
+                    f"Position Division: {tactical_action} "
+                    f"(Confidence: {division_result.get('average_confidence', 0.0):.2f}, "
+                    f"Short-term: {division_result.get('short_term_score', 0.0):.2f})"
+                )
+            else:
+                self.logger.warning("No position division result available")
+
+        except Exception as e:
+            self.logger.error(f"Error monitoring position division: {e}")
+
     def _determine_position_sizing_tactical_action(self, position_result: dict[str, Any]) -> str:
         """Determine tactical action based on position sizing results."""
         try:
-            position_size = position_result.get("position_size", 0.0)
-            lss = position_result.get("liquidation_safety_score", 50.0)
-            confidence = position_result.get("confidence_score", 0.0)
-            total_exposure = position_result.get("total_exposure_after", 0.0)
+            position_size = position_result.get("final_position_size", 0.0)
+            kelly_size = position_result.get("kelly_position_size", 0.0)
+            ml_size = position_result.get("ml_position_size", 0.0)
 
-            # High confidence with good safety score
-            if confidence > 0.8 and lss > 70:
-                if position_size > 0:
-                    return "strong_position_signal"
-                else:
-                    return "no_position_signal"
-
-            # Moderate confidence with acceptable safety
-            elif confidence > 0.6 and lss > 50:
-                if position_size > 0:
-                    return "moderate_position_signal"
-                else:
-                    return "no_position_signal"
-
-            # Low confidence or poor safety
+            # High confidence with good position size
+            if position_size > 0.1:
+                return "strong_position_signal"
+            elif position_size > 0.05:
+                return "moderate_position_signal"
+            elif position_size > 0.01:
+                return "small_position_signal"
             else:
                 return "avoid_position_signal"
 
@@ -638,34 +847,301 @@ class Tactician:
     def _determine_leverage_sizing_tactical_action(self, leverage_result: dict[str, Any]) -> str:
         """Determine tactical action based on leverage sizing results."""
         try:
-            leverage = leverage_result.get("leverage", 1)
-            lss = leverage_result.get("liquidation_safety_score", 50.0)
-            confidence = leverage_result.get("confidence_score", 0.0)
-            max_cap = leverage_result.get("max_leverage_cap", 50)
+            leverage = leverage_result.get("final_leverage", 10.0)
+            ml_leverage = leverage_result.get("ml_leverage", 10.0)
+            liquidation_leverage = leverage_result.get("liquidation_leverage", 10.0)
+            market_health_leverage = leverage_result.get("market_health_leverage", 10.0)
 
-            # High confidence with good safety score
-            if confidence > 0.8 and lss > 70:
-                if leverage > 10:
-                    return "high_leverage_signal"
-                elif leverage > 5:
-                    return "moderate_leverage_signal"
-                else:
-                    return "low_leverage_signal"
-
-            # Moderate confidence with acceptable safety
-            elif confidence > 0.6 and lss > 50:
-                if leverage > 5:
-                    return "moderate_leverage_signal"
-                else:
-                    return "low_leverage_signal"
-
-            # Low confidence or poor safety
+            # High leverage signals
+            if leverage > 50:
+                return "high_leverage_signal"
+            elif leverage > 25:
+                return "moderate_leverage_signal"
+            elif leverage > 10:
+                return "low_leverage_signal"
             else:
                 return "minimal_leverage_signal"
 
         except Exception as e:
             self.logger.error(f"Error determining leverage sizing tactical action: {e}")
             return "no_action"
+
+    def _determine_position_division_tactical_action(self, division_result: dict[str, Any]) -> str:
+        """Determine tactical action based on position division results."""
+        try:
+            entry_rec = division_result.get("entry_recommendation", {})
+            take_profit_rec = division_result.get("take_profit_recommendation", {})
+            stop_loss_rec = division_result.get("stop_loss_recommendation", {})
+            full_close_rec = division_result.get("full_close_recommendation", {})
+            
+            # Check for urgent actions first
+            if stop_loss_rec.get("total_stop_loss_size", 0.0) > 0:
+                return "urgent_stop_loss"
+            
+            if full_close_rec.get("total_full_close_size", 0.0) > 0:
+                return "urgent_full_close"
+            
+            # Check for profit taking
+            if take_profit_rec.get("total_take_profit_size", 0.0) > 0:
+                return "take_profit"
+            
+            # Check for new position entry
+            if entry_rec.get("should_enter", False):
+                return "enter_new_position"
+            
+            # No action needed
+            return "no_action"
+            
+        except Exception as e:
+            self.logger.error(f"Error determining position division tactical action: {e}")
+            return "no_action"
+
+    async def _get_sr_breakout_prediction_enhanced(self, df: pd.DataFrame, current_price: float) -> dict[str, Any]:
+        """
+        Get SR breakout prediction using enhanced predictive ensembles (Phase 2).
+        
+        Args:
+            df: Market data DataFrame
+            current_price: Current price
+            
+        Returns:
+            Prediction dictionary with breakout/bounce probabilities
+        """
+        try:
+            # Check if predictive ensembles are available
+            if not hasattr(self, 'predictive_ensembles') or not self.predictive_ensembles:
+                self.logger.warning("Predictive ensembles not available, using fallback")
+                return self._get_sr_breakout_prediction_fallback(df, current_price)
+            
+            # Get SR context using SR analyzer
+            sr_context = None
+            if hasattr(self, 'sr_analyzer') and self.sr_analyzer:
+                sr_context = self.sr_analyzer.detect_sr_zone_proximity(current_price)
+            
+            # Prepare features for prediction
+            features = self._prepare_features_for_sr_prediction(df, current_price, sr_context)
+            
+            # Get predictions from all available ensembles
+            predictions = {}
+            for ensemble_name, ensemble in self.predictive_ensembles.items():
+                try:
+                    prediction = ensemble.get_prediction(features)
+                    predictions[ensemble_name] = prediction
+                except Exception as e:
+                    self.logger.warning(f"Error getting prediction from {ensemble_name}: {e}")
+                    continue
+            
+            # Combine predictions to determine breakout/bounce probabilities
+            breakout_prob, bounce_prob, confidence = self._combine_sr_predictions(predictions)
+            
+            # Determine if near SR zone
+            near_sr_zone = sr_context.get('in_zone', False) if sr_context else False
+            
+            return {
+                "breakout_probability": breakout_prob,
+                "bounce_probability": bounce_prob,
+                "confidence": confidence,
+                "near_sr_zone": near_sr_zone,
+                "sr_context": sr_context,
+                "ensemble_predictions": predictions,
+                "recommendation": self._get_sr_recommendation(breakout_prob, bounce_prob, confidence),
+                "method": "enhanced_predictive_ensembles"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced SR breakout prediction: {e}")
+            return self._get_sr_breakout_prediction_fallback(df, current_price)
+    
+    def _prepare_features_for_sr_prediction(self, df: pd.DataFrame, current_price: float, sr_context: dict = None) -> pd.DataFrame:
+        """Prepare features for SR breakout prediction."""
+        try:
+            # Create features DataFrame
+            features = pd.DataFrame(index=[0])
+            
+            # Basic price features
+            features['close'] = current_price
+            features['price_change'] = (current_price - df['close'].iloc[-2]) / df['close'].iloc[-2] if len(df) > 1 else 0
+            
+            # Technical indicators (if available)
+            for indicator in ['rsi', 'macd', 'atr', 'adx', 'volume']:
+                if indicator in df.columns:
+                    features[indicator] = df[indicator].iloc[-1]
+                else:
+                    features[indicator] = 0.0
+            
+            # SR context features
+            if sr_context and sr_context.get('in_zone', False):
+                features['distance_to_sr'] = sr_context.get('distance_to_level', 0.0)
+                features['sr_strength'] = sr_context.get('level_strength', 0.0)
+                features['sr_type'] = 1.0 if sr_context.get('level_type') == 'resistance' else 0.0
+            else:
+                features['distance_to_sr'] = 1.0
+                features['sr_strength'] = 0.0
+                features['sr_type'] = 0.5
+            
+            # Momentum features
+            if len(df) >= 5:
+                features['momentum_5'] = (current_price - df['close'].iloc[-5]) / df['close'].iloc[-5]
+            else:
+                features['momentum_5'] = 0.0
+                
+            if len(df) >= 10:
+                features['momentum_10'] = (current_price - df['close'].iloc[-10]) / df['close'].iloc[-10]
+            else:
+                features['momentum_10'] = 0.0
+            
+            # Volume features
+            if 'volume' in df.columns:
+                avg_volume = df['volume'].tail(20).mean()
+                features['volume_ratio'] = df['volume'].iloc[-1] / avg_volume if avg_volume > 0 else 1.0
+            else:
+                features['volume_ratio'] = 1.0
+            
+            # Volatility features
+            if len(df) >= 20:
+                price_volatility = df['close'].tail(20).std() / df['close'].tail(20).mean()
+                features['volatility'] = price_volatility
+            else:
+                features['volatility'] = 0.0
+            
+            # Price position
+            if len(df) >= 20:
+                high_20 = df['high'].tail(20).max()
+                low_20 = df['low'].tail(20).min()
+                features['price_position'] = (current_price - low_20) / (high_20 - low_20) if high_20 > low_20 else 0.5
+            else:
+                features['price_position'] = 0.5
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error preparing features for SR prediction: {e}")
+            # Return minimal features
+            return pd.DataFrame({
+                'close': [current_price],
+                'distance_to_sr': [1.0],
+                'sr_strength': [0.0],
+                'sr_type': [0.5]
+            })
+    
+    def _combine_sr_predictions(self, predictions: dict) -> tuple[float, float, float]:
+        """Combine predictions from multiple ensembles to determine breakout/bounce probabilities."""
+        try:
+            if not predictions:
+                return 0.5, 0.5, 0.0
+            
+            # Extract predictions and confidences
+            ensemble_predictions = []
+            confidences = []
+            
+            for ensemble_name, prediction in predictions.items():
+                if isinstance(prediction, dict):
+                    pred_value = prediction.get('prediction', 'HOLD')
+                    confidence = prediction.get('confidence', 0.0)
+                    
+                    # Map predictions to breakout/bounce probabilities
+                    if pred_value in ['BULL', 'STRONG_BULL']:
+                        breakout_prob = 0.7
+                        bounce_prob = 0.3
+                    elif pred_value in ['BEAR', 'STRONG_BEAR']:
+                        breakout_prob = 0.3
+                        bounce_prob = 0.7
+                    else:  # HOLD, SIDEWAYS
+                        breakout_prob = 0.5
+                        bounce_prob = 0.5
+                    
+                    ensemble_predictions.append((breakout_prob, bounce_prob))
+                    confidences.append(confidence)
+            
+            if not ensemble_predictions:
+                return 0.5, 0.5, 0.0
+            
+            # Weighted average based on confidence
+            total_confidence = sum(confidences)
+            if total_confidence > 0:
+                weighted_breakout = sum(bp * conf for (bp, _), conf in zip(ensemble_predictions, confidences)) / total_confidence
+                weighted_bounce = sum(bp * conf for (_, bp), conf in zip(ensemble_predictions, confidences)) / total_confidence
+                avg_confidence = total_confidence / len(confidences)
+            else:
+                weighted_breakout = sum(bp for bp, _ in ensemble_predictions) / len(ensemble_predictions)
+                weighted_bounce = sum(bp for _, bp in ensemble_predictions) / len(ensemble_predictions)
+                avg_confidence = 0.0
+            
+            return weighted_breakout, weighted_bounce, avg_confidence
+            
+        except Exception as e:
+            self.logger.error(f"Error combining SR predictions: {e}")
+            return 0.5, 0.5, 0.0
+    
+    def _get_sr_recommendation(self, breakout_prob: float, bounce_prob: float, confidence: float) -> str:
+        """Get recommendation based on breakout/bounce probabilities."""
+        try:
+            if confidence < 0.3:
+                return "UNCERTAIN"
+            
+            if breakout_prob > 0.7:
+                return "STRONG_BREAKOUT"
+            elif breakout_prob > 0.6:
+                return "MODERATE_BREAKOUT"
+            elif bounce_prob > 0.7:
+                return "STRONG_BOUNCE"
+            elif bounce_prob > 0.6:
+                return "MODERATE_BOUNCE"
+            else:
+                return "NEUTRAL"
+                
+        except Exception as e:
+            self.logger.error(f"Error getting SR recommendation: {e}")
+            return "UNCERTAIN"
+    
+    def _get_sr_breakout_prediction_fallback(self, df: pd.DataFrame, current_price: float) -> dict[str, Any]:
+        """Fallback method when predictive ensembles are not available."""
+        try:
+            # Simple fallback based on price position and momentum
+            if len(df) < 20:
+                return {
+                    "breakout_probability": 0.5,
+                    "bounce_probability": 0.5,
+                    "confidence": 0.0,
+                    "near_sr_zone": False,
+                    "recommendation": "UNCERTAIN",
+                    "method": "fallback"
+                }
+            
+            # Calculate simple momentum-based prediction
+            momentum_5 = (current_price - df['close'].iloc[-5]) / df['close'].iloc[-5] if len(df) >= 5 else 0
+            momentum_10 = (current_price - df['close'].iloc[-10]) / df['close'].iloc[-10] if len(df) >= 10 else 0
+            
+            # Simple breakout probability based on momentum
+            if momentum_5 > 0.02 and momentum_10 > 0.01:  # Strong upward momentum
+                breakout_prob = 0.7
+                bounce_prob = 0.3
+            elif momentum_5 < -0.02 and momentum_10 < -0.01:  # Strong downward momentum
+                breakout_prob = 0.3
+                bounce_prob = 0.7
+            else:
+                breakout_prob = 0.5
+                bounce_prob = 0.5
+            
+            return {
+                "breakout_probability": breakout_prob,
+                "bounce_probability": bounce_prob,
+                "confidence": 0.3,  # Low confidence for fallback
+                "near_sr_zone": False,
+                "recommendation": self._get_sr_recommendation(breakout_prob, bounce_prob, 0.3),
+                "method": "fallback"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in fallback SR prediction: {e}")
+            return {
+                "breakout_probability": 0.5,
+                "bounce_probability": 0.5,
+                "confidence": 0.0,
+                "near_sr_zone": False,
+                "recommendation": "UNCERTAIN",
+                "method": "fallback"
+            }
 
     def _determine_sr_breakout_tactical_action(self, prediction: dict[str, Any]) -> str:
         """Determine tactical action based on SR breakout prediction."""

@@ -25,7 +25,7 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.analyst.hmm_regime_classifier import HMMRegimeClassifier
+from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from src.config import CONFIG
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
@@ -49,8 +49,8 @@ class RegimeSpecificTPSLOptimizer:
         self.config = config
         self.logger = system_logger.getChild("RegimeSpecificTPSLOptimizer")
 
-        # Initialize HMM regime classifier
-        self.hmm_classifier = HMMRegimeClassifier(config)
+        # Initialize Unified regime classifier
+        self.regime_classifier = UnifiedRegimeClassifier(config)
 
         # Regime-specific parameters from timeframe analysis
         self.regime_parameters = {
@@ -135,7 +135,7 @@ class RegimeSpecificTPSLOptimizer:
             self.logger.info("Initializing Regime-Specific TP/SL Optimizer...")
 
             # Initialize HMM classifier
-            if not await self._initialize_hmm_classifier():
+            if not await self._initialize_regime_classifier():
                 self.logger.error("Failed to initialize HMM classifier")
                 return False
 
@@ -153,7 +153,7 @@ class RegimeSpecificTPSLOptimizer:
             )
             return False
 
-    async def _initialize_hmm_classifier(self) -> bool:
+    async def _initialize_regime_classifier(self) -> bool:
         """
         Initialize the HMM regime classifier.
 
@@ -169,7 +169,7 @@ class RegimeSpecificTPSLOptimizer:
             )
 
             if os.path.exists(model_path):
-                if self.hmm_classifier.load_model(model_path):
+                if self.regime_classifier.load_models():
                     self.logger.info("✅ Loaded existing HMM regime classifier")
                     return True
                 self.logger.warning(
@@ -235,11 +235,11 @@ class RegimeSpecificTPSLOptimizer:
             Tuple of (regime, confidence, additional_info)
         """
         try:
-            if not self.hmm_classifier.trained:
+            if not self.regime_classifier.trained:
                 self.logger.warning("HMM classifier not trained, using default regime")
                 return "SIDEWAYS_RANGE", 0.5, {"method": "default"}
 
-            regime, confidence, info = self.hmm_classifier.predict_regime(current_data)
+            regime, confidence, info = self.regime_classifier.predict_regime(current_data)
             self.logger.info(
                 f"Identified regime: {regime} (confidence: {confidence:.2f})",
             )

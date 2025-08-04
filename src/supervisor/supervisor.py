@@ -152,6 +152,7 @@ class Supervisor:
     """
     Enhanced Supervisor component with DI, type hints, robust error handling,
     advanced error handling, automatic recovery, and online learning.
+    Updated to accommodate recent changes to Tactician, Strategist, Trainer, and Analyst.
     """
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
@@ -175,9 +176,51 @@ class Supervisor:
         # Online learning for model weighting
         self.online_learning = OnlineLearningManager(self.supervisor_config.get("online_learning", {}))
         
-        # Health monitoring
+        # Health monitoring - Updated to include new component features
         self.health_checks: dict[str, bool] = {}
-        self.critical_components: list[str] = ["database", "exchange", "analyst", "strategist"]
+        self.critical_components: list[str] = [
+            "database", 
+            "exchange", 
+            "analyst", 
+            "strategist", 
+            "tactician", 
+            "enhanced_training_manager"
+        ]
+        
+        # Component-specific monitoring
+        self.component_monitors: dict[str, dict[str, Any]] = {
+            "analyst": {
+                "dual_model_system": False,
+                "market_health_analyzer": False,
+                "liquidation_risk_model": False,
+                "feature_engineering_orchestrator": False,
+                "sr_analyzer": False,
+                "ml_confidence_predictor": False,
+                "regime_classifier": False
+            },
+            "strategist": {
+                "regime_classifier": False,
+                "ml_confidence_predictor": False,
+                "volatility_targeting": False
+            },
+            "tactician": {
+                "sr_analyzer": False,
+                "sr_breakout_predictor": False,
+                "position_sizer": False,
+                "leverage_sizer": False,
+                "position_division_strategy": False,
+                "ml_predictions": False,
+                "position_monitor": False
+            },
+            "enhanced_training_manager": {
+                "advanced_model_training": False,
+                "ensemble_training": False,
+                "multi_timeframe_training": False,
+                "adaptive_training": False,
+                "multi_timeframe_manager": False,
+                "ensemble_creator": False
+            }
+        }
 
     @handle_specific_errors(
         error_handlers={
@@ -198,6 +241,7 @@ class Supervisor:
             await self._initialize_components()
             await self._setup_circuit_breakers()
             await self._setup_online_learning()
+            await self._setup_component_monitors()
             self.logger.info("✅ Supervisor initialization completed successfully")
             return True
         except Exception as e:
@@ -255,7 +299,7 @@ class Supervisor:
     )
     async def _initialize_components(self) -> None:
         try:
-            # Initialize critical components
+            # Initialize critical components with updated structure
             self.components = {
                 "database": None,
                 "exchange": None,
@@ -266,6 +310,8 @@ class Supervisor:
                 "paper_trader": None,
                 "performance_monitor": None,
                 "enhanced_training_manager": None,
+                "model_manager": None,
+                "state_manager": None,
             }
             
             self.logger.info("Components initialized successfully")
@@ -285,6 +331,9 @@ class Supervisor:
                 "exchange": CircuitBreaker(failure_threshold=5, timeout=60),
                 "database": CircuitBreaker(failure_threshold=3, timeout=30),
                 "analyst": CircuitBreaker(failure_threshold=3, timeout=30),
+                "strategist": CircuitBreaker(failure_threshold=3, timeout=30),
+                "tactician": CircuitBreaker(failure_threshold=3, timeout=30),
+                "enhanced_training_manager": CircuitBreaker(failure_threshold=3, timeout=60),
             }
             
             self.logger.info("Circuit breakers setup complete")
@@ -306,6 +355,23 @@ class Supervisor:
             self.logger.info("Online learning setup complete")
         except Exception as e:
             self.logger.error(f"Error setting up online learning: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="component monitors setup",
+    )
+    async def _setup_component_monitors(self) -> None:
+        """Setup component-specific monitoring."""
+        try:
+            # Initialize component monitors with default states
+            for component, monitors in self.component_monitors.items():
+                for monitor_name in monitors:
+                    monitors[monitor_name] = False
+            
+            self.logger.info("Component monitors setup complete")
+        except Exception as e:
+            self.logger.error(f"Error setting up component monitors: {e}")
 
     @handle_specific_errors(
         error_handlers={
@@ -335,6 +401,9 @@ class Supervisor:
         try:
             # Perform health checks
             await self._monitor_system_health()
+            
+            # Monitor component-specific features
+            await self._monitor_component_features()
             
             # Coordinate components
             await self._coordinate_components()
@@ -379,6 +448,63 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
+        default_return=None,
+        context="component features monitoring",
+    )
+    async def _monitor_component_features(self) -> None:
+        """Monitor component-specific features and sub-components."""
+        try:
+            # Monitor Analyst features
+            if "analyst" in self.components and self.components["analyst"]:
+                analyst = self.components["analyst"]
+                self.component_monitors["analyst"]["dual_model_system"] = hasattr(analyst, 'dual_model_system') and analyst.dual_model_system is not None
+                self.component_monitors["analyst"]["market_health_analyzer"] = hasattr(analyst, 'market_health_analyzer') and analyst.market_health_analyzer is not None
+                self.component_monitors["analyst"]["liquidation_risk_model"] = hasattr(analyst, 'liquidation_risk_model') and analyst.liquidation_risk_model is not None
+                self.component_monitors["analyst"]["feature_engineering_orchestrator"] = hasattr(analyst, 'feature_engineering_orchestrator') and analyst.feature_engineering_orchestrator is not None
+                self.component_monitors["analyst"]["sr_analyzer"] = hasattr(analyst, 'sr_analyzer') and analyst.sr_analyzer is not None
+                self.component_monitors["analyst"]["ml_confidence_predictor"] = hasattr(analyst, 'ml_confidence_predictor') and analyst.ml_confidence_predictor is not None
+                self.component_monitors["analyst"]["regime_classifier"] = hasattr(analyst, 'regime_classifier') and analyst.regime_classifier is not None
+
+            # Monitor Strategist features
+            if "strategist" in self.components and self.components["strategist"]:
+                strategist = self.components["strategist"]
+                self.component_monitors["strategist"]["regime_classifier"] = hasattr(strategist, 'regime_classifier') and strategist.regime_classifier is not None
+                self.component_monitors["strategist"]["ml_confidence_predictor"] = hasattr(strategist, 'ml_confidence_predictor') and strategist.ml_confidence_predictor is not None
+                self.component_monitors["strategist"]["volatility_targeting"] = hasattr(strategist, 'volatility_info') and strategist.volatility_info is not None
+
+            # Monitor Tactician features
+            if "tactician" in self.components and self.components["tactician"]:
+                tactician = self.components["tactician"]
+                self.component_monitors["tactician"]["sr_analyzer"] = hasattr(tactician, 'sr_analyzer') and tactician.sr_analyzer is not None
+                self.component_monitors["tactician"]["sr_breakout_predictor"] = hasattr(tactician, 'sr_breakout_predictor') and tactician.sr_breakout_predictor is not None
+                self.component_monitors["tactician"]["position_sizer"] = hasattr(tactician, 'position_sizer') and tactician.position_sizer is not None
+                self.component_monitors["tactician"]["leverage_sizer"] = hasattr(tactician, 'leverage_sizer') and tactician.leverage_sizer is not None
+                self.component_monitors["tactician"]["position_division_strategy"] = hasattr(tactician, 'position_division_strategy') and tactician.position_division_strategy is not None
+                self.component_monitors["tactician"]["ml_predictions"] = hasattr(tactician, 'ml_predictions') and tactician.ml_predictions is not None
+
+            # Monitor Enhanced Training Manager features
+            if "enhanced_training_manager" in self.components and self.components["enhanced_training_manager"]:
+                training_manager = self.components["enhanced_training_manager"]
+                self.component_monitors["enhanced_training_manager"]["advanced_model_training"] = hasattr(training_manager, 'advanced_model_training') and training_manager.advanced_model_training is not None
+                self.component_monitors["enhanced_training_manager"]["ensemble_training"] = hasattr(training_manager, 'ensemble_training') and training_manager.ensemble_training is not None
+                self.component_monitors["enhanced_training_manager"]["multi_timeframe_training"] = hasattr(training_manager, 'multi_timeframe_training') and training_manager.multi_timeframe_training is not None
+                self.component_monitors["enhanced_training_manager"]["adaptive_training"] = hasattr(training_manager, 'adaptive_training') and training_manager.adaptive_training is not None
+                self.component_monitors["enhanced_training_manager"]["multi_timeframe_manager"] = hasattr(training_manager, 'multi_timeframe_manager') and training_manager.multi_timeframe_manager is not None
+                self.component_monitors["enhanced_training_manager"]["ensemble_creator"] = hasattr(training_manager, 'ensemble_creator') and training_manager.ensemble_creator is not None
+
+            # Log component feature status
+            for component, monitors in self.component_monitors.items():
+                active_features = sum(monitors.values())
+                total_features = len(monitors)
+                if total_features > 0:
+                    feature_percentage = (active_features / total_features) * 100
+                    self.logger.info(f"{component} features: {feature_percentage:.1f}% ({active_features}/{total_features} active)")
+
+        except Exception as e:
+            self.logger.error(f"Error monitoring component features: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
         default_return=False,
         context="component health check",
     )
@@ -404,13 +530,25 @@ class Supervisor:
     )
     async def _coordinate_components(self) -> None:
         try:
-            # Coordinate between components
-            # This is where you would implement the actual coordination logic
+            # Enhanced coordination between components with new features
             coordination_results = {
                 "timestamp": datetime.now().isoformat(),
                 "components_coordinated": len(self.components),
-                "status": "coordinated"
+                "status": "coordinated",
+                "component_features": self.component_monitors.copy()
             }
+            
+            # Coordinate Analyst with Strategist
+            if self.components.get("analyst") and self.components.get("strategist"):
+                await self._coordinate_analyst_strategist()
+            
+            # Coordinate Strategist with Tactician
+            if self.components.get("strategist") and self.components.get("tactician"):
+                await self._coordinate_strategist_tactician()
+            
+            # Coordinate Training Manager with other components
+            if self.components.get("enhanced_training_manager"):
+                await self._coordinate_training_manager()
             
             self.supervision_results["coordination"] = coordination_results
             
@@ -420,17 +558,124 @@ class Supervisor:
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
+        context="analyst strategist coordination",
+    )
+    async def _coordinate_analyst_strategist(self) -> None:
+        """Coordinate Analyst and Strategist components."""
+        try:
+            analyst = self.components["analyst"]
+            strategist = self.components["strategist"]
+            
+            # Share regime classification results
+            if hasattr(analyst, 'regime_classifier') and analyst.regime_classifier:
+                regime_info = await analyst._perform_regime_classification({})
+                if regime_info and hasattr(strategist, 'current_regime'):
+                    strategist.current_regime = regime_info.get('regime')
+                    strategist.regime_confidence = regime_info.get('confidence', 0.0)
+            
+            # Share ML confidence predictions
+            if hasattr(analyst, 'ml_confidence_predictor') and analyst.ml_confidence_predictor:
+                ml_predictions = await analyst._perform_ml_predictions({})
+                if ml_predictions and hasattr(strategist, 'ml_confidence_predictor'):
+                    strategist.ml_confidence_predictor = ml_predictions
+            
+            self.logger.info("Analyst-Strategist coordination completed")
+            
+        except Exception as e:
+            self.logger.error(f"Error coordinating Analyst-Strategist: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="strategist tactician coordination",
+    )
+    async def _coordinate_strategist_tactician(self) -> None:
+        """Coordinate Strategist and Tactician components."""
+        try:
+            strategist = self.components["strategist"]
+            tactician = self.components["tactician"]
+            
+            # Share volatility targeting information
+            if hasattr(strategist, 'volatility_info') and strategist.volatility_info:
+                if hasattr(tactician, 'position_sizer') and tactician.position_sizer:
+                    # Pass volatility info to position sizer
+                    tactician.position_sizer.volatility_info = strategist.volatility_info
+            
+            # Share regime information for tactical decisions
+            if hasattr(strategist, 'current_regime') and strategist.current_regime:
+                if hasattr(tactician, 'current_regime'):
+                    tactician.current_regime = strategist.current_regime
+            
+            self.logger.info("Strategist-Tactician coordination completed")
+            
+        except Exception as e:
+            self.logger.error(f"Error coordinating Strategist-Tactician: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="training manager coordination",
+    )
+    async def _coordinate_training_manager(self) -> None:
+        """Coordinate Enhanced Training Manager with other components."""
+        try:
+            training_manager = self.components["enhanced_training_manager"]
+            
+            # Coordinate with Analyst for model updates
+            if self.components.get("analyst"):
+                analyst = self.components["analyst"]
+                if hasattr(training_manager, 'get_enhanced_training_results'):
+                    training_results = training_manager.get_enhanced_training_results()
+                    if training_results and hasattr(analyst, 'update_models'):
+                        await analyst.update_models(training_results)
+            
+            # Coordinate with Strategist for model updates
+            if self.components.get("strategist"):
+                strategist = self.components["strategist"]
+                if hasattr(training_manager, 'get_enhanced_training_results'):
+                    training_results = training_manager.get_enhanced_training_results()
+                    if training_results and hasattr(strategist, 'update_models'):
+                        await strategist.update_models(training_results)
+            
+            self.logger.info("Training Manager coordination completed")
+            
+        except Exception as e:
+            self.logger.error(f"Error coordinating Training Manager: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
         context="online learning update",
     )
     async def _update_online_learning(self) -> None:
         """Update online learning with current performance data."""
         try:
-            # Get current model performances (mock data - replace with actual)
-            model_performances = {
-                "model_1": 0.75,
-                "model_2": 0.82,
-                "model_3": 0.68
-            }
+            # Get current model performances from components
+            model_performances = {}
+            
+            # Get performances from Analyst
+            if self.components.get("analyst"):
+                analyst = self.components["analyst"]
+                if hasattr(analyst, 'get_analysis_results'):
+                    analysis_results = analyst.get_analysis_results()
+                    if analysis_results:
+                        model_performances["analyst"] = analysis_results.get('performance_score', 0.5)
+            
+            # Get performances from Strategist
+            if self.components.get("strategist"):
+                strategist = self.components["strategist"]
+                if hasattr(strategist, 'get_strategy_performance'):
+                    strategy_performance = strategist.get_strategy_performance()
+                    if strategy_performance:
+                        model_performances["strategist"] = strategy_performance.get('win_rate', 0.5)
+            
+            # Get performances from Tactician
+            if self.components.get("tactician"):
+                tactician = self.components["tactician"]
+                if hasattr(tactician, 'get_tactics_results'):
+                    tactics_results = tactician.get_tactics_results()
+                    if tactics_results:
+                        model_performances["tactician"] = tactics_results.get('performance_score', 0.5)
             
             # Update online learning with current performances
             for model_id, performance in model_performances.items():
@@ -497,6 +742,12 @@ class Supervisor:
                 return await self._recover_exchange()
             elif component == "analyst":
                 return await self._recover_analyst()
+            elif component == "strategist":
+                return await self._recover_strategist()
+            elif component == "tactician":
+                return await self._recover_tactician()
+            elif component == "enhanced_training_manager":
+                return await self._recover_enhanced_training_manager()
             else:
                 # Generic recovery
                 return await self._generic_recovery(component)
@@ -559,6 +810,57 @@ class Supervisor:
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
+        context="strategist recovery",
+    )
+    async def _recover_strategist(self) -> bool:
+        """Recover strategist component."""
+        try:
+            # Implement strategist recovery logic
+            self.logger.info("Attempting strategist recovery...")
+            # Mock recovery - replace with actual strategist restart logic
+            await asyncio.sleep(1)
+            return True
+        except Exception as e:
+            self.logger.error(f"Strategist recovery failed: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="tactician recovery",
+    )
+    async def _recover_tactician(self) -> bool:
+        """Recover tactician component."""
+        try:
+            # Implement tactician recovery logic
+            self.logger.info("Attempting tactician recovery...")
+            # Mock recovery - replace with actual tactician restart logic
+            await asyncio.sleep(1)
+            return True
+        except Exception as e:
+            self.logger.error(f"Tactician recovery failed: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="enhanced training manager recovery",
+    )
+    async def _recover_enhanced_training_manager(self) -> bool:
+        """Recover enhanced training manager component."""
+        try:
+            # Implement enhanced training manager recovery logic
+            self.logger.info("Attempting enhanced training manager recovery...")
+            # Mock recovery - replace with actual training manager restart logic
+            await asyncio.sleep(1)
+            return True
+        except Exception as e:
+            self.logger.error(f"Enhanced training manager recovery failed: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
         context="generic recovery",
     )
     async def _generic_recovery(self, component: str) -> bool:
@@ -600,6 +902,9 @@ class Supervisor:
             # Add health status
             self.supervision_results["health_status"] = self.health_checks.copy()
             
+            # Add component monitors status
+            self.supervision_results["component_monitors"] = self.component_monitors.copy()
+            
             # Add recovery status
             self.supervision_results["recovery_status"] = {
                 "recovery_attempts": dict(self.recovery_attempts),
@@ -635,6 +940,7 @@ class Supervisor:
             "supervision_interval": self.supervision_interval,
             "max_history": self.max_history,
             "health_checks": self.health_checks,
+            "component_monitors": self.component_monitors,
             "recovery_attempts": dict(self.recovery_attempts),
             "online_learning_weights": self.online_learning.get_model_weights()
         }
@@ -660,6 +966,10 @@ class Supervisor:
             "min_weight": self.online_learning.min_weight,
             "max_weight": self.online_learning.max_weight
         }
+
+    def get_component_monitors(self) -> dict[str, Any]:
+        """Get component monitors status."""
+        return self.component_monitors.copy()
 
 
 supervisor: Supervisor | None = None

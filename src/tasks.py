@@ -1,5 +1,6 @@
 # src/tasks.py
 import os
+from typing import Any
 
 from celery import Celery
 from celery.schedules import crontab
@@ -9,7 +10,7 @@ app = Celery("ares_tasks", broker="redis://localhost:6379/0")
 
 
 @app.task
-def run_trading_bot_instance(symbol, exchange):
+def run_trading_bot_instance(symbol: str, exchange: str) -> None:
     """
     Celery task to run a single trading bot instance.
     This is now called by the main pipeline, not directly by the user.
@@ -31,7 +32,7 @@ def run_trading_bot_instance(symbol, exchange):
 
 
 @app.task
-def run_monthly_training_pipeline():
+def run_monthly_training_pipeline() -> None:
     """
     Celery task to run the monthly retraining and validation pipeline using TrainingManager.
     """

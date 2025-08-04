@@ -813,14 +813,27 @@ async def run_step(
 
         # Get ATR period with fallback
         atr_period = CONFIG.get("best_params", {}).get("atr_period", 14)
-        klines_df_copy.ta.atr(
+        
+        # Calculate ATR using pandas_ta
+        import pandas_ta as ta
+        atr_values = ta.atr(
             high=klines_df_copy["high"],
             low=klines_df_copy["low"],
             close=klines_df_copy["close"],
-            length=atr_period,
-            append=True,
-            col_names=("ATR"),
+            length=atr_period
         )
+        
+        # Add ATR to the dataframe
+        if atr_values is not None:
+            klines_df_copy["ATR"] = atr_values
+        else:
+            # Fallback: calculate simple ATR manually
+            high_low = klines_df_copy["high"] - klines_df_copy["low"]
+            high_close = np.abs(klines_df_copy["high"] - klines_df_copy["close"].shift())
+            low_close = np.abs(klines_df_copy["low"] - klines_df_copy["close"].shift())
+            ranges = pd.concat([high_low, high_close, low_close], axis=1)
+            true_range = ranges.max(axis=1)
+            klines_df_copy["ATR"] = true_range.rolling(window=atr_period).mean()
 
         data_with_features = feature_engineering.generate_all_features(
             klines_df_copy,

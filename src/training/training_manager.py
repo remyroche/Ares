@@ -172,26 +172,39 @@ class TrainingManager:
     async def _initialize_training_modules(self) -> None:
         """Initialize training modules."""
         try:
-            # Initialize model training module
+            self.logger.info("Initializing training modules...")
+
+            # Initialize model training
             if self.enable_model_training:
                 await self._initialize_model_training()
 
-            # Initialize hyperparameter optimization module
+            # Initialize hyperparameter optimization
             if self.enable_hyperparameter_optimization:
                 await self._initialize_hyperparameter_optimization()
 
-            # Initialize model evaluation module
-            if self.training_config.get("enable_model_evaluation", True):
-                await self._initialize_model_evaluation()
+            # Initialize model evaluation
+            await self._initialize_model_evaluation()
 
-            # Initialize model persistence module
-            if self.training_config.get("enable_model_persistence", True):
-                await self._initialize_model_persistence()
+            # Initialize model persistence
+            await self._initialize_model_persistence()
+
+            # Initialize feature integration manager
+            await self._initialize_feature_integration()
 
             self.logger.info("Training modules initialized successfully")
 
         except Exception as e:
             self.logger.error(f"Error initializing training modules: {e}")
+
+    async def _initialize_feature_integration(self) -> None:
+        """Initialize feature integration manager."""
+        try:
+            from src.training.feature_integration import FeatureIntegrationManager
+            self.feature_integration_manager = FeatureIntegrationManager(self.config)
+            await self.feature_integration_manager.initialize()
+            self.logger.info("Feature integration manager initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Error initializing feature integration manager: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -412,7 +425,7 @@ class TrainingManager:
 
             # Perform feature engineering
             if self.model_training_components.get("feature_engineering", False):
-                results["feature_engineering"] = self._perform_feature_engineering(
+                results["feature_engineering"] = await self._perform_feature_engineering(
                     training_input,
                 )
 
@@ -615,21 +628,49 @@ class TrainingManager:
             self.logger.error(f"Error performing data preprocessing: {e}")
             return {}
 
-    def _perform_feature_engineering(
+    async def _perform_feature_engineering(
         self,
         training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform feature engineering."""
+        """Perform feature engineering with liquidity features integration."""
         try:
-            # Simulate feature engineering
-            return {
-                "features_created": 25,
-                "feature_selection": "completed",
-                "engineering_time": datetime.now().isoformat(),
-            }
+            historical_data = training_input.get("historical_data")
+            market_data = training_input.get("market_data", historical_data)
+            order_flow_data = training_input.get("order_flow_data")
+            
+            if self.feature_integration_manager:
+                # Use feature integration manager to add advanced features including liquidity
+                integrated_data = await self.feature_integration_manager.integrate_features(
+                    historical_data=historical_data,
+                    market_data=market_data,
+                    order_flow_data=order_flow_data
+                )
+                
+                # Get liquidity feature summary
+                liquidity_summary = self.feature_integration_manager.get_liquidity_feature_summary(integrated_data)
+                self.logger.info(f"Liquidity features integrated: {liquidity_summary}")
+                
+                return {
+                    "engineered_features": integrated_data,
+                    "liquidity_summary": liquidity_summary,
+                    "feature_count": len(integrated_data.columns),
+                    "liquidity_feature_count": liquidity_summary.get("total_liquidity_features", 0)
+                }
+            else:
+                self.logger.warning("Feature integration manager not available, using original data")
+                return {
+                    "engineered_features": historical_data,
+                    "feature_count": len(historical_data.columns),
+                    "liquidity_feature_count": 0
+                }
+                
         except Exception as e:
             self.logger.error(f"Error performing feature engineering: {e}")
-            return {}
+            return {
+                "engineered_features": training_input.get("historical_data"),
+                "feature_count": 0,
+                "liquidity_feature_count": 0
+            }
 
     def _perform_model_training_core(
         self,

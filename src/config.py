@@ -228,14 +228,43 @@ CONFIG: dict[str, Any] = {
     },
     # --- Model Training Parameters ---
     "MODEL_TRAINING": {
-        "data_retention_days": 730,  # 2 years of data for large datasets
-        "hyperparameter_tuning": {
-            "max_trials": 50,  # Default number of Optuna trials
+        "regularization": {
+            "lightgbm": {
+                "l1_alpha": 0.01,
+                "l2_alpha": 0.1,
+                "dropout_rate": 0.1
+            },
+            "tensorflow": {
+                "l1_alpha": 0.001,
+                "l2_alpha": 0.01,
+                "dropout_rate": 0.2
+            },
+            "sklearn": {
+                "l1_alpha": 0.01,
+                "l2_alpha": 0.1,
+                "elastic_net_ratio": 0.5
+            },
+            "tabnet": {
+                "lambda_sparse": 0.001,
+                "reg_lambda": 0.01,
+                "dropout_rate": 0.15
+            }
         },
-        "coarse_hpo": {
-            "n_trials": 20,  # Default number of coarse optimization trials
+        "optimization": {
+            "hyperparameter_trials": 500,
+            "cross_validation_folds": 5,
+            "early_stopping_patience": 20,
+            "ensemble_weight_optimization": True,
+            "feature_selection_method": "recursive_feature_elimination",
+            "model_selection_criteria": "sharpe_ratio"
         },
-        "min_data_points": 1000,  # Minimum data points required for training
+        "advanced_features": {
+            "enable_market_regime_detection": True,
+            "enable_volatility_regime_modeling": True,
+            "enable_correlation_analysis": True,
+            "enable_momentum_analysis": True,
+            "enable_liquidity_analysis": True
+        }
     },
     # --- Global Data Configuration ---
     "DATA_CONFIG": {
@@ -511,6 +540,31 @@ CONFIG: dict[str, Any] = {
             },
         },
     },
+    # --- Enhanced Risk Management Configuration ---
+    "RISK_MANAGEMENT": {
+        "position_sizing": {
+            "kelly_criterion_enabled": True,
+            "volatility_targeting": True,
+            "max_position_size": 0.3,  # 30% max per position
+            "dynamic_sizing": {
+                "confidence_threshold": 0.7,
+                "volatility_multiplier": 0.8,
+                "market_regime_adjustment": True
+            }
+        },
+        "stop_loss": {
+            "trailing_stop": True,
+            "atr_multiplier": 2.0,
+            "confidence_based_stop": True,
+            "max_loss_per_trade": 0.02,  # 2% max loss per trade
+        },
+        "take_profit": {
+            "dynamic_tp": True,
+            "risk_reward_ratio": 2.0,
+            "partial_profit_taking": True,
+            "profit_targets": [0.01, 0.02, 0.03]  # 1%, 2%, 3%
+        }
+    },
     # --- Best Parameters (from previous optimization) ---
     "best_params": {
         "lookback_period": 20,
@@ -562,13 +616,35 @@ CONFIG: dict[str, Any] = {
             "covariance_type": "full",
             "random_state": 42,
         },
-        # --- HMM Regime Classifier Configuration ---
-        "hmm_regime_classifier": {
+        # --- Unified Regime Classifier Configuration ---
+        "unified_regime_classifier": {
             "n_states": 4,  # Number of hidden states
             "n_iter": 100,  # Maximum iterations for HMM training
             "random_state": 42,
-            "volatility_period": 20,  # 20 periods for 1h timeframe
+            "target_timeframe": "1h",  # Target timeframe for regime classification
+            "volatility_period": 10,  # Volatility period for feature calculation
             "min_data_points": 1000,  # Minimum data points for training
+        },
+        
+        # --- Candle Analyzer Configuration ---
+        "candle_analyzer": {
+            "size_thresholds": {
+                "small": 0.5,      # 0.5x average
+                "normal": 1.0,      # 1.0x average
+                "large": 2.0,       # 2.0x average
+                "huge": 3.0,        # 3.0x average
+                "extreme": 5.0      # 5.0x average
+            },
+            "volatility_period": 20,  # Period for volatility calculation
+            "volatility_multiplier": 2.0,  # Multiplier for volatility-based thresholds
+            "doji_threshold": 0.1,  # 10% of range for doji detection
+            "hammer_ratio": 0.3,    # 30% body for hammer pattern
+            "shooting_star_ratio": 0.3,  # 30% body for shooting star
+            "outlier_threshold": 2.5,  # Standard deviations for outlier detection
+            "min_candle_count": 100,  # Minimum candles for analysis
+            "use_adaptive_thresholds": True,  # Use volatility-based adaptive thresholds
+            "use_volume_confirmation": True,  # Use volume for confirmation
+            "use_multi_timeframe": True,  # Enable multi-timeframe analysis
         },
         # --- Regime-Specific TP/SL Optimizer Configuration ---
         "regime_specific_tpsl_optimizer": {
@@ -734,6 +810,216 @@ CONFIG: dict[str, Any] = {
         "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         "file_rotation": "1 day",
         "file_retention": "30 days",
+    },
+    # --- Enhanced Hyperparameter Optimization Configuration ---
+    "hyperparameter_optimization": {
+        "multi_objective": {
+            "enabled": True,
+            "objectives": ["sharpe_ratio", "win_rate", "profit_factor"],
+            "weights": {
+                "sharpe_ratio": 0.50,
+                "win_rate": 0.30,
+                "profit_factor": 0.20
+            },
+            "risk_constraints": {
+                "max_drawdown_threshold": 0.20,
+                "min_win_rate": 0.40,
+                "min_profit_factor": 1.2
+            }
+        },
+        "bayesian_optimization": {
+            "enabled": True,
+            "sampling_strategy": "tpe",  # "tpe", "random", "cmaes", "nsga2"
+            "max_trials": 500,
+            "patience": 50,
+            "min_trials": 20,
+            "pruning_threshold": 0.1,
+            "acquisition_function": "ei",  # "ei", "pi", "ucb"
+            "n_startup_trials": 10,
+            "n_ei_candidates": 24
+        },
+        "adaptive_optimization": {
+            "enabled": True,
+            "regime_detection": {
+                "lookback_window": 50,
+                "volatility_threshold": 0.02,
+                "trend_threshold": 0.01,
+                "regime_stability_threshold": 0.7
+            },
+            "regime_specific_constraints": {
+                "bull": {
+                    "tp_multiplier_range": [2.5, 5.0],
+                    "sl_multiplier_range": [1.2, 2.5],
+                    "position_size_range": [0.10, 0.25]
+                },
+                "bear": {
+                    "tp_multiplier_range": [2.0, 4.5],
+                    "sl_multiplier_range": [1.0, 2.2],
+                    "position_size_range": [0.08, 0.20]
+                },
+                "sideways": {
+                    "tp_multiplier_range": [1.5, 3.0],
+                    "sl_multiplier_range": [0.8, 1.5],
+                    "position_size_range": [0.05, 0.15]
+                },
+                "sr": {
+                    "tp_multiplier_range": [1.8, 3.5],
+                    "sl_multiplier_range": [0.9, 1.8],
+                    "position_size_range": [0.06, 0.18]
+                },
+                "candle": {
+                    "tp_multiplier_range": [1.2, 2.5],
+                    "sl_multiplier_range": [0.6, 1.2],
+                    "position_size_range": [0.03, 0.12]
+                }
+            }
+        },
+        "advanced_features": {
+            "early_stopping": True,
+            "pruning": True,
+            "parameter_importance_analysis": True,
+            "convergence_monitoring": True,
+            "adaptive_sampling": True,
+            "multi_start_optimization": True
+        },
+        "search_spaces": {
+            "model_hyperparameters": {
+                "learning_rate": {"type": "float", "low": 1e-4, "high": 1e-1, "log": True},
+                "max_depth": {"type": "int", "low": 3, "high": 15},
+                "n_estimators": {"type": "int", "low": 50, "high": 1000},
+                "subsample": {"type": "float", "low": 0.6, "high": 1.0},
+                "colsample_bytree": {"type": "float", "low": 0.6, "high": 1.0},
+                "reg_alpha": {"type": "float", "low": 1e-8, "high": 10.0, "log": True},
+                "reg_lambda": {"type": "float", "low": 1e-8, "high": 10.0, "log": True},
+                "model_type": {"type": "categorical", "choices": ["xgboost", "lightgbm", "catboost", "random_forest", "gradient_boosting", "tabnet", "transformer"]}
+            },
+            "feature_engineering": {
+                "lookback_window": {"type": "int", "low": 5, "high": 200},
+                "feature_selection_threshold": {"type": "float", "low": 0.001, "high": 0.1},
+                "technical_indicator_periods": {"type": "int", "low": 5, "high": 50}
+            },
+            "trading_parameters": {
+                "tp_multiplier": {"type": "float", "low": 1.2, "high": 10.0},
+                "sl_multiplier": {"type": "float", "low": 0.5, "high": 5.0},
+                "position_size": {"type": "float", "low": 0.01, "high": 0.5},
+                "confidence_threshold": {"type": "float", "low": 0.6, "high": 0.95},
+                "reg_alpha": {"type": "float", "low": 1e-8, "high": 10.0, "log": True},
+                "reg_lambda": {"type": "float", "low": 1e-8, "high": 10.0, "log": True}
+            },
+            "ensemble_parameters": {
+                "ensemble_size": {"type": "int", "low": 3, "high": 10},
+                "ensemble_weight": {"type": "float", "low": 0.1, "high": 0.9},
+                "meta_learner_type": {"type": "categorical", "choices": ["lightgbm", "xgboost", "random_forest"]}
+            }
+        },
+        "optimization_schedules": {
+            "daily": {
+                "enabled": True,
+                "time": "02:00",
+                "max_trials": 100,
+                "focus": "quick_adaptation"
+            },
+            "weekly": {
+                "enabled": True,
+                "day": "sunday",
+                "time": "03:00",
+                "max_trials": 500,
+                "focus": "comprehensive_optimization"
+            },
+            "monthly": {
+                "enabled": True,
+                "day": 1,
+                "time": "04:00",
+                "max_trials": 1000,
+                "focus": "deep_optimization"
+            }
+        },
+        "performance_metrics": {
+            "primary": ["sharpe_ratio", "total_return", "max_drawdown"],
+            "secondary": ["win_rate", "profit_factor", "calmar_ratio", "sortino_ratio"],
+            "risk_metrics": ["var_95", "cvar_95", "volatility", "beta"],
+            "custom_metrics": ["regime_adaptation_score", "parameter_stability_score"]
+        },
+        "constraints_and_penalties": {
+            "hard_constraints": {
+                "max_drawdown": 0.25,
+                "min_win_rate": 0.35,
+                "max_position_size": 0.3
+            },
+            "soft_constraints": {
+                "target_sharpe_ratio": 1.0,
+                "target_profit_factor": 1.5,
+                "target_calmar_ratio": 2.0
+            },
+            "penalty_functions": {
+                "drawdown_penalty": "exponential",
+                "volatility_penalty": "linear",
+                "complexity_penalty": "l1_norm"
+            }
+        }
+    },
+    
+    # --- Computational Optimization Configuration ---
+    "computational_optimization": {
+        "caching": {
+            "enabled": True,
+            "max_cache_size": 1000,
+            "cache_ttl": 3600  # 1 hour
+        },
+        "parallelization": {
+            "enabled": True,
+            "max_workers": 8,
+            "chunk_size": 1000
+        },
+        "early_stopping": {
+            "enabled": True,
+            "patience": 10,
+            "min_trials": 20
+        },
+        "surrogate_models": {
+            "enabled": True,
+            "expensive_trials": 50,
+            "update_frequency": 10
+        },
+        "memory_management": {
+            "enabled": True,
+            "memory_threshold": 0.8,
+            "cleanup_frequency": 100
+        },
+        "progressive_evaluation": {
+            "enabled": True,
+            "stages": [
+                {"data_ratio": 0.1, "weight": 0.3},
+                {"data_ratio": 0.3, "weight": 0.5},
+                {"data_ratio": 1.0, "weight": 1.0}
+            ]
+        }
+    },
+    # --- Feature Integration Configuration ---
+    "FEATURE_INTEGRATION": {
+        "enable_liquidity_features": True,
+        "enable_advanced_features": True,
+        "feature_selection_method": "correlation",
+        "pca_variance_threshold": 0.95,
+        "correlation_threshold": 0.95,
+        "min_features": 10,
+        "max_features": 100,
+        "liquidity_feature_weights": {
+            "volume_liquidity": 1.0,
+            "price_impact": 1.0,
+            "spread_liquidity": 1.0,
+            "liquidity_regime": 1.0,
+            "liquidity_percentile": 1.0,
+            "kyle_lambda": 1.0,
+            "amihud_illiquidity": 1.0,
+            "order_flow_imbalance": 1.0,
+            "large_order_ratio": 1.0,
+            "vwap": 1.0,
+            "volume_roc": 1.0,
+            "volume_ma_ratio": 1.0,
+            "liquidity_stress": 1.0,
+            "liquidity_health": 1.0
+        }
     },
 }
 

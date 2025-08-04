@@ -115,34 +115,56 @@ class BacktestAnalyst:
 
     def __init__(self, params):
         self.params = params
+        # Position division parameters (with defaults)
+        self.entry_confidence_threshold = params.get("entry_confidence_threshold", 0.7)
+        self.additional_position_threshold = params.get("additional_position_threshold", 0.8)
+        self.division_confidence_threshold = params.get("division_confidence_threshold", 0.85)
+        self.max_division_ratio = params.get("max_division_ratio", 1.0)
+        self.max_positions = params.get("max_positions", 3)
 
-    def get_signal(self, prev: pd.Series) -> int:
-        """Get trading signal based on confidence score."""
+    def get_signal(self, prev: pd.Series) -> dict:
+        """Get trading signal based on confidence score with position division support."""
         try:
             score = prev.get("Confidence_Score", 0.0)  # Default to 0.0 if missing
         except (KeyError, AttributeError):
-            score = 0.0  # Fallback if column doesn't exist
-        threshold = self.params.get("trade_entry_threshold", 0.6)
-
-        if score > threshold:
+            # Create confidence score from available data if Confidence_Score doesn't exist
+            if "momentum" in prev:
+                score = prev["momentum"] * 1000  # Scale momentum to reasonable confidence range
+            else:
+                score = 0.0  # Fallback if no momentum data
+        
+        # Determine signal based on confidence thresholds
+        if score > self.entry_confidence_threshold:
             # Determine Stop Loss based on ATR
             sl = prev["close"] - (
                 prev["ATR"] * self.params.get("sl_atr_multiplier", 1.5)
             )
-            return {"direction": 1, "source": "CONFIDENCE_LONG", "sl": sl}
+            return {
+                "direction": 1, 
+                "source": "CONFIDENCE_LONG", 
+                "sl": sl,
+                "confidence": score,
+                "entry_type": "primary" if score >= self.entry_confidence_threshold else "additional"
+            }
 
-        if score < -threshold:
+        if score < -self.entry_confidence_threshold:
             sl = prev["close"] + (
                 prev["ATR"] * self.params.get("sl_atr_multiplier", 1.5)
             )
-            return {"direction": -1, "source": "CONFIDENCE_SHORT", "sl": sl}
+            return {
+                "direction": -1, 
+                "source": "CONFIDENCE_SHORT", 
+                "sl": sl,
+                "confidence": abs(score),
+                "entry_type": "primary" if abs(score) >= self.entry_confidence_threshold else "additional"
+            }
 
         return None
 
 
 async def run_backtest(df, params=None):
     """
-    Runs the full backtest using the new confidence score logic.
+    Runs the full backtest using the new confidence score logic with position division support.
     Improved exit logic to prioritize stop-loss if both SL/TP are hit within the same candle.
     """
     # Use BEST_PARAMS from the main CONFIG
@@ -151,7 +173,12 @@ async def run_backtest(df, params=None):
 
     portfolio = PortfolioManager(CONFIG.get("INITIAL_EQUITY", 10000))
     analyst = BacktestAnalyst(params)
-    position, entry_price, trade_info = 0, 0, {}
+    
+    # Position tracking for multiple entries
+    positions = []  # List of active positions
+    max_positions = params.get("max_positions", 3)
+    entry_confidence_threshold = params.get("entry_confidence_threshold", 0.7)
+    additional_position_threshold = params.get("additional_position_threshold", 0.8)
 
     # Process data in chunks for better performance
     chunk_size = 1000
@@ -165,57 +192,75 @@ async def run_backtest(df, params=None):
                 else row
             )
 
-            # Check for exit conditions if in position
-            if position != 0:
+            # Check for exit conditions on all positions
+            positions_to_remove = []
+            for pos_idx, position in enumerate(positions):
                 exit_signal = None
 
                 # Check stop loss first (prioritized)
                 if (
-                    position == 1
-                    and row["low"] <= trade_info["sl"]
-                    or position == -1
-                    and row["high"] >= trade_info["sl"]
+                    position["direction"] == 1
+                    and row["low"] <= position["sl"]
+                    or position["direction"] == -1
+                    and row["high"] >= position["sl"]
                 ):
-                    exit_signal = {"reason": "stop_loss", "price": trade_info["sl"]}
+                    exit_signal = {"reason": "stop_loss", "price": position["sl"]}
 
                 # Check take profit if no stop loss hit
                 elif (
-                    position == 1
-                    and row["high"] >= trade_info["tp"]
-                    or position == -1
-                    and row["low"] <= trade_info["tp"]
+                    position["direction"] == 1
+                    and row["high"] >= position["tp"]
+                    or position["direction"] == -1
+                    and row["low"] <= position["tp"]
                 ):
-                    exit_signal = {"reason": "take_profit", "price": trade_info["tp"]}
+                    exit_signal = {"reason": "take_profit", "price": position["tp"]}
 
                 if exit_signal:
                     # Calculate PnL
-                    if position == 1:
-                        pnl = (exit_signal["price"] - entry_price) / entry_price
+                    if position["direction"] == 1:
+                        pnl = (exit_signal["price"] - position["entry_price"]) / position["entry_price"]
                     else:
-                        pnl = (entry_price - exit_signal["price"]) / entry_price
+                        pnl = (position["entry_price"] - exit_signal["price"]) / position["entry_price"]
 
-                    portfolio.record(pnl, trade_info["source"])
-                    position, entry_price, trade_info = 0, 0, {}
+                    portfolio.record(pnl, position["source"])
+                    positions_to_remove.append(pos_idx)
 
-            # Check for new entry signal if not in position
-            if position == 0:
+            # Remove closed positions (in reverse order to maintain indices)
+            for pos_idx in reversed(positions_to_remove):
+                positions.pop(pos_idx)
+
+            # Check for new entry signals
+            if len(positions) < max_positions:
                 signal = analyst.get_signal(prev)
                 if signal:
-                    position = signal["direction"]
-                    entry_price = row["close"]
-                    trade_info = {
-                        "source": signal["source"],
-                        "sl": signal["sl"],
-                        "tp": row["close"]
-                        + (
-                            position * row["ATR"] * params.get("tp_atr_multiplier", 2.0)
-                        ),
-                    }
+                    # Check if we should add this position based on confidence
+                    should_add = False
+                    
+                    # First position or high confidence
+                    if len(positions) == 0:
+                        should_add = signal["confidence"] >= entry_confidence_threshold
+                    # Additional position with higher confidence
+                    elif len(positions) > 0:
+                        should_add = signal["confidence"] >= additional_position_threshold
+                    
+                    if should_add:
+                        new_position = {
+                            "direction": signal["direction"],
+                            "entry_price": row["close"],
+                            "sl": signal["sl"],
+                            "tp": row["close"] + (
+                                signal["direction"] * row["ATR"] * params.get("tp_atr_multiplier", 2.0)
+                            ),
+                            "source": signal["source"],
+                            "confidence": signal["confidence"],
+                            "entry_type": signal["entry_type"]
+                        }
+                        positions.append(new_position)
 
         # Yield control to event loop periodically
         await asyncio.sleep(0)
 
-    return portfolio.report()
+    return portfolio
 
 
 async def save_backtest_results(results: dict[str, Any], filename: str):
@@ -240,10 +285,11 @@ async def main():
 
         # Run backtest
         print("--- Step 2: Running Backtest ---")
-        results = await run_backtest(df)
+        portfolio = await run_backtest(df)
 
         # Display results
         print("--- Step 3: Backtest Results ---")
+        results = portfolio.report()
         for strategy, metrics in results.items():
             print(f"\n{strategy}:")
             print(f"  Number of trades: {metrics['num_trades']}")

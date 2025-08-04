@@ -15,7 +15,7 @@ import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.analyst.feature_engineering import FeatureEngineeringEngine
+from src.analyst.feature_engineering_orchestrator import FeatureEngineeringEngine
 from src.analyst.ml_target_generator import MLTargetGenerator
 from src.analyst.sr_analyzer import SRLevelAnalyzer  # Import SRLevelAnalyzer
 from src.config import CONFIG

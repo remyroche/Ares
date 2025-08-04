@@ -1,0 +1,158 @@
+# config/combined_sizing.yaml
+# Combined Position and Leverage Sizing Configuration
+
+risk_management:
+  # Position Sizing Configuration
+  position_sizing:
+    # Base position size as fraction of portfolio
+    base_position_size: 0.05
+    
+    # Confidence-based scaling
+    confidence_based_scaling: true
+    confidence_thresholds:
+      very_high_confidence: 0.95
+      high_confidence: 0.85
+      medium_confidence: 0.75
+    position_size_multipliers:
+      very_high_confidence: 2.0
+      high_confidence: 1.5
+      medium_confidence: 1.0
+      low_confidence: 0.5
+    
+    # Volatility adjustment
+    volatility_adjustment:
+      enable_volatility_scaling: true
+      volatility_thresholds:
+        low_volatility: 0.02
+        medium_volatility: 0.05
+      volatility_multipliers:
+        low_volatility: 1.2
+        medium_volatility: 1.0
+        high_volatility: 0.7
+    
+    # Liquidation risk adjustment
+    liquidation_risk_adjustment:
+      enable_liquidation_scaling: true
+      lss_thresholds:
+        very_safe: 80
+        safe: 60
+        moderate: 40
+      lss_multipliers:
+        very_safe: 1.2
+        safe: 1.0
+        moderate: 0.8
+        dangerous: 0.5
+    
+    # Successive position rules
+    successive_position_rules:
+      enable_successive_positions: true
+      min_confidence_for_successive: 0.85
+      max_successive_positions: 3
+      size_reduction_factor: 0.8
+    
+    # Risk limits
+    risk_limits:
+      max_single_position: 0.15
+      max_total_exposure: 0.3
+      min_position_size: 0.01
+  
+  # Leverage Sizing Configuration
+  leverage_sizing:
+    # Confidence-based leverage
+    confidence_based_leverage:
+      enable_confidence_scaling: true
+      confidence_thresholds:
+        very_high_confidence: 0.95
+        high_confidence: 0.85
+        medium_confidence: 0.75
+      leverage_multipliers:
+        very_high_confidence: 2.0
+        high_confidence: 1.8
+        medium_confidence: 1.5
+        low_confidence: 1.0
+    
+    # Volatility-based leverage
+    volatility_based_leverage:
+      enable_volatility_scaling: true
+      volatility_thresholds:
+        low_volatility: 0.02
+        medium_volatility: 0.05
+      leverage_multipliers:
+        low_volatility: 1.3
+        medium_volatility: 1.0
+        high_volatility: 0.6
+    
+    # Opportunity-based leverage
+    opportunity_based_leverage:
+      enable_opportunity_scaling: true
+      opportunity_multipliers:
+        sr_opportunity: 2.0
+        breakout: 1.8
+        reversal: 1.5
+        standard: 1.0
+        sr_zone: 1.5
+        huge_candle: 2.0
+        momentum: 1.3
+    
+    # Liquidation risk leverage
+    liquidation_risk_leverage:
+      enable_liquidation_scaling: true
+      lss_thresholds:
+        very_safe: 80
+        safe: 60
+        moderate: 40
+      lss_multipliers:
+        very_safe: 1.2
+        safe: 1.0
+        moderate: 0.8
+        dangerous: 0.5
+  
+  # Dynamic risk management (applies to both position and leverage sizing)
+  dynamic_risk_management:
+    enable_dynamic_risk: true
+    drawdown_adjustment:
+      enable_drawdown_scaling: true
+      drawdown_thresholds:
+        emergency: 0.4
+        aggressive: 0.3
+        reduction: 0.2
+        warning: 0.1
+      size_reduction_factors:
+        emergency: 0.2
+        aggressive: 0.5
+        reduction: 0.7
+        warning: 0.9
+      leverage_reduction_factors:
+        emergency: 0.2
+        aggressive: 0.5
+        reduction: 0.7
+        warning: 0.9
+    daily_loss_adjustment:
+      enable_daily_loss_scaling: true
+      daily_loss_thresholds:
+        emergency: 0.10
+        reduction: 0.08
+        warning: 0.05
+      size_reduction_factors:
+        emergency: 0.2
+        reduction: 0.5
+        warning: 0.8
+      leverage_reduction_factors:
+        emergency: 0.2
+        reduction: 0.5
+        warning: 0.8
+  
+  # Liquidation risk model configuration
+  liquidation_risk:
+    lss_weights:
+      liquidation_distance: 0.4
+      volatility_risk: 0.25
+      position_risk: 0.2
+      leverage_risk: 0.15
+
+# Tactician configuration
+tactician:
+  enable_position_sizing: true
+  enable_leverage_sizing: true
+  tactics_interval: 30
+  max_history: 100

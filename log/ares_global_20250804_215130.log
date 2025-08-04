@@ -1,0 +1,68 @@
+2025-08-04 21:51:30,206 - AresGlobal - INFO - ================================================================================
+2025-08-04 21:51:30,206 - AresGlobal - INFO - 📊 SESSION SUMMARY
+2025-08-04 21:51:30,206 - AresGlobal - INFO - Session started: 2025-08-04 21:51:30
+2025-08-04 21:51:30,207 - AresGlobal - INFO - Global log file: ares_global_20250804_215130.log
+2025-08-04 21:51:30,207 - AresGlobal - INFO - This file contains ALL logs for this session
+2025-08-04 21:51:30,207 - AresGlobal - INFO - ================================================================================
+2025-08-04 21:51:30,207 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-04 21:51:30,207 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION
+2025-08-04 21:51:30,207 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-04 21:51:30
+2025-08-04 21:51:30,207 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-04 21:51:30,207 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-04 21:51:30,207 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-04 21:51:30,207 - AresGlobal.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-08-04 21:51:30,207 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-04 21:51:30,207 - AresGlobal.AresLauncher - INFO - Start time: 2025-08-04 21:51:30
+2025-08-04 21:51:30,208 - AresGlobal.AresLauncher - INFO - Log directory: log
+2025-08-04 21:51:30,208 - AresGlobal.AresLauncher - INFO - Log level: INFO
+2025-08-04 21:51:30,208 - AresGlobal.AresLauncher - INFO - Global log file: ares_global_20250804_215130.log
+2025-08-04 21:51:30,208 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-04 21:51:30,208 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-04 21:51:30,208 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: regime - Symbol: ETHUSDT - Exchange: BINANCE
+2025-08-04 21:51:30,208 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-04 21:51:30
+2025-08-04 21:51:30,208 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-04 21:51:30,208 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-04 21:51:30,209 - AresGlobal.AresLauncher - INFO - 🧠 Running regime operations for ETHUSDT on BINANCE
+2025-08-04 21:51:30,209 - AresGlobal.AresLauncher - INFO - 📋 Subcommand: train
+2025-08-04 21:51:30,209 - AresGlobal.AresLauncher - INFO - 🖥️ GUI mode: False
+2025-08-04 21:51:30,209 - AresGlobal.AresLauncher - INFO - ⏰ Start time: 2025-08-04 21:51:30
+2025-08-04 21:51:30,209 - AresGlobal.AresLauncher - INFO - 📦 Importing required modules...
+2025-08-04 21:51:31,218 - AresGlobal.AresLauncher - INFO - ✅ Modules imported successfully
+2025-08-04 21:51:31,218 - AresGlobal.AresLauncher - INFO - 🔧 Initializing unified regime classifier...
+2025-08-04 21:51:31,218 - AresGlobal.AresLauncher - INFO - ✅ Unified regime classifier initialized successfully
+2025-08-04 21:51:31,218 - AresGlobal.AresLauncher - INFO - 🚀 Starting unified regime classifier training for ETHUSDT on BINANCE (2 years data)...
+2025-08-04 21:51:31,218 - AresGlobal.AresLauncher - INFO - 📊 Training configuration:
+2025-08-04 21:51:31,218 - AresGlobal.AresLauncher - INFO -    - Symbol: ETHUSDT
+2025-08-04 21:51:31,218 - AresGlobal.AresLauncher - INFO -    - Exchange: BINANCE
+2025-08-04 21:51:31,218 - AresGlobal.AresLauncher - INFO -    - Lookback years: 2
+2025-08-04 21:51:31,218 - AresGlobal.AresLauncher - INFO -    - Target timeframe: 1h
+2025-08-04 21:51:32,113 - AresGlobal.UnifiedRegimeClassifier - INFO - 🚀 Training complete unified regime classification system...
+2025-08-04 21:51:32,114 - AresGlobal.SRLevelAnalyzer - INFO - Initializing SR Level Analyzer...
+2025-08-04 21:51:32,114 - AresGlobal.SRLevelAnalyzer - INFO - SR configuration loaded successfully
+2025-08-04 21:51:32,114 - AresGlobal.SRLevelAnalyzer - INFO - Analysis parameters initialized
+2025-08-04 21:51:32,114 - AresGlobal.SRLevelAnalyzer - INFO - Configuration validation successful
+2025-08-04 21:51:32,114 - AresGlobal.SRLevelAnalyzer - INFO - ✅ SR Level Analyzer initialization completed successfully
+2025-08-04 21:51:32,114 - AresGlobal.UnifiedRegimeClassifier - INFO - ✅ SR analyzer initialized successfully
+2025-08-04 21:51:32,119 - AresGlobal.CandleAnalyzer - INFO - Initializing Candle Analyzer...
+2025-08-04 21:51:32,119 - AresGlobal.CandleAnalyzer - INFO - Candle configuration loaded successfully
+2025-08-04 21:51:32,119 - AresGlobal.CandleAnalyzer - INFO - Analysis parameters initialized
+2025-08-04 21:51:32,119 - AresGlobal.CandleAnalyzer - INFO - Configuration validation successful
+2025-08-04 21:51:32,119 - AresGlobal.CandleAnalyzer - INFO - Analysis parameters initialized
+2025-08-04 21:51:32,119 - AresGlobal.CandleAnalyzer - INFO - ✅ Candle Analyzer initialization completed successfully
+2025-08-04 21:51:32,119 - AresGlobal.UnifiedRegimeClassifier - INFO - ✅ Candle analyzer initialized successfully
+2025-08-04 21:51:32,119 - AresGlobal.UnifiedRegimeClassifier - INFO - 🎯 Step 1: Training HMM-based labeler...
+2025-08-04 21:51:32,657 - AresGlobal.UnifiedRegimeClassifier - INFO - Calculated 16 features for 1056930 periods
+2025-08-04 21:52:52,995 - AresGlobal.UnifiedRegimeClassifier - INFO - State 0: SIDEWAYS (mean_return=0.0000, mean_vol=0.0009)
+2025-08-04 21:52:53,007 - AresGlobal.UnifiedRegimeClassifier - INFO - State 1: SIDEWAYS (mean_return=0.0000, mean_vol=0.0003)
+2025-08-04 21:52:53,014 - AresGlobal.UnifiedRegimeClassifier - INFO - State 2: SIDEWAYS (mean_return=-0.0000, mean_vol=0.0018)
+2025-08-04 21:52:53,027 - AresGlobal.UnifiedRegimeClassifier - INFO - State 3: SIDEWAYS (mean_return=0.0000, mean_vol=0.0006)
+2025-08-04 21:52:53,030 - AresGlobal.UnifiedRegimeClassifier - INFO - ✅ HMM labeler trained successfully
+2025-08-04 21:52:53,033 - AresGlobal.UnifiedRegimeClassifier - INFO - 🎯 Step 2: Training basic regime ensemble...
+2025-08-04 21:52:53,467 - AresGlobal.UnifiedRegimeClassifier - INFO - Calculated 16 features for 1056930 periods
+2025-08-04 21:53:00,586 - AresGlobal.AresLauncher - ERROR - ❌ Failed to run regime operations: The number of classes has to be greater than one; got 1 class
+2025-08-04 21:53:00,603 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-04 21:53:00,603 - AresGlobal - INFO - [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1
+2025-08-04 21:53:00,603 - AresGlobal - INFO - [SYSTEM] End time: 2025-08-04 21:53:00
+2025-08-04 21:53:00,603 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-04 21:53:00,603 - AresGlobal.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-08-04 21:53:00,603 - AresGlobal.AresLauncher - INFO - ✅ Cleanup completed

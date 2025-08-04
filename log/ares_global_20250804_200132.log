@@ -1,0 +1,39 @@
+2025-08-04 20:01:32,191 - AresGlobal - INFO - ================================================================================
+2025-08-04 20:01:32,192 - AresGlobal - INFO - 📊 SESSION SUMMARY
+2025-08-04 20:01:32,192 - AresGlobal - INFO - Session started: 2025-08-04 20:01:32
+2025-08-04 20:01:32,192 - AresGlobal - INFO - Global log file: ares_global_20250804_200132.log
+2025-08-04 20:01:32,192 - AresGlobal - INFO - This file contains ALL logs for this session
+2025-08-04 20:01:32,192 - AresGlobal - INFO - ================================================================================
+2025-08-04 20:01:32,192 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-04 20:01:32,192 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION
+2025-08-04 20:01:32,192 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-04 20:01:32
+2025-08-04 20:01:32,192 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-04 20:01:32,192 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-04 20:01:32,193 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-04 20:01:32,193 - AresGlobal.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-08-04 20:01:32,193 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-04 20:01:32,193 - AresGlobal.AresLauncher - INFO - Start time: 2025-08-04 20:01:32
+2025-08-04 20:01:32,193 - AresGlobal.AresLauncher - INFO - Log directory: log
+2025-08-04 20:01:32,193 - AresGlobal.AresLauncher - INFO - Log level: INFO
+2025-08-04 20:01:32,193 - AresGlobal.AresLauncher - INFO - Global log file: ares_global_20250804_200132.log
+2025-08-04 20:01:32,193 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-04 20:01:32,193 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-04 20:01:32,193 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: regime - Symbol: ETHUSDT - Exchange: BINANCE
+2025-08-04 20:01:32,193 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-04 20:01:32
+2025-08-04 20:01:32,193 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-04 20:01:32,193 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-04 20:01:32,194 - AresGlobal.AresLauncher - INFO - 🧠 Running regime operations for ETHUSDT on BINANCE
+2025-08-04 20:01:32,194 - AresGlobal.AresLauncher - INFO - 📋 Subcommand: train_blank
+2025-08-04 20:01:32,194 - AresGlobal.AresLauncher - INFO - 🖥️ GUI mode: False
+2025-08-04 20:01:32,194 - AresGlobal.AresLauncher - INFO - ⏰ Start time: 2025-08-04 20:01:32
+2025-08-04 20:01:32,194 - AresGlobal.AresLauncher - INFO - 📦 Importing required modules...
+2025-08-04 20:01:33,907 - AresGlobal.AresLauncher - INFO - ✅ Modules imported successfully
+2025-08-04 20:01:33,907 - AresGlobal.AresLauncher - INFO - 🔧 Initializing unified regime classifier...
+2025-08-04 20:01:33,907 - AresGlobal.AresLauncher - INFO - ✅ Unified regime classifier initialized successfully
+2025-08-04 20:01:33,966 - AresGlobal.AresLauncher - ERROR - ❌ Failed to run regime operations: load_klines_data() got an unexpected keyword argument 'lookback_days'
+2025-08-04 20:01:33,967 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-04 20:01:33,967 - AresGlobal - INFO - [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1
+2025-08-04 20:01:33,967 - AresGlobal - INFO - [SYSTEM] End time: 2025-08-04 20:01:33
+2025-08-04 20:01:33,967 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-04 20:01:33,967 - AresGlobal.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-08-04 20:01:33,967 - AresGlobal.AresLauncher - INFO - ✅ Cleanup completed

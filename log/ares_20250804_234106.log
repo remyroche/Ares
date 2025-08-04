@@ -1,0 +1,5 @@
+2025-08-04 23:41:06,430 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-04 23:41:27,100 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Received SIGINT signal
+2025-08-04 23:41:27,101 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Initiating graceful shutdown: SIGINT
+2025-08-04 23:42:07,856 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Received SIGINT signal
+2025-08-04 23:42:07,857 - AresTradingSystem.System.SignalHandler - INFO - Shutdown already in progress

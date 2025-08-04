@@ -8,3 +8,5 @@
 # from .predictive_ensembles import RegimePredictiveEnsembles
 # from .liquidation_risk_model import ProbabilisticLiquidationRiskModel
 # from .market_health_analyzer import GeneralMarketAnalystModule
+# from .ml_confidence_predictor import MLConfidencePredictor
+

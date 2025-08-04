@@ -9,7 +9,7 @@ from optuna.pruners import SuccessiveHalvingPruner
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 
-from src.analyst.feature_engineering import (
+from src.analyst.feature_engineering_orchestrator import (
     FeatureEngineeringEngine,
 )  # Corrected import to FeatureEngineeringEngine
 from src.analyst.ml_target_generator import MLTargetGenerator

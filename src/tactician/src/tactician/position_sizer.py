@@ -137,7 +137,6 @@ class PositionSizer:
                 "volatility_multiplier": self._get_volatility_multiplier(
                     market_conditions,
                 ),
-                "regime_multiplier": self._get_regime_multiplier(market_conditions),
                 "liquidation_multiplier": self._get_liquidation_multiplier(
                     lss_metrics,
                 ),
@@ -226,30 +225,6 @@ class PositionSizer:
 
         return position_size * multiplier
 
-    def _apply_regime_adjustment(
-        self,
-        position_size: float,
-        market_conditions: dict[str, Any],
-    ) -> float:
-        """Apply regime-based position size adjustment."""
-        if not self.position_config.get("regime_based_adjustment", {}).get(
-            "enable_regime_adjustment",
-            True,
-        ):
-            return position_size
-
-        regime = (
-            market_conditions.get("market_regime", "SIDEWAYS_RANGE")
-            if market_conditions
-            else "SIDEWAYS_RANGE"
-        )
-        multipliers = self.position_config.get("regime_based_adjustment", {}).get(
-            "regime_multipliers",
-            {},
-        )
-
-        multiplier = multipliers.get(regime, 1.0)
-        return position_size * multiplier
 
     def _apply_liquidation_risk_adjustment(
         self,
@@ -501,18 +476,7 @@ class PositionSizer:
             return multipliers.get("medium_volatility", 1.0)
         return multipliers.get("high_volatility", 0.7)
 
-    def _get_regime_multiplier(self, market_conditions: dict[str, Any]) -> float:
-        """Get regime-based multiplier."""
-        regime = (
-            market_conditions.get("market_regime", "SIDEWAYS_RANGE")
-            if market_conditions
-            else "SIDEWAYS_RANGE"
-        )
-        multipliers = self.position_config.get("regime_based_adjustment", {}).get(
-            "regime_multipliers",
-            {},
-        )
-        return multipliers.get(regime, 1.0)
+
 
     def _get_liquidation_multiplier(self, lss_metrics: dict[str, Any]) -> float:
         """Get liquidation risk-based multiplier."""

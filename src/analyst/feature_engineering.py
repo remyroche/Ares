@@ -1,5 +1,6 @@
-import os
+# src/analyst/feature_engineering.py
 
+import os
 import joblib
 import numpy as np
 import pandas as pd
@@ -44,7 +45,7 @@ class FeatureEngineeringEngine:
         )
         self.autoencoder_scaler_path = os.path.join(
             self.model_storage_path,
-            "autoencoder_scaler.joblib",
+            "der_scaler.joblib",
         )
 
     @handle_errors(

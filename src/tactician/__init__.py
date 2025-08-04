@@ -1,5 +1,13 @@
 # src/tactician/__init__.py
-# This file makes the 'tactician' directory a Python package.
 
-# You can import sub-modules here for easier access, e.g.:
-# from .tactician import Tactician
+# Import the main components for easier access
+from .tactician import Tactician, setup_tactician
+from .position_sizer import PositionSizer
+from .leverage_sizer import LeverageSizer
+
+__all__ = [
+    "Tactician",
+    "setup_tactician", 
+    "PositionSizer",
+    "LeverageSizer",
+]

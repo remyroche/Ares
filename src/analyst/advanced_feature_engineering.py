@@ -114,8 +114,10 @@ class AdvancedFeatureEngineering:
             features = self._calculate_volume_profile_features(features, agg_trades_df)
         if self.enable_market_microstructure and order_book_df is not None:
              features = self._calculate_market_microstructure_features(features, order_book_df)
-        if 'funding_rate' in features.columns:
-            features = self._calculate_funding_features(features)
+        
+        features = self._calculate_advanced_order_flow_funding_features(features, agg_trades_df)
+
+            
 
         features.replace([np.inf, -np.inf], np.nan, inplace=True)
         self.logger.info(f"✅ Generated {len(features.columns)} total features")
@@ -314,11 +316,64 @@ class AdvancedFeatureEngineering:
         df['market_depth'] = order_book_df["market_depth"].resample(df.index.freq).sum().reindex(df.index, method='ffill')
         return df
 
-    # --- Category 9: Funding Rate Features ---
-    def _calculate_funding_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        self.logger.info("Calculating Funding Rate Features...")
-        df['funding_rate_MA_8'] = df['funding_rate'].rolling(window=8).mean()
-        df['funding_rate_change'] = df['funding_rate'].diff()
+    # --- Category 9: Advanced Order Flow & Funding ---
+    def _calculate_advanced_order_flow_funding_features(self, df: pd.DataFrame, agg_trades_df: pd.DataFrame | None) -> pd.DataFrame:
+        """Wrapper for advanced order flow and funding features."""
+        if agg_trades_df is not None:
+            df = self._calculate_order_flow_indicators(df, agg_trades_df)
+        if 'funding_rate' in df.columns:
+            df = self._calculate_enhanced_funding_features(df)
+        return df
+
+    def _calculate_enhanced_funding_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Calculate enhanced funding rate features."""
+        self.logger.info("Calculating enhanced funding rate features...")
+        if "funding_rate" not in df.columns:
+            self.logger.warning("`funding_rate` column not found. Skipping.")
+            return df
+        try:
+            funding_momentum_period = self.config.get("funding_momentum_period", 3)
+            df["Funding_Momentum"] = df["funding_rate"].diff(funding_momentum_period).fillna(0.0)
+            price_change = df["close"].pct_change(funding_momentum_period).fillna(0.0)
+            df["Funding_Divergence"] = df["Funding_Momentum"] - price_change
+            funding_window = self.config.get("funding_window", 24)
+            funding_mean = df["funding_rate"].rolling(funding_window, min_periods=1).mean()
+            funding_std = df["funding_rate"].rolling(funding_window, min_periods=1).std().replace(0, 1e-8)
+            df["Funding_Extreme"] = ((df["funding_rate"] - funding_mean) / funding_std).fillna(0.0)
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate enhanced funding features: {e}")
+            df["Funding_Momentum"], df["Funding_Divergence"], df["Funding_Extreme"] = 0.0, 0.0, 0.0
+        return df
+
+    def _calculate_order_flow_indicators(self, df: pd.DataFrame, agg_trades_df: pd.DataFrame) -> pd.DataFrame:
+        """Calculate order flow and liquidity indicators from aggregated trades."""
+        self.logger.info("Calculating order flow and liquidity indicators...")
+        df["Buy_Sell_Pressure_Ratio"], df["Order_Flow_Imbalance"], df["Large_Order_Count"], df["Liquidity_Score"] = 0.5, 0.0, 0, 0.0
+        if agg_trades_df.empty or "is_buyer_maker" not in agg_trades_df.columns:
+            return df
+        try:
+            if not isinstance(agg_trades_df.index, pd.DatetimeIndex):
+                agg_trades_df['timestamp'] = pd.to_datetime(agg_trades_df['timestamp'])
+                agg_trades_df = agg_trades_df.set_index('timestamp')
+
+            resample_interval = self.config.get("resample_interval", "1T")
+            agg_trades_df["buy_volume"] = np.where(~agg_trades_df["is_buyer_maker"], agg_trades_df["quantity"] * agg_trades_df["price"], 0)
+            agg_trades_df["sell_volume"] = np.where(agg_trades_df["is_buyer_maker"], agg_trades_df["quantity"] * agg_trades_df["price"], 0)
+            flow_data = agg_trades_df.resample(resample_interval).agg({"buy_volume": "sum", "sell_volume": "sum"}).reindex(df.index, method="ffill").fillna(0)
+            
+            total_volume = flow_data["buy_volume"] + flow_data["sell_volume"]
+            df["Buy_Sell_Pressure_Ratio"] = np.where(total_volume > 0, flow_data["buy_volume"] / total_volume, 0.5)
+            df["Order_Flow_Imbalance"] = np.where(total_volume > 0, (flow_data["buy_volume"] - flow_data["sell_volume"]) / total_volume, 0.0)
+
+            large_order_threshold = agg_trades_df["quantity"].quantile(0.95)
+            agg_trades_df["is_large_order"] = agg_trades_df["quantity"] > large_order_threshold
+            large_order_counts = agg_trades_df["is_large_order"].resample(resample_interval).sum().reindex(df.index, fill_value=0)
+            df["Large_Order_Count"] = large_order_counts
+            
+            trade_counts = agg_trades_df['quantity'].resample(resample_interval).count().reindex(df.index, method="ffill").fillna(0)
+            df["Liquidity_Score"] = (trade_counts * total_volume).fillna(0)
+        except Exception as e:
+            self.logger.error(f"Error calculating order flow indicators: {e}")
         return df
 
     # --- Utility Methods ---

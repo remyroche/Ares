@@ -1,4 +1,4 @@
-# src/training/two_tier_decision_system.py
+# src/tactician/two_tier_decision_system.py
 
 """
 Two-Tier Decision System for High Leverage Trading

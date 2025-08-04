@@ -1,0 +1,48 @@
+risk_management:
+  position_sizing:
+    base_position_size: 0.05
+    confidence_based_scaling: true
+    confidence_thresholds:
+      very_high_confidence: 0.95
+      high_confidence: 0.85
+      medium_confidence: 0.75
+    position_size_multipliers:
+      very_high_confidence: 2.0
+      high_confidence: 1.5
+      medium_confidence: 1.0
+      low_confidence: 0.5
+    volatility_adjustment:
+      enable_volatility_scaling: true
+      volatility_thresholds:
+        low_volatility: 0.02
+        medium_volatility: 0.05
+      volatility_multipliers:
+        low_volatility: 1.2
+        medium_volatility: 1.0
+        high_volatility: 0.7
+    regime_based_adjustment:
+      enable_regime_adjustment: true
+      regime_multipliers:
+        BULL_TREND: 1.2
+        BEAR_TREND: 0.8
+        SIDEWAYS_RANGE: 1.0
+    liquidation_risk_adjustment:
+      enable_liquidation_scaling: true
+      lss_thresholds:
+        very_safe: 80
+        safe: 60
+        moderate: 40
+      lss_multipliers:
+        very_safe: 1.2
+        safe: 1.0
+        moderate: 0.8
+        dangerous: 0.5
+    successive_position_rules:
+      enable_successive_positions: true
+      min_confidence_for_successive: 0.85
+      max_successive_positions: 3
+      size_reduction_factor: 0.8
+    risk_limits:
+      max_single_position: 0.15
+      max_total_exposure: 0.3
+      min_position_size: 0.01

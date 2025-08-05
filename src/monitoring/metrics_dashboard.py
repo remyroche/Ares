@@ -8,21 +8,18 @@ including performance metrics, model behavior, system health, and trading analyt
 
 import asyncio
 import json
-import time
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
-from dataclasses import dataclass, asdict
 from enum import Enum
+from typing import Any
 
-import pandas as pd
-import numpy as np
-
-from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
 
 
 class MetricType(Enum):
     """Metric types for categorization."""
+
     PERFORMANCE = "performance"
     MODEL_BEHAVIOR = "model_behavior"
     SYSTEM_HEALTH = "system_health"
@@ -34,31 +31,34 @@ class MetricType(Enum):
 @dataclass
 class MetricPoint:
     """Individual metric data point."""
+
     metric_name: str
     metric_type: MetricType
     value: float
     timestamp: datetime
-    metadata: Dict[str, Any]
-    unit: Optional[str] = None
+    metadata: dict[str, Any]
+    unit: str | None = None
 
 
 @dataclass
 class DashboardMetric:
     """Dashboard metric with aggregation."""
+
     metric_name: str
     metric_type: MetricType
     current_value: float
-    previous_value: Optional[float]
-    change_percentage: Optional[float]
+    previous_value: float | None
+    change_percentage: float | None
     trend: str  # "up", "down", "stable"
     last_updated: datetime
-    metadata: Dict[str, Any]
-    unit: Optional[str] = None
+    metadata: dict[str, Any]
+    unit: str | None = None
 
 
 @dataclass
 class PerformanceMetrics:
     """Performance metrics aggregation."""
+
     total_pnl: float
     daily_pnl: float
     win_rate: float
@@ -76,18 +76,20 @@ class PerformanceMetrics:
 @dataclass
 class ModelBehaviorMetrics:
     """Model behavior metrics."""
+
     model_accuracy: float
     prediction_confidence: float
     feature_importance_stability: float
     concept_drift_score: float
     data_drift_score: float
-    model_performance_trend: List[float]
-    last_retraining: Optional[datetime] = None
+    model_performance_trend: list[float]
+    last_retraining: datetime | None = None
 
 
 @dataclass
 class SystemHealthMetrics:
     """System health metrics."""
+
     cpu_usage: float
     memory_usage: float
     disk_usage: float
@@ -100,13 +102,14 @@ class SystemHealthMetrics:
 @dataclass
 class TradingAnalytics:
     """Trading analytics metrics."""
+
     active_positions: int
     total_exposure: float
     portfolio_value: float
     margin_usage: float
     leverage: float
     risk_per_trade: float
-    correlation_matrix: Dict[str, Dict[str, float]]
+    correlation_matrix: dict[str, dict[str, float]]
 
 
 class MetricsDashboard:
@@ -114,37 +117,46 @@ class MetricsDashboard:
     Real-time metrics dashboard providing comprehensive visualization
     of trading bot performance, model behavior, and system health.
     """
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize metrics dashboard.
-        
+
         Args:
             config: Configuration dictionary
         """
         self.config = config
         self.logger = system_logger.getChild("MetricsDashboard")
-        
+
         # Dashboard configuration
         self.dashboard_config = config.get("metrics_dashboard", {})
-        self.update_interval = self.dashboard_config.get("update_interval", 5)  # seconds
+        self.update_interval = self.dashboard_config.get(
+            "update_interval",
+            5,
+        )  # seconds
         self.max_metric_history = self.dashboard_config.get("max_metric_history", 1000)
-        self.enable_real_time_updates = self.dashboard_config.get("enable_real_time_updates", True)
-        self.enable_websocket_broadcast = self.dashboard_config.get("enable_websocket_broadcast", True)
-        
+        self.enable_real_time_updates = self.dashboard_config.get(
+            "enable_real_time_updates",
+            True,
+        )
+        self.enable_websocket_broadcast = self.dashboard_config.get(
+            "enable_websocket_broadcast",
+            True,
+        )
+
         # Metric storage
-        self.metrics_history: Dict[str, List[MetricPoint]] = {}
-        self.current_metrics: Dict[str, DashboardMetric] = {}
-        self.performance_metrics: Optional[PerformanceMetrics] = None
-        self.model_behavior_metrics: Dict[str, ModelBehaviorMetrics] = {}
-        self.system_health_metrics: Optional[SystemHealthMetrics] = None
-        self.trading_analytics: Optional[TradingAnalytics] = None
-        
+        self.metrics_history: dict[str, list[MetricPoint]] = {}
+        self.current_metrics: dict[str, DashboardMetric] = {}
+        self.performance_metrics: PerformanceMetrics | None = None
+        self.model_behavior_metrics: dict[str, ModelBehaviorMetrics] = {}
+        self.system_health_metrics: SystemHealthMetrics | None = None
+        self.trading_analytics: TradingAnalytics | None = None
+
         # Dashboard state
         self.is_running = False
-        self.dashboard_task: Optional[asyncio.Task] = None
-        self.websocket_connections: List[Any] = []
-        
+        self.dashboard_task: asyncio.Task | None = None
+        self.websocket_connections: list[Any] = []
+
         # Metric aggregation
         self.aggregation_windows = {
             "1m": 60,
@@ -153,7 +165,7 @@ class MetricsDashboard:
             "1h": 3600,
             "1d": 86400,
         }
-        
+
         self.logger.info("📊 Metrics Dashboard initialized")
 
     @handle_specific_errors(
@@ -168,21 +180,21 @@ class MetricsDashboard:
         """Initialize the metrics dashboard."""
         try:
             self.logger.info("Initializing Metrics Dashboard...")
-            
+
             # Initialize metric storage
             await self._initialize_metric_storage()
-            
+
             # Initialize real-time updates
             if self.enable_real_time_updates:
                 await self._initialize_real_time_updates()
-            
+
             # Initialize websocket broadcasting
             if self.enable_websocket_broadcast:
                 await self._initialize_websocket_broadcast()
-            
+
             self.logger.info("✅ Metrics Dashboard initialization completed")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Metrics Dashboard initialization failed: {e}")
             return False
@@ -198,9 +210,9 @@ class MetricsDashboard:
             # Initialize metric history for each type
             for metric_type in MetricType:
                 self.metrics_history[metric_type.value] = []
-            
+
             self.logger.info("Metric storage initialized")
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing metric storage: {e}")
 
@@ -214,7 +226,7 @@ class MetricsDashboard:
         try:
             self.dashboard_task = asyncio.create_task(self._dashboard_update_loop())
             self.logger.info("Real-time updates initialized")
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing real-time updates: {e}")
 
@@ -228,7 +240,7 @@ class MetricsDashboard:
         try:
             # This would integrate with the existing GUI websocket system
             self.logger.info("WebSocket broadcasting initialized")
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing websocket broadcast: {e}")
 
@@ -244,7 +256,7 @@ class MetricsDashboard:
                 await self._update_all_metrics()
                 await self._broadcast_metrics()
                 await asyncio.sleep(self.update_interval)
-                
+
         except Exception as e:
             self.logger.error(f"Error in dashboard update loop: {e}")
 
@@ -258,19 +270,19 @@ class MetricsDashboard:
         try:
             # Update performance metrics
             await self._update_performance_metrics()
-            
+
             # Update model behavior metrics
             await self._update_model_behavior_metrics()
-            
+
             # Update system health metrics
             await self._update_system_health_metrics()
-            
+
             # Update trading analytics
             await self._update_trading_analytics()
-            
+
             # Update current metrics
             await self._update_current_metrics()
-            
+
         except Exception as e:
             self.logger.error(f"Error updating metrics: {e}")
 
@@ -298,7 +310,7 @@ class MetricsDashboard:
                 best_trade=0.0,
                 worst_trade=0.0,
             )
-            
+
         except Exception as e:
             self.logger.error(f"Error updating performance metrics: {e}")
 
@@ -322,7 +334,7 @@ class MetricsDashboard:
                     model_performance_trend=[0.0],
                     last_retraining=None,
                 )
-            
+
         except Exception as e:
             self.logger.error(f"Error updating model behavior metrics: {e}")
 
@@ -345,7 +357,7 @@ class MetricsDashboard:
                 uptime=0.0,
                 active_connections=0,
             )
-            
+
         except Exception as e:
             self.logger.error(f"Error updating system health metrics: {e}")
 
@@ -368,7 +380,7 @@ class MetricsDashboard:
                 risk_per_trade=0.0,
                 correlation_matrix={},
             )
-            
+
         except Exception as e:
             self.logger.error(f"Error updating trading analytics: {e}")
 
@@ -381,37 +393,74 @@ class MetricsDashboard:
         """Update current dashboard metrics."""
         try:
             now = datetime.now()
-            
+
             # Update performance metrics
             if self.performance_metrics:
-                self._update_metric("total_pnl", MetricType.PERFORMANCE, 
-                                  self.performance_metrics.total_pnl, now)
-                self._update_metric("win_rate", MetricType.PERFORMANCE, 
-                                  self.performance_metrics.win_rate, now)
-                self._update_metric("sharpe_ratio", MetricType.PERFORMANCE, 
-                                  self.performance_metrics.sharpe_ratio, now)
-            
+                self._update_metric(
+                    "total_pnl",
+                    MetricType.PERFORMANCE,
+                    self.performance_metrics.total_pnl,
+                    now,
+                )
+                self._update_metric(
+                    "win_rate",
+                    MetricType.PERFORMANCE,
+                    self.performance_metrics.win_rate,
+                    now,
+                )
+                self._update_metric(
+                    "sharpe_ratio",
+                    MetricType.PERFORMANCE,
+                    self.performance_metrics.sharpe_ratio,
+                    now,
+                )
+
             # Update system health metrics
             if self.system_health_metrics:
-                self._update_metric("cpu_usage", MetricType.SYSTEM_HEALTH, 
-                                  self.system_health_metrics.cpu_usage, now)
-                self._update_metric("memory_usage", MetricType.SYSTEM_HEALTH, 
-                                  self.system_health_metrics.memory_usage, now)
-                self._update_metric("error_rate", MetricType.SYSTEM_HEALTH, 
-                                  self.system_health_metrics.error_rate, now)
-            
+                self._update_metric(
+                    "cpu_usage",
+                    MetricType.SYSTEM_HEALTH,
+                    self.system_health_metrics.cpu_usage,
+                    now,
+                )
+                self._update_metric(
+                    "memory_usage",
+                    MetricType.SYSTEM_HEALTH,
+                    self.system_health_metrics.memory_usage,
+                    now,
+                )
+                self._update_metric(
+                    "error_rate",
+                    MetricType.SYSTEM_HEALTH,
+                    self.system_health_metrics.error_rate,
+                    now,
+                )
+
             # Update trading analytics
             if self.trading_analytics:
-                self._update_metric("active_positions", MetricType.TRADING_ANALYTICS, 
-                                  self.trading_analytics.active_positions, now)
-                self._update_metric("total_exposure", MetricType.TRADING_ANALYTICS, 
-                                  self.trading_analytics.total_exposure, now)
-            
+                self._update_metric(
+                    "active_positions",
+                    MetricType.TRADING_ANALYTICS,
+                    self.trading_analytics.active_positions,
+                    now,
+                )
+                self._update_metric(
+                    "total_exposure",
+                    MetricType.TRADING_ANALYTICS,
+                    self.trading_analytics.total_exposure,
+                    now,
+                )
+
         except Exception as e:
             self.logger.error(f"Error updating current metrics: {e}")
 
-    def _update_metric(self, metric_name: str, metric_type: MetricType, 
-                      value: float, timestamp: datetime) -> None:
+    def _update_metric(
+        self,
+        metric_name: str,
+        metric_type: MetricType,
+        value: float,
+        timestamp: datetime,
+    ) -> None:
         """Update a single metric."""
         try:
             # Create metric point
@@ -422,35 +471,39 @@ class MetricsDashboard:
                 timestamp=timestamp,
                 metadata={},
             )
-            
+
             # Add to history
             history_key = metric_type.value
             if history_key not in self.metrics_history:
                 self.metrics_history[history_key] = []
-            
+
             self.metrics_history[history_key].append(metric_point)
-            
+
             # Limit history size
             if len(self.metrics_history[history_key]) > self.max_metric_history:
-                self.metrics_history[history_key] = self.metrics_history[history_key][-self.max_metric_history:]
-            
+                self.metrics_history[history_key] = self.metrics_history[history_key][
+                    -self.max_metric_history :
+                ]
+
             # Update current metric
             previous_value = None
             change_percentage = None
             trend = "stable"
-            
+
             if len(self.metrics_history[history_key]) > 1:
                 previous_point = self.metrics_history[history_key][-2]
                 previous_value = previous_point.value
-                
+
                 if previous_value != 0:
-                    change_percentage = ((value - previous_value) / abs(previous_value)) * 100
-                    
+                    change_percentage = (
+                        (value - previous_value) / abs(previous_value)
+                    ) * 100
+
                     if change_percentage > 1:
                         trend = "up"
                     elif change_percentage < -1:
                         trend = "down"
-            
+
             self.current_metrics[metric_name] = DashboardMetric(
                 metric_name=metric_name,
                 metric_type=metric_type,
@@ -461,7 +514,7 @@ class MetricsDashboard:
                 last_updated=timestamp,
                 metadata={},
             )
-            
+
         except Exception as e:
             self.logger.error(f"Error updating metric {metric_name}: {e}")
 
@@ -475,49 +528,65 @@ class MetricsDashboard:
         try:
             if not self.enable_websocket_broadcast:
                 return
-            
+
             dashboard_data = self.get_dashboard_data()
-            
+
             # Broadcast to websocket connections
             for connection in self.websocket_connections:
                 try:
                     await connection.send_text(json.dumps(dashboard_data))
                 except Exception as e:
                     self.logger.error(f"Error broadcasting to connection: {e}")
-                    
+
         except Exception as e:
             self.logger.error(f"Error broadcasting metrics: {e}")
 
-    def get_dashboard_data(self) -> Dict[str, Any]:
+    def get_dashboard_data(self) -> dict[str, Any]:
         """Get current dashboard data."""
         try:
             return {
                 "timestamp": datetime.now().isoformat(),
-                "performance_metrics": asdict(self.performance_metrics) if self.performance_metrics else {},
-                "model_behavior_metrics": {k: asdict(v) for k, v in self.model_behavior_metrics.items()},
-                "system_health_metrics": asdict(self.system_health_metrics) if self.system_health_metrics else {},
-                "trading_analytics": asdict(self.trading_analytics) if self.trading_analytics else {},
-                "current_metrics": {k: asdict(v) for k, v in self.current_metrics.items()},
+                "performance_metrics": asdict(self.performance_metrics)
+                if self.performance_metrics
+                else {},
+                "model_behavior_metrics": {
+                    k: asdict(v) for k, v in self.model_behavior_metrics.items()
+                },
+                "system_health_metrics": asdict(self.system_health_metrics)
+                if self.system_health_metrics
+                else {},
+                "trading_analytics": asdict(self.trading_analytics)
+                if self.trading_analytics
+                else {},
+                "current_metrics": {
+                    k: asdict(v) for k, v in self.current_metrics.items()
+                },
             }
         except Exception as e:
             self.logger.error(f"Error getting dashboard data: {e}")
             return {}
 
-    def get_metric_history(self, metric_name: str, 
-                          window: str = "1h") -> List[Dict[str, Any]]:
+    def get_metric_history(
+        self,
+        metric_name: str,
+        window: str = "1h",
+    ) -> list[dict[str, Any]]:
         """Get metric history for a specific metric."""
         try:
             history = []
             window_seconds = self.aggregation_windows.get(window, 3600)
             cutoff_time = datetime.now() - timedelta(seconds=window_seconds)
-            
+
             for metric_type, points in self.metrics_history.items():
                 for point in points:
-                    if point.metric_name == metric_name and point.timestamp >= cutoff_time:
+                    if (
+                        point.metric_name == metric_name
+                        and point.timestamp >= cutoff_time
+                    ):
                         history.append(asdict(point))
-            
+
             return sorted(history, key=lambda x: x["timestamp"])
-            
+
         except Exception as e:
             self.logger.error(f"Error getting metric history: {e}")
             return []
@@ -535,7 +604,7 @@ class MetricsDashboard:
             self.is_running = True
             self.logger.info("🚀 Metrics Dashboard started")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error starting dashboard: {e}")
             return False
@@ -549,16 +618,16 @@ class MetricsDashboard:
         """Stop the metrics dashboard."""
         try:
             self.is_running = False
-            
+
             if self.dashboard_task:
                 self.dashboard_task.cancel()
                 try:
                     await self.dashboard_task
                 except asyncio.CancelledError:
                     pass
-            
+
             self.logger.info("🛑 Metrics Dashboard stopped")
-            
+
         except Exception as e:
             self.logger.error(f"Error stopping dashboard: {e}")
 
@@ -568,24 +637,23 @@ class MetricsDashboard:
     default_return=None,
     context="metrics dashboard setup",
 )
-async def setup_metrics_dashboard(config: Dict[str, Any]) -> MetricsDashboard | None:
+async def setup_metrics_dashboard(config: dict[str, Any]) -> MetricsDashboard | None:
     """
     Setup and initialize metrics dashboard.
-    
+
     Args:
         config: Configuration dictionary
-        
+
     Returns:
         MetricsDashboard instance or None if setup failed
     """
     try:
         dashboard = MetricsDashboard(config)
-        
+
         if await dashboard.initialize():
             return dashboard
-        else:
-            return None
-            
+        return None
+
     except Exception as e:
         system_logger.error(f"Error setting up metrics dashboard: {e}")
-        return None 
+        return None

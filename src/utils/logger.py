@@ -282,11 +282,11 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
             # Ensure log directory exists
             log_dir = Path("log")
             log_dir.mkdir(exist_ok=True)
-            
+
             # Create timestamped log file
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             log_file = log_dir / f"ares_{timestamp}.log"
-            
+
             config = {
                 "logging": {
                     "level": "INFO",
@@ -358,10 +358,11 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
 # Initialize default logger if not already set
 if system_logger is None:
     system_logger = setup_logging()
-    
+
     # Try to integrate with comprehensive logging if available
     try:
         from src.utils.comprehensive_logger import get_comprehensive_logger
+
         comprehensive_logger = get_comprehensive_logger()
         if comprehensive_logger:
             # Replace with integrated version
@@ -396,17 +397,18 @@ def get_logger(name: str) -> logging.Logger:
     global system_logger
     if system_logger is None:
         system_logger = setup_logging()
-    
+
     # Check if comprehensive logging is available and integrate with it
     try:
         from src.utils.comprehensive_logger import get_comprehensive_logger
+
         comprehensive_logger = get_comprehensive_logger()
         if comprehensive_logger:
             # Use comprehensive logging if available
             return comprehensive_logger.get_component_logger(name)
     except ImportError:
         pass
-    
+
     # Fallback to old system
     return system_logger.getChild(name)
 
@@ -414,14 +416,14 @@ def get_logger(name: str) -> logging.Logger:
 def get_system_logger_with_comprehensive_integration() -> logging.Logger:
     """
     Get system logger with comprehensive logging integration.
-    
+
     Returns:
         logging.Logger: System logger that integrates with comprehensive logging
     """
     global system_logger
     if system_logger is None:
         system_logger = setup_logging()
-    
+
     # Create a wrapper that integrates with comprehensive logging
     class ComprehensiveIntegratedLogger:
         def __init__(self, base_logger):
@@ -429,21 +431,22 @@ def get_system_logger_with_comprehensive_integration() -> logging.Logger:
             self.comprehensive_logger = None
             try:
                 from src.utils.comprehensive_logger import get_comprehensive_logger
+
                 self.comprehensive_logger = get_comprehensive_logger()
             except ImportError:
                 pass
-        
+
         def getChild(self, name: str) -> logging.Logger:
             """Get child logger with comprehensive logging integration."""
             if self.comprehensive_logger:
                 # Return the comprehensive logger's component logger directly
                 return self.comprehensive_logger.get_component_logger(name)
             return self.base_logger.getChild(name)
-        
+
         def __getattr__(self, name):
             """Delegate all other attributes to the base logger."""
             return getattr(self.base_logger, name)
-    
+
     return ComprehensiveIntegratedLogger(system_logger)
 
 
@@ -453,7 +456,7 @@ def initialize_comprehensive_integration():
     global system_logger
     if system_logger is None:
         system_logger = setup_logging()
-    
+
     # Replace with integrated version
     system_logger = get_system_logger_with_comprehensive_integration()
 
@@ -462,6 +465,7 @@ def ensure_comprehensive_logging_available():
     """Ensure comprehensive logging is available for all logging calls."""
     try:
         from src.utils.comprehensive_logger import get_comprehensive_logger
+
         comprehensive_logger = get_comprehensive_logger()
         if comprehensive_logger:
             # Initialize integration if comprehensive logging is available

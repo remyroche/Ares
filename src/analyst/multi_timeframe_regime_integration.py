@@ -202,7 +202,9 @@ class MultiTimeframeRegimeIntegration:
 
             # Check if we need to update regime (cache management)
             if self._should_update_regime():
-                regime, confidence, info = self.regime_classifier.predict_regime(data_1h)
+                regime, confidence, info = self.regime_classifier.predict_regime(
+                    data_1h,
+                )
 
                 # Update cache
                 self.current_regime = regime
@@ -482,7 +484,9 @@ class MultiTimeframeRegimeIntegration:
                 self.logger.error("Invalid 1h data provided for training")
                 return False
 
-            success = await self.regime_classifier.train_complete_system(historical_data_1h)
+            success = await self.regime_classifier.train_complete_system(
+                historical_data_1h,
+            )
 
             if success:
                 self.logger.info("✅ HMM regime classifier trained successfully")

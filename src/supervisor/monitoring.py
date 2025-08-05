@@ -1,24 +1,6 @@
 # src/supervisor/monitoring.py
 
-import asyncio
-from datetime import datetime
 from typing import Any
-
-# Import SQLite and InfluxDB managers directly, make Firebase optional
-
-try:
-    from src.database.influxdb_manager import InfluxDBManager
-except ImportError:
-    InfluxDBManager = None
-
-# Make Firebase optional - only import if available
-try:
-    from src.database.firestore_manager import FirestoreManager
-
-    FIREBASE_AVAILABLE = True
-except ImportError:
-    FirestoreManager = None
-    FIREBASE_AVAILABLE = False
 
 from src.utils.error_handler import (
     handle_errors,

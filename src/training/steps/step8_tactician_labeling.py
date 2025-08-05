@@ -3,213 +3,242 @@
 import asyncio
 import json
 import os
-import pandas as pd
 import pickle
-import numpy as np
-from typing import Any, Dict, Optional, List, Tuple
 from datetime import datetime, timedelta
+from typing import Any
 
-from src.utils.error_handler import handle_errors
+import pandas as pd
+
 from src.utils.logger import system_logger
 
 
 class TacticianLabelingStep:
     """Step 8: Tactician Model Labeling using Analyst's model and Triple Barrier Method."""
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: dict[str, Any]):
         self.config = config
         self.logger = system_logger
-        
+
     async def initialize(self) -> None:
         """Initialize the tactician labeling step."""
         try:
             self.logger.info("Initializing Tactician Labeling Step...")
             self.logger.info("Tactician Labeling Step initialized successfully")
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing Tactician Labeling Step: {e}")
             raise
-    
-    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def execute(
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Execute tactician model labeling.
-        
+
         Args:
             training_input: Training input parameters
             pipeline_state: Current pipeline state
-            
+
         Returns:
             Dict containing labeling results
         """
         try:
             self.logger.info("🔄 Executing Tactician Labeling...")
-            
+
             # Extract parameters
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             data_dir = training_input.get("data_dir", "data/training")
-            
+
             # Load 1m data for tactician
             data_file_path = f"{data_dir}/{exchange}_{symbol}_historical_data.pkl"
-            
+
             if not os.path.exists(data_file_path):
                 raise FileNotFoundError(f"Data file not found: {data_file_path}")
-            
+
             # Load data
-            with open(data_file_path, 'rb') as f:
+            with open(data_file_path, "rb") as f:
                 historical_data = pickle.load(f)
-            
+
             # Convert to DataFrame if needed
             if not isinstance(historical_data, pd.DataFrame):
                 historical_data = pd.DataFrame(historical_data)
-            
+
             # Load analyst ensemble models
             analyst_ensembles_dir = f"{data_dir}/analyst_ensembles"
             analyst_ensembles = {}
-            
+
             if os.path.exists(analyst_ensembles_dir):
                 for ensemble_file in os.listdir(analyst_ensembles_dir):
-                    if ensemble_file.endswith('_ensemble.pkl'):
-                        regime_name = ensemble_file.replace('_ensemble.pkl', '')
-                        ensemble_path = os.path.join(analyst_ensembles_dir, ensemble_file)
-                        
-                        with open(ensemble_path, 'rb') as f:
+                    if ensemble_file.endswith("_ensemble.pkl"):
+                        regime_name = ensemble_file.replace("_ensemble.pkl", "")
+                        ensemble_path = os.path.join(
+                            analyst_ensembles_dir,
+                            ensemble_file,
+                        )
+
+                        with open(ensemble_path, "rb") as f:
                             analyst_ensembles[regime_name] = pickle.load(f)
-            
+
             # Generate strategic signals using analyst models
-            strategic_signals = await self._generate_strategic_signals(historical_data, analyst_ensembles, symbol, exchange)
-            
+            strategic_signals = await self._generate_strategic_signals(
+                historical_data,
+                analyst_ensembles,
+                symbol,
+                exchange,
+            )
+
             # Apply triple barrier method with optimized parameters
-            labeled_data = await self._apply_tactician_triple_barrier(historical_data, strategic_signals, symbol, exchange)
-            
+            labeled_data = await self._apply_tactician_triple_barrier(
+                historical_data,
+                strategic_signals,
+                symbol,
+                exchange,
+            )
+
             # Save labeled data
             labeled_data_dir = f"{data_dir}/tactician_labeled_data"
             os.makedirs(labeled_data_dir, exist_ok=True)
-            
-            labeled_file = f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl"
-            with open(labeled_file, 'wb') as f:
+
+            labeled_file = (
+                f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl"
+            )
+            with open(labeled_file, "wb") as f:
                 pickle.dump(labeled_data, f)
-            
+
             # Save strategic signals
             signals_file = f"{data_dir}/{exchange}_{symbol}_strategic_signals.json"
-            with open(signals_file, 'w') as f:
+            with open(signals_file, "w") as f:
                 json.dump(strategic_signals, f, indent=2)
-            
-            self.logger.info(f"✅ Tactician labeling completed. Results saved to {labeled_data_dir}")
-            
+
+            self.logger.info(
+                f"✅ Tactician labeling completed. Results saved to {labeled_data_dir}",
+            )
+
             # Update pipeline state
             pipeline_state["tactician_labeled_data"] = labeled_data
             pipeline_state["strategic_signals"] = strategic_signals
-            
+
             return {
                 "tactician_labeled_data": labeled_data,
                 "strategic_signals": strategic_signals,
                 "labeled_file": labeled_file,
                 "signals_file": signals_file,
                 "duration": 0.0,  # Will be calculated in actual implementation
-                "status": "SUCCESS"
+                "status": "SUCCESS",
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in Tactician Labeling: {e}")
-            return {
-                "status": "FAILED",
-                "error": str(e),
-                "duration": 0.0
-            }
-    
-    async def _generate_strategic_signals(self, data: pd.DataFrame, analyst_ensembles: Dict[str, Any], 
-                                        symbol: str, exchange: str) -> Dict[str, Any]:
+            return {"status": "FAILED", "error": str(e), "duration": 0.0}
+
+    async def _generate_strategic_signals(
+        self,
+        data: pd.DataFrame,
+        analyst_ensembles: dict[str, Any],
+        symbol: str,
+        exchange: str,
+    ) -> dict[str, Any]:
         """
         Generate strategic signals using analyst ensemble models.
-        
+
         Args:
             data: Historical market data
             analyst_ensembles: Analyst ensemble models
             symbol: Trading symbol
             exchange: Exchange name
-            
+
         Returns:
             Dict containing strategic signals
         """
         try:
-            self.logger.info(f"Generating strategic signals for {symbol} on {exchange}...")
-            
+            self.logger.info(
+                f"Generating strategic signals for {symbol} on {exchange}...",
+            )
+
             # Calculate features for signal generation
             data_with_features = self._calculate_tactician_features(data)
-            
+
             # Generate signals for each regime
             strategic_signals = {
                 "symbol": symbol,
                 "exchange": exchange,
                 "signal_generation_date": datetime.now().isoformat(),
                 "signals": [],
-                "regime_signals": {}
+                "regime_signals": {},
             }
-            
+
             # For each regime, generate signals using analyst ensemble
             for regime_name, ensemble_data in analyst_ensembles.items():
                 self.logger.info(f"Generating signals for regime: {regime_name}")
-                
+
                 # Use the stacking ensemble for signal generation
                 if "stacking_cv" in ensemble_data:
                     ensemble = ensemble_data["stacking_cv"]["ensemble"]
-                    
+
                     # Generate signals for this regime
-                    regime_signals = await self._generate_regime_signals(data_with_features, ensemble, regime_name)
+                    regime_signals = await self._generate_regime_signals(
+                        data_with_features,
+                        ensemble,
+                        regime_name,
+                    )
                     strategic_signals["regime_signals"][regime_name] = regime_signals
-                    
+
                     # Add to overall signals
                     strategic_signals["signals"].extend(regime_signals)
-            
-            self.logger.info(f"Generated {len(strategic_signals['signals'])} strategic signals")
-            
+
+            self.logger.info(
+                f"Generated {len(strategic_signals['signals'])} strategic signals",
+            )
+
             return strategic_signals
-            
+
         except Exception as e:
             self.logger.error(f"Error generating strategic signals: {e}")
             raise
-    
+
     def _calculate_tactician_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate features for tactician signal generation.
-        
+
         Args:
             data: Market data
-            
+
         Returns:
             DataFrame with features added
         """
         try:
             # Calculate basic features
-            data['price_change'] = data['close'].pct_change()
-            data['volume_change'] = data['volume'].pct_change()
-            data['high_low_ratio'] = data['high'] / data['low']
-            
+            data["price_change"] = data["close"].pct_change()
+            data["volume_change"] = data["volume"].pct_change()
+            data["high_low_ratio"] = data["high"] / data["low"]
+
             # Calculate moving averages
-            data['sma_5'] = data['close'].rolling(window=5).mean()
-            data['sma_10'] = data['close'].rolling(window=10).mean()
-            data['sma_20'] = data['close'].rolling(window=20).mean()
-            
+            data["sma_5"] = data["close"].rolling(window=5).mean()
+            data["sma_10"] = data["close"].rolling(window=10).mean()
+            data["sma_20"] = data["close"].rolling(window=20).mean()
+
             # Calculate momentum indicators
-            data['momentum_5'] = data['close'] / data['close'].shift(5) - 1
-            data['momentum_10'] = data['close'] / data['close'].shift(10) - 1
-            
+            data["momentum_5"] = data["close"] / data["close"].shift(5) - 1
+            data["momentum_10"] = data["close"] / data["close"].shift(10) - 1
+
             # Calculate volatility
-            data['volatility'] = data['price_change'].rolling(window=20).std()
-            
+            data["volatility"] = data["price_change"].rolling(window=20).std()
+
             # Calculate RSI
-            data['rsi'] = self._calculate_rsi(data['close'])
-            
+            data["rsi"] = self._calculate_rsi(data["close"])
+
             # Fill NaN values
-            data = data.fillna(method='bfill').fillna(0)
-            
+            data = data.fillna(method="bfill").fillna(0)
+
             return data
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating tactician features: {e}")
             raise
-    
+
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """Calculate RSI indicator."""
         delta = prices.diff()
@@ -218,57 +247,75 @@ class TacticianLabelingStep:
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
         return rsi
-    
-    async def _generate_regime_signals(self, data: pd.DataFrame, ensemble: Any, regime_name: str) -> List[Dict[str, Any]]:
+
+    async def _generate_regime_signals(
+        self,
+        data: pd.DataFrame,
+        ensemble: Any,
+        regime_name: str,
+    ) -> list[dict[str, Any]]:
         """
         Generate signals for a specific regime using analyst ensemble.
-        
+
         Args:
             data: Market data with features
             ensemble: Analyst ensemble model
             regime_name: Name of the regime
-            
+
         Returns:
             List of strategic signals
         """
         try:
             signals = []
-            
+
             # Prepare feature columns
             feature_columns = [
-                'price_change', 'volume_change', 'high_low_ratio',
-                'sma_5', 'sma_10', 'sma_20', 'momentum_5', 'momentum_10',
-                'volatility', 'rsi'
+                "price_change",
+                "volume_change",
+                "high_low_ratio",
+                "sma_5",
+                "sma_10",
+                "sma_20",
+                "momentum_5",
+                "momentum_10",
+                "volatility",
+                "rsi",
             ]
-            
+
             # Filter available features
             available_features = [col for col in feature_columns if col in data.columns]
-            
+
             if not available_features:
                 self.logger.warning(f"No features available for regime {regime_name}")
                 return signals
-            
+
             # Generate signals for each data point
             for i in range(len(data)):
                 if i < 20:  # Skip first 20 points for feature calculation
                     continue
-                
+
                 # Get features for current point
                 features = data[available_features].iloc[i]
-                
+
                 # Generate prediction using ensemble
                 try:
                     # Reshape features for prediction
                     features_reshaped = features.values.reshape(1, -1)
-                    
+
                     # Get prediction probability
                     prediction_proba = ensemble.predict_proba(features_reshaped)[0]
                     prediction = ensemble.predict(features_reshaped)[0]
-                    
+
                     # Create signal based on prediction
                     signal_strength = max(prediction_proba)
-                    signal_direction = "BUY" if prediction == 1 else "SELL" if prediction == -1 else "HOLD"
-                    
+                    signal_direction = (
+                        "BUY"
+                        if prediction == 1
+                        else "SELL"
+                        if prediction == -1
+                        else "HOLD"
+                    )
+
                     # Only create signal if confidence is high enough
                     if signal_strength > 0.6:
                         signal = {
@@ -278,164 +325,201 @@ class TacticianLabelingStep:
                             "signal_strength": signal_strength,
                             "prediction": prediction,
                             "prediction_proba": prediction_proba.tolist(),
-                            "features": features.to_dict()
+                            "features": features.to_dict(),
                         }
                         signals.append(signal)
-                
+
                 except Exception as e:
                     self.logger.warning(f"Error generating signal for point {i}: {e}")
                     continue
-            
-            self.logger.info(f"Generated {len(signals)} signals for regime {regime_name}")
+
+            self.logger.info(
+                f"Generated {len(signals)} signals for regime {regime_name}",
+            )
             return signals
-            
+
         except Exception as e:
             self.logger.error(f"Error generating regime signals for {regime_name}: {e}")
             raise
-    
-    async def _apply_tactician_triple_barrier(self, data: pd.DataFrame, strategic_signals: Dict[str, Any], 
-                                            symbol: str, exchange: str) -> pd.DataFrame:
+
+    async def _apply_tactician_triple_barrier(
+        self,
+        data: pd.DataFrame,
+        strategic_signals: dict[str, Any],
+        symbol: str,
+        exchange: str,
+    ) -> pd.DataFrame:
         """
         Apply Triple Barrier Method for tactician labeling with optimized parameters.
-        
+
         Args:
             data: Market data
             strategic_signals: Strategic signals from analyst models
             symbol: Trading symbol
             exchange: Exchange name
-            
+
         Returns:
             DataFrame with tactician labels
         """
         try:
-            self.logger.info(f"Applying Tactician Triple Barrier Method for {symbol} on {exchange}...")
-            
+            self.logger.info(
+                f"Applying Tactician Triple Barrier Method for {symbol} on {exchange}...",
+            )
+
             # Optimize barrier parameters using Optuna
-            optimal_params = await self._optimize_barrier_parameters(data, strategic_signals)
-            
+            optimal_params = await self._optimize_barrier_parameters(
+                data,
+                strategic_signals,
+            )
+
             # Apply triple barrier with optimized parameters
             labeled_data = data.copy()
             labels = []
-            
+
             for i in range(len(data)):
                 if i >= len(data) - 1:  # Skip last point
                     labels.append(0)
                     continue
-                
-                entry_price = data.iloc[i]['close']
+
+                entry_price = data.iloc[i]["close"]
                 entry_time = data.index[i]
-                
+
                 # Use optimized barrier parameters
                 profit_take_multiplier = optimal_params["profit_take_multiplier"]
                 stop_loss_multiplier = optimal_params["stop_loss_multiplier"]
                 time_barrier_minutes = optimal_params["time_barrier_minutes"]
-                
+
                 # Calculate barriers
                 profit_take_barrier = entry_price * (1 + profit_take_multiplier)
                 stop_loss_barrier = entry_price * (1 - stop_loss_multiplier)
                 time_barrier = entry_time + timedelta(minutes=time_barrier_minutes)
-                
+
                 # Check if any barrier is hit
                 label = 0  # Neutral
-                
-                for j in range(i + 1, min(i + 100, len(data))):  # Look ahead up to 100 points
+
+                for j in range(
+                    i + 1,
+                    min(i + 100, len(data)),
+                ):  # Look ahead up to 100 points
                     current_time = data.index[j]
-                    current_price = data.iloc[j]['high']  # Use high for profit take
-                    current_low = data.iloc[j]['low']     # Use low for stop loss
-                    
+                    current_price = data.iloc[j]["high"]  # Use high for profit take
+                    current_low = data.iloc[j]["low"]  # Use low for stop loss
+
                     # Check time barrier
                     if current_time > time_barrier:
                         label = 0  # Time barrier hit - neutral
                         break
-                    
+
                     # Check profit take barrier
                     if current_price >= profit_take_barrier:
                         label = 1  # Profit take hit - positive
                         break
-                    
+
                     # Check stop loss barrier
                     if current_low <= stop_loss_barrier:
                         label = -1  # Stop loss hit - negative
                         break
-                
+
                 labels.append(label)
-            
-            labeled_data['tactician_label'] = labels
-            
+
+            labeled_data["tactician_label"] = labels
+
             # Calculate label distribution
             label_counts = pd.Series(labels).value_counts()
             self.logger.info(f"Tactician label distribution: {dict(label_counts)}")
-            
+
             # Add optimization metadata
-            labeled_data.attrs['barrier_optimization'] = optimal_params
-            
+            labeled_data.attrs["barrier_optimization"] = optimal_params
+
             return labeled_data
-            
+
         except Exception as e:
             self.logger.error(f"Error in tactician triple barrier labeling: {e}")
             raise
-    
-    async def _optimize_barrier_parameters(self, data: pd.DataFrame, strategic_signals: Dict[str, Any]) -> Dict[str, float]:
+
+    async def _optimize_barrier_parameters(
+        self,
+        data: pd.DataFrame,
+        strategic_signals: dict[str, Any],
+    ) -> dict[str, float]:
         """
         Optimize barrier parameters using Optuna.
-        
+
         Args:
             data: Market data
             strategic_signals: Strategic signals
-            
+
         Returns:
             Dict containing optimized parameters
         """
         try:
             import optuna
-            
+
             def objective(trial):
                 # Define parameter ranges
-                profit_take_multiplier = trial.suggest_float('profit_take_multiplier', 0.0005, 0.003, step=0.0001)
-                stop_loss_multiplier = trial.suggest_float('stop_loss_multiplier', 0.0002, 0.002, step=0.0001)
-                time_barrier_minutes = trial.suggest_int('time_barrier_minutes', 5, 30)
-                
+                profit_take_multiplier = trial.suggest_float(
+                    "profit_take_multiplier",
+                    0.0005,
+                    0.003,
+                    step=0.0001,
+                )
+                stop_loss_multiplier = trial.suggest_float(
+                    "stop_loss_multiplier",
+                    0.0002,
+                    0.002,
+                    step=0.0001,
+                )
+                time_barrier_minutes = trial.suggest_int("time_barrier_minutes", 5, 30)
+
                 # Simulate barrier application and calculate score
                 # In real implementation, this would apply barriers and evaluate performance
                 score = self._evaluate_barrier_parameters(
-                    data, strategic_signals, 
-                    profit_take_multiplier, stop_loss_multiplier, time_barrier_minutes
+                    data,
+                    strategic_signals,
+                    profit_take_multiplier,
+                    stop_loss_multiplier,
+                    time_barrier_minutes,
                 )
-                
+
                 return score
-            
+
             # Create study
-            study = optuna.create_study(direction='maximize')
+            study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=50)
-            
+
             # Return best parameters
             best_params = study.best_params
             self.logger.info(f"Optimized barrier parameters: {best_params}")
-            
+
             return best_params
-            
+
         except Exception as e:
             self.logger.error(f"Error optimizing barrier parameters: {e}")
             # Return default parameters
             return {
                 "profit_take_multiplier": 0.001,
                 "stop_loss_multiplier": 0.0005,
-                "time_barrier_minutes": 5
+                "time_barrier_minutes": 5,
             }
-    
-    def _evaluate_barrier_parameters(self, data: pd.DataFrame, strategic_signals: Dict[str, Any],
-                                   profit_take_multiplier: float, stop_loss_multiplier: float, 
-                                   time_barrier_minutes: int) -> float:
+
+    def _evaluate_barrier_parameters(
+        self,
+        data: pd.DataFrame,
+        strategic_signals: dict[str, Any],
+        profit_take_multiplier: float,
+        stop_loss_multiplier: float,
+        time_barrier_minutes: int,
+    ) -> float:
         """
         Evaluate barrier parameters by simulating their application.
-        
+
         Args:
             data: Market data
             strategic_signals: Strategic signals
             profit_take_multiplier: Profit take multiplier
             stop_loss_multiplier: Stop loss multiplier
             time_barrier_minutes: Time barrier in minutes
-            
+
         Returns:
             Evaluation score
         """
@@ -443,50 +527,50 @@ class TacticianLabelingStep:
             # Simulate barrier application on a subset of data
             subset_size = min(1000, len(data))
             subset_data = data.iloc[:subset_size]
-            
+
             # Apply barriers and count outcomes
             positive_outcomes = 0
             negative_outcomes = 0
             neutral_outcomes = 0
-            
+
             for i in range(len(subset_data) - 1):
-                entry_price = subset_data.iloc[i]['close']
+                entry_price = subset_data.iloc[i]["close"]
                 entry_time = subset_data.index[i]
-                
+
                 # Calculate barriers
                 profit_take_barrier = entry_price * (1 + profit_take_multiplier)
                 stop_loss_barrier = entry_price * (1 - stop_loss_multiplier)
                 time_barrier = entry_time + timedelta(minutes=time_barrier_minutes)
-                
+
                 # Check outcomes
                 for j in range(i + 1, min(i + 50, len(subset_data))):
                     current_time = subset_data.index[j]
-                    current_price = subset_data.iloc[j]['high']
-                    current_low = subset_data.iloc[j]['low']
-                    
+                    current_price = subset_data.iloc[j]["high"]
+                    current_low = subset_data.iloc[j]["low"]
+
                     if current_time > time_barrier:
                         neutral_outcomes += 1
                         break
-                    elif current_price >= profit_take_barrier:
+                    if current_price >= profit_take_barrier:
                         positive_outcomes += 1
                         break
-                    elif current_low <= stop_loss_barrier:
+                    if current_low <= stop_loss_barrier:
                         negative_outcomes += 1
                         break
-            
+
             # Calculate score based on positive vs negative outcomes
             total_outcomes = positive_outcomes + negative_outcomes + neutral_outcomes
             if total_outcomes == 0:
                 return 0.0
-            
+
             positive_ratio = positive_outcomes / total_outcomes
             negative_ratio = negative_outcomes / total_outcomes
-            
+
             # Score favors higher positive ratio and lower negative ratio
             score = positive_ratio - negative_ratio
-            
+
             return score
-            
+
         except Exception as e:
             self.logger.error(f"Error evaluating barrier parameters: {e}")
             return 0.0
@@ -497,17 +581,17 @@ async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
     data_dir: str = "data/training",
-    **kwargs
+    **kwargs,
 ) -> bool:
     """
     Run the tactician labeling step.
-    
+
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory path
         **kwargs: Additional parameters
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
@@ -516,20 +600,20 @@ async def run_step(
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
         step = TacticianLabelingStep(config)
         await step.initialize()
-        
+
         # Execute step
         training_input = {
             "symbol": symbol,
             "exchange": exchange,
             "data_dir": data_dir,
-            **kwargs
+            **kwargs,
         }
-        
+
         pipeline_state = {}
         result = await step.execute(training_input, pipeline_state)
-        
+
         return result.get("status") == "SUCCESS"
-        
+
     except Exception as e:
         print(f"❌ Tactician labeling failed: {e}")
         return False
@@ -540,5 +624,5 @@ if __name__ == "__main__":
     async def test():
         result = await run_step("ETHUSDT", "BINANCE", "data/training")
         print(f"Test result: {result}")
-    
+
     asyncio.run(test())

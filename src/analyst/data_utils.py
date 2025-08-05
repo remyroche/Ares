@@ -1061,41 +1061,45 @@ def validate_klines_data(df: pd.DataFrame) -> tuple[bool, str]:
     """Validate klines data quality."""
     if df.empty:
         return False, "Empty DataFrame"
-    
+
     required_cols = ["open", "high", "low", "close", "volume"]
     missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
         return False, f"Missing required columns: {missing_cols}"
-    
+
     # Check for NaN values
     nan_counts = df[required_cols].isnull().sum()
     if nan_counts.sum() > 0:
         return False, f"NaN values found: {nan_counts.to_dict()}"
-    
+
     # Check for infinite values
     inf_counts = np.isinf(df[required_cols]).sum()
     if inf_counts.sum() > 0:
         return False, f"Infinite values found: {inf_counts.to_dict()}"
-    
+
     # Check for negative prices
     price_cols = ["open", "high", "low", "close"]
     for col in price_cols:
         if (df[col] < 0).any():
             return False, f"Negative values found in {col}"
-    
+
     # Check for invalid OHLC relationships
     if (df["high"] < df["low"]).any():
         return False, "High < Low found"
-    
-    if ((df["open"] > df["high"]) | (df["open"] < df["low"]) | 
-        (df["close"] > df["high"]) | (df["close"] < df["low"])).any():
+
+    if (
+        (df["open"] > df["high"])
+        | (df["open"] < df["low"])
+        | (df["close"] > df["high"])
+        | (df["close"] < df["low"])
+    ).any():
         return False, "Open/Close outside High-Low range"
-    
+
     # Check for zero prices
     for col in price_cols:
         if (df[col] == 0).any():
             return False, f"Zero values found in {col}"
-    
+
     return True, "Data quality validation passed"
 
 
@@ -1120,7 +1124,9 @@ def load_klines_data(filename):
         initial_rows = len(df)
         df = df.dropna()
         if len(df) < initial_rows:
-            print(f"⚠️ Warning: Removed {initial_rows - len(df)} rows with invalid timestamps")
+            print(
+                f"⚠️ Warning: Removed {initial_rows - len(df)} rows with invalid timestamps",
+            )
 
         if df.empty:
             print("❌ CRITICAL: No valid data after timestamp processing")
@@ -1140,7 +1146,9 @@ def load_klines_data(filename):
         nan_counts = df[numeric_cols].isnull().sum()
         total_nan = nan_counts.sum()
         if total_nan > 0:
-            print(f"❌ CRITICAL: Found {total_nan} NaN values in klines data: {nan_counts.to_dict()}")
+            print(
+                f"❌ CRITICAL: Found {total_nan} NaN values in klines data: {nan_counts.to_dict()}",
+            )
             print("Please fix the data quality issues before proceeding.")
             return pd.DataFrame()
 
@@ -1148,7 +1156,9 @@ def load_klines_data(filename):
         inf_counts = np.isinf(df[numeric_cols]).sum()
         total_inf = inf_counts.sum()
         if total_inf > 0:
-            print(f"❌ CRITICAL: Found {total_inf} infinite values in klines data: {inf_counts.to_dict()}")
+            print(
+                f"❌ CRITICAL: Found {total_inf} infinite values in klines data: {inf_counts.to_dict()}",
+            )
             print("Please fix the data quality issues before proceeding.")
             return pd.DataFrame()
 
@@ -1158,7 +1168,9 @@ def load_klines_data(filename):
             if col in df.columns:
                 negative_count = (df[col] < 0).sum()
                 if negative_count > 0:
-                    print(f"❌ CRITICAL: Found {negative_count} negative values in {col}")
+                    print(
+                        f"❌ CRITICAL: Found {negative_count} negative values in {col}",
+                    )
                     print("Please fix the data quality issues before proceeding.")
                     return pd.DataFrame()
 
@@ -1178,11 +1190,21 @@ def load_klines_data(filename):
             print("Please fix the data quality issues before proceeding.")
             return pd.DataFrame()
 
-        if ((df["open"] > df["high"]) | (df["open"] < df["low"]) | 
-            (df["close"] > df["high"]) | (df["close"] < df["low"])).any():
-            invalid_count = ((df["open"] > df["high"]) | (df["open"] < df["low"]) | 
-                           (df["close"] > df["high"]) | (df["close"] < df["low"])).sum()
-            print(f"❌ CRITICAL: Found {invalid_count} rows where open/close outside high-low range")
+        if (
+            (df["open"] > df["high"])
+            | (df["open"] < df["low"])
+            | (df["close"] > df["high"])
+            | (df["close"] < df["low"])
+        ).any():
+            invalid_count = (
+                (df["open"] > df["high"])
+                | (df["open"] < df["low"])
+                | (df["close"] > df["high"])
+                | (df["close"] < df["low"])
+            ).sum()
+            print(
+                f"❌ CRITICAL: Found {invalid_count} rows where open/close outside high-low range",
+            )
             print("Please fix the data quality issues before proceeding.")
             return pd.DataFrame()
 
@@ -1209,13 +1231,19 @@ def load_agg_trades_data(filename):
         df = pd.read_csv(filename, low_memory=False)
 
         # Convert timestamp with flexible parsing
-        df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed", errors="coerce")
+        df["timestamp"] = pd.to_datetime(
+            df["timestamp"],
+            format="mixed",
+            errors="coerce",
+        )
 
         # Remove rows with invalid timestamps
         initial_rows = len(df)
         df = df.dropna(subset=["timestamp"])
         if len(df) < initial_rows:
-            print(f"⚠️ Warning: Removed {initial_rows - len(df)} rows with invalid timestamps")
+            print(
+                f"⚠️ Warning: Removed {initial_rows - len(df)} rows with invalid timestamps",
+            )
 
         if df.empty:
             print("❌ CRITICAL: No valid data after timestamp processing")
@@ -1236,7 +1264,9 @@ def load_agg_trades_data(filename):
         nan_counts = df[numeric_cols].isnull().sum()
         total_nan = nan_counts.sum()
         if total_nan > 0:
-            print(f"❌ CRITICAL: Found {total_nan} NaN values in agg_trades data: {nan_counts.to_dict()}")
+            print(
+                f"❌ CRITICAL: Found {total_nan} NaN values in agg_trades data: {nan_counts.to_dict()}",
+            )
             print("Please fix the data quality issues before proceeding.")
             return pd.DataFrame()
 
@@ -1244,7 +1274,9 @@ def load_agg_trades_data(filename):
         inf_counts = np.isinf(df[numeric_cols]).sum()
         total_inf = inf_counts.sum()
         if total_inf > 0:
-            print(f"❌ CRITICAL: Found {total_inf} infinite values in agg_trades data: {inf_counts.to_dict()}")
+            print(
+                f"❌ CRITICAL: Found {total_inf} infinite values in agg_trades data: {inf_counts.to_dict()}",
+            )
             print("Please fix the data quality issues before proceeding.")
             return pd.DataFrame()
 
@@ -1253,7 +1285,9 @@ def load_agg_trades_data(filename):
             if col in df.columns:
                 negative_count = (df[col] < 0).sum()
                 if negative_count > 0:
-                    print(f"❌ CRITICAL: Found {negative_count} negative values in {col}")
+                    print(
+                        f"❌ CRITICAL: Found {negative_count} negative values in {col}",
+                    )
                     print("Please fix the data quality issues before proceeding.")
                     return pd.DataFrame()
 
@@ -1280,13 +1314,19 @@ def load_futures_data(filename):
         df = pd.read_csv(filename, low_memory=False)
 
         # Convert timestamp with flexible parsing
-        df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed", errors="coerce")
+        df["timestamp"] = pd.to_datetime(
+            df["timestamp"],
+            format="mixed",
+            errors="coerce",
+        )
 
         # Remove rows with invalid timestamps
         initial_rows = len(df)
         df = df.dropna(subset=["timestamp"])
         if len(df) < initial_rows:
-            print(f"⚠️ Warning: Removed {initial_rows - len(df)} rows with invalid timestamps")
+            print(
+                f"⚠️ Warning: Removed {initial_rows - len(df)} rows with invalid timestamps",
+            )
 
         if df.empty:
             print("❌ CRITICAL: No valid data after timestamp processing")
@@ -1307,7 +1347,9 @@ def load_futures_data(filename):
         nan_counts = df[numeric_cols].isnull().sum()
         total_nan = nan_counts.sum()
         if total_nan > 0:
-            print(f"❌ CRITICAL: Found {total_nan} NaN values in futures data: {nan_counts.to_dict()}")
+            print(
+                f"❌ CRITICAL: Found {total_nan} NaN values in futures data: {nan_counts.to_dict()}",
+            )
             print("Please fix the data quality issues before proceeding.")
             return pd.DataFrame()
 
@@ -1315,7 +1357,9 @@ def load_futures_data(filename):
         inf_counts = np.isinf(df[numeric_cols]).sum()
         total_inf = inf_counts.sum()
         if total_inf > 0:
-            print(f"❌ CRITICAL: Found {total_inf} infinite values in futures data: {inf_counts.to_dict()}")
+            print(
+                f"❌ CRITICAL: Found {total_inf} infinite values in futures data: {inf_counts.to_dict()}",
+            )
             print("Please fix the data quality issues before proceeding.")
             return pd.DataFrame()
 
@@ -1360,6 +1404,244 @@ def simulate_order_book_data(current_price):
     return {"bids": simulated_bids, "asks": simulated_asks}
 
 
+def _get_column_names(klines_df: pd.DataFrame) -> tuple[str, str, str, str]:
+    """Get standardized column names for OHLCV data."""
+    close_col = "Close" if "Close" in klines_df.columns else "close"
+    high_col = "High" if "High" in klines_df.columns else "high"
+    low_col = "Low" if "Low" in klines_df.columns else "low"
+    volume_col = "Volume" if "Volume" in klines_df.columns else "volume"
+    return close_col, high_col, low_col, volume_col
+
+
+def _calculate_price_range(klines_df: pd.DataFrame, close_col: str, high_col: str, low_col: str) -> tuple[float, float]:
+    """Calculate the price range for volume profile analysis."""
+    min_price = klines_df[close_col].min()
+    max_price = klines_df[close_col].max()
+    
+    # Add padding to the range (10% on each side)
+    price_range = max_price - min_price
+    padding = price_range * 0.1
+    min_price = max(100.0, min_price - padding)  # Don't go below $100
+    max_price = max_price + padding
+    
+    # Handle extreme outliers using percentiles
+    if max_price / min_price > 100:  # More than 100x difference
+        min_price = klines_df[close_col].quantile(0.01)  # 1st percentile
+        max_price = klines_df[close_col].quantile(0.99)  # 99th percentile
+    
+    return min_price, max_price
+
+
+def _filter_reasonable_data(klines_df: pd.DataFrame, min_price: float, max_price: float, 
+                          close_col: str, high_col: str, low_col: str) -> pd.DataFrame:
+    """Filter data to only include reasonable prices within the calculated range."""
+    reasonable_data = klines_df[
+        (klines_df[close_col] >= min_price)
+        & (klines_df[close_col] <= max_price)
+        & (klines_df[high_col] >= min_price)
+        & (klines_df[high_col] <= max_price)
+        & (klines_df[low_col] >= min_price)
+        & (klines_df[low_col] <= max_price)
+    ]
+    
+    return reasonable_data if len(reasonable_data) > 0 else klines_df
+
+
+def _create_volume_profile(klines_df: pd.DataFrame, min_price: float, max_price: float, 
+                          high_col: str, low_col: str, volume_col: str, num_bins: int) -> pd.Series:
+    """Create the volume profile by binning price data and summing volumes."""
+    if max_price == min_price:  # Handle flat market
+        return pd.Series([klines_df[volume_col].sum()], index=[min_price])
+    
+    # Create bins and assign volume to price bins
+    actual_bins = min(num_bins, 100)
+    bins = np.linspace(min_price, max_price, actual_bins + 1)
+    
+    # Assign each candle's midpoint to a bin and sum its volume
+    mid_prices = (klines_df[high_col] + klines_df[low_col]) / 2
+    price_bins_categorized = pd.cut(mid_prices, bins, include_lowest=True)
+    
+    # Group by these categories and sum volume
+    volume_profile_series = klines_df.groupby(price_bins_categorized)[volume_col].sum()
+    
+    # Map bin intervals to their midpoints for a more usable index
+    bin_midpoints_map = {
+        interval: (interval.left + interval.right) / 2
+        for interval in volume_profile_series.index
+    }
+    volume_profile = volume_profile_series.rename(index=bin_midpoints_map)
+    return volume_profile.fillna(0)  # Fill bins with no volume as 0
+
+
+def _detect_peaks_with_prominence(volume_profile: pd.Series) -> list[tuple[float, float]]:
+    """Detect peaks using prominence-based method."""
+    hvn_levels = []
+    hvn_strengths = {}
+    
+    hvn_indices, _ = find_peaks(
+        volume_profile.values,
+        prominence=volume_profile.max() * 0.005,  # 0.5% threshold
+        width=1,
+    )
+    
+    for i in hvn_indices:
+        level = volume_profile.index[i]
+        hvn_levels.append(level)
+        volume_at_level = volume_profile.iloc[i]
+        total_volume = volume_profile.sum()
+        strength = min(volume_at_level / total_volume * 100, 1.0)
+        hvn_strengths[level] = strength
+    
+    return [(level, hvn_strengths[level]) for level in hvn_levels]
+
+
+def _detect_peaks_with_percentiles(volume_profile: pd.Series) -> list[tuple[float, float]]:
+    """Detect peaks using percentile-based method."""
+    hvn_levels = []
+    hvn_strengths = {}
+    
+    percentiles = [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+    
+    for percentile in percentiles:
+        volume_threshold = volume_profile.quantile(percentile)
+        high_volume_levels = volume_profile[volume_profile > volume_threshold].index.tolist()
+        
+        for level in high_volume_levels:
+            if level not in hvn_levels:
+                hvn_levels.append(level)
+                volume_at_level = volume_profile.loc[level]
+                total_volume = volume_profile.sum()
+                percentile_strength = (percentile - 0.3) * 1.43  # 0.3 to 1.0 based on percentile
+                volume_strength = min(volume_at_level / total_volume * 100, 1.0)
+                strength = (percentile_strength + volume_strength) / 2
+                hvn_strengths[level] = strength
+    
+    return [(level, hvn_strengths[level]) for level in hvn_levels]
+
+
+def _detect_local_maxima(volume_profile: pd.Series) -> list[tuple[float, float]]:
+    """Detect local maxima using multiple window sizes."""
+    hvn_levels = []
+    hvn_strengths = {}
+    local_maxima_indices = []
+    
+    # Multiple window sizes for local maxima detection
+    window_sizes = [1, 2, 3, 4, 5]
+    
+    for window_size in window_sizes:
+        for i in range(window_size, len(volume_profile) - window_size):
+            is_maximum = True
+            for j in range(1, window_size + 1):
+                if (volume_profile.iloc[i] <= volume_profile.iloc[i - j] or 
+                    volume_profile.iloc[i] <= volume_profile.iloc[i + j]):
+                    is_maximum = False
+                    break
+            
+            if is_maximum:
+                local_maxima_indices.append(i)
+    
+    # Remove duplicates and add levels
+    local_maxima_indices = list(set(local_maxima_indices))
+    
+    for i in local_maxima_indices:
+        level = volume_profile.index[i]
+        if level not in hvn_levels:
+            hvn_levels.append(level)
+            volume_at_level = volume_profile.iloc[i]
+            total_volume = volume_profile.sum()
+            strength = min(volume_at_level / total_volume * 50, 0.8)
+            hvn_strengths[level] = strength
+    
+    return [(level, hvn_strengths[level]) for level in hvn_levels]
+
+
+def _add_volume_weighted_levels(volume_profile: pd.Series) -> list[tuple[float, float]]:
+    """Add levels based on volume distribution."""
+    hvn_levels = []
+    hvn_strengths = {}
+    
+    volume_sorted = volume_profile.sort_values(ascending=False)
+    top_volume_levels = volume_sorted.head(int(len(volume_profile) * 0.7)).index.tolist()
+    
+    for level in top_volume_levels:
+        if level not in hvn_levels:
+            hvn_levels.append(level)
+            volume_at_level = volume_profile.loc[level]
+            total_volume = volume_profile.sum()
+            strength = min(volume_at_level / total_volume * 80, 0.9)
+            hvn_strengths[level] = strength
+    
+    return [(level, hvn_strengths[level]) for level in hvn_levels]
+
+
+def _add_distributed_levels(volume_profile: pd.Series) -> list[tuple[float, float]]:
+    """Add levels at regular intervals across the price range."""
+    hvn_levels = []
+    hvn_strengths = {}
+    
+    price_range = volume_profile.index.max() - volume_profile.index.min()
+    interval_count = max(15, int(len(volume_profile) * 0.6))
+    interval = price_range / interval_count
+    
+    for i in range(interval_count):
+        target_price = volume_profile.index.min() + (i + 0.5) * interval
+        closest_level = min(volume_profile.index, key=lambda x: abs(x - target_price))
+        if closest_level not in hvn_levels:
+            hvn_levels.append(closest_level)
+            volume_at_level = volume_profile.loc[closest_level]
+            total_volume = volume_profile.sum()
+            strength = min(volume_at_level / total_volume * 60, 0.7)
+            hvn_strengths[closest_level] = strength
+    
+    return [(level, hvn_strengths[level]) for level in hvn_levels]
+
+
+def _ensure_minimum_levels(volume_profile: pd.Series, existing_levels: list[tuple[float, float]], 
+                          min_levels: int = 200) -> list[tuple[float, float]]:
+    """Ensure we have at least the minimum number of levels."""
+    all_levels = existing_levels.copy()
+    
+    if len(all_levels) < min_levels:
+        # Add remaining levels with lower strength
+        existing_prices = {level for level, _ in all_levels}
+        remaining_levels = [(level, volume_profile.loc[level]) 
+                           for level in volume_profile.index 
+                           if level not in existing_prices]
+        
+        # Sort by volume and add top remaining levels
+        remaining_levels.sort(key=lambda x: x[1], reverse=True)
+        
+        for level, volume_at_level in remaining_levels[:min_levels - len(all_levels)]:
+            total_volume = volume_profile.sum()
+            strength = min(volume_at_level / total_volume * 40, 0.6)
+            all_levels.append((level, strength))
+    
+    return all_levels
+
+
+def _consolidate_hvn_results(all_levels: list[tuple[float, float]], volume_profile: pd.Series) -> list[dict]:
+    """Consolidate all detected levels into final results."""
+    # Remove duplicates and sort by strength
+    unique_levels = {}
+    for level, strength in all_levels:
+        if level not in unique_levels or strength > unique_levels[level]:
+            unique_levels[level] = strength
+    
+    # Create final results
+    hvn_results = []
+    for level, strength in unique_levels.items():
+        hvn_results.append({
+            "price": level,
+            "strength": strength,
+            "volume_concentration": volume_profile.loc[level] / volume_profile.sum(),
+            "method": "hvn",
+        })
+    
+    # Sort by strength (strongest first)
+    hvn_results.sort(key=lambda x: x["strength"], reverse=True)
+    return hvn_results
+
+
 def calculate_volume_profile(klines_df: pd.DataFrame, num_bins: int = 100):
     """
     Calculates Volume Profile (HVNs, LVNs, POC) for the given price range.
@@ -1376,293 +1658,58 @@ def calculate_volume_profile(klines_df: pd.DataFrame, num_bins: int = 100):
             "volume_in_bins": pd.Series(),
         }
 
-    # Use Close data for price range calculation since it's more reliable
-    # Handle both uppercase and lowercase column names
-    close_col = "Close" if "Close" in klines_df.columns else "close"
-    high_col = "High" if "High" in klines_df.columns else "high"
-    low_col = "Low" if "Low" in klines_df.columns else "low"
-    volume_col = "Volume" if "Volume" in klines_df.columns else "volume"
+    # Get standardized column names
+    close_col, high_col, low_col, volume_col = _get_column_names(klines_df)
     
-    min_price = klines_df[close_col].min()
-    max_price = klines_df[close_col].max()
+    # Calculate price range
+    min_price, max_price = _calculate_price_range(klines_df, close_col, high_col, low_col)
     
-    # Debug: Print the actual data range
-    print(f"Volume Profile Debug - Raw Close Range: {min_price:.2f} to {max_price:.2f}")
-    print(f"Volume Profile Debug - Raw High/Low Range: {klines_df[low_col].min():.2f} to {klines_df[high_col].max():.2f}")
+    # Filter reasonable data
+    reasonable_data = _filter_reasonable_data(klines_df, min_price, max_price, close_col, high_col, low_col)
     
-    # Filter out extreme outliers using percentiles to avoid corrupted data
-    # Use actual ETH price range based on the data
-    min_price = klines_df[close_col].min()
-    max_price = klines_df[close_col].max()
+    # Create volume profile
+    volume_profile = _create_volume_profile(reasonable_data, min_price, max_price, high_col, low_col, volume_col, num_bins)
     
-    # Add some padding to the actual range (10% on each side)
-    price_range = max_price - min_price
-    padding = price_range * 0.1
-    min_price = max(100.0, min_price - padding)  # Don't go below $100
-    max_price = max_price + padding
-    
-    print(f"Volume Profile Debug - Median Price: {klines_df[close_col].median():.2f}")
-    print(f"Volume Profile Debug - Using fixed ETH price range: {min_price:.2f} to {max_price:.2f}")
-    
-    # Filter the data to only include reasonable prices
-    reasonable_data = klines_df[
-        (klines_df[close_col] >= min_price) & 
-        (klines_df[close_col] <= max_price) &
-        (klines_df[high_col] >= min_price) & 
-        (klines_df[high_col] <= max_price) &
-        (klines_df[low_col] >= min_price) & 
-        (klines_df[low_col] <= max_price)
-    ]
-    
-    if len(reasonable_data) == 0:
-        print(f"Volume Profile Debug - No reasonable data found, using original data")
-        reasonable_data = klines_df
-    
-    print(f"Volume Profile Debug - Reasonable records: {len(reasonable_data)} out of {len(klines_df)}")
-    print(f"Volume Profile Debug - Final Range: {min_price:.2f} to {max_price:.2f}")
-    
-    # Use the reasonable data for volume profile calculation
-    klines_df = reasonable_data
-    
-    # Additional sanity check: if the range is still too large, use percentiles
-    if max_price / min_price > 100:  # More than 100x difference
-        min_price = klines_df[close_col].quantile(0.01)  # 1st percentile
-        max_price = klines_df[close_col].quantile(0.99)  # 99th percentile
-        print(f"Volume Profile Debug - Using percentiles due to large range")
-    
-    print(f"Volume Profile Debug - Final Range: {min_price:.2f} to {max_price:.2f}")
-
-    if max_price == min_price:  # Handle flat market
+    # Handle flat market case
+    if max_price == min_price:
         return {
             "poc": min_price,
             "hvn_levels": [min_price],
             "lvn_levels": [],
-            "volume_in_bins": pd.Series([klines_df[volume_col].sum()], index=[min_price]),
+            "volume_in_bins": volume_profile,
         }
-
-    # Create bins and sum volume within each bin
-    # We'll create bins based on the overall price range
-    # Use 100 bins as requested
-    actual_bins = min(num_bins, 100)  # Use 100 bins as requested
-    bins = np.linspace(min_price, max_price, actual_bins + 1)
-
-    # To accurately assign volume to price bins, we can iterate through candles
-    # and distribute their volume across the bins they span.
-    # For simplicity and performance with OHLCV, we'll assign candle's volume to its midpoint bin.
-    # A more precise method would involve distributing volume proportionally across price ranges.
-
-    # Assign each candle's midpoint to a bin and sum its volume
-    mid_prices = (klines_df[high_col] + klines_df[low_col]) / 2
-
-    # Use pd.cut to categorize each midpoint into a bin interval
-    price_bins_categorized = pd.cut(mid_prices, bins, include_lowest=True)
-
-    # Group by these categories and sum volume
-    volume_profile_series = klines_df.groupby(price_bins_categorized)[volume_col].sum()
-
-    # Map bin intervals to their midpoints for a more usable index
-    bin_midpoints_map = {
-        interval: (interval.left + interval.right) / 2
-        for interval in volume_profile_series.index
-    }
-    volume_profile = volume_profile_series.rename(index=bin_midpoints_map)
-    volume_profile = volume_profile.fillna(0)  # Fill bins with no volume as 0
-
-    # Point of Control (POC): Price level (midpoint of bin) with highest volume
+    
+    # Point of Control (POC): Price level with highest volume
     poc_price = volume_profile.idxmax() if not volume_profile.empty else np.nan
     
-    # Debug: Print price range info
-    print(f"Volume Profile Debug - Price Range: {min_price:.2f} to {max_price:.2f}")
-    print(f"Volume Profile Debug - Median Price: {klines_df[close_col].median():.2f}")
-    print(f"Volume Profile Debug - POC Price: {poc_price:.2f}")
-    print(f"Volume Profile Debug - Number of bins: {len(volume_profile)}")
-    print(f"Volume Profile Debug - Sample bin prices: {list(volume_profile.index[:5])}")
-
-    # High-Volume Nodes (HVNs): Much more aggressive detection
-    # Use multiple methods to ensure we get enough levels
+    # Detect high-volume nodes using multiple methods
+    all_levels = []
     
-    hvn_levels = []
-    hvn_strengths = {}
+    # Method 1: Prominence-based detection
+    all_levels.extend(_detect_peaks_with_prominence(volume_profile))
     
-    # Method 1: More aggressive prominence peak detection (0.5% threshold)
-    hvn_indices, _ = find_peaks(
-        volume_profile.values,
-        prominence=volume_profile.max() * 0.005,  # 0.5% threshold (more aggressive)
-        width=1,
-    )
-    for i in hvn_indices:
-        level = volume_profile.index[i]
-        hvn_levels.append(level)
-        # Calculate strength based on volume concentration
-        volume_at_level = volume_profile.iloc[i]
-        total_volume = volume_profile.sum()
-        strength = min(volume_at_level / total_volume * 100, 1.0)  # Normalize to 0-1
-        hvn_strengths[level] = strength
+    # Method 2: Percentile-based detection
+    all_levels.extend(_detect_peaks_with_percentiles(volume_profile))
     
-    # Method 2: Much more aggressive percentile-based detection
-    # Use many more percentiles to catch different levels of volume concentration
-    percentiles = [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]  # 16 different thresholds (more aggressive)
-    for percentile in percentiles:
-        volume_threshold = volume_profile.quantile(percentile)
-        high_volume_levels = volume_profile[volume_profile > volume_threshold].index.tolist()
-        
-        for level in high_volume_levels:
-            if level not in hvn_levels:
-                hvn_levels.append(level)
-                # Calculate strength based on percentile and volume concentration
-                volume_at_level = volume_profile.loc[level]
-                total_volume = volume_profile.sum()
-                percentile_strength = (percentile - 0.3) * 1.43  # 0.3 to 1.0 based on percentile
-                volume_strength = min(volume_at_level / total_volume * 100, 1.0)
-                strength = (percentile_strength + volume_strength) / 2
-                hvn_strengths[level] = strength
+    # Method 3: Local maxima detection
+    all_levels.extend(_detect_local_maxima(volume_profile))
     
-    # Method 3: Much more aggressive local maxima detection
-    # Find all local maxima with multiple window sizes
-    local_maxima_indices = []
+    # Method 4: Volume-weighted sampling
+    all_levels.extend(_add_volume_weighted_levels(volume_profile))
     
-    # Window size 1: immediate neighbors (most aggressive)
-    for i in range(1, len(volume_profile) - 1):
-        if (volume_profile.iloc[i] > volume_profile.iloc[i-1] and 
-            volume_profile.iloc[i] > volume_profile.iloc[i+1]):
-            local_maxima_indices.append(i)
+    # Method 5: Distributed sampling
+    all_levels.extend(_add_distributed_levels(volume_profile))
     
-    # Window size 2: wider context (more aggressive)
-    for i in range(2, len(volume_profile) - 2):
-        if (volume_profile.iloc[i] > volume_profile.iloc[i-2] and 
-            volume_profile.iloc[i] > volume_profile.iloc[i-1] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+1] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+2]):
-            local_maxima_indices.append(i)
+    # Ensure minimum number of levels
+    all_levels = _ensure_minimum_levels(volume_profile, all_levels)
     
-    # Window size 3: even wider context (most aggressive)
-    for i in range(3, len(volume_profile) - 3):
-        if (volume_profile.iloc[i] > volume_profile.iloc[i-3] and 
-            volume_profile.iloc[i] > volume_profile.iloc[i-2] and
-            volume_profile.iloc[i] > volume_profile.iloc[i-1] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+1] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+2] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+3]):
-            local_maxima_indices.append(i)
+    # Consolidate results
+    hvn_results = _consolidate_hvn_results(all_levels, volume_profile)
     
-    # Window size 4: even more aggressive (new)
-    for i in range(4, len(volume_profile) - 4):
-        if (volume_profile.iloc[i] > volume_profile.iloc[i-4] and 
-            volume_profile.iloc[i] > volume_profile.iloc[i-3] and
-            volume_profile.iloc[i] > volume_profile.iloc[i-2] and
-            volume_profile.iloc[i] > volume_profile.iloc[i-1] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+1] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+2] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+3] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+4]):
-            local_maxima_indices.append(i)
-    
-    # Window size 5: most aggressive (new)
-    for i in range(5, len(volume_profile) - 5):
-        if (volume_profile.iloc[i] > volume_profile.iloc[i-5] and 
-            volume_profile.iloc[i] > volume_profile.iloc[i-4] and
-            volume_profile.iloc[i] > volume_profile.iloc[i-3] and
-            volume_profile.iloc[i] > volume_profile.iloc[i-2] and
-            volume_profile.iloc[i] > volume_profile.iloc[i-1] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+1] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+2] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+3] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+4] and
-            volume_profile.iloc[i] > volume_profile.iloc[i+5]):
-            local_maxima_indices.append(i)
-    
-    # Remove duplicates and add levels
-    local_maxima_indices = list(set(local_maxima_indices))
-    
-    for i in local_maxima_indices:
-        level = volume_profile.index[i]
-        if level not in hvn_levels:
-            hvn_levels.append(level)
-            # Calculate strength for local maxima
-            volume_at_level = volume_profile.iloc[i]
-            total_volume = volume_profile.sum()
-            strength = min(volume_at_level / total_volume * 50, 0.8)  # Cap at 0.8 for local maxima
-            hvn_strengths[level] = strength
-    
-    # Method 4: Volume-weighted sampling (super aggressive)
-    # Add levels based on volume distribution
-    volume_sorted = volume_profile.sort_values(ascending=False)
-    top_volume_levels = volume_sorted.head(int(len(volume_profile) * 0.7)).index.tolist()  # Top 70% (more aggressive)
-    
-    for level in top_volume_levels:
-        if level not in hvn_levels:
-            hvn_levels.append(level)
-            volume_at_level = volume_profile.loc[level]
-            total_volume = volume_profile.sum()
-            strength = min(volume_at_level / total_volume * 80, 0.9)  # Higher strength for volume-weighted
-            hvn_strengths[level] = strength
-    
-    # Method 5: Even distribution sampling (most aggressive)
-    # Add levels at regular intervals across the price range
-    price_range = volume_profile.index.max() - volume_profile.index.min()
-    interval_count = max(15, int(len(volume_profile) * 0.6))  # At least 15, up to 60% of bins (more aggressive)
-    interval = price_range / interval_count
-    
-    for i in range(interval_count):
-        target_price = volume_profile.index.min() + (i + 0.5) * interval
-        # Find the closest actual price level
-        closest_level = min(volume_profile.index, key=lambda x: abs(x - target_price))
-        if closest_level not in hvn_levels:
-            hvn_levels.append(closest_level)
-            volume_at_level = volume_profile.loc[closest_level]
-            total_volume = volume_profile.sum()
-            strength = min(volume_at_level / total_volume * 60, 0.7)  # Moderate strength for distribution
-            hvn_strengths[closest_level] = strength
-    
-    # Method 6: Force minimum number of levels (super aggressive)
-    # Ensure we have at least 200 levels for a 2-year dataset (target: 1-4 per day)
-    min_levels = 200
-    if len(hvn_levels) < min_levels:
-        # Add all remaining levels with lower strength
-        remaining_levels = [level for level in volume_profile.index if level not in hvn_levels]
-        remaining_levels.sort(key=lambda x: volume_profile.loc[x], reverse=True)  # Sort by volume
-        
-        for level in remaining_levels[:min_levels - len(hvn_levels)]:
-            hvn_levels.append(level)
-            volume_at_level = volume_profile.loc[level]
-            total_volume = volume_profile.sum()
-            strength = min(volume_at_level / total_volume * 40, 0.6)  # Lower strength for forced levels
-            hvn_strengths[level] = strength
-    
-    # Method 7: Add ALL levels if we still don't have enough (most aggressive)
-    # If we still don't have enough levels, add every single price level
-    if len(hvn_levels) < min_levels:
-        all_levels = list(volume_profile.index)
-        for level in all_levels:
-            if level not in hvn_levels:
-                hvn_levels.append(level)
-                volume_at_level = volume_profile.loc[level]
-                total_volume = volume_profile.sum()
-                strength = min(volume_at_level / total_volume * 30, 0.5)  # Very low strength for all levels
-                hvn_strengths[level] = strength
-    
-    # Sort levels and remove duplicates
-    hvn_levels = sorted(list(set(hvn_levels)))
-    
-    # Create HVN results with strength information
-    hvn_results = []
-    for level in hvn_levels:
-        strength = hvn_strengths.get(level, 0.5)  # Default strength if not calculated
-        hvn_results.append({
-            'price': level,
-            'strength': strength,
-            'volume_concentration': volume_profile.loc[level] / volume_profile.sum(),
-            'method': 'hvn'
-        })
-    
-    # Sort by strength (strongest first)
-    hvn_results.sort(key=lambda x: x['strength'], reverse=True)
-    
-    # print(f"Volume Profile: POC={poc_price:.2f}, HVNs={len(hvn_results)}")
     return {
         "poc": poc_price,
-        "hvn_levels": [hvn['price'] for hvn in hvn_results],
-        "hvn_results": hvn_results,  # Include full results with strength
+        "hvn_levels": [hvn["price"] for hvn in hvn_results],
+        "hvn_results": hvn_results,
         "lvn_levels": [],  # No LVNs as requested
         "volume_in_bins": volume_profile,
     }

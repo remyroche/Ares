@@ -58,8 +58,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
-
 # Try to import requests for GUI health checks
 try:
     import requests
@@ -69,9 +67,13 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 from src.config import CONFIG
+from src.utils.comprehensive_logger import (
+    setup_comprehensive_logging,
+)
 from src.utils.error_handler import handle_errors
-from src.utils.logger import setup_logging, system_logger, initialize_comprehensive_integration, ensure_comprehensive_logging_available
-from src.utils.comprehensive_logger import setup_comprehensive_logging, get_comprehensive_logger
+from src.utils.logger import (
+    ensure_comprehensive_logging_available,
+)
 from src.utils.signal_handler import setup_signal_handlers
 
 # Add the project root to the Python path
@@ -85,10 +87,10 @@ class AresLauncher:
     def __init__(self):
         # Initialize comprehensive logging
         self.comprehensive_logger = setup_comprehensive_logging(CONFIG)
-        
+
         # Ensure comprehensive logging is available for all existing logging calls
         ensure_comprehensive_logging_available()
-        
+
         self.logger = self.comprehensive_logger.get_component_logger("AresLauncher")
         self.global_logger = self.comprehensive_logger.get_global_logger()
         self.processes = []  # Track subprocesses for cleanup
@@ -106,7 +108,7 @@ class AresLauncher:
         # Comprehensive logging is already set up in __init__
         # Log launcher startup information
         self.comprehensive_logger.log_launcher_start("INITIALIZATION")
-        
+
         # Log to both component logger and global logger
         self.logger.info("=" * 80)
         self.logger.info("🚀 ARES COMPREHENSIVE LAUNCHER")
@@ -115,7 +117,9 @@ class AresLauncher:
         self.logger.info(f"Log directory: {self.comprehensive_logger.log_dir}")
         self.logger.info(f"Log level: {CONFIG.get('logging', {}).get('level', 'INFO')}")
         if self.global_logger:
-            self.logger.info(f"Global log file: ares_global_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+            self.logger.info(
+                f"Global log file: ares_global_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+            )
         self.logger.info("=" * 80)
 
     @handle_errors(
@@ -181,30 +185,25 @@ class AresLauncher:
         if mode and symbol and exchange:
             cmd.extend(["--mode", mode, "--symbol", symbol, "--exchange", exchange])
 
-        try:
-            self.gui_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            self.processes.append(self.gui_process)
-            self.logger.info(f"✅ GUI server started with PID {self.gui_process.pid}")
+        self.gui_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.processes.append(self.gui_process)
+        self.logger.info(f"✅ GUI server started with PID {self.gui_process.pid}")
 
-            # Wait a moment for the server to start
-            time.sleep(2)
+        # Wait a moment for the server to start
+        time.sleep(2)
 
-            # Check if the server is running
-            if self.gui_process.poll() is None:
-                self.logger.info("✅ GUI server is running")
-                return True
-            stdout, stderr = self.gui_process.communicate()
-            self.logger.error(f"❌ GUI server failed to start: {stderr}")
-            return False
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to launch GUI server: {e}")
-            return False
+        # Check if the server is running
+        if self.gui_process.poll() is None:
+            self.logger.info("✅ GUI server is running")
+            return True
+        stdout, stderr = self.gui_process.communicate()
+        self.logger.error(f"❌ GUI server failed to start: {stderr}")
+        return False
 
     @handle_errors(
         exceptions=(Exception,),
@@ -215,22 +214,17 @@ class AresLauncher:
         """Launch the portfolio manager."""
         self.logger.info("🚀 Launching portfolio manager...")
 
-        try:
-            self.portfolio_process = subprocess.Popen(
-                [sys.executable, "src/supervisor/global_portfolio_manager.py"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            self.processes.append(self.portfolio_process)
-            self.logger.info(
-                f"✅ Portfolio manager started with PID {self.portfolio_process.pid}",
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to launch portfolio manager: {e}")
-            return False
+        self.portfolio_process = subprocess.Popen(
+            [sys.executable, "src/supervisor/global_portfolio_manager.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.processes.append(self.portfolio_process)
+        self.logger.info(
+            f"✅ Portfolio manager started with PID {self.portfolio_process.pid}",
+        )
+        return True
 
     def _run_unified_training(
         self,
@@ -241,23 +235,47 @@ class AresLauncher:
         with_gui: bool = False,
     ):
         """Run unified training with enhanced training manager."""
-        try:
-            # Set environment variable for blank training mode
-            import os
-            if training_mode == "blank":
-                os.environ['BLANK_TRAINING_MODE'] = '1'
-                print(f"🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1")
-            
-            mode_display = f"{training_mode} training"
-            print(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
-            self.logger.info(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
+        # Set environment variable for blank training mode
+        import os
 
-            async def run_enhanced_training():
+        if training_mode == "blank":
+            os.environ["BLANK_TRAINING_MODE"] = "1"
+            print("🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1")
+
+        mode_display = f"{training_mode} training"
+        print(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
+        self.logger.info(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
+
+        @handle_errors(
+            exceptions=(Exception,),
+            default_return=False,
+            context="enhanced_training_pipeline",
+        )
+        async def run_enhanced_training():
+            """Execute enhanced training using EnhancedTrainingManager with comprehensive error handling."""
+            from src.database.sqlite_manager import SQLiteManager
+            from src.training.enhanced_training_manager import EnhancedTrainingManager
+            from src.utils.logger import system_logger
+
+            logger = system_logger.getChild("EnhancedTrainingPipeline")
+            
+            logger.info("=" * 80)
+            logger.info("🚀 ENHANCED TRAINING PIPELINE START")
+            logger.info("=" * 80)
+            logger.info(f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(f"🎯 Symbol: {symbol}")
+            logger.info(f"🏢 Exchange: {exchange}")
+            logger.info(f"📊 Training Mode: {training_mode}")
+            logger.info(f"📈 Lookback Days: {lookback_days}")
+            print("=" * 80)
+            print("🚀 ENHANCED TRAINING PIPELINE START")
+            print("=" * 80)
+
+            try:
                 # Initialize database manager
+                logger.info("📊 STEP 0: Initializing Database Manager...")
                 print("   📊 Setting up database manager...")
-                from src.database.sqlite_manager import SQLiteManager
                 
-                # Create default config for SQLiteManager
                 default_config = {
                     "database": {
                         "sqlite_path": "data/ares.db",
@@ -267,11 +285,16 @@ class AresLauncher:
                         "check_same_thread": False,
                     },
                 }
+                
                 db_manager = SQLiteManager(default_config)
                 await db_manager.initialize()
+                logger.info("✅ Database manager initialized successfully")
+                print("   ✅ Database manager initialized successfully")
 
                 # Initialize enhanced training manager
+                logger.info("🤖 STEP 1: Initializing Enhanced Training Manager...")
                 print("   🤖 Initializing enhanced training manager...")
+                
                 training_config = {
                     "enhanced_training_manager": {
                         "enhanced_training_interval": 3600,
@@ -280,16 +303,26 @@ class AresLauncher:
                         "enable_ensemble_training": True,
                         "enable_multi_timeframe_training": True,
                         "enable_adaptive_training": True,
+                        # Light parameters for blank training mode
+                        "blank_training_mode": training_mode == "blank",
+                        "max_trials": 3 if training_mode == "blank" else 200,
+                        "n_trials": 5 if training_mode == "blank" else 100,
+                        "lookback_days": lookback_days,
                     },
                     "database": default_config["database"],
                 }
-                from src.training.enhanced_training_manager import EnhancedTrainingManager
-                training_manager = EnhancedTrainingManager(training_config)
 
+                training_manager = EnhancedTrainingManager(training_config)
+                logger.info("✅ Enhanced training manager initialized successfully")
+                print("   ✅ Enhanced training manager initialized successfully")
+
+                # Execute the enhanced training
+                logger.info("🚀 STEP 2: Executing Enhanced Training Pipeline...")
                 print("   🚀 Starting enhanced training pipeline...")
 
                 # Initialize the training manager
                 if not await training_manager.initialize():
+                    logger.error("❌ Failed to initialize enhanced training manager")
                     print("❌ Failed to initialize enhanced training manager")
                     return False
 
@@ -310,29 +343,56 @@ class AresLauncher:
                     training_input,
                 )
 
-                return success
+                if success:
+                    logger.info("=" * 80)
+                    logger.info("🎉 ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY")
+                    logger.info("=" * 80)
+                    logger.info(f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    logger.info(f"🎯 Symbol: {symbol}")
+                    logger.info(f"🏢 Exchange: {exchange}")
+                    logger.info(f"📊 Training Mode: {training_mode}")
+                    print("=" * 80)
+                    print("🎉 ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY")
+                    print("=" * 80)
+                    print("   ✅ Enhanced training completed successfully!")
+                    return True
+                else:
+                    logger.error("❌ Enhanced training pipeline failed")
+                    print("❌ Enhanced training pipeline failed")
+                    return False
 
-            # Run the async training
-            print("🔄 Starting async training execution...")
-            print("⏳ Training is running... This may take several minutes.")
-            print("📊 You can monitor progress in the logs directory.")
+            except Exception as e:
+                logger.error(f"💥 ENHANCED TRAINING PIPELINE FAILED: {str(e)}")
+                logger.error(f"📋 Error details: {type(e).__name__}: {str(e)}")
+                print(f"💥 ENHANCED TRAINING PIPELINE FAILED: {str(e)}")
+                print(f"📋 Error details: {type(e).__name__}: {str(e)}")
+                return False
 
-            success = asyncio.run(run_enhanced_training())
+            finally:
+                # Cleanup
+                try:
+                    if 'db_manager' in locals():
+                        await db_manager.stop()
+                        logger.info("🧹 Database manager cleaned up successfully")
+                except Exception as cleanup_error:
+                    logger.warning(f"⚠️ Database cleanup warning: {cleanup_error}")
 
-            if success:
-                self.logger.info(f"✅ {mode_display} completed successfully")
-                print(f"✅ {mode_display} completed successfully")
-                print("🎉 Training pipeline finished!")
-                return True
-            self.logger.error(f"❌ {mode_display} failed")
-            print(f"❌ {mode_display} failed")
-            print("💥 Training pipeline encountered an error.")
-            return False
+        # Run the async training
+        print("🔄 Starting async training execution...")
+        print("⏳ Training is running... This may take several minutes.")
+        print("📊 You can monitor progress in the logs directory.")
 
-        except Exception as e:
-            self.logger.error(f"❌ Failed to run {mode_display}: {e}")
-            print(f"❌ Failed to run {mode_display}: {e}")
-            return False
+        success = asyncio.run(run_enhanced_training())
+
+        if success:
+            self.logger.info(f"✅ {mode_display} completed successfully")
+            print(f"✅ {mode_display} completed successfully")
+            print("🎉 Training pipeline finished!")
+            return True
+        self.logger.error(f"❌ {mode_display} failed")
+        print(f"❌ {mode_display} failed")
+        print("💥 Training pipeline encountered an error.")
+        return False
 
     @handle_errors(
         exceptions=(Exception,),
@@ -856,52 +916,69 @@ class AresLauncher:
         default_return=False,
         context="run_data_loading",
     )
-    def run_data_loading(self, symbol: str, exchange: str, lookback_days: int = 730) -> bool:
+    def run_data_loading(
+        self,
+        symbol: str,
+        exchange: str,
+        lookback_days: int = 730,
+    ) -> bool:
         """Run data loading and consolidation for the specified symbol and exchange."""
         try:
             self.logger.info(f"🔄 Starting data loading for {symbol} on {exchange}")
-            
+
             # Set environment variable for blank training mode
             import os
-            os.environ['BLANK_TRAINING_MODE'] = '1'
-            
+
+            os.environ["BLANK_TRAINING_MODE"] = "1"
+
             # Step 1: Download data using optimized downloader
             self.logger.info("📥 Step 1: Downloading data...")
             download_script = "backtesting/ares_data_downloader_optimized.py"
-            
+
             if not os.path.exists(download_script):
                 self.logger.error(f"❌ Download script not found: {download_script}")
                 return False
-            
+
             # Run the download script
             download_cmd = [
                 sys.executable,
                 download_script,
-                "--symbol", symbol,
-                "--exchange", exchange,
-                "--lookback-years", str(lookback_days // 365)
+                "--symbol",
+                symbol,
+                "--exchange",
+                exchange,
+                "--lookback-years",
+                str(lookback_days // 365),
             ]
-            
+
             self.logger.info(f"🔧 Running download command: {' '.join(download_cmd)}")
             # Pass environment with BLANK_TRAINING_MODE set
             env = os.environ.copy()
-            env['BLANK_TRAINING_MODE'] = '1'
-            download_result = subprocess.run(download_cmd, capture_output=True, text=True, env=env)
-            
+            env["BLANK_TRAINING_MODE"] = "1"
+            download_result = subprocess.run(
+                download_cmd,
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+
             if download_result.returncode != 0:
                 self.logger.error(f"❌ Download failed: {download_result.stderr}")
                 return False
-            
+
             self.logger.info("✅ Data download completed successfully")
-            
+
             # Step 2: Consolidate data using step1_data_collection
             self.logger.info("🔄 Step 2: Consolidating data...")
             consolidate_script = "src/training/steps/step1_data_collection.py"
-            
+
             if not os.path.exists(consolidate_script):
-                self.logger.error(f"❌ Consolidation script not found: {consolidate_script}")
+                self.logger.error(
+                    f"❌ Consolidation script not found: {consolidate_script}",
+                )
                 return False
-            
+
             # Run the consolidation script
             consolidate_cmd = [
                 sys.executable,
@@ -910,20 +987,30 @@ class AresLauncher:
                 exchange,  # This should be BINANCE
                 "1000",  # min_data_points
                 "data_cache",  # data_dir
-                str(lookback_days)  # Pass lookback period as positional argument
+                str(lookback_days),  # Pass lookback period as positional argument
             ]
-            
-            self.logger.info(f"🔧 Running consolidation command: {' '.join(consolidate_cmd)}")
+
+            self.logger.info(
+                f"🔧 Running consolidation command: {' '.join(consolidate_cmd)}",
+            )
             # Pass environment with BLANK_TRAINING_MODE set
-            consolidate_result = subprocess.run(consolidate_cmd, capture_output=True, text=True, env=env)
-            
+            consolidate_result = subprocess.run(
+                consolidate_cmd,
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+
             if consolidate_result.returncode != 0:
-                self.logger.error(f"❌ Consolidation failed: {consolidate_result.stderr}")
+                self.logger.error(
+                    f"❌ Consolidation failed: {consolidate_result.stderr}",
+                )
                 return False
-            
+
             self.logger.info("✅ Data consolidation completed successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Data loading failed: {e}")
             return False
@@ -944,122 +1031,151 @@ class AresLauncher:
         self.logger.info(f"🧠 Running regime operations for {symbol} on {exchange}")
         self.logger.info(f"📋 Subcommand: {subcommand}")
         self.logger.info(f"🖥️ GUI mode: {with_gui}")
-        self.logger.info(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        self.logger.info(
+            f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        )
 
         if with_gui:
             if not self.launch_gui("regime", symbol, exchange):
                 return False
 
         try:
-            self.logger.info(f"📦 Importing required modules...")
+            self.logger.info("📦 Importing required modules...")
             # Import UnifiedRegimeClassifier
             from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
             from src.config import CONFIG
-            self.logger.info(f"✅ Modules imported successfully")
-            
-            self.logger.info(f"🔧 Initializing unified regime classifier...")
+
+            self.logger.info("✅ Modules imported successfully")
+
+            self.logger.info("🔧 Initializing unified regime classifier...")
             # Initialize unified regime classifier
             regime_classifier = UnifiedRegimeClassifier(CONFIG)
-            self.logger.info(f"✅ Unified regime classifier initialized successfully")
-            
+            self.logger.info("✅ Unified regime classifier initialized successfully")
+
             if subcommand == "load":
-                print(f"🚀 Starting unified regime classifier training for {symbol} on {exchange}...")
-                
+                print(
+                    f"🚀 Starting unified regime classifier training for {symbol} on {exchange}...",
+                )
+
                 # Load historical data from data directory
                 data_file = f"data/{symbol}_1h.csv"
                 if not os.path.exists(data_file):
                     self.logger.error(f"❌ Data file not found: {data_file}")
                     print(f"❌ Data file not found: {data_file}")
-                    print("Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE")
+                    print(
+                        "Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE",
+                    )
                     return False
-                
+
                 from src.analyst.data_utils import load_klines_data
+
                 historical_data = load_klines_data(data_file)
-                
+
                 if historical_data is None or historical_data.empty:
                     self.logger.error("❌ Failed to load historical data")
                     print("❌ Failed to load historical data")
                     return False
-                
+
                 # Train unified regime classifier
                 success = await regime_classifier.train_complete_system(historical_data)
-                
-                if success:
-                    self.logger.info("✅ Unified regime classifier training completed successfully")
-                    print("✅ Unified regime classifier training completed successfully")
-                    return True
-                else:
-                    self.logger.error("❌ Unified regime classifier training failed")
-                    print("❌ Unified regime classifier training failed")
-                    return False
 
-            elif subcommand == "train":
-                self.logger.info(f"🚀 Starting unified regime classifier training for {symbol} on {exchange} (2 years data)...")
-                self.logger.info(f"📊 Training configuration:")
+                if success:
+                    self.logger.info(
+                        "✅ Unified regime classifier training completed successfully",
+                    )
+                    print(
+                        "✅ Unified regime classifier training completed successfully",
+                    )
+                    return True
+                self.logger.error("❌ Unified regime classifier training failed")
+                print("❌ Unified regime classifier training failed")
+                return False
+
+            if subcommand == "train":
+                self.logger.info(
+                    f"🚀 Starting unified regime classifier training for {symbol} on {exchange} (2 years data)...",
+                )
+                self.logger.info("📊 Training configuration:")
                 self.logger.info(f"   - Symbol: {symbol}")
                 self.logger.info(f"   - Exchange: {exchange}")
-                self.logger.info(f"   - Lookback years: 2")
-                self.logger.info(f"   - Target timeframe: 1h")
-                print(f"🚀 Starting unified regime classifier training for {symbol} on {exchange} (2 years data)...")
-                
+                self.logger.info("   - Lookback years: 2")
+                self.logger.info("   - Target timeframe: 1h")
+                print(
+                    f"🚀 Starting unified regime classifier training for {symbol} on {exchange} (2 years data)...",
+                )
+
                 # Load historical data from data directory
                 data_file = f"data/{symbol}_1h.csv"
                 if not os.path.exists(data_file):
                     self.logger.error(f"❌ Data file not found: {data_file}")
                     print(f"❌ Data file not found: {data_file}")
-                    print("Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE")
-                    return False
-                
-                from src.analyst.data_utils import load_klines_data
-                historical_data = load_klines_data(data_file)
-                
-                if historical_data is None or historical_data.empty:
-                    self.logger.error("❌ Failed to load historical data")
-                    print("❌ Failed to load historical data")
-                    return False
-                
-                # Train unified regime classifier
-                success = await regime_classifier.train_complete_system(historical_data)
-                
-                if success:
-                    self.logger.info("✅ Unified regime classifier training completed successfully")
-                    print("✅ Unified regime classifier training completed successfully")
-                    return True
-                else:
-                    self.logger.error("❌ Unified regime classifier training failed")
-                    print("❌ Unified regime classifier training failed")
-                    return False
-                    
-            elif subcommand == "train_blank":
-                print(f"🚀 Starting unified regime classifier training for {symbol} on {exchange} (30 days data)...")
-                
-                # Load historical data
-                from src.analyst.data_utils import load_klines_data
-                
-                # Load 30 days of data for quick training
-                historical_data = await load_klines_data(symbol, exchange, lookback_days=30)
-                
-                if historical_data is None or historical_data.empty:
-                    self.logger.error("❌ Failed to load historical data")
-                    print("❌ Failed to load historical data")
-                    return False
-                
-                # Train unified regime classifier
-                success = await regime_classifier.train_complete_system(historical_data)
-                
-                if success:
-                    self.logger.info("✅ Unified regime classifier training completed successfully")
-                    print("✅ Unified regime classifier training completed successfully")
-                    return True
-                else:
-                    self.logger.error("❌ Unified regime classifier training failed")
-                    print("❌ Unified regime classifier training failed")
+                    print(
+                        "Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE",
+                    )
                     return False
 
-            else:
-                self.logger.error(f"❌ Unknown regime subcommand: {subcommand}")
-                print(f"❌ Unknown regime subcommand: {subcommand}")
+                from src.analyst.data_utils import load_klines_data
+
+                historical_data = load_klines_data(data_file)
+
+                if historical_data is None or historical_data.empty:
+                    self.logger.error("❌ Failed to load historical data")
+                    print("❌ Failed to load historical data")
+                    return False
+
+                # Train unified regime classifier
+                success = await regime_classifier.train_complete_system(historical_data)
+
+                if success:
+                    self.logger.info(
+                        "✅ Unified regime classifier training completed successfully",
+                    )
+                    print(
+                        "✅ Unified regime classifier training completed successfully",
+                    )
+                    return True
+                self.logger.error("❌ Unified regime classifier training failed")
+                print("❌ Unified regime classifier training failed")
                 return False
+
+            if subcommand == "train_blank":
+                print(
+                    f"🚀 Starting unified regime classifier training for {symbol} on {exchange} (30 days data)...",
+                )
+
+                # Load historical data
+                from src.analyst.data_utils import load_klines_data
+
+                # Load 30 days of data for quick training
+                historical_data = await load_klines_data(
+                    symbol,
+                    exchange,
+                    lookback_days=30,
+                )
+
+                if historical_data is None or historical_data.empty:
+                    self.logger.error("❌ Failed to load historical data")
+                    print("❌ Failed to load historical data")
+                    return False
+
+                # Train unified regime classifier
+                success = await regime_classifier.train_complete_system(historical_data)
+
+                if success:
+                    self.logger.info(
+                        "✅ Unified regime classifier training completed successfully",
+                    )
+                    print(
+                        "✅ Unified regime classifier training completed successfully",
+                    )
+                    return True
+                self.logger.error("❌ Unified regime classifier training failed")
+                print("❌ Unified regime classifier training failed")
+                return False
+
+            self.logger.error(f"❌ Unknown regime subcommand: {subcommand}")
+            print(f"❌ Unknown regime subcommand: {subcommand}")
+            return False
 
         except Exception as e:
             self.logger.error(f"❌ Failed to run regime operations: {e}")
@@ -1213,7 +1329,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
     """Execute the requested command based on parsed arguments."""
     print(f"🔍 DEBUG: Executing command: {args.command}")
     print(f"🔍 DEBUG: Symbol: {args.symbol}, Exchange: {args.exchange}")
-    
+
     command_handlers = {
         "backtest": lambda: launcher.run_backtesting(
             args.symbol,
@@ -1254,14 +1370,18 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
         "load": lambda: launcher.run_data_loading(
             args.symbol,
             args.exchange,
-            lookback_days=730 if not args.blank_mode else 30, # Use 730 for standard, 30 for blank
+            lookback_days=730
+            if not args.blank_mode
+            else 30,  # Use 730 for standard, 30 for blank
         ),
-        "regime": lambda: asyncio.run(launcher.run_regime_operations(
-            args.symbol,
-            args.exchange,
-            args.regime_subcommand,
-            with_gui=args.gui,
-        )),
+        "regime": lambda: asyncio.run(
+            launcher.run_regime_operations(
+                args.symbol,
+                args.exchange,
+                args.regime_subcommand,
+                with_gui=args.gui,
+            ),
+        ),
     }
 
     if args.command in command_handlers:
@@ -1311,17 +1431,19 @@ def main():
 
         # Initialize launcher (this sets up comprehensive logging)
         launcher, signal_handler = initialize_launcher()
-        
+
         # Log command execution
         command_info = f"Command: {args.command}"
-        if hasattr(args, 'symbol') and args.symbol:
+        if hasattr(args, "symbol") and args.symbol:
             command_info += f" - Symbol: {args.symbol}"
-        if hasattr(args, 'exchange') and args.exchange:
+        if hasattr(args, "exchange") and args.exchange:
             command_info += f" - Exchange: {args.exchange}"
-        
-        launcher.comprehensive_logger.log_launcher_start(args.command, 
-                                                       getattr(args, 'symbol', None), 
-                                                       getattr(args, 'exchange', None))
+
+        launcher.comprehensive_logger.log_launcher_start(
+            args.command,
+            getattr(args, "symbol", None),
+            getattr(args, "exchange", None),
+        )
 
         # Execute the requested command
         success = execute_command(launcher, args)
@@ -1329,18 +1451,21 @@ def main():
         if success:
             launcher.comprehensive_logger.log_launcher_end(0)
             return 0
-        else:
-            launcher.comprehensive_logger.log_launcher_end(1)
-            return 1
+        launcher.comprehensive_logger.log_launcher_end(1)
+        return 1
 
     except Exception as e:
         # Log error if launcher is available
         if "launcher" in locals():
-            launcher.comprehensive_logger.log_error(f"Main function exception: {e}", exc_info=True)
+            launcher.comprehensive_logger.log_error(
+                f"Main function exception: {e}",
+                exc_info=True,
+            )
             launcher.comprehensive_logger.log_launcher_end(1)
         else:
             print(f"💥 ERROR: Exception in main: {e}")
             import traceback
+
             traceback.print_exc()
         return 1
     finally:

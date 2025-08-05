@@ -391,29 +391,36 @@ def validate_system_resources() -> tuple[bool, list[str]]:
 
     # Check available memory (need at least 2GB free for blank mode, 4GB for full training)
     memory = psutil.virtual_memory()
-    
+
     # Check if we're in blank training mode by looking at environment or config
     import os
-    blank_mode = os.getenv('BLANK_TRAINING_MODE', '0') == '1'
-    
+
+    blank_mode = os.getenv("BLANK_TRAINING_MODE", "0") == "1"
+
     # Debug logging
-    print(f"🔍 DEBUG: BLANK_TRAINING_MODE environment variable: {os.getenv('BLANK_TRAINING_MODE', 'not set')}")
+    print(
+        f"🔍 DEBUG: BLANK_TRAINING_MODE environment variable: {os.getenv('BLANK_TRAINING_MODE', 'not set')}",
+    )
     print(f"🔍 DEBUG: blank_mode detected: {blank_mode}")
     print(f"🔍 DEBUG: Available memory: {memory.available / (1024**3):.1f}GB")
-    
+
     if blank_mode:
         # More lenient requirements for blank mode
         min_memory_gb = 2
         min_disk_gb = 5
         min_cpu_cores = 2
-        print(f"🔍 DEBUG: Using blank mode requirements: {min_memory_gb}GB RAM, {min_disk_gb}GB disk, {min_cpu_cores} CPU cores")
+        print(
+            f"🔍 DEBUG: Using blank mode requirements: {min_memory_gb}GB RAM, {min_disk_gb}GB disk, {min_cpu_cores} CPU cores",
+        )
     else:
         # Full requirements for production training
         min_memory_gb = 4
         min_disk_gb = 10
         min_cpu_cores = 4
-        print(f"🔍 DEBUG: Using production requirements: {min_memory_gb}GB RAM, {min_disk_gb}GB disk, {min_cpu_cores} CPU cores")
-    
+        print(
+            f"🔍 DEBUG: Using production requirements: {min_memory_gb}GB RAM, {min_disk_gb}GB disk, {min_cpu_cores} CPU cores",
+        )
+
     if memory.available < min_memory_gb * 1024 * 1024 * 1024:
         errors.append(
             f"Insufficient memory: {memory.available / (1024**3):.1f}GB available, need {min_memory_gb}GB",
@@ -429,7 +436,9 @@ def validate_system_resources() -> tuple[bool, list[str]]:
     # Check CPU cores
     cpu_count = psutil.cpu_count()
     if cpu_count < min_cpu_cores:
-        errors.append(f"Insufficient CPU cores: {cpu_count} available, need {min_cpu_cores}")
+        errors.append(
+            f"Insufficient CPU cores: {cpu_count} available, need {min_cpu_cores}",
+        )
 
     return len(errors) == 0, errors
 
@@ -492,26 +501,30 @@ def validate_coarse_optimization(data: dict[str, Any]) -> tuple[bool, list[str]]
     # For production: at least 8 parameters (8-12 optimal range)
     min_params = 3  # Conservative minimum for any mode
     production_min_params = 8  # Production mode minimum
-    
+
     # Check if we're in production mode (more than 5 parameters suggests production)
     is_production_mode = len(data) >= 5
-    
+
     if is_production_mode and len(data) < production_min_params:
         found_params = list(data.keys())
-        errors.append(f"Production mode requires at least {production_min_params} parameters. Found: {found_params}")
+        errors.append(
+            f"Production mode requires at least {production_min_params} parameters. Found: {found_params}",
+        )
 
     elif len(data) < min_params:
         found_params = list(data.keys())
-        errors.append(f"Too few parameters found. Found: {found_params} (need at least {min_params})")
+        errors.append(
+            f"Too few parameters found. Found: {found_params} (need at least {min_params})",
+        )
 
     # Validate parameter structure
     for param_name, param_config in data.items():
         if not isinstance(param_config, dict):
             errors.append(f"Invalid parameter config for {param_name}")
             continue
-            
+
         # Check for required keys in parameter config
-        required_keys = ['low', 'high', 'type']
+        required_keys = ["low", "high", "type"]
         missing_keys = [key for key in required_keys if key not in param_config]
         if missing_keys:
             errors.append(f"Missing keys for {param_name}: {missing_keys}")

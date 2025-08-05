@@ -200,6 +200,7 @@ class TrainingManager:
         """Initialize feature integration manager."""
         try:
             from src.training.feature_integration import FeatureIntegrationManager
+
             self.feature_integration_manager = FeatureIntegrationManager(self.config)
             await self.feature_integration_manager.initialize()
             self.logger.info("Feature integration manager initialized successfully")
@@ -309,54 +310,46 @@ class TrainingManager:
         Returns:
             bool: True if successful, False otherwise
         """
-        try:
-            if not self._validate_training_inputs(training_input):
-                return False
-
-            self.is_training = True
-            self.logger.info("🔄 Starting training execution...")
-
-            # Perform model training
-            if self.enable_model_training:
-                model_training_results = await self._perform_model_training(
-                    training_input,
-                )
-                self.training_results["model_training"] = model_training_results
-
-            # Perform hyperparameter optimization
-            if self.enable_hyperparameter_optimization:
-                optimization_results = await self._perform_hyperparameter_optimization(
-                    training_input,
-                )
-                self.training_results["hyperparameter_optimization"] = (
-                    optimization_results
-                )
-
-            # Perform model evaluation
-            if self.training_config.get("enable_model_evaluation", True):
-                evaluation_results = await self._perform_model_evaluation(
-                    training_input,
-                )
-                self.training_results["model_evaluation"] = evaluation_results
-
-            # Perform model persistence
-            if self.training_config.get("enable_model_persistence", True):
-                persistence_results = await self._perform_model_persistence(
-                    training_input,
-                )
-                self.training_results["model_persistence"] = persistence_results
-
-            # Store training results
-            await self._store_training_results()
-
-            self.is_training = False
-            self.logger.info("✅ Training execution completed successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error executing training: {e}")
-            self.is_training = False
+        if not self._validate_training_inputs(training_input):
             return False
+
+        self.is_training = True
+        self.logger.info("🔄 Starting training execution...")
+
+        # Perform model training
+        if self.enable_model_training:
+            model_training_results = await self._perform_model_training(
+                training_input,
+            )
+            self.training_results["model_training"] = model_training_results
+
+        # Perform hyperparameter optimization
+        if self.enable_hyperparameter_optimization:
+            optimization_results = await self._perform_hyperparameter_optimization(
+                training_input,
+            )
+            self.training_results["hyperparameter_optimization"] = optimization_results
+
+        # Perform model evaluation
+        if self.training_config.get("enable_model_evaluation", True):
+            evaluation_results = await self._perform_model_evaluation(
+                training_input,
+            )
+            self.training_results["model_evaluation"] = evaluation_results
+
+        # Perform model persistence
+        if self.training_config.get("enable_model_persistence", True):
+            persistence_results = await self._perform_model_persistence(
+                training_input,
+            )
+            self.training_results["model_persistence"] = persistence_results
+
+        # Store training results
+        await self._store_training_results()
+
+        self.is_training = False
+        self.logger.info("✅ Training execution completed successfully")
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -373,28 +366,23 @@ class TrainingManager:
         Returns:
             bool: True if valid, False otherwise
         """
-        try:
-            # Check required training input fields
-            required_fields = ["training_type", "model_type", "timestamp"]
-            for field in required_fields:
-                if field not in training_input:
-                    self.logger.error(f"Missing required training input field: {field}")
-                    return False
-
-            # Validate data types
-            if not isinstance(training_input["training_type"], str):
-                self.logger.error("Invalid training type")
+        # Check required training input fields
+        required_fields = ["training_type", "model_type", "timestamp"]
+        for field in required_fields:
+            if field not in training_input:
+                self.logger.error(f"Missing required training input field: {field}")
                 return False
 
-            if not isinstance(training_input["model_type"], str):
-                self.logger.error("Invalid model type")
-                return False
-
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error validating training inputs: {e}")
+        # Validate data types
+        if not isinstance(training_input["training_type"], str):
+            self.logger.error("Invalid training type")
             return False
+
+        if not isinstance(training_input["model_type"], str):
+            self.logger.error("Invalid model type")
+            return False
+
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -425,7 +413,9 @@ class TrainingManager:
 
             # Perform feature engineering
             if self.model_training_components.get("feature_engineering", False):
-                results["feature_engineering"] = await self._perform_feature_engineering(
+                results[
+                    "feature_engineering"
+                ] = await self._perform_feature_engineering(
                     training_input,
                 )
 
@@ -637,39 +627,49 @@ class TrainingManager:
             historical_data = training_input.get("historical_data")
             market_data = training_input.get("market_data", historical_data)
             order_flow_data = training_input.get("order_flow_data")
-            
+
             if self.feature_integration_manager:
                 # Use feature integration manager to add advanced features including liquidity
-                integrated_data = await self.feature_integration_manager.integrate_features(
-                    historical_data=historical_data,
-                    market_data=market_data,
-                    order_flow_data=order_flow_data
+                integrated_data = (
+                    await self.feature_integration_manager.integrate_features(
+                        historical_data=historical_data,
+                        market_data=market_data,
+                        order_flow_data=order_flow_data,
+                    )
                 )
-                
+
                 # Get liquidity feature summary
-                liquidity_summary = self.feature_integration_manager.get_liquidity_feature_summary(integrated_data)
+                liquidity_summary = (
+                    self.feature_integration_manager.get_liquidity_feature_summary(
+                        integrated_data,
+                    )
+                )
                 self.logger.info(f"Liquidity features integrated: {liquidity_summary}")
-                
+
                 return {
                     "engineered_features": integrated_data,
                     "liquidity_summary": liquidity_summary,
                     "feature_count": len(integrated_data.columns),
-                    "liquidity_feature_count": liquidity_summary.get("total_liquidity_features", 0)
+                    "liquidity_feature_count": liquidity_summary.get(
+                        "total_liquidity_features",
+                        0,
+                    ),
                 }
-            else:
-                self.logger.warning("Feature integration manager not available, using original data")
-                return {
-                    "engineered_features": historical_data,
-                    "feature_count": len(historical_data.columns),
-                    "liquidity_feature_count": 0
-                }
-                
+            self.logger.warning(
+                "Feature integration manager not available, using original data",
+            )
+            return {
+                "engineered_features": historical_data,
+                "feature_count": len(historical_data.columns),
+                "liquidity_feature_count": 0,
+            }
+
         except Exception as e:
             self.logger.error(f"Error performing feature engineering: {e}")
             return {
                 "engineered_features": training_input.get("historical_data"),
                 "feature_count": 0,
-                "liquidity_feature_count": 0
+                "liquidity_feature_count": 0,
             }
 
     def _perform_model_training_core(

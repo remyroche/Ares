@@ -171,26 +171,21 @@ class BasePipeline:
         Returns:
             bool: True if initialization successful, False otherwise
         """
-        try:
-            self.logger.info("Initializing Base Pipeline...")
+        self.logger.info("Initializing Base Pipeline...")
 
-            # Load pipeline configuration
-            await self._load_pipeline_configuration()
+        # Load pipeline configuration
+        await self._load_pipeline_configuration()
 
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for base pipeline")
-                return False
-
-            # Initialize pipeline modules
-            await self._initialize_pipeline_modules()
-
-            self.logger.info("✅ Base Pipeline initialization completed successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Base Pipeline initialization failed: {e}")
+        # Validate configuration
+        if not self._validate_configuration():
+            self.logger.error("Invalid configuration for base pipeline")
             return False
+
+        # Initialize pipeline modules
+        await self._initialize_pipeline_modules()
+
+        self.logger.info("✅ Base Pipeline initialization completed successfully")
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -199,27 +194,23 @@ class BasePipeline:
     )
     async def _load_pipeline_configuration(self) -> None:
         """Load pipeline configuration."""
-        try:
-            # Set default pipeline parameters
-            self.pipeline_config.setdefault("pipeline_interval", 60)
-            self.pipeline_config.setdefault("max_pipeline_history", 100)
-            self.pipeline_config.setdefault("enable_data_processing", True)
-            self.pipeline_config.setdefault("enable_analysis_processing", True)
-            self.pipeline_config.setdefault("enable_strategy_processing", False)
-            self.pipeline_config.setdefault("enable_execution_processing", True)
+        # Set default pipeline parameters
+        self.pipeline_config.setdefault("pipeline_interval", 60)
+        self.pipeline_config.setdefault("max_pipeline_history", 100)
+        self.pipeline_config.setdefault("enable_data_processing", True)
+        self.pipeline_config.setdefault("enable_analysis_processing", True)
+        self.pipeline_config.setdefault("enable_strategy_processing", False)
+        self.pipeline_config.setdefault("enable_execution_processing", True)
 
-            # Update configuration
-            self.pipeline_interval = self.pipeline_config["pipeline_interval"]
-            self.max_pipeline_history = self.pipeline_config["max_pipeline_history"]
-            self.enable_data_processing = self.pipeline_config["enable_data_processing"]
-            self.enable_analysis_processing = self.pipeline_config[
-                "enable_analysis_processing"
-            ]
+        # Update configuration
+        self.pipeline_interval = self.pipeline_config["pipeline_interval"]
+        self.max_pipeline_history = self.pipeline_config["max_pipeline_history"]
+        self.enable_data_processing = self.pipeline_config["enable_data_processing"]
+        self.enable_analysis_processing = self.pipeline_config[
+            "enable_analysis_processing"
+        ]
 
-            self.logger.info("Pipeline configuration loaded successfully")
-
-        except Exception as e:
-            self.logger.error(f"Error loading pipeline configuration: {e}")
+        self.logger.info("Pipeline configuration loaded successfully")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -233,35 +224,30 @@ class BasePipeline:
         Returns:
             bool: True if configuration is valid, False otherwise
         """
-        try:
-            # Validate pipeline interval
-            if self.pipeline_interval <= 0:
-                self.logger.error("Invalid pipeline interval")
-                return False
-
-            # Validate max pipeline history
-            if self.max_pipeline_history <= 0:
-                self.logger.error("Invalid max pipeline history")
-                return False
-
-            # Validate that at least one processing type is enabled
-            if not any(
-                [
-                    self.enable_data_processing,
-                    self.enable_analysis_processing,
-                    self.pipeline_config.get("enable_strategy_processing", False),
-                    self.pipeline_config.get("enable_execution_processing", True),
-                ],
-            ):
-                self.logger.error("At least one processing type must be enabled")
-                return False
-
-            self.logger.info("Configuration validation successful")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        # Validate pipeline interval
+        if self.pipeline_interval <= 0:
+            self.logger.error("Invalid pipeline interval")
             return False
+
+        # Validate max pipeline history
+        if self.max_pipeline_history <= 0:
+            self.logger.error("Invalid max pipeline history")
+            return False
+
+        # Validate that at least one processing type is enabled
+        if not any(
+            [
+                self.enable_data_processing,
+                self.enable_analysis_processing,
+                self.pipeline_config.get("enable_strategy_processing", False),
+                self.pipeline_config.get("enable_execution_processing", True),
+            ],
+        ):
+            self.logger.error("At least one processing type must be enabled")
+            return False
+
+        self.logger.info("Configuration validation successful")
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

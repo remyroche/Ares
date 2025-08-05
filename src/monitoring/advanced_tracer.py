@@ -10,22 +10,21 @@ import asyncio
 import json
 import time
 import uuid
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple, Callable
-from dataclasses import dataclass, asdict
-from enum import Enum
+from collections.abc import Callable
 from contextlib import asynccontextmanager, contextmanager
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
+from enum import Enum
 from functools import wraps
+from typing import Any
 
-import pandas as pd
-import numpy as np
-
-from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
 
 
 class TraceLevel(Enum):
     """Trace levels for different types of tracing."""
+
     DEBUG = "debug"
     INFO = "info"
     WARNING = "warning"
@@ -35,6 +34,7 @@ class TraceLevel(Enum):
 
 class ComponentType(Enum):
     """Component types for tracing."""
+
     ANALYST = "analyst"
     STRATEGIST = "strategist"
     TACTICIAN = "tactician"
@@ -48,40 +48,43 @@ class ComponentType(Enum):
 @dataclass
 class TraceSpan:
     """Individual trace span for a component operation."""
+
     span_id: str
     correlation_id: str
     component_type: ComponentType
     operation_name: str
     start_time: datetime
-    end_time: Optional[datetime] = None
-    duration_ms: Optional[float] = None
+    end_time: datetime | None = None
+    duration_ms: float | None = None
     status: str = "running"  # "running", "completed", "failed"
-    error_message: Optional[str] = None
-    metadata: Dict[str, Any] = None
-    parent_span_id: Optional[str] = None
-    child_span_ids: List[str] = None
+    error_message: str | None = None
+    metadata: dict[str, Any] = None
+    parent_span_id: str | None = None
+    child_span_ids: list[str] = None
 
 
 @dataclass
 class TraceRequest:
     """Complete trace request with all spans."""
+
     correlation_id: str
     request_timestamp: datetime
-    component_path: List[ComponentType]
-    spans: List[TraceSpan]
-    response_timestamp: Optional[datetime] = None
-    total_duration_ms: Optional[float] = None
+    component_path: list[ComponentType]
+    spans: list[TraceSpan]
+    response_timestamp: datetime | None = None
+    total_duration_ms: float | None = None
     status: str = "running"  # "running", "completed", "failed"
-    error_info: Optional[Dict[str, Any]] = None
-    performance_metrics: Dict[str, float] = None
-    metadata: Dict[str, Any] = None
+    error_info: dict[str, Any] | None = None
+    performance_metrics: dict[str, float] = None
+    metadata: dict[str, Any] = None
 
 
 @dataclass
 class PerformanceMetrics:
     """Performance metrics for tracing."""
+
     total_duration_ms: float
-    component_durations: Dict[str, float]
+    component_durations: dict[str, float]
     bottleneck_component: str
     throughput_ops_per_sec: float
     error_rate: float
@@ -93,38 +96,44 @@ class AdvancedTracer:
     Advanced tracing system with correlation IDs for comprehensive
     request/response tracking across all components.
     """
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize advanced tracer.
-        
+
         Args:
             config: Configuration dictionary
         """
         self.config = config
         self.logger = system_logger.getChild("AdvancedTracer")
-        
+
         # Tracer configuration
         self.tracer_config = config.get("advanced_tracer", {})
         self.enable_tracing = self.tracer_config.get("enable_tracing", True)
-        self.correlation_id_header = self.tracer_config.get("correlation_id_header", "X-Correlation-ID")
+        self.correlation_id_header = self.tracer_config.get(
+            "correlation_id_header",
+            "X-Correlation-ID",
+        )
         self.trace_sampling_rate = self.tracer_config.get("trace_sampling_rate", 1.0)
         self.max_trace_history = self.tracer_config.get("max_trace_history", 10000)
-        self.enable_performance_tracing = self.tracer_config.get("enable_performance_tracing", True)
+        self.enable_performance_tracing = self.tracer_config.get(
+            "enable_performance_tracing",
+            True,
+        )
         self.enable_error_tracing = self.tracer_config.get("enable_error_tracing", True)
-        
+
         # Trace storage
-        self.trace_requests: Dict[str, TraceRequest] = {}
-        self.active_spans: Dict[str, TraceSpan] = {}
-        self.performance_metrics: Dict[str, PerformanceMetrics] = {}
-        
+        self.trace_requests: dict[str, TraceRequest] = {}
+        self.active_spans: dict[str, TraceSpan] = {}
+        self.performance_metrics: dict[str, PerformanceMetrics] = {}
+
         # Tracing state
         self.is_tracing = False
-        self.trace_cleanup_task: Optional[asyncio.Task] = None
-        
+        self.trace_cleanup_task: asyncio.Task | None = None
+
         # Correlation ID management
         self.correlation_id_counter = 0
-        
+
         self.logger.info("🔍 Advanced Tracer initialized")
 
     def generate_correlation_id(self) -> str:
@@ -147,29 +156,24 @@ class AdvancedTracer:
     )
     async def initialize(self) -> bool:
         """Initialize the advanced tracer."""
-        try:
-            self.logger.info("Initializing Advanced Tracer...")
-            
-            # Initialize trace storage
-            await self._initialize_trace_storage()
-            
-            # Initialize performance tracking
-            if self.enable_performance_tracing:
-                await self._initialize_performance_tracking()
-            
-            # Initialize error tracking
-            if self.enable_error_tracing:
-                await self._initialize_error_tracking()
-            
-            # Start trace cleanup task
-            self.trace_cleanup_task = asyncio.create_task(self._trace_cleanup_loop())
-            
-            self.logger.info("✅ Advanced Tracer initialization completed")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"❌ Advanced Tracer initialization failed: {e}")
-            return False
+        self.logger.info("Initializing Advanced Tracer...")
+
+        # Initialize trace storage
+        await self._initialize_trace_storage()
+
+        # Initialize performance tracking
+        if self.enable_performance_tracing:
+            await self._initialize_performance_tracking()
+
+        # Initialize error tracking
+        if self.enable_error_tracing:
+            await self._initialize_error_tracking()
+
+        # Start trace cleanup task
+        self.trace_cleanup_task = asyncio.create_task(self._trace_cleanup_loop())
+
+        self.logger.info("✅ Advanced Tracer initialization completed")
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -178,16 +182,12 @@ class AdvancedTracer:
     )
     async def _initialize_trace_storage(self) -> None:
         """Initialize trace storage structures."""
-        try:
-            # Initialize trace storage
-            self.trace_requests.clear()
-            self.active_spans.clear()
-            self.performance_metrics.clear()
-            
-            self.logger.info("Trace storage initialized")
-            
-        except Exception as e:
-            self.logger.error(f"Error initializing trace storage: {e}")
+        # Initialize trace storage
+        self.trace_requests.clear()
+        self.active_spans.clear()
+        self.performance_metrics.clear()
+
+        self.logger.info("Trace storage initialized")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -196,12 +196,8 @@ class AdvancedTracer:
     )
     async def _initialize_performance_tracking(self) -> None:
         """Initialize performance tracking."""
-        try:
-            # Initialize performance tracking structures
-            self.logger.info("Performance tracking initialized")
-            
-        except Exception as e:
-            self.logger.error(f"Error initializing performance tracking: {e}")
+        # Initialize performance tracking structures
+        self.logger.info("Performance tracking initialized")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -210,12 +206,8 @@ class AdvancedTracer:
     )
     async def _initialize_error_tracking(self) -> None:
         """Initialize error tracking."""
-        try:
-            # Initialize error tracking structures
-            self.logger.info("Error tracking initialized")
-            
-        except Exception as e:
-            self.logger.error(f"Error initializing error tracking: {e}")
+        # Initialize error tracking structures
+        self.logger.info("Error tracking initialized")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -224,13 +216,9 @@ class AdvancedTracer:
     )
     async def _trace_cleanup_loop(self) -> None:
         """Cleanup old traces periodically."""
-        try:
-            while self.is_tracing:
-                await self._cleanup_old_traces()
-                await asyncio.sleep(300)  # Cleanup every 5 minutes
-                
-        except Exception as e:
-            self.logger.error(f"Error in trace cleanup loop: {e}")
+        while self.is_tracing:
+            await self._cleanup_old_traces()
+            await asyncio.sleep(300)  # Cleanup every 5 minutes
 
     @handle_errors(
         exceptions=(Exception,),
@@ -239,65 +227,68 @@ class AdvancedTracer:
     )
     async def _cleanup_old_traces(self) -> None:
         """Cleanup old traces to prevent memory issues."""
-        try:
-            cutoff_time = datetime.now() - timedelta(hours=24)
-            
-            # Cleanup old trace requests
-            old_correlation_ids = [
-                corr_id for corr_id, trace in self.trace_requests.items()
-                if trace.request_timestamp < cutoff_time
-            ]
-            
-            for corr_id in old_correlation_ids:
+        cutoff_time = datetime.now() - timedelta(hours=24)
+
+        # Cleanup old trace requests
+        old_correlation_ids = [
+            corr_id
+            for corr_id, trace in self.trace_requests.items()
+            if trace.request_timestamp < cutoff_time
+        ]
+
+        for corr_id in old_correlation_ids:
+            del self.trace_requests[corr_id]
+
+        # Cleanup old active spans
+        old_span_ids = [
+            span_id
+            for span_id, span in self.active_spans.items()
+            if span.start_time < cutoff_time
+        ]
+
+        for span_id in old_span_ids:
+            del self.active_spans[span_id]
+
+        # Limit trace history
+        if len(self.trace_requests) > self.max_trace_history:
+            # Remove oldest traces
+            sorted_traces = sorted(
+                self.trace_requests.items(),
+                key=lambda x: x[1].request_timestamp,
+            )
+
+            excess_count = len(self.trace_requests) - self.max_trace_history
+            for corr_id, _ in sorted_traces[:excess_count]:
                 del self.trace_requests[corr_id]
-            
-            # Cleanup old active spans
-            old_span_ids = [
-                span_id for span_id, span in self.active_spans.items()
-                if span.start_time < cutoff_time
-            ]
-            
-            for span_id in old_span_ids:
-                del self.active_spans[span_id]
-            
-            # Limit trace history
-            if len(self.trace_requests) > self.max_trace_history:
-                # Remove oldest traces
-                sorted_traces = sorted(
-                    self.trace_requests.items(),
-                    key=lambda x: x[1].request_timestamp
-                )
-                
-                excess_count = len(self.trace_requests) - self.max_trace_history
-                for corr_id, _ in sorted_traces[:excess_count]:
-                    del self.trace_requests[corr_id]
-            
-            if old_correlation_ids or old_span_ids:
-                self.logger.info(f"Cleaned up {len(old_correlation_ids)} old traces and {len(old_span_ids)} old spans")
-                
-        except Exception as e:
-            self.logger.error(f"Error cleaning up old traces: {e}")
+
+        if old_correlation_ids or old_span_ids:
+            self.logger.info(
+                f"Cleaned up {len(old_correlation_ids)} old traces and {len(old_span_ids)} old spans",
+            )
 
     @contextmanager
-    def trace_request(self, correlation_id: Optional[str] = None, 
-                     metadata: Optional[Dict[str, Any]] = None):
+    def trace_request(
+        self,
+        correlation_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ):
         """
         Context manager for tracing a complete request.
-        
+
         Args:
             correlation_id: Optional correlation ID, generates one if not provided
             metadata: Optional metadata for the request
-            
+
         Yields:
             TraceRequest: The trace request object
         """
         if not self.enable_tracing:
             yield None
             return
-        
+
         if correlation_id is None:
             correlation_id = self.generate_correlation_id()
-        
+
         trace_request = TraceRequest(
             correlation_id=correlation_id,
             request_timestamp=datetime.now(),
@@ -305,9 +296,9 @@ class AdvancedTracer:
             spans=[],
             metadata=metadata or {},
         )
-        
+
         self.trace_requests[correlation_id] = trace_request
-        
+
         try:
             yield trace_request
         finally:
@@ -318,29 +309,34 @@ class AdvancedTracer:
                 ).total_seconds() * 1000
 
     @asynccontextmanager
-    async def trace_span(self, component_type: ComponentType, operation_name: str,
-                        correlation_id: str, parent_span_id: Optional[str] = None,
-                        metadata: Optional[Dict[str, Any]] = None):
+    async def trace_span(
+        self,
+        component_type: ComponentType,
+        operation_name: str,
+        correlation_id: str,
+        parent_span_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ):
         """
         Async context manager for tracing a component span.
-        
+
         Args:
             component_type: Type of component being traced
             operation_name: Name of the operation
             correlation_id: Correlation ID for the request
             parent_span_id: Optional parent span ID
             metadata: Optional metadata for the span
-            
+
         Yields:
             TraceSpan: The trace span object
         """
         if not self.enable_tracing:
             yield None
             return
-        
+
         span_id = self.generate_span_id()
         start_time = datetime.now()
-        
+
         span = TraceSpan(
             span_id=span_id,
             correlation_id=correlation_id,
@@ -351,14 +347,14 @@ class AdvancedTracer:
             child_span_ids=[],
             metadata=metadata or {},
         )
-        
+
         self.active_spans[span_id] = span
-        
+
         # Add to trace request
         if correlation_id in self.trace_requests:
             self.trace_requests[correlation_id].spans.append(span)
             self.trace_requests[correlation_id].component_path.append(component_type)
-        
+
         try:
             yield span
         except Exception as e:
@@ -368,148 +364,164 @@ class AdvancedTracer:
         finally:
             span.end_time = datetime.now()
             if span.start_time and span.end_time:
-                span.duration_ms = (span.end_time - span.start_time).total_seconds() * 1000
-            
+                span.duration_ms = (
+                    span.end_time - span.start_time
+                ).total_seconds() * 1000
+
             span.status = "completed"
             del self.active_spans[span_id]
 
-    def trace_function(self, component_type: ComponentType, operation_name: Optional[str] = None):
+    def trace_function(
+        self,
+        component_type: ComponentType,
+        operation_name: str | None = None,
+    ):
         """
         Decorator for tracing function calls.
-        
+
         Args:
             component_type: Type of component being traced
             operation_name: Optional operation name, uses function name if not provided
         """
+
         def decorator(func: Callable) -> Callable:
             @wraps(func)
             async def async_wrapper(*args, **kwargs):
                 if not self.enable_tracing:
                     return await func(*args, **kwargs)
-                
+
                 # Extract correlation ID from kwargs or generate one
-                correlation_id = kwargs.pop('correlation_id', self.generate_correlation_id())
-                metadata = kwargs.pop('trace_metadata', {})
-                
+                correlation_id = kwargs.pop(
+                    "correlation_id",
+                    self.generate_correlation_id(),
+                )
+                metadata = kwargs.pop("trace_metadata", {})
+
                 op_name = operation_name or func.__name__
-                
+
                 async with self.trace_span(
                     component_type=component_type,
                     operation_name=op_name,
                     correlation_id=correlation_id,
-                    metadata=metadata
+                    metadata=metadata,
                 ) as span:
                     try:
                         result = await func(*args, **kwargs)
-                        span.metadata['result_type'] = type(result).__name__
+                        span.metadata["result_type"] = type(result).__name__
                         return result
                     except Exception as e:
                         span.status = "failed"
                         span.error_message = str(e)
                         raise
-            
+
             @wraps(func)
             def sync_wrapper(*args, **kwargs):
                 if not self.enable_tracing:
                     return func(*args, **kwargs)
-                
+
                 # Extract correlation ID from kwargs or generate one
-                correlation_id = kwargs.pop('correlation_id', self.generate_correlation_id())
-                metadata = kwargs.pop('trace_metadata', {})
-                
+                correlation_id = kwargs.pop(
+                    "correlation_id",
+                    self.generate_correlation_id(),
+                )
+                metadata = kwargs.pop("trace_metadata", {})
+
                 op_name = operation_name or func.__name__
-                
+
                 with self.trace_span(
                     component_type=component_type,
                     operation_name=op_name,
                     correlation_id=correlation_id,
-                    metadata=metadata
+                    metadata=metadata,
                 ) as span:
                     try:
                         result = func(*args, **kwargs)
-                        span.metadata['result_type'] = type(result).__name__
+                        span.metadata["result_type"] = type(result).__name__
                         return result
                     except Exception as e:
                         span.status = "failed"
                         span.error_message = str(e)
                         raise
-            
+
             # Return async wrapper for async functions, sync wrapper for sync functions
             if asyncio.iscoroutinefunction(func):
                 return async_wrapper
-            else:
-                return sync_wrapper
-        
+            return sync_wrapper
+
         return decorator
 
-    def get_trace_request(self, correlation_id: str) -> Optional[TraceRequest]:
+    def get_trace_request(self, correlation_id: str) -> TraceRequest | None:
         """Get a trace request by correlation ID."""
         return self.trace_requests.get(correlation_id)
 
-    def get_active_spans(self) -> List[TraceSpan]:
+    def get_active_spans(self) -> list[TraceSpan]:
         """Get all currently active spans."""
         return list(self.active_spans.values())
 
-    def get_trace_statistics(self) -> Dict[str, Any]:
+    def get_trace_statistics(self) -> dict[str, Any]:
         """Get trace statistics."""
         try:
             total_requests = len(self.trace_requests)
             active_spans = len(self.active_spans)
-            
+
             # Calculate performance metrics
             completed_requests = [
-                req for req in self.trace_requests.values()
-                if req.status == "completed"
+                req for req in self.trace_requests.values() if req.status == "completed"
             ]
-            
+
             failed_requests = [
-                req for req in self.trace_requests.values()
-                if req.status == "failed"
+                req for req in self.trace_requests.values() if req.status == "failed"
             ]
-            
+
             avg_duration = 0
             if completed_requests:
-                durations = [req.total_duration_ms for req in completed_requests if req.total_duration_ms]
+                durations = [
+                    req.total_duration_ms
+                    for req in completed_requests
+                    if req.total_duration_ms
+                ]
                 avg_duration = sum(durations) / len(durations) if durations else 0
-            
+
             return {
                 "total_requests": total_requests,
                 "active_spans": active_spans,
                 "completed_requests": len(completed_requests),
                 "failed_requests": len(failed_requests),
-                "success_rate": len(completed_requests) / total_requests if total_requests > 0 else 0,
+                "success_rate": len(completed_requests) / total_requests
+                if total_requests > 0
+                else 0,
                 "average_duration_ms": avg_duration,
                 "tracing_enabled": self.enable_tracing,
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error getting trace statistics: {e}")
             return {}
 
-    def export_trace_data(self, correlation_id: Optional[str] = None,
-                         format: str = "json") -> str:
+    def export_trace_data(
+        self,
+        correlation_id: str | None = None,
+        format: str = "json",
+    ) -> str:
         """Export trace data."""
         try:
             if correlation_id:
                 trace_data = self.get_trace_request(correlation_id)
                 if not trace_data:
                     return "Trace not found"
-                
+
                 if format == "json":
                     return json.dumps(asdict(trace_data), indent=2, default=str)
-                else:
-                    return str(trace_data)
-            else:
-                # Export all traces
-                all_traces = {
-                    corr_id: asdict(trace) for corr_id, trace in self.trace_requests.items()
-                }
-                
-                if format == "json":
-                    return json.dumps(all_traces, indent=2, default=str)
-                else:
-                    return str(all_traces)
-                    
+                return str(trace_data)
+            # Export all traces
+            all_traces = {
+                corr_id: asdict(trace) for corr_id, trace in self.trace_requests.items()
+            }
+
+            if format == "json":
+                return json.dumps(all_traces, indent=2, default=str)
+            return str(all_traces)
+
         except Exception as e:
             self.logger.error(f"Error exporting trace data: {e}")
             return ""
@@ -527,7 +539,7 @@ class AdvancedTracer:
             self.is_tracing = True
             self.logger.info("🚀 Advanced Tracer started")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error starting tracer: {e}")
             return False
@@ -541,16 +553,16 @@ class AdvancedTracer:
         """Stop the advanced tracer."""
         try:
             self.is_tracing = False
-            
+
             if self.trace_cleanup_task:
                 self.trace_cleanup_task.cancel()
                 try:
                     await self.trace_cleanup_task
                 except asyncio.CancelledError:
                     pass
-            
+
             self.logger.info("🛑 Advanced Tracer stopped")
-            
+
         except Exception as e:
             self.logger.error(f"Error stopping tracer: {e}")
 
@@ -560,24 +572,23 @@ class AdvancedTracer:
     default_return=None,
     context="advanced tracer setup",
 )
-async def setup_advanced_tracer(config: Dict[str, Any]) -> AdvancedTracer | None:
+async def setup_advanced_tracer(config: dict[str, Any]) -> AdvancedTracer | None:
     """
     Setup and initialize advanced tracer.
-    
+
     Args:
         config: Configuration dictionary
-        
+
     Returns:
         AdvancedTracer instance or None if setup failed
     """
     try:
         tracer = AdvancedTracer(config)
-        
+
         if await tracer.initialize():
             return tracer
-        else:
-            return None
-            
+        return None
+
     except Exception as e:
         system_logger.error(f"Error setting up advanced tracer: {e}")
-        return None 
+        return None

@@ -1,12 +1,10 @@
-
 import asyncio
 import logging
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any
 
 import ccxt.async_support as ccxt
 from ccxt.base.errors import (
-    AuthenticationError,
     DDoSProtection,
     ExchangeError,
     ExchangeNotAvailable,
@@ -14,10 +12,11 @@ from ccxt.base.errors import (
     RequestTimeout,
 )
 
+from src.interfaces.base_interfaces import MarketData
 from src.utils.error_handler import handle_network_operations
 from src.utils.logger import system_logger
+
 from .base_exchange import BaseExchange
-from src.interfaces.base_interfaces import MarketData
 
 logger = logging.getLogger(__name__)
 
@@ -93,15 +92,17 @@ class OkxExchange(BaseExchange):
 
     def __init__(self, api_key: str, api_secret: str, password: str, trade_symbol: str):
         super().__init__(api_key, api_secret, trade_symbol, password)
-        self.exchange = ccxt.okx({
-            'apiKey': api_key,
-            'secret': api_secret,
-            'password': password,
-            'enableRateLimit': True,
-            'options': {
-                'defaultType': 'swap',
+        self.exchange = ccxt.okx(
+            {
+                "apiKey": api_key,
+                "secret": api_secret,
+                "password": password,
+                "enableRateLimit": True,
+                "options": {
+                    "defaultType": "swap",
+                },
             },
-        })
+        )
 
     async def _get_market_id(self, symbol: str) -> str:
         """Helper to get the market ID for a given symbol."""
@@ -110,11 +111,20 @@ class OkxExchange(BaseExchange):
 
     @retry_on_rate_limit()
     @handle_network_operations(max_retries=3, default_return=[])
-    async def get_klines_raw(self, symbol: str, interval: str, limit: int = 500) -> list[dict[str, Any]]:
+    async def get_klines_raw(
+        self,
+        symbol: str,
+        interval: str,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
         """Get kline/candlestick data for a symbol."""
         try:
             market_id = await self._get_market_id(symbol)
-            ohlcv = await self.exchange.fetch_ohlcv(market_id, timeframe=interval, limit=limit)
+            ohlcv = await self.exchange.fetch_ohlcv(
+                market_id,
+                timeframe=interval,
+                limit=limit,
+            )
             return [
                 {
                     "timestamp": k[0],
@@ -131,29 +141,55 @@ class OkxExchange(BaseExchange):
             return []
 
     @retry_on_rate_limit()
-    @handle_network_operations(max_retries=3, default_return={"error": "Failed to create order", "status": "failed"})
-    async def create_order(self, symbol: str, side: str, order_type: str, quantity: float, price: float = None, params: dict[str, Any] = None):
+    @handle_network_operations(
+        max_retries=3,
+        default_return={"error": "Failed to create order", "status": "failed"},
+    )
+    async def create_order(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: float = None,
+        params: dict[str, Any] = None,
+    ):
         """Creates a new order."""
         try:
             market_id = await self._get_market_id(symbol)
-            return await self.exchange.create_order(market_id, order_type, side, quantity, price, params)
+            return await self.exchange.create_order(
+                market_id,
+                order_type,
+                side,
+                quantity,
+                price,
+                params,
+            )
         except Exception as e:
             logger.error(f"Error creating order on OKX for {symbol}: {e}")
             return {"error": str(e), "status": "failed"}
 
     @retry_on_rate_limit()
-    @handle_network_operations(max_retries=3, default_return={"error": "Failed to get order status"})
+    @handle_network_operations(
+        max_retries=3,
+        default_return={"error": "Failed to get order status"},
+    )
     async def get_order_status(self, symbol: str, order_id: str):
         """Retrieves the status of a specific order."""
         try:
             market_id = await self._get_market_id(symbol)
             return await self.exchange.fetch_order(order_id, market_id)
         except Exception as e:
-            logger.error(f"Failed to get status for order {order_id} on OKX {symbol}: {e}")
+            logger.error(
+                f"Failed to get status for order {order_id} on OKX {symbol}: {e}",
+            )
             return {"error": str(e)}
 
     @retry_on_rate_limit()
-    @handle_network_operations(max_retries=3, default_return={"error": "Failed to cancel order"})
+    @handle_network_operations(
+        max_retries=3,
+        default_return={"error": "Failed to cancel order"},
+    )
     async def cancel_order(self, symbol: str, order_id: str):
         """Cancels an open order."""
         try:
@@ -164,7 +200,10 @@ class OkxExchange(BaseExchange):
             return {"error": str(e)}
 
     @retry_on_rate_limit()
-    @handle_network_operations(max_retries=3, default_return={"error": "Failed to get account info"})
+    @handle_network_operations(
+        max_retries=3,
+        default_return={"error": "Failed to get account info"},
+    )
     async def get_account_info(self):
         """Fetches account information, including balances and positions."""
         try:
@@ -179,9 +218,13 @@ class OkxExchange(BaseExchange):
         """Gets current position risk for all symbols or a specific symbol."""
         try:
             market_id = await self._get_market_id(symbol) if symbol else None
-            return await self.exchange.fetch_positions([market_id] if market_id else None)
+            return await self.exchange.fetch_positions(
+                [market_id] if market_id else None,
+            )
         except Exception as e:
-            logger.error(f"Failed to get position risk from OKX for {symbol or 'all symbols'}: {e}")
+            logger.error(
+                f"Failed to get position risk from OKX for {symbol or 'all symbols'}: {e}",
+            )
             return []
 
     @retry_on_rate_limit()
@@ -192,7 +235,9 @@ class OkxExchange(BaseExchange):
             market_id = await self._get_market_id(symbol) if symbol else None
             return await self.exchange.fetch_open_orders(market_id)
         except Exception as e:
-            logger.error(f"Failed to get open orders from OKX for {symbol or 'all symbols'}: {e}")
+            logger.error(
+                f"Failed to get open orders from OKX for {symbol or 'all symbols'}: {e}",
+            )
             return []
 
     async def close(self):
@@ -206,9 +251,13 @@ class OkxExchange(BaseExchange):
     async def _initialize_exchange(self) -> None:
         """Initialize the exchange client."""
         # OKX doesn't need special initialization beyond CCXT setup
-        pass
 
-    async def _convert_to_market_data(self, raw_data: list[dict[str, Any]], symbol: str, interval: str) -> list[MarketData]:
+    async def _convert_to_market_data(
+        self,
+        raw_data: list[dict[str, Any]],
+        symbol: str,
+        interval: str,
+    ) -> list[MarketData]:
         """Convert raw exchange data to standardized MarketData format."""
         market_data_list = []
         for candle in raw_data:
@@ -222,7 +271,7 @@ class OkxExchange(BaseExchange):
                     low=float(candle[3]),
                     close=float(candle[4]),
                     volume=float(candle[5]),
-                    interval=interval
+                    interval=interval,
                 )
                 market_data_list.append(market_data)
             except (IndexError, ValueError, TypeError) as e:
@@ -230,7 +279,12 @@ class OkxExchange(BaseExchange):
                 continue
         return market_data_list
 
-    async def _get_klines_raw(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+    async def _get_klines_raw(
+        self,
+        symbol: str,
+        interval: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
         """Get raw kline data from exchange."""
         return await self.get_klines_raw(symbol, interval, limit)
 
@@ -244,13 +298,23 @@ class OkxExchange(BaseExchange):
         side: str,
         order_type: str,
         quantity: float,
-        price: Optional[float] = None,
-        params: Optional[dict[str, Any]] = None,
+        price: float | None = None,
+        params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create raw order on exchange."""
-        return await self.create_order(symbol, side, order_type, quantity, price, params)
+        return await self.create_order(
+            symbol,
+            side,
+            order_type,
+            quantity,
+            price,
+            params,
+        )
 
-    async def _get_position_risk_raw(self, symbol: Optional[str] = None) -> dict[str, Any]:
+    async def _get_position_risk_raw(
+        self,
+        symbol: str | None = None,
+    ) -> dict[str, Any]:
         """Get raw position risk information from exchange."""
         return await self.get_position_risk(symbol)
 
@@ -277,10 +341,15 @@ class OkxExchange(BaseExchange):
         """Get raw historical aggregated trades from exchange."""
         # OKX doesn't have a direct historical trades method, so we'll return empty
         # This is a limitation of the current implementation
-        logger.warning("OKX doesn't support historical aggregated trades in current implementation")
+        logger.warning(
+            "OKX doesn't support historical aggregated trades in current implementation",
+        )
         return []
 
-    async def _get_open_orders_raw(self, symbol: Optional[str] = None) -> list[dict[str, Any]]:
+    async def _get_open_orders_raw(
+        self,
+        symbol: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Get raw open orders from exchange."""
         return await self.get_open_orders(symbol)
 

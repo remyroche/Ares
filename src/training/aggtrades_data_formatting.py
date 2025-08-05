@@ -102,8 +102,13 @@ class DataFileReformatter:
             return False
 
         try:
-            with open(self.input_path, "r", encoding="utf-8") as infile:
-                with open(self.output_path, "w", newline="", encoding="utf-8") as outfile:
+            with open(self.input_path, encoding="utf-8") as infile:
+                with open(
+                    self.output_path,
+                    "w",
+                    newline="",
+                    encoding="utf-8",
+                ) as outfile:
                     writer = csv.writer(outfile)
                     return processor(infile, writer)
         except Exception as e:
@@ -114,7 +119,9 @@ class DataFileReformatter:
         """Process semicolon-delimited format."""
         try:
             # Write header
-            writer.writerow(["timestamp", "price", "quantity", "is_buyer_maker", "agg_trade_id"])
+            writer.writerow(
+                ["timestamp", "price", "quantity", "is_buyer_maker", "agg_trade_id"],
+            )
 
             # Process data lines
             for line in infile:
@@ -129,9 +136,13 @@ class DataFileReformatter:
                     price = fields[1]
                     quantity = fields[2]
                     is_buyer_maker = fields[3]
-                    agg_trade_id = f"agg_{timestamp}_{price}_{quantity}"  # Generate dummy ID
+                    agg_trade_id = (
+                        f"agg_{timestamp}_{price}_{quantity}"  # Generate dummy ID
+                    )
 
-                    writer.writerow([timestamp, price, quantity, is_buyer_maker, agg_trade_id])
+                    writer.writerow(
+                        [timestamp, price, quantity, is_buyer_maker, agg_trade_id],
+                    )
 
             return True
         except Exception as e:
@@ -142,7 +153,9 @@ class DataFileReformatter:
         """Process mixed-delimiter format with agg_trade_id."""
         try:
             # Write header
-            writer.writerow(["timestamp", "price", "quantity", "is_buyer_maker", "agg_trade_id"])
+            writer.writerow(
+                ["timestamp", "price", "quantity", "is_buyer_maker", "agg_trade_id"],
+            )
 
             # Process data lines
             for line in infile:
@@ -159,9 +172,15 @@ class DataFileReformatter:
                         price = parts[1]
                         quantity = parts[2]
                         is_buyer_maker = parts[3]
-                        agg_trade_id = parts[4] if len(parts) > 4 else f"agg_{timestamp}_{price}_{quantity}"
+                        agg_trade_id = (
+                            parts[4]
+                            if len(parts) > 4
+                            else f"agg_{timestamp}_{price}_{quantity}"
+                        )
 
-                        writer.writerow([timestamp, price, quantity, is_buyer_maker, agg_trade_id])
+                        writer.writerow(
+                            [timestamp, price, quantity, is_buyer_maker, agg_trade_id],
+                        )
 
             return True
         except Exception as e:
@@ -172,7 +191,9 @@ class DataFileReformatter:
         """Process format missing agg_trade_id column."""
         try:
             # Write header
-            writer.writerow(["timestamp", "price", "quantity", "is_buyer_maker", "agg_trade_id"])
+            writer.writerow(
+                ["timestamp", "price", "quantity", "is_buyer_maker", "agg_trade_id"],
+            )
 
             # Process data lines
             for line in infile:
@@ -187,9 +208,13 @@ class DataFileReformatter:
                     price = fields[1]
                     quantity = fields[2]
                     is_buyer_maker = fields[3]
-                    agg_trade_id = f"agg_{timestamp}_{price}_{quantity}"  # Generate dummy ID
+                    agg_trade_id = (
+                        f"agg_{timestamp}_{price}_{quantity}"  # Generate dummy ID
+                    )
 
-                    writer.writerow([timestamp, price, quantity, is_buyer_maker, agg_trade_id])
+                    writer.writerow(
+                        [timestamp, price, quantity, is_buyer_maker, agg_trade_id],
+                    )
 
             return True
         except Exception as e:
@@ -351,7 +376,9 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str):
                 f"  -> Failed to reformat, restored from backup: {os.path.basename(file_path)}",
             )
 
-    print(f"\nReformatting complete for {exchange}_{symbol}! Backup files are in: {backup_dir}")
+    print(
+        f"\nReformatting complete for {exchange}_{symbol}! Backup files are in: {backup_dir}",
+    )
 
 
 def create_dummy_files(input_dir):

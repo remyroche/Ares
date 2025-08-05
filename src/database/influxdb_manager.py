@@ -73,22 +73,15 @@ class InfluxDBManager:
             if col in df_copy.columns:
                 df_copy[col] = pd.to_numeric(df_copy[col], errors="coerce")
 
-        try:
-            self.write_api.write(
-                bucket=self.bucket,
-                record=df_copy,
-                data_frame_measurement_name=measurement_name,
-                data_frame_tag_columns=["symbol", "interval"],
-            )
-            self.logger.info(
-                f"Successfully wrote {len(df)} rows for {symbol}/{interval} to InfluxDB.",
-            )
-        except Exception as e:
-            self.logger.error(
-                f"Error writing kline data to InfluxDB: {e}",
-                exc_info=True,
-            )
-            raise
+        self.write_api.write(
+            bucket=self.bucket,
+            record=df_copy,
+            data_frame_measurement_name=measurement_name,
+            data_frame_tag_columns=["symbol", "interval"],
+        )
+        self.logger.info(
+            f"Successfully wrote {len(df)} rows for {symbol}/{interval} to InfluxDB.",
+        )
 
     def query_kline_data(
         self,
@@ -119,34 +112,27 @@ class InfluxDBManager:
           |> keep(columns: ["_time", "open", "high", "low", "close", "volume"])
           |> rename(columns: {{_time: "timestamp"}})
         """
-        try:
-            df = self.query_api.query_data_frame(query=query, org=self.org)
-            if isinstance(df, list):
-                if not df:
-                    return pd.DataFrame()
-                df = pd.concat(df, ignore_index=True)
-
-            if df.empty:
+        df = self.query_api.query_data_frame(query=query, org=self.org)
+        if isinstance(df, list):
+            if not df:
                 return pd.DataFrame()
+            df = pd.concat(df, ignore_index=True)
 
-            # Convert timestamp to milliseconds integer, as expected by the rest of the application
-            if "timestamp" in df.columns:
-                df["timestamp"] = (
-                    pd.to_datetime(df["timestamp"]).astype("int64") // 1_000_000
-                )
-
-            # Ensure correct data types
-            for col in ["open", "high", "low", "close", "volume"]:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors="coerce")
-
-            return df
-        except Exception as e:
-            self.logger.error(
-                f"Error querying kline data from InfluxDB: {e}",
-                exc_info=True,
-            )
+        if df.empty:
             return pd.DataFrame()
+
+        # Convert timestamp to milliseconds integer, as expected by the rest of the application
+        if "timestamp" in df.columns:
+            df["timestamp"] = (
+                pd.to_datetime(df["timestamp"]).astype("int64") // 1_000_000
+            )
+
+        # Ensure correct data types
+        for col in ["open", "high", "low", "close", "volume"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        return df
 
     def close(self):
         """Closes the InfluxDB client."""

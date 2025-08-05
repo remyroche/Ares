@@ -3,15 +3,18 @@
 from datetime import datetime
 from typing import Any
 
+# Add multi-timeframe feature engineering and regime integration imports
+from src.analyst.multi_timeframe_feature_engineering import (
+    MultiTimeframeFeatureEngineering,
+)
+from src.analyst.multi_timeframe_regime_integration import (
+    MultiTimeframeRegimeIntegration,
+)
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
-
-# Add multi-timeframe feature engineering and regime integration imports
-from src.analyst.multi_timeframe_feature_engineering import MultiTimeframeFeatureEngineering
-from src.analyst.multi_timeframe_regime_integration import MultiTimeframeRegimeIntegration
 
 
 class MultiTimeframeTrainingManager:
@@ -327,13 +330,19 @@ class MultiTimeframeTrainingManager:
             self.logger.info("Initializing Multi-Timeframe Components...")
 
             # Initialize multi-timeframe feature engineering
-            if self.config.get("multi_timeframe_feature_engineering", {}).get("enable_mtf_features", True):
+            if self.config.get("multi_timeframe_feature_engineering", {}).get(
+                "enable_mtf_features",
+                True,
+            ):
                 self.logger.info("✅ Multi-Timeframe Feature Engineering initialized")
             else:
                 self.logger.info("⚠️ Multi-Timeframe Feature Engineering disabled")
 
             # Initialize multi-timeframe regime integration
-            if self.config.get("multi_timeframe_regime_integration", {}).get("enable_propagation", True):
+            if self.config.get("multi_timeframe_regime_integration", {}).get(
+                "enable_propagation",
+                True,
+            ):
                 await self.mtf_regime_integration.initialize()
                 self.logger.info("✅ Multi-Timeframe Regime Integration initialized")
             else:
@@ -361,22 +370,26 @@ class MultiTimeframeTrainingManager:
             self.logger.info(f"🎯 Generating multi-timeframe features for {symbol}")
 
             # Generate multi-timeframe features
-            features_dict = await self.mtf_feature_engine.generate_multi_timeframe_features(
-                data_dict=data_dict,
-                agg_trades_dict=data_dict.get("agg_trades", {}),
-                futures_dict=data_dict.get("futures", {}),
-                sr_levels=data_dict.get("sr_levels", []),
+            features_dict = (
+                await self.mtf_feature_engine.generate_multi_timeframe_features(
+                    data_dict=data_dict,
+                    agg_trades_dict=data_dict.get("agg_trades", {}),
+                    futures_dict=data_dict.get("futures", {}),
+                    sr_levels=data_dict.get("sr_levels", []),
+                )
             )
 
             # Get regime information for each timeframe
             regime_dict = {}
             if "1h" in data_dict:  # Strategic timeframe for regime classification
-                for timeframe in data_dict.keys():
+                for timeframe in data_dict:
                     if timeframe != "1h":
-                        regime_info = await self.mtf_regime_integration.get_regime_for_timeframe(
-                            timeframe=timeframe,
-                            current_data=data_dict[timeframe],
-                            data_1h=data_dict["1h"],
+                        regime_info = (
+                            await self.mtf_regime_integration.get_regime_for_timeframe(
+                                timeframe=timeframe,
+                                current_data=data_dict[timeframe],
+                                data_1h=data_dict["1h"],
+                            )
                         )
                         regime_dict[timeframe] = regime_info
 
@@ -387,9 +400,14 @@ class MultiTimeframeTrainingManager:
                     regime_info = regime_dict[timeframe]
                     features["regime"] = regime_info.get("regime", "UNKNOWN")
                     features["regime_confidence"] = regime_info.get("confidence", 0.5)
-                    features["regime_source"] = regime_info.get("regime_source", "unknown")
+                    features["regime_source"] = regime_info.get(
+                        "regime_source",
+                        "unknown",
+                    )
 
-            self.logger.info(f"✅ Generated multi-timeframe features for {len(features_dict)} timeframes")
+            self.logger.info(
+                f"✅ Generated multi-timeframe features for {len(features_dict)} timeframes",
+            )
             return features_dict
 
         except Exception as e:
@@ -1224,4 +1242,3 @@ async def setup_multi_timeframe_training_manager(
     except Exception as e:
         print(f"Error setting up multi-timeframe training manager: {e}")
         return None
-

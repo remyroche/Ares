@@ -1,4 +1,4 @@
-# src/analyst/analyst.py 
+# src/analyst/analyst.py
 
 from datetime import datetime
 from typing import (
@@ -7,17 +7,17 @@ from typing import (
 
 import pandas as pd
 
+from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
+from src.analyst.liquidation_risk_model import LiquidationRiskModel
+from src.analyst.market_health_analyzer import MarketHealthAnalyzer
+
+# Import dual model system and other components
+from src.training.dual_model_system import DualModelSystem
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
-
-# Import dual model system and other components
-from src.training.dual_model_system import DualModelSystem
-from src.analyst.market_health_analyzer import MarketHealthAnalyzer
-from src.analyst.liquidation_risk_model import LiquidationRiskModel
-from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
 
 
 class Analyst:
@@ -56,31 +56,54 @@ class Analyst:
 
         # Dual Model System integration
         self.dual_model_system: DualModelSystem | None = None
-        self.enable_dual_model_system: bool = self.analyst_config.get("enable_dual_model_system", True)
-        
+        self.enable_dual_model_system: bool = self.analyst_config.get(
+            "enable_dual_model_system",
+            True,
+        )
+
         # Market Health Analyzer integration
         self.market_health_analyzer: MarketHealthAnalyzer | None = None
-        self.enable_market_health_analysis: bool = self.analyst_config.get("enable_market_health_analysis", True)
-        
+        self.enable_market_health_analysis: bool = self.analyst_config.get(
+            "enable_market_health_analysis",
+            True,
+        )
+
         # Liquidation Risk Model integration
         self.liquidation_risk_model: LiquidationRiskModel | None = None
-        self.enable_liquidation_risk_analysis: bool = self.analyst_config.get("enable_liquidation_risk_analysis", True)
-        
+        self.enable_liquidation_risk_analysis: bool = self.analyst_config.get(
+            "enable_liquidation_risk_analysis",
+            True,
+        )
+
         # Feature Engineering Orchestrator integration
-        self.feature_engineering_orchestrator: FeatureEngineeringOrchestrator | None = None
-        self.enable_feature_engineering: bool = self.analyst_config.get("enable_feature_engineering", True)
-        
-        # SR Analyzer integration
-        self.sr_analyzer = None
-        self.enable_sr_analysis: bool = self.analyst_config.get("enable_sr_analysis", True)
-        
+        self.feature_engineering_orchestrator: FeatureEngineeringOrchestrator | None = (
+            None
+        )
+        self.enable_feature_engineering: bool = self.analyst_config.get(
+            "enable_feature_engineering",
+            True,
+        )
+
+        # Legacy S/R/Candle code removed integration
+        # Legacy S/R/Candle code removed
+        self.enable_sr_analysis: bool = self.analyst_config.get(
+            "enable_sr_analysis",
+            True,
+        )
+
         # ML Confidence Predictor integration
         self.ml_confidence_predictor = None
-        self.enable_ml_predictions: bool = self.analyst_config.get("enable_ml_predictions", True)
-        
+        self.enable_ml_predictions: bool = self.analyst_config.get(
+            "enable_ml_predictions",
+            True,
+        )
+
         # Unified Regime Classifier integration
         self.regime_classifier = None
-        self.enable_regime_classification: bool = self.analyst_config.get("enable_regime_classification", True)
+        self.enable_regime_classification: bool = self.analyst_config.get(
+            "enable_regime_classification",
+            True,
+        )
 
     @handle_specific_errors(
         error_handlers={
@@ -110,31 +133,32 @@ class Analyst:
 
         # Initialize analyst modules
         await self._initialize_analyst_modules()
-        
+
         # Initialize Dual Model System
         if self.enable_dual_model_system:
             await self._initialize_dual_model_system()
-        
+
         # Initialize Market Health Analyzer
         if self.enable_market_health_analysis:
             await self._initialize_market_health_analyzer()
-        
+
         # Initialize Liquidation Risk Model
         if self.enable_liquidation_risk_analysis:
             await self._initialize_liquidation_risk_model()
-        
+
         # Initialize Feature Engineering Orchestrator
         if self.enable_feature_engineering:
             await self._initialize_feature_engineering_orchestrator()
-        
+
         # Initialize SR analyzer
         if self.enable_sr_analysis:
-            await self._initialize_sr_analyzer()
-            
+            # Legacy S/R code removed
+            pass
+
         # Initialize ML Confidence Predictor
         if self.enable_ml_predictions:
             await self._initialize_ml_confidence_predictor()
-            
+
         # Initialize Unified Regime Classifier
         if self.enable_regime_classification:
             await self._initialize_regime_classifier()
@@ -150,7 +174,7 @@ class Analyst:
     async def _load_analyst_configuration(self) -> None:
         """Load analyst configuration."""
         self.logger.info("Loading analyst configuration...")
-        
+
         # Additional configuration can be loaded here
         self.logger.info("Analyst configuration loaded successfully")
 
@@ -221,6 +245,7 @@ class Analyst:
         """Initialize Dual Model System."""
         try:
             from src.training.dual_model_system import setup_dual_model_system
+
             self.dual_model_system = await setup_dual_model_system(self.config)
             if self.dual_model_system:
                 self.logger.info("✅ Dual Model System initialized successfully")
@@ -238,7 +263,10 @@ class Analyst:
         """Initialize Market Health Analyzer."""
         try:
             from src.analyst.market_health_analyzer import setup_market_health_analyzer
-            self.market_health_analyzer = await setup_market_health_analyzer(self.config)
+
+            self.market_health_analyzer = await setup_market_health_analyzer(
+                self.config,
+            )
             if self.market_health_analyzer:
                 self.logger.info("✅ Market Health Analyzer initialized successfully")
             else:
@@ -255,7 +283,10 @@ class Analyst:
         """Initialize Liquidation Risk Model."""
         try:
             from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
-            self.liquidation_risk_model = await setup_liquidation_risk_model(self.config)
+
+            self.liquidation_risk_model = await setup_liquidation_risk_model(
+                self.config,
+            )
             if self.liquidation_risk_model:
                 self.logger.info("✅ Liquidation Risk Model initialized successfully")
             else:
@@ -271,21 +302,18 @@ class Analyst:
     async def _initialize_feature_engineering_orchestrator(self) -> None:
         """Initialize Feature Engineering Orchestrator."""
         try:
-            self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator(self.config)
-            self.logger.info("✅ Feature Engineering Orchestrator initialized successfully")
+            self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator(
+                self.config,
+            )
+            self.logger.info(
+                "✅ Feature Engineering Orchestrator initialized successfully",
+            )
         except Exception as e:
-            self.logger.error(f"Error initializing Feature Engineering Orchestrator: {e}")
+            self.logger.error(
+                f"Error initializing Feature Engineering Orchestrator: {e}",
+            )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="SR analyzer initialization",
-    )
-    async def _initialize_sr_analyzer(self) -> None:
-        """Initialize SR analyzer."""
-        self.logger.info("Initializing SR analyzer...")
-        # SR analyzer initialization logic here
-        self.logger.info("SR analyzer initialized successfully")
+    # Legacy S/R analyzer initialization method removed
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -344,11 +372,13 @@ class Analyst:
             # 1. Generate features using orchestrator
             if self.feature_engineering_orchestrator:
                 self.logger.info("Generating features...")
-                features_df = self.feature_engineering_orchestrator.generate_all_features(
-                    market_data, 
-                    analysis_input.get("agg_trades_df"),
-                    analysis_input.get("futures_df"),
-                    analysis_input.get("sr_levels")
+                features_df = (
+                    self.feature_engineering_orchestrator.generate_all_features(
+                        market_data,
+                        analysis_input.get("agg_trades_df"),
+                        analysis_input.get("futures_df"),
+                        analysis_input.get("sr_levels"),
+                    )
                 )
             else:
                 features_df = market_data
@@ -359,20 +389,31 @@ class Analyst:
                 self.logger.info("Performing market health analysis...")
                 health_input = {
                     "market_data": features_df,
-                    "current_price": current_price
+                    "current_price": current_price,
                 }
-                await self.market_health_analyzer.execute_market_health_analysis(health_input)
-                market_health_results = self.market_health_analyzer.get_analysis_results()
+                await self.market_health_analyzer.execute_market_health_analysis(
+                    health_input,
+                )
+                market_health_results = (
+                    self.market_health_analyzer.get_analysis_results()
+                )
 
             # 3. Perform liquidation risk analysis
             liquidation_risk_results = {}
             if self.liquidation_risk_model and self.ml_confidence_predictor:
                 self.logger.info("Performing liquidation risk analysis...")
                 # Get ML predictions first
-                ml_predictions = await self._get_ml_predictions(features_df, current_price)
+                ml_predictions = await self._get_ml_predictions(
+                    features_df,
+                    current_price,
+                )
                 if ml_predictions:
-                    liquidation_risk_results = await self.liquidation_risk_model.calculate_liquidation_risk(
-                        ml_predictions, current_price, analysis_input.get("target_direction", "long")
+                    liquidation_risk_results = (
+                        await self.liquidation_risk_model.calculate_liquidation_risk(
+                            ml_predictions,
+                            current_price,
+                            analysis_input.get("target_direction", "long"),
+                        )
                     )
 
             # 4. Make trading decision using dual model system
@@ -380,7 +421,9 @@ class Analyst:
             if self.dual_model_system:
                 self.logger.info("Making trading decision with dual model system...")
                 trading_decision = await self.dual_model_system.make_trading_decision(
-                    features_df, current_price, current_position
+                    features_df,
+                    current_price,
+                    current_position,
                 )
 
             # 5. Compile comprehensive analysis results
@@ -389,9 +432,11 @@ class Analyst:
                 "market_health": market_health_results,
                 "liquidation_risk": liquidation_risk_results,
                 "trading_decision": trading_decision,
-                "features_shape": features_df.shape if features_df is not None else None,
+                "features_shape": features_df.shape
+                if features_df is not None
+                else None,
                 "current_price": current_price,
-                "analysis_status": "completed"
+                "analysis_status": "completed",
             }
 
             # Store analysis results
@@ -406,23 +451,28 @@ class Analyst:
             self.logger.error(f"❌ Analysis failed: {e}")
             return False
 
-    async def _get_ml_predictions(self, features_df: pd.DataFrame, current_price: float) -> dict[str, Any]:
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="ML predictions",
+    )
+    async def _get_ml_predictions(
+        self,
+        features_df: pd.DataFrame,
+        current_price: float,
+    ) -> dict[str, Any]:
         """Get ML predictions for liquidation risk analysis."""
-        try:
-            if self.ml_confidence_predictor:
-                return await self.ml_confidence_predictor.predict_confidence_table(
-                    features_df, current_price
-                )
-            else:
-                # Fallback predictions
-                return {
-                    "confidence": 0.5,
-                    "increase_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
-                    "decrease_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1}
-                }
-        except Exception as e:
-            self.logger.error(f"Error getting ML predictions: {e}")
-            return {}
+        if self.ml_confidence_predictor:
+            return await self.ml_confidence_predictor.predict_confidence_table(
+                features_df,
+                current_price,
+            )
+        # Fallback predictions
+        return {
+            "confidence": 0.5,
+            "increase_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
+            "decrease_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
+        }
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -455,8 +505,8 @@ class Analyst:
             return False
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
+        exceptions=(Exception,),
+        default_return={},
         context="technical analysis",
     )
     async def _perform_technical_analysis(
@@ -472,29 +522,24 @@ class Analyst:
         Returns:
             dict: Technical analysis results
         """
-        try:
-            market_data = analysis_input.get("market_data")
-            current_price = analysis_input.get("current_price")
+        market_data = analysis_input.get("market_data")
+        current_price = analysis_input.get("current_price")
 
-            # Perform technical analysis
-            technical_results = {
-                "price_analysis": self._perform_price_analysis(analysis_input),
-                "volume_analysis": self._perform_volume_analysis(analysis_input),
-                "indicator_analysis": self._perform_indicator_analysis(analysis_input),
-                "pattern_analysis": self._perform_pattern_analysis(analysis_input),
-                "volatility_analysis": self._perform_volatility_analysis(analysis_input),
-                "correlation_analysis": self._perform_correlation_analysis(analysis_input),
-                "drawdown_analysis": self._perform_drawdown_analysis(analysis_input),
-                "risk_scoring": self._perform_risk_scoring(analysis_input),
-                "timestamp": datetime.now().isoformat(),
-            }
+        # Perform technical analysis
+        technical_results = {
+            "price_analysis": self._perform_price_analysis(analysis_input),
+            "volume_analysis": self._perform_volume_analysis(analysis_input),
+            "indicator_analysis": self._perform_indicator_analysis(analysis_input),
+            "pattern_analysis": self._perform_pattern_analysis(analysis_input),
+            "volatility_analysis": self._perform_volatility_analysis(analysis_input),
+            "correlation_analysis": self._perform_correlation_analysis(analysis_input),
+            "drawdown_analysis": self._perform_drawdown_analysis(analysis_input),
+            "risk_scoring": self._perform_risk_scoring(analysis_input),
+            "timestamp": datetime.now().isoformat(),
+        }
 
-            self.logger.info("Technical analysis completed successfully")
-            return technical_results
-
-        except Exception as e:
-            self.logger.error(f"Error performing technical analysis: {e}")
-            return {}
+        self.logger.info("Technical analysis completed successfully")
+        return technical_results
 
     def _perform_price_analysis(self, analysis_input: dict[str, Any]) -> dict[str, Any]:
         """Perform price analysis."""
@@ -505,9 +550,15 @@ class Analyst:
             # Simple price analysis
             price_results = {
                 "current_price": current_price,
-                "price_change_1h": market_data["close"].pct_change(1).iloc[-1] if len(market_data) > 0 else 0,
-                "price_change_24h": market_data["close"].pct_change(24).iloc[-1] if len(market_data) > 24 else 0,
-                "price_trend": "bullish" if market_data["close"].iloc[-1] > market_data["close"].iloc[-20] else "bearish",
+                "price_change_1h": market_data["close"].pct_change(1).iloc[-1]
+                if len(market_data) > 0
+                else 0,
+                "price_change_24h": market_data["close"].pct_change(24).iloc[-1]
+                if len(market_data) > 24
+                else 0,
+                "price_trend": "bullish"
+                if market_data["close"].iloc[-1] > market_data["close"].iloc[-20]
+                else "bearish",
             }
 
             return price_results
@@ -530,8 +581,12 @@ class Analyst:
             volume_results = {
                 "current_volume": market_data["volume"].iloc[-1],
                 "volume_ma": market_data["volume"].rolling(window=20).mean().iloc[-1],
-                "volume_ratio": market_data["volume"].iloc[-1] / market_data["volume"].rolling(window=20).mean().iloc[-1],
-                "volume_trend": "high" if market_data["volume"].iloc[-1] > market_data["volume"].rolling(window=20).mean().iloc[-1] else "low",
+                "volume_ratio": market_data["volume"].iloc[-1]
+                / market_data["volume"].rolling(window=20).mean().iloc[-1],
+                "volume_trend": "high"
+                if market_data["volume"].iloc[-1]
+                > market_data["volume"].rolling(window=20).mean().iloc[-1]
+                else "low",
             }
 
             return volume_results
@@ -549,11 +604,22 @@ class Analyst:
             market_data = analysis_input.get("market_data")
 
             indicator_results = {
-                "rsi": market_data.get("rsi", {}).iloc[-1] if "rsi" in market_data.columns else None,
-                "macd": market_data.get("macd", {}).iloc[-1] if "macd" in market_data.columns else None,
-                "bb_position": (market_data["close"].iloc[-1] - market_data.get("bb_lower", {}).iloc[-1]) / 
-                             (market_data.get("bb_upper", {}).iloc[-1] - market_data.get("bb_lower", {}).iloc[-1]) 
-                             if all(col in market_data.columns for col in ["bb_upper", "bb_lower"]) else None,
+                "rsi": market_data.get("rsi", {}).iloc[-1]
+                if "rsi" in market_data.columns
+                else None,
+                "macd": market_data.get("macd", {}).iloc[-1]
+                if "macd" in market_data.columns
+                else None,
+                "bb_position": (
+                    market_data["close"].iloc[-1]
+                    - market_data.get("bb_lower", {}).iloc[-1]
+                )
+                / (
+                    market_data.get("bb_upper", {}).iloc[-1]
+                    - market_data.get("bb_lower", {}).iloc[-1]
+                )
+                if all(col in market_data.columns for col in ["bb_upper", "bb_lower"])
+                else None,
             }
 
             return indicator_results
@@ -591,8 +657,13 @@ class Analyst:
             returns = market_data["close"].pct_change()
             volatility_results = {
                 "current_volatility": returns.rolling(window=20).std().iloc[-1],
-                "volatility_regime": "high" if returns.rolling(window=20).std().iloc[-1] > 0.04 else "normal",
-                "volatility_trend": "increasing" if returns.rolling(window=20).std().iloc[-1] > returns.rolling(window=50).std().iloc[-1] else "decreasing",
+                "volatility_regime": "high"
+                if returns.rolling(window=20).std().iloc[-1] > 0.04
+                else "normal",
+                "volatility_trend": "increasing"
+                if returns.rolling(window=20).std().iloc[-1]
+                > returns.rolling(window=50).std().iloc[-1]
+                else "decreasing",
             }
 
             return volatility_results
@@ -632,7 +703,9 @@ class Analyst:
             drawdown_results = {
                 "current_drawdown": drawdown.iloc[-1],
                 "max_drawdown": drawdown.min(),
-                "drawdown_regime": "high" if abs(drawdown.iloc[-1]) > 0.05 else "normal",
+                "drawdown_regime": "high"
+                if abs(drawdown.iloc[-1]) > 0.05
+                else "normal",
             }
 
             return drawdown_results
@@ -680,8 +753,11 @@ class Analyst:
             current_price = analysis_input.get("current_price")
 
             if self.ml_confidence_predictor:
-                ml_results = await self.ml_confidence_predictor.predict_confidence_table(
-                    market_data, current_price
+                ml_results = (
+                    await self.ml_confidence_predictor.predict_confidence_table(
+                        market_data,
+                        current_price,
+                    )
                 )
             else:
                 # Fallback ML results
@@ -720,19 +796,15 @@ class Analyst:
             market_data = analysis_input.get("market_data")
             current_price = analysis_input.get("current_price")
 
-            if self.sr_analyzer:
-                sr_results = await self.sr_analyzer.analyze_support_resistance(
-                    market_data, current_price
-                )
-            else:
-                # Fallback SR results
-                sr_results = {
-                    "support_levels": [],
-                    "resistance_levels": [],
-                    "nearest_support": current_price * 0.95,
-                    "nearest_resistance": current_price * 1.05,
-                    "timestamp": datetime.now().isoformat(),
-                }
+            # Legacy S/R code removed
+            # Fallback SR results
+            sr_results = {
+                "support_levels": [],
+                "resistance_levels": [],
+                "nearest_support": current_price * 0.95,
+                "nearest_resistance": current_price * 1.05,
+                "timestamp": datetime.now().isoformat(),
+            }
 
             self.logger.info("SR analysis completed successfully")
             return sr_results
@@ -751,32 +823,55 @@ class Analyst:
         analysis_input: dict[str, Any],
     ) -> dict[str, Any]:
         """
-        Perform regime classification.
+        Perform regime and location classification.
 
         Args:
             analysis_input: Input data for analysis
 
         Returns:
-            dict: Regime classification results
+            dict: Regime and location classification results
         """
         try:
             market_data = analysis_input.get("market_data")
             current_price = analysis_input.get("current_price")
 
             if self.regime_classifier:
-                regime_results = await self.regime_classifier.classify_regime(
-                    market_data, current_price
+                # Use the new unified regime classifier for both regime and location
+                regime, location, confidence, additional_info = (
+                    self.regime_classifier.predict_regime_and_location(market_data)
                 )
+
+                regime_results = {
+                    "regime": regime,
+                    "location": location,
+                    "confidence": confidence,
+                    "regime_confidence": additional_info.get(
+                        "regime_confidence",
+                        confidence,
+                    ),
+                    "location_confidence": additional_info.get(
+                        "location_confidence",
+                        confidence,
+                    ),
+                    "regime_duration": 0,  # Could be enhanced with duration tracking
+                    "timestamp": datetime.now().isoformat(),
+                    "additional_info": additional_info,
+                }
             else:
                 # Fallback regime results
                 regime_results = {
-                    "regime": "normal",
+                    "regime": "SIDEWAYS",
+                    "location": "OPEN_RANGE",
+                    "confidence": 0.5,
                     "regime_confidence": 0.5,
+                    "location_confidence": 0.5,
                     "regime_duration": 0,
                     "timestamp": datetime.now().isoformat(),
                 }
 
-            self.logger.info("Regime classification completed successfully")
+            self.logger.info(
+                f"Regime and location classification completed: {regime_results['regime']} at {regime_results['location']}",
+            )
             return regime_results
 
         except Exception as e:
@@ -792,14 +887,14 @@ class Analyst:
         """Store analysis results."""
         try:
             self.logger.info("Storing analysis results...")
-            
+
             # Add to history
             self.analysis_history.append(self.analysis_results.copy())
-            
+
             # Limit history size
             if len(self.analysis_history) > self.max_analysis_history:
                 self.analysis_history.pop(0)
-            
+
             self.logger.info("Analysis results stored successfully")
         except Exception as e:
             self.logger.error(f"Error storing analysis results: {e}")
@@ -822,8 +917,7 @@ class Analyst:
         try:
             if analysis_type is None:
                 return self.analysis_results
-            else:
-                return self.analysis_results.get(analysis_type, {})
+            return self.analysis_results.get(analysis_type, {})
 
         except Exception as e:
             self.logger.error(f"Error getting analysis results: {e}")
@@ -847,8 +941,7 @@ class Analyst:
         try:
             if limit is None:
                 return self.analysis_history
-            else:
-                return self.analysis_history[-limit:]
+            return self.analysis_history[-limit:]
 
         except Exception as e:
             self.logger.error(f"Error getting analysis history: {e}")
@@ -861,9 +954,12 @@ class Analyst:
             "last_analysis": self.analysis_results.get("timestamp"),
             "analysis_count": len(self.analysis_history),
             "dual_model_system_initialized": self.dual_model_system is not None,
-            "market_health_analyzer_initialized": self.market_health_analyzer is not None,
-            "liquidation_risk_model_initialized": self.liquidation_risk_model is not None,
-            "feature_engineering_orchestrator_initialized": self.feature_engineering_orchestrator is not None,
+            "market_health_analyzer_initialized": self.market_health_analyzer
+            is not None,
+            "liquidation_risk_model_initialized": self.liquidation_risk_model
+            is not None,
+            "feature_engineering_orchestrator_initialized": self.feature_engineering_orchestrator
+            is not None,
         }
 
     @handle_errors(
@@ -876,20 +972,20 @@ class Analyst:
         try:
             self.logger.info("Stopping Analyst...")
             self.is_analyzing = False
-            
+
             # Stop sub-components
             if self.dual_model_system:
                 await self.dual_model_system.stop()
-            
+
             if self.market_health_analyzer:
                 await self.market_health_analyzer.stop()
-            
+
             if self.liquidation_risk_model:
                 await self.liquidation_risk_model.stop()
-            
+
             self.analysis_results = {}
             self.analysis_history = []
-            
+
             self.logger.info("✅ Analyst stopped successfully")
         except Exception as e:
             self.logger.error(f"❌ Error stopping Analyst: {e}")
@@ -915,15 +1011,13 @@ async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
             config = {}
 
         analyst = Analyst(config)
-        
+
         if await analyst.initialize():
             system_logger.info("✅ Analyst setup completed successfully")
             return analyst
-        else:
-            system_logger.error("❌ Analyst setup failed")
-            return None
+        system_logger.error("❌ Analyst setup failed")
+        return None
 
     except Exception as e:
         system_logger.error(f"❌ Error setting up Analyst: {e}")
         return None
-

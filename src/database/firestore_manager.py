@@ -9,7 +9,7 @@ from typing import Any
 import firebase_admin
 from firebase_admin import auth, credentials, firestore
 
-from src.config import CONFIG, settings  # Import CONFIG
+from src.config import CONFIG, get_environment_settings  # Import CONFIG
 from src.utils.error_handler import (
     ErrorRecoveryStrategies,
     error_context,
@@ -48,9 +48,10 @@ class FirestoreManager:
 
         # Check if Firestore is enabled in the settings AND if DATABASE_TYPE is 'firestore'
         with error_context("firestore_config_validation"):
+            env_settings = get_environment_settings()
             if (
-                not settings.google_application_credentials
-                or not settings.firestore_project_id
+                not env_settings.google_application_credentials
+                or not env_settings.firestore_project_id
                 or CONFIG.get("DATABASE_TYPE") != "firestore"
             ):
                 self.logger.warning(
@@ -94,27 +95,20 @@ class FirestoreManager:
     )
     def _blocking_initialize(self):
         """Synchronous part of the initialization. Runs in a thread pool."""
-        try:
-            if not firebase_admin._apps:
-                cred = credentials.ApplicationDefault()
-                firebase_admin.initialize_app(
-                    cred,
-                    {"projectId": settings.firestore_project_id},
-                )
-                self.logger.info("Firebase Admin SDK initialized.")
-            else:
-                self.logger.info(
-                    "Firebase app already initialized. Reusing existing app.",
-                )
+        if not firebase_admin._apps:
+            cred = credentials.ApplicationDefault()
+            firebase_admin.initialize_app(
+                cred,
+                {"projectId": env_settings.firestore_project_id},
+            )
+            self.logger.info("Firebase Admin SDK initialized.")
+        else:
+            self.logger.info(
+                "Firebase app already initialized. Reusing existing app.",
+            )
 
-            self._db = firestore.client()
-            self._auth = auth
-        except Exception as e:
-            self.logger.error(f"Failed to initialize Firebase: {e}", exc_info=True)
-            self._db = None
-            self._auth = None
-            self._firestore_enabled = False
-            raise
+        self._db = firestore.client()
+        self._auth = auth
 
     @handle_errors(
         exceptions=(Exception,),
@@ -123,22 +117,16 @@ class FirestoreManager:
     )
     def _determine_user_id(self, initial_auth_token: str | None):
         """Determines the user ID for Firestore document paths."""
-        try:
-            if initial_auth_token:
-                self._user_id = f"canvas-user-{self._app_id}"
-                self.logger.info(
-                    f"Using Canvas-derived user ID for Firestore paths: {self._user_id}",
-                )
-            else:
-                self._user_id = str(uuid.uuid4())
-                self.logger.info(
-                    f"Using anonymous user ID for Firestore paths: {self._user_id}",
-                )
-        except Exception as e:
-            self.logger.warning(
-                f"Could not derive user ID from auth token: {e}. Falling back to UUID.",
+        if initial_auth_token:
+            self._user_id = f"canvas-user-{self._app_id}"
+            self.logger.info(
+                f"Using Canvas-derived user ID for Firestore paths: {self._user_id}",
             )
+        else:
             self._user_id = str(uuid.uuid4())
+            self.logger.info(
+                f"Using anonymous user ID for Firestore paths: {self._user_id}",
+            )
 
     @handle_errors(
         exceptions=(Exception,),
@@ -155,19 +143,15 @@ class FirestoreManager:
             self.logger.error("App ID not set. Cannot construct collection path.")
             return None
 
-        try:
-            base_path = f"artifacts/{self._app_id}"
-            if is_public:
-                return f"{base_path}/public/data/{collection_name}"
-            if not self._user_id:
-                self.logger.error(
-                    "User ID not set. Cannot construct private collection path.",
-                )
-                return None
-            return f"{base_path}/users/{self._user_id}/{collection_name}"
-        except Exception as e:
-            self.logger.error(f"Error constructing collection path: {e}", exc_info=True)
+        base_path = f"artifacts/{self._app_id}"
+        if is_public:
+            return f"{base_path}/public/data/{collection_name}"
+        if not self._user_id:
+            self.logger.error(
+                "User ID not set. Cannot construct private collection path.",
+            )
             return None
+        return f"{base_path}/users/{self._user_id}/{collection_name}"
 
     @handle_errors(
         exceptions=(Exception,),
@@ -180,13 +164,9 @@ class FirestoreManager:
             self.logger.warning("Firestore not available. Cannot perform operation.")
             return None
 
-        try:
-            loop = asyncio.get_running_loop()
-            p_func = partial(func, *args, **kwargs)
-            return await loop.run_in_executor(None, p_func)
-        except Exception as e:
-            self.logger.error(f"Error executing blocking operation: {e}", exc_info=True)
-            return None
+        loop = asyncio.get_running_loop()
+        p_func = partial(func, *args, **kwargs)
+        return await loop.run_in_executor(None, p_func)
 
     @handle_errors(
         exceptions=(Exception,),

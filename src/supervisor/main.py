@@ -7,8 +7,8 @@ from typing import Any
 # Import necessary modules
 from src.config import (
     CONFIG,
-    settings,
-)  # Import settings for trading_mode, and CONFIG for other params
+    get_environment_settings,
+)  # Import environment settings for trading_mode, and CONFIG for other params
 from src.paper_trader import PaperTrader  # Import PaperTrader for paper trading mode
 from src.sentinel.sentinel import Sentinel
 from src.supervisor.ab_tester import ABTester
@@ -60,14 +60,15 @@ class Supervisor:
         self.monitoring = Monitoring(self.db_manager)
 
         # Determine the actual trading client (PaperTrader or live exchange_client)
-        if settings.trading_environment == "PAPER":
+        env_settings = get_environment_settings()
+        if env_settings.trading_environment == "PAPER":
             self.trader = PaperTrader(
                 symbol=self.symbol,
                 exchange_name=self.exchange_name,
                 config=self.config,
             )
             self.logger.info("Paper Trader initialized for simulation.")
-        elif settings.trading_environment == "LIVE":
+        elif env_settings.trading_environment == "LIVE":
             self.trader = (
                 exchange_client  # Use the live exchange client passed from main
             )
@@ -77,10 +78,10 @@ class Supervisor:
         else:
             self.trader = None
             self.logger.error(
-                f"Unknown trading environment: '{settings.trading_environment}'. Trading will be disabled.",
+                f"Unknown trading environment: '{env_settings.trading_environment}'. Trading will be disabled.",
             )
             raise ValueError(
-                f"Invalid TRADING_ENVIRONMENT: {settings.trading_environment}",
+                f"Invalid TRADING_ENVIRONMENT: {env_settings.trading_environment}",
             )  # Halt if invalid
 
         # Initialize ModelManager first, which will load the champion models

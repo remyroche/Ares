@@ -7,19 +7,19 @@ feature importance, decision path analysis, and model behavior monitoring.
 """
 
 import asyncio
-import json
 import time
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from dataclasses import dataclass, asdict
 from enum import Enum
+from typing import Any
 
-from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
 
 
 class TrackingType(Enum):
     """Tracking types."""
+
     ENSEMBLE_DECISION = "ensemble_decision"
     REGIME_ANALYSIS = "regime_analysis"
     FEATURE_IMPORTANCE = "feature_importance"
@@ -29,6 +29,7 @@ class TrackingType(Enum):
 
 class RegimeType(Enum):
     """Market regime types."""
+
     BULL_TREND = "bull_trend"
     BEAR_TREND = "bear_trend"
     SIDEWAYS = "sideways"
@@ -39,72 +40,77 @@ class RegimeType(Enum):
 @dataclass
 class EnsembleDecision:
     """Ensemble decision tracking."""
+
     decision_id: str
     timestamp: datetime
-    ensemble_models: List[str]
-    individual_predictions: Dict[str, float]
+    ensemble_models: list[str]
+    individual_predictions: dict[str, float]
     ensemble_prediction: float
     confidence_score: float
     consensus_level: float
     disagreement_score: float
     final_decision: str
-    metadata: Dict[str, Any] = None
+    metadata: dict[str, Any] = None
 
 
 @dataclass
 class RegimeAnalysis:
     """Regime analysis tracking."""
+
     analysis_id: str
     timestamp: datetime
     current_regime: RegimeType
     regime_confidence: float
     regime_duration: float
     regime_transition_probability: float
-    market_conditions: Dict[str, float]
+    market_conditions: dict[str, float]
     volatility_level: float
     trend_strength: float
-    metadata: Dict[str, Any] = None
+    metadata: dict[str, Any] = None
 
 
 @dataclass
 class FeatureImportanceTracking:
     """Feature importance tracking."""
+
     tracking_id: str
     timestamp: datetime
     model_id: str
-    feature_importance: Dict[str, float]
-    importance_stability: Dict[str, float]
-    feature_drift_scores: Dict[str, float]
-    top_features: List[str]
-    metadata: Dict[str, Any] = None
+    feature_importance: dict[str, float]
+    importance_stability: dict[str, float]
+    feature_drift_scores: dict[str, float]
+    top_features: list[str]
+    metadata: dict[str, Any] = None
 
 
 @dataclass
 class DecisionPath:
     """Decision path analysis."""
+
     path_id: str
     timestamp: datetime
-    decision_components: List[str]
-    decision_weights: Dict[str, float]
-    decision_thresholds: Dict[str, float]
-    decision_sequence: List[Dict[str, Any]]
+    decision_components: list[str]
+    decision_weights: dict[str, float]
+    decision_thresholds: dict[str, float]
+    decision_sequence: list[dict[str, Any]]
     final_decision: str
     confidence_level: float
-    metadata: Dict[str, Any] = None
+    metadata: dict[str, Any] = None
 
 
 @dataclass
 class ModelBehavior:
     """Model behavior tracking."""
+
     behavior_id: str
     timestamp: datetime
     model_id: str
     prediction_bias: float
     prediction_variance: float
     adaptation_speed: float
-    performance_trend: List[float]
-    error_patterns: Dict[str, int]
-    metadata: Dict[str, Any] = None
+    performance_trend: list[float]
+    error_patterns: dict[str, int]
+    metadata: dict[str, Any] = None
 
 
 class TrackingSystem:
@@ -112,42 +118,69 @@ class TrackingSystem:
     Comprehensive tracking system for model ensembles, regime data,
     feature importance, decision paths, and model behavior.
     """
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize tracking system.
-        
+
         Args:
             config: Configuration dictionary
         """
         self.config = config
         self.logger = system_logger.getChild("TrackingSystem")
-        
+
         # Tracking configuration
         self.tracking_config = config.get("tracking_system", {})
-        self.enable_ensemble_tracking = self.tracking_config.get("enable_ensemble_tracking", True)
-        self.enable_regime_tracking = self.tracking_config.get("enable_regime_tracking", True)
-        self.enable_feature_tracking = self.tracking_config.get("enable_feature_tracking", True)
-        self.enable_decision_tracking = self.tracking_config.get("enable_decision_tracking", True)
-        self.enable_behavior_tracking = self.tracking_config.get("enable_behavior_tracking", True)
-        
+        self.enable_ensemble_tracking = self.tracking_config.get(
+            "enable_ensemble_tracking",
+            True,
+        )
+        self.enable_regime_tracking = self.tracking_config.get(
+            "enable_regime_tracking",
+            True,
+        )
+        self.enable_feature_tracking = self.tracking_config.get(
+            "enable_feature_tracking",
+            True,
+        )
+        self.enable_decision_tracking = self.tracking_config.get(
+            "enable_decision_tracking",
+            True,
+        )
+        self.enable_behavior_tracking = self.tracking_config.get(
+            "enable_behavior_tracking",
+            True,
+        )
+
         # Tracking intervals
-        self.ensemble_tracking_interval = self.tracking_config.get("ensemble_tracking_interval", 60)
-        self.regime_tracking_interval = self.tracking_config.get("regime_tracking_interval", 300)
-        self.feature_tracking_interval = self.tracking_config.get("feature_tracking_interval", 600)
-        self.behavior_tracking_interval = self.tracking_config.get("behavior_tracking_interval", 300)
-        
+        self.ensemble_tracking_interval = self.tracking_config.get(
+            "ensemble_tracking_interval",
+            60,
+        )
+        self.regime_tracking_interval = self.tracking_config.get(
+            "regime_tracking_interval",
+            300,
+        )
+        self.feature_tracking_interval = self.tracking_config.get(
+            "feature_tracking_interval",
+            600,
+        )
+        self.behavior_tracking_interval = self.tracking_config.get(
+            "behavior_tracking_interval",
+            300,
+        )
+
         # Storage
-        self.ensemble_decisions: List[EnsembleDecision] = []
-        self.regime_analyses: List[RegimeAnalysis] = []
-        self.feature_importance_history: List[FeatureImportanceTracking] = []
-        self.decision_paths: List[DecisionPath] = []
-        self.model_behaviors: List[ModelBehavior] = []
-        
+        self.ensemble_decisions: list[EnsembleDecision] = []
+        self.regime_analyses: list[RegimeAnalysis] = []
+        self.feature_importance_history: list[FeatureImportanceTracking] = []
+        self.decision_paths: list[DecisionPath] = []
+        self.model_behaviors: list[ModelBehavior] = []
+
         # Tracking state
         self.is_tracking = False
-        self.tracking_tasks: List[asyncio.Task] = []
-        
+        self.tracking_tasks: list[asyncio.Task] = []
+
         self.logger.info("📊 Tracking System initialized")
 
     @handle_specific_errors(
@@ -162,29 +195,29 @@ class TrackingSystem:
         """Initialize the tracking system."""
         try:
             self.logger.info("Initializing Tracking System...")
-            
+
             # Initialize tracking storage
             await self._initialize_tracking_storage()
-            
+
             # Initialize tracking components
             if self.enable_ensemble_tracking:
                 await self._initialize_ensemble_tracking()
-            
+
             if self.enable_regime_tracking:
                 await self._initialize_regime_tracking()
-            
+
             if self.enable_feature_tracking:
                 await self._initialize_feature_tracking()
-            
+
             if self.enable_decision_tracking:
                 await self._initialize_decision_tracking()
-            
+
             if self.enable_behavior_tracking:
                 await self._initialize_behavior_tracking()
-            
+
             self.logger.info("✅ Tracking System initialization completed")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Tracking System initialization failed: {e}")
             return False
@@ -203,9 +236,9 @@ class TrackingSystem:
             self.feature_importance_history.clear()
             self.decision_paths.clear()
             self.model_behaviors.clear()
-            
+
             self.logger.info("Tracking storage initialized")
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing tracking storage: {e}")
 
@@ -218,7 +251,7 @@ class TrackingSystem:
         """Initialize ensemble decision tracking."""
         try:
             self.logger.info("Ensemble tracking initialized")
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing ensemble tracking: {e}")
 
@@ -231,7 +264,7 @@ class TrackingSystem:
         """Initialize regime analysis tracking."""
         try:
             self.logger.info("Regime tracking initialized")
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing regime tracking: {e}")
 
@@ -244,7 +277,7 @@ class TrackingSystem:
         """Initialize feature importance tracking."""
         try:
             self.logger.info("Feature tracking initialized")
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing feature tracking: {e}")
 
@@ -257,7 +290,7 @@ class TrackingSystem:
         """Initialize decision path tracking."""
         try:
             self.logger.info("Decision tracking initialized")
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing decision tracking: {e}")
 
@@ -270,7 +303,7 @@ class TrackingSystem:
         """Initialize model behavior tracking."""
         try:
             self.logger.info("Behavior tracking initialized")
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing behavior tracking: {e}")
 
@@ -285,27 +318,27 @@ class TrackingSystem:
         """Start tracking system."""
         try:
             self.is_tracking = True
-            
+
             # Start tracking tasks
             if self.enable_ensemble_tracking:
                 ensemble_task = asyncio.create_task(self._ensemble_tracking_loop())
                 self.tracking_tasks.append(ensemble_task)
-            
+
             if self.enable_regime_tracking:
                 regime_task = asyncio.create_task(self._regime_tracking_loop())
                 self.tracking_tasks.append(regime_task)
-            
+
             if self.enable_feature_tracking:
                 feature_task = asyncio.create_task(self._feature_tracking_loop())
                 self.tracking_tasks.append(feature_task)
-            
+
             if self.enable_behavior_tracking:
                 behavior_task = asyncio.create_task(self._behavior_tracking_loop())
                 self.tracking_tasks.append(behavior_task)
-            
+
             self.logger.info("🚀 Tracking System started")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error starting tracking system: {e}")
             return False
@@ -321,7 +354,7 @@ class TrackingSystem:
             while self.is_tracking:
                 await self._track_ensemble_decisions()
                 await asyncio.sleep(self.ensemble_tracking_interval)
-                
+
         except Exception as e:
             self.logger.error(f"Error in ensemble tracking loop: {e}")
 
@@ -336,7 +369,7 @@ class TrackingSystem:
             while self.is_tracking:
                 await self._track_regime_analysis()
                 await asyncio.sleep(self.regime_tracking_interval)
-                
+
         except Exception as e:
             self.logger.error(f"Error in regime tracking loop: {e}")
 
@@ -351,7 +384,7 @@ class TrackingSystem:
             while self.is_tracking:
                 await self._track_feature_importance()
                 await asyncio.sleep(self.feature_tracking_interval)
-                
+
         except Exception as e:
             self.logger.error(f"Error in feature tracking loop: {e}")
 
@@ -366,7 +399,7 @@ class TrackingSystem:
             while self.is_tracking:
                 await self._track_model_behavior()
                 await asyncio.sleep(self.behavior_tracking_interval)
-                
+
         except Exception as e:
             self.logger.error(f"Error in behavior tracking loop: {e}")
 
@@ -396,15 +429,15 @@ class TrackingSystem:
                 final_decision="BUY",
                 metadata={"market_condition": "bull_trend"},
             )
-            
+
             self.ensemble_decisions.append(decision)
-            
+
             # Limit history size
             if len(self.ensemble_decisions) > 1000:
                 self.ensemble_decisions = self.ensemble_decisions[-1000:]
-            
+
             self.logger.debug(f"Tracked ensemble decision: {decision.decision_id}")
-            
+
         except Exception as e:
             self.logger.error(f"Error tracking ensemble decisions: {e}")
 
@@ -434,15 +467,15 @@ class TrackingSystem:
                 trend_strength=0.75,
                 metadata={"market_sentiment": "positive"},
             )
-            
+
             self.regime_analyses.append(analysis)
-            
+
             # Limit history size
             if len(self.regime_analyses) > 1000:
                 self.regime_analyses = self.regime_analyses[-1000:]
-            
+
             self.logger.debug(f"Tracked regime analysis: {analysis.analysis_id}")
-            
+
         except Exception as e:
             self.logger.error(f"Error tracking regime analysis: {e}")
 
@@ -485,15 +518,17 @@ class TrackingSystem:
                     top_features=["feature_1", "feature_2", "feature_3"],
                     metadata={"analysis_window": "1h"},
                 )
-                
+
                 self.feature_importance_history.append(tracking)
-            
+
             # Limit history size
             if len(self.feature_importance_history) > 1000:
-                self.feature_importance_history = self.feature_importance_history[-1000:]
-            
+                self.feature_importance_history = self.feature_importance_history[
+                    -1000:
+                ]
+
             self.logger.debug("Tracked feature importance")
-            
+
         except Exception as e:
             self.logger.error(f"Error tracking feature importance: {e}")
 
@@ -502,7 +537,7 @@ class TrackingSystem:
         default_return=None,
         context="decision path tracking",
     )
-    async def track_decision_path(self, decision_data: Dict[str, Any]) -> None:
+    async def track_decision_path(self, decision_data: dict[str, Any]) -> None:
         """Track a decision path."""
         try:
             path = DecisionPath(
@@ -516,15 +551,15 @@ class TrackingSystem:
                 confidence_level=decision_data.get("confidence", 0.5),
                 metadata=decision_data.get("metadata", {}),
             )
-            
+
             self.decision_paths.append(path)
-            
+
             # Limit history size
             if len(self.decision_paths) > 1000:
                 self.decision_paths = self.decision_paths[-1000:]
-            
+
             self.logger.debug(f"Tracked decision path: {path.path_id}")
-            
+
         except Exception as e:
             self.logger.error(f"Error tracking decision path: {e}")
 
@@ -554,34 +589,40 @@ class TrackingSystem:
                     },
                     metadata={"analysis_period": "1h"},
                 )
-                
+
                 self.model_behaviors.append(behavior)
-            
+
             # Limit history size
             if len(self.model_behaviors) > 1000:
                 self.model_behaviors = self.model_behaviors[-1000:]
-            
+
             self.logger.debug("Tracked model behavior")
-            
+
         except Exception as e:
             self.logger.error(f"Error tracking model behavior: {e}")
 
-    def get_ensemble_decisions(self, limit: Optional[int] = None) -> List[EnsembleDecision]:
+    def get_ensemble_decisions(
+        self,
+        limit: int | None = None,
+    ) -> list[EnsembleDecision]:
         """Get ensemble decisions."""
         decisions = self.ensemble_decisions
         if limit:
             return decisions[-limit:]
         return decisions
 
-    def get_regime_analyses(self, limit: Optional[int] = None) -> List[RegimeAnalysis]:
+    def get_regime_analyses(self, limit: int | None = None) -> list[RegimeAnalysis]:
         """Get regime analyses."""
         analyses = self.regime_analyses
         if limit:
             return analyses[-limit:]
         return analyses
 
-    def get_feature_importance_history(self, model_id: Optional[str] = None, 
-                                     limit: Optional[int] = None) -> List[FeatureImportanceTracking]:
+    def get_feature_importance_history(
+        self,
+        model_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[FeatureImportanceTracking]:
         """Get feature importance history."""
         history = self.feature_importance_history
         if model_id:
@@ -590,15 +631,18 @@ class TrackingSystem:
             return history[-limit:]
         return history
 
-    def get_decision_paths(self, limit: Optional[int] = None) -> List[DecisionPath]:
+    def get_decision_paths(self, limit: int | None = None) -> list[DecisionPath]:
         """Get decision paths."""
         paths = self.decision_paths
         if limit:
             return paths[-limit:]
         return paths
 
-    def get_model_behaviors(self, model_id: Optional[str] = None, 
-                           limit: Optional[int] = None) -> List[ModelBehavior]:
+    def get_model_behaviors(
+        self,
+        model_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[ModelBehavior]:
         """Get model behaviors."""
         behaviors = self.model_behaviors
         if model_id:
@@ -607,7 +651,7 @@ class TrackingSystem:
             return behaviors[-limit:]
         return behaviors
 
-    def get_tracking_summary(self) -> Dict[str, Any]:
+    def get_tracking_summary(self) -> dict[str, Any]:
         """Get tracking system summary."""
         try:
             return {
@@ -622,7 +666,7 @@ class TrackingSystem:
                 "decision_tracking_enabled": self.enable_decision_tracking,
                 "behavior_tracking_enabled": self.enable_behavior_tracking,
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error getting tracking summary: {e}")
             return {}
@@ -636,7 +680,7 @@ class TrackingSystem:
         """Stop tracking system."""
         try:
             self.is_tracking = False
-            
+
             # Cancel all tracking tasks
             for task in self.tracking_tasks:
                 task.cancel()
@@ -644,11 +688,11 @@ class TrackingSystem:
                     await task
                 except asyncio.CancelledError:
                     pass
-            
+
             self.tracking_tasks.clear()
-            
+
             self.logger.info("🛑 Tracking System stopped")
-            
+
         except Exception as e:
             self.logger.error(f"Error stopping tracking system: {e}")
 
@@ -658,24 +702,23 @@ class TrackingSystem:
     default_return=None,
     context="tracking system setup",
 )
-async def setup_tracking_system(config: Dict[str, Any]) -> TrackingSystem | None:
+async def setup_tracking_system(config: dict[str, Any]) -> TrackingSystem | None:
     """
     Setup and initialize tracking system.
-    
+
     Args:
         config: Configuration dictionary
-        
+
     Returns:
         TrackingSystem instance or None if setup failed
     """
     try:
         tracking_system = TrackingSystem(config)
-        
+
         if await tracking_system.initialize():
             return tracking_system
-        else:
-            return None
-            
+        return None
+
     except Exception as e:
         system_logger.error(f"Error setting up tracking system: {e}")
-        return None 
+        return None

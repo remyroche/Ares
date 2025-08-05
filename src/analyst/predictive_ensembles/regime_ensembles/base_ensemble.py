@@ -231,7 +231,7 @@ class BaseEnsemble:
         # Calculate SR context features (Phase 1 Enhancement)
         sr_features = self._calculate_sr_context_features(historical_features)
         historical_features = pd.concat([historical_features, sr_features], axis=1)
-        
+
         # Ensure all expected features are present, fill missing with 0.0
         # Create a union of all features used across different types
         all_expected_features = list(
@@ -545,94 +545,108 @@ class BaseEnsemble:
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
         raise NotImplementedError
 
-    def _calculate_sr_context_features(self, df: pd.DataFrame, sr_analyzer=None) -> pd.DataFrame:
+    def _calculate_sr_context_features(
+        self,
+        df: pd.DataFrame,
+        sr_analyzer=None,
+    ) -> pd.DataFrame:
         """
         Calculate SR context features for enhanced prediction capabilities.
-        
+
         Args:
             df: DataFrame with OHLCV data
             sr_analyzer: Optional SR analyzer instance
-            
+
         Returns:
             DataFrame with SR context features
         """
         try:
             # Initialize SR features with defaults
             sr_features = pd.DataFrame(index=df.index)
-            sr_features['distance_to_sr'] = 1.0  # Default: far from SR
-            sr_features['sr_strength'] = 0.0     # Default: no SR
-            sr_features['sr_type'] = 0.5         # Default: neutral
-            
-            if sr_analyzer is None:
-                # Try to import and initialize SR analyzer
-                try:
-                    from src.analyst.sr_analyzer import SRLevelAnalyzer
-                    sr_analyzer = SRLevelAnalyzer(self.config.get("sr_analyzer", {}))
-                except ImportError:
-                    self.logger.warning("SR analyzer not available, using default SR features")
-                    return sr_features
-            
-            # Calculate SR context for each row
+            sr_features["distance_to_sr"] = 1.0  # Default: far from SR
+            sr_features["sr_strength"] = 0.0  # Default: no SR
+            sr_features["sr_type"] = 0.5  # Default: neutral
+
+            # Legacy S/R code removed - using simplified approach
+
+            # Calculate SR context for each row (simplified)
             for i in range(len(df)):
                 try:
-                    current_price = df.iloc[i]['close']
-                    
-                    # Get SR context from analyzer
-                    sr_context = sr_analyzer.detect_sr_zone_proximity(current_price)
-                    
-                    if sr_context.get('in_zone', False):
-                        sr_features.iloc[i, sr_features.columns.get_loc('distance_to_sr')] = sr_context.get('distance_to_level', 0.0)
-                        sr_features.iloc[i, sr_features.columns.get_loc('sr_strength')] = sr_context.get('level_strength', 0.0)
-                        sr_features.iloc[i, sr_features.columns.get_loc('sr_type')] = 1.0 if sr_context.get('level_type') == 'resistance' else 0.0
-                    else:
-                        # Calculate distance to nearest SR level (simplified approach)
-                        # Since SR analyzer doesn't have get_sr_levels method, use a simple distance calculation
-                        sr_features.iloc[i, sr_features.columns.get_loc('distance_to_sr')] = 1.0  # Default distance
-                            
+                    current_price = df.iloc[i]["close"]
+
+                    # Simplified SR context calculation
+                    # Default values for SR features
+                    sr_features.iloc[
+                        i,
+                        sr_features.columns.get_loc("distance_to_sr"),
+                    ] = 1.0  # Default distance
+                    sr_features.iloc[i, sr_features.columns.get_loc("sr_strength")] = (
+                        0.0  # Default strength
+                    )
+                    sr_features.iloc[i, sr_features.columns.get_loc("sr_type")] = (
+                        0.5  # Default type
+                    )
+
                 except Exception as e:
-                    self.logger.warning(f"Error calculating SR features for row {i}: {e}")
+                    self.logger.warning(
+                        f"Error calculating SR features for row {i}: {e}",
+                    )
                     continue
-            
+
             # Calculate additional momentum and volatility features
             if len(df) >= 5:
-                sr_features['momentum_5'] = df['close'].pct_change(5).fillna(0)
+                sr_features["momentum_5"] = df["close"].pct_change(5).fillna(0)
             else:
-                sr_features['momentum_5'] = 0.0
-                
+                sr_features["momentum_5"] = 0.0
+
             if len(df) >= 10:
-                sr_features['momentum_10'] = df['close'].pct_change(10).fillna(0)
+                sr_features["momentum_10"] = df["close"].pct_change(10).fillna(0)
             else:
-                sr_features['momentum_10'] = 0.0
-            
+                sr_features["momentum_10"] = 0.0
+
             # Volume ratio
-            if 'volume' in df.columns:
-                volume_ma = df['volume'].rolling(window=20, min_periods=1).mean()
-                sr_features['volume_ratio'] = (df['volume'] / volume_ma).fillna(1.0)
+            if "volume" in df.columns:
+                volume_ma = df["volume"].rolling(window=20, min_periods=1).mean()
+                sr_features["volume_ratio"] = (df["volume"] / volume_ma).fillna(1.0)
             else:
-                sr_features['volume_ratio'] = 1.0
-            
+                sr_features["volume_ratio"] = 1.0
+
             # Volatility
             if len(df) >= 20:
-                price_volatility = df['close'].rolling(window=20).std() / df['close'].rolling(window=20).mean()
-                sr_features['volatility'] = price_volatility.fillna(0.0)
+                price_volatility = (
+                    df["close"].rolling(window=20).std()
+                    / df["close"].rolling(window=20).mean()
+                )
+                sr_features["volatility"] = price_volatility.fillna(0.0)
             else:
-                sr_features['volatility'] = 0.0
-            
+                sr_features["volatility"] = 0.0
+
             # Price position within recent range
             if len(df) >= 20:
-                high_20 = df['high'].rolling(window=20, min_periods=1).max()
-                low_20 = df['low'].rolling(window=20, min_periods=1).min()
-                sr_features['price_position'] = ((df['close'] - low_20) / (high_20 - low_20)).fillna(0.5)
+                high_20 = df["high"].rolling(window=20, min_periods=1).max()
+                low_20 = df["low"].rolling(window=20, min_periods=1).min()
+                sr_features["price_position"] = (
+                    (df["close"] - low_20) / (high_20 - low_20)
+                ).fillna(0.5)
             else:
-                sr_features['price_position'] = 0.5
-            
+                sr_features["price_position"] = 0.5
+
             return sr_features
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating SR context features: {e}")
             # Return default features
             default_features = pd.DataFrame(index=df.index)
-            for feature in ['distance_to_sr', 'sr_strength', 'sr_type', 'price_position', 'momentum_5', 'momentum_10', 'volume_ratio', 'volatility']:
+            for feature in [
+                "distance_to_sr",
+                "sr_strength",
+                "sr_type",
+                "price_position",
+                "momentum_5",
+                "momentum_10",
+                "volume_ratio",
+                "volatility",
+            ]:
                 default_features[feature] = 0.0
             return default_features
 

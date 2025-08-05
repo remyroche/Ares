@@ -65,28 +65,23 @@ class ModularTactician:
         Returns:
             bool: True if initialization successful, False otherwise
         """
-        try:
-            self.logger.info("Initializing Modular Tactician...")
+        self.logger.info("Initializing Modular Tactician...")
 
-            # Load tactician configuration
-            await self._load_tactician_configuration()
+        # Load tactician configuration
+        await self._load_tactician_configuration()
 
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for modular tactician")
-                return False
-
-            # Initialize tactician modules
-            await self._initialize_tactician_modules()
-
-            self.logger.info(
-                "✅ Modular Tactician initialization completed successfully",
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Modular Tactician initialization failed: {e}")
+        # Validate configuration
+        if not self._validate_configuration():
+            self.logger.error("Invalid configuration for modular tactician")
             return False
+
+        # Initialize tactician modules
+        await self._initialize_tactician_modules()
+
+        self.logger.info(
+            "✅ Modular Tactician initialization completed successfully",
+        )
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -95,29 +90,25 @@ class ModularTactician:
     )
     async def _load_tactician_configuration(self) -> None:
         """Load tactician configuration."""
-        try:
-            # Set default tactician parameters
-            self.tactician_config.setdefault("tactician_interval", 5)
-            self.tactician_config.setdefault("max_tactician_history", 100)
-            self.tactician_config.setdefault("enable_entry_monitoring", True)
-            self.tactician_config.setdefault("enable_exit_monitoring", True)
-            self.tactician_config.setdefault("enable_position_monitoring", False)
-            self.tactician_config.setdefault("enable_risk_monitoring", True)
+        # Set default tactician parameters
+        self.tactician_config.setdefault("tactician_interval", 5)
+        self.tactician_config.setdefault("max_tactician_history", 100)
+        self.tactician_config.setdefault("enable_entry_monitoring", True)
+        self.tactician_config.setdefault("enable_exit_monitoring", True)
+        self.tactician_config.setdefault("enable_position_monitoring", False)
+        self.tactician_config.setdefault("enable_risk_monitoring", True)
 
-            # Update configuration
-            self.tactician_interval = self.tactician_config["tactician_interval"]
-            self.max_tactician_history = self.tactician_config["max_tactician_history"]
-            self.enable_entry_monitoring = self.tactician_config[
-                "enable_entry_monitoring"
-            ]
-            self.enable_exit_monitoring = self.tactician_config[
-                "enable_exit_monitoring"
-            ]
+        # Update configuration
+        self.tactician_interval = self.tactician_config["tactician_interval"]
+        self.max_tactician_history = self.tactician_config["max_tactician_history"]
+        self.enable_entry_monitoring = self.tactician_config[
+            "enable_entry_monitoring"
+        ]
+        self.enable_exit_monitoring = self.tactician_config[
+            "enable_exit_monitoring"
+        ]
 
-            self.logger.info("Tactician configuration loaded successfully")
-
-        except Exception as e:
-            self.logger.error(f"Error loading tactician configuration: {e}")
+        self.logger.info("Tactician configuration loaded successfully")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -131,35 +122,30 @@ class ModularTactician:
         Returns:
             bool: True if configuration is valid, False otherwise
         """
-        try:
-            # Validate tactician interval
-            if self.tactician_interval <= 0:
-                self.logger.error("Invalid tactician interval")
-                return False
-
-            # Validate max tactician history
-            if self.max_tactician_history <= 0:
-                self.logger.error("Invalid max tactician history")
-                return False
-
-            # Validate that at least one tactician type is enabled
-            if not any(
-                [
-                    self.enable_entry_monitoring,
-                    self.enable_exit_monitoring,
-                    self.tactician_config.get("enable_position_monitoring", False),
-                    self.tactician_config.get("enable_risk_monitoring", True),
-                ],
-            ):
-                self.logger.error("At least one tactician type must be enabled")
-                return False
-
-            self.logger.info("Configuration validation successful")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        # Validate tactician interval
+        if self.tactician_interval <= 0:
+            self.logger.error("Invalid tactician interval")
             return False
+
+        # Validate max tactician history
+        if self.max_tactician_history <= 0:
+            self.logger.error("Invalid max tactician history")
+            return False
+
+        # Validate that at least one tactician type is enabled
+        if not any(
+            [
+                self.enable_entry_monitoring,
+                self.enable_exit_monitoring,
+                self.tactician_config.get("enable_position_monitoring", False),
+                self.tactician_config.get("enable_risk_monitoring", True),
+            ],
+        ):
+            self.logger.error("At least one tactician type must be enabled")
+            return False
+
+        self.logger.info("Configuration validation successful")
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

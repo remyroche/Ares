@@ -1,20 +1,21 @@
 # src/core/config_service.py
 
-import os
-import json
-import yaml
 import asyncio
+import json
+import os
 import time
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Any, Optional, Dict, List
-from dataclasses import dataclass, asdict
 from pathlib import Path
-from collections import defaultdict
+from typing import Any
+
+import yaml
 
 # Try to import watchdog for file watching
 try:
-    from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
+    from watchdog.observers import Observer
+
     WATCHDOG_AVAILABLE = True
 except ImportError:
     WATCHDOG_AVAILABLE = False
@@ -32,6 +33,7 @@ from src.utils.logger import system_logger
 @dataclass
 class DatabaseConfig:
     """Database configuration dataclass."""
+
     database_path: str = "data/ares.db"
     auto_backup: bool = True
     backup_interval: int = 3600
@@ -45,6 +47,7 @@ class DatabaseConfig:
 @dataclass
 class ExchangeConfig:
     """Exchange configuration dataclass."""
+
     exchange_name: str = "BINANCE"
     api_key: str = ""
     api_secret: str = ""
@@ -58,6 +61,7 @@ class ExchangeConfig:
 @dataclass
 class ModelTrainingConfig:
     """Model training configuration dataclass."""
+
     enable_advanced_training: bool = True
     enable_ensemble_training: bool = True
     enable_multi_timeframe_training: bool = True
@@ -71,6 +75,7 @@ class ModelTrainingConfig:
 @dataclass
 class RiskConfig:
     """Risk management configuration dataclass."""
+
     max_position_size: float = 0.1
     max_portfolio_risk: float = 0.02
     stop_loss_percentage: float = 0.05
@@ -80,29 +85,31 @@ class RiskConfig:
 
 
 if WATCHDOG_AVAILABLE:
+
     class ConfigurationWatcher(FileSystemEventHandler):
         """Watch for configuration file changes and reload automatically."""
-        
-        def __init__(self, config_service: 'ConfigurationService'):
+
+        def __init__(self, config_service: "ConfigurationService"):
             self.config_service = config_service
             self.logger = system_logger.getChild("ConfigurationWatcher")
-            
+
         def on_modified(self, event):
             """Handle file modification events."""
-            if event.src_path.endswith(('.yaml', '.yml', '.json')):
+            if event.src_path.endswith((".yaml", ".yml", ".json")):
                 self.logger.info(f"Configuration file changed: {event.src_path}")
                 asyncio.create_task(self.config_service._reload_configuration())
 else:
+
     class ConfigurationWatcher:
         """Dummy configuration watcher when watchdog is not available."""
-        
-        def __init__(self, config_service: 'ConfigurationService'):
+
+        def __init__(self, config_service: "ConfigurationService"):
             self.config_service = config_service
             self.logger = system_logger.getChild("ConfigurationWatcher")
-            
+
         def on_modified(self, event):
             """Handle file modification events."""
-            pass  # No-op when watchdog is not available
+            # No-op when watchdog is not available
 
 
 class ConfigurationService:
@@ -110,36 +117,36 @@ class ConfigurationService:
     Enhanced Configuration Service with hot-reload, environment-specific configs,
     and dynamic configuration management.
     """
-    
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("ConfigurationService")
-        
+
         # Configuration state
         self.is_initialized: bool = False
         self.config_data: dict[str, Any] = {}
         self.config_sections: dict[str, Any] = {}
         self.config_history: list[dict[str, Any]] = []
         self.max_history: int = 100
-        
+
         # Environment-specific configuration
         self.environment: str = os.getenv("TRADING_ENV", "development")
         self.config_files: list[str] = []
         self.config_directories: list[str] = ["config"]
-        
+
         # Hot-reload settings
         self.enable_hot_reload: bool = self.config.get("enable_hot_reload", True)
-        self.watcher: Optional[Observer] = None
+        self.watcher: Observer | None = None
         self.watched_files: set[str] = set()
-        
+
         # Configuration validation
         self.validation_rules: dict[str, Any] = {}
         self.validation_errors: list[str] = []
-        
+
         # Configuration encryption
         self.encryption_enabled: bool = self.config.get("encryption_enabled", False)
-        self.encryption_key: Optional[str] = None
-        
+        self.encryption_key: str | None = None
+
         # Performance monitoring
         self.load_times: list[float] = []
         self.last_load_time: float = 0
@@ -157,30 +164,32 @@ class ConfigurationService:
         """Initialize configuration service with enhanced capabilities."""
         try:
             self.logger.info("Initializing Configuration Service...")
-            
+
             # Load configuration
             await self._load_configuration()
-            
+
             # Validate configuration
             if not await self._validate_configuration():
                 self.logger.error("Configuration validation failed")
                 return False
-            
+
             # Setup configuration sections
             await self._setup_configuration_sections()
-            
+
             # Setup hot-reload if enabled
             if self.enable_hot_reload:
                 await self._setup_hot_reload()
-            
+
             # Setup encryption if enabled
             if self.encryption_enabled:
                 await self._setup_encryption()
-            
+
             self.is_initialized = True
-            self.logger.info("✅ Configuration Service initialization completed successfully")
+            self.logger.info(
+                "✅ Configuration Service initialization completed successfully",
+            )
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Configuration Service initialization failed: {e}")
             return False
@@ -194,36 +203,36 @@ class ConfigurationService:
         """Load configuration from multiple sources."""
         try:
             start_time = time.time()
-            
+
             # Determine environment-specific config files
             self.config_files = [
-                f"config/base.yaml",
+                "config/base.yaml",
                 f"config/{self.environment}.yaml",
-                f"config/{self.environment}_local.yaml"  # Optional local overrides
+                f"config/{self.environment}_local.yaml",  # Optional local overrides
             ]
-            
+
             # Load configuration from files
             for config_file in self.config_files:
                 if os.path.exists(config_file):
                     await self._load_config_file(config_file)
-            
+
             # Load from environment variables
             await self._load_from_environment()
-            
+
             # Load from command line arguments
             await self._load_from_arguments()
-            
+
             # Record load time
             load_time = time.time() - start_time
             self.load_times.append(load_time)
             self.last_load_time = load_time
-            
+
             # Keep only recent load times
             if len(self.load_times) > 10:
                 self.load_times = self.load_times[-10:]
-            
+
             self.logger.info(f"Configuration loaded successfully in {load_time:.3f}s")
-            
+
         except Exception as e:
             self.logger.error(f"Error loading configuration: {e}")
 
@@ -235,26 +244,28 @@ class ConfigurationService:
         """Load configuration from a specific file."""
         try:
             file_path = Path(config_file)
-            
-            if file_path.suffix.lower() in ['.yaml', '.yml']:
-                with open(file_path, 'r') as f:
+
+            if file_path.suffix.lower() in [".yaml", ".yml"]:
+                with open(file_path) as f:
                     file_config = yaml.safe_load(f)
-            elif file_path.suffix.lower() == '.json':
-                with open(file_path, 'r') as f:
+            elif file_path.suffix.lower() == ".json":
+                with open(file_path) as f:
                     file_config = json.load(f)
             else:
-                self.logger.warning(f"Unsupported config file format: {file_path.suffix}")
+                self.logger.warning(
+                    f"Unsupported config file format: {file_path.suffix}",
+                )
                 return
-            
+
             # Merge configuration
             self._merge_configuration(file_config)
-            
+
             # Add to watched files for hot-reload
             if self.enable_hot_reload:
                 self.watched_files.add(str(file_path))
-            
+
             self.logger.info(f"Loaded configuration from: {config_file}")
-            
+
         except Exception as e:
             self.logger.error(f"Error loading config file {config_file}: {e}")
 
@@ -267,7 +278,7 @@ class ConfigurationService:
         """Load configuration from environment variables."""
         try:
             env_config = {}
-            
+
             # Load database configuration
             env_config["database"] = {
                 "database_path": os.getenv("DB_PATH", "data/ares.db"),
@@ -275,7 +286,7 @@ class ConfigurationService:
                 "backup_interval": int(os.getenv("DB_BACKUP_INTERVAL", "3600")),
                 "max_connections": int(os.getenv("DB_MAX_CONNECTIONS", "10")),
             }
-            
+
             # Load exchange configuration
             env_config["exchange"] = {
                 "exchange_name": os.getenv("EXCHANGE_NAME", "binance"),
@@ -284,28 +295,40 @@ class ConfigurationService:
                 "testnet": os.getenv("EXCHANGE_TESTNET", "true").lower() == "true",
                 "rate_limit": int(os.getenv("EXCHANGE_RATE_LIMIT", "1200")),
             }
-            
+
             # Load training configuration
             env_config["training"] = {
-                "enable_advanced_training": os.getenv("ENABLE_ADVANCED_TRAINING", "true").lower() == "true",
-                "enable_ensemble_training": os.getenv("ENABLE_ENSEMBLE_TRAINING", "true").lower() == "true",
+                "enable_advanced_training": os.getenv(
+                    "ENABLE_ADVANCED_TRAINING",
+                    "true",
+                ).lower()
+                == "true",
+                "enable_ensemble_training": os.getenv(
+                    "ENABLE_ENSEMBLE_TRAINING",
+                    "true",
+                ).lower()
+                == "true",
                 "training_interval": int(os.getenv("TRAINING_INTERVAL", "3600")),
                 "lookback_days": int(os.getenv("TRAINING_LOOKBACK_DAYS", "730")),
             }
-            
+
             # Load risk configuration
             env_config["risk"] = {
                 "max_position_size": float(os.getenv("MAX_POSITION_SIZE", "0.1")),
                 "max_portfolio_risk": float(os.getenv("MAX_PORTFOLIO_RISK", "0.02")),
-                "stop_loss_percentage": float(os.getenv("STOP_LOSS_PERCENTAGE", "0.05")),
-                "take_profit_percentage": float(os.getenv("TAKE_PROFIT_PERCENTAGE", "0.15")),
+                "stop_loss_percentage": float(
+                    os.getenv("STOP_LOSS_PERCENTAGE", "0.05"),
+                ),
+                "take_profit_percentage": float(
+                    os.getenv("TAKE_PROFIT_PERCENTAGE", "0.15"),
+                ),
             }
-            
+
             # Merge environment configuration
             self._merge_configuration(env_config)
-            
+
             self.logger.info("Configuration loaded from environment variables")
-            
+
         except Exception as e:
             self.logger.error(f"Error loading from environment: {e}")
 
@@ -320,31 +343,36 @@ class ConfigurationService:
             # This would be implemented to parse command line arguments
             # For now, we'll use a mock implementation
             arg_config = {}
-            
+
             # Add any command line specific overrides here
             # arg_config["debug"] = True  # Example
-            
+
             if arg_config:
                 self._merge_configuration(arg_config)
                 self.logger.info("Configuration loaded from command line arguments")
-            
+
         except Exception as e:
             self.logger.error(f"Error loading from arguments: {e}")
 
     def _merge_configuration(self, new_config: dict[str, Any]) -> None:
         """Merge new configuration with existing configuration."""
         try:
+
             def deep_merge(base: dict, update: dict) -> dict:
                 """Deep merge two dictionaries."""
                 for key, value in update.items():
-                    if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+                    if (
+                        key in base
+                        and isinstance(base[key], dict)
+                        and isinstance(value, dict)
+                    ):
                         deep_merge(base[key], value)
                     else:
                         base[key] = value
                 return base
-            
+
             self.config_data = deep_merge(self.config_data, new_config)
-            
+
         except Exception as e:
             self.logger.error(f"Error merging configuration: {e}")
 
@@ -357,7 +385,7 @@ class ConfigurationService:
         """Validate configuration using defined rules."""
         try:
             self.validation_errors.clear()
-            
+
             # Validate database configuration
             if "database" in self.config_data:
                 db_config = self.config_data["database"]
@@ -367,7 +395,7 @@ class ConfigurationService:
                     self.validation_errors.append("Backup interval must be positive")
                 if db_config.get("max_connections", 0) <= 0:
                     self.validation_errors.append("Max connections must be positive")
-            
+
             # Validate exchange configuration
             if "exchange" in self.config_data:
                 exchange_config = self.config_data["exchange"]
@@ -377,7 +405,7 @@ class ConfigurationService:
                     self.validation_errors.append("Exchange API key is required")
                 if not exchange_config.get("api_secret"):
                     self.validation_errors.append("Exchange API secret is required")
-            
+
             # Validate training configuration
             if "training" in self.config_data:
                 training_config = self.config_data["training"]
@@ -385,22 +413,28 @@ class ConfigurationService:
                     self.validation_errors.append("Training interval must be positive")
                 if training_config.get("lookback_days", 0) <= 0:
                     self.validation_errors.append("Lookback days must be positive")
-            
+
             # Validate risk configuration
             if "risk" in self.config_data:
                 risk_config = self.config_data["risk"]
                 if not (0 < risk_config.get("max_position_size", 0) <= 1):
-                    self.validation_errors.append("Max position size must be between 0 and 1")
+                    self.validation_errors.append(
+                        "Max position size must be between 0 and 1",
+                    )
                 if not (0 < risk_config.get("max_portfolio_risk", 0) <= 1):
-                    self.validation_errors.append("Max portfolio risk must be between 0 and 1")
-            
+                    self.validation_errors.append(
+                        "Max portfolio risk must be between 0 and 1",
+                    )
+
             if self.validation_errors:
-                self.logger.error(f"Configuration validation failed: {self.validation_errors}")
+                self.logger.error(
+                    f"Configuration validation failed: {self.validation_errors}",
+                )
                 return False
-            
+
             self.logger.info("Configuration validation successful")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error validating configuration: {e}")
             return False
@@ -416,21 +450,23 @@ class ConfigurationService:
             # Setup database configuration
             db_config_data = self.config_data.get("database", {})
             self.config_sections["database"] = DatabaseConfig(**db_config_data)
-            
+
             # Setup exchange configuration
             exchange_config_data = self.config_data.get("exchange", {})
             self.config_sections["exchange"] = ExchangeConfig(**exchange_config_data)
-            
+
             # Setup training configuration
             training_config_data = self.config_data.get("training", {})
-            self.config_sections["training"] = ModelTrainingConfig(**training_config_data)
-            
+            self.config_sections["training"] = ModelTrainingConfig(
+                **training_config_data,
+            )
+
             # Setup risk configuration
             risk_config_data = self.config_data.get("risk", {})
             self.config_sections["risk"] = RiskConfig(**risk_config_data)
-            
+
             self.logger.info("Configuration sections setup complete")
-            
+
         except Exception as e:
             self.logger.error(f"Error setting up configuration sections: {e}")
 
@@ -445,21 +481,21 @@ class ConfigurationService:
             if not WATCHDOG_AVAILABLE:
                 self.logger.warning("Watchdog not available, hot-reload disabled")
                 return
-            
+
             self.watcher = Observer()
-            
+
             # Watch config directories
             for config_dir in self.config_directories:
                 if os.path.exists(config_dir):
                     self.watcher.schedule(
                         ConfigurationWatcher(self),
                         config_dir,
-                        recursive=True
+                        recursive=True,
                     )
-            
+
             self.watcher.start()
             self.logger.info("Hot-reload setup complete")
-            
+
         except Exception as e:
             self.logger.error(f"Error setting up hot-reload: {e}")
 
@@ -473,13 +509,13 @@ class ConfigurationService:
         try:
             # In a real implementation, you would setup encryption keys here
             self.encryption_key = os.getenv("CONFIG_ENCRYPTION_KEY")
-            
+
             if not self.encryption_key:
                 self.logger.warning("No encryption key provided, encryption disabled")
                 self.encryption_enabled = False
             else:
                 self.logger.info("Configuration encryption setup complete")
-                
+
         except Exception as e:
             self.logger.error(f"Error setting up encryption: {e}")
 
@@ -492,24 +528,26 @@ class ConfigurationService:
         """Reload configuration from files."""
         try:
             self.logger.info("🔄 Reloading configuration...")
-            
+
             # Store current configuration in history
-            self.config_history.append({
-                "timestamp": datetime.now().isoformat(),
-                "config": self.config_data.copy()
-            })
-            
+            self.config_history.append(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "config": self.config_data.copy(),
+                },
+            )
+
             # Limit history size
             if len(self.config_history) > self.max_history:
                 self.config_history.pop(0)
-            
+
             # Clear current configuration
             self.config_data.clear()
             self.config_sections.clear()
-            
+
             # Reload configuration
             await self._load_configuration()
-            
+
             # Re-validate configuration
             if not await self._validate_configuration():
                 self.logger.error("Configuration validation failed after reload")
@@ -519,12 +557,12 @@ class ConfigurationService:
                     self.config_data = previous_config
                     await self._setup_configuration_sections()
                 return
-            
+
             # Re-setup configuration sections
             await self._setup_configuration_sections()
-            
+
             self.logger.info("✅ Configuration reloaded successfully")
-            
+
         except Exception as e:
             self.logger.error(f"Error reloading configuration: {e}")
 
@@ -560,11 +598,11 @@ class ConfigurationService:
             if section not in self.config_sections:
                 self.logger.error(f"Unknown configuration section: {section}")
                 return False
-            
+
             # Update the configuration section
             current_config = asdict(self.config_sections[section])
             current_config.update(updates)
-            
+
             # Recreate the dataclass instance
             if section == "database":
                 self.config_sections[section] = DatabaseConfig(**current_config)
@@ -574,13 +612,13 @@ class ConfigurationService:
                 self.config_sections[section] = ModelTrainingConfig(**current_config)
             elif section == "risk":
                 self.config_sections[section] = RiskConfig(**current_config)
-            
+
             # Update the main config data
             self.config_data[section] = current_config
-            
+
             self.logger.info(f"Configuration section '{section}' updated successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error updating configuration: {e}")
             return False
@@ -598,12 +636,14 @@ class ConfigurationService:
                 "config_sections": list(self.config_sections.keys()),
                 "history_count": len(self.config_history),
                 "last_load_time": self.last_load_time,
-                "average_load_time": sum(self.load_times) / len(self.load_times) if self.load_times else 0,
-                "watched_files_count": len(self.watched_files)
+                "average_load_time": sum(self.load_times) / len(self.load_times)
+                if self.load_times
+                else 0,
+                "watched_files_count": len(self.watched_files),
             }
-            
+
             return status
-            
+
         except Exception as e:
             self.logger.error(f"Error getting configuration status: {e}")
             return {}
@@ -627,28 +667,28 @@ class ConfigurationService:
     async def stop(self) -> None:
         """Stop the configuration service."""
         self.logger.info("🛑 Stopping Configuration Service...")
-        
+
         try:
             # Stop hot-reload watcher
             if self.watcher:
                 self.watcher.stop()
                 self.watcher.join()
                 self.watcher = None
-            
+
             # Clear configuration data
             self.config_data.clear()
             self.config_sections.clear()
             self.config_history.clear()
-            
+
             self.is_initialized = False
             self.logger.info("✅ Configuration Service stopped successfully")
-            
+
         except Exception as e:
             self.logger.error(f"Error stopping configuration service: {e}")
 
 
 # Global configuration service instance
-config_service: Optional[ConfigurationService] = None
+config_service: ConfigurationService | None = None
 
 
 @handle_errors(
@@ -658,7 +698,7 @@ config_service: Optional[ConfigurationService] = None
 )
 async def setup_configuration_service(
     config: dict[str, Any] | None = None,
-) -> Optional[ConfigurationService]:
+) -> ConfigurationService | None:
     """
     Setup global configuration service.
 

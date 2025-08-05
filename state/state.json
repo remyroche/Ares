@@ -1,11 +1,11 @@
 {
-  "sr_levels": null,
+  "sr_levels": [],
   "history": [
     {
-      "timestamp": "2025-08-04T22:00:09.401890+00:00",
+      "timestamp": "2025-08-05T21:19:40.646400+00:00",
       "action": "set",
       "key": "sr_levels",
-      "value": null
+      "value": []
     }
   ]
 }

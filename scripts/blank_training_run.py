@@ -212,23 +212,32 @@ async def main():
             # Add quality validation checks
             logger.info("🔍 Running data quality validation...")
             print("🔍 Running data quality validation...")
-            
-            from src.training.training_validation_config import validate_data_format, validate_data_quality
-            
+
+            from src.training.training_validation_config import (
+                validate_data_format,
+                validate_data_quality,
+            )
+
             # Load additional data for validation
-            agg_trades_file = f"data_cache/aggtrades_{args.exchange}_{args.symbol}_consolidated.csv"
-            futures_file = f"data_cache/futures_{args.exchange}_{args.symbol}_consolidated.csv"
-            
+            agg_trades_file = (
+                f"data_cache/aggtrades_{args.exchange}_{args.symbol}_consolidated.csv"
+            )
+            futures_file = (
+                f"data_cache/futures_{args.exchange}_{args.symbol}_consolidated.csv"
+            )
+
             validation_data = {"klines": klines_df}
-            
+
             # Load aggregated trades if available
             if os.path.exists(agg_trades_file):
                 agg_trades_df = pd.read_csv(agg_trades_file)
                 validation_data["agg_trades"] = agg_trades_df
                 logger.info(f"📊 Loaded agg trades: {len(agg_trades_df)} rows")
             else:
-                logger.warning("⚠️  Aggregated trades file not found, skipping validation")
-            
+                logger.warning(
+                    "⚠️  Aggregated trades file not found, skipping validation",
+                )
+
             # Load futures data if available
             if os.path.exists(futures_file):
                 futures_df = pd.read_csv(futures_file)
@@ -236,7 +245,7 @@ async def main():
                 logger.info(f"📊 Loaded futures: {len(futures_df)} rows")
             else:
                 logger.warning("⚠️  Futures file not found, skipping validation")
-            
+
             # Validate data format
             format_valid, format_errors = validate_data_format(validation_data)
             if not format_valid:
@@ -245,7 +254,7 @@ async def main():
                 raise Exception("Data format validation failed")
             logger.info("✅ Data format validation passed")
             print("✅ Data format validation passed")
-            
+
             # Validate data quality
             quality_valid, quality_errors = validate_data_quality(validation_data)
             if not quality_valid:
@@ -257,7 +266,9 @@ async def main():
 
             # Create the pickle file in the expected format
             pickle_data = {"klines": klines_df}
-            pickle_file = f"data/training/{args.exchange}_{args.symbol}_collected_data.pkl"
+            pickle_file = (
+                f"data/training/{args.exchange}_{args.symbol}_collected_data.pkl"
+            )
             os.makedirs("data/training", exist_ok=True)
 
             with open(pickle_file, "wb") as f:

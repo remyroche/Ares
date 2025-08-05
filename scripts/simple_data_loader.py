@@ -37,9 +37,10 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
 
         # Step 2: Run consolidation to create pkl files
         logger.info("🔄 Step 2: Consolidating data into pkl files...")
-        
+
         # Get configuration for data consolidation
         from src.config import CONFIG
+
         lookback_days = CONFIG.get("lookback_days", 365)
         min_data_points = CONFIG.get("min_data_points", "1000")
         data_dir = CONFIG.get("data_dir", "data")
@@ -76,11 +77,14 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
 
         if consolidation_return_code == 0:
             logger.info("✅ Data consolidation completed successfully")
-            logger.info(f"📁 Consolidated data saved to: data/{exchange}_{symbol}_historical_data.pkl")
+            logger.info(
+                f"📁 Consolidated data saved to: data/{exchange}_{symbol}_historical_data.pkl",
+            )
             return True
-        else:
-            logger.error(f"❌ Data consolidation failed with return code: {consolidation_return_code}")
-            return False
+        logger.error(
+            f"❌ Data consolidation failed with return code: {consolidation_return_code}",
+        )
+        return False
 
     except Exception as e:
         logger.error(f"❌ Error during data loading: {e}")

@@ -7,6 +7,7 @@ import time
 import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -22,6 +23,348 @@ from src.utils.error_handler import (
     handle_errors,
 )
 from src.utils.logger import setup_logging, system_logger
+
+
+class DataCollectionStep:
+    """Step 1: Data Collection using existing run_step function."""
+
+    def __init__(self, config: dict[str, Any]):
+        self.config = config
+        self.logger = system_logger.getChild("DataCollectionStep")
+
+    async def initialize(self) -> None:
+        """Initialize the data collection step."""
+        self.logger.info("Initializing Data Collection Step...")
+        self.logger.info("Data Collection Step initialized successfully")
+
+    async def execute(
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Execute data collection.
+
+        Args:
+            training_input: Training input parameters
+            pipeline_state: Current pipeline state
+
+        Returns:
+            Dict containing data collection results
+        """
+        self.logger.info("🔄 Executing Data Collection...")
+
+        # Extract parameters
+        symbol = training_input.get("symbol", "ETHUSDT")
+        exchange = training_input.get("exchange", "BINANCE")
+        data_dir = training_input.get("data_dir", "data/training")
+        lookback_days = training_input.get("lookback_days", 7)
+
+        # Execute data collection using existing run_step function
+        result = await run_step(
+            symbol=symbol,
+            exchange_name=exchange,
+            min_data_points="10000",
+            data_dir=data_dir,
+            lookback_days=lookback_days,
+        )
+
+        if not result:
+            raise Exception("Data collection failed")
+
+        self.logger.info("✅ Data collection completed successfully")
+
+        return {
+            "data_collection": result,
+            "duration": 0.0,  # Will be calculated in actual implementation
+            "status": "SUCCESS",
+        }
+
+
+def _get_source_files(pattern: str, lookback_days: int | None = None) -> list[str]:
+    """Get source files matching the pattern, optionally filtered by lookback days."""
+    logger = system_logger.getChild("ConsolidateFiles")
+    
+    source_files = sorted(glob.glob(os.path.join("data_cache", pattern)))
+    print(f"📋 Found {len(source_files)} files matching pattern")
+    logger.info(f"📋 Found {len(source_files)} files matching pattern")
+    
+    if lookback_days is not None:
+        from datetime import datetime, timedelta
+        import re
+        
+        cutoff_date = datetime.now() - timedelta(days=lookback_days)
+        print(f"📅 Filtering files to last {lookback_days} days (since {cutoff_date.strftime('%Y-%m-%d')})")
+        logger.info(f"📅 Filtering files to last {lookback_days} days (since {cutoff_date.strftime('%Y-%m-%d')})")
+        
+        filtered_files = []
+        for file in source_files:
+            filename = os.path.basename(file)
+            try:
+                # Look for date patterns in filename (YYYY-MM-DD or YYYYMMDD)
+                date_match = re.search(r"(\d{4})-(\d{2})-(\d{2})", filename)
+                if date_match:
+                    file_date = datetime.strptime(date_match.group(0), "%Y-%m-%d")
+                else:
+                    # Try YYYYMMDD format
+                    date_match = re.search(r"(\d{4})(\d{2})(\d{2})", filename)
+                    if date_match:
+                        file_date = datetime.strptime(date_match.group(0), "%Y%m%d")
+                    else:
+                        # If no date found, include the file (conservative approach)
+                        file_date = datetime.now()
+                
+                if file_date >= cutoff_date:
+                    filtered_files.append(file)
+                else:
+                    print(f"   ⏭️ Skipping {filename} (date: {file_date.strftime('%Y-%m-%d')})")
+                    logger.info(f"   ⏭️ Skipping {filename} (date: {file_date.strftime('%Y-%m-%d')})")
+            except Exception as e:
+                # If date parsing fails, include the file (conservative approach)
+                print(f"   ⚠️ Could not parse date from {filename}, including file")
+                logger.warning(f"   ⚠️ Could not parse date from {filename}, including file: {e}")
+                filtered_files.append(file)
+        
+        source_files = filtered_files
+        print(f"📋 After filtering: {len(source_files)} files within {lookback_days} days")
+        logger.info(f"📋 After filtering: {len(source_files)} files within {lookback_days} days")
+    
+    return source_files
+
+
+def _validate_file(file_path: str, expected_columns: list[str] | None = None) -> bool:
+    """Validate a single file for data integrity and expected columns."""
+    logger = system_logger.getChild("ConsolidateFiles")
+    filename = os.path.basename(file_path)
+    
+    try:
+        # Read a small sample to validate the file
+        logger.info(f"   📖 Reading sample from {filename}...")
+        sample_df = pd.read_csv(file_path, nrows=5)
+        logger.info(f"   📊 Sample shape: {sample_df.shape}")
+        logger.info(f"   📋 Sample columns: {list(sample_df.columns)}")
+        
+        # Check if file has expected columns
+        if expected_columns:
+            missing_cols = set(expected_columns) - set(sample_df.columns)
+            if missing_cols:
+                logger.warning(f"   ❌ File {filename} missing columns: {missing_cols}")
+                return False
+            logger.info("   ✅ All expected columns present")
+        
+        # Check for reasonable price data (for klines files)
+        if "close" in sample_df.columns or "Close" in sample_df.columns:
+            close_col = "close" if "close" in sample_df.columns else "Close"
+            logger.info(f"   💰 Checking price data in column: {close_col}")
+            prices = pd.to_numeric(sample_df[close_col], errors="coerce")
+            
+            if prices.isna().all():
+                logger.warning(f"   ❌ File {filename} has invalid price data (all NaN)")
+                return False
+            
+            # Check for reasonable price range (for ETH, should be between $100 and $50,000)
+            valid_prices = prices.dropna()
+            if len(valid_prices) > 0:
+                min_price = valid_prices.min()
+                max_price = valid_prices.max()
+                logger.info(f"   📈 Price range: ${min_price:.2f} to ${max_price:.2f}")
+                if min_price < 100 or max_price > 50000:
+                    logger.warning(f"   ⚠️ File {filename} has unreasonable prices: ${min_price:.2f} to ${max_price:.2f}")
+                    return False
+                logger.info("   ✅ Price range is reasonable")
+            else:
+                logger.warning(f"   ❌ No valid prices found in {filename}")
+                return False
+        
+        logger.info(f"   ✅ Validated file: {filename}")
+        return True
+        
+    except Exception as e:
+        logger.warning(f"   ❌ Invalid file {filename}: {e}")
+        logger.warning(f"   🔍 Exception type: {type(e).__name__}")
+        return False
+
+
+def _validate_source_files(source_files: list[str], expected_columns: list[str] | None = None) -> list[str]:
+    """Validate all source files and return list of valid files."""
+    logger = system_logger.getChild("ConsolidateFiles")
+    
+    logger.info(f"🔍 Validating {len(source_files)} source files...")
+    logger.info(f"📋 Expected columns: {expected_columns}")
+    
+    valid_files = []
+    for i, file in enumerate(source_files, 1):
+        logger.info(f"🔍 [{i}/{len(source_files)}] Validating file: {os.path.basename(file)}")
+        if _validate_file(file, expected_columns):
+            valid_files.append(file)
+    
+    logger.info(f"Found {len(valid_files)} valid files out of {len(source_files)} total files")
+    return valid_files
+
+
+def _load_existing_data(consolidated_filepath: str, index_col: str, unique_col: str, dtype: dict | None = None) -> tuple[pd.DataFrame, set]:
+    """Load existing consolidated data and return DataFrame and existing IDs."""
+    logger = system_logger.getChild("ConsolidateFiles")
+    
+    existing_df = pd.DataFrame()
+    existing_ids = set()
+    
+    if os.path.exists(consolidated_filepath):
+        try:
+            logger.info(f"Loading existing consolidated file: {consolidated_filepath}")
+            existing_df = pd.read_csv(consolidated_filepath, dtype=dtype, low_memory=False)
+            
+            if not existing_df.empty and index_col in existing_df.columns:
+                # Robustly convert timestamp column, handling mixed (string/unix) formats
+                converted_datetimes = pd.to_datetime(existing_df[index_col], errors="coerce")
+                failed_indices = converted_datetimes.isna() & existing_df[index_col].notna()
+                
+                if failed_indices.any():
+                    logger.warning(f"Found {failed_indices.sum()} non-standard timestamps in consolidated file. Attempting numeric conversion.")
+                    numeric_part = pd.to_datetime(existing_df.loc[failed_indices, index_col], unit="ms", errors="coerce")
+                    converted_datetimes.loc[failed_indices] = numeric_part
+                
+                existing_df[index_col] = converted_datetimes
+                existing_df.dropna(subset=[index_col], inplace=True)
+            
+            if not existing_df.empty and unique_col in existing_df.columns:
+                existing_ids = set(existing_df[unique_col].unique())
+                logger.info(f"Found {len(existing_ids)} existing unique records.")
+        except Exception as e:
+            logger.warning(f"Could not read existing file {consolidated_filepath}: {e}. Rebuilding from scratch.")
+            existing_df, existing_ids = pd.DataFrame(), set()
+    
+    return existing_df, existing_ids
+
+
+def _process_single_file(file_path: str, index_col: str, unique_col: str, dtype: dict | None = None) -> pd.DataFrame | None:
+    """Process a single file and return DataFrame if valid."""
+    logger = system_logger.getChild("ConsolidateFiles")
+    filename = os.path.basename(file_path)
+    
+    if os.path.getsize(file_path) == 0:
+        logger.warning(f"      ⚠️ File is empty: {filename}")
+        return None
+    
+    try:
+        logger.info(f"      📊 File size: {os.path.getsize(file_path):,} bytes")
+        logger.info("      📖 Reading CSV file...")
+        df = pd.read_csv(file_path, dtype=dtype, on_bad_lines="warn")
+        logger.info("      ✅ CSV read successfully")
+        logger.info(f"      📊 DataFrame shape: {df.shape}")
+        
+        # Ensure timestamp column is in datetime format for processing
+        if index_col in df.columns and not pd.api.types.is_datetime64_any_dtype(df[index_col]):
+            logger.info(f"      🕐 Converting timestamp column '{index_col}'...")
+            df[index_col] = pd.to_datetime(df[index_col], errors="coerce")
+            
+            # Check for invalid timestamps and remove them
+            invalid_timestamps = df[index_col].isna().sum()
+            if invalid_timestamps > 0:
+                logger.warning(f"      ⚠️ Found {invalid_timestamps} rows with invalid timestamps - removing them")
+                df = df.dropna(subset=[index_col])
+            
+            # Remove duplicates
+            duplicates_before = df[index_col].duplicated().sum()
+            if duplicates_before > 0:
+                logger.info(f"      🧹 Removing {duplicates_before} duplicate timestamps...")
+                df.drop_duplicates(subset=[index_col], keep="last", inplace=True)
+            
+            logger.info("      ✅ Timestamp processing completed")
+        
+        # Final check for the unique column
+        if unique_col in df.columns and not df.empty:
+            logger.info("      ✅ File is valid and ready for processing")
+            return df
+        # Special handling for aggtrades files
+        elif "aggtrades" in filename.lower():
+            if "timestamp" not in df.columns and not df.empty:
+                possible_timestamp_cols = ["time", "date", "datetime", "T", "timestamp"]
+                for col in possible_timestamp_cols:
+                    if col in df.columns:
+                        logger.info(f"🔄 Mapping '{col}' to 'timestamp' for aggtrades file")
+                        df = df.rename(columns={col: "timestamp"})
+                        logger.info("✅ File is valid and ready for processing after column mapping")
+                        return df
+                logger.warning(f"❌ Skipping file {filename}: missing 'timestamp' or empty.")
+            else:
+                logger.warning(f"❌ Skipping file {filename}: missing '{unique_col}' or empty.")
+        else:
+            logger.warning(f"❌ Skipping file {filename}: missing '{unique_col}' or empty.")
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"      ❌ Could not read or process file {filename}: {e}. Skipping.")
+        logger.warning(f"         Exception type: {type(e).__name__}")
+        return None
+
+
+def _process_file_chunk(chunk_files: list[str], index_col: str, unique_col: str, 
+                       existing_ids: set, dtype: dict | None = None) -> pd.DataFrame:
+    """Process a chunk of files and return new data DataFrame."""
+    logger = system_logger.getChild("ConsolidateFiles")
+    
+    valid_df_list = []
+    logger.info(f"   📖 Reading {len(chunk_files)} files in this chunk...")
+    
+    for j, file_path in enumerate(chunk_files, 1):
+        logger.info(f"   📄 [{j}/{len(chunk_files)}] Processing: {os.path.basename(file_path)}")
+        df = _process_single_file(file_path, index_col, unique_col, dtype)
+        if df is not None:
+            valid_df_list.append(df)
+    
+    if not valid_df_list:
+        logger.warning(f"   ❌ No valid dataframes found in chunk starting with {os.path.basename(chunk_files[0])}.")
+        return pd.DataFrame()
+    
+    logger.info(f"   🔄 Concatenating {len(valid_df_list)} valid dataframes...")
+    chunk_df = pd.concat(valid_df_list, ignore_index=True)
+    logger.info(f"   📊 Combined chunk shape: {chunk_df.shape}")
+    
+    # Remove duplicates
+    logger.info(f"   🧹 Removing duplicates based on '{unique_col}'...")
+    duplicates_before = chunk_df[unique_col].duplicated().sum()
+    chunk_df.drop_duplicates(subset=[unique_col], keep="last", inplace=True)
+    duplicates_after = chunk_df[unique_col].duplicated().sum()
+    logger.info(f"   ✅ Removed {duplicates_before - duplicates_after} duplicates")
+    
+    # Filter out records we already have
+    logger.info("   🔍 Filtering out existing records...")
+    new_records_mask = ~chunk_df[unique_col].isin(existing_ids)
+    new_data = chunk_df[new_records_mask]
+    logger.info(f"   📊 New records found: {len(new_data)} out of {len(chunk_df)}")
+    
+    return new_data
+
+
+def _save_consolidated_data(combined_df: pd.DataFrame, consolidated_filepath: str, index_col: str, unique_col: str) -> None:
+    """Save the consolidated data with final processing."""
+    logger = system_logger.getChild("ConsolidateFiles")
+    
+    logger.info("🔄 Final processing steps...")
+    logger.info(f"   📊 Combined DataFrame shape before final processing: {combined_df.shape}")
+    
+    # Sort by index column
+    logger.info(f"   📅 Sorting by '{index_col}'...")
+    combined_df.sort_values(by=index_col, inplace=True)
+    logger.info("   ✅ Sorting completed")
+    
+    # Final duplicate removal
+    logger.info("   🧹 Final duplicate removal...")
+    duplicates_before = combined_df[unique_col].duplicated().sum()
+    combined_df.drop_duplicates(subset=[unique_col], keep="last", inplace=True)
+    duplicates_after = combined_df[unique_col].duplicated().sum()
+    logger.info(f"   ✅ Removed {duplicates_before - duplicates_after} final duplicates")
+    
+    # Save to file
+    logger.info(f"   💾 Saving to {consolidated_filepath}...")
+    combined_df.to_csv(consolidated_filepath, index=False)
+    file_size = os.path.getsize(consolidated_filepath)
+    logger.info(f"✅ Saved consolidated file with {len(combined_df)} rows to {consolidated_filepath}")
+    logger.info(f"📊 File size: {file_size:,} bytes")
+    logger.info(f"📈 Data range: {combined_df[index_col].min()} to {combined_df[index_col].max()}")
+    logger.info(f"📋 Final columns: {list(combined_df.columns)}")
 
 
 def consolidate_files(
@@ -44,59 +387,17 @@ def consolidate_files(
     """
     logger = system_logger.getChild("ConsolidateFiles")
     print(f"🔄 Starting consolidation for pattern: {pattern}")
-    print(f"📁 Looking for files in data_cache directory...")
+    print("📁 Looking for files in data_cache directory...")
     logger.info(f"🔄 Starting consolidation for pattern: {pattern}")
-    logger.info(f"📁 Looking for files in data_cache directory...")
+    logger.info("📁 Looking for files in data_cache directory...")
     
-    # Get all source files
-    source_files = sorted(glob.glob(os.path.join("data_cache", pattern)))
-    print(f"📋 Found {len(source_files)} files matching pattern")
-    logger.info(f"📋 Found {len(source_files)} files matching pattern")
+    # Get source files
+    source_files = _get_source_files(pattern, lookback_days)
     
-    # Filter files based on lookback_days if specified
-    if lookback_days is not None:
-        from datetime import datetime, timedelta
-        cutoff_date = datetime.now() - timedelta(days=lookback_days)
-        print(f"📅 Filtering files to last {lookback_days} days (since {cutoff_date.strftime('%Y-%m-%d')})")
-        logger.info(f"📅 Filtering files to last {lookback_days} days (since {cutoff_date.strftime('%Y-%m-%d')})")
-        
-        filtered_files = []
-        for file in source_files:
-            # Try to extract date from filename
-            filename = os.path.basename(file)
-            try:
-                # Look for date patterns in filename (YYYY-MM-DD or YYYYMMDD)
-                import re
-                date_match = re.search(r'(\d{4})-(\d{2})-(\d{2})', filename)
-                if date_match:
-                    file_date = datetime.strptime(date_match.group(0), '%Y-%m-%d')
-                else:
-                    # Try YYYYMMDD format
-                    date_match = re.search(r'(\d{4})(\d{2})(\d{2})', filename)
-                    if date_match:
-                        file_date = datetime.strptime(date_match.group(0), '%Y%m%d')
-                    else:
-                        # If no date found, include the file (conservative approach)
-                        file_date = datetime.now()
-                
-                if file_date >= cutoff_date:
-                    filtered_files.append(file)
-                else:
-                    print(f"   ⏭️ Skipping {filename} (date: {file_date.strftime('%Y-%m-%d')})")
-                    logger.info(f"   ⏭️ Skipping {filename} (date: {file_date.strftime('%Y-%m-%d')})")
-            except Exception as e:
-                # If date parsing fails, include the file (conservative approach)
-                print(f"   ⚠️ Could not parse date from {filename}, including file")
-                logger.warning(f"   ⚠️ Could not parse date from {filename}, including file: {e}")
-                filtered_files.append(file)
-        
-        source_files = filtered_files
-        print(f"📋 After filtering: {len(source_files)} files within {lookback_days} days")
-        logger.info(f"📋 After filtering: {len(source_files)} files within {lookback_days} days")
-    
-    print(f"📁 Source files:")
-    logger.info(f"📁 Source files:")
-    for i, file in enumerate(source_files[:5], 1):  # Show first 5 files
+    # Log source files info
+    print("📁 Source files:")
+    logger.info("📁 Source files:")
+    for i, file in enumerate(source_files[:5], 1):
         print(f"   {i}. {os.path.basename(file)} ({os.path.getsize(file):,} bytes)")
         logger.info(f"   {i}. {os.path.basename(file)} ({os.path.getsize(file):,} bytes)")
     if len(source_files) > 5:
@@ -106,318 +407,71 @@ def consolidate_files(
     unique_col = sort_col if sort_col else index_col
     logger.info(f"🔑 Using unique column: {unique_col}")
     logger.info(f"📊 Expected columns: {expected_columns}")
-
+    
     if not source_files:
         logger.warning(f"No source files found for pattern: {pattern}")
         print(f"[ConsolidateFiles] No source files found for pattern: {pattern}")
         if os.path.exists(consolidated_filepath):
-            logger.info(
-                f"Returning data from existing consolidated file: {consolidated_filepath}",
-            )
-            print(
-                f"[ConsolidateFiles] Returning data from existing consolidated file: {consolidated_filepath}",
-            )
+            logger.info(f"Returning data from existing consolidated file: {consolidated_filepath}")
+            print(f"[ConsolidateFiles] Returning data from existing consolidated file: {consolidated_filepath}")
             return pd.read_csv(consolidated_filepath)
         return pd.DataFrame()
-
-    # Validate source files before processing
-    logger.info(f"🔍 Validating {len(source_files)} source files...")
-    logger.info(f"📋 Expected columns: {expected_columns}")
-    valid_files = []
-    for i, file in enumerate(source_files, 1):
-        logger.info(f"🔍 [{i}/{len(source_files)}] Validating file: {os.path.basename(file)}")
-        try:
-            # Read a small sample to validate the file
-            logger.info(f"   📖 Reading sample from {os.path.basename(file)}...")
-            sample_df = pd.read_csv(file, nrows=5)
-            logger.info(f"   📊 Sample shape: {sample_df.shape}")
-            logger.info(f"   📋 Sample columns: {list(sample_df.columns)}")
-            logger.info(f"   📄 Sample data types: {sample_df.dtypes.to_dict()}")
-            
-            # Check if file has expected columns
-            if expected_columns:
-                missing_cols = set(expected_columns) - set(sample_df.columns)
-                if missing_cols:
-                    logger.warning(f"   ❌ File {os.path.basename(file)} missing columns: {missing_cols}")
-                    continue
-                else:
-                    logger.info(f"   ✅ All expected columns present")
-            
-            # Check for reasonable price data (for klines files)
-            if "close" in sample_df.columns or "Close" in sample_df.columns:
-                close_col = "close" if "close" in sample_df.columns else "Close"
-                logger.info(f"   💰 Checking price data in column: {close_col}")
-                prices = pd.to_numeric(sample_df[close_col], errors='coerce')
-                logger.info(f"   📊 Price sample: {prices.tolist()}")
-                
-                if prices.isna().all():
-                    logger.warning(f"   ❌ File {os.path.basename(file)} has invalid price data (all NaN)")
-                    continue
-                
-                # Check for reasonable price range (for ETH, should be between $100 and $50,000)
-                valid_prices = prices.dropna()
-                if len(valid_prices) > 0:
-                    min_price = valid_prices.min()
-                    max_price = valid_prices.max()
-                    logger.info(f"   📈 Price range: ${min_price:.2f} to ${max_price:.2f}")
-                    if min_price < 100 or max_price > 50000:
-                        logger.warning(f"   ⚠️ File {os.path.basename(file)} has unreasonable prices: ${min_price:.2f} to ${max_price:.2f}")
-                        continue
-                    else:
-                        logger.info(f"   ✅ Price range is reasonable")
-                else:
-                    logger.warning(f"   ❌ No valid prices found in {os.path.basename(file)}")
-                    continue
-            
-            valid_files.append(file)
-            logger.info(f"   ✅ Validated file: {os.path.basename(file)}")
-            
-        except Exception as e:
-            logger.warning(f"   ❌ Invalid file {os.path.basename(file)}: {e}")
-            logger.warning(f"   🔍 Exception type: {type(e).__name__}")
-            continue
+    
+    # Validate source files
+    valid_files = _validate_source_files(source_files, expected_columns)
     
     if not valid_files:
         logger.error("No valid source files found!")
         return pd.DataFrame()
     
-    logger.info(f"Found {len(valid_files)} valid files out of {len(source_files)} total files")
-
-    # Load existing data to determine what's new
-    existing_df = pd.DataFrame()
-    existing_ids = set()
-    if os.path.exists(consolidated_filepath):
-        try:
-            logger.info(f"Loading existing consolidated file: {consolidated_filepath}")
-            existing_df = pd.read_csv(
-                consolidated_filepath,
-                dtype=dtype,
-                low_memory=False,
-            )
-
-            if not existing_df.empty and index_col in existing_df.columns:
-                # Robustly convert timestamp column, handling mixed (string/unix) formats
-                # from previous runs, which can cause errors.
-                converted_datetimes = pd.to_datetime(
-                    existing_df[index_col],
-                    errors="coerce",
-                )
-                failed_indices = (
-                    converted_datetimes.isna() & existing_df[index_col].notna()
-                )
-
-                if failed_indices.any():
-                    logger.warning(
-                        f"Found {failed_indices.sum()} non-standard timestamps in consolidated file. Attempting numeric conversion.",
-                    )
-                    numeric_part = pd.to_datetime(
-                        existing_df.loc[failed_indices, index_col],
-                        unit="ms",
-                        errors="coerce",
-                    )
-                    converted_datetimes.loc[failed_indices] = numeric_part
-
-                existing_df[index_col] = converted_datetimes
-                existing_df.dropna(subset=[index_col], inplace=True)
-
-            if not existing_df.empty and unique_col in existing_df.columns:
-                # Get the set of unique IDs that we already have.
-                existing_ids = set(existing_df[unique_col].unique())
-                logger.info(f"Found {len(existing_ids)} existing unique records.")
-        except Exception as e:
-            logger.warning(
-                f"Could not read existing file {consolidated_filepath}: {e}. Rebuilding from scratch.",
-            )
-            existing_df, existing_ids = pd.DataFrame(), set()
-
-    # Process source files in chunks, adding only new data.
+    # Load existing data
+    existing_df, existing_ids = _load_existing_data(consolidated_filepath, index_col, unique_col, dtype)
+    
+    # Process files in chunks
     new_data_chunks = []
-    chunk_size = 200  # Process 200 files at a time
+    chunk_size = 200
     logger.info(f"🔄 Processing {len(valid_files)} valid files in chunks of {chunk_size}")
     logger.info(f"📊 Total chunks: {(len(valid_files) + chunk_size - 1)//chunk_size}")
     
     for i in range(0, len(valid_files), chunk_size):
-        chunk_of_files = valid_files[i : i + chunk_size]
-        chunk_num = i//chunk_size + 1
-        total_chunks = (len(valid_files) + chunk_size - 1)//chunk_size
-        logger.info(
-            f"📦 Processing chunk {chunk_num}/{total_chunks} for pattern '{pattern}'",
-        )
-        logger.info(f"   📁 Files in this chunk: {len(chunk_of_files)}")
-        logger.info(f"   📋 Sample files: {[os.path.basename(f) for f in chunk_of_files[:3]]}")
-
-        valid_df_list = []
-        logger.info(f"   📖 Reading {len(chunk_of_files)} files in this chunk...")
+        chunk_files = valid_files[i : i + chunk_size]
+        chunk_num = i // chunk_size + 1
+        total_chunks = (len(valid_files) + chunk_size - 1) // chunk_size
+        logger.info(f"📦 Processing chunk {chunk_num}/{total_chunks} for pattern '{pattern}'")
+        logger.info(f"   📁 Files in this chunk: {len(chunk_files)}")
+        logger.info(f"   📋 Sample files: {[os.path.basename(f) for f in chunk_files[:3]]}")
         
-        for j, f in enumerate(chunk_of_files, 1):
-            logger.info(f"   📄 [{j}/{len(chunk_of_files)}] Processing: {os.path.basename(f)}")
-            
-            if os.path.getsize(f) > 0:
-                logger.info(f"      📊 File size: {os.path.getsize(f):,} bytes")
-                try:
-                    logger.info(f"      📖 Reading CSV file...")
-                    df = pd.read_csv(f, dtype=dtype, on_bad_lines="warn")
-                    logger.info(f"      ✅ CSV read successfully")
-                    logger.info(f"      📊 DataFrame shape: {df.shape}")
-                    logger.info(f"      📋 DataFrame columns: {list(df.columns)}")
-                    logger.info(f"      📄 Data types: {df.dtypes.to_dict()}")
-
-                    # Ensure timestamp column is in datetime format for processing
-                    if (
-                        index_col in df.columns
-                        and not pd.api.types.is_datetime64_any_dtype(df[index_col])
-                    ):
-                        logger.info(f"      🕐 Converting timestamp column '{index_col}'...")
-                        df[index_col] = pd.to_datetime(df[index_col], errors="coerce")
-                        logger.info(f"      📊 Timestamp conversion completed")
-                        
-                        # Check for invalid timestamps and remove them
-                        invalid_timestamps = df[index_col].isna().sum()
-                        if invalid_timestamps > 0:
-                            logger.warning(f"      ⚠️ Found {invalid_timestamps} rows with invalid timestamps - removing them")
-                            df = df.dropna(subset=[index_col])
-                            logger.info(f"      ✅ Removed {invalid_timestamps} rows with invalid timestamps")
-                        else:
-                            logger.info(f"      ✅ All timestamps are valid")
-                        
-                        # Remove duplicates
-                        duplicates_before = df[index_col].duplicated().sum()
-                        if duplicates_before > 0:
-                            logger.info(f"      🧹 Removing {duplicates_before} duplicate timestamps...")
-                            df.drop_duplicates(subset=[index_col], keep="last", inplace=True)
-                            logger.info(f"      ✅ Duplicate removal completed")
-                        else:
-                            logger.info(f"      ✅ No duplicate timestamps found")
-                        
-                        logger.info(f"      ✅ Timestamp processing completed")
-
-                    # Final check for the unique column
-                    if unique_col in df.columns and not df.empty:
-                        logger.info(f"      ✅ File is valid and ready for processing")
-                        valid_df_list.append(df)
-                    else:
-                        # Special handling for aggtrades files that might have different column names
-                        if "aggtrades" in os.path.basename(f).lower():
-                            # Check if this is an aggtrades file and try to map columns
-                            if "timestamp" not in df.columns and not df.empty:
-                                # Try to find alternative timestamp columns
-                                possible_timestamp_cols = ["time", "date", "datetime", "T", "timestamp"]
-                                found_timestamp_col = None
-                                for col in possible_timestamp_cols:
-                                    if col in df.columns:
-                                        found_timestamp_col = col
-                                        break
-                                
-                                if found_timestamp_col:
-                                    logger.info(f"🔄 Mapping '{found_timestamp_col}' to 'timestamp' for aggtrades file")
-                                    df = df.rename(columns={found_timestamp_col: "timestamp"})
-                                    # Update unique_col to use the mapped timestamp
-                                    unique_col = "timestamp"
-                                    logger.info(f"✅ File is valid and ready for processing after column mapping")
-                                    valid_df_list.append(df)
-                                else:
-                                    logger.warning(
-                                        f"❌ Skipping file {os.path.basename(f)}: missing 'timestamp' or empty.",
-                                    )
-                                    logger.warning(f"         Available columns: {list(df.columns)}")
-                            else:
-                                logger.warning(
-                                    f"❌ Skipping file {os.path.basename(f)}: missing '{unique_col}' or empty.",
-                                )
-                                if unique_col not in df.columns:
-                                    logger.warning(f"Missing column: {unique_col}")
-                                if df.empty:
-                                    logger.warning(f"DataFrame is empty")
-                        else:
-                            logger.warning(
-                                f"❌ Skipping file {os.path.basename(f)}: missing '{unique_col}' or empty.",
-                            )
-                            if unique_col not in df.columns:
-                                logger.warning(f"Missing column: {unique_col}")
-                            if df.empty:
-                                logger.warning(f"DataFrame is empty")
-                
-                except Exception as e:
-                    logger.warning(
-                        f"      ❌ Could not read or process file {os.path.basename(f)}: {e}. Skipping.",
-                    )
-                    logger.warning(f"         Exception type: {type(e).__name__}")
-            else:
-                logger.warning(f"      ⚠️ File is empty: {os.path.basename(f)}")
-
-        if not valid_df_list:
-            logger.warning(
-                f"   ❌ No valid dataframes found in chunk starting with {os.path.basename(chunk_of_files[0])}.",
-            )
-            continue
-
-        logger.info(f"   🔄 Concatenating {len(valid_df_list)} valid dataframes...")
-        chunk_df = pd.concat(valid_df_list, ignore_index=True)
-        logger.info(f"   📊 Combined chunk shape: {chunk_df.shape}")
+        new_data = _process_file_chunk(chunk_files, index_col, unique_col, existing_ids, dtype)
         
-        logger.info(f"   🧹 Removing duplicates based on '{unique_col}'...")
-        duplicates_before = chunk_df[unique_col].duplicated().sum()
-        chunk_df.drop_duplicates(subset=[unique_col], keep="last", inplace=True)
-        duplicates_after = chunk_df[unique_col].duplicated().sum()
-        logger.info(f"   ✅ Removed {duplicates_before - duplicates_after} duplicates")
-
-        # Filter out records we already have in the consolidated file
-        logger.info(f"   🔍 Filtering out existing records...")
-        new_records_mask = ~chunk_df[unique_col].isin(existing_ids)
-        new_data = chunk_df[new_records_mask]
-        logger.info(f"   📊 New records found: {len(new_data)} out of {len(chunk_df)}")
-
         if not new_data.empty:
             logger.info(f"   ✅ Adding {len(new_data)} new records to processing queue")
             new_data_chunks.append(new_data)
             existing_ids.update(new_data[unique_col])
         else:
-            logger.info(f"   ℹ️ No new records in this chunk")
-
+            logger.info("   ℹ️ No new records in this chunk")
+    
+    # Combine new data with existing data
     if new_data_chunks:
         logger.info(f"🔄 Concatenating {len(new_data_chunks)} data chunks...")
         new_data_df = pd.concat(new_data_chunks, ignore_index=True)
-        logger.info(
-            f"📊 Found {len(new_data_df)} new records to add to the consolidated file.",
-        )
+        logger.info(f"📊 Found {len(new_data_df)} new records to add to the consolidated file.")
         logger.info(f"📋 New data columns: {list(new_data_df.columns)}")
         logger.info(f"📊 New data shape: {new_data_df.shape}")
         
-        logger.info(f"🔄 Combining with existing data...")
+        logger.info("🔄 Combining with existing data...")
         combined_df = pd.concat([existing_df, new_data_df], ignore_index=True)
         logger.info(f"📊 Combined shape: {combined_df.shape}")
     else:
         logger.info("ℹ️ No new records found in source files.")
         combined_df = existing_df
-
+    
     if combined_df.empty:
         logger.warning(f"❌ No data found for pattern '{pattern}'.")
         return pd.DataFrame()
-
-    # Final sort, safeguard deduplication, and save
-    logger.info(f"🔄 Final processing steps...")
-    logger.info(f"   📊 Combined DataFrame shape before final processing: {combined_df.shape}")
     
-    # Timestamps are converted incrementally, so the combined column should be datetime.
-    logger.info(f"   📅 Sorting by '{index_col}'...")
-    combined_df.sort_values(by=index_col, inplace=True)
-    logger.info(f"   ✅ Sorting completed")
+    # Save consolidated data
+    _save_consolidated_data(combined_df, consolidated_filepath, index_col, unique_col)
     
-    logger.info(f"   🧹 Final duplicate removal...")
-    duplicates_before = combined_df[unique_col].duplicated().sum()
-    combined_df.drop_duplicates(subset=[unique_col], keep="last", inplace=True)
-    duplicates_after = combined_df[unique_col].duplicated().sum()
-    logger.info(f"   ✅ Removed {duplicates_before - duplicates_after} final duplicates")
-    
-    logger.info(f"   💾 Saving to {consolidated_filepath}...")
-    combined_df.to_csv(consolidated_filepath, index=False)
-    file_size = os.path.getsize(consolidated_filepath)
-    logger.info(
-        f"✅ Saved consolidated file with {len(combined_df)} rows to {consolidated_filepath}",
-    )
-    logger.info(f"📊 File size: {file_size:,} bytes")
-    logger.info(f"📈 Data range: {combined_df[index_col].min()} to {combined_df[index_col].max()}")
-    logger.info(f"📋 Final columns: {list(combined_df.columns)}")
     return combined_df
 
 
@@ -539,40 +593,46 @@ async def run_step(
         print("=" * 60)
         print("🔄 Starting klines consolidation...")
         logger.info("🔄 Starting klines consolidation...")
-        
+
         klines_pattern = f"klines_{exchange_name}_{symbol}_1m_*.csv"
         klines_consolidated_path = os.path.join(
             "data_cache",
             f"klines_{exchange_name}_{symbol}_1m_consolidated.csv",
         )
-        
+
         print(f"📁 Looking for files matching pattern: {klines_pattern}")
         print(f"💾 Consolidated file path: {klines_consolidated_path}")
-        print(f"📋 Expected columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume']")
+        print(
+            "📋 Expected columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume']",
+        )
         logger.info(f"📁 Looking for files matching pattern: {klines_pattern}")
         logger.info(f"💾 Consolidated file path: {klines_consolidated_path}")
-        logger.info(f"📋 Expected columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume']")
-        
+        logger.info(
+            "📋 Expected columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume']",
+        )
+
         # Check for existing files
         klines_files = glob.glob(os.path.join("data_cache", klines_pattern))
         print(f"📁 Found {len(klines_files)} klines files")
         if klines_files:
-            print(f"📋 First 3 klines files:")
+            print("📋 First 3 klines files:")
             for i, file in enumerate(klines_files[:3], 1):
-                print(f"   {i}. {os.path.basename(file)} ({os.path.getsize(file):,} bytes)")
-        
-        print(f"🔍 Checking existing consolidated file...")
-        logger.info(f"🔍 Checking existing consolidated file...")
-        
+                print(
+                    f"   {i}. {os.path.basename(file)} ({os.path.getsize(file):,} bytes)",
+                )
+
+        print("🔍 Checking existing consolidated file...")
+        logger.info("🔍 Checking existing consolidated file...")
+
         if os.path.exists(klines_consolidated_path):
             existing_size = os.path.getsize(klines_consolidated_path)
             print(f"📄 Existing consolidated file found: {existing_size:,} bytes")
             logger.info(f"📄 Existing consolidated file found: {existing_size:,} bytes")
         else:
-            print(f"📄 No existing consolidated file found - will create new one")
-            logger.info(f"📄 No existing consolidated file found - will create new one")
-        
-        print(f"🔄 Starting klines consolidation...")
+            print("📄 No existing consolidated file found - will create new one")
+            logger.info("📄 No existing consolidated file found - will create new one")
+
+        print("🔄 Starting klines consolidation...")
         klines_df = consolidate_files(
             pattern=klines_pattern,
             consolidated_filepath=klines_consolidated_path,
@@ -580,20 +640,26 @@ async def run_step(
             expected_columns=["timestamp", "open", "high", "low", "close", "volume"],
             lookback_days=lookback_days,
         )
-        
+
         logger.info(f"✅ Klines consolidation completed: {len(klines_df)} rows")
         print(f"✅ Klines consolidation completed: {len(klines_df)} rows")
-        
+
         if not klines_df.empty:
-            logger.info(f"📊 Klines data info:")
+            logger.info("📊 Klines data info:")
             logger.info(f"   - Shape: {klines_df.shape}")
             logger.info(f"   - Columns: {list(klines_df.columns)}")
             logger.info(f"   - Data types: {klines_df.dtypes.to_dict()}")
-            logger.info(f"   - Date range: {klines_df.index.min()} to {klines_df.index.max()}")
-            logger.info(f"   - Price range: ${klines_df['low'].min():.2f} to ${klines_df['high'].max():.2f}")
-            logger.info(f"   - Memory usage: {klines_df.memory_usage(deep=True).sum() / 1024:.2f} KB")
+            logger.info(
+                f"   - Date range: {klines_df.index.min()} to {klines_df.index.max()}",
+            )
+            logger.info(
+                f"   - Price range: ${klines_df['low'].min():.2f} to ${klines_df['high'].max():.2f}",
+            )
+            logger.info(
+                f"   - Memory usage: {klines_df.memory_usage(deep=True).sum() / 1024:.2f} KB",
+            )
         else:
-            logger.warning(f"⚠️ No klines data found!")
+            logger.warning("⚠️ No klines data found!")
 
         # Process aggtrades data (limited subset for blank training mode)
         logger.info(
@@ -607,45 +673,55 @@ async def run_step(
         print("=" * 60)
         print("📊 STEP 1.2: AGGTRADES CONSOLIDATION")
         print("=" * 60)
-        
+
         # Check for different aggtrades file patterns
         agg_trades_pattern_1m = f"aggtrades_{exchange_name}_{symbol}_1m_*.csv"
         agg_trades_pattern_daily = f"aggtrades_{exchange_name}_{symbol}_????-??-??.csv"
-        
-        print(f"🔍 Looking for aggtrades files with patterns:")
+
+        print("🔍 Looking for aggtrades files with patterns:")
         print(f"   Pattern 1: {agg_trades_pattern_1m}")
         print(f"   Pattern 2: {agg_trades_pattern_daily}")
-        
-        agg_trades_files_1m = glob.glob(os.path.join("data_cache", agg_trades_pattern_1m))
-        agg_trades_files_daily = glob.glob(os.path.join("data_cache", agg_trades_pattern_daily))
-        
+
+        agg_trades_files_1m = glob.glob(
+            os.path.join("data_cache", agg_trades_pattern_1m),
+        )
+        agg_trades_files_daily = glob.glob(
+            os.path.join("data_cache", agg_trades_pattern_daily),
+        )
+
         print(f"📁 Found {len(agg_trades_files_1m)} files with pattern 1")
         print(f"📁 Found {len(agg_trades_files_daily)} files with pattern 2")
-        
+
         # Show first few files of each pattern
         if agg_trades_files_1m:
-            print(f"📋 Pattern 1 files (first 3):")
+            print("📋 Pattern 1 files (first 3):")
             for i, file in enumerate(agg_trades_files_1m[:3], 1):
-                print(f"   {i}. {os.path.basename(file)} ({os.path.getsize(file):,} bytes)")
-        
+                print(
+                    f"   {i}. {os.path.basename(file)} ({os.path.getsize(file):,} bytes)",
+                )
+
         if agg_trades_files_daily:
-            print(f"📋 Pattern 2 files (first 3):")
+            print("📋 Pattern 2 files (first 3):")
             for i, file in enumerate(agg_trades_files_daily[:3], 1):
-                print(f"   {i}. {os.path.basename(file)} ({os.path.getsize(file):,} bytes)")
-        
+                print(
+                    f"   {i}. {os.path.basename(file)} ({os.path.getsize(file):,} bytes)",
+                )
+
         # Use the pattern that has files
         if agg_trades_files_daily:
             agg_trades_pattern = agg_trades_pattern_daily
-            print(f"✅ Using daily pattern for aggtrades consolidation")
+            print("✅ Using daily pattern for aggtrades consolidation")
         elif agg_trades_files_1m:
             agg_trades_pattern = agg_trades_pattern_1m
-            print(f"✅ Using 1m pattern for aggtrades consolidation")
+            print("✅ Using 1m pattern for aggtrades consolidation")
         else:
-            print(f"❌ No aggtrades files found with either pattern")
+            print("❌ No aggtrades files found with either pattern")
             agg_trades_pattern = agg_trades_pattern_daily  # Default to daily pattern
 
         if agg_trades_files_1m or agg_trades_files_daily:
-            print(f"🔄 Starting aggtrades consolidation with pattern: {agg_trades_pattern}")
+            print(
+                f"🔄 Starting aggtrades consolidation with pattern: {agg_trades_pattern}",
+            )
             # Load and consolidate aggtrades data
             agg_trades_df = consolidate_files(
                 pattern=agg_trades_pattern,
@@ -694,26 +770,28 @@ async def run_step(
         print("=" * 60)
         print("📈 STEP 1.3: FUTURES CONSOLIDATION")
         print("=" * 60)
-        
+
         futures_pattern = f"futures_{exchange_name}_{symbol}_*.csv"
         futures_consolidated_path = os.path.join(
             "data_cache",
             f"futures_{exchange_name}_{symbol}_consolidated.csv",
         )
-        
+
         print(f"📁 Looking for files matching pattern: {futures_pattern}")
         print(f"💾 Consolidated file path: {futures_consolidated_path}")
-        print(f"📋 Expected columns: ['timestamp', 'fundingRate']")
-        
+        print("📋 Expected columns: ['timestamp', 'fundingRate']")
+
         # Check for existing files
         futures_files = glob.glob(os.path.join("data_cache", futures_pattern))
         print(f"📁 Found {len(futures_files)} futures files")
         if futures_files:
-            print(f"📋 First 3 futures files:")
+            print("📋 First 3 futures files:")
             for i, file in enumerate(futures_files[:3], 1):
-                print(f"   {i}. {os.path.basename(file)} ({os.path.getsize(file):,} bytes)")
-        
-        print(f"🔄 Starting futures consolidation...")
+                print(
+                    f"   {i}. {os.path.basename(file)} ({os.path.getsize(file):,} bytes)",
+                )
+
+        print("🔄 Starting futures consolidation...")
         futures_df = consolidate_files(
             pattern=futures_pattern,
             consolidated_filepath=futures_consolidated_path,
@@ -721,7 +799,7 @@ async def run_step(
             expected_columns=["timestamp", "fundingRate"],
             lookback_days=lookback_days,
         )
-        
+
         logger.info(f"✅ Futures consolidation completed: {len(futures_df)} rows")
         print(f"✅ Futures consolidation completed: {len(futures_df)} rows")
 
@@ -793,15 +871,17 @@ async def run_step(
         os.makedirs(data_dir, exist_ok=True)
 
         end_time_ms = int(time.time() * 1000)
-        
+
         # Get lookback days with fallback
         try:
             lookback_days = CONFIG["MODEL_TRAINING"]["data_retention_days"]
         except (KeyError, TypeError):
             # Fallback if CONFIG is not available or MODEL_TRAINING section is missing
             lookback_days = 730  # Default to 2 years
-            logger.warning(f"⚠️ CONFIG['MODEL_TRAINING']['data_retention_days'] not available, using default: {lookback_days} days")
-        
+            logger.warning(
+                f"⚠️ CONFIG['MODEL_TRAINING']['data_retention_days'] not available, using default: {lookback_days} days",
+            )
+
         start_time_ms = end_time_ms - int(
             timedelta(days=lookback_days).total_seconds() * 1000,
         )
@@ -854,7 +934,9 @@ async def run_step(
             import sys
 
             sys.path.append(str(Path(__file__).parent.parent.parent.parent))
-            from analysis.data_collection_quality_analysis import DataCollectionQualityAnalyzer
+            from analysis.data_collection_quality_analysis import (
+                DataCollectionQualityAnalyzer,
+            )
 
             # Create analyzer and load the collected data
             analyzer = DataCollectionQualityAnalyzer()
@@ -869,9 +951,7 @@ async def run_step(
             analyzer.analyze_data_quality()
 
             # Save the quality report
-            quality_report_path = (
-                f"{data_dir}/{exchange_name}_{symbol}_data_collection_quality_report.txt"
-            )
+            quality_report_path = f"{data_dir}/{exchange_name}_{symbol}_data_collection_quality_report.txt"
             analyzer.save_report(quality_report_path)
 
             logger.info(

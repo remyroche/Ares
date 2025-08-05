@@ -21,6 +21,19 @@ from src.interfaces.base_interfaces import (
     ISupervisor,
     ITactician,
 )
+from src.monitoring.performance_dashboard import (
+    PerformanceDashboard,
+    setup_performance_dashboard,
+)
+
+# Import performance monitoring
+from src.monitoring.performance_monitor import (
+    PerformanceMonitor,
+    setup_performance_monitor,
+)
+
+# Import dual model system
+from src.training.dual_model_system import DualModelSystem, setup_dual_model_system
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
@@ -53,6 +66,13 @@ class AresPipeline:
         self.supervisor: ISupervisor | None = None
         self.state_manager: IStateManager | None = None
         self.event_bus: IEventBus | None = None
+
+        # Dual model system
+        self.dual_model_system: DualModelSystem | None = None
+
+        # Performance monitoring
+        self.performance_monitor: PerformanceMonitor | None = None
+        self.performance_dashboard: PerformanceDashboard | None = None
 
         # Pipeline state
         self.is_running: bool = False
@@ -90,6 +110,12 @@ class AresPipeline:
 
             # Initialize components
             await self._initialize_components()
+
+            # Initialize dual model system
+            await self._initialize_dual_model_system()
+
+            # Initialize performance monitoring
+            await self._initialize_performance_monitoring()
 
             # Setup signal handlers
             self._setup_signal_handlers()
@@ -152,8 +178,11 @@ class AresPipeline:
             self.logger.info("   🏢 Registering ExchangeClient...")
             try:
                 from src.exchange.factory import ExchangeFactory
-                self.exchange = ExchangeFactory.get_exchange(ares_config.exchange_name)
-        self.container.register("ExchangeClient", self.exchange)
+
+                self.exchange = ExchangeFactory.get_exchange(
+                    "binance",
+                )  # Default to binance
+                self.container.register("ExchangeClient", self.exchange)
                 print("   ✅ ExchangeClient registered successfully")
                 self.logger.info("   ✅ ExchangeClient registered successfully")
             except Exception as e:
@@ -165,6 +194,7 @@ class AresPipeline:
             self.logger.info("   📊 Registering Analyst...")
             try:
                 from src.analyst.analyst import Analyst
+
                 self.container.register("Analyst", Analyst, config={"analyst": {}})
                 print("   ✅ Analyst registered successfully")
                 self.logger.info("   ✅ Analyst registered successfully")
@@ -177,7 +207,12 @@ class AresPipeline:
             self.logger.info("   🧠 Registering Strategist...")
             try:
                 from src.strategist.strategist import Strategist
-                self.container.register("Strategist", Strategist, config={"strategist": {}})
+
+                self.container.register(
+                    "Strategist",
+                    Strategist,
+                    config={"strategist": {}},
+                )
                 print("   ✅ Strategist registered successfully")
                 self.logger.info("   ✅ Strategist registered successfully")
             except Exception as e:
@@ -189,7 +224,12 @@ class AresPipeline:
             self.logger.info("   🎯 Registering Tactician...")
             try:
                 from src.tactician.tactician import Tactician
-                self.container.register("Tactician", Tactician, config={"tactician": {}})
+
+                self.container.register(
+                    "Tactician",
+                    Tactician,
+                    config={"tactician": {}},
+                )
                 print("   ✅ Tactician registered successfully")
                 self.logger.info("   ✅ Tactician registered successfully")
             except Exception as e:
@@ -201,7 +241,12 @@ class AresPipeline:
             self.logger.info("   👁️ Registering Supervisor...")
             try:
                 from src.supervisor.supervisor import Supervisor
-                self.container.register("Supervisor", Supervisor, config={"supervisor": {}})
+
+                self.container.register(
+                    "Supervisor",
+                    Supervisor,
+                    config={"supervisor": {}},
+                )
                 print("   ✅ Supervisor registered successfully")
                 self.logger.info("   ✅ Supervisor registered successfully")
             except Exception as e:
@@ -213,7 +258,12 @@ class AresPipeline:
             self.logger.info("   💾 Registering StateManager...")
             try:
                 from src.utils.state_manager import StateManager
-                self.container.register("StateManager", StateManager, config={"state_manager": {}})
+
+                self.container.register(
+                    "StateManager",
+                    StateManager,
+                    config={"state_manager": {}},
+                )
                 print("   ✅ StateManager registered successfully")
                 self.logger.info("   ✅ StateManager registered successfully")
             except Exception as e:
@@ -225,6 +275,7 @@ class AresPipeline:
             self.logger.info("   📡 Registering EventBus...")
             try:
                 from src.interfaces.event_bus import EventBus
+
                 self.container.register("EventBus", EventBus, config={"event_bus": {}})
                 print("   ✅ EventBus registered successfully")
                 self.logger.info("   ✅ EventBus registered successfully")
@@ -416,26 +467,40 @@ class AresPipeline:
                     # Check timeout conditions
                     current_time = datetime.now()
                     elapsed_time = (current_time - self.start_time).total_seconds()
-                    
+
                     if self.cycle_count >= max_cycles:
-                        print(f"⏰ Reached maximum cycles ({max_cycles}), stopping pipeline")
-                        self.logger.info(f"⏰ Reached maximum cycles ({max_cycles}), stopping pipeline")
-                        break
-                    
-                    if elapsed_time >= max_duration:
-                        print(f"⏰ Reached maximum duration ({max_duration}s), stopping pipeline")
-                        self.logger.info(f"⏰ Reached maximum duration ({max_duration}s), stopping pipeline")
+                        print(
+                            f"⏰ Reached maximum cycles ({max_cycles}), stopping pipeline",
+                        )
+                        self.logger.info(
+                            f"⏰ Reached maximum cycles ({max_cycles}), stopping pipeline",
+                        )
                         break
 
-                    print(f"🔄 Executing pipeline cycle {self.cycle_count + 1}... (Time: {elapsed_time:.1f}s)")
-                    self.logger.info(f"🔄 Executing pipeline cycle {self.cycle_count + 1}... (Time: {elapsed_time:.1f}s)")
-                    
+                    if elapsed_time >= max_duration:
+                        print(
+                            f"⏰ Reached maximum duration ({max_duration}s), stopping pipeline",
+                        )
+                        self.logger.info(
+                            f"⏰ Reached maximum duration ({max_duration}s), stopping pipeline",
+                        )
+                        break
+
+                    print(
+                        f"🔄 Executing pipeline cycle {self.cycle_count + 1}... (Time: {elapsed_time:.1f}s)",
+                    )
+                    self.logger.info(
+                        f"🔄 Executing pipeline cycle {self.cycle_count + 1}... (Time: {elapsed_time:.1f}s)",
+                    )
+
                     await self._execute_cycle()
                     self.cycle_count += 1
                     self.last_cycle_time = datetime.now()
 
                     print(f"✅ Cycle {self.cycle_count} completed successfully")
-                    self.logger.info(f"✅ Cycle {self.cycle_count} completed successfully")
+                    self.logger.info(
+                        f"✅ Cycle {self.cycle_count} completed successfully",
+                    )
 
                     # Get cycle interval from configuration
                     try:
@@ -444,11 +509,17 @@ class AresPipeline:
                             "pipeline.loop_interval_seconds",
                             10,
                         )
-                        print(f"⏱️ Waiting {cycle_interval} seconds before next cycle...")
-                        self.logger.info(f"⏱️ Waiting {cycle_interval} seconds before next cycle...")
+                        print(
+                            f"⏱️ Waiting {cycle_interval} seconds before next cycle...",
+                        )
+                        self.logger.info(
+                            f"⏱️ Waiting {cycle_interval} seconds before next cycle...",
+                        )
                     except Exception as e:
                         print(f"⚠️ Error getting cycle interval, using default: {e}")
-                        self.logger.warning(f"Error getting cycle interval, using default: {e}")
+                        self.logger.warning(
+                            f"Error getting cycle interval, using default: {e}",
+                        )
                         cycle_interval = 10
 
                     await asyncio.sleep(cycle_interval)
@@ -464,12 +535,12 @@ class AresPipeline:
 
             end_time = datetime.now()
             duration = (end_time - self.start_time).total_seconds()
-            
-            print(f"✅ Pipeline completed successfully!")
+
+            print("✅ Pipeline completed successfully!")
             print(f"📊 Total cycles executed: {self.cycle_count}")
             print(f"⏱️ Total duration: {duration:.2f} seconds")
-            
-            self.logger.info(f"✅ Pipeline completed successfully!")
+
+            self.logger.info("✅ Pipeline completed successfully!")
             self.logger.info(f"📊 Total cycles executed: {self.cycle_count}")
             self.logger.info(f"⏱️ Total duration: {duration:.2f} seconds")
 
@@ -515,7 +586,7 @@ class AresPipeline:
                     "limit": 100,
                     "analysis_type": "technical",  # Add required analysis_type
                     "include_indicators": True,
-                    "include_patterns": True
+                    "include_patterns": True,
                 }
                 analysis_result = await self.analyst.execute_analysis(analysis_input)
                 if analysis_result:
@@ -537,7 +608,9 @@ class AresPipeline:
                 strategy_result = await self.strategist.generate_strategy()
                 if strategy_result:
                     print("   ✅ Strategy development completed successfully")
-                    self.logger.info("   ✅ Strategy development completed successfully")
+                    self.logger.info(
+                        "   ✅ Strategy development completed successfully",
+                    )
                 else:
                     print("   ⚠️ Strategy development had issues")
                     self.logger.warning("   ⚠️ Strategy development had issues")
@@ -562,9 +635,122 @@ class AresPipeline:
                 print("   ❌ Tactician component not available")
                 self.logger.error("   ❌ Tactician component not available")
 
-            # Step 4: Supervision and Monitoring
-            print("👁️ Step 4: Supervision and Monitoring")
-            self.logger.info("👁️ Step 4: Supervision and Monitoring")
+            # Step 4: Dual Model System Decision Making
+            print("🤖 Step 4: Dual Model System Decision Making")
+            self.logger.info("🤖 Step 4: Dual Model System Decision Making")
+            if self.dual_model_system:
+                print("   🧠 Making trading decisions with dual model system...")
+                self.logger.info(
+                    "   🧠 Making trading decisions with dual model system...",
+                )
+
+                # Create mock market data for demonstration
+                import pandas as pd
+
+                market_data = pd.DataFrame(
+                    {
+                        "open": [100.0] * 100,
+                        "high": [101.0] * 100,
+                        "low": [99.0] * 100,
+                        "close": [100.5] * 100,
+                        "volume": [1000.0] * 100,
+                    },
+                )
+                current_price = 100.5
+
+                # Make trading decision
+                decision_result = await self.dual_model_system.make_trading_decision(
+                    market_data=market_data,
+                    current_price=current_price,
+                )
+
+                if decision_result:
+                    print("   ✅ Dual model system decision completed successfully")
+                    self.logger.info(
+                        "   ✅ Dual model system decision completed successfully",
+                    )
+
+                    # Integrate with tactician for position sizing and leverage
+                    integrated_decision = (
+                        await self._integrate_dual_model_with_tactician(
+                            dual_model_decision=decision_result,
+                            market_data=market_data,
+                            current_price=current_price,
+                        )
+                    )
+
+                    # Log decision details
+                    action = decision_result.get("action", "UNKNOWN")
+                    analyst_confidence = decision_result.get("analyst_confidence", 0.0)
+                    tactician_confidence = decision_result.get(
+                        "tactician_confidence",
+                        0.0,
+                    )
+                    final_confidence = decision_result.get("final_confidence", 0.0)
+
+                    # Log position sizing and leverage
+                    position_size = integrated_decision.get("position_sizing", {}).get(
+                        "final_position_size",
+                        0.0,
+                    )
+                    leverage = integrated_decision.get("leverage_sizing", {}).get(
+                        "final_leverage",
+                        1.0,
+                    )
+
+                    print(
+                        f"   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}, Final: {final_confidence:.3f}",
+                    )
+                    print(
+                        f"   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x",
+                    )
+                    self.logger.info(
+                        f"   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}, Final: {final_confidence:.3f}",
+                    )
+                    self.logger.info(
+                        f"   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x",
+                    )
+
+                    # Check if model training should be triggered
+                    if self.dual_model_system.should_trigger_training():
+                        print(
+                            "   🔄 Model training conditions met - triggering training...",
+                        )
+                        self.logger.info(
+                            "   🔄 Model training conditions met - triggering training...",
+                        )
+
+                        # Trigger model training
+                        training_result = (
+                            await self.dual_model_system.trigger_model_training(
+                                market_data,
+                                "continuous",
+                                force_training=False,
+                            )
+                        )
+
+                        if training_result.get("success", False):
+                            print("   ✅ Model training completed successfully")
+                            self.logger.info(
+                                "   ✅ Model training completed successfully",
+                            )
+                        else:
+                            print(
+                                f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}",
+                            )
+                            self.logger.warning(
+                                f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}",
+                            )
+                else:
+                    print("   ⚠️ Dual model system decision had issues")
+                    self.logger.warning("   ⚠️ Dual model system decision had issues")
+            else:
+                print("   ❌ Dual model system not available")
+                self.logger.error("   ❌ Dual model system not available")
+
+            # Step 5: Supervision and Monitoring
+            print("👁️ Step 5: Supervision and Monitoring")
+            self.logger.info("👁️ Step 5: Supervision and Monitoring")
             if self.supervisor:
                 print("   📊 Monitoring system performance...")
                 self.logger.info("   📊 Monitoring system performance...")
@@ -665,6 +851,175 @@ class AresPipeline:
         except Exception as e:
             self.logger.error(f"Error initializing supervisor: {e}")
 
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="dual model system initialization",
+    )
+    async def _initialize_dual_model_system(self) -> None:
+        """Initialize dual model system."""
+        try:
+            # Get proper configuration for dual model system
+            dual_model_config = self._get_dual_model_config()
+
+            self.dual_model_system = await setup_dual_model_system(dual_model_config)
+            if self.dual_model_system:
+                self.logger.info("✅ Dual Model System initialized successfully")
+
+                # Log system information
+                system_info = self.dual_model_system.get_system_info()
+                self.logger.info(
+                    f"   📊 Analyst timeframes: {system_info.get('analyst_timeframes', [])}",
+                )
+                self.logger.info(
+                    f"   📊 Tactician timeframes: {system_info.get('tactician_timeframes', [])}",
+                )
+                self.logger.info(
+                    f"   📊 Analyst confidence threshold: {system_info.get('analyst_confidence_threshold', 0.5)}",
+                )
+                self.logger.info(
+                    f"   📊 Tactician confidence threshold: {system_info.get('tactician_confidence_threshold', 0.6)}",
+                )
+            else:
+                self.logger.warning("Dual Model System not available")
+        except Exception as e:
+            self.logger.error(f"Error initializing dual model system: {e}")
+
+    async def _initialize_performance_monitoring(self) -> None:
+        """Initialize performance monitoring."""
+        try:
+            self.logger.info("📊 Initializing Performance Monitoring...")
+
+            # Setup performance monitor
+            self.performance_monitor = await setup_performance_monitor(self.config)
+
+            if self.performance_monitor:
+                self.logger.info("✅ Performance Monitor initialized successfully")
+
+                # Setup performance dashboard
+                self.performance_dashboard = await setup_performance_dashboard(
+                    self.config,
+                    self.performance_monitor,
+                )
+
+                if self.performance_dashboard:
+                    self.logger.info(
+                        "✅ Performance Dashboard initialized successfully",
+                    )
+                else:
+                    self.logger.warning("⚠️ Failed to initialize Performance Dashboard")
+            else:
+                self.logger.warning("⚠️ Failed to initialize Performance Monitor")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing performance monitoring: {e}")
+
+    async def _integrate_dual_model_with_tactician(
+        self,
+        dual_model_decision: dict[str, Any],
+        market_data: pd.DataFrame,
+        current_price: float,
+    ) -> dict[str, Any]:
+        """
+        Integrate dual model system decisions with tactician for position sizing and leverage.
+
+        Args:
+            dual_model_decision: Decision from dual model system
+            market_data: Current market data
+            current_price: Current market price
+
+        Returns:
+            dict[str, Any]: Integrated tactical decision
+        """
+        try:
+            if not self.tactician or not dual_model_decision:
+                return {"error": "Tactician or dual model decision not available"}
+
+            # Extract confidence scores from dual model decision
+            analyst_confidence = dual_model_decision.get("analyst_confidence", 0.5)
+            tactician_confidence = dual_model_decision.get("tactician_confidence", 0.5)
+            final_confidence = dual_model_decision.get("final_confidence", 0.5)
+            normalized_confidence = dual_model_decision.get(
+                "normalized_confidence",
+                0.5,
+            )
+
+            # Create ML predictions for tactician
+            ml_predictions = {
+                "price_target_confidences": {
+                    "0.5%": analyst_confidence,
+                    "1.0%": analyst_confidence * 0.9,
+                    "1.5%": analyst_confidence * 0.8,
+                    "2.0%": analyst_confidence * 0.7,
+                },
+                "adversarial_confidences": {
+                    "0.5%": 1.0 - tactician_confidence,
+                    "1.0%": (1.0 - tactician_confidence) * 0.9,
+                    "1.5%": (1.0 - tactician_confidence) * 0.8,
+                    "2.0%": (1.0 - tactician_confidence) * 0.7,
+                },
+                "directional_analysis": {
+                    "primary_direction": dual_model_decision.get("action", "HOLD"),
+                    "primary_confidence": final_confidence,
+                    "magnitude_levels": [0.5, 1.0, 1.5, 2.0],
+                },
+            }
+
+            # Calculate position size using tactician
+            position_sizer = getattr(self.tactician, "position_sizer", None)
+            if position_sizer:
+                position_size_result = await position_sizer.calculate_position_size(
+                    ml_predictions=ml_predictions,
+                    current_price=current_price,
+                    account_balance=1000.0,  # Default balance
+                    analyst_confidence=analyst_confidence,
+                    tactician_confidence=tactician_confidence,
+                )
+            else:
+                position_size_result = {
+                    "final_position_size": 0.0,
+                    "error": "Position sizer not available",
+                }
+
+            # Calculate leverage using tactician
+            leverage_sizer = getattr(self.tactician, "leverage_sizer", None)
+            if leverage_sizer:
+                leverage_result = await leverage_sizer.calculate_leverage(
+                    ml_predictions=ml_predictions,
+                    current_price=current_price,
+                    target_direction=dual_model_decision.get("action", "HOLD"),
+                    analyst_confidence=analyst_confidence,
+                    tactician_confidence=tactician_confidence,
+                )
+            else:
+                leverage_result = {
+                    "final_leverage": 1.0,
+                    "error": "Leverage sizer not available",
+                }
+
+            # Integrate results
+            integrated_decision = {
+                **dual_model_decision,
+                "position_sizing": position_size_result,
+                "leverage_sizing": leverage_result,
+                "integrated": True,
+                "timestamp": datetime.now().isoformat(),
+            }
+
+            self.logger.info(
+                f"Integrated dual model decision with tactician - Position: {position_size_result.get('final_position_size', 0.0)}, Leverage: {leverage_result.get('final_leverage', 1.0)}",
+            )
+
+            return integrated_decision
+
+        except Exception as e:
+            self.logger.error(f"Error integrating dual model with tactician: {e}")
+            return {
+                "error": str(e),
+                "dual_model_decision": dual_model_decision,
+                "integrated": False,
+            }
+
     def get_pipeline_status(self) -> dict[str, Any]:
         """
         Get current pipeline status.
@@ -672,7 +1027,7 @@ class AresPipeline:
         Returns:
             Dict[str, Any]: Pipeline status information
         """
-        return {
+        status = {
             "is_running": self.is_running,
             "start_time": self.start_time,
             "cycle_count": self.cycle_count,
@@ -684,8 +1039,34 @@ class AresPipeline:
                 "supervisor": self.supervisor is not None,
                 "state_manager": self.state_manager is not None,
                 "event_bus": self.event_bus is not None,
+                "dual_model_system": self.dual_model_system is not None,
             },
         }
+
+        # Add dual model system status if available
+        if self.dual_model_system:
+            try:
+                dual_model_status = self.dual_model_system.get_system_info()
+                status["dual_model_system_status"] = dual_model_status
+            except Exception as e:
+                status["dual_model_system_status"] = {"error": str(e)}
+
+        # Add performance monitoring status if available
+        if self.performance_monitor:
+            try:
+                performance_status = self.performance_monitor.get_performance_summary()
+                status["performance_monitoring_status"] = performance_status
+            except Exception as e:
+                status["performance_monitoring_status"] = {"error": str(e)}
+
+        if self.performance_dashboard:
+            try:
+                dashboard_status = self.performance_dashboard.get_dashboard_summary()
+                status["performance_dashboard_status"] = dashboard_status
+            except Exception as e:
+                status["performance_dashboard_status"] = {"error": str(e)}
+
+        return status
 
     @handle_errors(
         exceptions=(Exception,),
@@ -701,6 +1082,15 @@ class AresPipeline:
             self.is_running = False
 
             # Stop components in reverse dependency order
+            if self.dual_model_system:
+                await self.dual_model_system.stop()
+
+            # Stop performance monitoring
+            if self.performance_dashboard:
+                await self.performance_dashboard.stop()
+            if self.performance_monitor:
+                await self.performance_monitor.stop()
+
             if self.supervisor:
                 await self.supervisor.stop()
 
@@ -742,6 +1132,51 @@ class AresPipeline:
 
         except Exception as e:
             self.logger.error(f"Error during cleanup: {e}")
+
+    def _get_dual_model_config(self) -> dict[str, Any]:
+        """Get dual model system configuration."""
+        try:
+            # Import configuration helper
+            from src.config import get_dual_model_config
+
+            # Get configuration from the centralized config system
+            dual_model_config = get_dual_model_config()
+
+            if dual_model_config:
+                return {"dual_model_system": dual_model_config}
+            # Fallback to default configuration
+            return {
+                "dual_model_system": {
+                    "analyst_timeframes": ["30m", "15m", "5m"],
+                    "tactician_timeframes": ["1m"],
+                    "analyst_confidence_threshold": 0.5,
+                    "tactician_confidence_threshold": 0.6,
+                    "enter_signal_validity_duration": 120,
+                    "signal_check_interval": 10,
+                    "neutral_signal_threshold": 0.5,
+                    "close_signal_threshold": 0.4,
+                    "position_close_confidence_threshold": 0.6,
+                    "enable_ensemble_analysis": True,
+                },
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error getting dual model config: {e}")
+            # Return default configuration
+            return {
+                "dual_model_system": {
+                    "analyst_timeframes": ["30m", "15m", "5m"],
+                    "tactician_timeframes": ["1m"],
+                    "analyst_confidence_threshold": 0.5,
+                    "tactician_confidence_threshold": 0.6,
+                    "enter_signal_validity_duration": 120,
+                    "signal_check_interval": 10,
+                    "neutral_signal_threshold": 0.5,
+                    "close_signal_threshold": 0.4,
+                    "position_close_confidence_threshold": 0.6,
+                    "enable_ensemble_analysis": True,
+                },
+            }
 
 
 async def main():

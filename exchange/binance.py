@@ -8,7 +8,7 @@ import traceback
 from collections.abc import Callable
 from datetime import datetime
 from functools import wraps
-from typing import Any, Optional
+from typing import Any
 
 import aiohttp
 import ccxt.async_support as ccxt
@@ -22,13 +22,14 @@ from ccxt.base.errors import (
     RequestTimeout,
 )
 
+from src.interfaces.base_interfaces import MarketData
 from src.utils.error_handler import (
     handle_errors,
     handle_network_operations,
 )
 from src.utils.logger import system_logger
+
 from .base_exchange import BaseExchange
-from src.interfaces.base_interfaces import MarketData
 
 logger = logging.getLogger(__name__)
 
@@ -821,7 +822,12 @@ class BinanceExchange(BaseExchange):
         Get aggregate trades for a symbol within a time range.
         This is an alias for get_historical_agg_trades for compatibility.
         """
-        return await self.get_historical_agg_trades(symbol, start_time_ms, end_time_ms, limit)
+        return await self.get_historical_agg_trades(
+            symbol,
+            start_time_ms,
+            end_time_ms,
+            limit,
+        )
 
     @retry_on_rate_limit()
     @handle_network_operations(
@@ -1028,13 +1034,13 @@ class BinanceExchange(BaseExchange):
             # Use CCXT's fetch_ohlcv method for klines
             # Convert interval to CCXT format if needed
             ccxt_interval = interval  # Binance intervals are already in CCXT format
-            
+
             # Fetch klines using CCXT
             klines = await exchange.fetch_ohlcv(
                 symbol=symbol.upper(),
                 timeframe=ccxt_interval,
                 since=start_time_ms,
-                limit=limit
+                limit=limit,
             )
 
             # Convert CCXT format to our expected format
@@ -1053,7 +1059,7 @@ class BinanceExchange(BaseExchange):
                     0,  # number_of_trades
                     "0",  # taker_buy_base_asset_volume
                     "0",  # taker_buy_quote_asset_volume
-                    "0"   # ignore
+                    "0",  # ignore
                 ]
                 formatted_klines.append(formatted_kline)
 
@@ -1087,7 +1093,11 @@ class BinanceExchange(BaseExchange):
         Get futures funding rates for a symbol within a time range.
         This is an alias for the funding rates part of get_historical_futures_data.
         """
-        futures_data = await self.get_historical_futures_data(symbol, start_time_ms, end_time_ms)
+        futures_data = await self.get_historical_futures_data(
+            symbol,
+            start_time_ms,
+            end_time_ms,
+        )
         return futures_data.get("funding_rates", [])
 
     @retry_on_rate_limit()
@@ -1810,7 +1820,12 @@ class BinanceExchange(BaseExchange):
         # Binance doesn't need special initialization beyond session creation
         await self._get_session()
 
-    async def _convert_to_market_data(self, raw_data: list[dict[str, Any]], symbol: str, interval: str) -> list[MarketData]:
+    async def _convert_to_market_data(
+        self,
+        raw_data: list[dict[str, Any]],
+        symbol: str,
+        interval: str,
+    ) -> list[MarketData]:
         """Convert raw exchange data to standardized MarketData format."""
         market_data_list = []
         for candle in raw_data:
@@ -1824,11 +1839,13 @@ class BinanceExchange(BaseExchange):
                     low=float(candle[3]),
                     close=float(candle[4]),
                     volume=float(candle[5]),
-                    interval=interval
+                    interval=interval,
                 )
                 market_data_list.append(market_data)
             except (IndexError, ValueError, TypeError) as e:
-                system_logger.warning(f"Failed to convert candle data: {e}. Candle: {candle}")
+                system_logger.warning(
+                    f"Failed to convert candle data: {e}. Candle: {candle}",
+                )
                 continue
         return market_data_list
 
@@ -1837,7 +1854,12 @@ class BinanceExchange(BaseExchange):
         # For Binance, the symbol is the market ID
         return symbol
 
-    async def _get_klines_raw(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+    async def _get_klines_raw(
+        self,
+        symbol: str,
+        interval: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
         """Get raw kline data from exchange."""
         # Use the existing get_klines_raw method but return raw data
         return await self.get_klines_raw(symbol, interval, limit)
@@ -1852,18 +1874,29 @@ class BinanceExchange(BaseExchange):
         side: str,
         order_type: str,
         quantity: float,
-        price: Optional[float] = None,
-        params: Optional[dict[str, Any]] = None,
+        price: float | None = None,
+        params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create raw order on exchange."""
         # Handle the time_in_force parameter that Binance requires
         time_in_force = None
-        if params and 'time_in_force' in params:
-            time_in_force = params.pop('time_in_force')
-        
-        return await self.create_order(symbol, side, order_type, quantity, price, time_in_force=time_in_force, params=params)
+        if params and "time_in_force" in params:
+            time_in_force = params.pop("time_in_force")
 
-    async def _get_position_risk_raw(self, symbol: Optional[str] = None) -> dict[str, Any]:
+        return await self.create_order(
+            symbol,
+            side,
+            order_type,
+            quantity,
+            price,
+            time_in_force=time_in_force,
+            params=params,
+        )
+
+    async def _get_position_risk_raw(
+        self,
+        symbol: str | None = None,
+    ) -> dict[str, Any]:
         """Get raw position risk information from exchange."""
         return await self.get_position_risk(symbol)
 
@@ -1876,7 +1909,13 @@ class BinanceExchange(BaseExchange):
         limit: int,
     ) -> list[dict[str, Any]]:
         """Get raw historical kline data from exchange."""
-        return await self.get_historical_klines(symbol, interval, start_time_ms, end_time_ms, limit)
+        return await self.get_historical_klines(
+            symbol,
+            interval,
+            start_time_ms,
+            end_time_ms,
+            limit,
+        )
 
     async def _get_historical_agg_trades_raw(
         self,
@@ -1886,9 +1925,17 @@ class BinanceExchange(BaseExchange):
         limit: int,
     ) -> list[dict[str, Any]]:
         """Get raw historical aggregated trades from exchange."""
-        return await self.get_historical_agg_trades(symbol, start_time_ms, end_time_ms, limit)
+        return await self.get_historical_agg_trades(
+            symbol,
+            start_time_ms,
+            end_time_ms,
+            limit,
+        )
 
-    async def _get_open_orders_raw(self, symbol: Optional[str] = None) -> list[dict[str, Any]]:
+    async def _get_open_orders_raw(
+        self,
+        symbol: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Get raw open orders from exchange."""
         return await self.get_open_orders(symbol)
 

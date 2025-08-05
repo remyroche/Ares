@@ -59,28 +59,23 @@ class BinanceExchange:
         Returns:
             bool: True if initialization successful, False otherwise
         """
-        try:
-            self.logger.info("Initializing Binance Exchange...")
+        self.logger.info("Initializing Binance Exchange...")
 
-            # Load exchange configuration
-            await self._load_exchange_configuration()
+        # Load exchange configuration
+        await self._load_exchange_configuration()
 
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for Binance exchange")
-                return False
-
-            # Initialize connection
-            await self._initialize_connection()
-
-            self.logger.info(
-                "✅ Binance Exchange initialization completed successfully",
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Binance Exchange initialization failed: {e}")
+        # Validate configuration
+        if not self._validate_configuration():
+            self.logger.error("Invalid configuration for Binance exchange")
             return False
+
+        # Initialize connection
+        await self._initialize_connection()
+
+        self.logger.info(
+            "✅ Binance Exchange initialization completed successfully",
+        )
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -89,26 +84,22 @@ class BinanceExchange:
     )
     async def _load_exchange_configuration(self) -> None:
         """Load exchange configuration."""
-        try:
-            # Set default exchange parameters
-            self.exchange_config.setdefault("use_testnet", True)
-            self.exchange_config.setdefault("timeout", 30)
-            self.exchange_config.setdefault("max_retries", 3)
-            self.exchange_config.setdefault("rate_limit_enabled", True)
-            self.exchange_config.setdefault("rate_limit_requests", 1200)
-            self.exchange_config.setdefault("rate_limit_window", 60)
+        # Set default exchange parameters
+        self.exchange_config.setdefault("use_testnet", True)
+        self.exchange_config.setdefault("timeout", 30)
+        self.exchange_config.setdefault("max_retries", 3)
+        self.exchange_config.setdefault("rate_limit_enabled", True)
+        self.exchange_config.setdefault("rate_limit_requests", 1200)
+        self.exchange_config.setdefault("rate_limit_window", 60)
 
-            # Update configuration
-            self.api_key = self.exchange_config.get("api_key")
-            self.api_secret = self.exchange_config.get("api_secret")
-            self.use_testnet = self.exchange_config["use_testnet"]
-            self.timeout = self.exchange_config["timeout"]
-            self.max_retries = self.exchange_config["max_retries"]
+        # Update configuration
+        self.api_key = self.exchange_config.get("api_key")
+        self.api_secret = self.exchange_config.get("api_secret")
+        self.use_testnet = self.exchange_config["use_testnet"]
+        self.timeout = self.exchange_config["timeout"]
+        self.max_retries = self.exchange_config["max_retries"]
 
-            self.logger.info("Exchange configuration loaded successfully")
-
-        except Exception as e:
-            self.logger.error(f"Error loading exchange configuration: {e}")
+        self.logger.info("Exchange configuration loaded successfully")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -122,29 +113,24 @@ class BinanceExchange:
         Returns:
             bool: True if configuration is valid, False otherwise
         """
-        try:
-            # Validate timeout
-            if self.timeout <= 0:
-                self.logger.error("Invalid timeout")
-                return False
-
-            # Validate max retries
-            if self.max_retries < 0:
-                self.logger.error("Invalid max retries")
-                return False
-
-            # Validate API credentials for live trading
-            if not self.use_testnet:
-                if not self.api_key or not self.api_secret:
-                    self.logger.error("API credentials required for live trading")
-                    return False
-
-            self.logger.info("Configuration validation successful")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        # Validate timeout
+        if self.timeout <= 0:
+            self.logger.error("Invalid timeout")
             return False
+
+        # Validate max retries
+        if self.max_retries < 0:
+            self.logger.error("Invalid max retries")
+            return False
+
+        # Validate API credentials for live trading
+        if not self.use_testnet:
+            if not self.api_key or not self.api_secret:
+                self.logger.error("API credentials required for live trading")
+                return False
+
+        self.logger.info("Configuration validation successful")
+        return True
 
     @handle_network_operations(
         max_retries=3,
@@ -561,12 +547,12 @@ class BinanceExchange:
     ) -> list[dict[str, Any]] | None:
         """
         Get aggregate trades for a symbol within a time range.
-        
+
         Args:
             symbol: Trading symbol
             start_time_ms: Start time in milliseconds
             end_time_ms: End time in milliseconds
-            
+
         Returns:
             List of aggregate trades or None if failed
         """
@@ -575,19 +561,20 @@ class BinanceExchange:
                 "symbol": symbol,
                 "startTime": start_time_ms,
                 "endTime": end_time_ms,
-                "limit": 1000
+                "limit": 1000,
             }
-            
+
             url = f"{self._get_base_url()}/api/v3/aggTrades"
-            
+
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
                     return data
-                else:
-                    self.logger.error(f"Failed to get aggregate trades: {response.status}")
-                    return None
-                    
+                self.logger.error(
+                    f"Failed to get aggregate trades: {response.status}",
+                )
+                return None
+
         except Exception as e:
             self.logger.error(f"Error getting aggregate trades: {e}")
             return None
@@ -657,12 +644,12 @@ class BinanceExchange:
     ) -> list[dict[str, Any]] | None:
         """
         Get futures funding rates for a symbol within a time range.
-        
+
         Args:
             symbol: Trading symbol
             start_time_ms: Start time in milliseconds
             end_time_ms: End time in milliseconds
-            
+
         Returns:
             List of funding rates or None if failed
         """
@@ -671,19 +658,18 @@ class BinanceExchange:
                 "symbol": symbol,
                 "startTime": start_time_ms,
                 "endTime": end_time_ms,
-                "limit": 1000
+                "limit": 1000,
             }
-            
+
             url = f"{self._get_base_url()}/fapi/v1/fundingRate"
-            
+
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
                     return data
-                else:
-                    self.logger.error(f"Failed to get funding rates: {response.status}")
-                    return None
-                    
+                self.logger.error(f"Failed to get funding rates: {response.status}")
+                return None
+
         except Exception as e:
             self.logger.error(f"Error getting funding rates: {e}")
             return None

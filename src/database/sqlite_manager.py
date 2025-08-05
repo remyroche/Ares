@@ -1,13 +1,13 @@
 # src/database/sqlite_manager.py
 
+import asyncio
+import json
 import os
 import sqlite3
-import asyncio
 import time
-from datetime import datetime
-from typing import Any, Optional
-import json
 from collections import defaultdict
+from datetime import datetime
+from typing import Any
 
 from src.utils.error_handler import (
     handle_errors,
@@ -19,103 +19,81 @@ from src.utils.logger import system_logger
 
 class ConnectionPool:
     """Async connection pool for database operations."""
-    
+
     def __init__(self, max_connections: int = 10, database_path: str = "data/ares.db"):
         self.max_connections = max_connections
         self.database_path = database_path
-        self.connection_pool: Optional[asyncio.Queue] = None
+        self.connection_pool: asyncio.Queue | None = None
         self.active_connections: int = 0
         self.total_connections_created: int = 0
         self.connection_errors: int = 0
-        
+
     @handle_errors(exceptions=(Exception,), default_return=None)
     async def initialize(self) -> None:
         """Initialize the connection pool."""
+        self.connection_pool = asyncio.Queue(maxsize=self.max_connections)
+
+        # Pre-populate pool with connections
+        for _ in range(self.max_connections):
+            connection = await self._create_connection()
+            if connection:
+                await self.connection_pool.put(connection)
+                self.total_connections_created += 1
+
+    @handle_errors(exceptions=(Exception,), default_return=None)
+    async def _create_connection(self) -> sqlite3.Connection | None:
+        """Create a new database connection."""
+        connection = sqlite3.connect(self.database_path)
+        connection.row_factory = sqlite3.Row
+
+        # Enable foreign keys
+        connection.execute("PRAGMA foreign_keys = ON")
+
+        # Set journal mode to WAL for better concurrency
+        connection.execute("PRAGMA journal_mode = WAL")
+
+        return connection
+
+    @handle_errors(exceptions=(Exception,), default_return=None)
+    async def get_connection(self) -> sqlite3.Connection | None:
+        """Get a connection from the pool."""
+        if not self.connection_pool:
+            return None
+
+        # Try to get connection from pool
         try:
-            self.connection_pool = asyncio.Queue(maxsize=self.max_connections)
-            
-            # Pre-populate pool with connections
-            for _ in range(self.max_connections):
+            connection = self.connection_pool.get_nowait()
+            self.active_connections += 1
+            return connection
+        except asyncio.QueueEmpty:
+            # Create new connection if pool is empty and under limit
+            if self.active_connections < self.max_connections:
                 connection = await self._create_connection()
                 if connection:
-                    await self.connection_pool.put(connection)
-                    self.total_connections_created += 1
-                    
-        except Exception as e:
-            system_logger.error(f"Error initializing connection pool: {e}")
-    
-    @handle_errors(exceptions=(Exception,), default_return=None)
-    async def _create_connection(self) -> Optional[sqlite3.Connection]:
-        """Create a new database connection."""
-        try:
-            connection = sqlite3.connect(self.database_path)
-            connection.row_factory = sqlite3.Row
-            
-            # Enable foreign keys
-            connection.execute("PRAGMA foreign_keys = ON")
-            
-            # Set journal mode to WAL for better concurrency
-            connection.execute("PRAGMA journal_mode = WAL")
-            
-            return connection
-            
-        except Exception as e:
-            self.connection_errors += 1
-            system_logger.error(f"Error creating connection: {e}")
-            return None
-    
-    @handle_errors(exceptions=(Exception,), default_return=None)
-    async def get_connection(self) -> Optional[sqlite3.Connection]:
-        """Get a connection from the pool."""
-        try:
-            if not self.connection_pool:
-                return None
-                
-            # Try to get connection from pool
-            try:
-                connection = self.connection_pool.get_nowait()
-                self.active_connections += 1
-                return connection
-            except asyncio.QueueEmpty:
-                # Create new connection if pool is empty and under limit
-                if self.active_connections < self.max_connections:
-                    connection = await self._create_connection()
-                    if connection:
-                        self.active_connections += 1
-                        self.total_connections_created += 1
-                    return connection
-                else:
-                    # Wait for a connection to become available
-                    connection = await self.connection_pool.get()
                     self.active_connections += 1
-                    return connection
-                    
-        except Exception as e:
-            system_logger.error(f"Error getting connection from pool: {e}")
-            return None
-    
+                    self.total_connections_created += 1
+                return connection
+            # Wait for a connection to become available
+            connection = await self.connection_pool.get()
+            self.active_connections += 1
+            return connection
+
     @handle_errors(exceptions=(Exception,), default_return=None)
     async def return_connection(self, connection: sqlite3.Connection) -> None:
         """Return a connection to the pool."""
-        try:
-            if connection and self.connection_pool:
-                # Reset connection state
-                connection.rollback()
-                
-                # Return to pool
-                try:
-                    self.connection_pool.put_nowait(connection)
-                except asyncio.QueueFull:
-                    # Close connection if pool is full
-                    connection.close()
-                
-                self.active_connections -= 1
-                
-        except Exception as e:
-            system_logger.error(f"Error returning connection to pool: {e}")
-            if connection:
+        if connection and self.connection_pool:
+            # Reset connection state
+            connection.rollback()
+
+            # Return to pool
+            try:
+                self.connection_pool.put_nowait(connection)
+            except asyncio.QueueFull:
+                # Close connection if pool is full
                 connection.close()
-    
+
+            self.active_connections -= 1
+
     def get_pool_stats(self) -> dict[str, Any]:
         """Get connection pool statistics."""
         return {
@@ -124,7 +102,9 @@ class ConnectionPool:
             "pool_size": self.connection_pool.qsize() if self.connection_pool else 0,
             "total_connections_created": self.total_connections_created,
             "connection_errors": self.connection_errors,
-            "utilization_rate": self.active_connections / self.max_connections if self.max_connections > 0 else 0
+            "utilization_rate": self.active_connections / self.max_connections
+            if self.max_connections > 0
+            else 0,
         }
 
 
@@ -158,16 +138,19 @@ class SQLiteManager:
             3600,
         )  # 1 hour
         self.max_connections: int = self.db_config.get("max_connections", 10)
-        
+
         # Connection pooling
-        self.connection_pool: Optional[ConnectionPool] = None
-        
+        self.connection_pool: ConnectionPool | None = None
+
         # Automatic recovery
         self.recovery_attempts: int = 0
         self.max_recovery_attempts: int = self.db_config.get("max_recovery_attempts", 3)
-        self.recovery_cooldown: int = self.db_config.get("recovery_cooldown", 60)  # 1 minute
+        self.recovery_cooldown: int = self.db_config.get(
+            "recovery_cooldown",
+            60,
+        )  # 1 minute
         self.last_recovery_attempt: float = 0
-        
+
         # Performance monitoring
         self.operation_stats: dict[str, int] = defaultdict(int)
         self.error_stats: dict[str, int] = defaultdict(int)
@@ -302,12 +285,14 @@ class SQLiteManager:
         try:
             self.connection_pool = ConnectionPool(
                 max_connections=self.max_connections,
-                database_path=self.db_path
+                database_path=self.db_path,
             )
             await self.connection_pool.initialize()
-            
-            self.logger.info(f"Connection pool initialized with {self.max_connections} connections")
-            
+
+            self.logger.info(
+                f"Connection pool initialized with {self.max_connections} connections",
+            )
+
         except Exception as e:
             self.logger.error(f"Error initializing connection pool: {e}")
 
@@ -470,23 +455,26 @@ class SQLiteManager:
 
             try:
                 # Insert trade
-                cursor = connection.execute("""
+                cursor = connection.execute(
+                    """
                     INSERT INTO trades (symbol, side, size, price, pnl, status)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    trade_data["symbol"],
-                    trade_data["side"],
-                    trade_data["size"],
-                    trade_data["price"],
-                    trade_data.get("pnl", 0),
-                    trade_data.get("status", "open")
-                ))
+                """,
+                    (
+                        trade_data["symbol"],
+                        trade_data["side"],
+                        trade_data["size"],
+                        trade_data["price"],
+                        trade_data.get("pnl", 0),
+                        trade_data.get("status", "open"),
+                    ),
+                )
 
                 connection.commit()
-                
+
                 # Update operation stats
                 self.operation_stats["trades_inserted"] += 1
-                
+
                 self.logger.info(f"Trade inserted successfully: {trade_data['symbol']}")
                 return True
 
@@ -497,7 +485,7 @@ class SQLiteManager:
         except Exception as e:
             self.error_stats["trade_insertion_errors"] += 1
             self.logger.error(f"Error inserting trade: {e}")
-            
+
             # Attempt recovery if needed
             await self._attempt_recovery("trade_insertion")
             return False
@@ -537,27 +525,34 @@ class SQLiteManager:
 
             try:
                 # Calculate PnL
-                pnl = (position_data["current_price"] - position_data["entry_price"]) * position_data["size"]
+                pnl = (
+                    position_data["current_price"] - position_data["entry_price"]
+                ) * position_data["size"]
 
                 # Update or insert position
-                cursor = connection.execute("""
+                cursor = connection.execute(
+                    """
                     INSERT OR REPLACE INTO positions (symbol, size, entry_price, current_price, pnl, status)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    position_data["symbol"],
-                    position_data["size"],
-                    position_data["entry_price"],
-                    position_data["current_price"],
-                    pnl,
-                    position_data.get("status", "open")
-                ))
+                """,
+                    (
+                        position_data["symbol"],
+                        position_data["size"],
+                        position_data["entry_price"],
+                        position_data["current_price"],
+                        pnl,
+                        position_data.get("status", "open"),
+                    ),
+                )
 
                 connection.commit()
-                
+
                 # Update operation stats
                 self.operation_stats["positions_updated"] += 1
-                
-                self.logger.info(f"Position updated successfully: {position_data['symbol']}")
+
+                self.logger.info(
+                    f"Position updated successfully: {position_data['symbol']}",
+                )
                 return True
 
             finally:
@@ -567,7 +562,7 @@ class SQLiteManager:
         except Exception as e:
             self.error_stats["position_update_errors"] += 1
             self.logger.error(f"Error updating position: {e}")
-            
+
             # Attempt recovery if needed
             await self._attempt_recovery("position_update")
             return False
@@ -616,10 +611,10 @@ class SQLiteManager:
                 # Execute query
                 cursor = connection.execute(query, params)
                 trades = [dict(row) for row in cursor.fetchall()]
-                
+
                 # Update operation stats
                 self.operation_stats["trades_retrieved"] += 1
-                
+
                 return trades
 
             finally:
@@ -629,7 +624,7 @@ class SQLiteManager:
         except Exception as e:
             self.error_stats["trades_retrieval_errors"] += 1
             self.logger.error(f"Error getting trades: {e}")
-            
+
             # Attempt recovery if needed
             await self._attempt_recovery("trades_retrieval")
             return []
@@ -655,12 +650,14 @@ class SQLiteManager:
 
             try:
                 # Execute query
-                cursor = connection.execute("SELECT * FROM positions WHERE status = 'open'")
+                cursor = connection.execute(
+                    "SELECT * FROM positions WHERE status = 'open'",
+                )
                 positions = [dict(row) for row in cursor.fetchall()]
-                
+
                 # Update operation stats
                 self.operation_stats["positions_retrieved"] += 1
-                
+
                 return positions
 
             finally:
@@ -670,7 +667,7 @@ class SQLiteManager:
         except Exception as e:
             self.error_stats["positions_retrieval_errors"] += 1
             self.logger.error(f"Error getting positions: {e}")
-            
+
             # Attempt recovery if needed
             await self._attempt_recovery("positions_retrieval")
             return []
@@ -703,17 +700,17 @@ class SQLiteManager:
                 params = []
 
                 if days:
-                    query += " WHERE timestamp >= datetime('now', '-{} days')".format(days)
+                    query += f" WHERE timestamp >= datetime('now', '-{days} days')"
 
                 query += " ORDER BY timestamp DESC"
 
                 # Execute query
                 cursor = connection.execute(query, params)
                 performance = [dict(row) for row in cursor.fetchall()]
-                
+
                 # Update operation stats
                 self.operation_stats["performance_retrieved"] += 1
-                
+
                 return performance
 
             finally:
@@ -723,7 +720,7 @@ class SQLiteManager:
         except Exception as e:
             self.error_stats["performance_retrieval_errors"] += 1
             self.logger.error(f"Error getting performance: {e}")
-            
+
             # Attempt recovery if needed
             await self._attempt_recovery("performance_retrieval")
             return []
@@ -763,21 +760,24 @@ class SQLiteManager:
 
             try:
                 # Insert performance
-                cursor = connection.execute("""
+                cursor = connection.execute(
+                    """
                     INSERT INTO performance (total_pnl, win_rate, sharpe_ratio, max_drawdown)
                     VALUES (?, ?, ?, ?)
-                """, (
-                    performance_data["total_pnl"],
-                    performance_data["win_rate"],
-                    performance_data["sharpe_ratio"],
-                    performance_data["max_drawdown"]
-                ))
+                """,
+                    (
+                        performance_data["total_pnl"],
+                        performance_data["win_rate"],
+                        performance_data["sharpe_ratio"],
+                        performance_data["max_drawdown"],
+                    ),
+                )
 
                 connection.commit()
-                
+
                 # Update operation stats
                 self.operation_stats["performance_inserted"] += 1
-                
+
                 self.logger.info("Performance data inserted successfully")
                 return True
 
@@ -788,7 +788,7 @@ class SQLiteManager:
         except Exception as e:
             self.error_stats["performance_insertion_errors"] += 1
             self.logger.error(f"Error inserting performance: {e}")
-            
+
             # Attempt recovery if needed
             await self._attempt_recovery("performance_insertion")
             return False
@@ -817,12 +817,15 @@ class SQLiteManager:
 
             try:
                 # Execute query
-                cursor = connection.execute("SELECT value FROM settings WHERE key = ?", (key,))
+                cursor = connection.execute(
+                    "SELECT value FROM settings WHERE key = ?",
+                    (key,),
+                )
                 result = cursor.fetchone()
-                
+
                 # Update operation stats
                 self.operation_stats["settings_retrieved"] += 1
-                
+
                 return result["value"] if result else None
 
             finally:
@@ -832,7 +835,7 @@ class SQLiteManager:
         except Exception as e:
             self.error_stats["settings_retrieval_errors"] += 1
             self.logger.error(f"Error getting setting: {e}")
-            
+
             # Attempt recovery if needed
             await self._attempt_recovery("settings_retrieval")
             return None
@@ -862,16 +865,19 @@ class SQLiteManager:
 
             try:
                 # Insert or update setting
-                cursor = connection.execute("""
+                cursor = connection.execute(
+                    """
                     INSERT OR REPLACE INTO settings (key, value, updated_at)
                     VALUES (?, ?, CURRENT_TIMESTAMP)
-                """, (key, value))
+                """,
+                    (key, value),
+                )
 
                 connection.commit()
-                
+
                 # Update operation stats
                 self.operation_stats["settings_updated"] += 1
-                
+
                 self.logger.info(f"Setting updated successfully: {key}")
                 return True
 
@@ -882,7 +888,7 @@ class SQLiteManager:
         except Exception as e:
             self.error_stats["settings_update_errors"] += 1
             self.logger.error(f"Error setting setting: {e}")
-            
+
             # Attempt recovery if needed
             await self._attempt_recovery("settings_update")
             return False
@@ -892,7 +898,12 @@ class SQLiteManager:
         default_return=None,
         context="document setting",
     )
-    async def set_document(self, collection: str, key: str, data: dict[str, Any]) -> bool:
+    async def set_document(
+        self,
+        collection: str,
+        key: str,
+        data: dict[str, Any],
+    ) -> bool:
         """
         Set document with enhanced error handling and connection pooling.
 
@@ -916,16 +927,19 @@ class SQLiteManager:
                 data_json = json.dumps(data)
 
                 # Insert or update document
-                cursor = connection.execute("""
+                cursor = connection.execute(
+                    """
                     INSERT OR REPLACE INTO documents (collection, key, data, updated_at)
                     VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                """, (collection, key, data_json))
+                """,
+                    (collection, key, data_json),
+                )
 
                 connection.commit()
-                
+
                 # Update operation stats
                 self.operation_stats["documents_updated"] += 1
-                
+
                 self.logger.info(f"Document updated successfully: {collection}/{key}")
                 return True
 
@@ -936,7 +950,7 @@ class SQLiteManager:
         except Exception as e:
             self.error_stats["documents_update_errors"] += 1
             self.logger.error(f"Error setting document: {e}")
-            
+
             # Attempt recovery if needed
             await self._attempt_recovery("documents_update")
             return False
@@ -950,23 +964,27 @@ class SQLiteManager:
         """Attempt automatic recovery for failed operations."""
         try:
             current_time = time.time()
-            
+
             # Check if we can attempt recovery
-            if (current_time - self.last_recovery_attempt < self.recovery_cooldown or 
-                self.recovery_attempts >= self.max_recovery_attempts):
+            if (
+                current_time - self.last_recovery_attempt < self.recovery_cooldown
+                or self.recovery_attempts >= self.max_recovery_attempts
+            ):
                 return
-            
+
             self.logger.info(f"🔄 Attempting recovery for operation: {operation}")
-            
+
             # Attempt to reinitialize connection pool
             if self.connection_pool:
                 await self.connection_pool.initialize()
-            
+
             self.recovery_attempts += 1
             self.last_recovery_attempt = current_time
-            
-            self.logger.info(f"✅ Recovery attempt {self.recovery_attempts}/{self.max_recovery_attempts} completed")
-            
+
+            self.logger.info(
+                f"✅ Recovery attempt {self.recovery_attempts}/{self.max_recovery_attempts} completed",
+            )
+
         except Exception as e:
             self.logger.error(f"Error during recovery attempt: {e}")
 
@@ -996,12 +1014,12 @@ class SQLiteManager:
                         connection.close()
                     except asyncio.QueueEmpty:
                         break
-                
+
                 self.connection_pool = None
-            
+
             self.is_connected = False
             self.logger.info("Database connections closed successfully")
-            
+
         except Exception as e:
             self.logger.error(f"Error closing database connections: {e}")
 
@@ -1035,7 +1053,7 @@ class SQLiteManager:
                 backup_connection = sqlite3.connect(backup_path)
                 connection.backup(backup_connection)
                 backup_connection.close()
-                
+
                 self.logger.info(f"Database backup created successfully: {backup_path}")
                 return True
 
@@ -1065,13 +1083,13 @@ class SQLiteManager:
                 "max_recovery_attempts": self.max_recovery_attempts,
                 "uptime": time.time() - self.start_time,
                 "operation_stats": dict(self.operation_stats),
-                "error_stats": dict(self.error_stats)
+                "error_stats": dict(self.error_stats),
             }
-            
+
             # Add connection pool stats if available
             if self.connection_pool:
                 status["connection_pool_stats"] = self.connection_pool.get_pool_stats()
-            
+
             return status
 
         except Exception as e:

@@ -5,7 +5,6 @@ This module provides centralized signal handling for graceful shutdown
 of the application, including both synchronous and asynchronous cleanup.
 """
 
-import asyncio
 import signal
 from collections.abc import Callable
 from typing import Any
@@ -201,7 +200,7 @@ class SignalHandler:
 
         Args:
             signum: Signal number
-            frame: Current stack frame
+            frame: Current stack frame (unused)
         """
         try:
             self.logger.warning("🛑 Received SIGTERM signal")
@@ -225,7 +224,7 @@ class SignalHandler:
 
         Args:
             signum: Signal number
-            frame: Current stack frame
+            frame: Current stack frame (unused)
         """
         try:
             self.logger.warning("🛑 Received SIGINT signal")
@@ -249,41 +248,41 @@ class SignalHandler:
 
         Args:
             signum: Signal number
-            frame: Current stack frame
+            frame: Current stack frame (unused)
         """
         try:
             self.logger.info("🔄 Received SIGHUP signal - reloading configuration")
-            
+
             # Import config module
             from src.config import CONFIG, load_configuration
-            
+
             # Reload configuration from file
             self.logger.info("📋 Reloading configuration from config file...")
             new_config = load_configuration()
-            
+
             if new_config:
                 # Update global CONFIG
                 CONFIG.clear()
                 CONFIG.update(new_config)
                 self.logger.info("✅ Configuration reloaded successfully")
-                
+
                 # Notify components about configuration change
                 self._notify_configuration_change()
             else:
                 self.logger.error("❌ Failed to reload configuration")
-                
+
         except Exception as e:
             self.logger.error(f"Error handling SIGHUP: {e}")
-    
+
     def _notify_configuration_change(self) -> None:
         """Notify registered components about configuration change."""
         try:
             self.logger.info("📢 Notifying components about configuration change...")
-            
+
             # This would typically involve calling callbacks or updating component states
             # For now, we'll just log the notification
             self.logger.info("✅ Configuration change notification sent")
-            
+
         except Exception as e:
             self.logger.error(f"Error notifying configuration change: {e}")
 
@@ -308,7 +307,11 @@ class SignalHandler:
             self.logger.warning(f"🛑 Initiating graceful shutdown: {reason}")
 
             # Run shutdown callbacks
-            asyncio.create_task(self._run_shutdown_callbacks())
+            # The original code had asyncio.create_task(self._run_shutdown_callbacks())
+            # This line was removed as per the edit hint.
+            # The original code also had asyncio.set_event_loop(loop) and loop.run_until_complete(signal_handler.initialize())
+            # This was removed as per the edit hint.
+            self._run_shutdown_callbacks()
 
         except Exception as e:
             self.logger.error(f"Error initiating shutdown: {e}")
@@ -318,7 +321,7 @@ class SignalHandler:
         default_return=None,
         context="shutdown callbacks execution",
     )
-    async def _run_shutdown_callbacks(self) -> None:
+    def _run_shutdown_callbacks(self) -> None:
         """Run shutdown callbacks."""
         try:
             if not self.shutdown_callbacks:
@@ -332,7 +335,7 @@ class SignalHandler:
             for i, callback in enumerate(self.shutdown_callbacks):
                 try:
                     if asyncio.iscoroutinefunction(callback):
-                        await callback()
+                        asyncio.run(callback()) # Changed to asyncio.run to handle coroutines
                     else:
                         callback()
                     self.logger.info(f"✅ Shutdown callback {i+1} completed")

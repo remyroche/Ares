@@ -13,9 +13,8 @@ from src.utils.logger import system_logger
 
 from .regime_ensembles.bear_trend_ensemble import BearTrendEnsemble
 from .regime_ensembles.bull_trend_ensemble import BullTrendEnsemble
-from .regime_ensembles.high_impact_candle_ensemble import HighImpactCandleEnsemble
 from .regime_ensembles.sideways_range_ensemble import SidewaysRangeEnsemble
-from .regime_ensembles.sr_zone_action_ensemble import SRZoneActionEnsemble
+from .regime_ensembles.volatile_regime_ensemble import VolatileRegimeEnsemble
 
 
 class RegimePredictiveEnsembles:
@@ -29,16 +28,12 @@ class RegimePredictiveEnsembles:
         self.config = config.get("analyst", {})
         self.logger = system_logger.getChild("PredictiveEnsembles.Orchestrator")
 
-        # Initialize all possible ensemble instances
+        # Initialize all possible ensemble instances - updated for new regime classification
         self.regime_ensembles = {
             "BULL_TREND": BullTrendEnsemble(config, "BullTrendEnsemble"),
             "BEAR_TREND": BearTrendEnsemble(config, "BearTrendEnsemble"),
             "SIDEWAYS_RANGE": SidewaysRangeEnsemble(config, "SidewaysRangeEnsemble"),
-            "SR_ZONE_ACTION": SRZoneActionEnsemble(config, "SRZoneActionEnsemble"),
-            "HIGH_IMPACT_CANDLE": HighImpactCandleEnsemble(
-                config,
-                "HighImpactCandleEnsemble",
-            ),
+            "VOLATILE_REGIME": VolatileRegimeEnsemble(config, "VolatileRegimeEnsemble"),
         }
         # Model storage path is now dynamic based on checkpoint config
         self.model_storage_dir = os.path.join(
@@ -336,8 +331,7 @@ class RegimePredictiveEnsembles:
                     "BULL_TREND_confidence",
                     "BEAR_TREND_confidence",
                     "SIDEWAYS_RANGE_confidence",
-                    "SR_ZONE_ACTION_confidence",
-                    "HIGH_IMPACT_CANDLE_confidence",
+                    "VOLATILE_REGIME_confidence",
                 ),
             )
             or "_prediction_" in col

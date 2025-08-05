@@ -239,7 +239,9 @@ class RegimeSpecificTPSLOptimizer:
                 self.logger.warning("HMM classifier not trained, using default regime")
                 return "SIDEWAYS_RANGE", 0.5, {"method": "default"}
 
-            regime, confidence, info = self.regime_classifier.predict_regime(current_data)
+            regime, confidence, info = self.regime_classifier.predict_regime(
+                current_data,
+            )
             self.logger.info(
                 f"Identified regime: {regime} (confidence: {confidence:.2f})",
             )

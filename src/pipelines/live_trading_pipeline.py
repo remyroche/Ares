@@ -70,28 +70,23 @@ class LiveTradingPipeline:
         Returns:
             bool: True if initialization successful, False otherwise
         """
-        try:
-            self.logger.info("Initializing Live Trading Pipeline...")
+        self.logger.info("Initializing Live Trading Pipeline...")
 
-            # Load trading configuration
-            await self._load_trading_configuration()
+        # Load trading configuration
+        await self._load_trading_configuration()
 
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for live trading pipeline")
-                return False
-
-            # Initialize trading modules
-            await self._initialize_trading_modules()
-
-            self.logger.info(
-                "✅ Live Trading Pipeline initialization completed successfully",
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Live Trading Pipeline initialization failed: {e}")
+        # Validate configuration
+        if not self._validate_configuration():
+            self.logger.error("Invalid configuration for live trading pipeline")
             return False
+
+        # Initialize trading modules
+        await self._initialize_trading_modules()
+
+        self.logger.info(
+            "✅ Live Trading Pipeline initialization completed successfully",
+        )
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -100,27 +95,23 @@ class LiveTradingPipeline:
     )
     async def _load_trading_configuration(self) -> None:
         """Load trading configuration."""
-        try:
-            # Set default trading parameters
-            self.trading_config.setdefault("trading_interval", 1)
-            self.trading_config.setdefault("max_trading_history", 1000)
-            self.trading_config.setdefault("enable_market_data", True)
-            self.trading_config.setdefault("enable_signal_generation", True)
-            self.trading_config.setdefault("enable_order_execution", True)
-            self.trading_config.setdefault("enable_risk_management", True)
+        # Set default trading parameters
+        self.trading_config.setdefault("trading_interval", 1)
+        self.trading_config.setdefault("max_trading_history", 1000)
+        self.trading_config.setdefault("enable_market_data", True)
+        self.trading_config.setdefault("enable_signal_generation", True)
+        self.trading_config.setdefault("enable_order_execution", True)
+        self.trading_config.setdefault("enable_risk_management", True)
 
-            # Update configuration
-            self.trading_interval = self.trading_config["trading_interval"]
-            self.max_trading_history = self.trading_config["max_trading_history"]
-            self.enable_market_data = self.trading_config["enable_market_data"]
-            self.enable_signal_generation = self.trading_config[
-                "enable_signal_generation"
-            ]
+        # Update configuration
+        self.trading_interval = self.trading_config["trading_interval"]
+        self.max_trading_history = self.trading_config["max_trading_history"]
+        self.enable_market_data = self.trading_config["enable_market_data"]
+        self.enable_signal_generation = self.trading_config[
+            "enable_signal_generation"
+        ]
 
-            self.logger.info("Trading configuration loaded successfully")
-
-        except Exception as e:
-            self.logger.error(f"Error loading trading configuration: {e}")
+        self.logger.info("Trading configuration loaded successfully")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -134,35 +125,30 @@ class LiveTradingPipeline:
         Returns:
             bool: True if configuration is valid, False otherwise
         """
-        try:
-            # Validate trading interval
-            if self.trading_interval <= 0:
-                self.logger.error("Invalid trading interval")
-                return False
-
-            # Validate max trading history
-            if self.max_trading_history <= 0:
-                self.logger.error("Invalid max trading history")
-                return False
-
-            # Validate that at least one trading type is enabled
-            if not any(
-                [
-                    self.enable_market_data,
-                    self.enable_signal_generation,
-                    self.trading_config.get("enable_order_execution", True),
-                    self.trading_config.get("enable_risk_management", True),
-                ],
-            ):
-                self.logger.error("At least one trading type must be enabled")
-                return False
-
-            self.logger.info("Configuration validation successful")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        # Validate trading interval
+        if self.trading_interval <= 0:
+            self.logger.error("Invalid trading interval")
             return False
+
+        # Validate max trading history
+        if self.max_trading_history <= 0:
+            self.logger.error("Invalid max trading history")
+            return False
+
+        # Validate that at least one trading type is enabled
+        if not any(
+            [
+                self.enable_market_data,
+                self.enable_signal_generation,
+                self.trading_config.get("enable_order_execution", True),
+                self.trading_config.get("enable_risk_management", True),
+            ],
+        ):
+            self.logger.error("At least one trading type must be enabled")
+            return False
+
+        self.logger.info("Configuration validation successful")
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

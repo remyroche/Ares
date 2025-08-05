@@ -1,9 +1,8 @@
 # src/analyst/market_health_analyzer.py
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 import pandas as pd
-import numpy as np
 
 from src.utils.error_handler import (
     handle_errors,
@@ -108,7 +107,7 @@ class MarketHealthAnalyzer:
     async def _load_market_health_configuration(self) -> None:
         """Load market health analyzer configuration."""
         self.logger.info("Loading market health analyzer configuration...")
-        
+
         # Additional configuration can be loaded here
         self.logger.info("Market health configuration loaded successfully")
 
@@ -230,17 +229,23 @@ class MarketHealthAnalyzer:
 
             # Perform volatility analysis
             if self.enable_volatility_analysis:
-                volatility_results = await self._perform_volatility_analysis(analysis_input)
+                volatility_results = await self._perform_volatility_analysis(
+                    analysis_input,
+                )
                 self.analysis_results["volatility_analysis"] = volatility_results
 
             # Perform market health metrics
             if self.enable_market_health_metrics:
-                health_metrics = await self._perform_market_health_metrics(analysis_input)
+                health_metrics = await self._perform_market_health_metrics(
+                    analysis_input,
+                )
                 self.analysis_results["market_health_metrics"] = health_metrics
 
             # Perform liquidity analysis with advanced features
             if self.enable_liquidity_analysis:
-                liquidity_results = await self._perform_liquidity_analysis(analysis_input)
+                liquidity_results = await self._perform_liquidity_analysis(
+                    analysis_input,
+                )
                 self.analysis_results["liquidity_analysis"] = liquidity_results
 
             # Perform stress analysis
@@ -340,10 +345,10 @@ class MarketHealthAnalyzer:
 
             # Calculate returns
             returns = market_data["close"].pct_change().dropna()
-            
+
             # Calculate rolling volatility (20-period)
             volatility = returns.rolling(window=20).std().iloc[-1]
-            
+
             return float(volatility) if not pd.isna(volatility) else 0.0
 
         except Exception as e:
@@ -354,15 +359,14 @@ class MarketHealthAnalyzer:
         """Classify current volatility regime."""
         try:
             current_vol = self._calculate_current_volatility(market_data)
-            
+
             if current_vol <= 0.02:  # 2% daily volatility
                 return "LOW"
-            elif current_vol <= 0.04:  # 4% daily volatility
+            if current_vol <= 0.04:  # 4% daily volatility
                 return "NORMAL"
-            elif current_vol <= 0.08:  # 8% daily volatility
+            if current_vol <= 0.08:  # 8% daily volatility
                 return "HIGH"
-            else:
-                return "EXTREME"
+            return "EXTREME"
 
         except Exception as e:
             self.logger.error(f"Error classifying volatility regime: {e}")
@@ -377,13 +381,21 @@ class MarketHealthAnalyzer:
             # Calculate recent volatility trend
             returns = market_data["close"].pct_change().dropna()
             recent_vol = returns.rolling(window=10).std().iloc[-1]
-            older_vol = returns.rolling(window=10).std().iloc[-10] if len(returns) >= 20 else recent_vol
-            
+            older_vol = (
+                returns.rolling(window=10).std().iloc[-10]
+                if len(returns) >= 20
+                else recent_vol
+            )
+
             # Simple trend-based forecast
             vol_trend = recent_vol - older_vol
             forecast_vol = recent_vol + (vol_trend * 0.5)  # Extrapolate trend
-            
-            return max(0.0, float(forecast_vol)) if not pd.isna(forecast_vol) else recent_vol
+
+            return (
+                max(0.0, float(forecast_vol))
+                if not pd.isna(forecast_vol)
+                else recent_vol
+            )
 
         except Exception as e:
             self.logger.error(f"Error forecasting volatility: {e}")
@@ -394,15 +406,14 @@ class MarketHealthAnalyzer:
         try:
             current_vol = self._calculate_current_volatility(market_data)
             regime = self._classify_volatility_regime(market_data)
-            
+
             if regime == "LOW":
                 return "HEALTHY"
-            elif regime == "NORMAL":
+            if regime == "NORMAL":
                 return "NORMAL"
-            elif regime == "HIGH":
+            if regime == "HIGH":
                 return "CAUTION"
-            else:
-                return "DANGEROUS"
+            return "DANGEROUS"
 
         except Exception as e:
             self.logger.error(f"Error assessing volatility health: {e}")
@@ -464,10 +475,9 @@ class MarketHealthAnalyzer:
 
             if trend_pct > 0.02:  # 2% increase
                 return "BULLISH"
-            elif trend_pct < -0.02:  # 2% decrease
+            if trend_pct < -0.02:  # 2% decrease
                 return "BEARISH"
-            else:
-                return "SIDEWAYS"
+            return "SIDEWAYS"
 
         except Exception as e:
             self.logger.error(f"Error calculating price trend: {e}")
@@ -485,10 +495,9 @@ class MarketHealthAnalyzer:
 
             if current_volume > avg_volume * 1.5:
                 return "HIGH"
-            elif current_volume < avg_volume * 0.5:
+            if current_volume < avg_volume * 0.5:
                 return "LOW"
-            else:
-                return "NORMAL"
+            return "NORMAL"
 
         except Exception as e:
             self.logger.error(f"Error assessing volume health: {e}")
@@ -502,16 +511,18 @@ class MarketHealthAnalyzer:
 
             # Simple market strength calculation
             returns = market_data["close"].pct_change().dropna()
-            
+
             # Positive returns ratio
-            positive_ratio = (returns > 0).sum() / len(returns) if len(returns) > 0 else 0.5
-            
+            positive_ratio = (
+                (returns > 0).sum() / len(returns) if len(returns) > 0 else 0.5
+            )
+
             # Average return magnitude
             avg_return = abs(returns).mean() if len(returns) > 0 else 0.0
-            
+
             # Combine factors
             strength = (positive_ratio * 60) + (min(avg_return * 1000, 40))
-            
+
             return max(0.0, min(100.0, float(strength)))
 
         except Exception as e:
@@ -528,71 +539,86 @@ class MarketHealthAnalyzer:
             # Combine factors for overall health
             if trend == "BULLISH" and volume_health == "HIGH" and strength > 70:
                 return "EXCELLENT"
-            elif trend in ["BULLISH", "SIDEWAYS"] and strength > 50:
+            if trend in ["BULLISH", "SIDEWAYS"] and strength > 50:
                 return "GOOD"
-            elif strength > 30:
+            if strength > 30:
                 return "FAIR"
-            else:
-                return "POOR"
+            return "POOR"
 
         except Exception as e:
             self.logger.error(f"Error calculating overall health: {e}")
             return "UNKNOWN"
 
-    async def _perform_liquidity_analysis(self, analysis_input: dict[str, Any]) -> dict[str, Any]:
+    async def _perform_liquidity_analysis(
+        self,
+        analysis_input: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perform comprehensive liquidity analysis using advanced features."""
         try:
             market_data = analysis_input.get("market_data")
             current_price = analysis_input.get("current_price")
-            
+
             # Initialize advanced feature engineering for liquidity analysis
-            from src.analyst.advanced_feature_engineering import AdvancedFeatureEngineering
-            
+            from src.analyst.advanced_feature_engineering import (
+                AdvancedFeatureEngineering,
+            )
+
             # Create feature engineering instance
             feature_engineering = AdvancedFeatureEngineering(self.config)
             await feature_engineering.initialize()
-            
+
             # Prepare data for liquidity analysis
-            price_data = market_data[['open', 'high', 'low', 'close']].copy()
-            volume_data = market_data[['volume']].copy()
-            
+            price_data = market_data[["open", "high", "low", "close"]].copy()
+            volume_data = market_data[["volume"]].copy()
+
             # Get order flow data if available
             order_flow_data = analysis_input.get("order_flow_data")
-            
+
             # Engineer liquidity features
             liquidity_features = await feature_engineering.engineer_features(
                 price_data=price_data,
                 volume_data=volume_data,
-                order_flow_data=order_flow_data
+                order_flow_data=order_flow_data,
             )
-            
+
             # Extract liquidity-specific features
             liquidity_metrics = {
                 "volume_liquidity": liquidity_features.get("volume_liquidity", 1.0),
                 "price_impact": liquidity_features.get("price_impact", 0.0),
                 "spread_liquidity": liquidity_features.get("spread_liquidity", 0.0),
-                "liquidity_regime": liquidity_features.get("liquidity_regime", "medium"),
-                "liquidity_percentile": liquidity_features.get("liquidity_percentile", 0.5),
+                "liquidity_regime": liquidity_features.get(
+                    "liquidity_regime",
+                    "medium",
+                ),
+                "liquidity_percentile": liquidity_features.get(
+                    "liquidity_percentile",
+                    0.5,
+                ),
                 "kyle_lambda": liquidity_features.get("kyle_lambda", 0.0),
                 "amihud_illiquidity": liquidity_features.get("amihud_illiquidity", 0.0),
-                "order_flow_imbalance": liquidity_features.get("order_flow_imbalance", 0.0),
+                "order_flow_imbalance": liquidity_features.get(
+                    "order_flow_imbalance",
+                    0.0,
+                ),
                 "large_order_ratio": liquidity_features.get("large_order_ratio", 0.0),
                 "vwap": liquidity_features.get("vwap", current_price),
                 "volume_roc": liquidity_features.get("volume_roc", 0.0),
                 "volume_ma_ratio": liquidity_features.get("volume_ma_ratio", 1.0),
             }
-            
+
             # Calculate liquidity stress indicators
             liquidity_stress = self._calculate_liquidity_stress(liquidity_metrics)
             liquidity_metrics["liquidity_stress"] = liquidity_stress
-            
+
             # Determine liquidity health status
             liquidity_health = self._determine_liquidity_health(liquidity_metrics)
             liquidity_metrics["liquidity_health"] = liquidity_health
-            
-            self.logger.info(f"Liquidity analysis completed - Health: {liquidity_health}")
+
+            self.logger.info(
+                f"Liquidity analysis completed - Health: {liquidity_health}",
+            )
             return liquidity_metrics
-            
+
         except Exception as e:
             self.logger.error(f"Error performing liquidity analysis: {e}")
             return {}
@@ -601,7 +627,7 @@ class MarketHealthAnalyzer:
         """Calculate liquidity stress score."""
         try:
             stress_factors = []
-            
+
             # Volume-based stress
             volume_liquidity = liquidity_metrics.get("volume_liquidity", 1.0)
             if volume_liquidity < 0.5:
@@ -610,7 +636,7 @@ class MarketHealthAnalyzer:
                 stress_factors.append(0.4)  # Medium stress
             else:
                 stress_factors.append(0.1)  # Low stress
-            
+
             # Price impact stress
             price_impact = liquidity_metrics.get("price_impact", 0.0)
             if price_impact > 0.001:  # High price impact
@@ -619,7 +645,7 @@ class MarketHealthAnalyzer:
                 stress_factors.append(0.5)
             else:
                 stress_factors.append(0.1)
-            
+
             # Amihud illiquidity stress
             amihud_illiquidity = liquidity_metrics.get("amihud_illiquidity", 0.0)
             if amihud_illiquidity > 0.01:  # High illiquidity
@@ -628,21 +654,23 @@ class MarketHealthAnalyzer:
                 stress_factors.append(0.5)
             else:
                 stress_factors.append(0.1)
-            
+
             # Order flow imbalance stress
-            order_flow_imbalance = abs(liquidity_metrics.get("order_flow_imbalance", 0.0))
+            order_flow_imbalance = abs(
+                liquidity_metrics.get("order_flow_imbalance", 0.0),
+            )
             if order_flow_imbalance > 0.3:  # High imbalance
                 stress_factors.append(0.8)
             elif order_flow_imbalance > 0.1:  # Medium imbalance
                 stress_factors.append(0.4)
             else:
                 stress_factors.append(0.1)
-            
+
             # Calculate average stress score
             if stress_factors:
                 return sum(stress_factors) / len(stress_factors)
             return 0.0
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating liquidity stress: {e}")
             return 0.0
@@ -652,14 +680,13 @@ class MarketHealthAnalyzer:
         try:
             liquidity_stress = liquidity_metrics.get("liquidity_stress", 0.0)
             liquidity_regime = liquidity_metrics.get("liquidity_regime", "medium")
-            
+
             if liquidity_stress > 0.7 or liquidity_regime == "low":
                 return "poor"
-            elif liquidity_stress > 0.4 or liquidity_regime == "medium":
+            if liquidity_stress > 0.4 or liquidity_regime == "medium":
                 return "fair"
-            else:
-                return "good"
-                
+            return "good"
+
         except Exception as e:
             self.logger.error(f"Error determining liquidity health: {e}")
             return "unknown"
@@ -671,31 +698,34 @@ class MarketHealthAnalyzer:
             health_metrics = self.analysis_results.get("market_health_metrics", {})
             liquidity_analysis = self.analysis_results.get("liquidity_analysis", {})
             stress_analysis = self.analysis_results.get("stress_analysis", {})
-            
+
             # Extract key metrics
             volatility_score = volatility_analysis.get("volatility_score", 0.5)
             liquidity_stress = liquidity_analysis.get("liquidity_stress", 0.5)
             liquidity_health = liquidity_analysis.get("liquidity_health", "fair")
-            
+
             # Calculate weighted health score
             weights = {
                 "volatility": 0.3,
                 "liquidity": 0.4,  # Higher weight for liquidity
-                "stress": 0.3
+                "stress": 0.3,
             }
-            
+
             # Normalize scores
-            volatility_normalized = 1.0 - min(volatility_score, 1.0)  # Lower volatility = better
+            volatility_normalized = 1.0 - min(
+                volatility_score,
+                1.0,
+            )  # Lower volatility = better
             liquidity_normalized = 1.0 - liquidity_stress  # Lower stress = better
             stress_normalized = 1.0 - stress_analysis.get("stress_score", 0.5)
-            
+
             # Calculate weighted average
             overall_score = (
-                weights["volatility"] * volatility_normalized +
-                weights["liquidity"] * liquidity_normalized +
-                weights["stress"] * stress_normalized
+                weights["volatility"] * volatility_normalized
+                + weights["liquidity"] * liquidity_normalized
+                + weights["stress"] * stress_normalized
             )
-            
+
             # Determine health status
             if overall_score > 0.7:
                 health_status = "excellent"
@@ -705,7 +735,7 @@ class MarketHealthAnalyzer:
                 health_status = "fair"
             else:
                 health_status = "poor"
-            
+
             return {
                 "overall_score": overall_score,
                 "health_status": health_status,
@@ -715,7 +745,7 @@ class MarketHealthAnalyzer:
                 "liquidity_health": liquidity_health,
                 "liquidity_stress": liquidity_stress,
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating overall market health: {e}")
             return {"overall_score": 0.5, "health_status": "unknown"}
@@ -767,8 +797,10 @@ class MarketHealthAnalyzer:
 
             # Use recent high-low range as spread estimate
             recent_data = market_data.tail(20)
-            avg_spread = ((recent_data["high"] - recent_data["low"]) / recent_data["close"]).mean()
-            
+            avg_spread = (
+                (recent_data["high"] - recent_data["low"]) / recent_data["close"]
+            ).mean()
+
             return float(avg_spread) if not pd.isna(avg_spread) else 0.0
 
         except Exception as e:
@@ -784,15 +816,16 @@ class MarketHealthAnalyzer:
             # Calculate volume-based liquidity
             recent_volume = market_data["volume"].tail(20).mean()
             historical_volume = market_data["volume"].mean()
-            
-            volume_ratio = recent_volume / historical_volume if historical_volume > 0 else 1.0
-            
+
+            volume_ratio = (
+                recent_volume / historical_volume if historical_volume > 0 else 1.0
+            )
+
             if volume_ratio > 1.2:
                 return "HIGH"
-            elif volume_ratio < 0.8:
+            if volume_ratio < 0.8:
                 return "LOW"
-            else:
-                return "NORMAL"
+            return "NORMAL"
 
         except Exception as e:
             self.logger.error(f"Error assessing volume liquidity: {e}")
@@ -801,17 +834,23 @@ class MarketHealthAnalyzer:
     def _estimate_price_impact(self, market_data: pd.DataFrame) -> float:
         """Estimate price impact using volatility and volume."""
         try:
-            if "close" not in market_data.columns or "volume" not in market_data.columns:
+            if (
+                "close" not in market_data.columns
+                or "volume" not in market_data.columns
+            ):
                 return 0.0
 
             # Simple price impact estimation
             returns = market_data["close"].pct_change().dropna()
             volatility = returns.rolling(window=20).std().iloc[-1]
-            volume_ratio = market_data["volume"].iloc[-1] / market_data["volume"].rolling(window=20).mean().iloc[-1]
-            
+            volume_ratio = (
+                market_data["volume"].iloc[-1]
+                / market_data["volume"].rolling(window=20).mean().iloc[-1]
+            )
+
             # Price impact = volatility / volume_ratio
             price_impact = volatility / volume_ratio if volume_ratio > 0 else volatility
-            
+
             return float(price_impact) if not pd.isna(price_impact) else 0.0
 
         except Exception as e:
@@ -824,16 +863,22 @@ class MarketHealthAnalyzer:
             spread = self._estimate_spread(market_data)
             volume_liquidity = self._assess_volume_liquidity(market_data)
             price_impact = self._estimate_price_impact(market_data)
-            
+
             # Convert to numerical scores
-            volume_score = {"HIGH": 80, "NORMAL": 60, "LOW": 30, "UNKNOWN": 50}.get(volume_liquidity, 50)
-            
+            volume_score = {"HIGH": 80, "NORMAL": 60, "LOW": 30, "UNKNOWN": 50}.get(
+                volume_liquidity,
+                50,
+            )
+
             # Calculate composite score
             spread_score = max(0, 100 - (spread * 1000))  # Lower spread = higher score
-            impact_score = max(0, 100 - (price_impact * 1000))  # Lower impact = higher score
-            
+            impact_score = max(
+                0,
+                100 - (price_impact * 1000),
+            )  # Lower impact = higher score
+
             liquidity_score = (volume_score + spread_score + impact_score) / 3
-            
+
             return max(0.0, min(100.0, float(liquidity_score)))
 
         except Exception as e:
@@ -844,15 +889,14 @@ class MarketHealthAnalyzer:
         """Classify liquidity regime."""
         try:
             liquidity_score = self._calculate_liquidity_score(market_data)
-            
+
             if liquidity_score >= 80:
                 return "HIGH"
-            elif liquidity_score >= 60:
+            if liquidity_score >= 60:
                 return "NORMAL"
-            elif liquidity_score >= 40:
+            if liquidity_score >= 40:
                 return "LOW"
-            else:
-                return "POOR"
+            return "POOR"
 
         except Exception as e:
             self.logger.error(f"Error classifying liquidity regime: {e}")
@@ -906,10 +950,10 @@ class MarketHealthAnalyzer:
             returns = market_data["close"].pct_change().dropna()
             current_vol = returns.rolling(window=20).std().iloc[-1]
             historical_vol = returns.rolling(window=100).std().iloc[-1]
-            
+
             # Stress = current volatility / historical volatility
             vol_stress = current_vol / historical_vol if historical_vol > 0 else 1.0
-            
+
             return float(vol_stress) if not pd.isna(vol_stress) else 1.0
 
         except Exception as e:
@@ -924,11 +968,15 @@ class MarketHealthAnalyzer:
 
             # Calculate current drawdown
             rolling_max = market_data["close"].rolling(window=20).max()
-            current_drawdown = (market_data["close"].iloc[-1] - rolling_max.iloc[-1]) / rolling_max.iloc[-1]
-            
+            current_drawdown = (
+                market_data["close"].iloc[-1] - rolling_max.iloc[-1]
+            ) / rolling_max.iloc[-1]
+
             # Convert to stress score (0-1, higher = more stress)
-            drawdown_stress = abs(current_drawdown) if not pd.isna(current_drawdown) else 0.0
-            
+            drawdown_stress = (
+                abs(current_drawdown) if not pd.isna(current_drawdown) else 0.0
+            )
+
             return float(drawdown_stress)
 
         except Exception as e:
@@ -944,9 +992,13 @@ class MarketHealthAnalyzer:
             # Calculate volume stress (low volume = high stress)
             recent_volume = market_data["volume"].tail(20).mean()
             historical_volume = market_data["volume"].mean()
-            
-            volume_stress = 1.0 - (recent_volume / historical_volume) if historical_volume > 0 else 0.0
-            
+
+            volume_stress = (
+                1.0 - (recent_volume / historical_volume)
+                if historical_volume > 0
+                else 0.0
+            )
+
             return max(0.0, min(1.0, float(volume_stress)))
 
         except Exception as e:
@@ -959,10 +1011,12 @@ class MarketHealthAnalyzer:
             vol_stress = self._calculate_volatility_stress(market_data)
             drawdown_stress = self._calculate_drawdown_stress(market_data)
             volume_stress = self._calculate_volume_stress(market_data)
-            
+
             # Combine stress factors
-            stress_score = (vol_stress * 40) + (drawdown_stress * 40) + (volume_stress * 20)
-            
+            stress_score = (
+                (vol_stress * 40) + (drawdown_stress * 40) + (volume_stress * 20)
+            )
+
             return max(0.0, min(100.0, float(stress_score)))
 
         except Exception as e:
@@ -973,15 +1027,14 @@ class MarketHealthAnalyzer:
         """Classify stress regime."""
         try:
             stress_score = self._calculate_stress_score(market_data)
-            
+
             if stress_score <= 20:
                 return "LOW"
-            elif stress_score <= 40:
+            if stress_score <= 40:
                 return "NORMAL"
-            elif stress_score <= 60:
+            if stress_score <= 60:
                 return "HIGH"
-            else:
-                return "EXTREME"
+            return "EXTREME"
 
         except Exception as e:
             self.logger.error(f"Error classifying stress regime: {e}")
@@ -1019,8 +1072,7 @@ class MarketHealthAnalyzer:
         try:
             if analysis_type is None:
                 return self.analysis_results
-            else:
-                return self.analysis_results.get(analysis_type, {})
+            return self.analysis_results.get(analysis_type, {})
 
         except Exception as e:
             self.logger.error(f"Error getting analysis results: {e}")
@@ -1072,13 +1124,12 @@ async def setup_market_health_analyzer(
             config = {}
 
         health_analyzer = MarketHealthAnalyzer(config)
-        
+
         if await health_analyzer.initialize():
             system_logger.info("✅ Market Health Analyzer setup completed successfully")
             return health_analyzer
-        else:
-            system_logger.error("❌ Market Health Analyzer setup failed")
-            return None
+        system_logger.error("❌ Market Health Analyzer setup failed")
+        return None
 
     except Exception as e:
         system_logger.error(f"❌ Error setting up Market Health Analyzer: {e}")

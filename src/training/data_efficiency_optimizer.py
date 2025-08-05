@@ -30,7 +30,13 @@ class DataEfficiencyOptimizer:
     6. Checkpoint and resume capabilities
     """
 
-    def __init__(self, db_manager: SQLiteManager, symbol: str, timeframe: str, exchange: str = "BINANCE"):
+    def __init__(
+        self,
+        db_manager: SQLiteManager,
+        symbol: str,
+        timeframe: str,
+        exchange: str = "BINANCE",
+    ):
         self.db_manager = db_manager
         self.symbol = symbol
         self.timeframe = timeframe

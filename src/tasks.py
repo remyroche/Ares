@@ -1,6 +1,5 @@
 # src/tasks.py
 import os
-from typing import Any
 
 from celery import Celery
 from celery.schedules import crontab
@@ -40,7 +39,7 @@ def run_monthly_training_pipeline() -> None:
     try:
         import asyncio
 
-        from src.config import settings
+        from src.config import get_environment_settings
         from src.database.sqlite_manager import SQLiteManager
         from src.training.enhanced_training_manager import EnhancedTrainingManager
 
@@ -53,8 +52,9 @@ def run_monthly_training_pipeline() -> None:
             training_manager = EnhancedTrainingManager(db_manager)
 
             # Get current trading symbol and exchange
-            symbol = settings.trade_symbol
-            exchange_name = settings.exchange_name
+            env_settings = get_environment_settings()
+            symbol = env_settings.trade_symbol
+            exchange_name = env_settings.exchange_name
 
             # Run full training pipeline
             success = await training_manager.run_full_training(symbol, exchange_name)

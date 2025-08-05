@@ -13,19 +13,19 @@ import logging
 import time
 import traceback
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Dict, List, Optional, Protocol, TypeVar, Union, cast
 from functools import wraps
+from typing import Any, TypeVar, cast
 
 import numpy as np
 import pandas as pd
 
 # Type variables for generic functions
-T = TypeVar('T')
-R = TypeVar('R')
-F = TypeVar('F', bound=Callable[..., Any])
+T = TypeVar("T")
+R = TypeVar("R")
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 # Lazy import to prevent circular imports
@@ -33,6 +33,7 @@ def get_system_logger() -> logging.Logger:
     """Get system logger with lazy import to prevent circular dependencies."""
     try:
         from src.utils.logger import system_logger
+
         return system_logger
     except ImportError:
         # Fallback to basic logger if circular import occurs
@@ -50,14 +51,16 @@ def get_system_logger() -> logging.Logger:
 
 class CircuitState(Enum):
     """Circuit breaker states."""
+
     CLOSED = auto()  # Normal operation
-    OPEN = auto()    # Failing, reject requests
+    OPEN = auto()  # Failing, reject requests
     HALF_OPEN = auto()  # Testing if service is recovered
 
 
 @dataclass
 class CircuitBreakerConfig:
     """Configuration for circuit breaker pattern."""
+
     failure_threshold: int = 5
     recovery_timeout: float = 60.0
     expected_exception: type[Exception] = Exception
@@ -67,37 +70,35 @@ class CircuitBreakerConfig:
 @dataclass
 class RecoveryStrategy(ABC):
     """Abstract base class for recovery strategies."""
-    
+
     @abstractmethod
-    async def execute(self, context: Dict[str, Any]) -> Optional[Any]:
+    async def execute(self, context: dict[str, Any]) -> Any | None:
         """Execute the recovery strategy."""
-        pass
-    
+
     @abstractmethod
     def can_handle(self, error: Exception) -> bool:
         """Check if this strategy can handle the given error."""
-        pass
 
 
 @dataclass
 class RetryStrategy(RecoveryStrategy):
     """Retry strategy with exponential backoff."""
-    
+
     max_retries: int = 3
     base_delay: float = 1.0
     max_delay: float = 60.0
     backoff_factor: float = 2.0
     jitter: bool = True
-    
-    async def execute(self, context: Dict[str, Any]) -> Optional[Any]:
+
+    async def execute(self, context: dict[str, Any]) -> Any | None:
         """Execute retry strategy."""
-        operation = context.get('operation')
-        args = context.get('args', ())
-        kwargs = context.get('kwargs', {})
-        
+        operation = context.get("operation")
+        args = context.get("args", ())
+        kwargs = context.get("kwargs", {})
+
         if not operation:
             return None
-            
+
         for attempt in range(self.max_retries + 1):
             try:
                 if asyncio.iscoroutinefunction(operation):
@@ -106,19 +107,19 @@ class RetryStrategy(RecoveryStrategy):
             except Exception as e:
                 if attempt == self.max_retries:
                     raise e
-                
+
                 delay = min(
-                    self.base_delay * (self.backoff_factor ** attempt),
-                    self.max_delay
+                    self.base_delay * (self.backoff_factor**attempt),
+                    self.max_delay,
                 )
-                
+
                 if self.jitter:
-                    delay *= (0.5 + np.random.random() * 0.5)
-                
+                    delay *= 0.5 + np.random.random() * 0.5
+
                 await asyncio.sleep(delay)
-        
+
         return None
-    
+
     def can_handle(self, error: Exception) -> bool:
         """Retry can handle any exception."""
         return True
@@ -127,14 +128,14 @@ class RetryStrategy(RecoveryStrategy):
 @dataclass
 class FallbackStrategy(RecoveryStrategy):
     """Fallback strategy with multiple fallback operations."""
-    
-    fallback_operations: List[Callable[..., Any]] = field(default_factory=list)
-    
-    async def execute(self, context: Dict[str, Any]) -> Optional[Any]:
+
+    fallback_operations: list[Callable[..., Any]] = field(default_factory=list)
+
+    async def execute(self, context: dict[str, Any]) -> Any | None:
         """Execute fallback strategy."""
-        args = context.get('args', ())
-        kwargs = context.get('kwargs', {})
-        
+        args = context.get("args", ())
+        kwargs = context.get("kwargs", {})
+
         for i, operation in enumerate(self.fallback_operations):
             try:
                 if asyncio.iscoroutinefunction(operation):
@@ -144,9 +145,9 @@ class FallbackStrategy(RecoveryStrategy):
                 if i == len(self.fallback_operations) - 1:
                     raise e
                 continue
-        
+
         return None
-    
+
     def can_handle(self, error: Exception) -> bool:
         """Fallback can handle any exception."""
         return True
@@ -155,14 +156,14 @@ class FallbackStrategy(RecoveryStrategy):
 @dataclass
 class GracefulDegradationStrategy(RecoveryStrategy):
     """Graceful degradation strategy."""
-    
+
     default_return: Any = None
-    error_types: List[type[Exception]] = field(default_factory=list)
-    
-    async def execute(self, context: Dict[str, Any]) -> Optional[Any]:
+    error_types: list[type[Exception]] = field(default_factory=list)
+
+    async def execute(self, context: dict[str, Any]) -> Any | None:
         """Execute graceful degradation."""
         return self.default_return
-    
+
     def can_handle(self, error: Exception) -> bool:
         """Check if this strategy can handle the error."""
         if not self.error_types:
@@ -172,15 +173,20 @@ class GracefulDegradationStrategy(RecoveryStrategy):
 
 class CircuitBreaker:
     """Circuit breaker pattern implementation."""
-    
+
     def __init__(self, config: CircuitBreakerConfig) -> None:
         self.config = config
         self.state = CircuitState.CLOSED
         self.failure_count = 0
         self.last_failure_time = 0.0
         self.logger = logging.getLogger(f"{__name__}.CircuitBreaker")
-    
-    async def call(self, operation: Callable[..., T], *args: Any, **kwargs: Any) -> Optional[T]:
+
+    async def call(
+        self,
+        operation: Callable[..., T],
+        *args: Any,
+        **kwargs: Any,
+    ) -> T | None:
         """Execute operation with circuit breaker protection."""
         if self.state == CircuitState.OPEN:
             if time.time() - self.last_failure_time > self.config.recovery_timeout:
@@ -189,97 +195,103 @@ class CircuitBreaker:
             else:
                 self.logger.warning("Circuit breaker is OPEN, rejecting request")
                 return None
-        
+
         try:
             if asyncio.iscoroutinefunction(operation):
                 result = await operation(*args, **kwargs)
             else:
                 result = operation(*args, **kwargs)
-            
+
             if self.state == CircuitState.HALF_OPEN:
                 self.state = CircuitState.CLOSED
                 self.failure_count = 0
                 self.logger.info("Circuit breaker recovered, transitioning to CLOSED")
-            
+
             return result
-            
+
         except self.config.expected_exception as e:
             self.failure_count += 1
             self.last_failure_time = time.time()
-            
+
             if self.failure_count >= self.config.failure_threshold:
                 self.state = CircuitState.OPEN
-                self.logger.error(f"Circuit breaker opened after {self.failure_count} failures")
-            
+                self.logger.error(
+                    f"Circuit breaker opened after {self.failure_count} failures",
+                )
+
             raise e
 
 
 class ErrorRecoveryManager:
     """Manages automatic error recovery strategies."""
-    
+
     def __init__(self) -> None:
-        self.strategies: List[RecoveryStrategy] = []
-        self.circuit_breakers: Dict[str, CircuitBreaker] = {}
+        self.strategies: list[RecoveryStrategy] = []
+        self.circuit_breakers: dict[str, CircuitBreaker] = {}
         self.logger = logging.getLogger(f"{__name__}.ErrorRecoveryManager")
-    
+
     def add_strategy(self, strategy: RecoveryStrategy) -> None:
         """Add a recovery strategy."""
         self.strategies.append(strategy)
-    
+
     def add_circuit_breaker(self, name: str, config: CircuitBreakerConfig) -> None:
         """Add a circuit breaker."""
         self.circuit_breakers[name] = CircuitBreaker(config)
-    
+
     async def execute_with_recovery(
         self,
         operation: Callable[..., T],
         *args: Any,
-        **kwargs: Any
-    ) -> Optional[T]:
+        **kwargs: Any,
+    ) -> T | None:
         """Execute operation with automatic recovery."""
         try:
             return await self._execute_operation(operation, *args, **kwargs)
         except Exception as e:
             return await self._attempt_recovery(e, operation, *args, **kwargs)
-    
+
     async def _execute_operation(
         self,
         operation: Callable[..., T],
         *args: Any,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> T:
         """Execute the operation."""
         if asyncio.iscoroutinefunction(operation):
             return await operation(*args, **kwargs)
         return operation(*args, **kwargs)
-    
+
     async def _attempt_recovery(
         self,
         error: Exception,
         operation: Callable[..., T],
         *args: Any,
-        **kwargs: Any
-    ) -> Optional[T]:
+        **kwargs: Any,
+    ) -> T | None:
         """Attempt recovery using available strategies."""
         context = {
-            'operation': operation,
-            'args': args,
-            'kwargs': kwargs,
-            'error': error
+            "operation": operation,
+            "args": args,
+            "kwargs": kwargs,
+            "error": error,
         }
-        
+
         for strategy in self.strategies:
             if strategy.can_handle(error):
                 try:
-                    self.logger.info(f"Attempting recovery with {type(strategy).__name__}")
+                    self.logger.info(
+                        f"Attempting recovery with {type(strategy).__name__}",
+                    )
                     result = await strategy.execute(context)
                     if result is not None:
-                        self.logger.info(f"Recovery successful with {type(strategy).__name__}")
+                        self.logger.info(
+                            f"Recovery successful with {type(strategy).__name__}",
+                        )
                         return result
                 except Exception as recovery_error:
                     self.logger.error(f"Recovery strategy failed: {recovery_error}")
                     continue
-        
+
         self.logger.error(f"All recovery strategies failed for error: {error}")
         return None
 
@@ -287,7 +299,11 @@ class ErrorRecoveryManager:
 class ErrorHandler:
     """Enhanced error handler class with recovery strategies."""
 
-    def __init__(self, logger: Optional[logging.Logger] = None, context: str = "") -> None:
+    def __init__(
+        self,
+        logger: logging.Logger | None = None,
+        context: str = "",
+    ) -> None:
         self.logger = logger
         self.context = context
         self.recovery_manager = ErrorRecoveryManager()
@@ -295,66 +311,76 @@ class ErrorHandler:
     def handle_generic_errors(
         self,
         exceptions: tuple[type[Exception], ...] = (Exception,),
-        default_return: Optional[T] = None,
+        default_return: T | None = None,
         *,
-        recovery_strategies: Optional[List[RecoveryStrategy]] = None,
+        recovery_strategies: list[RecoveryStrategy] | None = None,
     ) -> Callable[[F], F]:
         """Handle generic errors with logging and recovery."""
 
         def decorator(func: F) -> F:
             @functools.wraps(func)
-            async def async_wrapper(*args: Any, **kwargs: Any) -> Optional[T]:
+            async def async_wrapper(*args: Any, **kwargs: Any) -> T | None:
                 try:
                     result = await func(*args, **kwargs)
-                    return cast(Optional[T], result)
+                    return cast(T | None, result)
                 except exceptions as e:
                     self._log_error(func.__name__, e)
-                    
+
                     if recovery_strategies:
                         for strategy in recovery_strategies:
                             if strategy.can_handle(e):
                                 try:
-                                    recovery_result = await strategy.execute({
-                                        'operation': func,
-                                        'args': args,
-                                        'kwargs': kwargs,
-                                        'error': e
-                                    })
+                                    recovery_result = await strategy.execute(
+                                        {
+                                            "operation": func,
+                                            "args": args,
+                                            "kwargs": kwargs,
+                                            "error": e,
+                                        },
+                                    )
                                     if recovery_result is not None:
-                                        return cast(Optional[T], recovery_result)
+                                        return cast(T | None, recovery_result)
                                 except Exception as recovery_error:
-                                    self.logger.error(f"Recovery failed: {recovery_error}")
-                    
+                                    self.logger.error(
+                                        f"Recovery failed: {recovery_error}",
+                                    )
+
                     return default_return
 
             @functools.wraps(func)
-            def sync_wrapper(*args: Any, **kwargs: Any) -> Optional[T]:
+            def sync_wrapper(*args: Any, **kwargs: Any) -> T | None:
                 try:
                     result = func(*args, **kwargs)
-                    return cast(Optional[T], result)
+                    return cast(T | None, result)
                 except exceptions as e:
                     self._log_error(func.__name__, e)
-                    
+
                     if recovery_strategies:
                         for strategy in recovery_strategies:
                             if strategy.can_handle(e):
                                 try:
                                     # For sync functions, handle recovery differently
-                                    async def run_recovery() -> Optional[Any]:
-                                        return await strategy.execute({
-                                            'operation': func,
-                                            'args': args,
-                                            'kwargs': kwargs,
-                                            'error': e
-                                        })
-                                    
+                                    async def run_recovery() -> Any | None:
+                                        return await strategy.execute(
+                                            {
+                                                "operation": func,
+                                                "args": args,
+                                                "kwargs": kwargs,
+                                                "error": e,
+                                            },
+                                        )
+
                                     loop = asyncio.get_event_loop()
-                                    recovery_result = loop.run_until_complete(run_recovery())
+                                    recovery_result = loop.run_until_complete(
+                                        run_recovery(),
+                                    )
                                     if recovery_result is not None:
-                                        return cast(Optional[T], recovery_result)
+                                        return cast(T | None, recovery_result)
                                 except Exception as recovery_error:
-                                    self.logger.error(f"Recovery failed: {recovery_error}")
-                    
+                                    self.logger.error(
+                                        f"Recovery failed: {recovery_error}",
+                                    )
+
                     return default_return
 
             if asyncio.iscoroutinefunction(func):
@@ -364,78 +390,89 @@ class ErrorHandler:
         return decorator
 
     def handle_specific_errors(
-        self, 
-        error_handlers: Dict[type[Exception], tuple[Any, str]], 
-        default_return: Optional[T] = None,
+        self,
+        error_handlers: dict[type[Exception], tuple[Any, str]],
+        default_return: T | None = None,
         *,
-        recovery_strategies: Optional[List[RecoveryStrategy]] = None,
+        recovery_strategies: list[RecoveryStrategy] | None = None,
     ) -> Callable[[F], F]:
         """Handle specific error types with recovery."""
 
         def decorator(func: F) -> F:
             @functools.wraps(func)
-            async def async_wrapper(*args: Any, **kwargs: Any) -> Optional[T]:
+            async def async_wrapper(*args: Any, **kwargs: Any) -> T | None:
                 try:
                     result = await func(*args, **kwargs)
-                    return cast(Optional[T], result)
+                    return cast(T | None, result)
                 except Exception as e:
                     error_type = type(e)
                     if error_type in error_handlers:
                         return_value, message = error_handlers[error_type]
                         self._log_error(func.__name__, e)
-                        
+
                         if recovery_strategies:
                             for strategy in recovery_strategies:
                                 if strategy.can_handle(e):
                                     try:
-                                        recovery_result = await strategy.execute({
-                                            'operation': func,
-                                            'args': args,
-                                            'kwargs': kwargs,
-                                            'error': e
-                                        })
+                                        recovery_result = await strategy.execute(
+                                            {
+                                                "operation": func,
+                                                "args": args,
+                                                "kwargs": kwargs,
+                                                "error": e,
+                                            },
+                                        )
                                         if recovery_result is not None:
-                                            return cast(Optional[T], recovery_result)
+                                            return cast(T | None, recovery_result)
                                     except Exception as recovery_error:
-                                        self.logger.error(f"Recovery failed: {recovery_error}")
-                        
-                        return cast(Optional[T], return_value)
-                    
+                                        self.logger.error(
+                                            f"Recovery failed: {recovery_error}",
+                                        )
+
+                        return cast(T | None, return_value)
+
                     self._log_error(func.__name__, e)
                     return default_return
 
             @functools.wraps(func)
-            def sync_wrapper(*args: Any, **kwargs: Any) -> Optional[T]:
+            def sync_wrapper(*args: Any, **kwargs: Any) -> T | None:
                 try:
                     result = func(*args, **kwargs)
-                    return cast(Optional[T], result)
+                    return cast(T | None, result)
                 except Exception as e:
                     error_type = type(e)
                     if error_type in error_handlers:
                         return_value, message = error_handlers[error_type]
                         self._log_error(func.__name__, e)
-                        
+
                         if recovery_strategies:
                             for strategy in recovery_strategies:
                                 if strategy.can_handle(e):
                                     try:
-                                        async def run_recovery() -> Optional[Any]:
-                                            return await strategy.execute({
-                                                'operation': func,
-                                                'args': args,
-                                                'kwargs': kwargs,
-                                                'error': e
-                                            })
-                                        
+
+                                        async def run_recovery() -> Any | None:
+                                            return await strategy.execute(
+                                                {
+                                                    "operation": func,
+                                                    "args": args,
+                                                    "kwargs": kwargs,
+                                                    "error": e,
+                                                },
+                                            )
+
                                         loop = asyncio.get_event_loop()
-                                        recovery_result = loop.run_until_complete(run_recovery())
+                                        recovery_result = loop.run_until_complete(
+                                            run_recovery(),
+                                        )
                                         if recovery_result is not None:
-                                            return cast(Optional[T], recovery_result)
+                                            return cast(T | None, recovery_result)
                                     except Exception as recovery_error:
-                                        self.logger.error(f"Recovery failed: {recovery_error}")
-                        
-                        return cast(Optional[T], return_value)
-                    
+                                        self.logger.error(
+                                            f"Recovery failed: {recovery_error}",
+                                        )
+
+                        return cast(T | None, return_value)
+
                     self._log_error(func.__name__, e)
                     return default_return
 
@@ -455,7 +492,7 @@ class ErrorHandler:
     def _handle_specific_error(
         self,
         error: Exception,
-        handlers: Dict[type[Exception], tuple[Any, str]],
+        handlers: dict[type[Exception], tuple[Any, str]],
         default_return: Any,
     ) -> Any:
         """Handle specific error types."""
@@ -471,14 +508,12 @@ class ErrorHandler:
 # Enhanced decorator functions with recovery strategies
 def handle_errors(
     exceptions: tuple[type[Exception], ...] = (Exception,),
-    default_return: Optional[T] = None,
+    default_return: T | None = None,
     context: str = "",
     *,
     log_errors: bool = True,
     reraise: bool = False,
-    retry_count: int = 0,
-    retry_delay: float = 1.0,
-    recovery_strategies: Optional[List[RecoveryStrategy]] = None,
+    recovery_strategies: list[RecoveryStrategy] | None = None,
 ) -> Callable[[F], F]:
     """Enhanced error handling decorator with recovery strategies."""
     handler = ErrorHandler(context=context)
@@ -490,12 +525,12 @@ def handle_errors(
 
 
 def handle_specific_errors(
-    error_handlers: Optional[Dict[type[Exception], tuple[Any, str]]] = None,
-    default_return: Optional[T] = None,
+    error_handlers: dict[type[Exception], tuple[Any, str]] | None = None,
+    default_return: T | None = None,
     context: str = "",
     *,
     log_errors: bool = True,
-    recovery_strategies: Optional[List[RecoveryStrategy]] = None,
+    recovery_strategies: list[RecoveryStrategy] | None = None,
 ) -> Callable[[F], F]:
     """Enhanced specific error handling decorator with recovery strategies."""
     if error_handlers is None:
@@ -514,7 +549,7 @@ def safe_operation(
     operation: Callable[..., T],
     *args: Any,
     **kwargs: Any,
-) -> Optional[T]:
+) -> T | None:
     """Execute operation safely with type hints."""
     try:
         return operation(*args, **kwargs)
@@ -527,7 +562,7 @@ async def safe_async_operation(
     operation: Callable[..., Awaitable[T]],
     *args: Any,
     **kwargs: Any,
-) -> Optional[T]:
+) -> T | None:
     """Execute async operation safely with type hints."""
     try:
         return await operation(*args, **kwargs)
@@ -569,7 +604,7 @@ def create_retry_strategy(
 
 
 def create_fallback_strategy(
-    fallback_operations: List[Callable[..., Any]],
+    fallback_operations: list[Callable[..., Any]],
 ) -> FallbackStrategy:
     """Create a fallback strategy with type hints."""
     return FallbackStrategy(fallback_operations=fallback_operations)
@@ -577,7 +612,7 @@ def create_fallback_strategy(
 
 def create_graceful_degradation_strategy(
     default_return: Any = None,
-    error_types: Optional[List[type[Exception]]] = None,
+    error_types: list[type[Exception]] | None = None,
 ) -> GracefulDegradationStrategy:
     """Create a graceful degradation strategy with type hints."""
     return GracefulDegradationStrategy(
@@ -1254,21 +1289,21 @@ def handle_assertion_errors(
 ):
     """
     Decorator for handling assertion errors with proper message formatting.
-    
+
     This decorator addresses EM101/EM102 and TRY003 issues by:
     - Assigning exception messages to variables before raising
     - Using proper exception message formatting
     - Providing context-aware error handling
-    
+
     Args:
         default_return: Value to return on error
         context: Context string for logging
         log_errors: Whether to log errors
-        
+
     Returns:
         Decorated function
     """
-    
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
@@ -1277,12 +1312,16 @@ def handle_assertion_errors(
             except AssertionError as e:
                 if log_errors:
                     system_logger = get_system_logger()
-                    system_logger.error(f"Assertion error in {context}.{func.__name__}: {e}")
+                    system_logger.error(
+                        f"Assertion error in {context}.{func.__name__}: {e}",
+                    )
                 return default_return
             except Exception as e:
                 if log_errors:
                     system_logger = get_system_logger()
-                    system_logger.exception(f"Unexpected error in {context}.{func.__name__}: {e}")
+                    system_logger.exception(
+                        f"Unexpected error in {context}.{func.__name__}: {e}",
+                    )
                 return default_return
 
         @functools.wraps(func)
@@ -1292,12 +1331,16 @@ def handle_assertion_errors(
             except AssertionError as e:
                 if log_errors:
                     system_logger = get_system_logger()
-                    system_logger.error(f"Assertion error in {context}.{func.__name__}: {e}")
+                    system_logger.error(
+                        f"Assertion error in {context}.{func.__name__}: {e}",
+                    )
                 return default_return
             except Exception as e:
                 if log_errors:
                     system_logger = get_system_logger()
-                    system_logger.exception(f"Unexpected error in {context}.{func.__name__}: {e}")
+                    system_logger.exception(
+                        f"Unexpected error in {context}.{func.__name__}: {e}",
+                    )
                 return default_return
 
         if asyncio.iscoroutinefunction(func):
@@ -1317,30 +1360,30 @@ def safe_assertion(
 ) -> None:
     """
     Safe assertion function that properly formats error messages.
-    
+
     This function addresses EM101/EM102 issues by:
     - Assigning the message to a variable before raising
     - Providing context-aware error messages
     - Using proper exception message formatting
-    
+
     Args:
         condition: Condition to assert
         message: Error message (assigned to variable before raising)
         context: Context string for logging
         error_type: Type of exception to raise
         log_errors: Whether to log errors
-        
+
     Raises:
         error_type: If condition is False
     """
     if not condition:
         # Assign message to variable to address EM101/EM102
         error_message = f"{context}: {message}" if context else message
-        
+
         if log_errors:
             system_logger = get_system_logger()
             system_logger.error(f"Assertion failed: {error_message}")
-            
+
         raise error_type(error_message)
 
 
@@ -1353,19 +1396,19 @@ def format_assertion_message(
 ) -> str:
     """
     Format assertion messages properly to address EM101/EM102 issues.
-    
+
     Args:
         expected: Expected value
         actual: Actual value
         context: Context string
         message_template: Template for the message
-        
+
     Returns:
         Formatted message string
     """
     # Assign formatted message to variable to address EM101/EM102
     formatted_message = message_template.format(expected=expected, actual=actual)
-    
+
     if context:
         return f"{context}: {formatted_message}"
     return formatted_message
@@ -1374,96 +1417,104 @@ def format_assertion_message(
 def handle_nan_issues(func: Callable) -> Callable:
     """
     Decorator for data processing operations with comprehensive NaN handling.
-    
+
     This decorator:
     1. Replaces infinite values with NaN
     2. Fills NaN values with appropriate defaults based on data type
     3. Handles division by zero
     4. Provides detailed logging of NaN issues
     """
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:
             result = func(*args, **kwargs)
-            
+
             # Handle DataFrame results
             if isinstance(result, pd.DataFrame):
                 initial_shape = result.shape
-                
+
                 # Replace infinite values
                 result = result.replace([np.inf, -np.inf], np.nan)
-                
+
                 # Fill NaN values with appropriate defaults
                 for col in result.columns:
-                    if result[col].dtype in ['float64', 'float32']:
+                    if result[col].dtype in ["float64", "float32"]:
                         # For numeric columns, use 0 as default
                         result[col] = result[col].fillna(0)
-                    elif result[col].dtype in ['int64', 'int32']:
+                    elif result[col].dtype in ["int64", "int32"]:
                         # For integer columns, use 0 as default
                         result[col] = result[col].fillna(0)
                     else:
                         # For other types, use forward fill then backward fill
-                        result[col] = result[col].fillna(method='ffill').fillna(method='bfill')
-                
+                        result[col] = (
+                            result[col].fillna(method="ffill").fillna(method="bfill")
+                        )
+
                 # Log any remaining NaN issues
                 nan_counts = result.isnull().sum()
                 if nan_counts.sum() > 0:
                     system_logger = get_system_logger()
-                    system_logger.warning(f"⚠️ NaN handling completed. Remaining NaN counts: {nan_counts[nan_counts > 0].to_dict()}")
-                
+                    system_logger.warning(
+                        f"⚠️ NaN handling completed. Remaining NaN counts: {nan_counts[nan_counts > 0].to_dict()}",
+                    )
+
                 final_shape = result.shape
                 if initial_shape != final_shape:
                     system_logger = get_system_logger()
-                    system_logger.warning(f"⚠️ DataFrame shape changed from {initial_shape} to {final_shape}")
-                
+                    system_logger.warning(
+                        f"⚠️ DataFrame shape changed from {initial_shape} to {final_shape}",
+                    )
+
                 return result
-            
+
             # Handle Series results
-            elif isinstance(result, pd.Series):
+            if isinstance(result, pd.Series):
                 # Replace infinite values
                 result = result.replace([np.inf, -np.inf], np.nan)
-                
+
                 # Fill NaN based on data type
-                if result.dtype in ['float64', 'float32']:
-                    result = result.fillna(0)
-                elif result.dtype in ['int64', 'int32']:
+                if result.dtype in ["float64", "float32"] or result.dtype in [
+                    "int64",
+                    "int32",
+                ]:
                     result = result.fillna(0)
                 else:
-                    result = result.fillna(method='ffill').fillna(method='bfill')
-                
+                    result = result.fillna(method="ffill").fillna(method="bfill")
+
                 return result
-            
+
             # Handle numpy arrays
-            elif isinstance(result, np.ndarray):
+            if isinstance(result, np.ndarray):
                 result = np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
                 return result
-            
+
             # Handle scalar values
-            elif isinstance(result, (int, float)):
+            if isinstance(result, (int, float)):
                 if np.isnan(result) or np.isinf(result):
                     return 0.0
                 return result
-            
+
             return result
-            
+
         except Exception as e:
             system_logger = get_system_logger()
             system_logger.error(f"Error in NaN handling for {func.__name__}: {e}")
             # Return safe default based on function signature
             return None
-    
+
     return wrapper
 
 
 def safe_division(numerator: float, denominator: float, default: float = 0.0) -> float:
     """
     Safe division function that handles division by zero and NaN values.
-    
+
     Args:
         numerator: Numerator value or array
         denominator: Denominator value or array
         default: Default value to return when division fails
-        
+
     Returns:
         Result of safe division
     """
@@ -1473,63 +1524,81 @@ def safe_division(numerator: float, denominator: float, default: float = 0.0) ->
             result = numerator / denominator.replace(0, np.nan)
             result = result.fillna(default)
             return result
-        elif isinstance(numerator, (pd.Series, np.ndarray)) and isinstance(denominator, (int, float)):
+        if isinstance(numerator, (pd.Series, np.ndarray)) and isinstance(
+            denominator,
+            (int, float),
+        ):
             # Handle Series/array divided by scalar
             if denominator == 0:
-                return pd.Series(default, index=numerator.index) if isinstance(numerator, pd.Series) else np.full_like(numerator, default)
+                return (
+                    pd.Series(default, index=numerator.index)
+                    if isinstance(numerator, pd.Series)
+                    else np.full_like(numerator, default)
+                )
             result = numerator / denominator
-            result = result.fillna(default) if isinstance(result, pd.Series) else np.nan_to_num(result, nan=default)
+            result = (
+                result.fillna(default)
+                if isinstance(result, pd.Series)
+                else np.nan_to_num(result, nan=default)
+            )
             return result
-        else:
-            # Handle scalar division
-            if denominator == 0:
-                return default
-            result = numerator / denominator
-            return result if not (np.isnan(result) or np.isinf(result)) else default
+        # Handle scalar division
+        if denominator == 0:
+            return default
+        result = numerator / denominator
+        return result if not (np.isnan(result) or np.isinf(result)) else default
     except Exception as e:
         system_logger = get_system_logger()
         system_logger.warning(f"Error in safe division: {e}")
         return default
 
 
-def clean_dataframe(df: pd.DataFrame, critical_columns: Optional[list[str]] = None) -> pd.DataFrame:
+def clean_dataframe(
+    df: pd.DataFrame,
+    critical_columns: list[str] | None = None,
+) -> pd.DataFrame:
     """
     Comprehensive DataFrame cleaning function.
-    
+
     Args:
         df: DataFrame to clean
         critical_columns: List of critical columns that must not have NaN values
-        
+
     Returns:
         Cleaned DataFrame
     """
     if df.empty:
         return df
-    
+
     initial_shape = df.shape
     system_logger = get_system_logger()
-    
+
     # Remove rows with NaN in critical columns
     if critical_columns:
         critical_cols = [col for col in critical_columns if col in df.columns]
         if critical_cols:
             df = df.dropna(subset=critical_cols)
-            system_logger.info(f"Removed rows with NaN in critical columns: {critical_cols}")
-    
+            system_logger.info(
+                f"Removed rows with NaN in critical columns: {critical_cols}",
+            )
+
     # Replace infinite values
     df = df.replace([np.inf, -np.inf], np.nan)
-    
+
     # Fill NaN values based on data type
     for col in df.columns:
-        if df[col].dtype in ['float64', 'float32']:
-            df[col] = df[col].fillna(0)
-        elif df[col].dtype in ['int64', 'int32']:
+        if df[col].dtype in ["float64", "float32"] or df[col].dtype in [
+            "int64",
+            "int32",
+        ]:
             df[col] = df[col].fillna(0)
         else:
-            df[col] = df[col].fillna(method='ffill').fillna(method='bfill')
-    
+            df[col] = df[col].fillna(method="ffill").fillna(method="bfill")
+
     final_shape = df.shape
     if initial_shape != final_shape:
-        system_logger.warning(f"DataFrame shape changed from {initial_shape} to {final_shape}")
-    
+        system_logger.warning(
+            f"DataFrame shape changed from {initial_shape} to {final_shape}",
+        )
+
     return df

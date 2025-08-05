@@ -6,21 +6,20 @@ This module provides automated report generation and distribution with
 configurable schedules and multiple output formats.
 """
 
-import asyncio
 import json
-import os
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from dataclasses import dataclass, asdict
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
-from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
 
 
 class ReportType(Enum):
     """Report types."""
+
     PERFORMANCE_SUMMARY = "performance_summary"
     MODEL_ANALYSIS = "model_analysis"
     RISK_ASSESSMENT = "risk_assessment"
@@ -29,6 +28,7 @@ class ReportType(Enum):
 
 class ReportSchedule(Enum):
     """Report schedules."""
+
     DAILY = "daily"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
@@ -36,6 +36,7 @@ class ReportSchedule(Enum):
 
 class ReportFormat(Enum):
     """Report formats."""
+
     JSON = "json"
     HTML = "html"
 
@@ -43,21 +44,23 @@ class ReportFormat(Enum):
 @dataclass
 class ReportConfig:
     """Report configuration."""
+
     report_type: ReportType
     schedule: ReportSchedule
     format: ReportFormat
-    recipients: List[str]
+    recipients: list[str]
     enabled: bool = True
 
 
 @dataclass
 class ReportHistory:
     """Report generation history."""
+
     report_id: str
     report_type: ReportType
     generated_at: datetime
     schedule_type: ReportSchedule
-    recipients: List[str]
+    recipients: list[str]
     file_path: str
     status: str  # "generated", "sent", "failed"
 
@@ -66,33 +69,36 @@ class ReportScheduler:
     """
     Automated report scheduler with configurable schedules and multiple output formats.
     """
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize report scheduler.
-        
+
         Args:
             config: Configuration dictionary
         """
         self.config = config
         self.logger = system_logger.getChild("ReportScheduler")
-        
+
         # Scheduler configuration
         self.scheduler_config = config.get("report_scheduler", {})
-        self.enable_automated_reports = self.scheduler_config.get("enable_automated_reports", True)
+        self.enable_automated_reports = self.scheduler_config.get(
+            "enable_automated_reports",
+            True,
+        )
         self.default_schedule = self.scheduler_config.get("default_schedule", "daily")
         self.email_distribution = self.scheduler_config.get("email_distribution", False)
         self.report_formats = self.scheduler_config.get("report_formats", ["json"])
-        
+
         # Report storage
-        self.report_configs: Dict[str, ReportConfig] = {}
-        self.report_history: List[ReportHistory] = []
+        self.report_configs: dict[str, ReportConfig] = {}
+        self.report_history: list[ReportHistory] = []
         self.is_scheduling = False
-        
+
         # Report directories
         self.reports_dir = Path("reports")
         self.reports_dir.mkdir(exist_ok=True)
-        
+
         self.logger.info("📊 Report Scheduler initialized")
 
     @handle_specific_errors(
@@ -107,13 +113,13 @@ class ReportScheduler:
         """Initialize the report scheduler."""
         try:
             self.logger.info("Initializing Report Scheduler...")
-            
+
             # Initialize report configurations
             await self._initialize_report_configs()
-            
+
             self.logger.info("✅ Report Scheduler initialization completed")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Report Scheduler initialization failed: {e}")
             return False
@@ -157,11 +163,11 @@ class ReportScheduler:
                     enabled=True,
                 ),
             }
-            
+
             self.report_configs.update(default_configs)
-            
+
             self.logger.info("Report configurations initialized")
-            
+
         except Exception as e:
             self.logger.error(f"Error initializing report configs: {e}")
 
@@ -176,13 +182,13 @@ class ReportScheduler:
         """Start report scheduling."""
         try:
             self.is_scheduling = True
-            
+
             # Schedule existing reports
             await self._schedule_existing_reports()
-            
+
             self.logger.info("🚀 Report Scheduler started")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error starting report scheduling: {e}")
             return False
@@ -199,7 +205,7 @@ class ReportScheduler:
                 if config.enabled:
                     # Schedule the report
                     await self._generate_scheduled_report(report_id, config)
-            
+
         except Exception as e:
             self.logger.error(f"Error scheduling existing reports: {e}")
 
@@ -208,17 +214,25 @@ class ReportScheduler:
         default_return=None,
         context="scheduled report generation",
     )
-    async def _generate_scheduled_report(self, report_id: str, config: ReportConfig) -> None:
+    async def _generate_scheduled_report(
+        self,
+        report_id: str,
+        config: ReportConfig,
+    ) -> None:
         """Generate a scheduled report."""
         try:
             self.logger.info(f"Generating scheduled report: {report_id}")
-            
+
             # Generate report content
             report_content = await self._generate_report_content(config.report_type)
-            
+
             # Generate report file
-            file_path = await self._generate_report_file(report_id, config, report_content)
-            
+            file_path = await self._generate_report_file(
+                report_id,
+                config,
+                report_content,
+            )
+
             # Record in history
             history = ReportHistory(
                 report_id=report_id,
@@ -229,11 +243,11 @@ class ReportScheduler:
                 file_path=file_path,
                 status="generated",
             )
-            
+
             self.report_history.append(history)
-            
+
             self.logger.info(f"Generated report: {report_id} -> {file_path}")
-            
+
         except Exception as e:
             self.logger.error(f"Error generating scheduled report: {e}")
 
@@ -242,25 +256,24 @@ class ReportScheduler:
         default_return=None,
         context="report content generation",
     )
-    async def _generate_report_content(self, report_type: ReportType) -> Dict[str, Any]:
+    async def _generate_report_content(self, report_type: ReportType) -> dict[str, Any]:
         """Generate report content based on type."""
         try:
             if report_type == ReportType.PERFORMANCE_SUMMARY:
                 return await self._generate_performance_summary()
-            elif report_type == ReportType.MODEL_ANALYSIS:
+            if report_type == ReportType.MODEL_ANALYSIS:
                 return await self._generate_model_analysis()
-            elif report_type == ReportType.RISK_ASSESSMENT:
+            if report_type == ReportType.RISK_ASSESSMENT:
                 return await self._generate_risk_assessment()
-            elif report_type == ReportType.EXECUTIVE_SUMMARY:
+            if report_type == ReportType.EXECUTIVE_SUMMARY:
                 return await self._generate_executive_summary()
-            else:
-                return {"error": "Unknown report type"}
-                
+            return {"error": "Unknown report type"}
+
         except Exception as e:
             self.logger.error(f"Error generating report content: {e}")
             return {"error": str(e)}
 
-    async def _generate_performance_summary(self) -> Dict[str, Any]:
+    async def _generate_performance_summary(self) -> dict[str, Any]:
         """Generate performance summary report."""
         try:
             return {
@@ -271,12 +284,12 @@ class ReportScheduler:
                 "total_trades": 150,
                 "timestamp": datetime.now().isoformat(),
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error generating performance summary: {e}")
             return {}
 
-    async def _generate_model_analysis(self) -> Dict[str, Any]:
+    async def _generate_model_analysis(self) -> dict[str, Any]:
         """Generate model analysis report."""
         try:
             return {
@@ -296,12 +309,12 @@ class ReportScheduler:
                 },
                 "timestamp": datetime.now().isoformat(),
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error generating model analysis: {e}")
             return {}
 
-    async def _generate_risk_assessment(self) -> Dict[str, Any]:
+    async def _generate_risk_assessment(self) -> dict[str, Any]:
         """Generate risk assessment report."""
         try:
             return {
@@ -311,12 +324,12 @@ class ReportScheduler:
                 "correlation_risk": 0.12,
                 "timestamp": datetime.now().isoformat(),
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error generating risk assessment: {e}")
             return {}
 
-    async def _generate_executive_summary(self) -> Dict[str, Any]:
+    async def _generate_executive_summary(self) -> dict[str, Any]:
         """Generate executive summary report."""
         try:
             return {
@@ -332,7 +345,7 @@ class ReportScheduler:
                 ],
                 "timestamp": datetime.now().isoformat(),
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error generating executive summary: {e}")
             return {}
@@ -342,18 +355,22 @@ class ReportScheduler:
         default_return=None,
         context="report file generation",
     )
-    async def _generate_report_file(self, report_id: str, config: ReportConfig, 
-                                   content: Dict[str, Any]) -> str:
+    async def _generate_report_file(
+        self,
+        report_id: str,
+        config: ReportConfig,
+        content: dict[str, Any],
+    ) -> str:
         """Generate report file in the specified format."""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{report_id}_{timestamp}"
-            
+
             if config.format == ReportFormat.JSON:
                 file_path = self.reports_dir / f"{filename}.json"
                 with open(file_path, "w") as f:
                     json.dump(content, f, indent=2, default=str)
-                    
+
             elif config.format == ReportFormat.HTML:
                 file_path = self.reports_dir / f"{filename}.html"
                 html_content = f"""
@@ -371,14 +388,14 @@ class ReportScheduler:
                 """
                 with open(file_path, "w") as f:
                     f.write(html_content)
-                
+
             else:  # Default to JSON
                 file_path = self.reports_dir / f"{filename}.json"
                 with open(file_path, "w") as f:
                     json.dump(content, f, indent=2, default=str)
-            
+
             return str(file_path)
-            
+
         except Exception as e:
             self.logger.error(f"Error generating report file: {e}")
             return ""
@@ -389,7 +406,7 @@ class ReportScheduler:
             self.report_configs[report_id] = config
             self.logger.info(f"Added report config: {report_id}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error adding report config: {e}")
             return False
@@ -402,33 +419,35 @@ class ReportScheduler:
                 self.logger.info(f"Removed report config: {report_id}")
                 return True
             return False
-            
+
         except Exception as e:
             self.logger.error(f"Error removing report config: {e}")
             return False
 
-    def get_report_configs(self) -> Dict[str, ReportConfig]:
+    def get_report_configs(self) -> dict[str, ReportConfig]:
         """Get all report configurations."""
         return self.report_configs
 
-    def get_report_history(self, limit: Optional[int] = None) -> List[ReportHistory]:
+    def get_report_history(self, limit: int | None = None) -> list[ReportHistory]:
         """Get report generation history."""
         history = self.report_history
         if limit:
             return history[-limit:]
         return history
 
-    def get_scheduler_status(self) -> Dict[str, Any]:
+    def get_scheduler_status(self) -> dict[str, Any]:
         """Get scheduler status."""
         try:
             return {
                 "is_scheduling": self.is_scheduling,
                 "total_configs": len(self.report_configs),
-                "enabled_configs": len([c for c in self.report_configs.values() if c.enabled]),
+                "enabled_configs": len(
+                    [c for c in self.report_configs.values() if c.enabled],
+                ),
                 "total_history": len(self.report_history),
                 "email_distribution": self.email_distribution,
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error getting scheduler status: {e}")
             return {}
@@ -443,7 +462,7 @@ class ReportScheduler:
         try:
             self.is_scheduling = False
             self.logger.info("🛑 Report Scheduler stopped")
-            
+
         except Exception as e:
             self.logger.error(f"Error stopping scheduler: {e}")
 
@@ -453,24 +472,23 @@ class ReportScheduler:
     default_return=None,
     context="report scheduler setup",
 )
-async def setup_report_scheduler(config: Dict[str, Any]) -> ReportScheduler | None:
+async def setup_report_scheduler(config: dict[str, Any]) -> ReportScheduler | None:
     """
     Setup and initialize report scheduler.
-    
+
     Args:
         config: Configuration dictionary
-        
+
     Returns:
         ReportScheduler instance or None if setup failed
     """
     try:
         scheduler = ReportScheduler(config)
-        
+
         if await scheduler.initialize():
             return scheduler
-        else:
-            return None
-            
+        return None
+
     except Exception as e:
         system_logger.error(f"Error setting up report scheduler: {e}")
-        return None 
+        return None

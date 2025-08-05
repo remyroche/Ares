@@ -5,31 +5,31 @@ This module provides utilities for proper assertion message formatting
 and test validation patterns that comply with linting rules.
 """
 
-from typing import Any, List, Tuple
+from typing import Any
 
 from src.utils.error_handler import format_assertion_message, safe_assertion
 
 
 class TestValidator:
     """Utility class for test validation with proper error message formatting."""
-    
+
     @staticmethod
     def assert_validation_result(
         is_valid: bool,
-        errors: List[str],
+        errors: list[str],
         context: str = "",
         *,
         expected_valid: bool = True,
     ) -> None:
         """
         Assert validation result with proper message formatting.
-        
+
         Args:
             is_valid: Whether the validation passed
             errors: List of validation errors
             context: Context for the validation
             expected_valid: Whether the validation should have passed
-            
+
         Raises:
             AssertionError: If validation result doesn't match expectation
         """
@@ -39,34 +39,34 @@ class TestValidator:
                 expected="valid",
                 actual="invalid",
                 context=context,
-                message_template="Should be valid: {actual}"
+                message_template="Should be valid: {actual}",
             )
             safe_assertion(False, error_message, context=context)
-            
+
         if not expected_valid and is_valid:
             # Assign message to variable to address EM101/EM102
             error_message = format_assertion_message(
-                expected="invalid", 
+                expected="invalid",
                 actual="valid",
                 context=context,
-                message_template="Should not be valid"
+                message_template="Should not be valid",
             )
             safe_assertion(False, error_message, context=context)
-    
+
     @staticmethod
     def assert_error_count(
-        errors: List[str],
+        errors: list[str],
         expected_count: int,
         context: str = "",
     ) -> None:
         """
         Assert error count with proper message formatting.
-        
+
         Args:
             errors: List of errors
             expected_count: Expected number of errors
             context: Context for the assertion
-            
+
         Raises:
             AssertionError: If error count doesn't match expectation
         """
@@ -77,10 +77,10 @@ class TestValidator:
                 expected=expected_count,
                 actual=actual_count,
                 context=context,
-                message_template="Expected {expected} errors, got {actual}"
+                message_template="Expected {expected} errors, got {actual}",
             )
             safe_assertion(False, error_message, context=context)
-    
+
     @staticmethod
     def assert_threshold_value(
         actual_value: Any,
@@ -90,13 +90,13 @@ class TestValidator:
     ) -> None:
         """
         Assert threshold value with proper message formatting.
-        
+
         Args:
             actual_value: Actual threshold value
             expected_value: Expected threshold value
             threshold_name: Name of the threshold being checked
             context: Context for the assertion
-            
+
         Raises:
             AssertionError: If threshold value doesn't match expectation
         """
@@ -108,7 +108,7 @@ class TestValidator:
                 context=f"{context}.{threshold_name}",
             )
             safe_assertion(False, error_message, context=context)
-    
+
     @staticmethod
     def assert_required_field(
         data: dict,
@@ -117,12 +117,12 @@ class TestValidator:
     ) -> None:
         """
         Assert required field exists with proper message formatting.
-        
+
         Args:
             data: Dictionary to check
             field_name: Name of required field
             context: Context for the assertion
-            
+
         Raises:
             AssertionError: If required field is missing
         """
@@ -130,7 +130,7 @@ class TestValidator:
             # Assign message to variable to address EM101/EM102
             error_message = f"'{field_name}' not found in {context}"
             safe_assertion(False, error_message, context=context)
-    
+
     @staticmethod
     def assert_step_rules(
         rules: dict,
@@ -140,27 +140,27 @@ class TestValidator:
     ) -> None:
         """
         Assert step rules with proper message formatting.
-        
+
         Args:
             rules: Step rules dictionary
             expected_can_skip: Expected can_skip value
             expected_failure_action: Expected failure_action value
             context: Context for the assertion
-            
+
         Raises:
             AssertionError: If step rules don't match expectations
         """
-        actual_can_skip = rules.get("can_skip", None)
+        actual_can_skip = rules.get("can_skip")
         if actual_can_skip != expected_can_skip:
             # Assign message to variable to address EM101/EM102
             error_message = format_assertion_message(
                 expected=expected_can_skip,
                 actual=actual_can_skip,
                 context=f"{context}.can_skip",
-                message_template="Expected can_skip to be {expected}, got {actual}"
+                message_template="Expected can_skip to be {expected}, got {actual}",
             )
             safe_assertion(False, error_message, context=context)
-        
+
         actual_failure_action = rules.get("failure_action", "")
         if actual_failure_action != expected_failure_action:
             # Assign message to variable to address EM101/EM102
@@ -168,36 +168,36 @@ class TestValidator:
                 expected=expected_failure_action,
                 actual=actual_failure_action,
                 context=f"{context}.failure_action",
-                message_template="Expected failure_action to be {expected}, got {actual}"
+                message_template="Expected failure_action to be {expected}, got {actual}",
             )
             safe_assertion(False, error_message, context=context)
 
 
 def create_validation_message(
     operation: str,
-    errors: List[str],
+    errors: list[str],
     context: str = "",
 ) -> str:
     """
     Create validation message with proper formatting.
-    
+
     Args:
         operation: Operation that was validated
         errors: List of validation errors
         context: Context for the validation
-        
+
     Returns:
         Formatted validation message
     """
     # Assign message to variable to address EM101/EM102
     base_message = f"{operation} validation failed"
-    
+
     if errors:
         error_details = "; ".join(errors)
         message = f"{base_message}: {error_details}"
     else:
         message = base_message
-    
+
     if context:
         return f"{context}: {message}"
     return message
@@ -211,13 +211,13 @@ def create_threshold_message(
 ) -> str:
     """
     Create threshold comparison message with proper formatting.
-    
+
     Args:
         expected: Expected threshold value
         actual: Actual threshold value
         threshold_name: Name of the threshold
         context: Context for the comparison
-        
+
     Returns:
         Formatted threshold message
     """
@@ -230,15 +230,15 @@ def create_threshold_message(
     return message
 
 
-def validate_imports() -> Tuple[bool, List[str]]:
+def validate_imports() -> tuple[bool, list[str]]:
     """
     Validate imports with proper error handling.
-    
+
     Returns:
         Tuple of (is_valid, errors)
     """
     errors = []
-    
+
     try:
         # Import validation logic here
         # This is a placeholder - actual implementation would check imports
@@ -250,18 +250,18 @@ def validate_imports() -> Tuple[bool, List[str]]:
         return False, errors
 
 
-def validate_data_format(data: Any) -> Tuple[bool, List[str]]:
+def validate_data_format(data: Any) -> tuple[bool, list[str]]:
     """
     Validate data format with proper error handling.
-    
+
     Args:
         data: Data to validate
-        
+
     Returns:
         Tuple of (is_valid, errors)
     """
     errors = []
-    
+
     try:
         # Data format validation logic here
         # This is a placeholder - actual implementation would validate data
@@ -273,18 +273,18 @@ def validate_data_format(data: Any) -> Tuple[bool, List[str]]:
         return False, errors
 
 
-def validate_data_quality(data: Any) -> Tuple[bool, List[str]]:
+def validate_data_quality(data: Any) -> tuple[bool, list[str]]:
     """
     Validate data quality with proper error handling.
-    
+
     Args:
         data: Data to validate
-        
+
     Returns:
         Tuple of (is_valid, errors)
     """
     errors = []
-    
+
     try:
         # Data quality validation logic here
         # This is a placeholder - actual implementation would validate quality
@@ -296,18 +296,18 @@ def validate_data_quality(data: Any) -> Tuple[bool, List[str]]:
         return False, errors
 
 
-def validate_file_paths(path: str) -> Tuple[bool, List[str]]:
+def validate_file_paths(path: str) -> tuple[bool, list[str]]:
     """
     Validate file paths with proper error handling.
-    
+
     Args:
         path: Path to validate
-        
+
     Returns:
         Tuple of (is_valid, errors)
     """
     errors = []
-    
+
     try:
         # File path validation logic here
         # This is a placeholder - actual implementation would validate paths
@@ -316,4 +316,4 @@ def validate_file_paths(path: str) -> Tuple[bool, List[str]]:
         # Assign error message to variable to address EM101/EM102
         error_message = f"File path validation failed: {str(e)}"
         errors.append(error_message)
-        return False, errors 
+        return False, errors

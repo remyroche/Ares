@@ -418,7 +418,7 @@ class TargetParameterOptimizer:
 
         try:
             # Load aggregated trades data for the current exchange and symbol
-            # Note: This is a simplified approach - in a full implementation, 
+            # Note: This is a simplified approach - in a full implementation,
             # the exchange and symbol should be passed as parameters
             agg_trades_files = [
                 f
@@ -486,15 +486,9 @@ class TargetParameterOptimizer:
             )
 
             # Fill missing values with forward fill then backward fill
-            self.data["bid_ask_spread"] = (
-                self.data["bid_ask_spread"]
-                .ffill()
-                .bfill()
-            )
+            self.data["bid_ask_spread"] = self.data["bid_ask_spread"].ffill().bfill()
             self.data["order_book_imbalance"] = (
-                self.data["order_book_imbalance"]
-                .ffill()
-                .bfill()
+                self.data["order_book_imbalance"].ffill().bfill()
             )
 
             # Fill any remaining NaN values with reasonable defaults
@@ -578,19 +572,25 @@ class TargetParameterOptimizer:
         target_dist = self.data["target"].value_counts()
         self.logger.info(f"Target variable created. Shape: {self.data.shape}")
         self.logger.info(f"Target distribution: {target_dist.to_dict()}")
-        
+
         # If we have only one class, try different thresholds
         if len(target_dist) == 1:
-            self.logger.warning("Only one class in target! Trying different thresholds...")
-            
+            self.logger.warning(
+                "Only one class in target! Trying different thresholds...",
+            )
+
             # Try different thresholds to get balanced classes
             thresholds = [0.001, 0.002, 0.003, 0.004, 0.006, 0.008, 0.01, 0.015, 0.02]
             for threshold in thresholds:
                 test_target = (price_change_pct > threshold).astype(int)
                 test_dist = test_target.value_counts()
-                if len(test_dist) > 1 and min(test_dist.values) > 100:  # At least 100 samples per class
+                if (
+                    len(test_dist) > 1 and min(test_dist.values) > 100
+                ):  # At least 100 samples per class
                     self.data["target"] = test_target
-                    self.logger.info(f"Adjusted target with threshold {threshold}: {test_dist.to_dict()}")
+                    self.logger.info(
+                        f"Adjusted target with threshold {threshold}: {test_dist.to_dict()}",
+                    )
                     break
             else:
                 # If still only one class, use median-based approach
@@ -759,9 +759,7 @@ class TargetParameterOptimizer:
                 self.logger.info(
                     f"Filling {nan_count} NaN values in column '{col}' with forward/backward fill",
                 )
-                self.data[col] = (
-                    self.data[col].ffill().bfill()
-                )
+                self.data[col] = self.data[col].ffill().bfill()
 
         # If there are still NaN values, fill with 0
         remaining_nan = self.data[feature_columns].isna().sum().sum()

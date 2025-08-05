@@ -69,30 +69,25 @@ class StateManager:
         Returns:
             bool: True if initialization successful, False otherwise
         """
-        try:
-            self.logger.info("Initializing State Manager...")
+        self.logger.info("Initializing State Manager...")
 
-            # Load state configuration
-            await self._load_state_configuration()
+        # Load state configuration
+        await self._load_state_configuration()
 
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for state manager")
-                return False
-
-            # Load existing state
-            await self._load_existing_state()
-
-            # Start auto-save if enabled
-            if self.auto_save:
-                await self._start_auto_save()
-
-            self.logger.info("✅ State Manager initialization completed successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ State Manager initialization failed: {e}")
+        # Validate configuration
+        if not self._validate_configuration():
+            self.logger.error("Invalid configuration for state manager")
             return False
+
+        # Load existing state
+        await self._load_existing_state()
+
+        # Start auto-save if enabled
+        if self.auto_save:
+            await self._start_auto_save()
+
+        self.logger.info("✅ State Manager initialization completed successfully")
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -146,13 +141,9 @@ class StateManager:
     )
     async def _start_auto_save(self) -> None:
         """Start auto-save task."""
-        try:
-            self.is_running = True
-            self.auto_save_task = asyncio.create_task(self._auto_save_loop())
-            self.logger.info("Auto-save task started")
-
-        except Exception as e:
-            self.logger.exception(f"Error starting auto-save task: {e}")
+        self.is_running = True
+        self.auto_save_task = asyncio.create_task(self._auto_save_loop())
+        self.logger.info("Auto-save task started")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -161,14 +152,10 @@ class StateManager:
     )
     async def _auto_save_loop(self) -> None:
         """Auto-save loop."""
-        try:
-            while self.is_running:
-                await asyncio.sleep(self.save_interval)
-                if self.is_running:
-                    await self.save_state()
-
-        except Exception as e:
-            self.logger.exception(f"Error in auto-save loop: {e}")
+        while self.is_running:
+            await asyncio.sleep(self.save_interval)
+            if self.is_running:
+                await self.save_state()
 
     @handle_specific_errors(
         error_handlers={
@@ -190,34 +177,29 @@ class StateManager:
         Returns:
             bool: True if successful, False otherwise
         """
-        try:
-            if not key:
-                self.logger.error("Invalid state key")
-                return False
-
-            # Update state
-            self.state[key] = value
-
-            # Add to history
-            self.state.setdefault("history", []).append(
-                {
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "action": "set",
-                    "key": key,
-                    "value": value,
-                },
-            )
-
-            # Auto-save if enabled
-            if self.auto_save:
-                await self.save_state()
-
-            self.logger.info(f"State updated: {key}")
-            return True
-
-        except Exception as e:
-            self.logger.exception(f"Error setting state: {e}")
+        if not key:
+            self.logger.error("Invalid state key")
             return False
+
+        # Update state
+        self.state[key] = value
+
+        # Add to history
+        self.state.setdefault("history", []).append(
+            {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "action": "set",
+                "key": key,
+                "value": value,
+            },
+        )
+
+        # Auto-save if enabled
+        if self.auto_save:
+            await self.save_state()
+
+        self.logger.info(f"State updated: {key}")
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -235,16 +217,11 @@ class StateManager:
         Returns:
             Any: State value or default
         """
-        try:
-            if not key:
-                self.logger.error("Invalid state key")
-                return default
-
-            return self.state.get(key, default)
-
-        except Exception as e:
-            self.logger.exception(f"Error getting state: {e}")
+        if not key:
+            self.logger.error("Invalid state key")
             return default
+
+        return self.state.get(key, default)
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

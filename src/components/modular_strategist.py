@@ -70,28 +70,23 @@ class ModularStrategist:
         Returns:
             bool: True if initialization successful, False otherwise
         """
-        try:
-            self.logger.info("Initializing Modular Strategist...")
+        self.logger.info("Initializing Modular Strategist...")
 
-            # Load strategist configuration
-            await self._load_strategist_configuration()
+        # Load strategist configuration
+        await self._load_strategist_configuration()
 
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for modular strategist")
-                return False
-
-            # Initialize strategy modules
-            await self._initialize_strategy_modules()
-
-            self.logger.info(
-                "✅ Modular Strategist initialization completed successfully",
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Modular Strategist initialization failed: {e}")
+        # Validate configuration
+        if not self._validate_configuration():
+            self.logger.error("Invalid configuration for modular strategist")
             return False
+
+        # Initialize strategy modules
+        await self._initialize_strategy_modules()
+
+        self.logger.info(
+            "✅ Modular Strategist initialization completed successfully",
+        )
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -100,29 +95,25 @@ class ModularStrategist:
     )
     async def _load_strategist_configuration(self) -> None:
         """Load strategist configuration."""
-        try:
-            # Set default strategist parameters
-            self.strategist_config.setdefault("strategy_interval", 60)
-            self.strategist_config.setdefault("max_strategy_history", 100)
-            self.strategist_config.setdefault("enable_position_sizing", True)
-            self.strategist_config.setdefault("enable_risk_management", True)
-            self.strategist_config.setdefault("enable_portfolio_optimization", False)
-            self.strategist_config.setdefault("enable_dynamic_rebalancing", True)
+        # Set default strategist parameters
+        self.strategist_config.setdefault("strategy_interval", 60)
+        self.strategist_config.setdefault("max_strategy_history", 100)
+        self.strategist_config.setdefault("enable_position_sizing", True)
+        self.strategist_config.setdefault("enable_risk_management", True)
+        self.strategist_config.setdefault("enable_portfolio_optimization", False)
+        self.strategist_config.setdefault("enable_dynamic_rebalancing", True)
 
-            # Update configuration
-            self.strategy_interval = self.strategist_config["strategy_interval"]
-            self.max_strategy_history = self.strategist_config["max_strategy_history"]
-            self.enable_position_sizing = self.strategist_config[
-                "enable_position_sizing"
-            ]
-            self.enable_risk_management = self.strategist_config[
-                "enable_risk_management"
-            ]
+        # Update configuration
+        self.strategy_interval = self.strategist_config["strategy_interval"]
+        self.max_strategy_history = self.strategist_config["max_strategy_history"]
+        self.enable_position_sizing = self.strategist_config[
+            "enable_position_sizing"
+        ]
+        self.enable_risk_management = self.strategist_config[
+            "enable_risk_management"
+        ]
 
-            self.logger.info("Strategist configuration loaded successfully")
-
-        except Exception as e:
-            self.logger.error(f"Error loading strategist configuration: {e}")
+        self.logger.info("Strategist configuration loaded successfully")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -136,35 +127,30 @@ class ModularStrategist:
         Returns:
             bool: True if configuration is valid, False otherwise
         """
-        try:
-            # Validate strategy interval
-            if self.strategy_interval <= 0:
-                self.logger.error("Invalid strategy interval")
-                return False
-
-            # Validate max strategy history
-            if self.max_strategy_history <= 0:
-                self.logger.error("Invalid max strategy history")
-                return False
-
-            # Validate that at least one strategy type is enabled
-            if not any(
-                [
-                    self.enable_position_sizing,
-                    self.enable_risk_management,
-                    self.strategist_config.get("enable_portfolio_optimization", False),
-                    self.strategist_config.get("enable_dynamic_rebalancing", True),
-                ],
-            ):
-                self.logger.error("At least one strategy type must be enabled")
-                return False
-
-            self.logger.info("Configuration validation successful")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        # Validate strategy interval
+        if self.strategy_interval <= 0:
+            self.logger.error("Invalid strategy interval")
             return False
+
+        # Validate max strategy history
+        if self.max_strategy_history <= 0:
+            self.logger.error("Invalid max strategy history")
+            return False
+
+        # Validate that at least one strategy type is enabled
+        if not any(
+            [
+                self.enable_position_sizing,
+                self.enable_risk_management,
+                self.strategist_config.get("enable_portfolio_optimization", False),
+                self.strategist_config.get("enable_dynamic_rebalancing", True),
+            ],
+        ):
+            self.logger.error("At least one strategy type must be enabled")
+            return False
+
+        self.logger.info("Configuration validation successful")
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

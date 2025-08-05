@@ -47,8 +47,10 @@ class MLTargetUpdater:
             "min_time_between_updates_seconds",
             60,
         )  # 1 minute
-        self.confidence_threshold_for_update = self.config.get(
-            "confidence_threshold_for_update",
+        from src.config_optuna import get_parameter_value
+
+        self.confidence_threshold_for_update = get_parameter_value(
+            "confidence_thresholds.ml_target_update_threshold",
             0.6,
         )
         self.max_target_change_percent = self.config.get(
@@ -93,6 +95,11 @@ class MLTargetUpdater:
         default_return=None,
         context="target updater start",
     )
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="target updater monitoring",
+    )
     async def start_monitoring(self):
         """Start the continuous target monitoring and updating process."""
         if self.is_running:
@@ -102,17 +109,11 @@ class MLTargetUpdater:
         self.is_running = True
         self.logger.info("Started ML target updater monitoring")
 
-        try:
-            while self.is_running:
-                await self._update_cycle()
-                await asyncio.sleep(self.update_interval_seconds)
-        except Exception as e:
-            self.logger.error(
-                f"Error in target updater monitoring loop: {e}",
-                exc_info=True,
-            )
-        finally:
-            self.is_running = False
+        while self.is_running:
+            await self._update_cycle()
+            await asyncio.sleep(self.update_interval_seconds)
+
+        self.is_running = False
 
     def stop_monitoring(self):
         """Stop the target monitoring process."""

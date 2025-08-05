@@ -29,6 +29,8 @@ class BehaviorMetricType(Enum):
     PREDICTION_DRIFT = "prediction_drift"
     ENSEMBLE_DIVERSITY = "ensemble_diversity"
     DECISION_PATH_STABILITY = "decision_path_stability"
+    CONFIDENCE_CALIBRATION = "confidence_calibration"
+    THEORY_VS_REALITY = "theory_vs_reality"
 
 
 @dataclass
@@ -43,6 +45,8 @@ class ModelBehaviorSnapshot:
     prediction_drift: float
     ensemble_diversity: Optional[float] = None
     decision_path_stability: Optional[float] = None
+    confidence_calibration: Optional[float] = None
+    theory_vs_reality_score: Optional[float] = None
     metadata: Dict[str, Any] = None
 
 
@@ -269,6 +273,8 @@ class ModelBehaviorTracker:
                 prediction_drift = self._calculate_prediction_drift(model_id, performance)
                 ensemble_diversity = self._calculate_ensemble_diversity(model_id, performance)
                 decision_path_stability = self._calculate_decision_path_stability(model_id, performance)
+                confidence_calibration = self._calculate_confidence_calibration(model_id, performance)
+                theory_vs_reality_score = self._calculate_theory_vs_reality_score(model_id, performance)
                 
                 # Create behavior snapshot
                 snapshot = ModelBehaviorSnapshot(
@@ -281,6 +287,8 @@ class ModelBehaviorTracker:
                     prediction_drift=prediction_drift,
                     ensemble_diversity=ensemble_diversity,
                     decision_path_stability=decision_path_stability,
+                    confidence_calibration=confidence_calibration,
+                    theory_vs_reality_score=theory_vs_reality_score,
                     metadata=performance.get("metadata", {}),
                 )
                 
@@ -390,6 +398,28 @@ class ModelBehaviorTracker:
             
         except Exception as e:
             self.logger.error(f"Error calculating decision path stability: {e}")
+            return None
+
+    def _calculate_confidence_calibration(self, model_id: str, performance: Dict[str, Any]) -> Optional[float]:
+        """Calculate confidence calibration score for a model."""
+        try:
+            # Simulate confidence calibration calculation
+            # In production, this would compare predicted probabilities with actual outcomes
+            return 0.92
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating confidence calibration for {model_id}: {e}")
+            return None
+
+    def _calculate_theory_vs_reality_score(self, model_id: str, performance: Dict[str, Any]) -> Optional[float]:
+        """Calculate theory vs reality score for a model."""
+        try:
+            # Simulate theory vs reality calculation
+            # In production, this would compare expected vs actual model behavior
+            return 0.88
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating theory vs reality score for {model_id}: {e}")
             return None
 
     @handle_errors(
@@ -605,4 +635,4 @@ async def setup_model_behavior_tracker(
             
     except Exception as e:
         system_logger.error(f"Error setting up model behavior tracker: {e}")
-        return None 
+        return None

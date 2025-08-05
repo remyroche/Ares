@@ -36,6 +36,33 @@ from src.training.regime_specific_training_manager import RegimeSpecificTraining
 # Import ML Confidence Predictor for calibration
 from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 
+# Import MLflow for model management
+import mlflow
+import mlflow.sklearn
+import mlflow.pytorch
+import mlflow.lightgbm
+
+# Import Optuna for hyperparameter optimization
+import optuna
+
+# Import training steps
+from src.training.steps.step1_data_collection import DataCollectionStep
+from src.training.steps.step2_market_regime_classification import MarketRegimeClassificationStep
+from src.training.steps.step3_regime_data_splitting import RegimeDataSplittingStep
+from src.training.steps.step4_analyst_labeling_feature_engineering import AnalystLabelingFeatureEngineeringStep
+from src.training.steps.step5_analyst_specialist_training import AnalystSpecialistTrainingStep
+from src.training.steps.step6_analyst_enhancement import AnalystEnhancementStep
+from src.training.steps.step7_analyst_ensemble_creation import AnalystEnsembleCreationStep
+from src.training.steps.step8_tactician_labeling import TacticianLabelingStep
+from src.training.steps.step9_tactician_specialist_training import TacticianSpecialistTrainingStep
+from src.training.steps.step10_tactician_ensemble_creation import TacticianEnsembleCreationStep
+from src.training.steps.step11_confidence_calibration import ConfidenceCalibrationStep
+from src.training.steps.step12_final_parameters_optimization import FinalParametersOptimizationStep
+from src.training.steps.step13_walk_forward_validation import WalkForwardValidationStep
+from src.training.steps.step14_monte_carlo_validation import MonteCarloValidationStep
+from src.training.steps.step15_ab_testing import ABTestingStep
+from src.training.steps.step16_saving import SavingStep
+
 from src.training.training_validation_config import (
     VALIDATION_FUNCTIONS,
     can_proceed_to_step,
@@ -314,6 +341,48 @@ class EnhancedTrainingManager:
             "walk_forward": True,
             "calibration_window": 1000
         }
+        
+        # MLflow configuration
+        self.mlflow_config = {
+            "tracking_uri": "sqlite:///mlflow.db",
+            "experiment_name": "enhanced_trading_system",
+            "enable_mlflow": True
+        }
+        
+        # Data splitting configuration
+        self.data_splitting_config = {
+            "model_generation_split": 0.85,  # 85% for model generation
+            "validation_split": 0.15,         # 15% for walk-forward and MC
+            "time_series_split": True,
+            "maintain_chronological_order": True
+        }
+        
+        # Training steps configuration
+        self.training_steps = {
+            "step1_data_collection": True,
+            "step2_market_regime_classification": True,
+            "step3_regime_data_splitting": True,
+            "step4_analyst_labeling_feature_engineering": True,
+            "step5_analyst_specialist_training": True,
+            "step6_analyst_enhancement": True,
+            "step7_analyst_ensemble_creation": True,
+            "step8_tactician_labeling": True,
+            "step9_tactician_specialist_training": True,
+            "step10_tactician_ensemble_creation": True,
+            "step11_confidence_calibration": True,
+            "step12_final_parameters_optimization": True,
+            "step13_walk_forward_validation": True,
+            "step14_monte_carlo_validation": True,
+            "step15_ab_testing": True,
+            "step16_saving": True
+        }
+        
+        # Training step instances
+        self.training_step_instances = {}
+        
+        # MLflow experiment tracking
+        self.mlflow_experiment = None
+        self.current_run = None
 
     @handle_specific_errors(
         error_handlers={
@@ -495,9 +564,15 @@ class EnhancedTrainingManager:
             # Initialize ML Confidence Predictor
             await self._initialize_ml_confidence_predictor()
             
-            # Initialize dual model systems
+                        # Initialize dual model systems
             await self._initialize_dual_model_systems()
-
+            
+            # Initialize MLflow
+            await self._initialize_mlflow()
+            
+            # Initialize training steps
+            await self._initialize_training_steps()
+            
             self.logger.info("Enhanced training modules initialized successfully")
 
         except Exception as e:
@@ -869,6 +944,76 @@ class EnhancedTrainingManager:
         except Exception as e:
             self.logger.error(f"Error initializing calibration for {model_key}: {e}")
 
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="MLflow initialization",
+    )
+    async def _initialize_mlflow(self) -> None:
+        """Initialize MLflow for experiment tracking."""
+        try:
+            if not self.mlflow_config.get("enable_mlflow", True):
+                self.logger.info("MLflow disabled in configuration")
+                return
+            
+            # Set MLflow tracking URI
+            mlflow.set_tracking_uri(self.mlflow_config["tracking_uri"])
+            
+            # Get or create experiment
+            experiment_name = self.mlflow_config["experiment_name"]
+            self.mlflow_experiment = mlflow.get_experiment_by_name(experiment_name)
+            
+            if self.mlflow_experiment is None:
+                experiment_id = mlflow.create_experiment(experiment_name)
+                self.mlflow_experiment = mlflow.get_experiment(experiment_id)
+            
+            self.logger.info(f"MLflow initialized with experiment: {experiment_name}")
+            
+        except Exception as e:
+            self.logger.error(f"Error initializing MLflow: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="training steps initialization",
+    )
+    async def _initialize_training_steps(self) -> None:
+        """Initialize all training step instances."""
+        try:
+            self.logger.info("Initializing training steps...")
+            
+            # Initialize each training step
+            step_classes = {
+                "step1_data_collection": DataCollectionStep,
+                "step2_market_regime_classification": MarketRegimeClassificationStep,
+                "step3_regime_data_splitting": RegimeDataSplittingStep,
+                "step4_analyst_labeling_feature_engineering": AnalystLabelingFeatureEngineeringStep,
+                "step5_analyst_specialist_training": AnalystSpecialistTrainingStep,
+                "step6_analyst_enhancement": AnalystEnhancementStep,
+                "step7_analyst_ensemble_creation": AnalystEnsembleCreationStep,
+                "step8_tactician_labeling": TacticianLabelingStep,
+                "step9_tactician_specialist_training": TacticianSpecialistTrainingStep,
+                "step10_tactician_ensemble_creation": TacticianEnsembleCreationStep,
+                "step11_confidence_calibration": ConfidenceCalibrationStep,
+                "step12_final_parameters_optimization": FinalParametersOptimizationStep,
+                "step13_walk_forward_validation": WalkForwardValidationStep,
+                "step14_monte_carlo_validation": MonteCarloValidationStep,
+                "step15_ab_testing": ABTestingStep,
+                "step16_saving": SavingStep
+            }
+            
+            for step_name, step_class in step_classes.items():
+                if self.training_steps.get(step_name, True):
+                    step_instance = step_class(self.config)
+                    await step_instance.initialize()
+                    self.training_step_instances[step_name] = step_instance
+                    self.logger.info(f"Initialized {step_name}")
+            
+            self.logger.info(f"Initialized {len(self.training_step_instances)} training steps")
+            
+        except Exception as e:
+            self.logger.error(f"Error initializing training steps: {e}")
+
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid enhanced training parameters"),
@@ -1000,6 +1145,9 @@ class EnhancedTrainingManager:
                     )
                     if calibration_results:
                         self.enhanced_training_results["confidence_calibration"] = calibration_results
+
+            # Execute comprehensive training pipeline
+            await self._execute_comprehensive_training_pipeline(enhanced_training_input)
 
             # Store enhanced training results
             await self._store_enhanced_training_results()
@@ -3560,6 +3708,243 @@ class EnhancedTrainingManager:
             
         except Exception as e:
             self.logger.error(f"Error getting cached data: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="comprehensive training pipeline execution",
+    )
+    async def _execute_comprehensive_training_pipeline(
+        self,
+        enhanced_training_input: dict[str, Any],
+    ) -> bool:
+        """
+        Execute the comprehensive training pipeline with all 16 steps.
+        
+        Args:
+            enhanced_training_input: Enhanced training input dictionary
+            
+        Returns:
+            bool: True if pipeline execution successful, False otherwise
+        """
+        try:
+            self.logger.info("🚀 Starting comprehensive training pipeline...")
+            
+            # Start MLflow run
+            if self.mlflow_config.get("enable_mlflow", True):
+                mlflow.set_experiment(self.mlflow_experiment.name)
+                self.current_run = mlflow.start_run()
+                mlflow.log_params({
+                    "symbol": enhanced_training_input.get("symbol", "ETHUSDT"),
+                    "exchange": enhanced_training_input.get("exchange", "BINANCE"),
+                    "training_mode": enhanced_training_input.get("training_mode", "full")
+                })
+            
+            # Initialize pipeline state
+            pipeline_state = {
+                "training_data": None,
+                "regime_data": {},
+                "analyst_models": {},
+                "tactician_models": {},
+                "ensembles": {},
+                "calibration_results": {},
+                "validation_results": {},
+                "final_parameters": {},
+                "mlflow_run_id": self.current_run.info.run_id if self.current_run else None
+            }
+            
+            # Execute each training step
+            step_execution_order = [
+                "step1_data_collection",
+                "step2_market_regime_classification", 
+                "step3_regime_data_splitting",
+                "step4_analyst_labeling_feature_engineering",
+                "step5_analyst_specialist_training",
+                "step6_analyst_enhancement",
+                "step7_analyst_ensemble_creation",
+                "step8_tactician_labeling",
+                "step9_tactician_specialist_training",
+                "step10_tactician_ensemble_creation",
+                "step11_confidence_calibration",
+                "step12_final_parameters_optimization",
+                "step13_walk_forward_validation",
+                "step14_monte_carlo_validation",
+                "step15_ab_testing",
+                "step16_saving"
+            ]
+            
+            for step_name in step_execution_order:
+                if step_name in self.training_step_instances:
+                    self.logger.info(f"🔄 Executing {step_name}...")
+                    
+                    try:
+                        step_instance = self.training_step_instances[step_name]
+                        step_result = await step_instance.execute(enhanced_training_input, pipeline_state)
+                        
+                        if step_result:
+                            # Update pipeline state with step results
+                            pipeline_state.update(step_result)
+                            
+                            # Log step completion to MLflow
+                            if self.current_run:
+                                mlflow.log_metric(f"{step_name}_status", 1)
+                                mlflow.log_metric(f"{step_name}_duration", step_result.get("duration", 0))
+                            
+                            self.logger.info(f"✅ {step_name} completed successfully")
+                        else:
+                            self.logger.error(f"❌ {step_name} failed")
+                            return False
+                            
+                    except Exception as e:
+                        self.logger.error(f"❌ Error in {step_name}: {e}")
+                        return False
+                else:
+                    self.logger.warning(f"⚠️ {step_name} not found in training step instances")
+            
+            # Store pipeline results
+            self.enhanced_training_results["comprehensive_pipeline"] = pipeline_state
+            
+            # End MLflow run
+            if self.current_run:
+                mlflow.end_run()
+                self.current_run = None
+            
+            self.logger.info("✅ Comprehensive training pipeline completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error executing comprehensive training pipeline: {e}")
+            
+            # End MLflow run on error
+            if self.current_run:
+                mlflow.end_run()
+                self.current_run = None
+            
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="data splitting",
+    )
+    async def _split_data_for_training_and_validation(
+        self,
+        data: pd.DataFrame,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Split data into training (85%) and validation (15%) sets.
+        
+        Args:
+            data: Input data DataFrame
+            
+        Returns:
+            Tuple of (training_data, validation_data)
+        """
+        try:
+            # Calculate split point
+            split_point = int(len(data) * self.data_splitting_config["model_generation_split"])
+            
+            # Split data maintaining chronological order
+            training_data = data.iloc[:split_point].copy()
+            validation_data = data.iloc[split_point:].copy()
+            
+            self.logger.info(f"Data split: {len(training_data)} training samples, {len(validation_data)} validation samples")
+            
+            return training_data, validation_data
+            
+        except Exception as e:
+            self.logger.error(f"Error splitting data: {e}")
+            return data, pd.DataFrame()
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="MLflow model logging",
+    )
+    async def _log_model_to_mlflow(
+        self,
+        model: Any,
+        model_name: str,
+        model_type: str,
+        metrics: dict[str, Any],
+        parameters: dict[str, Any],
+    ) -> None:
+        """
+        Log model to MLflow with metrics and parameters.
+        
+        Args:
+            model: Trained model
+            model_name: Name of the model
+            model_type: Type of model (sklearn, pytorch, lightgbm)
+            metrics: Model performance metrics
+            parameters: Model parameters
+        """
+        try:
+            if not self.mlflow_config.get("enable_mlflow", True):
+                return
+            
+            # Log parameters
+            mlflow.log_params(parameters)
+            
+            # Log metrics
+            for metric_name, metric_value in metrics.items():
+                mlflow.log_metric(metric_name, metric_value)
+            
+            # Log model based on type
+            if model_type == "sklearn":
+                mlflow.sklearn.log_model(model, f"{model_name}_model")
+            elif model_type == "pytorch":
+                mlflow.pytorch.log_model(model, f"{model_name}_model")
+            elif model_type == "lightgbm":
+                mlflow.lightgbm.log_model(model, f"{model_name}_model")
+            
+            self.logger.info(f"Logged {model_name} to MLflow")
+            
+        except Exception as e:
+            self.logger.error(f"Error logging model to MLflow: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="Optuna optimization",
+    )
+    async def _optimize_hyperparameters_with_optuna(
+        self,
+        objective_function: callable,
+        n_trials: int = 100,
+        study_name: str = "hyperparameter_optimization",
+    ) -> optuna.Study:
+        """
+        Optimize hyperparameters using Optuna.
+        
+        Args:
+            objective_function: Function to optimize
+            n_trials: Number of trials
+            study_name: Name of the study
+            
+        Returns:
+            Optuna study object
+        """
+        try:
+            # Create or load study
+            study = optuna.create_study(
+                direction="maximize",
+                study_name=study_name,
+                storage="sqlite:///optuna.db"
+            )
+            
+            # Optimize
+            study.optimize(objective_function, n_trials=n_trials)
+            
+            self.logger.info(f"Optuna optimization completed: {study_name}")
+            self.logger.info(f"Best value: {study.best_value}")
+            self.logger.info(f"Best parameters: {study.best_params}")
+            
+            return study
+            
+        except Exception as e:
+            self.logger.error(f"Error in Optuna optimization: {e}")
             return None
 
 

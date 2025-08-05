@@ -1,7 +1,5 @@
 # src/training/enhanced_training_manager.py
 
-# src/training/enhanced_training_manager.py
-
 import json
 import os
 import time
@@ -45,7 +43,7 @@ import mlflow.lightgbm
 # Import Optuna for hyperparameter optimization
 import optuna
 
-# Import training steps
+# Import training steps - using existing files where possible
 from src.training.steps.step1_data_collection import DataCollectionStep
 from src.training.steps.step2_market_regime_classification import MarketRegimeClassificationStep
 from src.training.steps.step3_regime_data_splitting import RegimeDataSplittingStep

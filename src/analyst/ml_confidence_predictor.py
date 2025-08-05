@@ -57,7 +57,6 @@ class MLConfidencePredictor:
         
         # Directional confidence analysis (0-2% range for high leverage trading)
         self.directional_confidence_levels: List[float] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
-        self.liquidation_risk_levels: List[float] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
         
         # Dual model system compatibility
         self.analyst_timeframes: List[str] = ["1h", "15m", "5m", "1m"]

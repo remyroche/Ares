@@ -6,8 +6,8 @@ Multi-Timeframe Feature Engineering System
 This module provides timeframe-specific feature engineering that adapts indicators
 to the defined timeframes:
 
-- Execution: 1m & 5m (combined for ultra-short-term execution)
-- Tactical: 15m (for tactical decision making)
+- Execution: 1m
+- Tactical: 1m & 15m & 30m (for tactical decision making)
 - Strategic: 1h (for macro trend analysis)
 
 The system ensures that indicators are calculated with appropriate parameters
@@ -84,7 +84,7 @@ class MultiTimeframeFeatureEngineering:
             Dictionary with timeframe-specific parameter mappings
         """
         return {
-            # Execution timeframes (1m & 5m)
+            # Execution timeframes (1m)
             "1m": {
                 "description": "Ultra-short-term execution",
                 "trading_style": "scalping",

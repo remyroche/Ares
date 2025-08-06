@@ -7,11 +7,69 @@ import pickle
 from datetime import datetime
 from typing import Any
 
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import StackingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
 from src.utils.logger import system_logger
+from src.analyst.data_utils import load_klines_data
+
+
+class DynamicWeightedEnsemble:
+    """Dynamic weighted ensemble using Sharpe Ratio for model weighting."""
+    
+    def __init__(self, models, model_names, weights):
+        self.models = models
+        self.model_names = model_names
+        self.weights = weights
+    
+    def predict(self, X):
+        """Make ensemble predictions using weighted average of model probabilities."""
+        all_probabilities = []
+        
+        for name, model in zip(self.model_names, self.models, strict=False):
+            if self.weights[name] > 0:
+                try:
+                    probs = model.predict_proba(X)
+                    weighted_probs = probs * self.weights[name]
+                    all_probabilities.append(weighted_probs)
+                except Exception:
+                    continue
+        
+        if all_probabilities:
+            # Average the weighted probabilities
+            ensemble_probs = np.mean(all_probabilities, axis=0)
+            return np.argmax(ensemble_probs, axis=1)
+        else:
+            # Fallback: return random predictions
+            return np.random.randint(0, 2, size=len(X))
+    
+    def predict_proba(self, X):
+        """Get ensemble probability predictions."""
+        all_probabilities = []
+        
+        for name, model in zip(self.model_names, self.models, strict=False):
+            if self.weights[name] > 0:
+                try:
+                    probs = model.predict_proba(X)
+                    weighted_probs = probs * self.weights[name]
+                    all_probabilities.append(weighted_probs)
+                except Exception:
+                    continue
+        
+        if all_probabilities:
+            # Average the weighted probabilities
+            return np.mean(all_probabilities, axis=0)
+        else:
+            # Fallback: return uniform probabilities
+            return np.ones((len(X), 2)) * 0.5
 
 
 class AnalystEnsembleCreationStep:
-    """Step 7: Analyst Ensemble Creation using StackingCV."""
+    """Step 7: Analyst Ensemble Creation using StackingCV and Dynamic Weighting."""
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
@@ -33,7 +91,7 @@ class AnalystEnsembleCreationStep:
         pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
         """
-        Execute analyst ensemble creation.
+        Execute analyst ensemble creation with data loading and proper ensemble methods.
 
         Args:
             training_input: Training input parameters
@@ -49,6 +107,14 @@ class AnalystEnsembleCreationStep:
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             data_dir = training_input.get("data_dir", "data/training")
+
+            # Load training and validation data
+            training_data, validation_data = await self._load_training_data(
+                symbol, exchange, data_dir
+            )
+
+            if training_data is None or validation_data is None:
+                raise ValueError("Failed to load training and validation data")
 
             # Load enhanced analyst models
             enhanced_models_dir = f"{data_dir}/enhanced_analyst_models"
@@ -80,10 +146,20 @@ class AnalystEnsembleCreationStep:
             for regime_name, regime_models in enhanced_models.items():
                 self.logger.info(f"Creating ensemble for regime: {regime_name}")
 
+                # Get regime-specific data
+                regime_training_data = training_data.get(regime_name, pd.DataFrame())
+                regime_validation_data = validation_data.get(regime_name, pd.DataFrame())
+
+                if regime_training_data.empty or regime_validation_data.empty:
+                    self.logger.warning(f"No data available for regime: {regime_name}")
+                    continue
+
                 # Create ensemble for this regime
                 regime_ensemble = await self._create_regime_ensemble(
                     regime_models,
                     regime_name,
+                    regime_training_data,
+                    regime_validation_data,
                 )
                 ensemble_results[regime_name] = regime_ensemble
 
@@ -96,12 +172,31 @@ class AnalystEnsembleCreationStep:
                 with open(ensemble_file, "wb") as f:
                     pickle.dump(ensemble_data, f)
 
-            # Save ensemble summary
+            # Save ensemble summary (without ensemble objects for JSON serialization)
             summary_file = (
                 f"{data_dir}/{exchange}_{symbol}_analyst_ensemble_summary.json"
             )
+            
+            # Create JSON-serializable summary
+            json_summary = {}
+            for regime_name, regime_ensembles in ensemble_results.items():
+                json_summary[regime_name] = {}
+                for ensemble_type, ensemble_data in regime_ensembles.items():
+                    # Extract only JSON-serializable data
+                    json_summary[regime_name][ensemble_type] = {
+                        "ensemble_type": ensemble_data.get("ensemble_type"),
+                        "base_models": ensemble_data.get("base_models"),
+                        "regime": ensemble_data.get("regime"),
+                        "creation_date": ensemble_data.get("creation_date"),
+                        "validation_metrics": ensemble_data.get("validation_metrics"),
+                        "cv_scores": ensemble_data.get("cv_scores"),
+                        "weights": ensemble_data.get("weights"),
+                        "sharpe_ratios": ensemble_data.get("sharpe_ratios"),
+                        "features": ensemble_data.get("features"),
+                    }
+            
             with open(summary_file, "w") as f:
-                json.dump(ensemble_results, f, indent=2)
+                json.dump(json_summary, f, indent=2)
 
             self.logger.info(
                 f"✅ Analyst ensemble creation completed. Results saved to {ensemble_models_dir}",
@@ -121,17 +216,85 @@ class AnalystEnsembleCreationStep:
             self.logger.error(f"❌ Error in Analyst Ensemble Creation: {e}")
             return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
+    async def _load_training_data(
+        self, symbol: str, exchange: str, data_dir: str
+    ) -> tuple[dict[str, pd.DataFrame] | None, dict[str, pd.DataFrame] | None]:
+        """
+        Load training and validation data for all regimes.
+
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            data_dir: Data directory path
+
+        Returns:
+            Tuple of (training_data, validation_data) dictionaries keyed by regime
+        """
+        try:
+            self.logger.info("Loading training and validation data...")
+
+            # Load regime data files
+            regime_data_dir = f"{data_dir}/regime_data"
+            if not os.path.exists(regime_data_dir):
+                self.logger.error(f"Regime data directory not found: {regime_data_dir}")
+                return None, None
+
+            training_data = {}
+            validation_data = {}
+
+            for regime_file in os.listdir(regime_data_dir):
+                if regime_file.endswith("_training.csv"):
+                    regime_name = regime_file.replace("_training.csv", "")
+                    training_file = os.path.join(regime_data_dir, regime_file)
+                    validation_file = os.path.join(regime_data_dir, f"{regime_name}_validation.csv")
+
+                    # Load training data
+                    if os.path.exists(training_file):
+                        training_df = pd.read_csv(training_file, index_col=0, parse_dates=True)
+                        training_data[regime_name] = training_df
+                        self.logger.info(f"Loaded training data for {regime_name}: {training_df.shape}")
+
+                    # Load validation data
+                    if os.path.exists(validation_file):
+                        validation_df = pd.read_csv(validation_file, index_col=0, parse_dates=True)
+                        validation_data[regime_name] = validation_df
+                        self.logger.info(f"Loaded validation data for {regime_name}: {validation_df.shape}")
+
+            if not training_data or not validation_data:
+                self.logger.warning("No training or validation data found, attempting to load from klines data...")
+                
+                # Fallback: try to load from klines data and split
+                klines_file = f"{data_dir}/{exchange}_{symbol}_1h.csv"
+                if os.path.exists(klines_file):
+                    klines_df = load_klines_data(klines_file)
+                    if not klines_df.empty:
+                        # Split data into training and validation
+                        split_idx = int(len(klines_df) * 0.8)
+                        training_data["all"] = klines_df.iloc[:split_idx]
+                        validation_data["all"] = klines_df.iloc[split_idx:]
+                        self.logger.info(f"Split klines data: training={len(training_data['all'])}, validation={len(validation_data['all'])}")
+
+            return training_data, validation_data
+
+        except Exception as e:
+            self.logger.error(f"Error loading training data: {e}")
+            return None, None
+
     async def _create_regime_ensemble(
         self,
         models: dict[str, Any],
         regime_name: str,
+        training_data: pd.DataFrame,
+        validation_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """
-        Create ensemble for a specific regime.
+        Create ensemble for a specific regime with real data.
 
         Args:
             models: Enhanced models for the regime
             regime_name: Name of the regime
+            training_data: Training data for the regime
+            validation_data: Validation data for the regime
 
         Returns:
             Dict containing ensemble model
@@ -139,67 +302,73 @@ class AnalystEnsembleCreationStep:
         try:
             self.logger.info(f"Creating ensemble for regime: {regime_name}")
 
-            # Extract models and their accuracies
+            # Extract models and prepare data
             model_list = []
             model_names = []
-            accuracies = []
+            model_performances = {}
 
             for model_name, model_data in models.items():
                 model_list.append(model_data["model"])
                 model_names.append(model_name)
-                accuracies.append(model_data.get("accuracy", 0))
+
+                # Calculate model performance on validation data
+                if not validation_data.empty and "label" in validation_data.columns:
+                    X_val = validation_data.drop("label", axis=1)
+                    y_val = validation_data["label"]
+                    
+                    try:
+                        predictions = model_data["model"].predict(X_val)
+                        accuracy = accuracy_score(y_val, predictions)
+                        precision = precision_score(y_val, predictions, average='weighted', zero_division=0)
+                        recall = recall_score(y_val, predictions, average='weighted', zero_division=0)
+                        f1 = f1_score(y_val, predictions, average='weighted', zero_division=0)
+                        
+                        model_performances[model_name] = {
+                            "accuracy": accuracy,
+                            "precision": precision,
+                            "recall": recall,
+                            "f1": f1
+                        }
+                    except Exception as e:
+                        self.logger.warning(f"Could not evaluate model {model_name}: {e}")
+                        model_performances[model_name] = {
+                            "accuracy": 0.5,
+                            "precision": 0.5,
+                            "recall": 0.5,
+                            "f1": 0.5
+                        }
 
             # Create different ensemble types
             ensemble_results = {}
 
-            # 1. StackingCV Ensemble
+            # 1. StackingCV Ensemble with proper meta-learner
             stacking_ensemble = await self._create_stacking_ensemble(
                 model_list,
                 model_names,
                 regime_name,
+                training_data,
+                validation_data,
             )
             ensemble_results["stacking_cv"] = stacking_ensemble
 
-            # 2. Voting Ensemble
+            # 2. Dynamic Performance-Weighted Ensemble using Sharpe Ratio
+            dynamic_ensemble = await self._create_dynamic_weighting_ensemble(
+                model_list,
+                model_names,
+                regime_name,
+                training_data,
+                validation_data,
+                model_performances,
+            )
+            ensemble_results["dynamic_weighting"] = dynamic_ensemble
+
+            # 3. Voting Ensemble
             voting_ensemble = await self._create_voting_ensemble(
                 model_list,
                 model_names,
                 regime_name,
             )
             ensemble_results["voting"] = voting_ensemble
-
-            # 3. Weighted Average Ensemble
-            weighted_ensemble = await self._create_weighted_ensemble(
-                model_list,
-                accuracies,
-                model_names,
-                regime_name,
-            )
-            ensemble_results["weighted_average"] = weighted_ensemble
-
-            # 4. Bagging Ensemble
-            bagging_ensemble = await self._create_bagging_ensemble(
-                model_list,
-                model_names,
-                regime_name,
-            )
-            ensemble_results["bagging"] = bagging_ensemble
-
-            # 5. Dynamic Weighting Ensemble
-            dynamic_ensemble = await self._create_dynamic_weighting_ensemble(
-                model_list,
-                model_names,
-                regime_name,
-            )
-            ensemble_results["dynamic_weighting"] = dynamic_ensemble
-
-            # 6. Blending Ensemble
-            blending_ensemble = await self._create_blending_ensemble(
-                model_list,
-                model_names,
-                regime_name,
-            )
-            ensemble_results["blending"] = blending_ensemble
 
             return ensemble_results
 
@@ -212,26 +381,18 @@ class AnalystEnsembleCreationStep:
         models: list[Any],
         model_names: list[str],
         regime_name: str,
+        training_data: pd.DataFrame,
+        validation_data: pd.DataFrame,
     ) -> dict[str, Any]:
-        """Create enhanced StackingCV ensemble with dynamic weighting and blending."""
+        """Create enhanced StackingCV ensemble with proper meta-learner."""
         try:
-            from sklearn.ensemble import StackingClassifier
-            from sklearn.linear_model import LogisticRegression, RidgeClassifier
-            from sklearn.model_selection import StratifiedKFold
+            if training_data.empty or "label" not in training_data.columns:
+                raise ValueError("Training data is empty or missing labels")
 
-            # Create multiple meta-learners for blending
-            meta_learners = [
-                LogisticRegression(random_state=42, max_iter=1000),
-                RidgeClassifier(random_state=42),
-                LogisticRegression(
-                    random_state=42,
-                    C=0.1,
-                    penalty="l1",
-                    solver="liblinear",
-                ),
-            ]
+            X_train = training_data.drop("label", axis=1)
+            y_train = training_data["label"]
 
-            # Create stacking classifier with cross-validation
+            # Create estimators for stacking
             estimators = [
                 (name, model) for name, model in zip(model_names, models, strict=False)
             ]
@@ -239,37 +400,193 @@ class AnalystEnsembleCreationStep:
             # Use stratified k-fold for better validation
             cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
+            # Create meta-learner with regularization
+            meta_learner = LogisticRegression(
+                random_state=42,
+                max_iter=1000,
+                C=1.0,  # Regularization strength
+                penalty='l2',
+                solver='lbfgs'
+            )
+
+            # Create stacking classifier
             stacking_classifier = StackingClassifier(
                 estimators=estimators,
-                final_estimator=LogisticRegression(random_state=42, max_iter=1000),
+                final_estimator=meta_learner,
                 cv=cv,
                 stack_method="predict_proba",
                 n_jobs=-1,
+                passthrough=False,  # Don't pass original features to meta-learner
             )
 
-            # Create blending ensemble with multiple meta-learners
-            blending_ensemble = {
-                "primary_stacking": stacking_classifier,
-                "meta_learners": meta_learners,
-                "blending_weights": [0.6, 0.25, 0.15],  # Weight for each meta-learner
-                "dynamic_weighting": True,
-                "ensemble_type": "EnhancedStackingCV",
+            # Fit the stacking classifier
+            stacking_classifier.fit(X_train, y_train)
+
+            # Evaluate on validation data
+            validation_metrics = {}
+            if not validation_data.empty and "label" in validation_data.columns:
+                X_val = validation_data.drop("label", axis=1)
+                y_val = validation_data["label"]
+                
+                val_predictions = stacking_classifier.predict(X_val)
+                val_probabilities = stacking_classifier.predict_proba(X_val)
+                
+                validation_metrics = {
+                    "accuracy": accuracy_score(y_val, val_predictions),
+                    "precision": precision_score(y_val, val_predictions, average='weighted', zero_division=0),
+                    "recall": recall_score(y_val, val_predictions, average='weighted', zero_division=0),
+                    "f1": f1_score(y_val, val_predictions, average='weighted', zero_division=0),
+                }
+
+            # Cross-validation scores
+            cv_scores = cross_val_score(
+                stacking_classifier, X_train, y_train, 
+                cv=cv, scoring='accuracy', n_jobs=-1
+            )
+
+            ensemble_data = {
+                "ensemble": stacking_classifier,
+                "ensemble_type": "StackingCV",
                 "base_models": model_names,
+                "meta_learner": "LogisticRegression",
                 "cv_folds": 5,
                 "regime": regime_name,
                 "creation_date": datetime.now().isoformat(),
+                "validation_metrics": validation_metrics,
+                "cv_scores": {
+                    "mean": cv_scores.mean(),
+                    "std": cv_scores.std(),
+                    "scores": cv_scores.tolist()
+                },
                 "features": {
                     "use_probabilities": True,
-                    "use_raw_predictions": True,
-                    "use_model_uncertainty": True,
+                    "use_raw_predictions": False,
+                    "passthrough": False,
                 },
             }
 
-            return blending_ensemble
+            return ensemble_data
 
         except Exception as e:
             self.logger.error(
-                f"Error creating enhanced stacking ensemble for {regime_name}: {e}",
+                f"Error creating stacking ensemble for {regime_name}: {e}",
+            )
+            raise
+
+    async def _create_dynamic_weighting_ensemble(
+        self,
+        models: list[Any],
+        model_names: list[str],
+        regime_name: str,
+        training_data: pd.DataFrame,
+        validation_data: pd.DataFrame,
+        model_performances: dict[str, dict[str, float]],
+    ) -> dict[str, Any]:
+        """Create dynamic performance-weighted ensemble using Sharpe Ratio."""
+        try:
+            if validation_data.empty or "label" not in validation_data.columns:
+                raise ValueError("Validation data is empty or missing labels")
+
+            X_val = validation_data.drop("label", axis=1)
+            y_val = validation_data["label"]
+
+            # Calculate Sharpe Ratio for each model
+            model_sharpe_ratios = {}
+            model_weights = {}
+
+            for i, (name, model) in enumerate(zip(model_names, models, strict=False)):
+                try:
+                    # Get predictions and probabilities
+                    predictions = model.predict(X_val)
+                    probabilities = model.predict_proba(X_val)
+                    
+                    # Calculate returns based on predictions (simplified approach)
+                    # In a real implementation, you would calculate actual trading returns
+                    correct_predictions = (predictions == y_val).astype(int)
+                    
+                    # Calculate "returns" based on prediction accuracy
+                    # This is a simplified approach - in reality you'd calculate actual trading returns
+                    returns = []
+                    for j, (pred, actual) in enumerate(zip(predictions, y_val)):
+                        if pred == actual:
+                            # Correct prediction: positive return
+                            returns.append(0.01)  # 1% return
+                        else:
+                            # Incorrect prediction: negative return
+                            returns.append(-0.005)  # -0.5% return
+                    
+                    returns = np.array(returns)
+                    
+                    # Calculate Sharpe Ratio
+                    if len(returns) > 0:
+                        mean_return = np.mean(returns)
+                        std_return = np.std(returns)
+                        
+                        if std_return > 0:
+                            sharpe_ratio = mean_return / std_return
+                        else:
+                            sharpe_ratio = 0.0
+                    else:
+                        sharpe_ratio = 0.0
+                    
+                    model_sharpe_ratios[name] = sharpe_ratio
+                    
+                    # Models with negative Sharpe Ratio get weight 0
+                    if sharpe_ratio <= 0:
+                        model_weights[name] = 0.0
+                    else:
+                        model_weights[name] = sharpe_ratio
+                        
+                except Exception as e:
+                    self.logger.warning(f"Could not calculate Sharpe Ratio for model {name}: {e}")
+                    model_sharpe_ratios[name] = 0.0
+                    model_weights[name] = 0.0
+
+            # Normalize weights so they sum to 1
+            total_weight = sum(model_weights.values())
+            if total_weight > 0:
+                for name in model_weights:
+                    model_weights[name] /= total_weight
+            else:
+                # If all weights are 0, assign equal weights
+                for name in model_weights:
+                    model_weights[name] = 1.0 / len(model_weights)
+
+
+
+            # Create ensemble object using the module-level class
+            ensemble = DynamicWeightedEnsemble(models, model_names, model_weights)
+
+            # Evaluate ensemble performance
+            ensemble_predictions = ensemble.predict(X_val)
+            ensemble_metrics = {
+                "accuracy": accuracy_score(y_val, ensemble_predictions),
+                "precision": precision_score(y_val, ensemble_predictions, average='weighted', zero_division=0),
+                "recall": recall_score(y_val, ensemble_predictions, average='weighted', zero_division=0),
+                "f1": f1_score(y_val, ensemble_predictions, average='weighted', zero_division=0),
+            }
+
+            ensemble_data = {
+                "ensemble": ensemble,
+                "ensemble_type": "DynamicWeightedEnsemble",
+                "base_models": model_names,
+                "weights": model_weights,
+                "sharpe_ratios": model_sharpe_ratios,
+                "regime": regime_name,
+                "creation_date": datetime.now().isoformat(),
+                "validation_metrics": ensemble_metrics,
+                "features": {
+                    "sharpe_ratio_weighting": True,
+                    "negative_sharpe_filtering": True,
+                    "dynamic_weighting": True,
+                },
+            }
+
+            return ensemble_data
+
+        except Exception as e:
+            self.logger.error(
+                f"Error creating dynamic weighting ensemble for {regime_name}: {e}",
             )
             raise
 
@@ -302,198 +619,6 @@ class AnalystEnsembleCreationStep:
 
         except Exception as e:
             self.logger.error(f"Error creating voting ensemble for {regime_name}: {e}")
-            raise
-
-    async def _create_weighted_ensemble(
-        self,
-        models: list[Any],
-        accuracies: list[float],
-        model_names: list[str],
-        regime_name: str,
-    ) -> dict[str, Any]:
-        """Create weighted average ensemble."""
-        try:
-            # Calculate weights based on accuracies
-            total_accuracy = sum(accuracies)
-            weights = [acc / total_accuracy for acc in accuracies]
-
-            ensemble_data = {
-                "ensemble_type": "WeightedAverage",
-                "base_models": model_names,
-                "weights": weights,
-                "accuracies": accuracies,
-                "regime": regime_name,
-                "creation_date": datetime.now().isoformat(),
-            }
-
-            return ensemble_data
-
-        except Exception as e:
-            self.logger.error(
-                f"Error creating weighted ensemble for {regime_name}: {e}",
-            )
-            raise
-
-    async def _create_bagging_ensemble(
-        self,
-        models: list[Any],
-        model_names: list[str],
-        regime_name: str,
-    ) -> dict[str, Any]:
-        """Create bagging ensemble."""
-        try:
-            from sklearn.ensemble import BaggingClassifier
-
-            # Use the best performing model as base estimator
-            best_model = models[
-                0
-            ]  # In real implementation, select based on performance
-
-            bagging_classifier = BaggingClassifier(
-                base_estimator=best_model,
-                n_estimators=10,
-                max_samples=0.8,
-                random_state=42,
-            )
-
-            ensemble_data = {
-                "ensemble": bagging_classifier,
-                "ensemble_type": "Bagging",
-                "base_estimator": model_names[0],
-                "n_estimators": 10,
-                "max_samples": 0.8,
-                "regime": regime_name,
-                "creation_date": datetime.now().isoformat(),
-            }
-
-            return ensemble_data
-
-        except Exception as e:
-            self.logger.error(f"Error creating bagging ensemble for {regime_name}: {e}")
-            raise
-
-    async def _create_dynamic_weighting_ensemble(
-        self,
-        models: list[Any],
-        model_names: list[str],
-        regime_name: str,
-    ) -> dict[str, Any]:
-        """Create dynamic weighting ensemble with adaptive weights."""
-        try:
-            import numpy as np
-
-            # Calculate dynamic weights based on multiple metrics
-            model_weights = {}
-            total_weight = 0
-
-            for i, (name, model) in enumerate(zip(model_names, models, strict=False)):
-                # Simulate performance metrics (in real implementation, use actual validation)
-                accuracy = np.random.uniform(0.7, 0.95)
-                precision = np.random.uniform(0.65, 0.9)
-                recall = np.random.uniform(0.6, 0.9)
-                f1 = np.random.uniform(0.65, 0.9)
-
-                # Calculate composite score
-                composite_score = (
-                    accuracy * 0.3 + precision * 0.25 + recall * 0.25 + f1 * 0.2
-                )
-
-                # Apply regime-specific adjustments
-                if regime_name == "volatile":
-                    composite_score *= (
-                        1.1  # Favor models that work well in volatile conditions
-                    )
-                elif regime_name == "trending":
-                    composite_score *= 1.05  # Slight boost for trending conditions
-
-                model_weights[name] = composite_score
-                total_weight += composite_score
-
-            # Normalize weights
-            if total_weight > 0:
-                for name in model_weights:
-                    model_weights[name] /= total_weight
-
-            ensemble_data = {
-                "ensemble_type": "DynamicWeighting",
-                "base_models": model_names,
-                "dynamic_weights": model_weights,
-                "regime": regime_name,
-                "weight_update_frequency": "daily",
-                "adaptation_rate": 0.1,
-                "creation_date": datetime.now().isoformat(),
-                "features": {
-                    "regime_aware_weighting": True,
-                    "performance_history": True,
-                    "uncertainty_quantification": True,
-                },
-            }
-
-            return ensemble_data
-
-        except Exception as e:
-            self.logger.error(
-                f"Error creating dynamic weighting ensemble for {regime_name}: {e}",
-            )
-            raise
-
-    async def _create_blending_ensemble(
-        self,
-        models: list[Any],
-        model_names: list[str],
-        regime_name: str,
-    ) -> dict[str, Any]:
-        """Create blending ensemble with multiple aggregation methods."""
-        try:
-            from sklearn.ensemble import VotingClassifier
-            from sklearn.linear_model import LogisticRegression
-
-            # Create multiple blending strategies
-            blending_strategies = {
-                "soft_voting": VotingClassifier(
-                    estimators=[
-                        (name, model)
-                        for name, model in zip(model_names, models, strict=False)
-                    ],
-                    voting="soft",
-                ),
-                "hard_voting": VotingClassifier(
-                    estimators=[
-                        (name, model)
-                        for name, model in zip(model_names, models, strict=False)
-                    ],
-                    voting="hard",
-                ),
-                "weighted_average": {
-                    "method": "weighted_average",
-                    "weights": [1.0 / len(models)] * len(models),
-                },
-                "rank_based": {"method": "rank_based", "top_k": min(3, len(models))},
-            }
-
-            # Create meta-blender
-            meta_blender = LogisticRegression(random_state=42, max_iter=1000)
-
-            ensemble_data = {
-                "ensemble_type": "Blending",
-                "base_models": model_names,
-                "blending_strategies": blending_strategies,
-                "meta_blender": meta_blender,
-                "regime": regime_name,
-                "creation_date": datetime.now().isoformat(),
-                "features": {
-                    "multi_strategy_blending": True,
-                    "meta_learning": True,
-                    "regime_adaptation": True,
-                },
-            }
-
-            return ensemble_data
-
-        except Exception as e:
-            self.logger.error(
-                f"Error creating blending ensemble for {regime_name}: {e}",
-            )
             raise
 
 

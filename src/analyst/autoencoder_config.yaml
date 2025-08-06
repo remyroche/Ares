@@ -1,0 +1,67 @@
+# Autoencoder Feature Generator Configuration
+
+# Data preprocessing
+preprocessing:
+  scaler_type: "robust"  # "robust", "standard", "minmax"
+  outlier_threshold: 3.0
+  missing_value_strategy: "forward_fill"  # "forward_fill", "backward_fill", "interpolate", "zero"
+  feature_selection_threshold: 0.99  # 99% threshold for feature filtering
+
+# Sequence preparation
+sequence:
+  timesteps: 10
+  overlap: 0.5  # 50% overlap between sequences
+  min_sequence_length: 5
+
+# Autoencoder architecture
+autoencoder:
+  encoding_dim: 32
+  dropout_rate: 0.3
+  learning_rate: 0.001
+  batch_size: 32
+  epochs: 100
+  validation_split: 0.2
+  early_stopping_patience: 10
+  reduce_lr_patience: 5
+  min_lr: 1e-6
+
+# CNN architecture (for sequence-aware models)
+cnn:
+  filters: [16, 32, 64]
+  kernel_size: [3, 5, 7]
+  pool_size: 2
+  activation: "relu"
+  kernel_regularizer: 0.001
+  max_norm_constraint: 2.0
+
+# Training parameters
+training:
+  n_trials: 50
+  timeout_seconds: 1800  # 30 minutes
+  n_jobs: -1
+  pruning_enabled: true
+  pruning_metric: "val_loss"
+  pruning_patience: 5
+
+# Feature filtering (Random Forest + SHAP)
+feature_filtering:
+  n_estimators: 100
+  max_depth: 10
+  min_samples_split: 5
+  min_samples_leaf: 2
+  random_state: 42
+  importance_threshold: 0.99  # 99% threshold for feature importance
+
+# Triple barrier parameters
+triple_barrier:
+  profit_take: 0.001  # 0.1%
+  stop_loss: 0.0005   # 0.05%
+  time_barrier: 300   # 5 minutes (in seconds)
+
+# Output configuration
+output:
+  save_autoencoder: true
+  save_config: true
+  save_preprocessor: true
+  output_dir: "models/autoencoder_features"
+  config_filename: "autoencoder_config.yaml"

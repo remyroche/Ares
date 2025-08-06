@@ -6,12 +6,14 @@ preprocessing:
   outlier_threshold: 3.0
   missing_value_strategy: "forward_fill"  # "forward_fill", "backward_fill", "interpolate", "zero"
   feature_selection_threshold: 0.99  # 99% threshold for feature filtering
+  iqr_multiplier: 3.0  # Multiplier for IQR outlier detection
 
 # Sequence preparation
 sequence:
   timesteps: 10
   overlap: 0.5  # 50% overlap between sequences
   min_sequence_length: 5
+  use_target_prediction: true  # Whether to predict targets or reconstruct sequences
 
 # Autoencoder architecture
 autoencoder:
@@ -24,6 +26,7 @@ autoencoder:
   early_stopping_patience: 10
   reduce_lr_patience: 5
   min_lr: 1e-6
+  target_prediction: true  # Predict targets instead of reconstructing sequences
 
 # CNN architecture (for sequence-aware models)
 cnn:
@@ -51,12 +54,14 @@ feature_filtering:
   min_samples_leaf: 2
   random_state: 42
   importance_threshold: 0.99  # 99% threshold for feature importance
+  use_existing_labels: true  # Use existing triple barrier labels if available
 
-# Triple barrier parameters
+# Triple barrier parameters (only used if use_existing_labels is false)
 triple_barrier:
   profit_take: 0.001  # 0.1%
   stop_loss: 0.0005   # 0.05%
   time_barrier: 300   # 5 minutes (in seconds)
+  vectorized: true     # Use vectorized implementation for speed
 
 # Output configuration
 output:
@@ -65,3 +70,4 @@ output:
   save_preprocessor: true
   output_dir: "models/autoencoder_features"
   config_filename: "autoencoder_config.yaml"
+  preserve_index: true  # Preserve DataFrame index for proper alignment

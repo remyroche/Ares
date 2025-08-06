@@ -236,10 +236,6 @@ class FeatureEngineeringOrchestrator:
             # ML enhanced features
             features_df = self._calculate_ml_enhanced_features(features_df)
 
-            # S/R features if SR levels are provided
-            if sr_levels:
-                features_df = self._calculate_sr_features(features_df, sr_levels)
-
             return features_df
 
         except Exception as e:
@@ -521,82 +517,6 @@ class FeatureEngineeringOrchestrator:
         except Exception as e:
             self.logger.error(f"Error calculating ML enhanced features: {e}")
             return df
-
-    @handle_data_processing_errors(
-        default_return=pd.DataFrame(),
-        context="S/R features calculation",
-    )
-    def _calculate_sr_features(
-        self,
-        features_df: pd.DataFrame,
-        sr_levels: list,
-    ) -> pd.DataFrame:
-        """
-        Calculate S/R-related features for each row of historical data.
-
-        Args:
-            features_df: Features DataFrame
-            sr_levels: Support/resistance levels from SR analyzer
-
-        Returns:
-            DataFrame with S/R features added
-        """
-        self.logger.info("🔍 Calculating S/R features...")
-
-        try:
-            # Initialize SR analyzer if not already done
-            # Legacy S/R/Candle code removed
-            # Legacy S/R/Candle code removed
-
-            # Calculate S/R features for each row
-            sr_features_list = []
-
-            for idx, row in features_df.iterrows():
-                current_price = row.get("close", 0)
-                if current_price > 0:
-                    # Legacy S/R/Candle code removed
-                    sr_features_list.append(sr_features)
-                else:
-                    # Default values if price is not available
-                    sr_features_list.append(
-                        {
-                            "distance_to_nearest_support": 0.0,
-                            "distance_to_nearest_resistance": 0.0,
-                            "strength_of_nearest_support": 0.0,
-                            "strength_of_nearest_resistance": 0.0,
-                            "time_since_level_tested": 0,
-                            "sr_density_nearby": 0,
-                            "is_vpvr_level": False,
-                            "is_hvn_level": False,
-                            "is_pivot_level": False,
-                        },
-                    )
-
-            # Convert to DataFrame
-            sr_features_df = pd.DataFrame(sr_features_list, index=features_df.index)
-
-            # Add S/R features to main DataFrame
-            for col in sr_features_df.columns:
-                features_df[f"sr_{col}"] = sr_features_df[col]
-
-            self.logger.info(
-                f"✅ S/R features added: {len(sr_features_df.columns)} features",
-            )
-            return features_df
-
-        except Exception as e:
-            self.logger.error(f"❌ Error calculating S/R features: {e}")
-            # Add default S/R features
-            features_df["sr_distance_to_nearest_support"] = 0.0
-            features_df["sr_distance_to_nearest_resistance"] = 0.0
-            features_df["sr_strength_of_nearest_support"] = 0.0
-            features_df["sr_strength_of_nearest_resistance"] = 0.0
-            features_df["sr_time_since_level_tested"] = 0
-            features_df["sr_density_nearby"] = 0
-            features_df["sr_is_vpvr_level"] = False
-            features_df["sr_is_hvn_level"] = False
-            features_df["sr_is_pivot_level"] = False
-            return features_df
 
     @handle_data_processing_errors(
         default_return=pd.DataFrame(),

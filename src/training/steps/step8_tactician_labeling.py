@@ -334,6 +334,230 @@ class TacticianLabelingStep:
             self.logger.error(f"Error generating regime signals for {regime_name}: {e}")
             raise
 
+class TacticianTripleBarrierLabeler:
+    """
+    Applies a triple barrier to generate labels specifically for a short-term, high-leverage Tactician model.
+    
+    This labeler uses FIXED PERCENTAGE barriers and a short time horizon to reward
+    models that can accurately predict immediate, favorable price action under strict risk parameters.
+    """
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config.get("tactician_triple_barrier", {})
+        self.logger = system_logger.getChild("TacticianTripleBarrierLabeler")
+
+    def apply_labels(self, data: pd.DataFrame, strategic_signals: pd.Series) -> pd.DataFrame:
+        """
+        Vectorized application of the triple barrier method.
+
+        Args:
+            data: The 1-minute market data (must contain OHLC columns).
+            strategic_signals: A Series with timestamps as index and signals (+1 for BUY, -1 for SELL)
+                               as values, indicating when the Analyst has identified a setup.
+
+        Returns:
+            A DataFrame with the new 'tactician_label' column.
+        """
+        self.logger.info("Applying specialized Tactician triple barrier labels using fixed percentages...")
+
+        # Get parameters from config, with defaults for a high-leverage, 1m timeframe
+        pt_pct = self.config.get("profit_take_pct", 0.005)  # Target 0.5% profit
+        sl_pct = self.config.get("stop_loss_pct", 0.0025)   # Stop out at 0.25% loss
+        time_barrier = self.config.get("time_barrier_periods", 30) # 30-minute time horizon
+
+        # Align signals with the data index
+        entry_points = strategic_signals[strategic_signals != 0].reindex(data.index).dropna()
+        if entry_points.empty:
+            self.logger.warning("No strategic signals found to label. Returning data without labels.")
+            data["tactician_label"] = 0
+            return data
+
+        entry_indices = data.index.get_indexer_for(entry_points.index)
+
+        # Calculate fixed percentage barriers for each entry point
+        entry_prices = data['open'].iloc[entry_indices + 1]
+        
+        profit_barriers = entry_prices * (1 + pt_pct * entry_points.values)
+        stop_barriers = entry_prices * (1 - sl_pct * entry_points.values)
+
+        labels = pd.Series(0, index=data.index)
+
+        # Vectorized barrier check
+        for i, entry_idx in enumerate(entry_indices):
+            if entry_idx >= len(data) - 1: continue
+            
+            signal = entry_points.iloc[i]
+            pt = profit_barriers.iloc[i]
+            sl = stop_barriers.iloc[i]
+            
+            path = data.iloc[entry_idx + 1 : entry_idx + 1 + time_barrier]
+            if path.empty: continue
+            
+            # Check for hits
+            pt_hit_mask = (path['high'] >= pt) if signal == 1 else (path['low'] <= pt)
+            sl_hit_mask = (path['low'] <= sl) if signal == 1 else (path['high'] >= sl)
+            
+            pt_hit_time = path.index[pt_hit_mask].min()
+            sl_hit_time = path.index[sl_hit_mask].min()
+            
+            # Determine label based on which barrier was hit first
+            if pd.notna(pt_hit_time) and (pd.isna(sl_hit_time) or pt_hit_time <= sl_hit_time):
+                labels.iloc[entry_idx] = 1  # Profit take
+            elif pd.notna(sl_hit_time):
+                labels.iloc[entry_idx] = -1 # Stop loss
+
+        data["tactician_label"] = labels
+        self.logger.info(f"Tactician labeling complete. Label distribution:\n{labels.value_counts()}")
+        return data
+
+
+class TacticianLabelingStep:
+    """Step 8: Tactician Model Labeling using Analyst's model."""
+
+    def __init__(self, config: dict[str, Any]):
+        self.config = config
+        self.logger = system_logger
+
+    async def initialize(self) -> None:
+        """Initialize the tactician labeling step."""
+        self.logger.info("Initializing Tactician Labeling Step...")
+
+    async def execute(
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Execute tactician model labeling."""
+        try:
+            self.logger.info("🔄 Executing Tactician Labeling...")
+
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            data_dir = training_input.get("data_dir", "data/training")
+
+            # Load 1m data for tactician
+            data_file_path = f"{data_dir}/{exchange}_{symbol}_historical_data.pkl"
+            with open(data_file_path, "rb") as f:
+                data_1m = pd.read_pickle(f)
+
+            # Load analyst ensemble models
+            analyst_ensembles = self._load_analyst_ensembles(data_dir)
+
+            # Generate strategic "setup" signals using analyst models
+            data_with_features, strategic_signals = await self._generate_strategic_signals(
+                data_1m, analyst_ensembles
+            )
+
+            # Apply the specialized Tactician Triple Barrier
+            labeler = TacticianTripleBarrierLabeler(self.config)
+            labeled_data = labeler.apply_labels(data_with_features, strategic_signals)
+
+            # Save results
+            labeled_file, signals_file = self._save_results(
+                labeled_data, strategic_signals, data_dir, exchange, symbol
+            )
+
+            self.logger.info(f"✅ Tactician labeling completed. Labeled data saved to {labeled_file}")
+            
+            pipeline_state["tactician_labeled_data"] = labeled_data
+            return {
+                "status": "SUCCESS",
+                "labeled_file": labeled_file,
+                "signals_file": signals_file,
+            }
+        except Exception as e:
+            self.logger.error(f"❌ Error in Tactician Labeling: {e}", exc_info=True)
+            return {"status": "FAILED", "error": str(e)}
+
+    def _load_analyst_ensembles(self, data_dir: str) -> Dict[str, Any]:
+        """Loads all trained analyst ensemble models."""
+        analyst_ensembles_dir = f"{data_dir}/analyst_ensembles"
+        analyst_ensembles = {}
+        if not os.path.exists(analyst_ensembles_dir):
+            raise FileNotFoundError(f"Analyst ensembles directory not found: {analyst_ensembles_dir}")
+            
+        for ensemble_file in os.listdir(analyst_ensembles_dir):
+            if ensemble_file.endswith("_ensemble.pkl"):
+                regime_name = ensemble_file.replace("_ensemble.pkl", "")
+                ensemble_path = os.path.join(analyst_ensembles_dir, ensemble_file)
+                with open(ensemble_path, "rb") as f:
+                    # The actual model is nested inside the saved dictionary
+                    analyst_ensembles[regime_name] = pickle.load(f).get("ensemble")
+        return analyst_ensembles
+
+    async def _generate_strategic_signals(
+        self, data: pd.DataFrame, analyst_ensembles: dict[str, Any]
+    ) -> tuple[pd.DataFrame, pd.Series]:
+        """Generate strategic signals using analyst ensemble models."""
+        self.logger.info("Generating strategic 'setup' signals from Analyst models...")
+        
+        # Step 1: Calculate all features needed for any of the analyst models
+        data_with_features = self._calculate_features(data)
+        
+        # Step 2: Determine the market regime for each data point
+        # This is a placeholder for your regime detection logic (e.g., from step 4)
+        # It is crucial that this logic is consistent with how regimes were defined during Analyst training.
+        data_with_features['regime'] = self._get_market_regime(data_with_features)
+        
+        all_signals = pd.Series(0, index=data_with_features.index)
+
+        # Step 3: Predict in a vectorized way for each regime
+        for regime_name, ensemble in analyst_ensembles.items():
+            if ensemble is None: continue
+            
+            regime_mask = data_with_features['regime'] == regime_name
+            if not regime_mask.any(): continue
+            
+            # Ensure the model's expected features are present
+            if hasattr(ensemble, 'feature_names_in_'):
+                features_for_model = [f for f in ensemble.feature_names_in_ if f in data_with_features.columns]
+                X_regime = data_with_features.loc[regime_mask, features_for_model]
+            else:
+                # Fallback if feature names are not stored in the model
+                X_regime = data_with_features.loc[regime_mask].select_dtypes(include=np.number)
+
+            if not X_regime.empty:
+                predictions = ensemble.predict(X_regime)
+                all_signals[regime_mask] = predictions
+
+        self.logger.info(f"Generated strategic signals. Signal distribution:\n{all_signals.value_counts()}")
+        return data_with_features, all_signals
+
+    def _get_market_regime(self, data: pd.DataFrame) -> pd.Series:
+        """
+        Placeholder for your market regime detection logic.
+        This should be consistent with the logic from step4_regime_specific_training.
+        """
+        # Example: Simple regime based on volatility percentile
+        # NOTE: Volatility is calculated here because the Analyst models need it for regime detection.
+        # It is NOT used by the Tactician's labeler.
+        vol_percentile = data['volatility'].rank(pct=True)
+        regimes = pd.cut(vol_percentile, bins=[0, 0.33, 0.66, 1.0], labels=['low_vol', 'mid_vol', 'high_vol'], right=False)
+        return regimes.astype(str).fillna('low_vol')
+
+    def _calculate_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Calculate all necessary features for both Analyst and Tactician."""
+        data["returns"] = data["close"].pct_change()
+        # Volatility is calculated here for the Analyst's regime detection, not for Tactician labeling.
+        data["volatility"] = data["returns"].rolling(window=60).std().bfill() # 1-hour volatility
+        # ... Add all other features your Analyst models were trained on ...
+        # e.g., RSI, MACD, Bollinger Bands, etc.
+        data = data.fillna(method="ffill").fillna(0)
+        return data
+
+    def _save_results(self, labeled_data, signals, data_dir, exchange, symbol):
+        """Saves the labeled data and signals to disk."""
+        labeled_data_dir = f"{data_dir}/tactician_labeled_data"
+        os.makedirs(labeled_data_dir, exist_ok=True)
+        
+        labeled_file = f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl"
+        labeled_data.to_pickle(labeled_file)
+
+        signals_file = f"{data_dir}/{exchange}_{symbol}_strategic_signals.pkl"
+        signals.to_pickle(signals_file)
+        
+        return labeled_file, signals_file
+        
+
 # For backward compatibility with existing step structure
 async def run_step(
     symbol: str,

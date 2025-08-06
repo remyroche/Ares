@@ -9,6 +9,7 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.validator_orchestrator import validator_orchestrator
 
 
 class EnhancedTrainingManager:
@@ -51,7 +52,11 @@ class EnhancedTrainingManager:
         self.max_trials: int = self.enhanced_training_config.get("max_trials", 200)
         self.n_trials: int = self.enhanced_training_config.get("n_trials", 100)
         self.lookback_days: int = self.enhanced_training_config.get("lookback_days", 30)
-
+        
+        # Validation parameters
+        self.enable_validators: bool = self.enhanced_training_config.get("enable_validators", True)
+        self.validation_results: dict[str, Any] = {}
+        
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid enhanced training manager configuration"),
@@ -286,6 +291,10 @@ class EnhancedTrainingManager:
             exchange = training_input.get("exchange", "")
             timeframe = training_input.get("timeframe", "1m")
             data_dir = "data/training"
+
+            
+            # Initialize pipeline state
+            pipeline_state = {}
             
             # Step 1: Data Collection
             self.logger.info("📊 STEP 1: Data Collection...")
@@ -305,6 +314,17 @@ class EnhancedTrainingManager:
                 self.logger.error("❌ Step 1: Data Collection failed")
                 print("❌ Step 1: Data Collection failed")
                 return False
+            
+            # Update pipeline state
+            pipeline_state["data_collection"] = {
+                "status": "SUCCESS",
+                "result": step1_result
+            }
+            
+            # Run validator for Step 1
+            validation_result = await self._run_step_validator(
+                "step1_data_collection", training_input, pipeline_state
+            )
             
             self.logger.info("✅ Step 1: Data Collection completed successfully")
             print("   ✅ Step 1: Data Collection completed successfully")
@@ -326,6 +346,17 @@ class EnhancedTrainingManager:
                 print("❌ Step 2: Market Regime Classification failed")
                 return False
             
+            # Update pipeline state
+            pipeline_state["regime_classification"] = {
+                "status": "SUCCESS",
+                "success": step2_success
+            }
+            
+            # Run validator for Step 2
+            validation_result = await self._run_step_validator(
+                "step2_market_regime_classification", training_input, pipeline_state
+            )
+            
             self.logger.info("✅ Step 2: Market Regime Classification completed successfully")
             print("   ✅ Step 2: Market Regime Classification completed successfully")
 
@@ -345,6 +376,17 @@ class EnhancedTrainingManager:
                 self.logger.error("❌ Step 3: Regime Data Splitting failed")
                 print("❌ Step 3: Regime Data Splitting failed")
                 return False
+            
+            # Update pipeline state
+            pipeline_state["regime_data_splitting"] = {
+                "status": "SUCCESS",
+                "success": step3_success
+            }
+            
+            # Run validator for Step 3
+            validation_result = await self._run_step_validator(
+                "step3_regime_data_splitting", training_input, pipeline_state
+            )
             
             self.logger.info("✅ Step 3: Regime Data Splitting completed successfully")
             print("   ✅ Step 3: Regime Data Splitting completed successfully")
@@ -380,11 +422,33 @@ class EnhancedTrainingManager:
                 timeframe=timeframe,
                 exchange=exchange,
             )
+
+            # Update pipeline state
+            pipeline_state["analyst_labeling_feature_engineering"] = {
+                "status": "SUCCESS",
+                "success": step4_success
+            }
+            
+            # Run validator for Step 4
+            validation_result = await self._run_step_validator(
+                "step4_analyst_labeling_feature_engineering", training_input, pipeline_state
+            )
             
             if not step5_success:
                 self.logger.error("❌ Step 5: Analyst Specialist Training failed")
                 print("❌ Step 5: Analyst Specialist Training failed")
                 return False
+            
+            # Update pipeline state
+            pipeline_state["analyst_specialist_training"] = {
+                "status": "SUCCESS",
+                "success": step5_success
+            }
+            
+            # Run validator for Step 5
+            validation_result = await self._run_step_validator(
+                "step5_analyst_specialist_training", training_input, pipeline_state
+            )
             
             self.logger.info("✅ Step 5: Analyst Specialist Training completed successfully")
             print("   ✅ Step 5: Analyst Specialist Training completed successfully")
@@ -618,6 +682,59 @@ class EnhancedTrainingManager:
             print(f"📋 Error details: {type(e).__name__}: {str(e)}")
             return False
 
+    async def _run_step_validator(
+        self,
+        step_name: str,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Run validator for a specific step.
+        
+        Args:
+            step_name: Name of the step
+            training_input: Training input parameters
+            pipeline_state: Current pipeline state
+            
+        Returns:
+            Dictionary containing validation results
+        """
+        if not self.enable_validators:
+            return {
+                "step_name": step_name,
+                "validation_passed": True,
+                "skipped": True,
+                "reason": "Validators disabled"
+            }
+        
+        try:
+            self.logger.info(f"🔍 Running validator for {step_name}")
+            validation_result = await validator_orchestrator.run_step_validator(
+                step_name=step_name,
+                training_input=training_input,
+                pipeline_state=pipeline_state,
+                config=self.config
+            )
+            
+            # Store validation result
+            self.validation_results[step_name] = validation_result
+            
+            if validation_result.get("validation_passed", False):
+                self.logger.info(f"✅ {step_name} validation passed")
+            else:
+                self.logger.warning(f"⚠️ {step_name} validation failed: {validation_result.get('error', 'Unknown error')}")
+            
+            return validation_result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error running validator for {step_name}: {e}")
+            return {
+                "step_name": step_name,
+                "validation_passed": False,
+                "error": str(e)
+            }
+
+    
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -738,6 +855,20 @@ class EnhancedTrainingManager:
             "max_trials": self.max_trials,
             "n_trials": self.n_trials,
             "lookback_days": self.lookback_days,
+            "enable_validators": self.enable_validators,
+        }
+    
+    def get_validation_results(self) -> dict[str, Any]:
+        """
+        Get validation results for all steps.
+        
+        Returns:
+            dict: Validation results summary
+        """
+        return {
+            "validation_results": self.validation_results,
+            "validation_summary": validator_orchestrator.get_validation_summary(),
+            "failed_validations": validator_orchestrator.get_failed_validations()
         }
 
     @handle_errors(

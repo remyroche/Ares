@@ -84,13 +84,6 @@ class Analyst:
             True,
         )
 
-        # Legacy S/R/Candle code removed integration
-        # Legacy S/R/Candle code removed
-        self.enable_sr_analysis: bool = self.analyst_config.get(
-            "enable_sr_analysis",
-            True,
-        )
-
         # ML Confidence Predictor integration
         self.ml_confidence_predictor = None
         self.enable_ml_predictions: bool = self.analyst_config.get(
@@ -149,11 +142,6 @@ class Analyst:
         # Initialize Feature Engineering Orchestrator
         if self.enable_feature_engineering:
             await self._initialize_feature_engineering_orchestrator()
-
-        # Initialize SR analyzer
-        if self.enable_sr_analysis:
-            # Legacy S/R code removed
-            pass
 
         # Initialize ML Confidence Predictor
         if self.enable_ml_predictions:
@@ -779,39 +767,6 @@ class Analyst:
         default_return=None,
         context="SR analysis",
     )
-    async def _perform_sr_analysis(
-        self,
-        analysis_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Perform SR analysis.
-
-        Args:
-            analysis_input: Input data for analysis
-
-        Returns:
-            dict: SR analysis results
-        """
-        try:
-            market_data = analysis_input.get("market_data")
-            current_price = analysis_input.get("current_price")
-
-            # Legacy S/R code removed
-            # Fallback SR results
-            sr_results = {
-                "support_levels": [],
-                "resistance_levels": [],
-                "nearest_support": current_price * 0.95,
-                "nearest_resistance": current_price * 1.05,
-                "timestamp": datetime.now().isoformat(),
-            }
-
-            self.logger.info("SR analysis completed successfully")
-            return sr_results
-
-        except Exception as e:
-            self.logger.error(f"Error performing SR analysis: {e}")
-            return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

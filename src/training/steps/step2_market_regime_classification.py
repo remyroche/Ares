@@ -53,24 +53,39 @@ class MarketRegimeClassificationStep:
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         data_dir = training_input.get("data_dir", "data/training")
-
-        # Load the collected data
+        
+        # Try to load pre-consolidated data first
+        consolidated_file = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
         data_file_path = f"{data_dir}/{exchange}_{symbol}_historical_data.pkl"
-
-        if not os.path.exists(data_file_path):
-            raise FileNotFoundError(f"Data file not found: {data_file_path}")
-
-        # Load data
-        import pickle
-
-        with open(data_file_path, "rb") as f:
-            historical_data = pickle.load(f)
-
-        self.logger.info(f"Loaded historical data: {len(historical_data)} records")
-
-        # Convert to DataFrame if needed
-        if not isinstance(historical_data, pd.DataFrame):
-            historical_data = pd.DataFrame(historical_data)
+        
+        historical_data = None
+        
+        # Try consolidated parquet file first
+        if os.path.exists(consolidated_file):
+            self.logger.info(f"📁 Loading pre-consolidated data from: {consolidated_file}")
+            try:
+                historical_data = pd.read_parquet(consolidated_file)
+                self.logger.info(f"✅ Loaded consolidated data: {len(historical_data)} records")
+            except Exception as e:
+                self.logger.warning(f"⚠️  Failed to load consolidated data: {e}")
+                historical_data = None
+        
+        # Fallback to pickle file if consolidated data not available
+        if historical_data is None:
+            if not os.path.exists(data_file_path):
+                raise FileNotFoundError(f"Data file not found: {data_file_path}")
+            
+            self.logger.info(f"📁 Loading data from pickle file: {data_file_path}")
+            import pickle
+            
+            with open(data_file_path, "rb") as f:
+                historical_data = pickle.load(f)
+            
+            self.logger.info(f"✅ Loaded historical data: {len(historical_data)} records")
+            
+            # Convert to DataFrame if needed
+            if not isinstance(historical_data, pd.DataFrame):
+                historical_data = pd.DataFrame(historical_data)
 
         # Perform regime classification
         regime_results = await self._classify_market_regimes(

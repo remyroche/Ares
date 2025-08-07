@@ -4,7 +4,7 @@ Defines error thresholds, validation criteria, and step progression rules.
 """
 
 import os
-from typing import Any
+from typing import Any, Number
 
 import numpy as np
 import pandas as pd

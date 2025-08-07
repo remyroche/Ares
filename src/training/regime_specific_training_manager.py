@@ -140,7 +140,7 @@ class RegimeSpecificTrainingManager:
     async def _initialize_regime_classifier(self) -> None:
         """Initialize the unified regime classifier."""
         try:
-            self.regime_classifier = UnifiedRegimeClassifier(self.config)
+            self.regime_classifier = UnifiedRegimeClassifier(self.config, "UNKNOWN", "UNKNOWN")
             await self.regime_classifier.initialize()
             self.logger.info("Regime classifier initialized successfully")
 

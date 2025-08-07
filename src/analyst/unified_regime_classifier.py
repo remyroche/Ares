@@ -132,6 +132,7 @@ class UnifiedRegimeClassifier:
         features_df = self._calculate_macd(features_df)
         features_df = self._calculate_bollinger_bands(features_df)
         features_df = self._calculate_atr(features_df)
+        features_df['atr_normalized'] = features_df['atr'] / features_df['close']
         features_df = self._calculate_adx(features_df)
     
         # Enhanced volatility features for VOLATILE regime detection
@@ -142,6 +143,7 @@ class UnifiedRegimeClassifier:
         features_df["volatility_momentum"] = features_df["volatility_20"] - features_df[
             "volatility_20"
         ].shift(5)
+        
 
         # Clean features
         features_df = features_df.dropna()
@@ -305,18 +307,16 @@ class UnifiedRegimeClassifier:
                 mean_return = state_data["log_returns"].mean()
                 mean_volatility = state_data["volatility_20"].mean()
                 mean_adx = state_data["adx"].mean() # Calculate the mean ADX for the state
+                mean_atr_norm = state_data["atr_normalized"].mean()
     
                 # New regime classification logic with ADX
-                if mean_volatility > 0.015: # Your original volatility threshold
+                if mean_volatility > 0.015 or mean_atr_norm > 0.02:
                     regime = "VOLATILE"
                 elif mean_adx < adx_sideways_threshold:
-                    # If ADX is low, the trend is weak. This is our SIDEWAYS condition.
                     regime = "SIDEWAYS"
                 elif mean_return > 0: 
-                    # If ADX is > 25 (trending) and returns are positive, it's a BULL trend.
                     regime = "BULL"
                 else:
-                    # If ADX is > 25 (trending) and returns are not positive, it's a BEAR trend.
                     regime = "BEAR"
     
                 state_analysis[state] = {

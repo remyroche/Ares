@@ -1,12 +1,14 @@
 """
 Wavelet Feature Selection Demo
 
-This script demonstrates the complete wavelet feature selection workflow:
+This script demonstrates the complete wavelet feature selection workflow using the two-model strategy:
 1. Run full wavelet analysis
-2. Build ML models
-3. Perform feature selection
+2. Train Discovery Model on rich feature set
+3. Perform feature selection using permutation importance and SHAP
 4. Identify winner features
-5. Create optimized live configurations
+5. Create lean dataset with only winning features
+6. Train Production Model on lean dataset
+7. Create optimized live configurations
 """
 
 import asyncio
@@ -23,7 +25,7 @@ from src.utils.logger import system_logger
 
 class WaveletFeatureSelectionDemo:
     """
-    Demo class for the wavelet feature selection workflow.
+    Demo class for the wavelet feature selection workflow using two-model strategy.
     
     Demonstrates the complete process from full analysis to optimized live configurations.
     """
@@ -190,7 +192,7 @@ class WaveletFeatureSelectionDemo:
         """Display comprehensive workflow results."""
         try:
             self.logger.info("\n" + "="*80)
-            self.logger.info("📊 WAVELET FEATURE SELECTION RESULTS")
+            self.logger.info("📊 WAVELET FEATURE SELECTION RESULTS (Two-Model Strategy)")
             self.logger.info("="*80)
             
             # Step 1: Full Analysis Results
@@ -200,13 +202,14 @@ class WaveletFeatureSelectionDemo:
             self.logger.info(f"  Wavelet features generated: {analysis_results['wavelet_feature_count']}")
             self.logger.info(f"  Computation time: {analysis_results['computation_time']:.2f}s")
             
-            # Step 2: ML Model Results
-            model_results = results["model_results"]
-            self.logger.info("\n🤖 STEP 2: ML MODEL PERFORMANCE")
-            for name, perf in model_results["performance"].items():
-                self.logger.info(f"  {name.upper()}:")
-                self.logger.info(f"    CV Score: {perf['cv_mean']:.3f} ± {perf['cv_std']:.3f}")
-                self.logger.info(f"    Test Accuracy: {perf['test_accuracy']:.3f}")
+            # Step 2: Discovery Model Results
+            discovery_model_results = results["discovery_model_results"]
+            self.logger.info("\n🔍 STEP 2: DISCOVERY MODEL (Feature Selection)")
+            discovery_perf = discovery_model_results["performance"]
+            self.logger.info(f"  Model Type: Random Forest (optimized for feature selection)")
+            self.logger.info(f"  CV Score: {discovery_perf['cv_mean']:.3f} ± {discovery_perf['cv_std']:.3f}")
+            self.logger.info(f"  Test Accuracy: {discovery_perf['test_accuracy']:.3f}")
+            self.logger.info(f"  Purpose: Identify most predictive features")
             
             # Step 3: Feature Selection Results
             feature_results = results["feature_results"]
@@ -238,19 +241,44 @@ class WaveletFeatureSelectionDemo:
             total_cost = sum(f.computation_cost for f in winner_features)
             self.logger.info(f"  Total computation cost: {total_cost:.1f}ms")
             
-            # Step 5: Live Configurations
+            # Step 5: Lean Dataset
+            lean_dataset = results["lean_dataset"]
+            self.logger.info("\n📊 STEP 5: LEAN DATASET CREATION")
+            self.logger.info(f"  Lean dataset shape: {lean_dataset['lean_feature_df'].shape}")
+            self.logger.info(f"  Features in lean dataset: {len(lean_dataset['winner_feature_names'])}")
+            
+            # Step 6: Production Model Results
+            production_model_results = results["production_model_results"]
+            self.logger.info("\n🚀 STEP 6: PRODUCTION MODEL (Deployment Ready)")
+            production_perf = production_model_results["performance"]
+            self.logger.info(f"  Model Type: Gradient Boosting (optimized for deployment)")
+            self.logger.info(f"  CV Score: {production_perf['cv_mean']:.3f} ± {production_perf['cv_std']:.3f}")
+            self.logger.info(f"  Test Accuracy: {production_perf['test_accuracy']:.3f}")
+            self.logger.info(f"  Purpose: Live trading deployment")
+            
+            # Step 7: Live Configurations
             live_configs = results["live_configs"]
-            self.logger.info("\n⚡ STEP 5: LIVE CONFIGURATIONS")
+            self.logger.info("\n⚡ STEP 7: LIVE CONFIGURATIONS")
             self.logger.info("  Generated configurations:")
             for config_name in live_configs.keys():
                 self.logger.info(f"    - {config_name}_config.yaml")
             
-            # Summary
+            # Model Comparison
             summary = results["summary"]
+            self.logger.info("\n📈 MODEL COMPARISON")
+            discovery_acc = summary["model_comparison"]["discovery_model"]["test_accuracy"]
+            production_acc = summary["model_comparison"]["production_model"]["test_accuracy"]
+            accuracy_preservation = summary["performance_improvement"]["accuracy_preservation"]
+            
+            self.logger.info(f"  Discovery Model Accuracy: {discovery_acc:.3f}")
+            self.logger.info(f"  Production Model Accuracy: {production_acc:.3f}")
+            self.logger.info(f"  Accuracy Preservation: {accuracy_preservation:.1%}")
+            
+            # Performance Summary
             self.logger.info("\n📈 PERFORMANCE SUMMARY")
             self.logger.info(f"  Computation time reduction: {summary['performance_improvement']['computation_time_reduction']:.1%}")
             self.logger.info(f"  Feature count reduction: {summary['performance_improvement']['feature_count_reduction']:.1%}")
-            self.logger.info(f"  Best model accuracy: {summary['workflow_summary']['best_model_accuracy']:.3f}")
+            self.logger.info(f"  Best model accuracy: {summary['workflow_summary']['production_model_accuracy']:.3f}")
             
             # Winner features details
             self.logger.info("\n🏆 WINNER FEATURES DETAILS:")
@@ -260,8 +288,14 @@ class WaveletFeatureSelectionDemo:
                 self.logger.info(f"      Cost: {winner['computation_cost_ms']:.1f}ms")
                 self.logger.info(f"      Type: {winner['feature_type']}")
             
+            # Deployment Information
+            self.logger.info("\n🚀 DEPLOYMENT INFORMATION")
+            self.logger.info("  Production Model saved to: data/wavelet_feature_selection/models/production_model.pkl")
+            self.logger.info("  Feature names saved to: data/wavelet_feature_selection/models/production_features.json")
+            self.logger.info("  Live configurations saved to: data/wavelet_feature_selection/configs/")
+            
             self.logger.info("\n" + "="*80)
-            self.logger.info("✅ WORKFLOW COMPLETED SUCCESSFULLY!")
+            self.logger.info("✅ TWO-MODEL WORKFLOW COMPLETED SUCCESSFULLY!")
             self.logger.info("="*80)
             
         except Exception as e:
@@ -302,6 +336,11 @@ class WaveletFeatureSelectionDemo:
                 for f in results["winner_features"]
             ])
             winners_df.to_csv(winners_path, index=False)
+            
+            # Save model comparison
+            model_comparison_path = self.workflow.results_dir / "model_comparison.yaml"
+            with open(model_comparison_path, 'w') as f:
+                yaml.dump(results["summary"]["model_comparison"], f, default_flow_style=False)
             
             self.logger.info(f"💾 Results saved to {self.workflow.output_dir}")
             

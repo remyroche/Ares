@@ -1,0 +1,182 @@
+# Wavelet Feature Selection Configuration
+# Two-Model Strategy Configuration
+
+# Workflow configuration
+wavelet_feature_selection:
+  # Output directories
+  output_dir: "data/wavelet_feature_selection"
+  
+  # Feature selection parameters
+  top_n_features: 20
+  min_importance_threshold: 0.01
+  max_computation_time: 0.1  # 100ms
+  
+  # ML model parameters
+  test_size: 0.2
+  random_state: 42
+  cv_folds: 5
+  
+  # Discovery Model Configuration (for feature selection)
+  discovery_model:
+    type: "random_forest"
+    n_estimators: 200
+    max_depth: 15
+    min_samples_split: 5
+    min_samples_leaf: 2
+    # Optimized for feature selection - deeper trees, more estimators
+  
+  # Production Model Configuration (for deployment)
+  production_model:
+    type: "gradient_boosting"
+    n_estimators: 100
+    max_depth: 6
+    learning_rate: 0.1
+    subsample: 0.8
+    # Optimized for deployment - faster inference, smaller model
+
+# Performance monitoring
+performance_monitoring:
+  enable_performance_tracking: true
+  max_history_size: 1000
+  performance_check_interval: 60  # seconds
+  
+# Feature analysis settings
+feature_analysis:
+  # SHAP analysis settings
+  shap_analysis:
+    enable_shap_analysis: true
+    max_samples_for_shap: 1000  # Limit samples for SHAP computation
+    shap_plot_enabled: false  # Disable plots for faster computation
+  
+  # Permutation importance settings
+  permutation_importance:
+    enable_permutation_importance: true
+    n_repeats: 10
+    random_state: 42
+  
+  # Feature type classification
+  feature_classification:
+    wavelet_keywords: ["wavelet", "dwt", "cwt", "packet", "denoising"]
+    technical_keywords: ["rsi", "macd", "sma", "ema", "bollinger", "atr", "stoch"]
+    other_keywords: ["volume", "price", "return", "volatility"]
+
+# Computation cost estimation
+computation_costs:
+  # Base costs in milliseconds
+  wavelet_features:
+    cwt: 50.0  # Continuous wavelet transform
+    packet: 40.0  # Wavelet packet analysis
+    denoising: 30.0  # Wavelet denoising
+    dwt: 10.0  # Discrete wavelet transform
+    basic: 5.0  # Basic wavelet features
+  
+  technical_features:
+    basic: 1.0  # Simple technical indicators
+    complex: 5.0  # Complex technical indicators
+  
+  other_features:
+    basic: 2.0  # Basic features
+    complex: 10.0  # Complex features
+
+# Model comparison settings
+model_comparison:
+  enable_model_comparison: true
+  comparison_metrics:
+    - "accuracy"
+    - "precision"
+    - "recall"
+    - "f1_score"
+    - "computation_time"
+  
+  # Accuracy preservation threshold
+  min_accuracy_preservation: 0.95  # 95% of discovery model accuracy
+
+# Deployment settings
+deployment:
+  # Model saving
+  model_saving:
+    save_discovery_model: true  # Save for analysis
+    save_production_model: true  # Save for deployment
+    save_feature_names: true
+    save_configurations: true
+  
+  # Model loading
+  model_loading:
+    enable_model_cache: true
+    cache_size: 1
+    prediction_timeout: 0.05  # 50ms
+  
+  # Feature validation
+  feature_validation:
+    enable_feature_validation: true
+    strict_validation: false
+    allow_missing_features: false
+
+# Logging configuration
+logging:
+  enable_detailed_logging: false
+  log_performance_metrics: true
+  log_feature_importance: true
+  log_model_comparison: true
+  log_deployment_info: true
+
+# Advanced settings
+advanced:
+  # Feature selection methods
+  feature_selection_methods:
+    - "permutation_importance"
+    - "shap_importance"
+    - "combined_score"
+  
+  # Model optimization
+  model_optimization:
+    enable_hyperparameter_tuning: false
+    enable_feature_engineering: true
+    enable_ensemble_methods: false
+  
+  # Performance optimization
+  performance_optimization:
+    enable_parallel_processing: true
+    max_workers: 4
+    enable_memory_optimization: true
+    max_memory_usage: 100  # MB
+
+# Testing and validation
+testing:
+  # Cross-validation settings
+  cross_validation:
+    cv_folds: 5
+    cv_strategy: "stratified"
+    enable_shuffle: true
+  
+  # Model validation
+  model_validation:
+    enable_holdout_validation: true
+    holdout_size: 0.2
+    enable_time_series_validation: false
+  
+  # Performance benchmarks
+  performance_benchmarks:
+    target_computation_time: 0.05  # 50ms target
+    target_accuracy: 0.6  # 60% accuracy target
+    target_feature_count: 20  # Maximum 20 features
+
+# Output configuration
+output:
+  # File formats
+  file_formats:
+    models: "pickle"
+    configurations: "yaml"
+    results: "csv"
+    summaries: "yaml"
+  
+  # Compression
+  compression:
+    enable_compression: true
+    compression_level: 6
+  
+  # Backup
+  backup:
+    enable_backup: true
+    backup_interval: 24  # hours
+    max_backups: 7

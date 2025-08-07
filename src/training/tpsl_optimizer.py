@@ -290,6 +290,7 @@ class TpSlOptimizer:
         logger.info("--- Best Trial Performance Breakdown ---")
         for category in ["total", "long", "short"]:
             attrs = best_trial.user_attrs.get(category, {})
+            # Check if there were any trades in this category before logging
             if attrs.get("trade_count", 0) > 0:
                 logger.info(f"  {category.upper()} Trades ({attrs['trade_count']}):")
                 logger.info(f"    - Profit Factor: {attrs.get('profit_factor', 0):.2f}")

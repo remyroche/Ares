@@ -1,11 +1,11 @@
 # src/training/target_parameter_optimizer.py
 
 import os
-
 import numpy as np
 import optuna
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
+from typing import Any, Number
 
 from src.database.sqlite_manager import SQLiteManager
 from src.utils.error_handler import handle_errors, handle_specific_errors
@@ -1129,7 +1129,7 @@ class TargetParameterOptimizer:
 
         return pd.Series(pnls)
 
-    def objective(self, trial: optuna.trial.Trial) -> float:
+    def objective(self, trial: optuna.trial.Trial) -> Number:
         """The objective function for Optuna to maximize."""
         # Ensure tp and sl are different and reasonable
         tp = trial.suggest_float("tp_threshold", 0.005, 0.03, log=True)

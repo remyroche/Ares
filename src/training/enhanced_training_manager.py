@@ -5,7 +5,9 @@ import pandas as pd
 import time
 import psutil
 import os
+import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from src.utils.error_handler import (
@@ -73,6 +75,75 @@ class EnhancedTrainingManager:
         self.computational_optimization_manager: ComputationalOptimizationManager | None = None
         self.optimization_statistics: dict[str, Any] = {}
         
+        # Checkpointing configuration
+        self.checkpoint_dir = Path("checkpoints")
+        self.checkpoint_dir.mkdir(exist_ok=True)
+        self.checkpoint_file = self.checkpoint_dir / "training_progress.json"
+        self.enable_checkpointing = self.enhanced_training_config.get("enable_checkpointing", True)
+        
+    def _save_checkpoint(self, step_name: str, pipeline_state: dict[str, Any]) -> None:
+        """
+        Save training progress checkpoint.
+        
+        Args:
+            step_name: Current step name
+            pipeline_state: Current pipeline state
+        """
+        if not self.enable_checkpointing:
+            return
+            
+        try:
+            checkpoint_data = {
+                "timestamp": datetime.now().isoformat(),
+                "current_step": step_name,
+                "pipeline_state": pipeline_state,
+                "training_mode": "blank" if self.blank_training_mode else "full",
+                "symbol": getattr(self, 'current_symbol', ''),
+                "exchange": getattr(self, 'current_exchange', ''),
+                "timeframe": getattr(self, 'current_timeframe', '1m'),
+                "lookback_days": self.lookback_days,
+                "max_trials": self.max_trials,
+                "n_trials": self.n_trials
+            }
+            
+            with open(self.checkpoint_file, 'w') as f:
+                json.dump(checkpoint_data, f, indent=2)
+                
+            self.logger.info(f"💾 Checkpoint saved: {step_name}")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to save checkpoint: {e}")
+    
+    def _load_checkpoint(self) -> dict[str, Any] | None:
+        """
+        Load training progress checkpoint.
+        
+        Returns:
+            dict: Checkpoint data or None if no checkpoint exists
+        """
+        if not self.enable_checkpointing or not self.checkpoint_file.exists():
+            return None
+            
+        try:
+            with open(self.checkpoint_file, 'r') as f:
+                checkpoint_data = json.load(f)
+                
+            self.logger.info(f"📂 Checkpoint loaded: {checkpoint_data.get('current_step', 'unknown')}")
+            return checkpoint_data
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to load checkpoint: {e}")
+            return None
+    
+    def _clear_checkpoint(self) -> None:
+        """Clear the checkpoint file."""
+        try:
+            if self.checkpoint_file.exists():
+                self.checkpoint_file.unlink()
+                self.logger.info("🗑️ Checkpoint cleared")
+        except Exception as e:
+            self.logger.warning(f"Failed to clear checkpoint: {e}")
+        
     def _get_system_resources(self) -> dict[str, float]:
         """
         Get current system resource usage.
@@ -111,15 +182,19 @@ class EnhancedTrainingManager:
             cpu_count = psutil.cpu_count()
             memory_gb = psutil.virtual_memory().total / 1024 / 1024 / 1024
             
-            # Estimate requirements based on training mode
+            # Realistic estimates based on actual training complexity
             if self.blank_training_mode:
                 estimated_memory_gb = 4.0  # Blank training uses less memory
-                estimated_time_minutes = 15  # Quick training
+                estimated_time_minutes = 90  # Realistic: 1.5 hours for blank training
                 memory_warning_threshold = 6.0
+                models_to_train = 4
+                optimization_trials = 50
             else:
                 estimated_memory_gb = 8.0  # Full training uses more memory
-                estimated_time_minutes = 120  # Full training takes longer
+                estimated_time_minutes = 720  # Realistic: 12 hours for full training
                 memory_warning_threshold = 12.0
+                models_to_train = 12
+                optimization_trials = 200
             
             # Check if system meets requirements
             memory_sufficient = memory_gb >= memory_warning_threshold
@@ -130,10 +205,13 @@ class EnhancedTrainingManager:
                 "cpu_count": cpu_count,
                 "estimated_memory_gb": estimated_memory_gb,
                 "estimated_time_minutes": estimated_time_minutes,
+                "models_to_train": models_to_train,
+                "optimization_trials": optimization_trials,
                 "memory_sufficient": memory_sufficient,
                 "cpu_sufficient": cpu_sufficient,
                 "memory_warning_threshold": memory_warning_threshold,
-                "recommendations": self._get_resource_recommendations(memory_gb, cpu_count)
+                "recommendations": self._get_resource_recommendations(memory_gb, cpu_count),
+                "step_breakdown": self._get_step_time_breakdown(self.blank_training_mode)
             }
         except Exception as e:
             self.logger.warning(f"Could not analyze resource requirements: {e}")
@@ -172,6 +250,55 @@ class EnhancedTrainingManager:
         
         return recommendations
     
+    def _get_step_time_breakdown(self, is_blank_mode: bool) -> dict[str, int]:
+        """
+        Get realistic time breakdown for each step.
+        
+        Args:
+            is_blank_mode: Whether this is blank training mode
+            
+        Returns:
+            dict: Time estimates for each step in minutes
+        """
+        if is_blank_mode:
+            return {
+                "step1_data_collection": 5,
+                "step2_market_regime_classification": 3,
+                "step3_regime_data_splitting": 2,
+                "step4_analyst_labeling_feature_engineering": 15,
+                "step5_analyst_specialist_training": 10,
+                "step6_analyst_enhancement": 8,
+                "step7_analyst_ensemble_creation": 12,
+                "step8_tactician_labeling": 5,
+                "step9_tactician_specialist_training": 10,
+                "step10_tactician_ensemble_creation": 12,
+                "step11_confidence_calibration": 3,
+                "step12_final_parameters_optimization": 15,
+                "step13_walk_forward_validation": 8,
+                "step14_monte_carlo_validation": 8,
+                "step15_ab_testing": 5,
+                "step16_saving": 2
+            }
+        else:
+            return {
+                "step1_data_collection": 15,
+                "step2_market_regime_classification": 8,
+                "step3_regime_data_splitting": 5,
+                "step4_analyst_labeling_feature_engineering": 60,
+                "step5_analyst_specialist_training": 30,
+                "step6_analyst_enhancement": 25,
+                "step7_analyst_ensemble_creation": 35,
+                "step8_tactician_labeling": 15,
+                "step9_tactician_specialist_training": 30,
+                "step10_tactician_ensemble_creation": 35,
+                "step11_confidence_calibration": 10,
+                "step12_final_parameters_optimization": 240,
+                "step13_walk_forward_validation": 60,
+                "step14_monte_carlo_validation": 60,
+                "step15_ab_testing": 30,
+                "step16_saving": 5
+            }
+    
     def _optimize_memory_usage(self) -> None:
         """
         Perform memory optimization to reduce memory footprint.
@@ -199,6 +326,44 @@ class EnhancedTrainingManager:
                 
         except Exception as e:
             self.logger.warning(f"Memory optimization failed: {e}")
+    
+    def _get_progress_percentage(self, completed_steps: int, total_steps: int = 16) -> float:
+        """
+        Calculate progress percentage.
+        
+        Args:
+            completed_steps: Number of completed steps
+            total_steps: Total number of steps
+            
+        Returns:
+            float: Progress percentage
+        """
+        return (completed_steps / total_steps) * 100
+    
+    def _log_progress(self, current_step: int, total_steps: int = 16, elapsed_time: float = 0) -> None:
+        """
+        Log progress with estimated completion time.
+        
+        Args:
+            current_step: Current step number
+            total_steps: Total number of steps
+            elapsed_time: Time elapsed so far
+        """
+        progress = self._get_progress_percentage(current_step, total_steps)
+        
+        if elapsed_time > 0 and current_step > 0:
+            # Estimate remaining time based on current progress
+            estimated_total_time = (elapsed_time / current_step) * total_steps
+            remaining_time = estimated_total_time - elapsed_time
+            eta_minutes = remaining_time / 60
+            
+            self.logger.info(f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
+            self.logger.info(f"⏱️ Elapsed: {elapsed_time/60:.1f} min | ETA: {eta_minutes:.1f} min")
+            print(f"   📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
+            print(f"   ⏱️ Elapsed: {elapsed_time/60:.1f} min | ETA: {eta_minutes:.1f} min")
+        else:
+            self.logger.info(f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
+            print(f"   📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
         
     def _log_step_completion(self, step_name: str, step_start: float, step_times: dict, success: bool = True) -> None:
         """
@@ -238,6 +403,11 @@ class EnhancedTrainingManager:
             self.logger.warning(warning_msg)
             print(f"   {warning_msg}")
         
+        # Log progress after each step
+        completed_steps = len(step_times)
+        elapsed_time = sum(step_times.values())
+        self._log_progress(completed_steps, 16, elapsed_time)
+        
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid enhanced training manager configuration"),
@@ -269,13 +439,27 @@ class EnhancedTrainingManager:
                 self.logger.info(f"   💾 System Memory: {resource_analysis['system_memory_gb']:.1f} GB")
                 self.logger.info(f"   🖥️ CPU Cores: {resource_analysis['cpu_count']}")
                 self.logger.info(f"   📈 Estimated Memory Usage: {resource_analysis['estimated_memory_gb']:.1f} GB")
-                self.logger.info(f"   ⏱️ Estimated Time: {resource_analysis['estimated_time_minutes']} minutes")
+                self.logger.info(f"   ⏱️ Estimated Time: {resource_analysis['estimated_time_minutes']} minutes ({resource_analysis['estimated_time_minutes']/60:.1f} hours)")
+                self.logger.info(f"   🤖 Models to Train: {resource_analysis['models_to_train']}")
+                self.logger.info(f"   🔧 Optimization Trials: {resource_analysis['optimization_trials']}")
                 
                 print("📊 Resource Analysis:")
                 print(f"   💾 System Memory: {resource_analysis['system_memory_gb']:.1f} GB")
                 print(f"   🖥️ CPU Cores: {resource_analysis['cpu_count']}")
                 print(f"   📈 Estimated Memory Usage: {resource_analysis['estimated_memory_gb']:.1f} GB")
-                print(f"   ⏱️ Estimated Time: {resource_analysis['estimated_time_minutes']} minutes")
+                print(f"   ⏱️ Estimated Time: {resource_analysis['estimated_time_minutes']} minutes ({resource_analysis['estimated_time_minutes']/60:.1f} hours)")
+                print(f"   🤖 Models to Train: {resource_analysis['models_to_train']}")
+                print(f"   🔧 Optimization Trials: {resource_analysis['optimization_trials']}")
+                
+                # Show step-by-step breakdown
+                if 'step_breakdown' in resource_analysis:
+                    self.logger.info("📋 Step-by-Step Time Estimates:")
+                    print("📋 Step-by-Step Time Estimates:")
+                    total_estimated = sum(resource_analysis['step_breakdown'].values())
+                    for step_name, minutes in resource_analysis['step_breakdown'].items():
+                        percentage = (minutes / total_estimated) * 100
+                        self.logger.info(f"   {step_name}: {minutes} min ({percentage:.1f}%)")
+                        print(f"   {step_name}: {minutes} min ({percentage:.1f}%)")
                 
                 # Log recommendations
                 if resource_analysis['recommendations']:
@@ -537,6 +721,24 @@ class EnhancedTrainingManager:
             start_time = time.time()
             step_times = {}
             
+            # Store current training parameters for checkpointing
+            self.current_symbol = symbol
+            self.current_exchange = exchange
+            self.current_timeframe = timeframe
+            
+            # Check for existing checkpoint
+            checkpoint = self._load_checkpoint()
+            if checkpoint:
+                self.logger.info("🔄 Resuming from checkpoint...")
+                print("🔄 Resuming from checkpoint...")
+                pipeline_state = checkpoint.get("pipeline_state", {})
+                last_completed_step = checkpoint.get("current_step", "")
+                self.logger.info(f"📂 Last completed step: {last_completed_step}")
+                print(f"📂 Last completed step: {last_completed_step}")
+            else:
+                self.logger.info("🚀 Starting fresh training...")
+                print("🚀 Starting fresh training...")
+            
             # Enhanced logging setup
             self.logger.info("=" * 100)
             self.logger.info("🚀 COMPREHENSIVE TRAINING PIPELINE START")
@@ -599,6 +801,9 @@ class EnhancedTrainingManager:
             
             self._log_step_completion("Step 1: Data Collection", step_start, step_times)
             
+            # Save checkpoint after step 1
+            self._save_checkpoint("step1_data_collection", pipeline_state)
+            
             # Memory optimization after data collection
             self._optimize_memory_usage()
 
@@ -633,6 +838,9 @@ class EnhancedTrainingManager:
             )
             
             self._log_step_completion("Step 2: Market Regime Classification", step_start, step_times)
+            
+            # Save checkpoint after step 2
+            self._save_checkpoint("step2_market_regime_classification", pipeline_state)
 
             # Step 3: Regime Data Splitting
             step_start = time.time()
@@ -665,6 +873,9 @@ class EnhancedTrainingManager:
             )
             
             self._log_step_completion("Step 3: Regime Data Splitting", step_start, step_times)
+            
+            # Save checkpoint after step 3
+            self._save_checkpoint("step3_regime_data_splitting", pipeline_state)
 
             # Step 4: Analyst Labeling & Feature Engineering
             self.logger.info("🧠 STEP 4: Analyst Labeling & Feature Engineering...")
@@ -683,6 +894,9 @@ class EnhancedTrainingManager:
                 return False
             
             self._log_step_completion("Step 4: Analyst Labeling & Feature Engineering", step_start, step_times)
+            
+            # Save checkpoint after step 4
+            self._save_checkpoint("step4_analyst_labeling_feature_engineering", pipeline_state)
             
             # Memory optimization after feature engineering (most memory-intensive step)
             self._optimize_memory_usage()
@@ -996,6 +1210,9 @@ class EnhancedTrainingManager:
                 percentage = (step_time / total_time) * 100
                 print(f"   {step_name}: {step_time:.2f}s ({percentage:.1f}%)")
             
+            # Clear checkpoint on successful completion
+            self._clear_checkpoint()
+            
             return True
             
         except Exception as e:
@@ -1003,9 +1220,11 @@ class EnhancedTrainingManager:
             self.logger.error(f"💥 COMPREHENSIVE PIPELINE FAILED: {str(e)}")
             self.logger.error(f"📋 Error details: {type(e).__name__}: {str(e)}")
             self.logger.error(f"⏱️ Time elapsed before failure: {total_time:.2f}s")
+            self.logger.info("💾 Checkpoint saved - you can resume training later")
             print(f"💥 COMPREHENSIVE PIPELINE FAILED: {str(e)}")
             print(f"📋 Error details: {type(e).__name__}: {str(e)}")
             print(f"⏱️ Time elapsed before failure: {total_time:.2f}s")
+            print("💾 Checkpoint saved - you can resume training later")
             return False
 
     @handle_errors(

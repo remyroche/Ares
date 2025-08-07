@@ -601,6 +601,120 @@ class TrackingSystem:
         except Exception as e:
             self.logger.error(f"Error tracking model behavior: {e}")
 
+    async def _analyze_correlation_patterns(self) -> None:
+        """Analyze correlation patterns between different system components."""
+        try:
+            # Get recent tracking data for correlation analysis
+            recent_ensemble_decisions = self.get_ensemble_decisions(limit=50)
+            recent_regime_analyses = self.get_regime_analyses(limit=50)
+            recent_feature_importance = self.get_feature_importance_history(limit=50)
+            
+            if len(recent_ensemble_decisions) < 10:
+                return
+
+            # Analyze ensemble-regime correlations
+            regime_correlations = {}
+            for regime_type in ["bull_trend", "bear_trend", "sideways", "high_volatility", "low_volatility"]:
+                regime_performance = []
+                ensemble_confidence = []
+                
+                for decision in recent_ensemble_decisions:
+                    # Find corresponding regime analysis
+                    matching_regime = next(
+                        (r for r in recent_regime_analyses 
+                         if abs((r.timestamp - decision.timestamp).total_seconds()) < 60), 
+                        None
+                    )
+                    
+                    if matching_regime and matching_regime.current_regime.value == regime_type:
+                        regime_performance.append(decision.confidence_score)
+                        ensemble_confidence.append(decision.ensemble_prediction)
+
+                if len(regime_performance) >= 3:
+                    correlation = self._calculate_correlation(regime_performance, ensemble_confidence)
+                    regime_correlations[regime_type] = correlation
+
+            # Analyze feature-ensemble correlations
+            feature_correlations = {}
+            for feature_importance in recent_feature_importance:
+                for feature_name, importance_score in feature_importance.feature_importance.items():
+                    if feature_name not in feature_correlations:
+                        feature_correlations[feature_name] = []
+                    
+                    # Find corresponding ensemble decision
+                    matching_decision = next(
+                        (d for d in recent_ensemble_decisions 
+                         if abs((d.timestamp - feature_importance.timestamp).total_seconds()) < 60), 
+                        None
+                    )
+                    
+                    if matching_decision:
+                        feature_correlations[feature_name].append({
+                            'importance': importance_score,
+                            'confidence': matching_decision.confidence_score
+                        })
+
+            # Calculate correlation coefficients
+            feature_ensemble_correlations = {}
+            for feature_name, data_points in feature_correlations.items():
+                if len(data_points) >= 5:
+                    importance_values = [d['importance'] for d in data_points]
+                    confidence_values = [d['confidence'] for d in data_points]
+                    correlation = self._calculate_correlation(importance_values, confidence_values)
+                    feature_ensemble_correlations[feature_name] = correlation
+
+            # Store correlation analysis results
+            self.correlation_analysis = {
+                'regime_correlations': regime_correlations,
+                'feature_ensemble_correlations': feature_ensemble_correlations,
+                'analysis_timestamp': datetime.now()
+            }
+
+            # Log significant correlations
+            significant_regime_correlations = {
+                regime: corr for regime, corr in regime_correlations.items() 
+                if abs(corr) > 0.3
+            }
+            
+            significant_feature_correlations = {
+                feature: corr for feature, corr in feature_ensemble_correlations.items() 
+                if abs(corr) > 0.25
+            }
+            
+            if significant_regime_correlations:
+                self.logger.info(f"Significant regime correlations: {significant_regime_correlations}")
+            
+            if significant_feature_correlations:
+                self.logger.info(f"Significant feature correlations: {significant_feature_correlations}")
+
+        except Exception as e:
+            self.logger.error(f"Error analyzing correlation patterns: {e}")
+
+    def _calculate_correlation(self, x_values: list[float], y_values: list[float]) -> float:
+        """Calculate Pearson correlation coefficient between two lists of values."""
+        try:
+            if len(x_values) != len(y_values) or len(x_values) < 2:
+                return 0.0
+            
+            n = len(x_values)
+            sum_x = sum(x_values)
+            sum_y = sum(y_values)
+            sum_xy = sum(x * y for x, y in zip(x_values, y_values))
+            sum_x2 = sum(x * x for x in x_values)
+            sum_y2 = sum(y * y for y in y_values)
+            
+            numerator = n * sum_xy - sum_x * sum_y
+            denominator = ((n * sum_x2 - sum_x * sum_x) * (n * sum_y2 - sum_y * sum_y)) ** 0.5
+            
+            if denominator == 0:
+                return 0.0
+            
+            return numerator / denominator
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating correlation: {e}")
+            return 0.0
+
     def get_ensemble_decisions(
         self,
         limit: int | None = None,

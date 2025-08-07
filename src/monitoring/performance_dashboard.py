@@ -326,6 +326,74 @@ class PerformanceDashboard:
             self.logger.error(f"Error calculating trends: {e}")
             return {}
 
+    def _calculate_predictive_analytics(self) -> dict[str, Any]:
+        """Calculate predictive analytics for future performance estimation."""
+        try:
+            if len(self.metrics_history) < 10:
+                return {"error": "Insufficient data for predictive analytics"}
+
+            # Get historical data for prediction
+            historical_metrics = self.metrics_history[-50:]  # Last 50 data points
+            
+            predictions = {}
+            
+            # Simple linear regression for key metrics
+            for metric_name in ["model_accuracy", "trading_win_rate", "system_memory_usage"]:
+                values = []
+                for metric in historical_metrics:
+                    if metric_name == "model_accuracy":
+                        values.append(metric.model_performance.get("accuracy", 0.0))
+                    elif metric_name == "trading_win_rate":
+                        values.append(metric.trading_performance.get("win_rate", 0.0))
+                    elif metric_name == "system_memory_usage":
+                        values.append(metric.system_performance.get("memory_usage", 0.0))
+                
+                timestamps = [i for i in range(len(values))]
+                
+                if len(values) >= 5:
+                    # Simple linear trend prediction
+                    try:
+                        # Calculate linear regression coefficients
+                        n = len(values)
+                        sum_x = sum(timestamps)
+                        sum_y = sum(values)
+                        sum_xy = sum(x * y for x, y in zip(timestamps, values))
+                        sum_x2 = sum(x * x for x in timestamps)
+                        
+                        # Linear regression: y = mx + b
+                        slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x)
+                        intercept = (sum_y - slope * sum_x) / n
+                        
+                        # Predict next 5 periods
+                        future_predictions = []
+                        for i in range(1, 6):
+                            prediction = slope * (n + i - 1) + intercept
+                            future_predictions.append(max(0, min(1, prediction)))  # Clamp between 0 and 1
+                        
+                        # Calculate prediction confidence based on R-squared
+                        y_mean = sum_y / n
+                        ss_tot = sum((y - y_mean) ** 2 for y in values)
+                        ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(timestamps, values))
+                        r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+                        
+                        predictions[metric_name] = {
+                            "current_value": values[-1],
+                            "predictions": future_predictions,
+                            "confidence": r_squared,
+                            "trend": "increasing" if slope > 0 else "decreasing",
+                            "slope": slope
+                        }
+                        
+                    except Exception as e:
+                        self.logger.warning(f"Failed to calculate prediction for {metric_name}: {e}")
+                        continue
+
+            return predictions
+
+        except Exception as e:
+            self.logger.error(f"Error calculating predictive analytics: {e}")
+            return {"error": f"Predictive analytics failed: {e}"}
+
     def _calculate_health_score(self) -> dict[str, Any]:
         """Calculate system health score."""
         try:

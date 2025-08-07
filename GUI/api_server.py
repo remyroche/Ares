@@ -858,6 +858,229 @@ async def restart_system():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/monitoring/dashboard")
+async def get_monitoring_dashboard():
+    """Get comprehensive monitoring dashboard data."""
+    try:
+        # Generate sample monitoring data
+        import random
+        from datetime import datetime, timedelta
+        
+        # Performance metrics over time
+        performance_data = []
+        base_time = datetime.now() - timedelta(hours=24)
+        for i in range(24):
+            timestamp = base_time + timedelta(hours=i)
+            performance_data.append({
+                'timestamp': timestamp.strftime('%Y-%m-%d %H:%M'),
+                'model_accuracy': 0.75 + random.uniform(-0.05, 0.05),
+                'trading_win_rate': 0.65 + random.uniform(-0.03, 0.03),
+                'profit_factor': 1.5 + random.uniform(-0.1, 0.1),
+                'sharpe_ratio': 1.2 + random.uniform(-0.05, 0.05),
+                'system_memory_usage': 0.6 + random.uniform(-0.1, 0.1),
+                'system_cpu_usage': 0.4 + random.uniform(-0.1, 0.1)
+            })
+        
+        # Anomaly detection data
+        anomalies_data = []
+        for i in range(7):
+            timestamp = datetime.now() - timedelta(days=i)
+            anomalies_data.append({
+                'timestamp': timestamp.strftime('%Y-%m-%d'),
+                'anomaly_count': random.randint(0, 5),
+                'severity_level': random.choice(['low', 'medium', 'high', 'critical']),
+                'detection_rate': random.uniform(0.8, 0.95)
+            })
+        
+        # Predictive analytics data
+        predictions_data = []
+        for i in range(24):
+            timestamp = base_time + timedelta(hours=i)
+            predictions_data.append({
+                'timestamp': timestamp.strftime('%Y-%m-%d %H:%M'),
+                'predicted_accuracy': 0.78 + random.uniform(-0.02, 0.02),
+                'predicted_win_rate': 0.67 + random.uniform(-0.02, 0.02),
+                'confidence_score': 0.85 + random.uniform(-0.05, 0.05)
+            })
+        
+        # Correlation analysis data
+        correlations_data = [
+            {'metric': 'Model Accuracy', 'value': 0.85},
+            {'metric': 'Win Rate', 'value': 0.72},
+            {'metric': 'Profit Factor', 'value': 0.68},
+            {'metric': 'Sharpe Ratio', 'value': 0.75},
+            {'metric': 'System Health', 'value': 0.90}
+        ]
+        
+        # Risk metrics data
+        risk_metrics_data = []
+        for i in range(24):
+            timestamp = base_time + timedelta(hours=i)
+            risk_metrics_data.append({
+                'timestamp': timestamp.strftime('%Y-%m-%d %H:%M'),
+                'portfolio_var': 0.03 + random.uniform(-0.01, 0.01),
+                'max_drawdown': -0.05 + random.uniform(-0.02, 0.02),
+                'correlation_risk': 0.12 + random.uniform(-0.02, 0.02),
+                'volume': random.randint(100, 500),
+                'value': random.uniform(0.6, 0.9)
+            })
+        
+        # System health data
+        system_health_data = []
+        for i in range(24):
+            timestamp = base_time + timedelta(hours=i)
+            system_health_data.append({
+                'timestamp': timestamp.strftime('%Y-%m-%d %H:%M'),
+                'health_score': 0.85 + random.uniform(-0.05, 0.05),
+                'memory_usage': 0.6 + random.uniform(-0.1, 0.1),
+                'cpu_usage': 0.4 + random.uniform(-0.1, 0.1),
+                'response_time': 1.5 + random.uniform(-0.3, 0.3)
+            })
+        
+        # Active alerts
+        active_alerts = [
+            {
+                'severity': 'medium',
+                'message': 'Model accuracy dropped below threshold',
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M')
+            },
+            {
+                'severity': 'low',
+                'message': 'Memory usage approaching limit',
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M')
+            }
+        ]
+        
+        dashboard_data = {
+            'performance': performance_data,
+            'anomalies': anomalies_data,
+            'predictions': predictions_data,
+            'correlations': correlations_data,
+            'riskMetrics': risk_metrics_data,
+            'systemHealth': system_health_data,
+            'alerts': active_alerts
+        }
+        
+        return dashboard_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/monitoring/export")
+async def export_monitoring_data(request: Request):
+    """Export monitoring data as CSV."""
+    try:
+        data = await request.json()
+        data_type = data.get('dataType', 'performance')
+        time_range = data.get('timeRange', '7d')
+        
+        # Generate CSV data based on type and time range
+        import csv
+        import io
+        from datetime import datetime, timedelta
+        import random
+        
+        # Create CSV data
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        if data_type == 'performance':
+            writer.writerow(['timestamp', 'model_accuracy', 'trading_win_rate', 'profit_factor', 'sharpe_ratio', 'system_memory_usage', 'system_cpu_usage'])
+            base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
+            for i in range(168 if time_range == '7d' else 24):  # 7 days * 24 hours or 24 hours
+                timestamp = base_time + timedelta(hours=i)
+                writer.writerow([
+                    timestamp.strftime('%Y-%m-%d %H:%M'),
+                    round(0.75 + random.uniform(-0.05, 0.05), 3),
+                    round(0.65 + random.uniform(-0.03, 0.03), 3),
+                    round(1.5 + random.uniform(-0.1, 0.1), 2),
+                    round(1.2 + random.uniform(-0.05, 0.05), 2),
+                    round(0.6 + random.uniform(-0.1, 0.1), 3),
+                    round(0.4 + random.uniform(-0.1, 0.1), 3)
+                ])
+        
+        elif data_type == 'anomalies':
+            writer.writerow(['timestamp', 'anomaly_count', 'severity_level', 'detection_rate', 'metric', 'value', 'threshold'])
+            base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
+            for i in range(168 if time_range == '7d' else 24):
+                timestamp = base_time + timedelta(hours=i)
+                writer.writerow([
+                    timestamp.strftime('%Y-%m-%d %H:%M'),
+                    random.randint(0, 5),
+                    random.choice(['low', 'medium', 'high', 'critical']),
+                    round(random.uniform(0.8, 0.95), 3),
+                    random.choice(['model_accuracy', 'win_rate', 'memory_usage', 'cpu_usage']),
+                    round(random.uniform(0.5, 0.9), 3),
+                    round(random.uniform(0.6, 0.8), 3)
+                ])
+        
+        elif data_type == 'predictions':
+            writer.writerow(['timestamp', 'predicted_accuracy', 'predicted_win_rate', 'confidence_score', 'trend', 'next_5_predictions'])
+            base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
+            for i in range(168 if time_range == '7d' else 24):
+                timestamp = base_time + timedelta(hours=i)
+                writer.writerow([
+                    timestamp.strftime('%Y-%m-%d %H:%M'),
+                    round(0.78 + random.uniform(-0.02, 0.02), 3),
+                    round(0.67 + random.uniform(-0.02, 0.02), 3),
+                    round(0.85 + random.uniform(-0.05, 0.05), 3),
+                    random.choice(['increasing', 'decreasing', 'stable']),
+                    ','.join([str(round(random.uniform(0.7, 0.8), 3)) for _ in range(5)])
+                ])
+        
+        elif data_type == 'correlations':
+            writer.writerow(['metric', 'correlation_value', 'significance', 'p_value', 'sample_size'])
+            metrics = ['Model Accuracy', 'Win Rate', 'Profit Factor', 'Sharpe Ratio', 'System Health']
+            for metric in metrics:
+                writer.writerow([
+                    metric,
+                    round(random.uniform(0.3, 0.9), 3),
+                    random.choice(['high', 'medium', 'low']),
+                    round(random.uniform(0.001, 0.05), 4),
+                    random.randint(100, 1000)
+                ])
+        
+        elif data_type == 'riskMetrics':
+            writer.writerow(['timestamp', 'portfolio_var', 'max_drawdown', 'correlation_risk', 'concentration_risk', 'leverage_ratio'])
+            base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
+            for i in range(168 if time_range == '7d' else 24):
+                timestamp = base_time + timedelta(hours=i)
+                writer.writerow([
+                    timestamp.strftime('%Y-%m-%d %H:%M'),
+                    round(0.03 + random.uniform(-0.01, 0.01), 4),
+                    round(-0.05 + random.uniform(-0.02, 0.02), 4),
+                    round(0.12 + random.uniform(-0.02, 0.02), 4),
+                    round(0.15 + random.uniform(-0.03, 0.03), 4),
+                    round(1.0 + random.uniform(-0.1, 0.1), 2)
+                ])
+        
+        elif data_type == 'systemHealth':
+            writer.writerow(['timestamp', 'health_score', 'memory_usage', 'cpu_usage', 'response_time', 'error_rate', 'uptime'])
+            base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
+            for i in range(168 if time_range == '7d' else 24):
+                timestamp = base_time + timedelta(hours=i)
+                writer.writerow([
+                    timestamp.strftime('%Y-%m-%d %H:%M'),
+                    round(0.85 + random.uniform(-0.05, 0.05), 3),
+                    round(0.6 + random.uniform(-0.1, 0.1), 3),
+                    round(0.4 + random.uniform(-0.1, 0.1), 3),
+                    round(1.5 + random.uniform(-0.3, 0.3), 2),
+                    round(random.uniform(0.001, 0.01), 4),
+                    random.randint(3600, 86400)
+                ])
+        
+        # Create response with CSV data
+        output.seek(0)
+        csv_data = output.getvalue()
+        
+        from fastapi.responses import Response
+        response = Response(content=csv_data, media_type="text/csv")
+        response.headers["Content-Disposition"] = f"attachment; filename=monitoring_data_{data_type}_{time_range}.csv"
+        
+        return response
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # Add new API endpoints for token and model management
 

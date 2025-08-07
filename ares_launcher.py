@@ -914,6 +914,68 @@ class AresLauncher:
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
+        context="run_step_based_training",
+    )
+    def run_step_based_training(
+        self,
+        symbol: str,
+        exchange: str,
+        start_step: str = "step2_market_regime_classification",
+        force_rerun: bool = False,
+        with_gui: bool = False,
+    ):
+        """Run step-based training starting from a specific step."""
+        self.logger.info(f"🚀 Running step-based training for {symbol} on {exchange}")
+        self.logger.info(f"Starting from step: {start_step}")
+        
+        if with_gui:
+            if not self.launch_gui("training", symbol, exchange):
+                return False
+
+        try:
+            # Import the step orchestrator
+            import os
+            from src.training.step_orchestrator import StepOrchestrator
+            from src.config import CONFIG
+            
+            # Initialize step orchestrator
+            orchestrator = StepOrchestrator(symbol, exchange)
+            
+            # Check if starting from step2, use pre-consolidated data
+            if start_step == "step2_market_regime_classification":
+                self.logger.info("📁 Using pre-consolidated data for step2")
+                
+                # Check for consolidated data file
+                consolidated_file = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+                if not os.path.exists(consolidated_file):
+                    self.logger.error(f"❌ Consolidated data file not found: {consolidated_file}")
+                    self.logger.error("Please run data loading first or ensure consolidated data exists")
+                    return False
+                
+                self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
+            
+            # Run the step-based training
+            import asyncio
+            success = asyncio.run(orchestrator.execute_from_step(
+                start_step=start_step,
+                config=CONFIG,
+                force_rerun=force_rerun
+            ))
+            
+            if success:
+                self.logger.info("✅ Step-based training completed successfully")
+                return True
+            else:
+                self.logger.error("❌ Step-based training failed")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to run step-based training: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
         context="run_data_loading",
     )
     def run_data_loading(
@@ -1193,6 +1255,8 @@ Examples:
   python ares_launcher.py paper --symbol ETHUSDT --exchange BINANCE
   python ares_launcher.py backtest --symbol ETHUSDT --exchange BINANCE --gui
   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --gui
+  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step3_regime_data_splitting
+  python ares_launcher.py model_trainer --symbol ETHUSDT --exchange BINANCE --step step4_analyst_labeling_feature_engineering
   python ares_launcher.py live --symbol ETHUSDT --exchange BINANCE
   python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE
   python ares_launcher.py load --symbol ETHUSDT --exchange MEXC
@@ -1286,6 +1350,18 @@ Examples:
         help="Use blank mode (30 days of data) for quick testing instead of 2 years",
     )
 
+    parser.add_argument(
+        "--step",
+        type=str,
+        help="Start training from a specific step (e.g., step2_market_regime_classification)",
+    )
+
+    parser.add_argument(
+        "--force-rerun",
+        action="store_true",
+        help="Force rerun of completed steps",
+    )
+
     return parser.parse_args()
 
 
@@ -1346,9 +1422,11 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             args.exchange,
             with_gui=args.gui,
         ),
-        "model_trainer": lambda: launcher.run_model_trainer(
+        "blank": lambda: launcher.run_step_based_training(
             args.symbol,
             args.exchange,
+            start_step=args.step or "step2_market_regime_classification",
+            force_rerun=args.force_rerun,
             with_gui=args.gui,
         ),
         "live": lambda: launcher.run_live_trading(

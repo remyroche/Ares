@@ -3,7 +3,7 @@
 import asyncio
 import pickle
 from datetime import datetime
-from typing import Any
+from typing import Any, Number
 
 import pandas as pd
 

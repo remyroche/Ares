@@ -2,7 +2,7 @@
 
 import warnings
 from datetime import datetime
-from typing import Any
+from typing import Any, NUmber
 
 warnings.filterwarnings("ignore")
 
@@ -778,7 +778,7 @@ class TrainingManager:
     def _perform_performance_metrics(
         self,
         training_input: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> dict[str, Number]:
         """Perform performance metrics."""
         try:
             # Simulate performance metrics

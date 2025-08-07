@@ -239,12 +239,17 @@ class AresLauncher:
         with_gui: bool = False,
     ):
         """Run unified training with enhanced training manager."""
-        # Set environment variable for blank training mode
+        # Set environment variable for training mode
         import os
 
         if training_mode == "blank":
             os.environ["BLANK_TRAINING_MODE"] = "1"
+            os.environ["FULL_TRAINING_MODE"] = "0"
             print("🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1")
+        elif training_mode == "full":
+            os.environ["FULL_TRAINING_MODE"] = "1"
+            os.environ["BLANK_TRAINING_MODE"] = "0"
+            print("🚀 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1")
 
         mode_display = f"{training_mode} training"
         print(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
@@ -299,6 +304,17 @@ class AresLauncher:
                 logger.info("🤖 STEP 1: Initializing Enhanced Training Manager...")
                 print("   🤖 Initializing enhanced training manager...")
                 
+                # Set training parameters based on mode
+                if training_mode == "blank":
+                    max_trials = 3
+                    n_trials = 5
+                elif training_mode == "full":
+                    max_trials = 200
+                    n_trials = 100
+                else:
+                    max_trials = 200
+                    n_trials = 100
+                
                 training_config = {
                     "enhanced_training_manager": {
                         "enhanced_training_interval": 3600,
@@ -307,10 +323,11 @@ class AresLauncher:
                         "enable_ensemble_training": True,
                         "enable_multi_timeframe_training": True,
                         "enable_adaptive_training": True,
-                        # Light parameters for blank training mode
+                        # Parameters based on training mode
                         "blank_training_mode": training_mode == "blank",
-                        "max_trials": 3 if training_mode == "blank" else 200,
-                        "n_trials": 5 if training_mode == "blank" else 100,
+                        "full_training_mode": training_mode == "full",
+                        "max_trials": max_trials,
+                        "n_trials": n_trials,
                         "lookback_days": lookback_days,
                     },
                     "database": default_config["database"],
@@ -418,6 +435,27 @@ class AresLauncher:
             exchange=exchange,
             training_mode="blank",
             lookback_days=30,  # 30 days for blank training (minimal dataset)
+            with_gui=with_gui,
+        )
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="run_full_training",
+    )
+    def run_full_training(
+        self,
+        symbol: str,
+        exchange: str,
+        with_gui: bool = False,
+    ):
+        """Run full training using unified training method with full parameters."""
+        # Full training uses complete dataset and full training parameters
+        return self._run_unified_training(
+            symbol=symbol,
+            exchange=exchange,
+            training_mode="full",
+            lookback_days=730,  # 730 days for full training (2 years)
             with_gui=with_gui,
         )
 
@@ -1124,6 +1162,73 @@ class AresLauncher:
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
+        context="run_step_based_full_training",
+    )
+    def run_step_based_full_training(
+        self,
+        symbol: str,
+        exchange: str,
+        start_step: str = "step2_market_regime_classification",
+        force_rerun: bool = False,
+        with_gui: bool = False,
+    ):
+        """Run step-based full training starting from a specific step with full parameters."""
+        self.logger.info(f"🚀 Running step-based full training for {symbol} on {exchange}")
+        self.logger.info(f"Starting from step: {start_step}")
+        self.logger.info("📊 Using full parameters (730 days lookback, full training parameters)")
+        
+        if with_gui:
+            if not self.launch_gui("training", symbol, exchange):
+                return False
+
+        try:
+            # Import the step orchestrator
+            import os
+            from src.training.step_orchestrator import StepOrchestrator
+            from src.config import CONFIG
+            
+            # Set environment variable for full training mode
+            os.environ["FULL_TRAINING_MODE"] = "1"
+            os.environ["BLANK_TRAINING_MODE"] = "0"  # Ensure blank mode is off
+            
+            # Initialize step orchestrator
+            orchestrator = StepOrchestrator(symbol, exchange)
+            
+            # Check if starting from step2, use pre-consolidated data
+            if start_step == "step2_market_regime_classification":
+                self.logger.info("📁 Using pre-consolidated data for step2")
+                
+                # Check for consolidated data file
+                consolidated_file = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+                if not os.path.exists(consolidated_file):
+                    self.logger.error(f"❌ Consolidated data file not found: {consolidated_file}")
+                    self.logger.error("Please run data loading first or ensure consolidated data exists")
+                    return False
+                
+                self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
+            
+            # Run the step-based training
+            import asyncio
+            success = asyncio.run(orchestrator.execute_from_step(
+                start_step=start_step,
+                config=CONFIG,
+                force_rerun=force_rerun
+            ))
+            
+            if success:
+                self.logger.info("✅ Step-based full training completed successfully")
+                return True
+            else:
+                self.logger.error("❌ Step-based full training failed")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to run step-based full training: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
         context="run_data_loading",
     )
     def run_data_loading(
@@ -1418,6 +1523,24 @@ Examples:
   python ares_launcher.py backtest --symbol ETHUSDT --exchange BINANCE --gui
   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --gui
   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step3_regime_data_splitting
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step3_regime_data_splitting
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step4_analyst_labeling_feature_engineering
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_analyst_specialist_training
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step6_analyst_enhancement
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step7_analyst_ensemble_creation
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step8_tactician_labeling
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step9_tactician_specialist_training
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step10_tactician_ensemble_creation
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step11_confidence_calibration
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step12_final_parameters_optimization
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step13_walk_forward_validation
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step14_monte_carlo_validation
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step15_ab_testing
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step16_saving
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification --force-rerun
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_analyst_specialist_training --force-rerun --gui
   python ares_launcher.py model_trainer --symbol ETHUSDT --exchange BINANCE --step step4_analyst_labeling_feature_engineering
   python ares_launcher.py live --symbol ETHUSDT --exchange BINANCE
   python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE
@@ -1440,6 +1563,7 @@ Examples:
             "portfolio",
             "gui",
             "blank",
+            "full",
             "multi-timeframe",
             "load",
             "regime",
@@ -1544,6 +1668,7 @@ def validate_arguments(args: argparse.Namespace) -> None:
         # "model_trainer",  # REMOVED: Use blank command with step5_analyst_specialist_training instead
         "live",
         "blank",
+        "full",
         "multi-timeframe",
         "load",
         "precompute",
@@ -1594,17 +1719,19 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             force_rerun=args.force_rerun,
             with_gui=args.gui,
         ),
+        "full": lambda: launcher.run_step_based_full_training(
+            args.symbol,
+            args.exchange,
+            start_step=args.step or "step2_market_regime_classification",
+            force_rerun=args.force_rerun,
+            with_gui=args.gui,
+        ),
         "live": lambda: launcher.run_live_trading(
             args.symbol,
             args.exchange,
             with_gui=args.gui,
         ),
         "portfolio": lambda: launcher.run_portfolio_trading(with_gui=args.gui),
-        "blank": lambda: launcher.run_enhanced_blank_training(
-            args.symbol,
-            args.exchange,
-            with_gui=args.gui,
-        ),
         "multi-timeframe": lambda: launcher.run_multi_timeframe_training(
             args.symbol,
             args.exchange,

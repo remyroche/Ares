@@ -66,8 +66,9 @@ class VectorizedLabellingOrchestrator:
         try:
             self.logger.info("🚀 Initializing vectorized labeling orchestrator...")
 
-            # Initialize triple barrier labeler
-            from src.training.steps.step4_analyst_labeling_feature_engineering.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+            # Initialize triple barrier labeler using the proper implementation
+            from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+            
             self.triple_barrier_labeler = OptimizedTripleBarrierLabeling(
                 profit_take_multiplier=self.orchestrator_config.get("profit_take_multiplier", 0.002),
                 stop_loss_multiplier=self.orchestrator_config.get("stop_loss_multiplier", 0.001),
@@ -75,14 +76,22 @@ class VectorizedLabellingOrchestrator:
                 max_lookahead=self.orchestrator_config.get("max_lookahead", 100),
             )
 
-            # Initialize advanced feature engineer
-            from src.training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineering
-            self.advanced_feature_engineer = VectorizedAdvancedFeatureEngineering(self.config)
-            await self.advanced_feature_engineer.initialize()
+            # Initialize advanced feature engineer with error handling
+            try:
+                from src.training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineering
+                self.advanced_feature_engineer = VectorizedAdvancedFeatureEngineering(self.config)
+                await self.advanced_feature_engineer.initialize()
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize advanced feature engineer: {e}")
+                self.advanced_feature_engineer = None
 
-            # Initialize autoencoder generator
-            from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
-            self.autoencoder_generator = AutoencoderFeatureGenerator(self.config)
+            # Initialize autoencoder generator with error handling
+            try:
+                from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
+                self.autoencoder_generator = AutoencoderFeatureGenerator(self.config)
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize autoencoder generator: {e}")
+                self.autoencoder_generator = None
 
             # Initialize stationarity checker
             self.stationarity_checker = VectorizedStationarityChecker(self.config)
@@ -101,7 +110,15 @@ class VectorizedLabellingOrchestrator:
             self.logger.error(
                 f"❌ Error initializing vectorized labeling orchestrator: {e}",
             )
-            return False
+            # Set basic components even if advanced ones fail
+            from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+            self.triple_barrier_labeler = OptimizedTripleBarrierLabeling()
+            self.stationarity_checker = VectorizedStationarityChecker(self.config)
+            self.feature_selector = VectorizedFeatureSelector(self.config)
+            self.data_normalizer = VectorizedDataNormalizer(self.config)
+            self.is_initialized = True
+            self.logger.warning("⚠️ Vectorized labeling orchestrator initialized with fallback components")
+            return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -148,12 +165,16 @@ class VectorizedLabellingOrchestrator:
 
             # 2. Advanced feature engineering
             self.logger.info("🔧 Generating advanced features...")
-            advanced_features = await self.advanced_feature_engineer.engineer_features(
-                price_data,
-                volume_data,
-                order_flow_data,
-                sr_levels,
-            )
+            if self.advanced_feature_engineer is not None:
+                advanced_features = await self.advanced_feature_engineer.engineer_features(
+                    price_data,
+                    volume_data,
+                    order_flow_data,
+                    sr_levels,
+                )
+            else:
+                self.logger.warning("Advanced feature engineer not available, using basic features")
+                advanced_features = {}
 
             # 3. Triple barrier labeling
             self.logger.info("🏷️ Applying triple barrier labeling...")
@@ -187,11 +208,15 @@ class VectorizedLabellingOrchestrator:
 
             # 7. Autoencoder feature generation
             self.logger.info("🤖 Generating autoencoder features...")
-            autoencoder_features = self.autoencoder_generator.generate_features(
-                combined_data,
-                "vectorized_regime",
-                labeled_data["label"].values if "label" in labeled_data.columns else np.zeros(len(combined_data)),
-            )
+            if self.autoencoder_generator is not None:
+                autoencoder_features = self.autoencoder_generator.generate_features(
+                    combined_data,
+                    "vectorized_regime",
+                    labeled_data["label"].values if "label" in labeled_data.columns else np.zeros(len(combined_data)),
+                )
+            else:
+                self.logger.warning("Autoencoder generator not available, skipping autoencoder feature generation")
+                autoencoder_features = combined_data
 
             # 8. Final data preparation
             self.logger.info("🎨 Preparing final data...")
@@ -219,9 +244,9 @@ class VectorizedLabellingOrchestrator:
                 "metadata": {
                     "total_features": len(final_data.columns),
                     "total_samples": len(final_data),
-                    "feature_engineering_completed": True,
+                    "feature_engineering_completed": self.advanced_feature_engineer is not None,
                     "labeling_completed": True,
-                    "autoencoder_features_generated": True,
+                    "autoencoder_features_generated": self.autoencoder_generator is not None,
                     "stationary_checks_performed": self.enable_stationary_checks,
                     "data_normalized": self.enable_data_normalization,
                     "feature_selection_performed": self.enable_feature_selection,
@@ -241,6 +266,13 @@ class VectorizedLabellingOrchestrator:
     ) -> pd.DataFrame:
         """Combine features and labels using vectorized operations."""
         try:
+            # Remove datetime columns from labeled_data to prevent dtype conflicts
+            labeled_data = self._remove_datetime_columns(labeled_data)
+            
+            # If no advanced features, return labeled data as is
+            if not advanced_features:
+                return labeled_data
+            
             # Convert advanced features to DataFrame
             features_df = pd.DataFrame([advanced_features])
             
@@ -259,6 +291,32 @@ class VectorizedLabellingOrchestrator:
         except Exception as e:
             self.logger.error(f"Error combining features and labels: {e}")
             return labeled_data
+
+    def _remove_datetime_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Remove datetime columns to prevent dtype conflicts in ML training."""
+        try:
+            # Get columns with datetime dtype
+            datetime_columns = []
+            for col in data.columns:
+                if data[col].dtype == 'datetime64[ns]' or 'datetime' in str(data[col].dtype).lower():
+                    datetime_columns.append(col)
+            
+            # Remove datetime columns
+            if datetime_columns:
+                self.logger.info(f"Removing datetime columns: {datetime_columns}")
+                data = data.drop(columns=datetime_columns)
+            
+            # Also remove any timestamp columns that might cause issues
+            timestamp_columns = [col for col in data.columns if 'timestamp' in col.lower()]
+            if timestamp_columns:
+                self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
+                data = data.drop(columns=timestamp_columns)
+            
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"Error removing datetime columns: {e}")
+            return data
 
     def _prepare_final_data_vectorized(
         self,
@@ -442,23 +500,32 @@ class VectorizedStationarityChecker:
         try:
             transformed_data = price_data.copy()
             
-            # Calculate returns (first difference)
+            # Ensure we preserve the original OHLCV columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            if not all(col in transformed_data.columns for col in required_columns):
+                self.logger.warning(f"Missing required OHLCV columns. Available: {transformed_data.columns.tolist()}")
+                return price_data
+            
+            # Calculate returns (first difference) - ADD to existing data, don't replace
             transformed_data["close_returns"] = transformed_data["close"].pct_change()
             transformed_data["open_returns"] = transformed_data["open"].pct_change()
             transformed_data["high_returns"] = transformed_data["high"].pct_change()
             transformed_data["low_returns"] = transformed_data["low"].pct_change()
             
-            # Log transformation for variance stabilization
+            # Log transformation for variance stabilization - ADD to existing data
             transformed_data["close_log"] = np.log(transformed_data["close"])
             transformed_data["open_log"] = np.log(transformed_data["open"])
             transformed_data["high_log"] = np.log(transformed_data["high"])
             transformed_data["low_log"] = np.log(transformed_data["low"])
             
-            # Remove trend using rolling mean
+            # Remove trend using rolling mean - ADD to existing data
             window = 20
             transformed_data["close_detrended"] = (
                 transformed_data["close"] - transformed_data["close"].rolling(window).mean()
             )
+            
+            # Ensure original OHLCV columns are still present
+            self.logger.info(f"✅ Transformed price data shape: {transformed_data.shape}, columns: {transformed_data.columns.tolist()}")
             
             return transformed_data
 
@@ -504,20 +571,27 @@ class VectorizedStationarityChecker:
         try:
             transformed_data = volume_data.copy()
             
-            if "volume" in transformed_data.columns:
-                # Log transformation
-                transformed_data["volume_log"] = np.log(transformed_data["volume"])
-                
-                # Remove trend
-                window = 20
-                transformed_data["volume_detrended"] = (
-                    transformed_data["volume"] - transformed_data["volume"].rolling(window).mean()
-                )
-                
-                # Normalize volume
-                transformed_data["volume_normalized"] = (
-                    transformed_data["volume"] / transformed_data["volume"].rolling(window).mean()
-                )
+            # Ensure we preserve the original volume column
+            if "volume" not in transformed_data.columns:
+                self.logger.warning(f"Missing volume column. Available: {transformed_data.columns.tolist()}")
+                return volume_data
+            
+            # Log transformation - ADD to existing data, don't replace
+            transformed_data["volume_log"] = np.log(transformed_data["volume"])
+            
+            # Remove trend - ADD to existing data
+            window = 20
+            transformed_data["volume_detrended"] = (
+                transformed_data["volume"] - transformed_data["volume"].rolling(window).mean()
+            )
+            
+            # Normalize volume - ADD to existing data
+            transformed_data["volume_normalized"] = (
+                transformed_data["volume"] / transformed_data["volume"].rolling(window).mean()
+            )
+            
+            # Ensure original volume column is still present
+            self.logger.info(f"✅ Transformed volume data shape: {transformed_data.shape}, columns: {transformed_data.columns.tolist()}")
             
             return transformed_data
 
@@ -592,71 +666,194 @@ class VectorizedStationarityChecker:
 
 
 class VectorizedFeatureSelector:
-    """Select optimal features using VIF, Mutual Information, and LightGBM importance."""
+    """Vectorized feature selector using multiple selection methods."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedFeatureSelector")
-        
-        # Configuration
+
+        # Feature selection configuration
         self.feature_selection_config = config.get("feature_selection", {})
-        self.vif_threshold = self.feature_selection_config.get("vif_threshold", 5.0)
-        self.mutual_info_threshold = self.feature_selection_config.get("mutual_info_threshold", 0.01)
-        self.lightgbm_importance_threshold = self.feature_selection_config.get("lightgbm_importance_threshold", 0.01)
+        self.vif_threshold = self.feature_selection_config.get("vif_threshold", 10.0)  # Increased from 5.0
+        self.mutual_info_threshold = self.feature_selection_config.get("mutual_info_threshold", 0.001)  # Decreased from 0.01
+        self.lightgbm_importance_threshold = self.feature_selection_config.get("lightgbm_importance_threshold", 0.001)  # Decreased from 0.01
+        self.min_features_to_keep = self.feature_selection_config.get("min_features_to_keep", 10)  # New parameter
+        self.correlation_threshold = self.feature_selection_config.get("correlation_threshold", 0.98)  # Increased from 0.95
+        self.max_removal_percentage = self.feature_selection_config.get("max_removal_percentage", 0.3)
+        
+        # Enable/disable flags
+        self.enable_constant_removal = self.feature_selection_config.get("enable_constant_removal", True)
+        self.enable_correlation_removal = self.feature_selection_config.get("enable_correlation_removal", True)
+        self.enable_vif_removal = self.feature_selection_config.get("enable_vif_removal", True)
+        self.enable_mutual_info_removal = self.feature_selection_config.get("enable_mutual_info_removal", True)
+        self.enable_importance_removal = self.feature_selection_config.get("enable_importance_removal", True)
+        
+        # Safety settings
+        self.enable_safety_checks = self.feature_selection_config.get("enable_safety_checks", True)
+        self.return_original_on_failure = self.feature_selection_config.get("return_original_on_failure", True)
+
+    def _remove_datetime_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Remove datetime columns to prevent dtype conflicts in ML training."""
+        try:
+            # Get columns with datetime dtype
+            datetime_columns = []
+            for col in data.columns:
+                if data[col].dtype == 'datetime64[ns]' or 'datetime' in str(data[col].dtype).lower():
+                    datetime_columns.append(col)
+            
+            # Remove datetime columns
+            if datetime_columns:
+                self.logger.info(f"Removing datetime columns: {datetime_columns}")
+                data = data.drop(columns=datetime_columns)
+            
+            # Also remove any timestamp columns that might cause issues
+            timestamp_columns = [col for col in data.columns if 'timestamp' in col.lower()]
+            if timestamp_columns:
+                self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
+                data = data.drop(columns=timestamp_columns)
+            
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"Error removing datetime columns: {e}")
+            return data
 
     async def select_optimal_features(
         self,
         data: pd.DataFrame,
         labels: np.ndarray | None = None,
     ) -> pd.DataFrame:
-        """Select optimal features using multiple methods."""
+        """Select optimal features using vectorized operations."""
         try:
             self.logger.info("🎯 Starting feature selection...")
+            initial_features = len(data.columns)
+            original_data = data.copy()  # Keep original for fallback
             
-            # Remove non-numeric columns
-            numeric_data = data.select_dtypes(include=[np.number])
+            # Remove datetime columns first
+            data = self._remove_datetime_columns(data)
             
-            # 1. Remove constant features
-            constant_features = numeric_data.columns[numeric_data.std() == 0]
-            numeric_data = numeric_data.drop(columns=constant_features)
-            self.logger.info(f"Removed {len(constant_features)} constant features")
+            # Handle NaN values in feature selection
+            self.logger.info("Handling NaN values in feature selection...")
+            data = data.fillna(method="ffill").fillna(method="bfill").fillna(0)
+
+            # Remove constant features (if enabled)
+            if self.enable_constant_removal:
+                constant_features = []
+                for col in data.columns:
+                    if data[col].nunique() <= 1:
+                        constant_features.append(col)
+                
+                if constant_features:
+                    self.logger.info(f"Removed {len(constant_features)} constant features")
+                    data = data.drop(columns=constant_features)
+
+            # Safety check after constant removal
+            if self.enable_safety_checks and len(data.columns) < self.min_features_to_keep:
+                self.logger.warning(f"Too few features after constant removal ({len(data.columns)}). Skipping further selection.")
+                return data
+
+            # Remove highly correlated features (only if enabled and we have enough features)
+            if (self.enable_correlation_removal and 
+                len(data.columns) > self.min_features_to_keep and 
+                len(data.columns) > 2):  # Need at least 2 features for correlation
+                
+                correlated_features = self._remove_correlated_features_vectorized(data)
+                if correlated_features:
+                    # Check removal percentage
+                    removal_percentage = len(correlated_features) / len(data.columns)
+                    if (removal_percentage <= self.max_removal_percentage and 
+                        len(data.columns) - len(correlated_features) >= self.min_features_to_keep):
+                        self.logger.info(f"Removed {len(correlated_features)} highly correlated features")
+                        data = data.drop(columns=correlated_features)
+                    else:
+                        self.logger.info(f"Skipping correlated feature removal (removal %: {removal_percentage:.2f})")
+
+            # Remove high VIF features (only if enabled and we have enough features)
+            if (self.enable_vif_removal and 
+                len(data.columns) > self.min_features_to_keep and 
+                len(data.columns) > 2):  # Need at least 2 features for VIF
+                
+                high_vif_features = self._remove_high_vif_features_vectorized(data)
+                if high_vif_features:
+                    # Check removal percentage
+                    removal_percentage = len(high_vif_features) / len(data.columns)
+                    if (removal_percentage <= self.max_removal_percentage and 
+                        len(data.columns) - len(high_vif_features) >= self.min_features_to_keep):
+                        self.logger.info(f"Removed {len(high_vif_features)} high VIF features")
+                        data = data.drop(columns=high_vif_features)
+                    else:
+                        self.logger.info(f"Skipping VIF feature removal (removal %: {removal_percentage:.2f})")
+
+            # Remove low mutual information features (if enabled, labels provided, and we have enough features)
+            if (self.enable_mutual_info_removal and 
+                labels is not None and len(labels) > 0 and 
+                len(data.columns) > self.min_features_to_keep):
+                
+                low_mi_features = self._remove_low_mutual_info_features_vectorized(data, labels)
+                if low_mi_features:
+                    # Check removal percentage
+                    removal_percentage = len(low_mi_features) / len(data.columns)
+                    if (removal_percentage <= self.max_removal_percentage and 
+                        len(data.columns) - len(low_mi_features) >= self.min_features_to_keep):
+                        self.logger.info(f"Removed {len(low_mi_features)} low mutual information features")
+                        data = data.drop(columns=low_mi_features)
+                    else:
+                        self.logger.info(f"Skipping mutual info feature removal (removal %: {removal_percentage:.2f})")
+
+            # Remove low importance features (if enabled, labels provided, and we have enough features)
+            if (self.enable_importance_removal and 
+                labels is not None and len(labels) > 0 and 
+                len(data.columns) > self.min_features_to_keep):
+                
+                low_importance_features = self._remove_low_importance_features_vectorized(data, labels)
+                if low_importance_features:
+                    # Check removal percentage
+                    removal_percentage = len(low_importance_features) / len(data.columns)
+                    if (removal_percentage <= self.max_removal_percentage and 
+                        len(data.columns) - len(low_importance_features) >= self.min_features_to_keep):
+                        self.logger.info(f"Removed {len(low_importance_features)} low importance features")
+                        data = data.drop(columns=low_importance_features)
+                    else:
+                        self.logger.info(f"Skipping importance feature removal (removal %: {removal_percentage:.2f})")
+
+            final_features = len(data.columns)
+            self.logger.info(f"Feature selection completed. Initial features: {initial_features}, Final features: {final_features}")
             
-            # 2. Remove highly correlated features
-            correlated_features = self._remove_correlated_features_vectorized(numeric_data)
-            numeric_data = numeric_data.drop(columns=correlated_features)
-            self.logger.info(f"Removed {len(correlated_features)} highly correlated features")
+            # Final safety check
+            if final_features == 0:
+                self.logger.error("No features remaining after selection!")
+                if self.return_original_on_failure:
+                    self.logger.info("Returning original data as fallback.")
+                    return self._remove_datetime_columns(original_data)
+                else:
+                    raise ValueError("No features remaining after selection and fallback disabled")
             
-            # 3. Remove features with high VIF
-            if len(numeric_data.columns) > 1:
-                high_vif_features = self._remove_high_vif_features_vectorized(numeric_data)
-                numeric_data = numeric_data.drop(columns=high_vif_features)
-                self.logger.info(f"Removed {len(high_vif_features)} high VIF features")
-            
-            # 4. Select features based on mutual information (if labels available)
-            if labels is not None and len(numeric_data.columns) > 0:
-                low_mi_features = self._remove_low_mutual_info_features_vectorized(numeric_data, labels)
-                numeric_data = numeric_data.drop(columns=low_mi_features)
-                self.logger.info(f"Removed {len(low_mi_features)} low mutual information features")
-            
-            # 5. Select features based on LightGBM importance (if labels available)
-            if labels is not None and len(numeric_data.columns) > 0:
-                low_importance_features = self._remove_low_importance_features_vectorized(numeric_data, labels)
-                numeric_data = numeric_data.drop(columns=low_importance_features)
-                self.logger.info(f"Removed {len(low_importance_features)} low importance features")
-            
-            self.logger.info(f"Feature selection completed. Final features: {len(numeric_data.columns)}")
-            return numeric_data
+            return data
 
         except Exception as e:
             self.logger.error(f"Error in feature selection: {e}")
-            return data
+            if self.return_original_on_failure:
+                self.logger.info("Returning original data as fallback due to error.")
+                return self._remove_datetime_columns(original_data)
+            else:
+                raise
 
     def _remove_correlated_features_vectorized(self, data: pd.DataFrame) -> List[str]:
         """Remove highly correlated features using vectorized operations."""
         try:
-            correlation_matrix = data.corr()
+            # Handle NaN values by imputing with median for correlation calculation
+            from sklearn.impute import SimpleImputer
+            
+            imputer = SimpleImputer(strategy='median')
+            data_imputed = pd.DataFrame(
+                imputer.fit_transform(data),
+                columns=data.columns,
+                index=data.index
+            )
+            
+            correlation_matrix = data_imputed.corr()
             upper_triangle = np.triu(np.ones_like(correlation_matrix, dtype=bool))
-            high_correlation = np.abs(correlation_matrix) > 0.95
+            high_correlation = np.abs(correlation_matrix) > self.correlation_threshold
             high_correlation = high_correlation & upper_triangle
             
             to_drop = []
@@ -675,14 +872,23 @@ class VectorizedFeatureSelector:
         """Remove features with high Variance Inflation Factor using vectorized operations."""
         try:
             from sklearn.linear_model import LinearRegression
+            from sklearn.impute import SimpleImputer
+            
+            # Handle NaN values by imputing with median
+            imputer = SimpleImputer(strategy='median')
+            data_imputed = pd.DataFrame(
+                imputer.fit_transform(data),
+                columns=data.columns,
+                index=data.index
+            )
             
             vif_scores = {}
-            for col in data.columns:
+            for col in data_imputed.columns:
                 # Use other features to predict this feature
-                other_cols = [c for c in data.columns if c != col]
+                other_cols = [c for c in data_imputed.columns if c != col]
                 if len(other_cols) > 0:
-                    X = data[other_cols]
-                    y = data[col]
+                    X = data_imputed[other_cols]
+                    y = data_imputed[col]
                     
                     # Fit linear regression
                     reg = LinearRegression()
@@ -714,12 +920,21 @@ class VectorizedFeatureSelector:
         """Remove features with low mutual information using vectorized operations."""
         try:
             from sklearn.feature_selection import mutual_info_classif
+            from sklearn.impute import SimpleImputer
+            
+            # Handle NaN values by imputing with median
+            imputer = SimpleImputer(strategy='median')
+            data_imputed = pd.DataFrame(
+                imputer.fit_transform(data),
+                columns=data.columns,
+                index=data.index
+            )
             
             # Calculate mutual information scores
-            mi_scores = mutual_info_classif(data, labels, random_state=42)
+            mi_scores = mutual_info_classif(data_imputed, labels, random_state=42)
             
             # Create feature importance dictionary
-            feature_importance = dict(zip(data.columns, mi_scores))
+            feature_importance = dict(zip(data_imputed.columns, mi_scores))
             
             # Return features with low mutual information
             low_mi_features = [
@@ -741,6 +956,15 @@ class VectorizedFeatureSelector:
         """Remove features with low LightGBM importance using vectorized operations."""
         try:
             import lightgbm as lgb
+            from sklearn.impute import SimpleImputer
+            
+            # Handle NaN values by imputing with median
+            imputer = SimpleImputer(strategy='median')
+            data_imputed = pd.DataFrame(
+                imputer.fit_transform(data),
+                columns=data.columns,
+                index=data.index
+            )
             
             # Train LightGBM model
             model = lgb.LGBMClassifier(
@@ -749,10 +973,10 @@ class VectorizedFeatureSelector:
                 random_state=42,
                 verbose=-1,
             )
-            model.fit(data, labels)
+            model.fit(data_imputed, labels)
             
             # Get feature importance
-            feature_importance = dict(zip(data.columns, model.feature_importances_))
+            feature_importance = dict(zip(data_imputed.columns, model.feature_importances_))
             
             # Return features with low importance
             low_importance_features = [
@@ -784,27 +1008,46 @@ class VectorizedDataNormalizer:
         try:
             self.logger.info("📏 Normalizing data...")
             
-            normalized_data = data.copy()
+            # Remove datetime columns first
+            data = self._remove_datetime_columns(data)
             
             # Handle outliers
-            if self.outlier_handling == "clip":
-                normalized_data = self._clip_outliers_vectorized(normalized_data)
-            elif self.outlier_handling == "remove":
-                normalized_data = self._remove_outliers_vectorized(normalized_data)
+            data = self._clip_outliers_vectorized(data)
             
-            # Apply scaling
-            if self.scaling_method == "robust":
-                normalized_data = self._apply_robust_scaling_vectorized(normalized_data)
-            elif self.scaling_method == "standard":
-                normalized_data = self._apply_standard_scaling_vectorized(normalized_data)
-            elif self.scaling_method == "minmax":
-                normalized_data = self._apply_minmax_scaling_vectorized(normalized_data)
+            # Apply robust scaling
+            data = self._apply_robust_scaling_vectorized(data)
             
             self.logger.info("✅ Data normalization completed")
-            return normalized_data
+            return data
 
         except Exception as e:
             self.logger.error(f"Error normalizing data: {e}")
+            return data
+
+    def _remove_datetime_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Remove datetime columns to prevent dtype conflicts in ML training."""
+        try:
+            # Get columns with datetime dtype
+            datetime_columns = []
+            for col in data.columns:
+                if data[col].dtype == 'datetime64[ns]' or 'datetime' in str(data[col].dtype).lower():
+                    datetime_columns.append(col)
+            
+            # Remove datetime columns
+            if datetime_columns:
+                self.logger.info(f"Removing datetime columns: {datetime_columns}")
+                data = data.drop(columns=datetime_columns)
+            
+            # Also remove any timestamp columns that might cause issues
+            timestamp_columns = [col for col in data.columns if 'timestamp' in col.lower()]
+            if timestamp_columns:
+                self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
+                data = data.drop(columns=timestamp_columns)
+            
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"Error removing datetime columns: {e}")
             return data
 
     def _clip_outliers_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:

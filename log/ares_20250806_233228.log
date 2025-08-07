@@ -1,0 +1,1195 @@
+2025-08-06 23:32:28,083 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-06 23:32:28,098 - AresTradingSystem.System - INFO - Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE
+2025-08-06 23:32:28,724 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-06 23:32:28,724 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STARTING OPTIMIZED DATA DOWNLOAD PROCESS
+2025-08-06 23:32:28,725 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Configuration: BINANCE ETHUSDT 1m
+2025-08-06 23:32:28,725 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 STEP 1: Initializing optimized downloader...
+2025-08-06 23:32:28,725 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Configuration: exchange=BINANCE, symbol=ETHUSDT, interval=1m, lookback_years=1
+2025-08-06 23:32:28,725 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Creating exchange client...
+2025-08-06 23:32:28,725 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Exchange client created: BinanceExchange
+2025-08-06 23:32:28,725 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🌐 Setting up HTTP session...
+2025-08-06 23:32:28,726 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ HTTP session configured
+2025-08-06 23:32:28,727 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Ensuring cache directory exists...
+2025-08-06 23:32:28,727 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Cache directory ready: data_cache
+2025-08-06 23:32:28,727 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ STEP 1 COMPLETED: Optimized downloader initialized successfully
+2025-08-06 23:32:28,727 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 STEP 4: Starting parallel downloads for all data types...
+2025-08-06 23:32:28,727 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Created 3 parallel download tasks
+2025-08-06 23:32:28,727 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing all tasks concurrently...
+2025-08-06 23:32:28,728 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STEP 3: Starting parallel klines download...
+2025-08-06 23:32:28,728 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📅 STEP 2: Calculating time periods for klines...
+2025-08-06 23:32:28,728 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Date range: 2024-08-06 to 2025-08-06
+2025-08-06 23:32:28,728 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Total days: 365
+2025-08-06 23:32:28,728 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Processing klines (monthly periods)...
+2025-08-06 23:32:28,728 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🕐 Incremental download starting from: 2025-08-03 21:29:00
+2025-08-06 23:32:28,728 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2025-08.csv (incremental update mode)
+2025-08-06 23:32:28,728 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Summary: 1 months to download, 0 months skipped
+2025-08-06 23:32:28,728 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Found 1 monthly periods to download
+2025-08-06 23:32:28,728 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Creating 1 parallel download tasks...
+2025-08-06 23:32:28,728 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 1: 2025-08 to 2025-08
+2025-08-06 23:32:28,729 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing 1 tasks concurrently...
+2025-08-06 23:32:28,729 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STEP 3B: Starting parallel aggtrades download...
+2025-08-06 23:32:28,729 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📅 STEP 2: Calculating time periods for aggtrades...
+2025-08-06 23:32:28,729 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Date range: 2024-08-06 to 2025-08-06
+2025-08-06 23:32:28,729 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Total days: 365
+2025-08-06 23:32:28,730 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Processing aggtrades (daily periods)...
+2025-08-06 23:32:28,730 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🕐 Incremental download starting from: 2025-07-29 23:59:59
+2025-08-06 23:32:28,730 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2025-07-29.csv (incremental update mode)
+2025-08-06 23:32:28,730 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2025-07-30.csv (incremental update mode)
+2025-08-06 23:32:28,730 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2025-07-31.csv (incremental update mode)
+2025-08-06 23:32:28,730 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2025-08-01.csv (incremental update mode)
+2025-08-06 23:32:28,730 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2025-08-02.csv (incremental update mode)
+2025-08-06 23:32:28,730 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Summary: 9 days to download (0 updates), 0 days skipped
+2025-08-06 23:32:28,730 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Found 9 daily periods to download
+2025-08-06 23:32:28,730 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Creating 9 parallel download tasks...
+2025-08-06 23:32:28,730 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 1: 2025-07-29 to 2025-07-30
+2025-08-06 23:32:28,730 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 2: 2025-07-30 to 2025-07-31
+2025-08-06 23:32:28,730 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 3: 2025-07-31 to 2025-08-01
+2025-08-06 23:32:28,731 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 4: 2025-08-01 to 2025-08-02
+2025-08-06 23:32:28,731 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 5: 2025-08-02 to 2025-08-03
+2025-08-06 23:32:28,731 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing 9 tasks concurrently...
+2025-08-06 23:32:28,731 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STEP 3C: Starting parallel futures download...
+2025-08-06 23:32:28,731 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📅 STEP 2: Calculating time periods for futures...
+2025-08-06 23:32:28,731 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Date range: 2024-08-06 to 2025-08-06
+2025-08-06 23:32:28,731 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Total days: 365
+2025-08-06 23:32:28,731 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Processing futures (monthly periods)...
+2025-08-06 23:32:28,731 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🕐 Incremental download starting from: 2025-08-06 16:00:00
+2025-08-06 23:32:28,732 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2025-08.csv (incremental update mode)
+2025-08-06 23:32:28,732 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Summary: 1 months to download (0 updates), 0 months skipped
+2025-08-06 23:32:28,732 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Found 1 daily periods to download
+2025-08-06 23:32:28,732 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Creating 1 parallel download tasks...
+2025-08-06 23:32:28,732 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 1: 2025-08-01 to 2025-08-06
+2025-08-06 23:32:28,732 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing 1 tasks concurrently...
+2025-08-06 23:32:28,733 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2025-08
+2025-08-06 23:32:28,733 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-08-01 00:00:00 to 2025-08-06 23:32:28.728117
+2025-08-06 23:32:28,733 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1753999200000 to 1754515948728
+2025-08-06 23:32:28,733 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-06 23:32:28,733 - AresTradingSystem.System - INFO - Klines: Adjusted end time to avoid recent data issues: 2025-08-06 23:27:28.733000
+2025-08-06 23:32:28,754 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-29
+2025-08-06 23:32:28,754 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-29 00:00:00 to 2025-07-30 00:00:00
+2025-08-06 23:32:28,755 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1753740000000 to 1753826400000
+2025-08-06 23:32:28,755 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-06 23:32:28,755 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Starting incremental download from 2025-07-29
+2025-08-06 23:32:28,755 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #1: fetching from timestamp 1753740000000
+2025-08-06 23:32:28,766 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:00:00 to 2025-07-30 00:00:00
+2025-08-06 23:32:28,767 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:28,767 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-30
+2025-08-06 23:32:28,767 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-30 00:00:00 to 2025-07-31 00:00:00
+2025-08-06 23:32:28,767 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1753826400000 to 1753912800000
+2025-08-06 23:32:28,767 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-06 23:32:28,767 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Starting incremental download from 2025-07-30
+2025-08-06 23:32:28,767 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #1: fetching from timestamp 1753826400000
+2025-08-06 23:32:28,778 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:00:00 to 2025-07-31 00:00:00
+2025-08-06 23:32:28,778 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:28,778 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-07-31
+2025-08-06 23:32:28,778 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-31 00:00:00 to 2025-08-01 00:00:00
+2025-08-06 23:32:28,778 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1753912800000 to 1753999200000
+2025-08-06 23:32:28,778 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-06 23:32:28,778 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Starting incremental download from 2025-07-31
+2025-08-06 23:32:28,778 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #1: fetching from timestamp 1753912800000
+2025-08-06 23:32:28,792 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:00:00 to 2025-08-01 00:00:00
+2025-08-06 23:32:28,792 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:28,792 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-08-01
+2025-08-06 23:32:28,792 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-08-01 00:00:00 to 2025-08-02 00:00:00
+2025-08-06 23:32:28,792 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1753999200000 to 1754085600000
+2025-08-06 23:32:28,792 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-06 23:32:28,792 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Starting incremental download from 2025-08-01
+2025-08-06 23:32:28,792 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #1: fetching from timestamp 1753999200000
+2025-08-06 23:32:28,802 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:00:00 to 2025-08-02 00:00:00
+2025-08-06 23:32:28,802 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:29,215 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-06 23:32:29,217 - AresTradingSystem.System.OptimizedDataDownloader - ERROR - ❌ Error downloading klines for 2025-08: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1753999200000&endTime=1754515648733&limit=5000'
+2025-08-06 23:32:29,217 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-08-02
+2025-08-06 23:32:29,217 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-08-02 00:00:00 to 2025-08-03 00:00:00
+2025-08-06 23:32:29,217 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1754085600000 to 1754172000000
+2025-08-06 23:32:29,217 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-06 23:32:29,217 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Starting incremental download from 2025-08-02
+2025-08-06 23:32:29,217 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #1: fetching from timestamp 1754085600000
+2025-08-06 23:32:29,224 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:00:00 to 2025-08-03 00:00:00
+2025-08-06 23:32:29,224 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:29,224 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Processing results...
+2025-08-06 23:32:29,224 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ STEP 3 COMPLETED: Klines download finished - 0/1 periods successful, 0 errors
+2025-08-06 23:32:29,224 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 CSV Files: 0 monthly klines files created
+2025-08-06 23:32:29,248 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740000087
+2025-08-06 23:32:29,249 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740035176
+2025-08-06 23:32:29,249 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 399
+2025-08-06 23:32:29,249 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:29,258 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999200076
+2025-08-06 23:32:29,258 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999208279
+2025-08-06 23:32:29,258 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 280
+2025-08-06 23:32:29,259 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:29,502 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #1
+2025-08-06 23:32:29,502 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #2: fetching from timestamp 1753740035177
+2025-08-06 23:32:29,508 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:00:35.177000 to 2025-07-30 00:00:00
+2025-08-06 23:32:29,508 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:29,520 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #1
+2025-08-06 23:32:29,521 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #2: fetching from timestamp 1753999208280
+2025-08-06 23:32:29,527 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:00:08.280000 to 2025-08-02 00:00:00
+2025-08-06 23:32:29,527 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:29,558 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753826400041
+2025-08-06 23:32:29,558 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753826470151
+2025-08-06 23:32:29,558 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 530
+2025-08-06 23:32:29,559 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:29,601 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085600209
+2025-08-06 23:32:29,602 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085636622
+2025-08-06 23:32:29,602 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 434
+2025-08-06 23:32:29,603 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:29,605 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753912800011
+2025-08-06 23:32:29,605 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753912829178
+2025-08-06 23:32:29,605 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 347
+2025-08-06 23:32:29,606 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:29,811 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #1
+2025-08-06 23:32:29,811 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #2: fetching from timestamp 1753826470152
+2025-08-06 23:32:29,818 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:01:10.152000 to 2025-07-31 00:00:00
+2025-08-06 23:32:29,818 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:29,854 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #1
+2025-08-06 23:32:29,855 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #2: fetching from timestamp 1754085636623
+2025-08-06 23:32:29,861 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:00:36.623000 to 2025-08-03 00:00:00
+2025-08-06 23:32:29,861 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:29,874 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #1
+2025-08-06 23:32:29,874 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #2: fetching from timestamp 1753912829179
+2025-08-06 23:32:29,881 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:00:29.179000 to 2025-08-01 00:00:00
+2025-08-06 23:32:29,881 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:29,895 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740035182
+2025-08-06 23:32:29,895 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740077999
+2025-08-06 23:32:29,895 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 333
+2025-08-06 23:32:29,896 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:29,914 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999208283
+2025-08-06 23:32:29,914 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999224881
+2025-08-06 23:32:29,914 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 286
+2025-08-06 23:32:29,916 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:30,149 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #2
+2025-08-06 23:32:30,149 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #3: fetching from timestamp 1753740078000
+2025-08-06 23:32:30,156 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:01:18 to 2025-07-30 00:00:00
+2025-08-06 23:32:30,156 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:30,168 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #2
+2025-08-06 23:32:30,168 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #3: fetching from timestamp 1753999224882
+2025-08-06 23:32:30,175 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:00:24.882000 to 2025-08-02 00:00:00
+2025-08-06 23:32:30,175 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:30,198 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753826470174
+2025-08-06 23:32:30,199 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753826523547
+2025-08-06 23:32:30,199 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 439
+2025-08-06 23:32:30,200 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:30,249 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753912829346
+2025-08-06 23:32:30,250 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753912866470
+2025-08-06 23:32:30,250 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 389
+2025-08-06 23:32:30,250 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:30,270 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085636651
+2025-08-06 23:32:30,270 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085670950
+2025-08-06 23:32:30,270 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 406
+2025-08-06 23:32:30,271 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:30,453 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #2
+2025-08-06 23:32:30,453 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #3: fetching from timestamp 1753826523548
+2025-08-06 23:32:30,459 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:02:03.548000 to 2025-07-31 00:00:00
+2025-08-06 23:32:30,459 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:30,503 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #2
+2025-08-06 23:32:30,503 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #3: fetching from timestamp 1753912866471
+2025-08-06 23:32:30,510 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:01:06.471000 to 2025-08-01 00:00:00
+2025-08-06 23:32:30,510 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:30,523 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #2
+2025-08-06 23:32:30,523 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #3: fetching from timestamp 1754085670951
+2025-08-06 23:32:30,529 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:01:10.951000 to 2025-08-03 00:00:00
+2025-08-06 23:32:30,529 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:30,550 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740078113
+2025-08-06 23:32:30,550 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740103767
+2025-08-06 23:32:30,551 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 261
+2025-08-06 23:32:30,551 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:30,558 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999224887
+2025-08-06 23:32:30,558 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999233482
+2025-08-06 23:32:30,558 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 230
+2025-08-06 23:32:30,559 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:30,804 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #3
+2025-08-06 23:32:30,804 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #4: fetching from timestamp 1753740103768
+2025-08-06 23:32:30,811 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:01:43.768000 to 2025-07-30 00:00:00
+2025-08-06 23:32:30,811 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:30,824 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #3
+2025-08-06 23:32:30,824 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #4: fetching from timestamp 1753999233483
+2025-08-06 23:32:30,831 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:00:33.483000 to 2025-08-02 00:00:00
+2025-08-06 23:32:30,831 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:30,847 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753826523723
+2025-08-06 23:32:30,847 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753826555543
+2025-08-06 23:32:30,848 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 429
+2025-08-06 23:32:30,849 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:30,890 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753912866471
+2025-08-06 23:32:30,890 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753912921759
+2025-08-06 23:32:30,890 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 436
+2025-08-06 23:32:30,891 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:30,904 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085671022
+2025-08-06 23:32:30,904 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085706686
+2025-08-06 23:32:30,904 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 355
+2025-08-06 23:32:30,904 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:31,102 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #3
+2025-08-06 23:32:31,102 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #4: fetching from timestamp 1753826555544
+2025-08-06 23:32:31,109 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:02:35.544000 to 2025-07-31 00:00:00
+2025-08-06 23:32:31,109 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:31,142 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #3
+2025-08-06 23:32:31,143 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #4: fetching from timestamp 1753912921760
+2025-08-06 23:32:31,150 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:02:01.760000 to 2025-08-01 00:00:00
+2025-08-06 23:32:31,150 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:31,162 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #3
+2025-08-06 23:32:31,162 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #4: fetching from timestamp 1754085706687
+2025-08-06 23:32:31,170 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:01:46.687000 to 2025-08-03 00:00:00
+2025-08-06 23:32:31,170 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:31,193 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999233497
+2025-08-06 23:32:31,193 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999250136
+2025-08-06 23:32:31,193 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 282
+2025-08-06 23:32:31,194 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:31,216 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740103777
+2025-08-06 23:32:31,216 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740120976
+2025-08-06 23:32:31,216 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 257
+2025-08-06 23:32:31,217 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:31,446 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #4
+2025-08-06 23:32:31,446 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #5: fetching from timestamp 1753999250137
+2025-08-06 23:32:31,453 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:00:50.137000 to 2025-08-02 00:00:00
+2025-08-06 23:32:31,454 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:31,469 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #4
+2025-08-06 23:32:31,470 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #5: fetching from timestamp 1753740120977
+2025-08-06 23:32:31,476 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:02:00.977000 to 2025-07-30 00:00:00
+2025-08-06 23:32:31,476 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:31,494 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753826555582
+2025-08-06 23:32:31,494 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753826580809
+2025-08-06 23:32:31,494 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 375
+2025-08-06 23:32:31,494 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:31,537 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753912922531
+2025-08-06 23:32:31,537 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753912952501
+2025-08-06 23:32:31,537 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 353
+2025-08-06 23:32:31,538 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:31,550 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085706974
+2025-08-06 23:32:31,550 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085751162
+2025-08-06 23:32:31,550 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 453
+2025-08-06 23:32:31,551 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:31,747 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #4
+2025-08-06 23:32:31,748 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #5: fetching from timestamp 1753826580810
+2025-08-06 23:32:31,754 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:03:00.810000 to 2025-07-31 00:00:00
+2025-08-06 23:32:31,755 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:31,789 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #4
+2025-08-06 23:32:31,789 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #5: fetching from timestamp 1753912952502
+2025-08-06 23:32:31,796 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:02:32.502000 to 2025-08-01 00:00:00
+2025-08-06 23:32:31,796 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:31,809 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #4
+2025-08-06 23:32:31,809 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #5: fetching from timestamp 1754085751163
+2025-08-06 23:32:31,817 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:02:31.163000 to 2025-08-03 00:00:00
+2025-08-06 23:32:31,818 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:32,047 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999250137
+2025-08-06 23:32:32,047 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999264161
+2025-08-06 23:32:32,047 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 324
+2025-08-06 23:32:32,049 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:32,129 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740120977
+2025-08-06 23:32:32,129 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740143199
+2025-08-06 23:32:32,129 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 340
+2025-08-06 23:32:32,130 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:32,143 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753826580811
+2025-08-06 23:32:32,143 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753826609048
+2025-08-06 23:32:32,143 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 305
+2025-08-06 23:32:32,143 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:32,184 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753912952513
+2025-08-06 23:32:32,184 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753912991230
+2025-08-06 23:32:32,184 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 366
+2025-08-06 23:32:32,185 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:32,200 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085751164
+2025-08-06 23:32:32,200 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085793979
+2025-08-06 23:32:32,200 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 517
+2025-08-06 23:32:32,200 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:32,302 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #5
+2025-08-06 23:32:32,302 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #6: fetching from timestamp 1753999264162
+2025-08-06 23:32:32,309 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:01:04.162000 to 2025-08-02 00:00:00
+2025-08-06 23:32:32,309 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:32,383 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #5
+2025-08-06 23:32:32,383 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #6: fetching from timestamp 1753740143200
+2025-08-06 23:32:32,389 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:02:23.200000 to 2025-07-30 00:00:00
+2025-08-06 23:32:32,389 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:32,402 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #5
+2025-08-06 23:32:32,402 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #6: fetching from timestamp 1753826609049
+2025-08-06 23:32:32,409 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:03:29.049000 to 2025-07-31 00:00:00
+2025-08-06 23:32:32,409 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:32,437 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #5
+2025-08-06 23:32:32,437 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #6: fetching from timestamp 1753912991231
+2025-08-06 23:32:32,444 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:03:11.231000 to 2025-08-01 00:00:00
+2025-08-06 23:32:32,444 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:32,458 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #5
+2025-08-06 23:32:32,458 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #6: fetching from timestamp 1754085793980
+2025-08-06 23:32:32,467 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:03:13.980000 to 2025-08-03 00:00:00
+2025-08-06 23:32:32,467 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:32,696 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999264183
+2025-08-06 23:32:32,696 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999274963
+2025-08-06 23:32:32,696 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 280
+2025-08-06 23:32:32,697 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:32,780 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740143207
+2025-08-06 23:32:32,780 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740158641
+2025-08-06 23:32:32,780 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 292
+2025-08-06 23:32:32,780 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:32,792 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753826609054
+2025-08-06 23:32:32,792 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753826615764
+2025-08-06 23:32:32,793 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 229
+2025-08-06 23:32:32,793 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:32,838 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753912991251
+2025-08-06 23:32:32,838 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913019901
+2025-08-06 23:32:32,838 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 357
+2025-08-06 23:32:32,838 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:32,950 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #6
+2025-08-06 23:32:32,951 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #7: fetching from timestamp 1753999274964
+2025-08-06 23:32:32,957 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:01:14.964000 to 2025-08-02 00:00:00
+2025-08-06 23:32:32,957 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:33,033 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #6
+2025-08-06 23:32:33,033 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #7: fetching from timestamp 1753740158642
+2025-08-06 23:32:33,039 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:02:38.642000 to 2025-07-30 00:00:00
+2025-08-06 23:32:33,039 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:33,052 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #6
+2025-08-06 23:32:33,053 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #7: fetching from timestamp 1753826615765
+2025-08-06 23:32:33,059 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:03:35.765000 to 2025-07-31 00:00:00
+2025-08-06 23:32:33,059 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:33,073 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085793987
+2025-08-06 23:32:33,073 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085844357
+2025-08-06 23:32:33,073 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 432
+2025-08-06 23:32:33,074 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:33,091 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #6
+2025-08-06 23:32:33,091 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #7: fetching from timestamp 1753913019902
+2025-08-06 23:32:33,098 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:03:39.902000 to 2025-08-01 00:00:00
+2025-08-06 23:32:33,099 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:33,327 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #6
+2025-08-06 23:32:33,327 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #7: fetching from timestamp 1754085844358
+2025-08-06 23:32:33,340 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:04:04.358000 to 2025-08-03 00:00:00
+2025-08-06 23:32:33,340 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:33,361 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999275017
+2025-08-06 23:32:33,362 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999289685
+2025-08-06 23:32:33,362 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 355
+2025-08-06 23:32:33,363 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:33,433 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740158643
+2025-08-06 23:32:33,433 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740170337
+2025-08-06 23:32:33,433 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 311
+2025-08-06 23:32:33,434 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:33,473 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913019902
+2025-08-06 23:32:33,473 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913051744
+2025-08-06 23:32:33,473 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 316
+2025-08-06 23:32:33,473 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:33,618 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #7
+2025-08-06 23:32:33,618 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #8: fetching from timestamp 1753999289686
+2025-08-06 23:32:33,625 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:01:29.686000 to 2025-08-02 00:00:00
+2025-08-06 23:32:33,626 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:33,676 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753826615767
+2025-08-06 23:32:33,676 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753826649240
+2025-08-06 23:32:33,676 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 374
+2025-08-06 23:32:33,677 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:33,686 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #7
+2025-08-06 23:32:33,686 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #8: fetching from timestamp 1753740170338
+2025-08-06 23:32:33,693 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:02:50.338000 to 2025-07-30 00:00:00
+2025-08-06 23:32:33,694 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:33,724 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085844383
+2025-08-06 23:32:33,724 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085882877
+2025-08-06 23:32:33,724 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 397
+2025-08-06 23:32:33,725 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:33,726 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #7
+2025-08-06 23:32:33,726 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #8: fetching from timestamp 1753913051745
+2025-08-06 23:32:33,735 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:04:11.745000 to 2025-08-01 00:00:00
+2025-08-06 23:32:33,735 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:33,929 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #7
+2025-08-06 23:32:33,930 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #8: fetching from timestamp 1753826649241
+2025-08-06 23:32:33,937 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:04:09.241000 to 2025-07-31 00:00:00
+2025-08-06 23:32:33,937 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:33,992 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999289692
+2025-08-06 23:32:33,992 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999303798
+2025-08-06 23:32:33,992 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 293
+2025-08-06 23:32:33,993 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:34,000 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #7
+2025-08-06 23:32:34,001 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #8: fetching from timestamp 1754085882878
+2025-08-06 23:32:34,008 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:04:42.878000 to 2025-08-03 00:00:00
+2025-08-06 23:32:34,008 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:34,086 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740170338
+2025-08-06 23:32:34,087 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740192411
+2025-08-06 23:32:34,087 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 341
+2025-08-06 23:32:34,087 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:34,108 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913051753
+2025-08-06 23:32:34,108 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913095567
+2025-08-06 23:32:34,109 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 347
+2025-08-06 23:32:34,109 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:34,245 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #8
+2025-08-06 23:32:34,246 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #9: fetching from timestamp 1753999303799
+2025-08-06 23:32:34,253 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:01:43.799000 to 2025-08-02 00:00:00
+2025-08-06 23:32:34,253 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:34,316 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753826649306
+2025-08-06 23:32:34,316 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753826674525
+2025-08-06 23:32:34,317 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 300
+2025-08-06 23:32:34,317 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:34,340 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #8
+2025-08-06 23:32:34,340 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #9: fetching from timestamp 1753740192412
+2025-08-06 23:32:34,347 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:03:12.412000 to 2025-07-30 00:00:00
+2025-08-06 23:32:34,347 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:34,361 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #8
+2025-08-06 23:32:34,361 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #9: fetching from timestamp 1753913095568
+2025-08-06 23:32:34,370 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:04:55.568000 to 2025-08-01 00:00:00
+2025-08-06 23:32:34,370 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:34,389 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085882880
+2025-08-06 23:32:34,389 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085904515
+2025-08-06 23:32:34,389 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 305
+2025-08-06 23:32:34,390 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:34,570 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #8
+2025-08-06 23:32:34,570 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #9: fetching from timestamp 1753826674526
+2025-08-06 23:32:34,577 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:04:34.526000 to 2025-07-31 00:00:00
+2025-08-06 23:32:34,577 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:34,642 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #8
+2025-08-06 23:32:34,642 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #9: fetching from timestamp 1754085904516
+2025-08-06 23:32:34,650 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:05:04.516000 to 2025-08-03 00:00:00
+2025-08-06 23:32:34,650 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:34,668 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999303809
+2025-08-06 23:32:34,668 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999319363
+2025-08-06 23:32:34,668 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 329
+2025-08-06 23:32:34,669 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:34,741 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740192785
+2025-08-06 23:32:34,741 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740224836
+2025-08-06 23:32:34,741 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 324
+2025-08-06 23:32:34,742 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:34,763 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913095569
+2025-08-06 23:32:34,763 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913146158
+2025-08-06 23:32:34,763 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 387
+2025-08-06 23:32:34,764 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:34,921 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #9
+2025-08-06 23:32:34,922 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #10: fetching from timestamp 1753999319364
+2025-08-06 23:32:34,928 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:01:59.364000 to 2025-08-02 00:00:00
+2025-08-06 23:32:34,928 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:34,973 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753826674710
+2025-08-06 23:32:34,973 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753826717090
+2025-08-06 23:32:34,973 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 380
+2025-08-06 23:32:34,974 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:34,994 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #9
+2025-08-06 23:32:34,995 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #10: fetching from timestamp 1753740224837
+2025-08-06 23:32:35,002 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:03:44.837000 to 2025-07-30 00:00:00
+2025-08-06 23:32:35,002 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:35,017 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #9
+2025-08-06 23:32:35,017 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #10: fetching from timestamp 1753913146159
+2025-08-06 23:32:35,024 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:05:46.159000 to 2025-08-01 00:00:00
+2025-08-06 23:32:35,024 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:35,160 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085904520
+2025-08-06 23:32:35,161 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085913323
+2025-08-06 23:32:35,164 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 291
+2025-08-06 23:32:35,237 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:35,246 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #9
+2025-08-06 23:32:35,248 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #10: fetching from timestamp 1753826717091
+2025-08-06 23:32:35,259 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:05:17.091000 to 2025-07-31 00:00:00
+2025-08-06 23:32:35,259 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:35,568 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #9
+2025-08-06 23:32:35,568 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #10: fetching from timestamp 1754085913324
+2025-08-06 23:32:35,575 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:05:13.324000 to 2025-08-03 00:00:00
+2025-08-06 23:32:35,575 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:35,612 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999319367
+2025-08-06 23:32:35,612 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999331863
+2025-08-06 23:32:35,613 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 363
+2025-08-06 23:32:35,614 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:35,635 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740224846
+2025-08-06 23:32:35,635 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740253423
+2025-08-06 23:32:35,635 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 344
+2025-08-06 23:32:35,636 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:35,637 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913146171
+2025-08-06 23:32:35,637 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913198664
+2025-08-06 23:32:35,637 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 438
+2025-08-06 23:32:35,638 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:35,768 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753826717135
+2025-08-06 23:32:35,768 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753826781988
+2025-08-06 23:32:35,769 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 459
+2025-08-06 23:32:35,769 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:35,867 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #10
+2025-08-06 23:32:35,868 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #11: fetching from timestamp 1753999331864
+2025-08-06 23:32:35,874 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:02:11.864000 to 2025-08-02 00:00:00
+2025-08-06 23:32:35,874 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:35,890 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #10
+2025-08-06 23:32:35,890 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #11: fetching from timestamp 1753740253424
+2025-08-06 23:32:35,896 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:04:13.424000 to 2025-07-30 00:00:00
+2025-08-06 23:32:35,897 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:35,899 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #10
+2025-08-06 23:32:35,899 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #11: fetching from timestamp 1753913198665
+2025-08-06 23:32:35,905 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:06:38.665000 to 2025-08-01 00:00:00
+2025-08-06 23:32:35,906 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:35,975 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085913332
+2025-08-06 23:32:35,975 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085926449
+2025-08-06 23:32:35,976 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 327
+2025-08-06 23:32:35,976 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:36,022 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #10
+2025-08-06 23:32:36,022 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #11: fetching from timestamp 1753826781989
+2025-08-06 23:32:36,028 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:06:21.989000 to 2025-07-31 00:00:00
+2025-08-06 23:32:36,028 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:36,228 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #10
+2025-08-06 23:32:36,229 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #11: fetching from timestamp 1754085926450
+2025-08-06 23:32:36,236 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:05:26.450000 to 2025-08-03 00:00:00
+2025-08-06 23:32:36,236 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:36,484 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740253426
+2025-08-06 23:32:36,484 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740300193
+2025-08-06 23:32:36,484 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 385
+2025-08-06 23:32:36,485 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:36,531 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753826781992
+2025-08-06 23:32:36,532 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753826862402
+2025-08-06 23:32:36,532 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 465
+2025-08-06 23:32:36,532 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:36,665 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085926528
+2025-08-06 23:32:36,665 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085932990
+2025-08-06 23:32:36,665 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 259
+2025-08-06 23:32:36,666 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:36,737 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #11
+2025-08-06 23:32:36,738 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #12: fetching from timestamp 1753740300194
+2025-08-06 23:32:36,744 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:05:00.194000 to 2025-07-30 00:00:00
+2025-08-06 23:32:36,744 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:36,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #11
+2025-08-06 23:32:36,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #12: fetching from timestamp 1753826862403
+2025-08-06 23:32:36,791 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:07:42.403000 to 2025-07-31 00:00:00
+2025-08-06 23:32:36,791 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:36,918 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #11
+2025-08-06 23:32:36,919 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #12: fetching from timestamp 1754085932991
+2025-08-06 23:32:36,925 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:05:32.991000 to 2025-08-03 00:00:00
+2025-08-06 23:32:36,925 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:37,188 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740300195
+2025-08-06 23:32:37,188 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740334417
+2025-08-06 23:32:37,188 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 384
+2025-08-06 23:32:37,189 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:37,259 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753826862407
+2025-08-06 23:32:37,259 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753826950972
+2025-08-06 23:32:37,259 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 456
+2025-08-06 23:32:37,260 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:37,336 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999331869
+2025-08-06 23:32:37,337 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999342039
+2025-08-06 23:32:37,337 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 351
+2025-08-06 23:32:37,337 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:37,344 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913198665
+2025-08-06 23:32:37,344 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913236412
+2025-08-06 23:32:37,345 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 326
+2025-08-06 23:32:37,345 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:37,353 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085932992
+2025-08-06 23:32:37,353 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085943116
+2025-08-06 23:32:37,353 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 331
+2025-08-06 23:32:37,354 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:37,441 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #12
+2025-08-06 23:32:37,441 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #13: fetching from timestamp 1753740334418
+2025-08-06 23:32:37,448 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:05:34.418000 to 2025-07-30 00:00:00
+2025-08-06 23:32:37,449 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:37,512 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #12
+2025-08-06 23:32:37,512 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #13: fetching from timestamp 1753826950973
+2025-08-06 23:32:37,519 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:09:10.973000 to 2025-07-31 00:00:00
+2025-08-06 23:32:37,519 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:37,589 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #11
+2025-08-06 23:32:37,589 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #12: fetching from timestamp 1753999342040
+2025-08-06 23:32:37,597 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:02:22.040000 to 2025-08-02 00:00:00
+2025-08-06 23:32:37,597 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:37,611 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #11
+2025-08-06 23:32:37,611 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #12: fetching from timestamp 1753913236413
+2025-08-06 23:32:37,619 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:07:16.413000 to 2025-08-01 00:00:00
+2025-08-06 23:32:37,619 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:37,632 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #12
+2025-08-06 23:32:37,633 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #13: fetching from timestamp 1754085943117
+2025-08-06 23:32:37,640 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:05:43.117000 to 2025-08-03 00:00:00
+2025-08-06 23:32:37,640 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:37,898 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740334436
+2025-08-06 23:32:37,899 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740379922
+2025-08-06 23:32:37,899 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 362
+2025-08-06 23:32:37,899 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:38,050 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753826950983
+2025-08-06 23:32:38,050 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753827006370
+2025-08-06 23:32:38,050 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 339
+2025-08-06 23:32:38,051 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:38,085 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999342055
+2025-08-06 23:32:38,085 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999354131
+2025-08-06 23:32:38,086 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 379
+2025-08-06 23:32:38,086 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:38,088 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913236727
+2025-08-06 23:32:38,088 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913274352
+2025-08-06 23:32:38,088 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 335
+2025-08-06 23:32:38,088 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:38,089 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085943120
+2025-08-06 23:32:38,089 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085962780
+2025-08-06 23:32:38,089 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 408
+2025-08-06 23:32:38,090 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:38,152 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #13
+2025-08-06 23:32:38,152 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #14: fetching from timestamp 1753740379923
+2025-08-06 23:32:38,159 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:06:19.923000 to 2025-07-30 00:00:00
+2025-08-06 23:32:38,159 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:38,303 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #13
+2025-08-06 23:32:38,304 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #14: fetching from timestamp 1753827006371
+2025-08-06 23:32:38,310 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:10:06.371000 to 2025-07-31 00:00:00
+2025-08-06 23:32:38,310 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:38,342 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #12
+2025-08-06 23:32:38,342 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #13: fetching from timestamp 1753999354132
+2025-08-06 23:32:38,350 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:02:34.132000 to 2025-08-02 00:00:00
+2025-08-06 23:32:38,351 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:38,352 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #12
+2025-08-06 23:32:38,352 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #13: fetching from timestamp 1753913274353
+2025-08-06 23:32:38,358 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:07:54.353000 to 2025-08-01 00:00:00
+2025-08-06 23:32:38,358 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:38,359 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #13
+2025-08-06 23:32:38,359 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #14: fetching from timestamp 1754085962781
+2025-08-06 23:32:38,367 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:06:02.781000 to 2025-08-03 00:00:00
+2025-08-06 23:32:38,367 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:38,630 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740379936
+2025-08-06 23:32:38,630 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740413015
+2025-08-06 23:32:38,630 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 363
+2025-08-06 23:32:38,632 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:38,781 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753827006378
+2025-08-06 23:32:38,781 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753827083757
+2025-08-06 23:32:38,781 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 378
+2025-08-06 23:32:38,781 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:38,853 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085962787
+2025-08-06 23:32:38,853 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085977180
+2025-08-06 23:32:38,853 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 404
+2025-08-06 23:32:38,853 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:38,855 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999354138
+2025-08-06 23:32:38,855 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999370853
+2025-08-06 23:32:38,855 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 436
+2025-08-06 23:32:38,855 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:38,862 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913274492
+2025-08-06 23:32:38,862 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913358280
+2025-08-06 23:32:38,862 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 571
+2025-08-06 23:32:38,863 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:38,885 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #14
+2025-08-06 23:32:38,885 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #15: fetching from timestamp 1753740413016
+2025-08-06 23:32:38,892 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:06:53.016000 to 2025-07-30 00:00:00
+2025-08-06 23:32:38,892 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:39,034 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #14
+2025-08-06 23:32:39,034 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #15: fetching from timestamp 1753827083758
+2025-08-06 23:32:39,041 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:11:23.758000 to 2025-07-31 00:00:00
+2025-08-06 23:32:39,041 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:39,107 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #14
+2025-08-06 23:32:39,107 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #15: fetching from timestamp 1754085977181
+2025-08-06 23:32:39,114 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:06:17.181000 to 2025-08-03 00:00:00
+2025-08-06 23:32:39,115 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:39,116 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #13
+2025-08-06 23:32:39,117 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #14: fetching from timestamp 1753999370854
+2025-08-06 23:32:39,124 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:02:50.854000 to 2025-08-02 00:00:00
+2025-08-06 23:32:39,124 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:39,150 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #13
+2025-08-06 23:32:39,150 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #14: fetching from timestamp 1753913358281
+2025-08-06 23:32:39,158 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:09:18.281000 to 2025-08-01 00:00:00
+2025-08-06 23:32:39,158 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:39,309 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740413161
+2025-08-06 23:32:39,310 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740455130
+2025-08-06 23:32:39,310 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 497
+2025-08-06 23:32:39,310 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:39,563 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #15
+2025-08-06 23:32:39,564 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #16: fetching from timestamp 1753740455131
+2025-08-06 23:32:39,571 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:07:35.131000 to 2025-07-30 00:00:00
+2025-08-06 23:32:39,571 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:39,632 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999370862
+2025-08-06 23:32:39,633 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999393569
+2025-08-06 23:32:39,633 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 382
+2025-08-06 23:32:39,633 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:39,638 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913358303
+2025-08-06 23:32:39,638 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913417420
+2025-08-06 23:32:39,638 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 355
+2025-08-06 23:32:39,638 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:39,702 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753827083763
+2025-08-06 23:32:39,702 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753827155000
+2025-08-06 23:32:39,702 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 359
+2025-08-06 23:32:39,702 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:39,886 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #14
+2025-08-06 23:32:39,886 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #15: fetching from timestamp 1753999393570
+2025-08-06 23:32:39,892 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:03:13.570000 to 2025-08-02 00:00:00
+2025-08-06 23:32:39,892 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:39,905 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #14
+2025-08-06 23:32:39,905 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #15: fetching from timestamp 1753913417421
+2025-08-06 23:32:39,912 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:10:17.421000 to 2025-08-01 00:00:00
+2025-08-06 23:32:39,912 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:39,925 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085977184
+2025-08-06 23:32:39,925 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754085991644
+2025-08-06 23:32:39,925 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 362
+2025-08-06 23:32:39,926 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:39,954 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #15
+2025-08-06 23:32:39,954 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #16: fetching from timestamp 1753827155001
+2025-08-06 23:32:39,961 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:12:35.001000 to 2025-07-31 00:00:00
+2025-08-06 23:32:39,961 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:39,975 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740455154
+2025-08-06 23:32:39,975 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740497159
+2025-08-06 23:32:39,976 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 399
+2025-08-06 23:32:39,976 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:40,179 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #15
+2025-08-06 23:32:40,179 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #16: fetching from timestamp 1754085991645
+2025-08-06 23:32:40,188 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:06:31.645000 to 2025-08-03 00:00:00
+2025-08-06 23:32:40,188 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:40,229 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #16
+2025-08-06 23:32:40,229 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #17: fetching from timestamp 1753740497160
+2025-08-06 23:32:40,238 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:08:17.160000 to 2025-07-30 00:00:00
+2025-08-06 23:32:40,238 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:40,338 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999393571
+2025-08-06 23:32:40,338 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999413575
+2025-08-06 23:32:40,338 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 392
+2025-08-06 23:32:40,339 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:40,340 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913417429
+2025-08-06 23:32:40,340 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913497617
+2025-08-06 23:32:40,340 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 441
+2025-08-06 23:32:40,341 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:40,593 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #15
+2025-08-06 23:32:40,593 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #16: fetching from timestamp 1753999413576
+2025-08-06 23:32:40,602 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:03:33.576000 to 2025-08-02 00:00:00
+2025-08-06 23:32:40,602 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:40,604 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #15
+2025-08-06 23:32:40,604 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #16: fetching from timestamp 1753913497618
+2025-08-06 23:32:40,611 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:11:37.618000 to 2025-08-01 00:00:00
+2025-08-06 23:32:40,611 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:40,685 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754085991649
+2025-08-06 23:32:40,685 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754086009078
+2025-08-06 23:32:40,685 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 407
+2025-08-06 23:32:40,686 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:40,688 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753827155004
+2025-08-06 23:32:40,688 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753827181949
+2025-08-06 23:32:40,688 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 273
+2025-08-06 23:32:40,689 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:40,702 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740497397
+2025-08-06 23:32:40,703 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740542409
+2025-08-06 23:32:40,703 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 442
+2025-08-06 23:32:40,703 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:40,941 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #16
+2025-08-06 23:32:40,941 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #17: fetching from timestamp 1754086009079
+2025-08-06 23:32:40,950 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:06:49.079000 to 2025-08-03 00:00:00
+2025-08-06 23:32:40,950 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:40,952 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #16
+2025-08-06 23:32:40,952 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #17: fetching from timestamp 1753827181950
+2025-08-06 23:32:40,959 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:13:01.950000 to 2025-07-31 00:00:00
+2025-08-06 23:32:40,959 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:40,986 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #17
+2025-08-06 23:32:40,986 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #18: fetching from timestamp 1753740542410
+2025-08-06 23:32:40,994 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:09:02.410000 to 2025-07-30 00:00:00
+2025-08-06 23:32:40,994 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:41,037 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913497618
+2025-08-06 23:32:41,037 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913610920
+2025-08-06 23:32:41,037 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 559
+2025-08-06 23:32:41,038 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:41,039 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999413765
+2025-08-06 23:32:41,039 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999439268
+2025-08-06 23:32:41,039 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 376
+2025-08-06 23:32:41,040 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:41,292 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #16
+2025-08-06 23:32:41,293 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #17: fetching from timestamp 1753913610921
+2025-08-06 23:32:41,301 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:13:30.921000 to 2025-08-01 00:00:00
+2025-08-06 23:32:41,301 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:41,303 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #16
+2025-08-06 23:32:41,303 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #17: fetching from timestamp 1753999439269
+2025-08-06 23:32:41,310 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:03:59.269000 to 2025-08-02 00:00:00
+2025-08-06 23:32:41,311 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:41,414 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754086009278
+2025-08-06 23:32:41,414 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754086032030
+2025-08-06 23:32:41,415 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 407
+2025-08-06 23:32:41,416 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:41,418 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740542410
+2025-08-06 23:32:41,418 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740572350
+2025-08-06 23:32:41,418 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 381
+2025-08-06 23:32:41,419 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:41,421 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753827181950
+2025-08-06 23:32:41,421 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753827198572
+2025-08-06 23:32:41,421 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 202
+2025-08-06 23:32:41,421 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:41,674 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #17
+2025-08-06 23:32:41,674 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #18: fetching from timestamp 1754086032031
+2025-08-06 23:32:41,683 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:07:12.031000 to 2025-08-03 00:00:00
+2025-08-06 23:32:41,683 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:41,684 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #18
+2025-08-06 23:32:41,685 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #19: fetching from timestamp 1753740572351
+2025-08-06 23:32:41,692 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:09:32.351000 to 2025-07-30 00:00:00
+2025-08-06 23:32:41,692 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:41,693 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #17
+2025-08-06 23:32:41,693 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #18: fetching from timestamp 1753827198573
+2025-08-06 23:32:41,702 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:13:18.573000 to 2025-07-31 00:00:00
+2025-08-06 23:32:41,702 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:41,754 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913610925
+2025-08-06 23:32:41,754 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913733024
+2025-08-06 23:32:41,754 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 528
+2025-08-06 23:32:41,755 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:41,763 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999439273
+2025-08-06 23:32:41,763 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999457625
+2025-08-06 23:32:41,763 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 357
+2025-08-06 23:32:41,764 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:42,007 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #17
+2025-08-06 23:32:42,008 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #18: fetching from timestamp 1753913733025
+2025-08-06 23:32:42,015 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:15:33.025000 to 2025-08-01 00:00:00
+2025-08-06 23:32:42,015 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:42,028 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #17
+2025-08-06 23:32:42,028 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #18: fetching from timestamp 1753999457626
+2025-08-06 23:32:42,036 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:04:17.626000 to 2025-08-02 00:00:00
+2025-08-06 23:32:42,036 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:42,240 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753827198574
+2025-08-06 23:32:42,240 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753827205577
+2025-08-06 23:32:42,241 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 125
+2025-08-06 23:32:42,241 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:42,243 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754086032045
+2025-08-06 23:32:42,243 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754086054827
+2025-08-06 23:32:42,243 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 448
+2025-08-06 23:32:42,243 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:42,255 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740572426
+2025-08-06 23:32:42,255 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740627769
+2025-08-06 23:32:42,255 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 490
+2025-08-06 23:32:42,255 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:42,455 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913733264
+2025-08-06 23:32:42,455 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913805482
+2025-08-06 23:32:42,455 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 370
+2025-08-06 23:32:42,456 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:42,457 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999457692
+2025-08-06 23:32:42,457 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999483895
+2025-08-06 23:32:42,457 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 351
+2025-08-06 23:32:42,458 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:42,496 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #18
+2025-08-06 23:32:42,496 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #19: fetching from timestamp 1753827205578
+2025-08-06 23:32:42,503 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:13:25.578000 to 2025-07-31 00:00:00
+2025-08-06 23:32:42,503 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:42,504 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #18
+2025-08-06 23:32:42,505 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #19: fetching from timestamp 1754086054828
+2025-08-06 23:32:42,511 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:07:34.828000 to 2025-08-03 00:00:00
+2025-08-06 23:32:42,511 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:42,537 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #19
+2025-08-06 23:32:42,537 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #20: fetching from timestamp 1753740627770
+2025-08-06 23:32:42,544 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:10:27.770000 to 2025-07-30 00:00:00
+2025-08-06 23:32:42,544 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:42,710 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #18
+2025-08-06 23:32:42,710 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #19: fetching from timestamp 1753913805483
+2025-08-06 23:32:42,718 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:16:45.483000 to 2025-08-01 00:00:00
+2025-08-06 23:32:42,718 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:42,719 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #18
+2025-08-06 23:32:42,719 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #19: fetching from timestamp 1753999483896
+2025-08-06 23:32:42,726 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:04:43.896000 to 2025-08-02 00:00:00
+2025-08-06 23:32:42,726 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:42,989 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754086054841
+2025-08-06 23:32:42,989 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754086076799
+2025-08-06 23:32:42,989 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 421
+2025-08-06 23:32:42,990 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:42,991 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753827205590
+2025-08-06 23:32:42,991 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753827221898
+2025-08-06 23:32:42,991 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 298
+2025-08-06 23:32:42,992 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:43,244 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #19
+2025-08-06 23:32:43,244 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #20: fetching from timestamp 1754086076800
+2025-08-06 23:32:43,255 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:07:56.800000 to 2025-08-03 00:00:00
+2025-08-06 23:32:43,255 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:43,257 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #19
+2025-08-06 23:32:43,258 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #20: fetching from timestamp 1753827221899
+2025-08-06 23:32:43,267 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:13:41.899000 to 2025-07-31 00:00:00
+2025-08-06 23:32:43,267 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:43,292 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913805491
+2025-08-06 23:32:43,292 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913887676
+2025-08-06 23:32:43,292 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 433
+2025-08-06 23:32:43,292 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:43,505 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999483896
+2025-08-06 23:32:43,505 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999507671
+2025-08-06 23:32:43,505 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 364
+2025-08-06 23:32:43,506 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:43,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #19
+2025-08-06 23:32:43,545 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #20: fetching from timestamp 1753913887677
+2025-08-06 23:32:43,552 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:18:07.677000 to 2025-08-01 00:00:00
+2025-08-06 23:32:43,552 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:43,634 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740627775
+2025-08-06 23:32:43,634 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740680509
+2025-08-06 23:32:43,634 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 465
+2025-08-06 23:32:43,635 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:43,758 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #19
+2025-08-06 23:32:43,758 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #20: fetching from timestamp 1753999507672
+2025-08-06 23:32:43,766 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:05:07.672000 to 2025-08-02 00:00:00
+2025-08-06 23:32:43,766 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:43,778 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754086076843
+2025-08-06 23:32:43,778 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754086086282
+2025-08-06 23:32:43,778 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 306
+2025-08-06 23:32:43,778 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:43,779 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753827221901
+2025-08-06 23:32:43,780 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753827300872
+2025-08-06 23:32:43,780 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 484
+2025-08-06 23:32:43,780 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:43,887 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #20
+2025-08-06 23:32:43,887 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #21: fetching from timestamp 1753740680510
+2025-08-06 23:32:43,894 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:11:20.510000 to 2025-07-30 00:00:00
+2025-08-06 23:32:43,894 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:43,959 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913887777
+2025-08-06 23:32:43,959 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753913957594
+2025-08-06 23:32:43,959 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 368
+2025-08-06 23:32:43,960 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:44,034 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #20
+2025-08-06 23:32:44,034 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #21: fetching from timestamp 1754086086283
+2025-08-06 23:32:44,040 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:08:06.283000 to 2025-08-03 00:00:00
+2025-08-06 23:32:44,041 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:44,042 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #20
+2025-08-06 23:32:44,042 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #21: fetching from timestamp 1753827300873
+2025-08-06 23:32:44,050 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:15:00.873000 to 2025-07-31 00:00:00
+2025-08-06 23:32:44,050 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:44,212 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #20
+2025-08-06 23:32:44,212 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #21: fetching from timestamp 1753913957595
+2025-08-06 23:32:44,219 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:19:17.595000 to 2025-08-01 00:00:00
+2025-08-06 23:32:44,219 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:44,267 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999507738
+2025-08-06 23:32:44,267 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999528280
+2025-08-06 23:32:44,267 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 392
+2025-08-06 23:32:44,268 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:44,303 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740680512
+2025-08-06 23:32:44,304 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740733694
+2025-08-06 23:32:44,304 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 414
+2025-08-06 23:32:44,304 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:44,485 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754086086330
+2025-08-06 23:32:44,485 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754086111189
+2025-08-06 23:32:44,485 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 384
+2025-08-06 23:32:44,486 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:44,487 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753827300876
+2025-08-06 23:32:44,487 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753827354045
+2025-08-06 23:32:44,487 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 394
+2025-08-06 23:32:44,488 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:44,520 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #20
+2025-08-06 23:32:44,521 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #21: fetching from timestamp 1753999528281
+2025-08-06 23:32:44,527 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:05:28.281000 to 2025-08-02 00:00:00
+2025-08-06 23:32:44,527 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:44,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #21
+2025-08-06 23:32:44,557 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #22: fetching from timestamp 1753740733695
+2025-08-06 23:32:44,565 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:12:13.695000 to 2025-07-30 00:00:00
+2025-08-06 23:32:44,565 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:44,619 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753913957731
+2025-08-06 23:32:44,619 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753914018149
+2025-08-06 23:32:44,620 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 414
+2025-08-06 23:32:44,620 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:44,740 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #21
+2025-08-06 23:32:44,741 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #22: fetching from timestamp 1754086111190
+2025-08-06 23:32:44,748 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:08:31.190000 to 2025-08-03 00:00:00
+2025-08-06 23:32:44,748 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:44,750 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #21
+2025-08-06 23:32:44,750 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #22: fetching from timestamp 1753827354046
+2025-08-06 23:32:44,757 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:15:54.046000 to 2025-07-31 00:00:00
+2025-08-06 23:32:44,757 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:44,873 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #21
+2025-08-06 23:32:44,873 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #22: fetching from timestamp 1753914018150
+2025-08-06 23:32:44,880 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:20:18.150000 to 2025-08-01 00:00:00
+2025-08-06 23:32:44,880 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:44,991 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999528294
+2025-08-06 23:32:44,991 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999560089
+2025-08-06 23:32:44,991 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 399
+2025-08-06 23:32:44,992 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:44,993 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740733754
+2025-08-06 23:32:44,993 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740796889
+2025-08-06 23:32:44,993 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 419
+2025-08-06 23:32:44,994 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:45,149 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753827354149
+2025-08-06 23:32:45,150 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753827431184
+2025-08-06 23:32:45,150 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 424
+2025-08-06 23:32:45,150 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:45,152 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754086111195
+2025-08-06 23:32:45,152 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754086137840
+2025-08-06 23:32:45,152 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 443
+2025-08-06 23:32:45,152 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:45,246 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #21
+2025-08-06 23:32:45,247 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #22: fetching from timestamp 1753999560090
+2025-08-06 23:32:45,254 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:06:00.090000 to 2025-08-02 00:00:00
+2025-08-06 23:32:45,254 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:45,255 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #22
+2025-08-06 23:32:45,255 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #23: fetching from timestamp 1753740796890
+2025-08-06 23:32:45,262 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:13:16.890000 to 2025-07-30 00:00:00
+2025-08-06 23:32:45,262 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:45,355 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753914018160
+2025-08-06 23:32:45,355 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753914054249
+2025-08-06 23:32:45,355 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 318
+2025-08-06 23:32:45,356 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:45,405 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #22
+2025-08-06 23:32:45,405 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #23: fetching from timestamp 1753827431185
+2025-08-06 23:32:45,411 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:17:11.185000 to 2025-07-31 00:00:00
+2025-08-06 23:32:45,411 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:45,413 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #22
+2025-08-06 23:32:45,413 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #23: fetching from timestamp 1754086137841
+2025-08-06 23:32:45,421 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:08:57.841000 to 2025-08-03 00:00:00
+2025-08-06 23:32:45,421 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:45,608 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #22
+2025-08-06 23:32:45,609 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #23: fetching from timestamp 1753914054250
+2025-08-06 23:32:45,616 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:20:54.250000 to 2025-08-01 00:00:00
+2025-08-06 23:32:45,616 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:45,665 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999560102
+2025-08-06 23:32:45,666 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999583421
+2025-08-06 23:32:45,666 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 352
+2025-08-06 23:32:45,667 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:45,672 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740797109
+2025-08-06 23:32:45,672 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740842625
+2025-08-06 23:32:45,672 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 356
+2025-08-06 23:32:45,673 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:45,886 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1754086137914
+2025-08-06 23:32:45,886 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1754086155742
+2025-08-06 23:32:45,886 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 344
+2025-08-06 23:32:45,886 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:45,919 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #22
+2025-08-06 23:32:45,919 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #23: fetching from timestamp 1753999583422
+2025-08-06 23:32:45,926 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:06:23.422000 to 2025-08-02 00:00:00
+2025-08-06 23:32:45,926 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:45,940 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #23
+2025-08-06 23:32:45,940 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #24: fetching from timestamp 1753740842626
+2025-08-06 23:32:45,948 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:14:02.626000 to 2025-07-30 00:00:00
+2025-08-06 23:32:45,948 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:46,038 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753914054250
+2025-08-06 23:32:46,038 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753914084175
+2025-08-06 23:32:46,038 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 318
+2025-08-06 23:32:46,039 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:46,124 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753827431327
+2025-08-06 23:32:46,124 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753827500760
+2025-08-06 23:32:46,124 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 412
+2025-08-06 23:32:46,125 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:46,139 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #23
+2025-08-06 23:32:46,139 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #24: fetching from timestamp 1754086155743
+2025-08-06 23:32:46,146 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-02 00:09:15.743000 to 2025-08-03 00:00:00
+2025-08-06 23:32:46,146 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:46,291 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #23
+2025-08-06 23:32:46,291 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #24: fetching from timestamp 1753914084176
+2025-08-06 23:32:46,298 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:21:24.176000 to 2025-08-01 00:00:00
+2025-08-06 23:32:46,298 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:46,377 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #23
+2025-08-06 23:32:46,377 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #24: fetching from timestamp 1753827500761
+2025-08-06 23:32:46,385 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-30 00:18:20.761000 to 2025-07-31 00:00:00
+2025-08-06 23:32:46,385 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:46,400 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753740842633
+2025-08-06 23:32:46,401 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753740899304
+2025-08-06 23:32:46,401 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 373
+2025-08-06 23:32:46,402 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:46,404 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753999583473
+2025-08-06 23:32:46,404 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753999604078
+2025-08-06 23:32:46,404 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 363
+2025-08-06 23:32:46,405 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:46,657 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #24
+2025-08-06 23:32:46,658 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #25: fetching from timestamp 1753740899305
+2025-08-06 23:32:46,665 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-29 00:14:59.305000 to 2025-07-30 00:00:00
+2025-08-06 23:32:46,665 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:46,666 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #23
+2025-08-06 23:32:46,666 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #24: fetching from timestamp 1753999604079
+2025-08-06 23:32:46,673 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-01 00:06:44.079000 to 2025-08-02 00:00:00
+2025-08-06 23:32:46,673 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:46,728 - AresTradingSystem.System - INFO - CCXT Debug: First trade timestamp: 1753914084182
+2025-08-06 23:32:46,729 - AresTradingSystem.System - INFO - CCXT Debug: Last trade timestamp: 1753914137644
+2025-08-06 23:32:46,729 - AresTradingSystem.System - INFO - CCXT Debug: Number of unique timestamps: 404
+2025-08-06 23:32:46,729 - AresTradingSystem.System - INFO - CCXT: Retrieved 1000 aggregated trades for ETHUSDT
+2025-08-06 23:32:46,887 - AresTradingSystem.System - ERROR - CCXT Error fetching historical agg trades for ETHUSDT: binance 429 Too Many Requests {"code":-1003,"msg":"Too many requests; current limit of IP(146.70.194.120) is 2400 requests per minute. Please use the websocket for live updates to avoid polling the API."}
+2025-08-06 23:32:46,887 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ No more trades available at timestamp 1753827500761
+2025-08-06 23:32:46,887 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Incremental download complete: 23000 total trades in 24 API calls
+2025-08-06 23:32:46,887 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 23000 aggtrades
+2025-08-06 23:32:46,887 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Processing data...
+2025-08-06 23:32:46,931 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 💾 Creating new CSV file: aggtrades_BINANCE_ETHUSDT_2025-07-30.csv
+2025-08-06 23:32:46,932 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 File path: data_cache/aggtrades_BINANCE_ETHUSDT_2025-07-30.csv
+2025-08-06 23:32:46,932 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Data shape: (23000, 5)
+2025-08-06 23:32:46,932 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Records: 23000 aggtrades
+2025-08-06 23:32:47,011 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ NEW CSV FILE CREATED: aggtrades_BINANCE_ETHUSDT_2025-07-30.csv - 1,248,171 bytes, 23000 aggtrades
+2025-08-06 23:32:47,014 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-08-03
+2025-08-06 23:32:47,014 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-08-03 00:00:00 to 2025-08-04 00:00:00
+2025-08-06 23:32:47,014 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1754172000000 to 1754258400000
+2025-08-06 23:32:47,014 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-06 23:32:47,015 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Starting incremental download from 2025-08-03
+2025-08-06 23:32:47,015 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #1: fetching from timestamp 1754172000000
+2025-08-06 23:32:47,022 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-03 00:00:00 to 2025-08-04 00:00:00
+2025-08-06 23:32:47,022 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:47,025 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1000 trades in batch #24
+2025-08-06 23:32:47,025 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #25: fetching from timestamp 1753914137645
+2025-08-06 23:32:47,034 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-07-31 00:22:17.645000 to 2025-08-01 00:00:00
+2025-08-06 23:32:47,034 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:47,081 - AresTradingSystem.System - ERROR - CCXT Error fetching historical agg trades for ETHUSDT: binance 429 Too Many Requests {"code":-1003,"msg":"Too many requests; current limit of IP(146.70.194.120) is 2400 requests per minute. Please use the websocket for live updates to avoid polling the API."}
+2025-08-06 23:32:47,082 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ No more trades available at timestamp 1753740899305
+2025-08-06 23:32:47,082 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Incremental download complete: 24000 total trades in 25 API calls
+2025-08-06 23:32:47,082 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 24000 aggtrades
+2025-08-06 23:32:47,082 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Processing data...
+2025-08-06 23:32:47,128 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 💾 Creating new CSV file: aggtrades_BINANCE_ETHUSDT_2025-07-29.csv
+2025-08-06 23:32:47,128 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 File path: data_cache/aggtrades_BINANCE_ETHUSDT_2025-07-29.csv
+2025-08-06 23:32:47,128 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Data shape: (24000, 5)
+2025-08-06 23:32:47,128 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Records: 24000 aggtrades
+2025-08-06 23:32:47,216 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ NEW CSV FILE CREATED: aggtrades_BINANCE_ETHUSDT_2025-07-29.csv - 1,303,415 bytes, 24000 aggtrades
+2025-08-06 23:32:47,220 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-08-04
+2025-08-06 23:32:47,220 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-08-04 00:00:00 to 2025-08-05 00:00:00
+2025-08-06 23:32:47,220 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1754258400000 to 1754344800000
+2025-08-06 23:32:47,220 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-06 23:32:47,220 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Starting incremental download from 2025-08-04
+2025-08-06 23:32:47,220 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #1: fetching from timestamp 1754258400000
+2025-08-06 23:32:47,229 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-04 00:00:00 to 2025-08-05 00:00:00
+2025-08-06 23:32:47,229 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:47,230 - AresTradingSystem.System - ERROR - CCXT Error fetching historical agg trades for ETHUSDT: binance 429 Too Many Requests {"code":-1003,"msg":"Too many requests; current limit of IP(146.70.194.120) is 2400 requests per minute. Please use the websocket for live updates to avoid polling the API."}
+2025-08-06 23:32:47,231 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ No more trades available at timestamp 1753999604079
+2025-08-06 23:32:47,231 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Incremental download complete: 23000 total trades in 24 API calls
+2025-08-06 23:32:47,231 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 23000 aggtrades
+2025-08-06 23:32:47,231 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Processing data...
+2025-08-06 23:32:47,279 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 💾 Creating new CSV file: aggtrades_BINANCE_ETHUSDT_2025-08-01.csv
+2025-08-06 23:32:47,279 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 File path: data_cache/aggtrades_BINANCE_ETHUSDT_2025-08-01.csv
+2025-08-06 23:32:47,279 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Data shape: (23000, 5)
+2025-08-06 23:32:47,279 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Records: 23000 aggtrades
+2025-08-06 23:32:47,366 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ NEW CSV FILE CREATED: aggtrades_BINANCE_ETHUSDT_2025-08-01.csv - 1,248,679 bytes, 23000 aggtrades
+2025-08-06 23:32:47,384 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-08-05
+2025-08-06 23:32:47,384 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-08-05 00:00:00 to 2025-08-06 00:00:00
+2025-08-06 23:32:47,385 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1754344800000 to 1754431200000
+2025-08-06 23:32:47,385 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-06 23:32:47,385 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Starting incremental download from 2025-08-05
+2025-08-06 23:32:47,385 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #1: fetching from timestamp 1754344800000
+2025-08-06 23:32:47,393 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-05 00:00:00 to 2025-08-06 00:00:00
+2025-08-06 23:32:47,393 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:47,711 - AresTradingSystem.System - ERROR - CCXT Error fetching historical agg trades for ETHUSDT: binance 429 Too Many Requests {"code":-1003,"msg":"Too many requests; current limit of IP(146.70.194.120) is 2400 requests per minute. Please use the websocket for live updates to avoid polling the API."}
+2025-08-06 23:32:47,712 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ No more trades available at timestamp 1754086155743
+2025-08-06 23:32:47,712 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Incremental download complete: 23000 total trades in 24 API calls
+2025-08-06 23:32:47,712 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 23000 aggtrades
+2025-08-06 23:32:47,712 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Processing data...
+2025-08-06 23:32:47,760 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 💾 Creating new CSV file: aggtrades_BINANCE_ETHUSDT_2025-08-02.csv
+2025-08-06 23:32:47,760 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 File path: data_cache/aggtrades_BINANCE_ETHUSDT_2025-08-02.csv
+2025-08-06 23:32:47,760 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Data shape: (23000, 5)
+2025-08-06 23:32:47,760 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Records: 23000 aggtrades
+2025-08-06 23:32:47,850 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ NEW CSV FILE CREATED: aggtrades_BINANCE_ETHUSDT_2025-08-02.csv - 1,247,990 bytes, 23000 aggtrades
+2025-08-06 23:32:47,854 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-08-06
+2025-08-06 23:32:47,854 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-08-06 00:00:00 to 2025-08-06 23:32:28.729704
+2025-08-06 23:32:47,854 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1754431200000 to 1754515948729
+2025-08-06 23:32:47,854 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-06 23:32:47,854 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Starting incremental download from 2025-08-06
+2025-08-06 23:32:47,854 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📞 API call #1: fetching from timestamp 1754431200000
+2025-08-06 23:32:47,862 - AresTradingSystem.System - INFO - CCXT: Adjusted end time to avoid recent data issues: 2025-08-06 23:27:47.862000
+2025-08-06 23:32:47,863 - AresTradingSystem.System - INFO - CCXT: Fetching agg trades for ETHUSDT from 2025-08-06 00:00:00 to 2025-08-06 23:27:47.862000
+2025-08-06 23:32:47,863 - AresTradingSystem.System - INFO - CCXT: Using limit 1000 (requested: 1000)
+2025-08-06 23:32:47,866 - AresTradingSystem.System - ERROR - CCXT Error fetching historical agg trades for ETHUSDT: binance 429 Too Many Requests {"code":-1003,"msg":"Too many requests; current limit of IP(146.70.194.120) is 2400 requests per minute. Please use the websocket for live updates to avoid polling the API."}
+2025-08-06 23:32:47,866 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ No more trades available at timestamp 1753914137645
+2025-08-06 23:32:47,866 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Incremental download complete: 24000 total trades in 25 API calls
+2025-08-06 23:32:47,866 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 24000 aggtrades
+2025-08-06 23:32:47,866 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Processing data...
+2025-08-06 23:32:47,921 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 💾 Creating new CSV file: aggtrades_BINANCE_ETHUSDT_2025-07-31.csv
+2025-08-06 23:32:47,921 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 File path: data_cache/aggtrades_BINANCE_ETHUSDT_2025-07-31.csv
+2025-08-06 23:32:47,921 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Data shape: (24000, 5)
+2025-08-06 23:32:47,921 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Records: 24000 aggtrades
+2025-08-06 23:32:48,022 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ NEW CSV FILE CREATED: aggtrades_BINANCE_ETHUSDT_2025-07-31.csv - 1,303,055 bytes, 24000 aggtrades
+2025-08-06 23:32:48,025 - AresTradingSystem.System - ERROR - CCXT Error fetching historical agg trades for ETHUSDT: binance 429 Too Many Requests {"code":-1003,"msg":"Too many requests; current limit of IP(146.70.194.120) is 2400 requests per minute. Please use the websocket for live updates to avoid polling the API."}
+2025-08-06 23:32:48,026 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ No more trades available at timestamp 1754172000000
+2025-08-06 23:32:48,026 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Incremental download complete: 0 total trades in 1 API calls
+2025-08-06 23:32:48,026 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-06 23:32:48,026 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-08-03
+2025-08-06 23:32:48,044 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading futures for 2025-08
+2025-08-06 23:32:48,044 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-08-01 00:00:00 to 2025-08-06 23:32:28.731479
+2025-08-06 23:32:48,044 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1753999200000 to 1754515948731
+2025-08-06 23:32:48,044 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-06 23:32:48,044 - AresTradingSystem.System - INFO - Futures: Adjusted end time to avoid recent data issues: 2025-08-06 23:27:48.044000
+2025-08-06 23:32:48,044 - AresTradingSystem.System - INFO - Futures: Fetching data for ETHUSDT from 2025-08-01 00:00:00 to 2025-08-06 23:27:48.044000
+2025-08-06 23:32:48,052 - AresTradingSystem.System - ERROR - CCXT Error fetching historical agg trades for ETHUSDT: binance 429 Too Many Requests {"code":-1003,"msg":"Too many requests; current limit of IP(146.70.194.120) is 2400 requests per minute. Please use the websocket for live updates to avoid polling the API."}
+2025-08-06 23:32:48,053 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ No more trades available at timestamp 1754344800000
+2025-08-06 23:32:48,053 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Incremental download complete: 0 total trades in 1 API calls
+2025-08-06 23:32:48,053 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-06 23:32:48,053 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-08-05
+2025-08-06 23:32:48,053 - AresTradingSystem.System - ERROR - CCXT Error fetching historical agg trades for ETHUSDT: binance 429 Too Many Requests {"code":-1003,"msg":"Too many requests; current limit of IP(146.70.194.120) is 2400 requests per minute. Please use the websocket for live updates to avoid polling the API."}
+2025-08-06 23:32:48,054 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ No more trades available at timestamp 1754258400000
+2025-08-06 23:32:48,054 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Incremental download complete: 0 total trades in 1 API calls
+2025-08-06 23:32:48,054 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-06 23:32:48,054 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-08-04
+2025-08-06 23:32:48,515 - AresTradingSystem.System - ERROR - CCXT Error fetching historical agg trades for ETHUSDT: binance 429 Too Many Requests {"code":-1003,"msg":"Too many requests; current limit of IP(146.70.194.120) is 2400 requests per minute. Please use the websocket for live updates to avoid polling the API."}
+2025-08-06 23:32:48,516 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ No more trades available at timestamp 1754431200000
+2025-08-06 23:32:48,516 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Incremental download complete: 0 total trades in 1 API calls
+2025-08-06 23:32:48,516 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 aggtrades
+2025-08-06 23:32:48,516 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No aggtrades received for 2025-08-06
+2025-08-06 23:32:48,516 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Processing results...
+2025-08-06 23:32:48,517 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Task 1 completed successfully
+2025-08-06 23:32:48,517 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Task 2 completed successfully
+2025-08-06 23:32:48,517 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Task 3 completed successfully
+2025-08-06 23:32:48,517 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Task 4 completed successfully
+2025-08-06 23:32:48,517 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Task 5 completed successfully
+2025-08-06 23:32:48,517 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ STEP 3B COMPLETED: Aggtrades download finished - 5/9 periods successful, 0 errors
+2025-08-06 23:32:48,517 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 CSV Files: 5 daily aggtrades files created
+2025-08-06 23:32:48,804 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 1 futures records
+2025-08-06 23:32:48,805 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Processing data...
+2025-08-06 23:32:48,805 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 💾 Creating new CSV file: futures_BINANCE_ETHUSDT_2025-08.csv
+2025-08-06 23:32:48,805 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 File path: data_cache/futures_BINANCE_ETHUSDT_2025-08.csv
+2025-08-06 23:32:48,805 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Data shape: (18, 1)
+2025-08-06 23:32:48,805 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Records: 18 futures records
+2025-08-06 23:32:48,806 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ NEW CSV FILE CREATED: futures_BINANCE_ETHUSDT_2025-08.csv - 2,049 bytes, 18 futures records
+2025-08-06 23:32:48,806 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Processing results...
+2025-08-06 23:32:48,806 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Task 1 completed successfully
+2025-08-06 23:32:48,806 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ STEP 3C COMPLETED: Futures download finished - 1/1 periods successful, 0 errors
+2025-08-06 23:32:48,806 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 CSV Files: 1 daily futures files created
+2025-08-06 23:32:48,806 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Processing final results...
+2025-08-06 23:32:48,806 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Aggtrades download completed successfully
+2025-08-06 23:32:48,806 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Futures download completed successfully
+2025-08-06 23:32:48,806 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🎉 OPTIMIZED DOWNLOAD PROCESS COMPLETED
+2025-08-06 23:32:48,806 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 FINAL STATISTICS:
+2025-08-06 23:32:48,806 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    ✅ Successful downloads: 2/3
+2025-08-06 23:32:48,806 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    ❌ Failed downloads: 0/3
+2025-08-06 23:32:48,806 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    ⏱️ Total time: 20.08 seconds
+2025-08-06 23:32:48,807 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    📈 Klines files downloaded: 0
+2025-08-06 23:32:48,807 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    📊 Aggtrades files downloaded: 5
+2025-08-06 23:32:48,807 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    📈 Futures files downloaded: 1
+2025-08-06 23:32:48,807 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    ❌ Total errors: 0
+2025-08-06 23:32:48,807 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 CSV FILES CREATED: 6 total files
+2025-08-06 23:32:48,807 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    📈 Monthly klines files: 0
+2025-08-06 23:32:48,807 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    📊 Daily aggtrades files: 5
+2025-08-06 23:32:48,807 - AresTradingSystem.System.OptimizedDataDownloader - INFO -    📈 Daily futures files: 1
+2025-08-06 23:32:48,807 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🧹 Cleaning up resources...
+2025-08-06 23:32:48,808 - AresTradingSystem.System - INFO - HTTP session closed.
+2025-08-06 23:32:48,809 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Cleanup completed
+2025-08-06 23:32:48,809 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Optimized download completed successfully

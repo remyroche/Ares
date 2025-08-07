@@ -1,0 +1,15 @@
+2025-08-07 23:06:16,180 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 23:06:16,191 - AresTradingSystem.System - INFO - Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE
+2025-08-07 23:06:16,713 - AresTradingSystem.System.SignalHandler - INFO - Initializing Signal Handler...
+2025-08-07 23:06:16,713 - AresTradingSystem.System.SignalHandler - INFO - Signal configuration loaded successfully
+2025-08-07 23:06:16,713 - AresTradingSystem.System.SignalHandler - INFO - Configuration validation successful
+2025-08-07 23:06:16,714 - AresTradingSystem.System.SignalHandler - INFO - Registered SIGTERM handler
+2025-08-07 23:06:16,714 - AresTradingSystem.System.SignalHandler - INFO - Registered SIGINT handler
+2025-08-07 23:06:16,714 - AresTradingSystem.System.SignalHandler - INFO - Signal handlers registered successfully
+2025-08-07 23:06:16,714 - AresTradingSystem.System.SignalHandler - INFO - ✅ Signal Handler initialization completed successfully
+2025-08-07 23:06:16,723 - AresTradingSystem.System.SignalHandler - INFO - Shutdown callback registered
+2025-08-07 23:09:27,452 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Received SIGINT signal
+2025-08-07 23:09:27,453 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Initiating graceful shutdown: SIGINT
+2025-08-07 23:09:27,453 - AresTradingSystem.System.SignalHandler - INFO - Running 1 shutdown callbacks...
+2025-08-07 23:09:27,456 - AresTradingSystem.System.SignalHandler - INFO - ✅ Shutdown callback 1 completed
+2025-08-07 23:09:27,456 - AresTradingSystem.System.SignalHandler - INFO - ✅ All shutdown callbacks completed

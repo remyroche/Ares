@@ -15,14 +15,40 @@ import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG
+# Handle imports with fallback - this must be done before any other imports
+CONFIG = None
+handle_errors = None
+setup_logging = None
+system_logger = None
+download_all_data_with_consolidation = None
 
-# Import the consolidated data downloader
-from src.training.steps.data_downloader import download_all_data_with_consolidation
-from src.utils.error_handler import (
-    handle_errors,
-)
-from src.utils.logger import setup_logging, system_logger
+try:
+    from src.config import CONFIG
+    from src.training.steps.data_downloader import download_all_data_with_consolidation
+    from src.utils.error_handler import (
+        handle_errors,
+    )
+    from src.utils.logger import setup_logging, system_logger
+except ImportError as e:
+    print(f"Warning: Could not import some modules: {e}")
+    # Fallback configuration
+    CONFIG = {
+        "SYMBOL": "ETHUSDT",
+        "INTERVAL": "1m",
+        "LOOKBACK_YEARS": 2,
+    }
+    # Create fallback functions
+    def handle_errors(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def setup_logging():
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        return logging.getLogger("System")
+    
+    system_logger = setup_logging()
 
 
 class DataCollectionStep:
@@ -85,8 +111,27 @@ def _get_source_files(pattern: str, lookback_days: int | None = None) -> list[st
     """Get source files matching the pattern, optionally filtered by lookback days."""
     logger = system_logger.getChild("ConsolidateFiles")
     
+    print(f"🔍 Looking for files matching pattern: {pattern}")
+    print(f"🔍 Searching in directory: data_cache")
+    print(f"🔍 Current working directory: {os.getcwd()}")
+    
+    # Check if data_cache directory exists
+    if not os.path.exists("data_cache"):
+        print(f"❌ data_cache directory does not exist!")
+        return []
+    
+    # List contents of data_cache
+    try:
+        cache_contents = os.listdir("data_cache")
+        print(f"📁 data_cache contents: {cache_contents[:10]}...")  # Show first 10 items
+    except Exception as e:
+        print(f"❌ Error listing data_cache: {e}")
+        return []
+    
     source_files = sorted(glob.glob(os.path.join("data_cache", pattern)))
     print(f"📋 Found {len(source_files)} files matching pattern")
+    if source_files:
+        print(f"📋 First few files: {source_files[:3]}")
     logger.info(f"📋 Found {len(source_files)} files matching pattern")
     
     if lookback_days is not None:
@@ -397,12 +442,161 @@ def consolidate_files(
     # Log source files info
     print("📁 Source files:")
     logger.info("📁 Source files:")
+    total_size = sum(os.path.getsize(f) for f in source_files)
+    print(f"📊 Total files: {len(source_files)}, Total size: {total_size:,} bytes ({total_size/1024/1024:.1f} MB)")
+    logger.info(f"📊 Total files: {len(source_files)}, Total size: {total_size:,} bytes ({total_size/1024/1024:.1f} MB)")
+    
     for i, file in enumerate(source_files[:5], 1):
         print(f"   {i}. {os.path.basename(file)} ({os.path.getsize(file):,} bytes)")
         logger.info(f"   {i}. {os.path.basename(file)} ({os.path.getsize(file):,} bytes)")
     if len(source_files) > 5:
         print(f"   ... and {len(source_files) - 5} more files")
         logger.info(f"   ... and {len(source_files) - 5} more files")
+    
+    # Simple approach: process files one by one and append to consolidated file
+    print("🔄 Using simple file-by-file consolidation approach...")
+    logger.info("🔄 Using simple file-by-file consolidation approach...")
+    
+    # Define unique column
+    unique_col = sort_col if sort_col else index_col
+    logger.info(f"🔑 Using unique column: {unique_col}")
+    
+    # Check if consolidated file exists
+    existing_df = None
+    existing_ids = set()
+    if os.path.exists(consolidated_filepath):
+        print(f"📁 Found existing consolidated file: {consolidated_filepath}")
+        logger.info(f"📁 Found existing consolidated file: {consolidated_filepath}")
+        try:
+            existing_df = pd.read_csv(consolidated_filepath)
+            existing_ids = set(existing_df[unique_col].astype(str)) if unique_col in existing_df.columns else set()
+            print(f"📊 Existing file has {len(existing_df)} records")
+            logger.info(f"📊 Existing file has {len(existing_df)} records")
+        except Exception as e:
+            print(f"⚠️ Error reading existing file: {e}")
+            logger.warning(f"⚠️ Error reading existing file: {e}")
+            existing_df = None
+            existing_ids = set()
+    
+    # Wait for files to be created and process them incrementally
+    print("⏳ Waiting for data files to be created...")
+    logger.info("⏳ Waiting for data files to be created...")
+    
+    # Check for files every 5 seconds for up to 10 minutes
+    max_wait_time = 600  # 10 minutes
+    check_interval = 5  # 5 seconds
+    waited_time = 0
+    
+    while waited_time < max_wait_time:
+        current_files = _get_source_files(pattern, lookback_days)
+        if current_files:
+            print(f"📁 Found {len(current_files)} files to process")
+            logger.info(f"📁 Found {len(current_files)} files to process")
+            break
+        
+        print(f"⏳ Waiting for files... ({waited_time}/{max_wait_time} seconds)")
+        logger.info(f"⏳ Waiting for files... ({waited_time}/{max_wait_time} seconds)")
+        time.sleep(check_interval)
+        waited_time += check_interval
+    
+    if not current_files:
+        print("⚠️ No files found after waiting, exiting consolidation")
+        logger.warning("⚠️ No files found after waiting, exiting consolidation")
+        return pd.DataFrame()
+    
+    # Process files one by one
+    all_new_data = []
+    processed_files = 0
+    
+    for i, file_path in enumerate(source_files, 1):
+        print(f"📄 Processing file {i}/{len(source_files)}: {os.path.basename(file_path)}")
+        logger.info(f"📄 Processing file {i}/{len(source_files)}: {os.path.basename(file_path)}")
+        
+        try:
+            # Read the file
+            df = pd.read_csv(file_path)
+            print(f"   📊 File has {len(df)} records")
+            logger.info(f"   📊 File has {len(df)} records")
+            
+            # Remove duplicates if unique_col exists
+            if unique_col in df.columns:
+                before_dedup = len(df)
+                df = df.drop_duplicates(subset=[unique_col], keep="last")
+                after_dedup = len(df)
+                print(f"   🧹 Removed {before_dedup - after_dedup} duplicates")
+                logger.info(f"   🧹 Removed {before_dedup - after_dedup} duplicates")
+            
+            # Filter out existing records
+            if existing_ids and unique_col in df.columns:
+                before_filter = len(df)
+                df = df[~df[unique_col].astype(str).isin(existing_ids)]
+                after_filter = len(df)
+                print(f"   🔍 Filtered out {before_filter - after_filter} existing records")
+                logger.info(f"   🔍 Filtered out {before_filter - after_filter} existing records")
+            
+            if not df.empty:
+                all_new_data.append(df)
+                processed_files += 1
+                print(f"   ✅ Added {len(df)} new records")
+                logger.info(f"   ✅ Added {len(df)} new records")
+            else:
+                print(f"   ⚠️ No new data in this file")
+                logger.info(f"   ⚠️ No new data in this file")
+                
+        except Exception as e:
+            print(f"   ❌ Error processing {file_path}: {e}")
+            logger.error(f"   ❌ Error processing {file_path}: {e}")
+    
+    # Combine all new data
+    if all_new_data:
+        print(f"🔄 Combining {len(all_new_data)} files with new data...")
+        logger.info(f"🔄 Combining {len(all_new_data)} files with new data...")
+        new_combined_df = pd.concat(all_new_data, ignore_index=True)
+        print(f"📊 Combined new data: {len(new_combined_df)} records")
+        logger.info(f"📊 Combined new data: {len(new_combined_df)} records")
+        
+        # Combine with existing data
+        if existing_df is not None:
+            print(f"🔄 Combining with existing data...")
+            logger.info(f"🔄 Combining with existing data...")
+            final_df = pd.concat([existing_df, new_combined_df], ignore_index=True)
+            print(f"📊 Final combined data: {len(final_df)} records")
+            logger.info(f"📊 Final combined data: {len(final_df)} records")
+        else:
+            final_df = new_combined_df
+            print(f"📊 Using only new data: {len(final_df)} records")
+            logger.info(f"📊 Using only new data: {len(final_df)} records")
+        
+        # Final deduplication
+        if unique_col in final_df.columns:
+            before_final_dedup = len(final_df)
+            final_df = final_df.drop_duplicates(subset=[unique_col], keep="last")
+            after_final_dedup = len(final_df)
+            print(f"🧹 Final deduplication: removed {before_final_dedup - after_final_dedup} duplicates")
+            logger.info(f"🧹 Final deduplication: removed {before_final_dedup - after_final_dedup} duplicates")
+        
+        # Sort by timestamp
+        if index_col in final_df.columns:
+            print(f"📅 Sorting by {index_col}...")
+            logger.info(f"📅 Sorting by {index_col}...")
+            final_df = final_df.sort_values(index_col)
+        
+        # Save to file
+        print(f"💾 Saving consolidated file: {consolidated_filepath}")
+        logger.info(f"💾 Saving consolidated file: {consolidated_filepath}")
+        final_df.to_csv(consolidated_filepath, index=False)
+        
+        file_size = os.path.getsize(consolidated_filepath)
+        print(f"✅ Successfully created consolidated file with {len(final_df)} records")
+        print(f"📊 File size: {file_size:,} bytes ({file_size/1024/1024:.1f} MB)")
+        logger.info(f"✅ Successfully created consolidated file with {len(final_df)} records")
+        logger.info(f"📊 File size: {file_size:,} bytes ({file_size/1024/1024:.1f} MB)")
+        
+        return final_df
+    else:
+        print("⚠️ No new data to consolidate")
+        logger.warning("⚠️ No new data to consolidate")
+        return existing_df if existing_df is not None else pd.DataFrame()
     
     unique_col = sort_col if sort_col else index_col
     logger.info(f"🔑 Using unique column: {unique_col}")
@@ -979,6 +1173,9 @@ if __name__ == "__main__":
     print("🚀 STEP1 SCRIPT STARTING")
     print("=" * 80)
     print(f"Arguments: {sys.argv}")
+    print(f"Current working directory: {os.getcwd()}")
+    print(f"Python path: {sys.path[:3]}...")  # Show first 3 entries
+    print("Starting import handling...")
 
     # Command-line arguments: symbol, exchange_name, min_data_points, data_dir
     symbol = sys.argv[

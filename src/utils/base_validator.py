@@ -221,3 +221,45 @@ class BaseValidator(ABC):
         except Exception as e:
             self.logger.error(f"❌ Error in outcome favorability validation: {e}")
             return False, {"error": str(e)}
+    
+    async def run_validation(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Run the validation and return results.
+        
+        Args:
+            training_input: Training input parameters
+            pipeline_state: Current pipeline state
+            
+        Returns:
+            Dict[str, Any]: Validation results dictionary
+        """
+        try:
+            self.logger.info(f"🔍 Running validation for {self.step_name}...")
+            
+            # Run the validation
+            validation_passed = await self.validate(training_input, pipeline_state)
+            
+            # Prepare results
+            results = {
+                "step_name": self.step_name,
+                "validation_passed": validation_passed,
+                "validation_results": self.validation_results.copy(),
+                "timestamp": "2024-01-01T00:00:00"  # Placeholder timestamp
+            }
+            
+            if validation_passed:
+                self.logger.info(f"✅ Validation for {self.step_name} passed")
+            else:
+                self.logger.warning(f"⚠️ Validation for {self.step_name} failed")
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error running validation for {self.step_name}: {e}")
+            return {
+                "step_name": self.step_name,
+                "validation_passed": False,
+                "error": str(e),
+                "validation_results": {},
+                "timestamp": "2024-01-01T00:00:00"  # Placeholder timestamp
+            }

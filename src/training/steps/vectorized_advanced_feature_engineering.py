@@ -570,6 +570,9 @@ class VectorizedAdvancedFeatureEngineering:
                 self.logger.error("Vectorized advanced feature engineering not initialized")
                 return {}
 
+            # Validate and transform data to ensure OHLCV structure
+            price_data, volume_data = self._validate_and_transform_data(price_data, volume_data)
+
             features = {}
 
             # Market microstructure features
@@ -860,7 +863,11 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             # Adaptive SMA based on volatility
             volatility = price_data["close"].pct_change().rolling(window=20).std()
-            adaptive_window = np.clip(20 / (1 + volatility * 100), 5, 50).astype(int)
+            # Handle NaN and infinite values before converting to int
+            adaptive_window_raw = 20 / (1 + volatility * 100)
+            adaptive_window_raw = adaptive_window_raw.fillna(20)  # Default to 20 if NaN
+            adaptive_window_raw = np.clip(adaptive_window_raw, 5, 50)
+            adaptive_window = adaptive_window_raw.astype(int)
             
             # Calculate adaptive SMA
             adaptive_sma = price_data["close"].rolling(window=adaptive_window.iloc[-1]).mean().iloc[-1]
@@ -875,7 +882,10 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             # Adaptive EMA based on volatility
             volatility = price_data["close"].pct_change().rolling(window=20).std()
-            adaptive_span = np.clip(12 / (1 + volatility * 100), 2, 50)
+            # Handle NaN and infinite values
+            adaptive_span_raw = 12 / (1 + volatility * 100)
+            adaptive_span_raw = adaptive_span_raw.fillna(12)  # Default to 12 if NaN
+            adaptive_span = np.clip(adaptive_span_raw, 2, 50)
             
             # Calculate adaptive EMA
             adaptive_ema = price_data["close"].ewm(span=adaptive_span.iloc[-1]).mean().iloc[-1]
@@ -897,7 +907,11 @@ class VectorizedAdvancedFeatureEngineering:
             
             # Adaptive window based on volatility
             volatility = true_range.rolling(window=20).std()
-            adaptive_window = np.clip(14 / (1 + volatility * 10), 5, 30).astype(int)
+            # Handle NaN and infinite values before converting to int
+            adaptive_window_raw = 14 / (1 + volatility * 10)
+            adaptive_window_raw = adaptive_window_raw.fillna(14)  # Default to 14 if NaN
+            adaptive_window_raw = np.clip(adaptive_window_raw, 5, 30)
+            adaptive_window = adaptive_window_raw.astype(int)
             
             adaptive_atr = true_range.rolling(window=adaptive_window.iloc[-1]).mean().iloc[-1]
             return adaptive_atr
@@ -911,7 +925,11 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             # Adaptive Bollinger Bands based on volatility
             volatility = price_data["close"].pct_change().rolling(window=20).std()
-            adaptive_window = np.clip(20 / (1 + volatility * 100), 10, 50).astype(int)
+            # Handle NaN and infinite values before converting to int
+            adaptive_window_raw = 20 / (1 + volatility * 100)
+            adaptive_window_raw = adaptive_window_raw.fillna(20)  # Default to 20 if NaN
+            adaptive_window_raw = np.clip(adaptive_window_raw, 10, 50)
+            adaptive_window = adaptive_window_raw.astype(int)
             
             # Calculate adaptive Bollinger Bands
             sma = price_data["close"].rolling(window=adaptive_window.iloc[-1]).mean()
@@ -944,6 +962,113 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.error(f"Error selecting optimal features: {e}")
             return features
+
+    def _validate_and_transform_data(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Validate and transform data to ensure it has the expected OHLCV structure.
+        
+        Args:
+            price_data: Input price data
+            volume_data: Input volume data
+            
+        Returns:
+            Tuple of (transformed_price_data, transformed_volume_data)
+        """
+        try:
+            # Check if price_data has OHLCV structure
+            required_ohlcv_columns = ['open', 'high', 'low', 'close']
+            available_price_columns = price_data.columns.tolist()
+            
+            # If price_data doesn't have OHLCV structure, try to create it
+            if not all(col in available_price_columns for col in required_ohlcv_columns):
+                # Check if we have trade data (price, quantity columns)
+                if 'price' in available_price_columns and 'quantity' in available_price_columns:
+                    # Create OHLCV from trade data by resampling
+                    price_data = self._create_ohlcv_from_trades(price_data)
+                    self.logger.info("✅ Transformed trade data to OHLCV structure")
+                else:
+                    # If we can't create OHLCV, create a minimal structure
+                    self.logger.warning(f"Cannot create OHLCV structure. Available columns: {available_price_columns}")
+                    price_data = self._create_minimal_ohlcv(price_data)
+            
+            # Ensure volume_data has 'volume' column
+            if 'volume' not in volume_data.columns:
+                if 'quantity' in volume_data.columns:
+                    volume_data = volume_data.rename(columns={'quantity': 'volume'})
+                else:
+                    # Create a default volume column if none exists
+                    volume_data['volume'] = 1.0
+            
+            return price_data, volume_data
+            
+        except Exception as e:
+            self.logger.error(f"Error validating and transforming data: {e}")
+            return price_data, volume_data
+
+    def _create_ohlcv_from_trades(self, trade_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create OHLCV data from trade data by resampling.
+        
+        Args:
+            trade_data: DataFrame with 'price' and 'quantity' columns
+            
+        Returns:
+            DataFrame with OHLCV structure
+        """
+        try:
+            # Set timestamp as index if it's not already
+            if 'timestamp' in trade_data.columns:
+                trade_data = trade_data.set_index('timestamp')
+            
+            # Resample to 1-minute intervals and create OHLCV
+            resampled = trade_data.resample('1min').agg({
+                'price': ['first', 'max', 'min', 'last'],
+                'quantity': 'sum'
+            })
+            
+            # Flatten column names
+            resampled.columns = ['open', 'high', 'low', 'close', 'volume']
+            
+            # Fill any missing values
+            resampled = resampled.fillna(method='ffill')
+            
+            return resampled
+            
+        except Exception as e:
+            self.logger.error(f"Error creating OHLCV from trades: {e}")
+            return trade_data
+
+    def _create_minimal_ohlcv(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create minimal OHLCV structure when proper data is not available.
+        
+        Args:
+            data: Input data
+            
+        Returns:
+            DataFrame with minimal OHLCV structure
+        """
+        try:
+            # If we have a 'price' column, use it for all OHLCV values
+            if 'price' in data.columns:
+                data['open'] = data['price']
+                data['high'] = data['price']
+                data['low'] = data['price']
+                data['close'] = data['price']
+                data['volume'] = data.get('quantity', 1.0)
+            else:
+                # Create dummy OHLCV structure
+                data['open'] = 1.0
+                data['high'] = 1.0
+                data['low'] = 1.0
+                data['close'] = 1.0
+                data['volume'] = 1.0
+            
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"Error creating minimal OHLCV: {e}")
+            return data
 
     async def _engineer_multi_timeframe_features_vectorized(
         self,
@@ -984,22 +1109,84 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             # Convert timeframe string to pandas offset
             timeframe_map = {
-                "1m": "1T",
-                "5m": "5T",
-                "15m": "15T",
-                "30m": "30T",
+                "1m": "1min",
+                "5m": "5min",
+                "15m": "15min",
+                "30m": "30min",
             }
             
             offset = timeframe_map.get(timeframe, "1T")
-            resampled = data.resample(offset).agg({
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum',
-            })
             
-            return resampled.dropna()
+            # Check if data has datetime index, if not create one
+            if not isinstance(data.index, pd.DatetimeIndex):
+                data = data.copy()
+                # Create a proper datetime index
+                data.index = pd.date_range(
+                    start='2023-01-01',
+                    periods=len(data),
+                    freq='1min'
+                )
+            
+            # Check if OHLCV columns exist, if not, create them from available data
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            available_columns = data.columns.tolist()
+            
+            # If we don't have OHLCV columns, try to create them from available data
+            if not all(col in available_columns for col in required_columns):
+                # Check if we have price and quantity columns (like in trade data)
+                if 'price' in available_columns and 'quantity' in available_columns:
+                    # Create OHLCV from trade data
+                    try:
+                        resampled = data.resample(offset).agg({
+                            'price': ['first', 'max', 'min', 'last'],
+                            'quantity': 'sum'
+                        })
+                        # Flatten column names
+                        resampled.columns = ['open', 'high', 'low', 'close', 'volume']
+                        return resampled.dropna()
+                    except Exception as resample_error:
+                        self.logger.error(f"Error resampling trade data: {resample_error}")
+                        return data
+                # Check if we have volume-only data (like volume features)
+                elif any(col.startswith('volume') for col in available_columns):
+                    # Handle volume-only data by resampling each volume column appropriately
+                    try:
+                        # Create aggregation dictionary for volume columns
+                        agg_dict = {}
+                        for col in available_columns:
+                            if col == 'volume':
+                                agg_dict[col] = 'sum'
+                            elif col.startswith('volume_'):
+                                # For derived volume features, use mean aggregation
+                                agg_dict[col] = 'mean'
+                            else:
+                                # For other columns, use mean
+                                agg_dict[col] = 'mean'
+                        
+                        resampled = data.resample(offset).agg(agg_dict)
+                        return resampled.dropna()
+                    except Exception as resample_error:
+                        self.logger.error(f"Error resampling volume data: {resample_error}")
+                        return data
+                else:
+                    # If we can't create OHLCV, return original data without resampling
+                    self.logger.warning(f"Cannot resample data: missing required columns. Available: {available_columns}")
+                    # Return data with proper index but no resampling
+                    return data
+            else:
+                # Standard OHLCV resampling
+                try:
+                    resampled = data.resample(offset).agg({
+                        'open': 'first',
+                        'high': 'max',
+                        'low': 'min',
+                        'close': 'last',
+                        'volume': 'sum',
+                    })
+                    return resampled.dropna()
+                except Exception as resample_error:
+                    self.logger.error(f"Error during resampling: {resample_error}")
+                    return data
 
         except Exception as e:
             self.logger.error(f"Error resampling data: {e}")

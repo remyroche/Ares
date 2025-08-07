@@ -1,4 +1,4 @@
-from src.config import ares_config
+from src.config import AresConfig
 
 from .binance import BinanceExchange
 from .gateio import GateioExchange
@@ -10,6 +10,7 @@ class ExchangeFactory:
     @staticmethod
     def get_exchange(exchange_name: str):
         exchange_name = exchange_name.lower()
+        ares_config = AresConfig()
         config = ares_config.get("exchanges", {}).get(exchange_name, {})
 
         if exchange_name == "binance":

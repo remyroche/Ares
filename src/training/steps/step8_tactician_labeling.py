@@ -5,7 +5,7 @@ import json
 import os
 import pickle
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Dict
 
 import pandas as pd
 

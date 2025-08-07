@@ -2,12 +2,13 @@
 Validator for Step 5: Analyst Specialist Training
 """
 
+import asyncio
 import os
 import sys
 import pickle
 import pandas as pd
 import numpy as np
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 from pathlib import Path
 
 # Add the project root to the Python path
@@ -156,8 +157,8 @@ class Step5AnalystSpecialistTrainingValidator(BaseValidator):
                 # Validate accuracy
                 if "accuracy" in metrics:
                     accuracy = metrics["accuracy"]
-                    accuracy_passed, accuracy_metrics = self.validate_model_performance(
-                        accuracy, 0.0, "analyst_model"
+                    accuracy_passed, accuracy_metrics = self._validate_performance_metric(
+                        accuracy, 0.6, "accuracy", "analyst_model"
                     )
                     self.validation_results["model_accuracy"] = accuracy_metrics
                     
@@ -168,8 +169,8 @@ class Step5AnalystSpecialistTrainingValidator(BaseValidator):
                 # Validate loss
                 if "loss" in metrics:
                     loss = metrics["loss"]
-                    loss_passed, loss_metrics = self.validate_model_performance(
-                        0.0, loss, "analyst_model"
+                    loss_passed, loss_metrics = self._validate_performance_metric(
+                        loss, 0.5, "loss", "analyst_model", is_loss=True
                     )
                     self.validation_results["model_loss"] = loss_metrics
                     
@@ -181,13 +182,11 @@ class Step5AnalystSpecialistTrainingValidator(BaseValidator):
                 for metric_name, metric_value in metrics.items():
                     if metric_name not in ["accuracy", "loss"]:
                         if isinstance(metric_value, (int, float)):
-                            # Record custom metric
-                            metrics.record_validation_result(
-                                step_name=self.step_name,
-                                validation_type=f"custom_metric_{metric_name}",
-                                passed=metric_value > 0,
-                                reason=f"{metric_name}: {metric_value:.3f}"
+                            # Record custom metric validation
+                            custom_passed, custom_metrics = self._validate_performance_metric(
+                                metric_value, 0.0, metric_name, "analyst_model"
                             )
+                            self.validation_results[f"custom_metric_{metric_name}"] = custom_metrics
             
             self.logger.info("✅ Model performance validation passed")
             return True
@@ -344,11 +343,69 @@ class Step5AnalystSpecialistTrainingValidator(BaseValidator):
         except Exception as e:
             self.logger.error(f"❌ Error during model quality validation: {e}")
             return False
+    
+    def _validate_performance_metric(
+        self, 
+        metric_value: float, 
+        threshold: float, 
+        metric_name: str, 
+        model_name: str, 
+        is_loss: bool = False
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Validate a performance metric against a threshold.
+        
+        Args:
+            metric_value: The metric value to validate
+            threshold: The threshold to compare against
+            metric_name: Name of the metric
+            model_name: Name of the model
+            is_loss: Whether this is a loss metric (lower is better)
+            
+        Returns:
+            Tuple[bool, Dict[str, Any]]: (passed, metrics)
+        """
+        try:
+            # For loss metrics, lower is better
+            # For accuracy/precision/recall metrics, higher is better
+            if is_loss:
+                passed = metric_value <= threshold
+                comparison = "≤"
+            else:
+                passed = metric_value >= threshold
+                comparison = "≥"
+            
+            metrics = {
+                "metric_name": metric_name,
+                "model_name": model_name,
+                "metric_value": metric_value,
+                "threshold": threshold,
+                "comparison": comparison,
+                "passed": passed,
+                "is_loss": is_loss
+            }
+            
+            if not passed:
+                self.logger.warning(
+                    f"⚠️ {model_name} {metric_name} validation failed: "
+                    f"{metric_value:.3f} {comparison} {threshold:.3f}"
+                )
+            else:
+                self.logger.info(
+                    f"✅ {model_name} {metric_name} validation passed: "
+                    f"{metric_value:.3f} {comparison} {threshold:.3f}"
+                )
+            
+            return passed, metrics
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in performance metric validation: {e}")
+            return False, {"error": str(e)}
 
 
 async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Run the Step 5 Analyst Specialist Training validator.
+    Run the step5_analyst_specialist_training validator.
     
     Args:
         training_input: Training input parameters
@@ -358,7 +415,15 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
         Dictionary containing validation results
     """
     validator = Step5AnalystSpecialistTrainingValidator(CONFIG)
-    return await validator.run_validation(training_input, pipeline_state)
+    validation_passed = await validator.validate(training_input, pipeline_state)
+    
+    return {
+        "step_name": "step5_analyst_specialist_training",
+        "validation_passed": validation_passed,
+        "validation_results": validator.validation_results,
+        "duration": 0,  # Could be enhanced to track actual duration
+        "timestamp": asyncio.get_event_loop().time()
+    }
 
 
 if __name__ == "__main__":

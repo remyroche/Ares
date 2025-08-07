@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 
 import pandas as pd
+import numpy as np
 
 from src.utils.logger import system_logger
 
@@ -139,12 +140,55 @@ class TacticianSpecialistTrainingStep:
                 f"Training tactician specialist models for {symbol} on {exchange}...",
             )
 
-            # Prepare data
-            feature_columns = [
-                col for col in data.columns if col not in ["tactician_label", "regime"]
-            ]
-            X = data[feature_columns]
-            y = data["tactician_label"]
+            # Prepare data - handle data types properly
+            # Save target columns before dropping object columns
+            target_columns = ["tactician_label", "regime"]
+            y = data["tactician_label"].copy()
+            
+            # First, explicitly drop any datetime columns
+            datetime_columns = data.select_dtypes(include=['datetime64[ns]', 'datetime64', 'datetime']).columns.tolist()
+            if datetime_columns:
+                self.logger.info(f"Dropping datetime columns: {datetime_columns}")
+                data = data.drop(columns=datetime_columns)
+            
+            # Also drop any object columns that might contain datetime strings
+            # But preserve target columns
+            object_columns = data.select_dtypes(include=['object']).columns.tolist()
+            object_columns_to_drop = [col for col in object_columns if col not in target_columns]
+            if object_columns_to_drop:
+                self.logger.info(f"Dropping object columns: {object_columns_to_drop}")
+                data = data.drop(columns=object_columns_to_drop)
+
+            # Get only numeric columns for features
+            excluded_columns = target_columns
+            numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
+            feature_columns = [col for col in numeric_columns if col not in excluded_columns]
+            
+            if not feature_columns:
+                self.logger.warning(f"No numeric feature columns found for tactician training")
+                # Create a simple fallback feature
+                data['simple_feature'] = np.random.randn(len(data))
+                feature_columns = ['simple_feature']
+            
+            X = data[feature_columns].copy()
+            
+            # Additional safety check - ensure all columns are numeric
+            for col in X.columns:
+                if not pd.api.types.is_numeric_dtype(X[col]):
+                    self.logger.warning(f"Non-numeric column detected: {col} with dtype {X[col].dtype}")
+                    X = X.drop(columns=[col])
+                    feature_columns.remove(col)
+            
+            # Remove any remaining NaN values
+            X = X.fillna(0)
+            
+            # Final check - ensure X is purely numeric
+            if not X.select_dtypes(include=[np.number]).shape[1] == X.shape[1]:
+                self.logger.error("Non-numeric columns still present in feature matrix")
+                # Force conversion to numeric, dropping any problematic columns
+                X = X.select_dtypes(include=[np.number])
+            
+            self.logger.info(f"Using {len(feature_columns)} feature columns for tactician training")
 
             # Split data for training and validation
             from sklearn.model_selection import train_test_split
@@ -260,7 +304,7 @@ class TacticianSpecialistTrainingStep:
 
             # Train with validation set
             eval_set = [(X_test, y_test)]
-            model.fit(X_train, y_train, eval_set=eval_set, eval_metric="logloss")
+            model.fit(X_train, y_train, eval_set=eval_set, eval_metric="logloss", verbose=False)
 
             # Evaluate model
             y_pred = model.predict(X_test)

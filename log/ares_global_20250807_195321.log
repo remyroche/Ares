@@ -1,0 +1,123 @@
+2025-08-07 19:53:21,110 - AresGlobal - INFO - ================================================================================
+2025-08-07 19:53:21,110 - AresGlobal - INFO - 📊 SESSION SUMMARY
+2025-08-07 19:53:21,110 - AresGlobal - INFO - Session started: 2025-08-07 19:53:21
+2025-08-07 19:53:21,110 - AresGlobal - INFO - Global log file: ares_global_20250807_195321.log
+2025-08-07 19:53:21,110 - AresGlobal - INFO - This file contains ALL logs for this session
+2025-08-07 19:53:21,110 - AresGlobal - INFO - ================================================================================
+2025-08-07 19:53:21,110 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 19:53:21,110 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION
+2025-08-07 19:53:21,110 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-07 19:53:21
+2025-08-07 19:53:21,110 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-07 19:53:21,110 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 19:53:21,110 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-07 19:53:21,111 - AresGlobal.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-08-07 19:53:21,111 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-07 19:53:21,111 - AresGlobal.AresLauncher - INFO - Start time: 2025-08-07 19:53:21
+2025-08-07 19:53:21,111 - AresGlobal.AresLauncher - INFO - Log directory: log
+2025-08-07 19:53:21,111 - AresGlobal.AresLauncher - INFO - Log level: INFO
+2025-08-07 19:53:21,111 - AresGlobal.AresLauncher - INFO - Global log file: ares_global_20250807_195321.log
+2025-08-07 19:53:21,111 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-07 19:53:21,111 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 19:53:21,111 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: blank - Symbol: ETHUSDT - Exchange: BINANCE
+2025-08-07 19:53:21,111 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-07 19:53:21
+2025-08-07 19:53:21,111 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-07 19:53:21,111 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 19:53:21,111 - AresGlobal.AresLauncher - INFO - 🚀 Running step-based training for ETHUSDT on BINANCE
+2025-08-07 19:53:21,111 - AresGlobal.AresLauncher - INFO - Starting from step: step2_market_regime_classification
+2025-08-07 19:53:21,112 - AresGlobal.ProgressManager - INFO - Initialized ProgressManager for ETHUSDT on BINANCE
+2025-08-07 19:53:21,112 - AresGlobal.ProgressManager - INFO - Progress directory: data/training/progress/BINANCE_ETHUSDT
+2025-08-07 19:53:21,112 - AresGlobal.StepOrchestrator - INFO - Initialized StepOrchestrator for ETHUSDT on BINANCE
+2025-08-07 19:53:21,112 - AresGlobal.AresLauncher - INFO - 📁 Using pre-consolidated data for step2
+2025-08-07 19:53:21,112 - AresGlobal.AresLauncher - INFO - ✅ Found consolidated data: data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet
+2025-08-07 19:53:21,112 - AresGlobal.StepOrchestrator - INFO - 🚀 Starting execution from step: step2_market_regime_classification
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🔄 Executing step step2_market_regime_classification (1/15)
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🚀 Executing step: step2_market_regime_classification
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - ⏭️  Step step2_market_regime_classification already completed, skipping
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🔄 Executing step step3_regime_data_splitting (2/15)
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🚀 Executing step: step3_regime_data_splitting
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - ⏭️  Step step3_regime_data_splitting already completed, skipping
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🔄 Executing step step4_analyst_labeling_feature_engineering (3/15)
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🚀 Executing step: step4_analyst_labeling_feature_engineering
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - ⏭️  Step step4_analyst_labeling_feature_engineering already completed, skipping
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🔄 Executing step step5_analyst_specialist_training (4/15)
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🚀 Executing step: step5_analyst_specialist_training
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - ⏭️  Step step5_analyst_specialist_training already completed, skipping
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🔄 Executing step step6_analyst_enhancement (5/15)
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🚀 Executing step: step6_analyst_enhancement
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - ⏭️  Step step6_analyst_enhancement already completed, skipping
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🔄 Executing step step7_analyst_ensemble_creation (6/15)
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🚀 Executing step: step7_analyst_ensemble_creation
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - ⏭️  Step step7_analyst_ensemble_creation already completed, skipping
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🔄 Executing step step8_tactician_labeling (7/15)
+2025-08-07 19:53:21,113 - AresGlobal.StepOrchestrator - INFO - 🚀 Executing step: step8_tactician_labeling
+2025-08-07 19:53:21,117 - AresGlobal.StepOrchestrator - INFO - ✅ Loaded step module: step8_tactician_labeling
+2025-08-07 19:53:21,117 - AresGlobal.StepOrchestrator - INFO - ✅ Found step class: TacticianLabelingStep
+2025-08-07 19:53:21,117 - AresGlobal.ProgressManager - INFO - ℹ️  No progress found for step1_data_collection
+2025-08-07 19:53:21,117 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step2_market_regime_classification
+2025-08-07 19:53:21,117 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step3_regime_data_splitting
+2025-08-07 19:53:21,118 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step4_analyst_labeling_feature_engineering
+2025-08-07 19:53:21,118 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step5_analyst_specialist_training
+2025-08-07 19:53:21,118 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step6_analyst_enhancement
+2025-08-07 19:53:21,118 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step7_analyst_ensemble_creation
+2025-08-07 19:53:21,118 - AresGlobal.StepOrchestrator - INFO - 📋 Built pipeline state with 8 items
+2025-08-07 19:53:21,120 - AresGlobal.ProgressManager - INFO - ✅ Saved progress for step8_tactician_labeling
+2025-08-07 19:53:21,120 - AresGlobal.StepOrchestrator - INFO - ✅ Step step8_tactician_labeling completed successfully
+2025-08-07 19:53:21,120 - AresGlobal.StepOrchestrator - INFO - 🔄 Executing step step9_tactician_specialist_training (8/15)
+2025-08-07 19:53:21,120 - AresGlobal.StepOrchestrator - INFO - 🚀 Executing step: step9_tactician_specialist_training
+2025-08-07 19:53:21,123 - AresGlobal.StepOrchestrator - INFO - ✅ Loaded step module: step9_tactician_specialist_training
+2025-08-07 19:53:21,123 - AresGlobal.StepOrchestrator - INFO - ✅ Found step class: TacticianSpecialistTrainingStep
+2025-08-07 19:53:21,123 - AresGlobal.ProgressManager - INFO - ℹ️  No progress found for step1_data_collection
+2025-08-07 19:53:21,124 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step2_market_regime_classification
+2025-08-07 19:53:21,124 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step3_regime_data_splitting
+2025-08-07 19:53:21,124 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step4_analyst_labeling_feature_engineering
+2025-08-07 19:53:21,124 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step5_analyst_specialist_training
+2025-08-07 19:53:21,124 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step6_analyst_enhancement
+2025-08-07 19:53:21,124 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step7_analyst_ensemble_creation
+2025-08-07 19:53:21,124 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step8_tactician_labeling
+2025-08-07 19:53:21,124 - AresGlobal.StepOrchestrator - INFO - 📋 Built pipeline state with 9 items
+2025-08-07 19:53:21,125 - AresGlobal.ProgressManager - INFO - ✅ Saved progress for step9_tactician_specialist_training
+2025-08-07 19:53:21,125 - AresGlobal.StepOrchestrator - INFO - ✅ Step step9_tactician_specialist_training completed successfully
+2025-08-07 19:53:21,125 - AresGlobal.StepOrchestrator - INFO - 🔄 Executing step step10_tactician_ensemble_creation (9/15)
+2025-08-07 19:53:21,125 - AresGlobal.StepOrchestrator - INFO - 🚀 Executing step: step10_tactician_ensemble_creation
+2025-08-07 19:53:21,719 - AresGlobal.StepOrchestrator - INFO - ✅ Loaded step module: step10_tactician_ensemble_creation
+2025-08-07 19:53:21,719 - AresGlobal.StepOrchestrator - INFO - ✅ Found step class: TacticianEnsembleCreationStep
+2025-08-07 19:53:21,719 - AresGlobal.ProgressManager - INFO - ℹ️  No progress found for step1_data_collection
+2025-08-07 19:53:21,720 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step2_market_regime_classification
+2025-08-07 19:53:21,720 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step3_regime_data_splitting
+2025-08-07 19:53:21,720 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step4_analyst_labeling_feature_engineering
+2025-08-07 19:53:21,720 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step5_analyst_specialist_training
+2025-08-07 19:53:21,720 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step6_analyst_enhancement
+2025-08-07 19:53:21,720 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step7_analyst_ensemble_creation
+2025-08-07 19:53:21,720 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step8_tactician_labeling
+2025-08-07 19:53:21,720 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step9_tactician_specialist_training
+2025-08-07 19:53:21,720 - AresGlobal.StepOrchestrator - INFO - 📋 Built pipeline state with 10 items
+2025-08-07 19:53:21,721 - AresGlobal.ProgressManager - INFO - ✅ Saved progress for step10_tactician_ensemble_creation
+2025-08-07 19:53:21,721 - AresGlobal.StepOrchestrator - INFO - ✅ Step step10_tactician_ensemble_creation completed successfully
+2025-08-07 19:53:21,721 - AresGlobal.StepOrchestrator - INFO - 🔄 Executing step step11_confidence_calibration (10/15)
+2025-08-07 19:53:21,721 - AresGlobal.StepOrchestrator - INFO - 🚀 Executing step: step11_confidence_calibration
+2025-08-07 19:53:21,724 - AresGlobal.StepOrchestrator - INFO - ✅ Loaded step module: step11_confidence_calibration
+2025-08-07 19:53:21,724 - AresGlobal.StepOrchestrator - INFO - ✅ Found step class: ConfidenceCalibrationStep
+2025-08-07 19:53:21,724 - AresGlobal.ProgressManager - INFO - ℹ️  No progress found for step1_data_collection
+2025-08-07 19:53:21,724 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step2_market_regime_classification
+2025-08-07 19:53:21,724 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step3_regime_data_splitting
+2025-08-07 19:53:21,724 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step4_analyst_labeling_feature_engineering
+2025-08-07 19:53:21,724 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step5_analyst_specialist_training
+2025-08-07 19:53:21,724 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step6_analyst_enhancement
+2025-08-07 19:53:21,724 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step7_analyst_ensemble_creation
+2025-08-07 19:53:21,725 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step8_tactician_labeling
+2025-08-07 19:53:21,725 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step9_tactician_specialist_training
+2025-08-07 19:53:21,725 - AresGlobal.ProgressManager - INFO - ✅ Loaded progress for step10_tactician_ensemble_creation
+2025-08-07 19:53:21,725 - AresGlobal.StepOrchestrator - INFO - 📋 Built pipeline state with 11 items
+2025-08-07 19:53:21,726 - AresGlobal.ProgressManager - INFO - ✅ Saved progress for step11_confidence_calibration
+2025-08-07 19:53:21,726 - AresGlobal.StepOrchestrator - INFO - ✅ Step step11_confidence_calibration completed successfully
+2025-08-07 19:53:21,726 - AresGlobal.StepOrchestrator - INFO - 🔄 Executing step step12_final_parameters_optimization (11/15)
+2025-08-07 19:53:21,726 - AresGlobal.StepOrchestrator - INFO - 🚀 Executing step: step12_final_parameters_optimization
+2025-08-07 19:53:21,727 - AresGlobal.StepOrchestrator - ERROR - ❌ Step step12_final_parameters_optimization failed: unindent does not match any outer indentation level (step12_final_parameters_optimization.py, line 258)
+2025-08-07 19:53:21,727 - AresGlobal.StepOrchestrator - ERROR - ❌ Pipeline failed at step: step12_final_parameters_optimization
+2025-08-07 19:53:21,727 - AresGlobal.AresLauncher - ERROR - ❌ Step-based training failed
+2025-08-07 19:53:21,727 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 19:53:21,727 - AresGlobal - INFO - [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1
+2025-08-07 19:53:21,727 - AresGlobal - INFO - [SYSTEM] End time: 2025-08-07 19:53:21
+2025-08-07 19:53:21,728 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 19:53:21,728 - AresGlobal.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-08-07 19:53:21,728 - AresGlobal.AresLauncher - INFO - ✅ Cleanup completed

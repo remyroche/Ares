@@ -335,7 +335,12 @@ class WaveletFeatureSelectionWorkflow:
             
             # SHAP Analysis
             self.logger.info("📊 Computing SHAP importance...")
-            explainer = shap.TreeExplainer(model)
+            # Try new import path first, then fallback to old path
+            try:
+                from shap.explainers import TreeExplainer
+            except ImportError:
+                from shap import TreeExplainer
+            explainer = TreeExplainer(model)
             shap_values = explainer.shap_values(X_test)
             
             # Calculate SHAP importance (mean absolute SHAP values)

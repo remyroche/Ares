@@ -1,0 +1,90 @@
+2025-08-07 23:10:52,858 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 23:10:52,858 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STARTING OPTIMIZED DATA DOWNLOAD PROCESS
+2025-08-07 23:10:52,859 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Configuration: BINANCE ETHUSDT 1m
+2025-08-07 23:10:52,859 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 STEP 1: Initializing optimized downloader...
+2025-08-07 23:10:52,859 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Configuration: exchange=BINANCE, symbol=ETHUSDT, interval=1m, lookback_years=1
+2025-08-07 23:10:52,859 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Creating exchange client...
+2025-08-07 23:10:52,859 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Exchange client created: BinanceExchange
+2025-08-07 23:10:52,859 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🌐 Setting up HTTP session...
+2025-08-07 23:10:52,861 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ HTTP session configured
+2025-08-07 23:10:52,861 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Ensuring cache directory exists...
+2025-08-07 23:10:52,861 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Cache directory ready: data_cache
+2025-08-07 23:10:52,861 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ STEP 1 COMPLETED: Optimized downloader initialized successfully
+2025-08-07 23:10:52,861 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 STEP 4: Starting parallel downloads for all data types...
+2025-08-07 23:10:52,861 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Created 3 parallel download tasks
+2025-08-07 23:10:52,862 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing all tasks concurrently...
+2025-08-07 23:10:52,862 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STEP 3: Starting parallel klines download...
+2025-08-07 23:10:52,862 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📅 STEP 2: Calculating time periods for klines...
+2025-08-07 23:10:52,862 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Date range: 2024-08-07 to 2025-08-07
+2025-08-07 23:10:52,862 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Total days: 365
+2025-08-07 23:10:52,862 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Processing klines (monthly periods)...
+2025-08-07 23:10:52,863 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_BINANCE_ETHUSDT_1m_2024-08.csv
+2025-08-07 23:10:52,863 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_BINANCE_ETHUSDT_1m_2024-09.csv
+2025-08-07 23:10:52,863 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_BINANCE_ETHUSDT_1m_2024-10.csv
+2025-08-07 23:10:52,863 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_BINANCE_ETHUSDT_1m_2024-11.csv
+2025-08-07 23:10:52,863 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_BINANCE_ETHUSDT_1m_2024-12.csv
+2025-08-07 23:10:52,863 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_BINANCE_ETHUSDT_1m_2025-01.csv
+2025-08-07 23:10:52,863 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_BINANCE_ETHUSDT_1m_2025-02.csv
+2025-08-07 23:10:52,864 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_BINANCE_ETHUSDT_1m_2025-03.csv
+2025-08-07 23:10:52,864 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_BINANCE_ETHUSDT_1m_2025-04.csv
+2025-08-07 23:10:52,864 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_BINANCE_ETHUSDT_1m_2025-05.csv
+2025-08-07 23:10:52,864 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_BINANCE_ETHUSDT_1m_2025-06.csv
+2025-08-07 23:10:52,864 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_BINANCE_ETHUSDT_1m_2025-07.csv
+2025-08-07 23:10:52,864 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: klines_BINANCE_ETHUSDT_1m_2025-08.csv
+2025-08-07 23:10:52,865 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Summary: 0 months to download, 13 months skipped
+2025-08-07 23:10:52,865 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Found 0 monthly periods to download
+2025-08-07 23:10:52,865 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⚠️ No klines periods to download - all data already exists
+2025-08-07 23:10:52,865 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STEP 3B: Starting parallel aggtrades download...
+2025-08-07 23:10:52,865 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📅 STEP 2: Calculating time periods for aggtrades...
+2025-08-07 23:10:52,865 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Date range: 2024-08-07 to 2025-08-07
+2025-08-07 23:10:52,865 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Total days: 365
+2025-08-07 23:10:52,865 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Processing aggtrades (daily periods)...
+2025-08-07 23:10:52,866 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_BINANCE_ETHUSDT_2024-08-07.csv
+2025-08-07 23:10:52,866 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_BINANCE_ETHUSDT_2024-08-08.csv
+2025-08-07 23:10:52,867 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_BINANCE_ETHUSDT_2024-08-09.csv
+2025-08-07 23:10:52,867 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_BINANCE_ETHUSDT_2024-08-10.csv
+2025-08-07 23:10:52,867 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_BINANCE_ETHUSDT_2024-08-11.csv
+2025-08-07 23:10:52,872 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_BINANCE_ETHUSDT_2024-09-25.csv
+2025-08-07 23:10:52,876 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_BINANCE_ETHUSDT_2024-11-14.csv
+2025-08-07 23:10:52,879 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_BINANCE_ETHUSDT_2025-01-03.csv
+2025-08-07 23:10:52,882 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_BINANCE_ETHUSDT_2025-02-22.csv
+2025-08-07 23:10:52,886 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_BINANCE_ETHUSDT_2025-04-13.csv
+2025-08-07 23:10:52,889 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_BINANCE_ETHUSDT_2025-06-02.csv
+2025-08-07 23:10:52,892 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: aggtrades_BINANCE_ETHUSDT_2025-07-22.csv
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2025-08-07.csv
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Summary: 1 days to download, 365 days skipped
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Found 1 daily periods to download
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Creating 1 parallel download tasks...
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 1: 2025-08-07 to 2025-08-07
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing 1 tasks concurrently...
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STEP 3C: Starting parallel futures download...
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📅 STEP 2: Calculating time periods for futures...
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Date range: 2024-08-07 to 2025-08-07
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Total days: 365
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Processing futures (monthly periods)...
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_BINANCE_ETHUSDT_2024-08.csv
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_BINANCE_ETHUSDT_2024-09.csv
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_BINANCE_ETHUSDT_2024-10.csv
+2025-08-07 23:10:52,893 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_BINANCE_ETHUSDT_2024-11.csv
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_BINANCE_ETHUSDT_2024-12.csv
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_BINANCE_ETHUSDT_2025-01.csv
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_BINANCE_ETHUSDT_2025-02.csv
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_BINANCE_ETHUSDT_2025-03.csv
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_BINANCE_ETHUSDT_2025-04.csv
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_BINANCE_ETHUSDT_2025-05.csv
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_BINANCE_ETHUSDT_2025-06.csv
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_BINANCE_ETHUSDT_2025-07.csv
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Skipping existing: futures_BINANCE_ETHUSDT_2025-08.csv
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Summary: 0 months to download, 13 months skipped
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Found 0 daily periods to download
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⚠️ No futures periods to download - all data already exists
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2025-08-07
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-08-07 00:00:00 to 2025-08-07 23:10:52.865567
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1754517600000 to 1754601052865
+2025-08-07 23:10:52,894 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 23:10:52,895 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Starting incremental download for 2025-08-07
+2025-08-07 23:10:52,895 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Batch 1: Downloading from 2025-08-07 00:00:00
+2025-08-07 23:10:52,895 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 API CALL #1: get_historical_agg_trades(ETHUSDT, 2025-08-07 00:00:00, 2025-08-07 23:10:52.865000, limit=1000)
+2025-08-07 23:14:39,080 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🧹 Cleaning up resources...
+2025-08-07 23:14:39,331 - AresTradingSystem.System - INFO - HTTP session closed.
+2025-08-07 23:14:39,341 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Cleanup completed

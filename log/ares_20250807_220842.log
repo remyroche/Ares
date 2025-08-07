@@ -1,0 +1,8 @@
+2025-08-07 22:08:42,033 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 22:08:42,034 - AresTradingSystem.System.VectorizedFeatureSelector - INFO - 🎯 Starting feature selection...
+2025-08-07 22:08:42,035 - AresTradingSystem.System.VectorizedFeatureSelector - INFO - Handling NaN values in feature selection...
+2025-08-07 22:08:42,559 - AresTradingSystem.System.VectorizedFeatureSelector - INFO - Removed 0 constant features
+2025-08-07 22:08:42,560 - AresTradingSystem.System.VectorizedFeatureSelector - INFO - Removed 0 highly correlated features
+2025-08-07 22:08:42,566 - AresTradingSystem.System.VectorizedFeatureSelector - INFO - Removed 0 high VIF features
+2025-08-07 22:08:42,583 - AresTradingSystem.System.VectorizedFeatureSelector - INFO - Removed 5 low mutual information features
+2025-08-07 22:08:42,583 - AresTradingSystem.System.VectorizedFeatureSelector - INFO - Feature selection completed. Final features: 0

@@ -1,0 +1,4 @@
+2025-08-07 22:36:23,257 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 22:36:23,266 - AresTradingSystem.System - INFO - Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE
+2025-08-07 22:36:23,267 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 1000 periods...
+2025-08-07 22:36:23,278 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 975 periods (dropped 25 rows)

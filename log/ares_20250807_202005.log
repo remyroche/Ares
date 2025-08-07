@@ -1,0 +1,107 @@
+2025-08-07 20:20:05,499 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 20:20:05,625 - AresTradingSystem.System - INFO - Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE
+2025-08-07 20:20:05,627 - AresTradingSystem.System.ProgressManager - INFO - Initialized ProgressManager for ETHUSDT on BINANCE
+2025-08-07 20:20:05,627 - AresTradingSystem.System.ProgressManager - INFO - Progress directory: data/training/progress/BINANCE_ETHUSDT
+2025-08-07 20:20:05,627 - AresTradingSystem.System.StepOrchestrator - INFO - Initialized StepOrchestrator for ETHUSDT on BINANCE
+2025-08-07 20:20:07,683 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🚀 Initializing Enhanced Training Manager...
+2025-08-07 20:20:07,683 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📊 Blank training mode: False
+2025-08-07 20:20:07,683 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🔧 Max trials: 200
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🔧 N trials: 100
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📈 Lookback days: 30
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🚀 Computational optimization: True
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📊 Resource Analysis:
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    💾 System Memory: 16.0 GB
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    🖥️ CPU Cores: 8
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    📈 Estimated Memory Usage: 8.0 GB
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    ⏱️ Estimated Time: 720 minutes (12.0 hours)
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    🤖 Models to Train: 12
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    🔧 Optimization Trials: 200
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📋 Step-by-Step Time Estimates:
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step1_data_collection: 15 min (2.3%)
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step2_market_regime_classification: 8 min (1.2%)
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step3_regime_data_splitting: 5 min (0.8%)
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step4_analyst_labeling_feature_engineering: 60 min (9.0%)
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step5_analyst_specialist_training: 30 min (4.5%)
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step6_analyst_enhancement: 25 min (3.8%)
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step7_analyst_ensemble_creation: 35 min (5.3%)
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step8_tactician_labeling: 15 min (2.3%)
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step9_tactician_specialist_training: 30 min (4.5%)
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step10_tactician_ensemble_creation: 35 min (5.3%)
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step11_confidence_calibration: 10 min (1.5%)
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step12_final_parameters_optimization: 240 min (36.2%)
+2025-08-07 20:20:07,684 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step13_walk_forward_validation: 60 min (9.0%)
+2025-08-07 20:20:07,685 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step14_monte_carlo_validation: 60 min (9.0%)
+2025-08-07 20:20:07,685 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step15_ab_testing: 30 min (4.5%)
+2025-08-07 20:20:07,685 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step16_saving: 5 min (0.8%)
+2025-08-07 20:20:07,685 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 💡 Recommendations:
+2025-08-07 20:20:07,685 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    ✅ Full training mode should work well on your system
+2025-08-07 20:20:07,685 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🚀 Initializing computational optimization components...
+2025-08-07 20:20:07,685 - AresTradingSystem.System.EnhancedTrainingManager - ERROR - ❌ Computational optimization initialization failed: ComputationalOptimizationConfig.__init__() got an unexpected keyword argument 'backtesting'
+2025-08-07 20:20:07,685 - AresTradingSystem.System.EnhancedTrainingManager - INFO - ✅ Enhanced Training Manager initialized successfully
+2025-08-07 20:20:07,685 - AresTradingSystem.System.StepOrchestrator - INFO - ✅ Enhanced training manager setup successfully
+2025-08-07 20:20:07,685 - AresTradingSystem.System.StepOrchestrator - INFO - 🚀 Starting execution from step: step2_market_regime_classification
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🚀 Initializing Enhanced Training Manager...
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📊 Blank training mode: False
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🔧 Max trials: 200
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🔧 N trials: 100
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📈 Lookback days: 30
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🚀 Computational optimization: True
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📊 Resource Analysis:
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    💾 System Memory: 16.0 GB
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    🖥️ CPU Cores: 8
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    📈 Estimated Memory Usage: 8.0 GB
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    ⏱️ Estimated Time: 720 minutes (12.0 hours)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    🤖 Models to Train: 12
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    🔧 Optimization Trials: 200
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📋 Step-by-Step Time Estimates:
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step1_data_collection: 15 min (2.3%)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step2_market_regime_classification: 8 min (1.2%)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step3_regime_data_splitting: 5 min (0.8%)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step4_analyst_labeling_feature_engineering: 60 min (9.0%)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step5_analyst_specialist_training: 30 min (4.5%)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step6_analyst_enhancement: 25 min (3.8%)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step7_analyst_ensemble_creation: 35 min (5.3%)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step8_tactician_labeling: 15 min (2.3%)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step9_tactician_specialist_training: 30 min (4.5%)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step10_tactician_ensemble_creation: 35 min (5.3%)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step11_confidence_calibration: 10 min (1.5%)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step12_final_parameters_optimization: 240 min (36.2%)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step13_walk_forward_validation: 60 min (9.0%)
+2025-08-07 20:20:07,686 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step14_monte_carlo_validation: 60 min (9.0%)
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step15_ab_testing: 30 min (4.5%)
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    step16_saving: 5 min (0.8%)
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 💡 Recommendations:
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    ✅ Full training mode should work well on your system
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🚀 Initializing computational optimization components...
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - ERROR - ❌ Computational optimization initialization failed: ComputationalOptimizationConfig.__init__() got an unexpected keyword argument 'backtesting'
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - ✅ Enhanced Training Manager initialized successfully
+2025-08-07 20:20:07,687 - AresTradingSystem.System.StepOrchestrator - INFO - ✅ Enhanced training manager setup successfully
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - ================================================================================
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🚀 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE START
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - ================================================================================
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📅 Started at: 2025-08-07 20:20:07
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🎯 Symbol: ETHUSDT
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🏢 Exchange: BINANCE
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📊 Training Mode: N/A
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📈 Lookback Days: 30
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🔧 Blank Training Mode: False
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🔧 Max Trials: 200
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🔧 N Trials: 100
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🚀 Starting fresh training...
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - ====================================================================================================
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🚀 COMPREHENSIVE TRAINING PIPELINE START
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - ====================================================================================================
+2025-08-07 20:20:07,687 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📅 Started at: 2025-08-07 20:20:07
+2025-08-07 20:20:07,688 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🎯 Symbol: ETHUSDT
+2025-08-07 20:20:07,688 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🏢 Exchange: BINANCE
+2025-08-07 20:20:07,688 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📊 Timeframe: 1m
+2025-08-07 20:20:07,688 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🧠 Training Mode: Full
+2025-08-07 20:20:07,688 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 🔧 Max Trials: 200
+2025-08-07 20:20:07,688 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📈 Lookback Days: 30
+2025-08-07 20:20:07,688 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 💾 Memory Optimization: Enabled
+2025-08-07 20:20:07,688 - AresTradingSystem.System.EnhancedTrainingManager - INFO - ====================================================================================================
+2025-08-07 20:20:07,688 - AresTradingSystem.System.EnhancedTrainingManager - INFO - 📊 STEP 1: Data Collection...
+2025-08-07 20:20:07,688 - AresTradingSystem.System.EnhancedTrainingManager - INFO -    🔍 Downloading and preparing market data...
+2025-08-07 20:20:07,699 - AresTradingSystem.System.EnhancedTrainingManager - ERROR - ❌ Step 1: Data Collection failed
+2025-08-07 20:20:07,700 - AresTradingSystem.System.EnhancedTrainingManager - ERROR - ❌ Enhanced training pipeline failed
+2025-08-07 20:20:07,700 - AresTradingSystem.System.StepOrchestrator - ERROR - ❌ Enhanced 16-step training pipeline failed

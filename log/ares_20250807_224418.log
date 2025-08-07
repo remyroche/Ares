@@ -1,0 +1,14 @@
+2025-08-07 22:44:18,626 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 22:44:18,645 - AresTradingSystem.System - INFO - Using device: MPS for PyTorch operations.
+2025-08-07 22:44:18,646 - AresTradingSystem.System - INFO - Initializing Analyst Enhancement Step...
+2025-08-07 22:44:18,646 - AresTradingSystem.System - INFO - Analyst Enhancement Step initialized successfully.
+2025-08-07 22:44:18,647 - AresTradingSystem.System - INFO - Loading data for regime 'SIDEWAYS'...
+2025-08-07 22:44:18,647 - AresTradingSystem.System - INFO - Looking for regime data in: data/training/regime_data
+2025-08-07 22:44:18,647 - AresTradingSystem.System - INFO - Current working directory: /Users/remyroche/Documents/Ares
+2025-08-07 22:44:18,647 - AresTradingSystem.System - INFO - Looking for data file: data/training/regime_data/BINANCE_ETHUSDT_SIDEWAYS_data.pkl
+2025-08-07 22:44:18,647 - AresTradingSystem.System - INFO - File exists: True
+2025-08-07 22:44:18,651 - AresTradingSystem.System - INFO - Loaded data shape: (40190, 18)
+2025-08-07 22:44:18,651 - AresTradingSystem.System - INFO - Available columns: ['open', 'high', 'low', 'close', 'volume', 'ATR', 'price_change', 'target', 'target_multi', 'dynamic_tp_threshold', 'dynamic_sl_threshold', 'tp_target', 'sl_target', 'momentum', 'momentum_target', 'trend_target', 'volatility_regime', 'regime']
+2025-08-07 22:44:18,653 - AresTradingSystem.System - INFO - After removing non-numeric columns: (40190, 17)
+2025-08-07 22:44:18,653 - AresTradingSystem.System - INFO - Numeric columns: ['open', 'high', 'low', 'close', 'volume', 'ATR', 'price_change', 'target', 'target_multi', 'dynamic_tp_threshold', 'dynamic_sl_threshold', 'tp_target', 'sl_target', 'momentum', 'momentum_target', 'trend_target', 'volatility_regime']
+2025-08-07 22:44:18,656 - AresTradingSystem.System - INFO - Data loaded and split: X_train shape (32152, 16), X_val shape (8038, 16)

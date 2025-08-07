@@ -1,0 +1,19 @@
+2025-08-07 22:25:54,690 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 22:25:54,697 - AresTradingSystem.System - INFO - Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE
+2025-08-07 22:25:54,700 - AresTradingSystem.System - INFO - Initializing Market Regime Classification Step...
+2025-08-07 22:25:54,700 - AresTradingSystem.System - INFO - Market Regime Classification Step initialized successfully
+2025-08-07 22:25:54,700 - AresTradingSystem.System - INFO - 🔄 Executing Market Regime Classification...
+2025-08-07 22:25:54,700 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Initializing UnifiedRegimeClassifier for BINANCE_ETHUSDT
+2025-08-07 22:25:54,700 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Loaded existing models successfully
+2025-08-07 22:25:54,700 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ UnifiedRegimeClassifier initialized successfully
+2025-08-07 22:25:54,700 - AresTradingSystem.System - INFO - 📁 Loading pre-consolidated data from: data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet
+2025-08-07 22:25:54,947 - AresTradingSystem.System - INFO - ✅ Loaded consolidated trade data: 17744326 records
+2025-08-07 22:25:54,947 - AresTradingSystem.System - INFO - 🔄 Converting trade data to OHLCV format...
+2025-08-07 22:25:56,084 - AresTradingSystem.System - INFO - ✅ Converted to OHLCV: 879 records
+2025-08-07 22:25:56,085 - AresTradingSystem.System - INFO - Classifying market regimes for ETHUSDT on BINANCE...
+2025-08-07 22:25:56,085 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 879 periods...
+2025-08-07 22:25:56,092 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 854 periods (dropped 25 rows)
+2025-08-07 22:25:56,093 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Classifying location with tactical pivots and strategic volume levels...
+2025-08-07 22:25:58,056 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Finished classifying locations. Found: {'OPEN_RANGE': 789, 'HVN_SUPPORT': 27, 'HVN_RESISTANCE': 23, 'PIVOT_R': 12, 'PIVOT_S': 3}
+2025-08-07 22:25:58,057 - AresTradingSystem.System - INFO - Regime classification completed. Found 1 distinct regimes
+2025-08-07 22:25:58,057 - AresTradingSystem.System - INFO - ✅ Market regime classification completed. Results saved to data/training/BINANCE_ETHUSDT_regime_classification.json

@@ -1,29 +1,122 @@
-# Core dependencies
+# Core scientific stack
+numpy>=1.26.0,<2.0.0
 pandas>=2.0.0
-numpy>=1.24.0
-scikit-learn>=1.3.0
-joblib>=1.3.0
+scipy>=1.12.0
+scikit-learn>=1.3.2
+imbalanced-learn>=0.11.0
 
-# Ray for distributed computing
-ray>=2.7.0
+# ML/AI libraries
+tensorflow>=2.15.0
+keras>=2.15.0
+tf-keras>=2.15.0
+lightgbm>=4.3.0
+optuna>=4.4.0
+joblib>=1.3.0
+mlflow>=3.1.0
+plotly>=6.2.0
+pandas-ta>=0.3.14b0
+arch>=7.2.0
+pytorch-tabnet>=4.1.0
+hmmlearn>=0.3.0
+
+# Enhanced hyperparameter optimization
+scikit-optimize>=0.10.2
+hyperopt>=0.2.7
+ray[tune]>=2.9.0
+pytorch-lightning>=2.2.0
+torch>=2.2.0
+transformers>=4.37.0
+datasets>=2.16.0
+accelerate>=0.25.0
+
+# SHAP and dependencies
+shap>=0.42.1
+numba>=0.58.0
+cloudpickle>=2.0.0
+
+# Monitoring and metrics
+prometheus-client>=0.19.0
+
+# Exchange and trading
+ccxt>=4.4.0
+python-binance>=1.0.19
+ta>=0.11.0
+
+# Networking and async
+aiohttp>=3.10.0
+aiohttp-retry>=2.8.0
+websockets>=12.0
+yarl>=1.17.0
+aiosignal>=1.4.0
+frozenlist>=1.4.0
+multidict>=6.0.0
+aiofiles>=24.1.0
+aiosqlite>=0.21.0
+aiodns>=3.5.0
+pycares>=4.9.0
+requests>=2.31.0
+aiosmtplib>=4.0.1
+
+# Database and storage
+firebase-admin>=7.0.0
+influxdb-client>=1.40.0
+sqlalchemy>=2.0.0
+alembic>=1.13.0
 
 # Data processing and analysis
-matplotlib>=3.7.0
-seaborn>=0.12.0
+pywavelets>=1.8.0
+statsmodels>=0.14.0
+filelock>=3.14.0
+sympy>=1.13.0
+networkx>=3.3.0
+fsspec>=2024.0.0
+patsy>=0.5.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
 
-# Optional: For advanced model training
-xgboost>=1.7.0
-lightgbm>=4.0.0
-catboost>=1.2.0
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.8.0
+pydantic-settings>=2.2.0
+click>=8.1.0
+rich>=14.0.0
+tqdm>=4.67.0
+colorama>=0.4.6
+python-dateutil>=2.8.0
+pytz>=2024.1
+schedule>=1.2.0
+python-json-logger>=2.0.0
+structlog>=24.1.0
+dataclasses-json>=0.6.0
 
-# Optional: For deep learning models
-torch>=2.0.0
-tensorflow>=2.13.0
+# Efficiency optimization
+pyarrow>=12.0.0
+fastparquet>=0.8.0
+memory-profiler>=0.60.0
 
-# Optional: For hyperparameter tuning
-optuna>=3.2.0
+# Computational optimization
+psutil>=6.0.0
+multiprocessing-logging>=0.3.4
+cachetools>=5.3.0
+
+# Web framework and scheduling
+fastapi>=0.115.0
+uvicorn>=0.32.0
+apscheduler>=3.10.4
+xgboost>=3.0.3
+catboost>=1.2.8
 
 # Development and testing
-pytest>=7.4.0
-black>=23.0.0
-flake8>=6.0.0
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
+black>=24.10.0
+isort>=5.13.2
+mypy>=1.17.0
+ruff>=0.6.2
+vulture>=2.11
+radon>=6.0.1
+pylint>=3.2.0
+pytest-benchmark>=4.0.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+pytest-xdist>=3.5.0

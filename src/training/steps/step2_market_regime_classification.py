@@ -7,9 +7,57 @@ from datetime import datetime
 from typing import Any
 
 import pandas as pd
+import numpy as np
 
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from src.utils.logger import system_logger
+
+
+def convert_trade_data_to_ohlcv(trade_data: pd.DataFrame, timeframe: str = "1h") -> pd.DataFrame:
+    """
+    Convert trade data to OHLCV format.
+    
+    Args:
+        trade_data: DataFrame with columns ['timestamp', 'price', 'quantity', 'is_buyer_maker', 'agg_trade_id']
+        timeframe: Timeframe for resampling (e.g., '1h', '1m', '1d')
+    
+    Returns:
+        DataFrame with OHLCV columns ['open', 'high', 'low', 'close', 'volume', 'timestamp']
+    """
+    try:
+        # Make a copy to avoid modifying original data
+        df = trade_data.copy()
+        
+        # Convert timestamp to datetime if it's not already
+        if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+        
+        # Set timestamp as index for resampling
+        df = df.set_index('timestamp')
+        
+        # Resample to the specified timeframe and calculate OHLCV
+        ohlcv = df.resample(timeframe).agg({
+            'price': ['first', 'max', 'min', 'last'],
+            'quantity': 'sum'
+        })
+        
+        # Flatten column names
+        ohlcv.columns = ['open', 'high', 'low', 'close', 'volume']
+        
+        # Reset index to create timestamp column
+        ohlcv = ohlcv.reset_index()
+        
+        # Rename the index column to 'timestamp'
+        ohlcv = ohlcv.rename(columns={ohlcv.index.name: 'timestamp'})
+        
+        # Remove any rows with NaN values
+        ohlcv = ohlcv.dropna()
+        
+        return ohlcv
+        
+    except Exception as e:
+        system_logger.error(f"Error converting trade data to OHLCV: {e}")
+        raise
 
 
 class MarketRegimeClassificationStep:
@@ -68,8 +116,14 @@ class MarketRegimeClassificationStep:
         if os.path.exists(consolidated_file):
             self.logger.info(f"📁 Loading pre-consolidated data from: {consolidated_file}")
             try:
-                historical_data = pd.read_parquet(consolidated_file)
-                self.logger.info(f"✅ Loaded consolidated data: {len(historical_data)} records")
+                trade_data = pd.read_parquet(consolidated_file)
+                self.logger.info(f"✅ Loaded consolidated trade data: {len(trade_data)} records")
+                
+                # Convert trade data to OHLCV format
+                self.logger.info("🔄 Converting trade data to OHLCV format...")
+                historical_data = convert_trade_data_to_ohlcv(trade_data, timeframe="1h")
+                self.logger.info(f"✅ Converted to OHLCV: {len(historical_data)} records")
+                
             except Exception as e:
                 self.logger.warning(f"⚠️  Failed to load consolidated data: {e}")
                 historical_data = None
@@ -200,22 +254,53 @@ class MarketRegimeClassificationStep:
                 if "regimes" in regime_results:
                     regimes = regime_results["regimes"]
                     if isinstance(regimes, list):
-                        formatted_results["regime_sequence"] = regimes
+                        # The regime sequence from the classifier may be shorter due to feature calculation
+                        # We need to map it back to the original data length
+                        original_data_length = len(data)
+                        regime_sequence_length = len(regimes)
+                        
+                        if regime_sequence_length < original_data_length:
+                            self.logger.info(
+                                f"Regime sequence length ({regime_sequence_length}) is shorter than original data length ({original_data_length}). "
+                                f"Mapping regimes to original data length..."
+                            )
+                            
+                            # Create a regime sequence that matches the original data length
+                            # We'll use interpolation to map the regimes back to the full data
+                            if regime_sequence_length > 0:
+                                # Create indices for the regime sequence
+                                regime_indices = np.linspace(0, original_data_length - 1, regime_sequence_length, dtype=int)
+                                
+                                # Create a full-length regime sequence
+                                full_regime_sequence = []
+                                for i in range(original_data_length):
+                                    # Find the closest regime index
+                                    closest_idx = np.argmin(np.abs(regime_indices - i))
+                                    full_regime_sequence.append(regimes[closest_idx])
+                                
+                                formatted_results["regime_sequence"] = full_regime_sequence
+                                self.logger.info(f"Mapped regime sequence to original data length: {len(full_regime_sequence)}")
+                            else:
+                                # Fallback: use default regime
+                                formatted_results["regime_sequence"] = ["SIDEWAYS"] * original_data_length
+                                self.logger.warning("No regimes available, using default SIDEWAYS regime")
+                        else:
+                            # Regime sequence is long enough, truncate if needed
+                            formatted_results["regime_sequence"] = regimes[:original_data_length]
 
                         # Calculate regime distribution
                         from collections import Counter
-
-                        regime_counts = Counter(regimes)
+                        regime_counts = Counter(formatted_results["regime_sequence"])
                         formatted_results["regime_distribution"] = dict(regime_counts)
 
                         # Calculate regime transitions
                         transitions = []
-                        for i in range(1, len(regimes)):
-                            if regimes[i] != regimes[i - 1]:
+                        for i in range(1, len(formatted_results["regime_sequence"])):
+                            if formatted_results["regime_sequence"][i] != formatted_results["regime_sequence"][i - 1]:
                                 transitions.append(
                                     {
-                                        "from_regime": regimes[i - 1],
-                                        "to_regime": regimes[i],
+                                        "from_regime": formatted_results["regime_sequence"][i - 1],
+                                        "to_regime": formatted_results["regime_sequence"][i],
                                         "transition_index": i,
                                     },
                                 )

@@ -48,6 +48,10 @@ def get_complete_config() -> dict[str, Any]:
         **training_config, # Include training config at root level for compatibility
     }
     
+    # Add CHECKPOINT_DIR for backward compatibility
+    checkpointing_config = system_config.get("checkpointing", {})
+    complete_config["CHECKPOINT_DIR"] = checkpointing_config.get("checkpoint_dir", "checkpoints")
+    
     return complete_config
 
 

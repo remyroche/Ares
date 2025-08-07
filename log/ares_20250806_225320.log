@@ -1,0 +1,101 @@
+2025-08-06 22:53:20,348 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-06 22:53:20,356 - AresTradingSystem.System - INFO - Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE
+2025-08-06 22:53:20,633 - AresTradingSystem.System.SignalHandler - INFO - Initializing Signal Handler...
+2025-08-06 22:53:20,633 - AresTradingSystem.System.SignalHandler - INFO - Signal configuration loaded successfully
+2025-08-06 22:53:20,633 - AresTradingSystem.System.SignalHandler - INFO - Configuration validation successful
+2025-08-06 22:53:20,633 - AresTradingSystem.System.SignalHandler - INFO - Registered SIGTERM handler
+2025-08-06 22:53:20,633 - AresTradingSystem.System.SignalHandler - INFO - Registered SIGINT handler
+2025-08-06 22:53:20,633 - AresTradingSystem.System.SignalHandler - INFO - Signal handlers registered successfully
+2025-08-06 22:53:20,633 - AresTradingSystem.System.SignalHandler - INFO - ✅ Signal Handler initialization completed successfully
+2025-08-06 22:53:20,635 - AresTradingSystem.System.SignalHandler - INFO - Shutdown callback registered
+2025-08-06 22:53:20,707 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-06 22:53:22,348 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Received SIGINT signal
+2025-08-06 22:53:22,348 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Initiating graceful shutdown: SIGINT
+2025-08-06 22:53:22,348 - AresTradingSystem.System.SignalHandler - INFO - Running 1 shutdown callbacks...
+2025-08-06 22:53:22,349 - AresTradingSystem.System.SignalHandler - INFO - ✅ Shutdown callback 1 completed
+2025-08-06 22:53:22,349 - AresTradingSystem.System.SignalHandler - INFO - ✅ All shutdown callbacks completed
+2025-08-06 22:54:05,932 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Received SIGINT signal
+2025-08-06 22:54:05,932 - AresTradingSystem.System.SignalHandler - INFO - Shutdown already in progress
+2025-08-06 22:54:27,595 - AresTradingSystem.System - INFO - Initializing Market Regime Classification Step...
+2025-08-06 22:54:27,595 - AresTradingSystem.System - INFO - Market Regime Classification Step initialized successfully
+2025-08-06 22:54:27,595 - AresTradingSystem.System - INFO - 🔄 Executing Market Regime Classification...
+2025-08-06 22:54:27,595 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Initializing UnifiedRegimeClassifier...
+2025-08-06 22:54:27,595 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📄 No HMM model found at: checkpoints/analyst_models/unified_hmm_model_BINANCE_ETHUSDT_1h.joblib
+2025-08-06 22:54:27,596 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📄 No ensemble model found at: checkpoints/analyst_models/unified_ensemble_model_BINANCE_ETHUSDT_1h.joblib
+2025-08-06 22:54:27,596 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📄 No location model found at: checkpoints/analyst_models/unified_location_model_BINANCE_ETHUSDT_1h.joblib
+2025-08-06 22:54:27,596 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ UnifiedRegimeClassifier initialized successfully
+2025-08-06 22:54:27,597 - AresTradingSystem.System - INFO - Loaded historical data: 4 records
+2025-08-06 22:54:27,597 - AresTradingSystem.System - INFO - Extracted klines data: 60395 rows
+2025-08-06 22:54:27,597 - AresTradingSystem.System - INFO - Classifying market regimes for ETHUSDT on BINANCE...
+2025-08-06 22:54:27,598 - AresTradingSystem.System - INFO - Converted timestamp index to column for regime classification
+2025-08-06 22:54:27,598 - AresTradingSystem.System - INFO - Current data columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+2025-08-06 22:54:27,599 - AresTradingSystem.System - INFO - 🎓 Training regime classification models...
+2025-08-06 22:54:27,599 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎓 Training Complete Regime Classification System...
+2025-08-06 22:54:27,599 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎓 Training HMM-based Market Regime Classifier...
+2025-08-06 22:54:27,599 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Feature calculation input: 60395 rows, min required: 100
+2025-08-06 22:54:27,599 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📋 Input columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+2025-08-06 22:54:27,599 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📅 Input date range: 0 to 60394
+2025-08-06 22:54:27,599 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 60395 periods...
+2025-08-06 22:54:27,692 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 60370 periods (dropped 25 rows)
+2025-08-06 22:54:28,644 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 0: BULL (mean_return=0.0004, mean_vol=0.0014, vol_regime=0.467)
+2025-08-06 22:54:28,646 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 1: SIDEWAYS (mean_return=-0.0001, mean_vol=0.0006, vol_regime=0.000)
+2025-08-06 22:54:28,647 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 2: SIDEWAYS (mean_return=0.0001, mean_vol=0.0008, vol_regime=0.000)
+2025-08-06 22:54:28,648 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 3: BEAR (mean_return=-0.0003, mean_vol=0.0013, vol_regime=0.398)
+2025-08-06 22:54:28,648 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ HMM-based regime classifier trained successfully
+2025-08-06 22:54:28,649 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎓 Training Basic Regime Ensemble...
+2025-08-06 22:54:28,649 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 60395 periods...
+2025-08-06 22:54:28,732 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 60370 periods (dropped 25 rows)
+2025-08-06 22:54:30,176 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Basic regime ensemble trained successfully
+2025-08-06 22:54:30,177 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎓 Training Location Classifier...
+2025-08-06 22:54:30,177 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ⚠️ Using simplified location classifier (S/R analysis disabled)
+2025-08-06 22:54:30,177 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Location classifier trained successfully (simplified)
+2025-08-06 22:54:30,178 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Complete regime classification system trained successfully
+2025-08-06 22:54:30,178 - AresTradingSystem.System - INFO - ✅ Regime classification models trained successfully
+2025-08-06 22:54:30,178 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Classifying market regimes using 1h timeframe...
+2025-08-06 22:54:30,178 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📊 Input data shape: (60395, 6)
+2025-08-06 22:54:30,178 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📋 Input data columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+2025-08-06 22:54:30,178 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📅 Input data index type: <class 'pandas.core.indexes.range.RangeIndex'>
+2025-08-06 22:54:30,178 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔄 Converting timestamp column to datetime index
+2025-08-06 22:54:30,183 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📅 Data index after conversion: 2025-06-22 22:55:00 to 2025-08-03 21:29:00
+2025-08-06 22:54:30,183 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔄 Resampling 60395 rows to 1h timeframe...
+2025-08-06 22:54:30,187 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📊 After resampling: 1008 hourly rows
+2025-08-06 22:54:30,187 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📅 Hourly data range: 2025-06-22 22:00:00 to 2025-08-03 21:00:00
+2025-08-06 22:54:30,187 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔄 Using rolling window size: 100 for 1008 hourly rows
+2025-08-06 22:54:30,187 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔍 Processing window 20/1008: 20 data points
+2025-08-06 22:54:30,187 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🤖 UnifiedRegimeClassifier: Starting regime prediction
+2025-08-06 22:54:30,187 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📊 Model Status:
+2025-08-06 22:54:30,187 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO -    - HMM model: ✅ Available
+2025-08-06 22:54:30,187 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO -    - Basic ensemble: ✅ Available
+2025-08-06 22:54:30,188 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO -    - Location classifier: ❌ Not loaded
+2025-08-06 22:54:30,188 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO -    - Training status: ✅ Trained
+2025-08-06 22:54:30,188 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 20 periods...
+2025-08-06 22:54:30,192 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 0 periods (dropped 20 rows)
+2025-08-06 22:54:30,192 - AresTradingSystem.System.UnifiedRegimeClassifier - WARNING - ❌ Could not calculate features for HMM prediction
+2025-08-06 22:54:30,192 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔍 Processing window 21/1008: 21 data points
+2025-08-06 22:54:30,192 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 21 periods...
+2025-08-06 22:54:30,196 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 0 periods (dropped 21 rows)
+2025-08-06 22:54:30,196 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔍 Processing window 22/1008: 22 data points
+2025-08-06 22:54:30,196 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 22 periods...
+2025-08-06 22:54:30,200 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 0 periods (dropped 22 rows)
+2025-08-06 22:54:30,200 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔍 Processing window 23/1008: 23 data points
+2025-08-06 22:54:30,200 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 23 periods...
+2025-08-06 22:54:30,203 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 0 periods (dropped 23 rows)
+2025-08-06 22:54:30,204 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔍 Processing window 24/1008: 24 data points
+2025-08-06 22:54:30,204 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 24 periods...
+2025-08-06 22:54:30,207 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 0 periods (dropped 24 rows)
+2025-08-06 22:54:30,207 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 25 periods...
+2025-08-06 22:54:30,211 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 0 periods (dropped 25 rows)
+2025-08-06 22:54:30,211 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 26 periods...
+2025-08-06 22:54:30,216 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 1 periods (dropped 25 rows)
+2025-08-06 22:54:30,216 - AresTradingSystem.System.UnifiedRegimeClassifier - ERROR - Error in regime classification: cannot unpack non-iterable NoneType object
+2025-08-06 22:54:30,221 - AresTradingSystem.System - INFO - Regime classification completed. Found 1 distinct regimes
+2025-08-06 22:54:30,230 - AresTradingSystem.System - INFO - ✅ Market regime classification completed. Results saved to data/training/BINANCE_ETHUSDT_regime_classification.json
+2025-08-06 22:54:30,239 - AresTradingSystem.System - INFO - Initializing Regime Data Splitting Step...
+2025-08-06 22:54:30,239 - AresTradingSystem.System - INFO - Regime Data Splitting Step initialized successfully
+2025-08-06 22:54:30,239 - AresTradingSystem.System - INFO - 🔄 Executing Regime Data Splitting...
+2025-08-06 22:54:30,243 - AresTradingSystem.System - INFO - Splitting data by regimes for ETHUSDT on BINANCE...
+2025-08-06 22:54:31,111 - AresTradingSystem.System - INFO - Regime 'SIDEWAYS': 60395 records
+2025-08-06 22:54:31,111 - AresTradingSystem.System - INFO - High-data regimes: ['SIDEWAYS']
+2025-08-06 22:54:31,112 - AresTradingSystem.System - INFO - Low-data regimes: []
+2025-08-06 22:54:31,112 - AresTradingSystem.System - INFO - Other regimes: []
+2025-08-06 22:54:31,119 - AresTradingSystem.System - INFO - ✅ Regime data splitting completed. Results saved to data/training/regime_data

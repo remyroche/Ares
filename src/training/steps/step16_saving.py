@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 import pandas as pd
+import os
 
 from src.utils.logger import system_logger
 
@@ -45,20 +46,7 @@ class SavingStep:
         exchange = training_input.get("exchange", "BINANCE")
         data_dir = training_input.get("data_dir", "data/training")
 
-        # Import and use the existing save results step
-        from src.training.steps.step9_save_results import run_step as save_run_step
-
-        # Execute saving using existing step
-        save_result = await save_run_step(
-            symbol=symbol,
-            exchange=exchange,
-            data_dir=data_dir,
-        )
-
-        if not save_result:
-            raise Exception("Saving failed")
-
-        # Save comprehensive training summary
+        # Create comprehensive training summary
         training_summary = await self._create_training_summary(
             pipeline_state,
             symbol,
@@ -179,40 +167,53 @@ class SavingStep:
         symbol: str,
         exchange: str,
     ) -> None:
-        """Save results to MLflow."""
+        """Save training results to MLflow with error handling."""
         try:
+            from src.config.mlflow_config import get_safe_mlflow_config, is_mlflow_available
+            
+            # Check if MLflow is available
+            if not is_mlflow_available():
+                self.logger.info("MLflow not available, skipping MLflow save")
+                return
+                
+            config = get_safe_mlflow_config()
+            if not config.get("enabled", False):
+                self.logger.info("MLflow disabled, skipping MLflow save")
+                return
+                
             import mlflow
-
-            # Log training summary as artifact
-            mlflow.log_dict(training_summary, "training_summary.json")
-
-            # Log metrics
-            mlflow.log_metric(
-                "training_status",
-                1 if training_summary.get("overall_status") == "SUCCESS" else 0,
-            )
-            mlflow.log_metric(
-                "components_count",
-                len(training_summary.get("components", {})),
-            )
-
-            # Log parameters
-            mlflow.log_params(
-                {
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "pipeline_version": training_summary.get(
-                        "pipeline_version",
-                        "unknown",
-                    ),
-                },
-            )
-
-            self.logger.info("Results saved to MLflow successfully")
-
+            
+            # Set up MLflow
+            mlflow.set_tracking_uri(config.get("tracking_uri", "http://localhost:5000"))
+            mlflow.set_experiment(config.get("experiment_name", "ares_trading"))
+            
+            # Start MLflow run
+            with mlflow.start_run(run_name=f"{exchange}_{symbol}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"):
+                # Log parameters
+                mlflow.log_param("symbol", symbol)
+                mlflow.log_param("exchange", exchange)
+                mlflow.log_param("training_date", datetime.now().isoformat())
+                
+                # Log metrics
+                if "metrics" in training_summary:
+                    for metric_name, metric_value in training_summary["metrics"].items():
+                        if isinstance(metric_value, (int, float)):
+                            mlflow.log_metric(metric_name, metric_value)
+                
+                # Log training summary as artifact
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                    import json
+                    json.dump(training_summary, f, indent=2, default=str)
+                    mlflow.log_artifact(f.name, "training_summary.json")
+                    os.unlink(f.name)
+                
+                self.logger.info("✅ Training results saved to MLflow successfully")
+                
         except Exception as e:
-            self.logger.error(f"Error saving to MLflow: {e}")
-            # Don't raise exception as MLflow saving is optional
+            self.logger.warning(f"⚠️ Error saving to MLflow: {e}")
+            # Don't raise the exception, just log the warning
+            # This prevents MLflow errors from breaking the pipeline
 
     async def _create_training_report(
         self,

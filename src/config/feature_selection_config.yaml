@@ -1,0 +1,32 @@
+# Feature Selection Configuration
+# This file contains parameters for the VectorizedFeatureSelector to prevent over-aggressive feature removal
+
+feature_selection:
+  # VIF (Variance Inflation Factor) threshold - higher values are more permissive
+  vif_threshold: 10.0
+  
+  # Mutual information threshold - lower values are more permissive
+  mutual_info_threshold: 0.001
+  
+  # LightGBM importance threshold - lower values are more permissive
+  lightgbm_importance_threshold: 0.001
+  
+  # Minimum number of features to keep after selection
+  min_features_to_keep: 10
+  
+  # Correlation threshold for removing highly correlated features
+  correlation_threshold: 0.98
+  
+  # Maximum percentage of features to remove in a single step
+  max_removal_percentage: 0.3
+  
+  # Whether to enable each selection method
+  enable_constant_removal: true
+  enable_correlation_removal: true
+  enable_vif_removal: true
+  enable_mutual_info_removal: true
+  enable_importance_removal: true
+  
+  # Safety checks
+  enable_safety_checks: true
+  return_original_on_failure: true 

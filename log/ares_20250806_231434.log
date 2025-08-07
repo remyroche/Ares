@@ -1,0 +1,107 @@
+2025-08-06 23:14:34,497 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-06 23:14:50,012 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Received SIGINT signal
+2025-08-06 23:14:50,012 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Initiating graceful shutdown: SIGINT
+2025-08-06 23:14:50,013 - AresTradingSystem.System.SignalHandler - INFO - Running 1 shutdown callbacks...
+2025-08-06 23:14:50,013 - AresTradingSystem.System.SignalHandler - INFO - ✅ Shutdown callback 1 completed
+2025-08-06 23:14:50,014 - AresTradingSystem.System.SignalHandler - INFO - ✅ All shutdown callbacks completed
+2025-08-06 23:18:46,924 - AresTradingSystem.System - INFO - Initializing Market Regime Classification Step...
+2025-08-06 23:18:46,924 - AresTradingSystem.System - INFO - Market Regime Classification Step initialized successfully
+2025-08-06 23:18:46,924 - AresTradingSystem.System - INFO - 🔄 Executing Market Regime Classification...
+2025-08-06 23:18:46,924 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Initializing UnifiedRegimeClassifier...
+2025-08-06 23:18:46,925 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📄 No HMM model found at: checkpoints/analyst_models/unified_hmm_model_BINANCE_ETHUSDT_1h.joblib
+2025-08-06 23:18:46,925 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📄 No ensemble model found at: checkpoints/analyst_models/unified_ensemble_model_BINANCE_ETHUSDT_1h.joblib
+2025-08-06 23:18:46,925 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📄 No location model found at: checkpoints/analyst_models/unified_location_model_BINANCE_ETHUSDT_1h.joblib
+2025-08-06 23:18:46,925 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ UnifiedRegimeClassifier initialized successfully
+2025-08-06 23:18:46,930 - AresTradingSystem.System - INFO - Loaded historical data: 4 records
+2025-08-06 23:18:46,931 - AresTradingSystem.System - INFO - Extracted klines data: 60371 rows
+2025-08-06 23:18:46,931 - AresTradingSystem.System - INFO - Classifying market regimes for ETHUSDT on BINANCE...
+2025-08-06 23:18:46,933 - AresTradingSystem.System - INFO - Converted timestamp index to column for regime classification
+2025-08-06 23:18:46,933 - AresTradingSystem.System - INFO - Current data columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+2025-08-06 23:18:46,937 - AresTradingSystem.System - INFO - 🎓 Training regime classification models...
+2025-08-06 23:18:46,937 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎓 Training Complete Regime Classification System...
+2025-08-06 23:18:46,937 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎓 Training HMM-based Market Regime Classifier...
+2025-08-06 23:18:46,938 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Feature calculation input: 60371 rows, min required: 100
+2025-08-06 23:18:46,938 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📋 Input columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+2025-08-06 23:18:46,938 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📅 Input date range: 0 to 60370
+2025-08-06 23:18:46,938 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 60371 periods...
+2025-08-06 23:18:47,086 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 60346 periods (dropped 25 rows)
+2025-08-06 23:18:48,721 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 0: SIDEWAYS (mean_return=0.0000, mean_vol=0.0007, vol_regime=0.000)
+2025-08-06 23:18:48,723 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 1: SIDEWAYS (mean_return=-0.0002, mean_vol=0.0013, vol_regime=0.506)
+2025-08-06 23:18:48,724 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 2: BULL (mean_return=0.0003, mean_vol=0.0013, vol_regime=0.451)
+2025-08-06 23:18:48,727 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 3: BEAR (mean_return=-0.0002, mean_vol=0.0007, vol_regime=0.000)
+2025-08-06 23:18:48,728 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ HMM-based regime classifier trained successfully
+2025-08-06 23:18:48,732 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎓 Training Basic Regime Ensemble...
+2025-08-06 23:18:48,732 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 60371 periods...
+2025-08-06 23:18:48,899 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 60346 periods (dropped 25 rows)
+2025-08-06 23:18:51,883 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Basic regime ensemble trained successfully
+2025-08-06 23:18:51,887 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎓 Training Location Classifier...
+2025-08-06 23:18:51,887 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 60371 periods...
+2025-08-06 23:18:52,030 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 60346 periods (dropped 25 rows)
+2025-08-06 23:18:52,244 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📍 Calculated 10 support and 10 resistance levels
+2025-08-06 23:18:58,024 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Location classifier trained successfully
+2025-08-06 23:18:58,075 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Complete regime classification system trained successfully
+2025-08-06 23:18:58,076 - AresTradingSystem.System - INFO - ✅ Regime classification models trained successfully
+2025-08-06 23:18:58,076 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Classifying market regimes using 1h timeframe...
+2025-08-06 23:18:58,076 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📊 Input data shape: (60371, 6)
+2025-08-06 23:18:58,076 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📋 Input data columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+2025-08-06 23:18:58,076 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📅 Input data index type: <class 'pandas.core.indexes.range.RangeIndex'>
+2025-08-06 23:18:58,079 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔄 Converting timestamp column to datetime index
+2025-08-06 23:18:58,090 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📅 Data index after conversion: 2025-06-22 23:19:00 to 2025-08-03 21:29:00
+2025-08-06 23:18:58,090 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔄 Resampling 60371 rows to 1h timeframe...
+2025-08-06 23:18:58,105 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📊 After resampling: 1007 hourly rows
+2025-08-06 23:18:58,105 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📅 Hourly data range: 2025-06-22 23:00:00 to 2025-08-03 21:00:00
+2025-08-06 23:18:58,105 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔄 Using rolling window size: 100 for 1007 hourly rows
+2025-08-06 23:18:58,105 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔍 Processing window 20/1007: 20 data points
+2025-08-06 23:18:58,105 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🤖 UnifiedRegimeClassifier: Starting regime prediction
+2025-08-06 23:18:58,105 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📊 Model Status:
+2025-08-06 23:18:58,105 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO -    - HMM model: ✅ Available
+2025-08-06 23:18:58,105 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO -    - Basic ensemble: ✅ Available
+2025-08-06 23:18:58,106 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO -    - Location classifier: ✅ Available
+2025-08-06 23:18:58,106 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO -    - Training status: ✅ Trained
+2025-08-06 23:18:58,106 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 20 periods...
+2025-08-06 23:18:58,120 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 20 periods (dropped 0 rows)
+2025-08-06 23:18:58,122 - AresTradingSystem.System.UnifiedRegimeClassifier - ERROR - Error in regime classification: cannot unpack non-iterable NoneType object
+2025-08-06 23:18:58,136 - AresTradingSystem.System - INFO - Regime classification completed. Found 1 distinct regimes
+2025-08-06 23:18:58,281 - AresTradingSystem.System - INFO - ✅ Market regime classification completed. Results saved to data/training/BINANCE_ETHUSDT_regime_classification.json
+2025-08-06 23:18:58,359 - AresTradingSystem.System - INFO - Initializing Regime Data Splitting Step...
+2025-08-06 23:18:58,359 - AresTradingSystem.System - INFO - Regime Data Splitting Step initialized successfully
+2025-08-06 23:18:58,359 - AresTradingSystem.System - INFO - 🔄 Executing Regime Data Splitting...
+2025-08-06 23:18:58,390 - AresTradingSystem.System - INFO - Splitting data by regimes for ETHUSDT on BINANCE...
+2025-08-06 23:18:59,929 - AresTradingSystem.System - INFO - Regime 'SIDEWAYS': 60371 records
+2025-08-06 23:18:59,929 - AresTradingSystem.System - INFO - High-data regimes: ['SIDEWAYS']
+2025-08-06 23:18:59,929 - AresTradingSystem.System - INFO - Low-data regimes: []
+2025-08-06 23:18:59,929 - AresTradingSystem.System - INFO - Other regimes: []
+2025-08-06 23:18:59,936 - AresTradingSystem.System - INFO - Creating train/validation/test splits...
+2025-08-06 23:18:59,950 - AresTradingSystem.System - INFO - ✅ Created train/validation/test splits:
+2025-08-06 23:18:59,950 - AresTradingSystem.System - INFO -    - Train: 48296 records (80.0%)
+2025-08-06 23:18:59,950 - AresTradingSystem.System - INFO -    - Validation: 6037 records (10.0%)
+2025-08-06 23:18:59,950 - AresTradingSystem.System - INFO -    - Test: 6038 records (10.0%)
+2025-08-06 23:18:59,952 - AresTradingSystem.System - INFO - ✅ Regime data splitting completed. Results saved to data/training/regime_data
+2025-08-06 23:19:06,239 - AresTradingSystem.System.AutoencoderConfig - ERROR - Error loading config: expected str, bytes or os.PathLike object, not dict, using default config.
+2025-08-06 23:19:06,263 - AresTradingSystem.System.FeatureEngineeringOrchestrator - INFO - 🚀 FeatureEngineeringOrchestrator initialized successfully
+2025-08-06 23:19:06,263 - AresTradingSystem.System.PrecomputedFeaturesManager - WARNING - InfluxDB not available - features will be stored locally only
+2025-08-06 23:19:06,263 - AresTradingSystem.System.AnalystLabelingFeatureEngineeringStep - INFO - Initializing Analyst Labeling and Feature Engineering Step...
+2025-08-06 23:19:06,263 - AresTradingSystem.System.PrecomputedFeaturesManager - INFO - 🚀 Initializing PrecomputedFeaturesManager...
+2025-08-06 23:19:06,263 - AresTradingSystem.System.PrecomputedFeaturesManager - INFO - Feature metadata storage configured
+2025-08-06 23:19:06,263 - AresTradingSystem.System.PrecomputedFeaturesManager - INFO - ✅ PrecomputedFeaturesManager initialized successfully
+2025-08-06 23:19:06,263 - AresTradingSystem.System.EfficientFeaturesDatabase - INFO - 🚀 Initializing EfficientFeaturesDatabase...
+2025-08-06 23:19:06,264 - AresTradingSystem.System.EfficientFeaturesDatabase - INFO - Found 0 existing precomputed features databases
+2025-08-06 23:19:06,264 - AresTradingSystem.System.EfficientFeaturesDatabase - INFO - ✅ EfficientFeaturesDatabase initialized successfully
+2025-08-06 23:19:06,264 - AresTradingSystem.System.MetaLabelingSystem - INFO - 🚀 Initializing meta-labeling system...
+2025-08-06 23:19:06,264 - AresTradingSystem.System.MetaLabelingSystem - INFO - ✅ Meta-labeling system initialized successfully
+2025-08-06 23:19:06,264 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Initializing UnifiedRegimeClassifier...
+2025-08-06 23:19:06,264 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📄 No HMM model found at: checkpoints/analyst_models/unified_hmm_model_UNKNOWN_UNKNOWN_1h.joblib
+2025-08-06 23:19:06,264 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📄 No ensemble model found at: checkpoints/analyst_models/unified_ensemble_model_UNKNOWN_UNKNOWN_1h.joblib
+2025-08-06 23:19:06,264 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📄 No location model found at: checkpoints/analyst_models/unified_location_model_UNKNOWN_UNKNOWN_1h.joblib
+2025-08-06 23:19:06,264 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ UnifiedRegimeClassifier initialized successfully
+2025-08-06 23:19:06,265 - AresTradingSystem.System.AnalystLabelingFeatureEngineeringStep - INFO - Analyst Labeling and Feature Engineering Step initialized successfully
+2025-08-06 23:19:06,265 - AresTradingSystem.System.AnalystLabelingFeatureEngineeringStep - INFO - 🔄 Executing Analyst Labeling and Feature Engineering with Incremental Processing...
+2025-08-06 23:19:06,265 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - Initializing UnifiedRegimeClassifier...
+2025-08-06 23:19:06,265 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📄 No HMM model found at: checkpoints/analyst_models/unified_hmm_model_BINANCE_ETHUSDT_1h.joblib
+2025-08-06 23:19:06,267 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📄 No ensemble model found at: checkpoints/analyst_models/unified_ensemble_model_BINANCE_ETHUSDT_1h.joblib
+2025-08-06 23:19:06,267 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 📄 No location model found at: checkpoints/analyst_models/unified_location_model_BINANCE_ETHUSDT_1h.joblib
+2025-08-06 23:19:06,267 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ UnifiedRegimeClassifier initialized successfully
+2025-08-06 23:19:06,274 - AresTradingSystem.System.AnalystLabelingFeatureEngineeringStep - INFO - Loaded 60371 historical records for ETHUSDT on BINANCE
+2025-08-06 23:19:06,275 - AresTradingSystem.System.AnalystLabelingFeatureEngineeringStep - INFO - No existing database found, will process all data
+2025-08-06 23:19:06,276 - AresTradingSystem.System.AnalystLabelingFeatureEngineeringStep - INFO - Processing 1 missing time ranges
+2025-08-06 23:19:06,276 - AresTradingSystem.System.AnalystLabelingFeatureEngineeringStep - ERROR - ❌ Error in Analyst Labeling and Feature Engineering: Invalid comparison between dtype=datetime64[ns] and int

@@ -1,0 +1,84 @@
+2025-08-07 23:09:51,715 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 23:09:51,731 - AresTradingSystem.System - INFO - Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE
+2025-08-07 23:09:52,272 - AresTradingSystem.System.SignalHandler - INFO - Initializing Signal Handler...
+2025-08-07 23:09:52,272 - AresTradingSystem.System.SignalHandler - INFO - Signal configuration loaded successfully
+2025-08-07 23:09:52,273 - AresTradingSystem.System.SignalHandler - INFO - Configuration validation successful
+2025-08-07 23:09:52,273 - AresTradingSystem.System.SignalHandler - INFO - Registered SIGTERM handler
+2025-08-07 23:09:52,273 - AresTradingSystem.System.SignalHandler - INFO - Registered SIGINT handler
+2025-08-07 23:09:52,273 - AresTradingSystem.System.SignalHandler - INFO - Signal handlers registered successfully
+2025-08-07 23:09:52,273 - AresTradingSystem.System.SignalHandler - INFO - ✅ Signal Handler initialization completed successfully
+2025-08-07 23:09:52,283 - AresTradingSystem.System.SignalHandler - INFO - Shutdown callback registered
+2025-08-07 23:09:54,302 - AresTradingSystem.System - INFO - Initializing Market Regime Classification Step...
+2025-08-07 23:09:54,302 - AresTradingSystem.System - INFO - Market Regime Classification Step initialized successfully
+2025-08-07 23:09:54,302 - AresTradingSystem.System - INFO - 🔄 Executing Market Regime Classification...
+2025-08-07 23:09:54,303 - AresTradingSystem.System - INFO - 📁 Loading pre-consolidated data from: data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet
+2025-08-07 23:09:54,836 - AresTradingSystem.System - INFO - ✅ Loaded consolidated trade data: 17744326 records
+2025-08-07 23:09:54,836 - AresTradingSystem.System - INFO - 🔄 Converting trade data to OHLCV format...
+2025-08-07 23:09:57,274 - AresTradingSystem.System - INFO - ✅ Converted to OHLCV: 879 records
+2025-08-07 23:09:57,274 - AresTradingSystem.System - INFO - Classifying market regimes for ETHUSDT on BINANCE...
+2025-08-07 23:10:04,251 - AresTradingSystem.System - INFO - Regime classification completed. Found 1 distinct regimes
+2025-08-07 23:10:04,252 - AresTradingSystem.System - INFO - ✅ Market regime classification completed. Results saved to data/training/BINANCE_ETHUSDT_regime_classification.json
+2025-08-07 23:10:04,271 - AresTradingSystem.System - INFO - Initializing Regime Data Splitting Step...
+2025-08-07 23:10:04,272 - AresTradingSystem.System - INFO - Regime Data Splitting Step initialized successfully
+2025-08-07 23:10:04,272 - AresTradingSystem.System - INFO - 🔄 Executing Regime Data Splitting...
+2025-08-07 23:10:04,272 - AresTradingSystem.System - INFO - Loading prepared data from: data/training/ETHUSDT_prepared_data.pkl
+2025-08-07 23:10:04,276 - AresTradingSystem.System - INFO - ✅ Loaded prepared data: (40190, 17)
+2025-08-07 23:10:04,277 - AresTradingSystem.System - INFO - Splitting data by regimes for ETHUSDT on BINANCE...
+2025-08-07 23:10:04,277 - AresTradingSystem.System - INFO - Regime sequence length (879) is shorter than data length (40190). This is expected due to feature calculation dropping NaN values.
+2025-08-07 23:10:04,277 - AresTradingSystem.System - INFO - Regime sequence covers 2.19% of the data
+2025-08-07 23:10:04,502 - AresTradingSystem.System - INFO - Interpolated regime sequence to match data length: 40190
+2025-08-07 23:10:07,969 - AresTradingSystem.System - INFO - Regime 'SIDEWAYS': 40190 records
+2025-08-07 23:10:07,970 - AresTradingSystem.System - INFO - High-data regimes: ['SIDEWAYS']
+2025-08-07 23:10:07,970 - AresTradingSystem.System - INFO - Low-data regimes: []
+2025-08-07 23:10:07,970 - AresTradingSystem.System - INFO - Other regimes: []
+2025-08-07 23:10:07,971 - AresTradingSystem.System - INFO - Creating regime data for BULL (has models but no classification)
+2025-08-07 23:10:07,972 - AresTradingSystem.System - INFO - Creating regime data for combined (has models but no classification)
+2025-08-07 23:10:07,981 - AresTradingSystem.System - INFO - ✅ Regime data splitting completed. Results saved to data/training/regime_data
+2025-08-07 23:10:17,344 - AresTradingSystem.System - INFO - Initializing Analyst Specialist Training Step...
+2025-08-07 23:10:17,345 - AresTradingSystem.System - INFO - Analyst Specialist Training Step initialized successfully
+2025-08-07 23:10:17,345 - AresTradingSystem.System - INFO - 🔄 Executing Analyst Specialist Training...
+2025-08-07 23:10:17,347 - AresTradingSystem.System - INFO - ✅ Loaded combined feature data: (951, 11)
+2025-08-07 23:10:17,347 - AresTradingSystem.System - INFO - Training specialist models for regime: combined
+2025-08-07 23:10:17,347 - AresTradingSystem.System - INFO - Training specialist models for regime: combined
+2025-08-07 23:10:17,348 - AresTradingSystem.System - INFO - Dropping datetime columns: ['timestamp']
+2025-08-07 23:10:17,349 - AresTradingSystem.System - INFO - Using 9 feature columns: ['open', 'high', 'low', 'close', 'volume']...
+2025-08-07 23:10:17,557 - AresTradingSystem.System - INFO - ✅ Random Forest trained successfully for combined
+2025-08-07 23:10:17,864 - AresTradingSystem.System - INFO - ✅ LightGBM trained successfully for combined
+2025-08-07 23:10:18,131 - AresTradingSystem.System - INFO - ✅ XGBoost trained successfully for combined
+2025-08-07 23:10:18,256 - AresTradingSystem.System - INFO - ✅ Neural Network trained successfully for combined
+2025-08-07 23:10:18,529 - AresTradingSystem.System - INFO - ✅ SVM trained successfully for combined
+2025-08-07 23:10:18,529 - AresTradingSystem.System - INFO - Trained 5 models for regime combined
+2025-08-07 23:10:18,533 - AresTradingSystem.System - INFO - ✅ Saved main analyst model to data/training/BINANCE_ETHUSDT_analyst_model.pkl
+2025-08-07 23:10:18,533 - AresTradingSystem.System - INFO - ✅ Saved model metadata to data/training/BINANCE_ETHUSDT_analyst_model_metadata.json
+2025-08-07 23:10:18,534 - AresTradingSystem.System - INFO - ✅ Saved training history to data/training/BINANCE_ETHUSDT_analyst_training_history.json
+2025-08-07 23:10:18,547 - AresTradingSystem.System - INFO - ✅ Analyst specialist training completed. Results saved to data/training/analyst_models
+2025-08-07 23:10:21,701 - AresTradingSystem.System - INFO - Using device: MPS for PyTorch operations.
+2025-08-07 23:10:21,701 - AresTradingSystem.System - INFO - Initializing Analyst Enhancement Step...
+2025-08-07 23:10:21,701 - AresTradingSystem.System - INFO - Analyst Enhancement Step initialized successfully.
+2025-08-07 23:10:21,701 - AresTradingSystem.System - INFO - 🔄 Executing Analyst Enhancement...
+2025-08-07 23:10:21,726 - AresTradingSystem.System - INFO - --- Enhancing models for regime: BULL ---
+2025-08-07 23:10:21,726 - AresTradingSystem.System - INFO - Loading data for regime 'BULL'...
+2025-08-07 23:10:21,726 - AresTradingSystem.System - INFO - Loaded data shape: (1000, 18), columns: ['open', 'high', 'low', 'close', 'volume', 'ATR', 'price_change', 'target', 'target_multi', 'dynamic_tp_threshold', 'dynamic_sl_threshold', 'tp_target', 'sl_target', 'momentum', 'momentum_target', 'trend_target', 'volatility_regime', 'regime']
+2025-08-07 23:10:21,727 - AresTradingSystem.System - INFO - After numeric filtering: (1000, 17), columns: ['open', 'high', 'low', 'close', 'volume', 'ATR', 'price_change', 'target', 'target_multi', 'dynamic_tp_threshold', 'dynamic_sl_threshold', 'tp_target', 'sl_target', 'momentum', 'momentum_target', 'trend_target', 'volatility_regime']
+2025-08-07 23:10:21,727 - AresTradingSystem.System - INFO - Found target column: target
+2025-08-07 23:10:21,728 - AresTradingSystem.System - INFO - Target distribution: {0: np.int64(1000)}
+2025-08-07 23:10:21,732 - AresTradingSystem.System - WARNING - Target has only 1 unique values: [0]
+2025-08-07 23:10:21,733 - AresTradingSystem.System - INFO - Created proxy target from open (median: 2565.825)
+2025-08-07 23:10:21,733 - AresTradingSystem.System - INFO - New target distribution: {1: np.int64(500), 0: np.int64(500)}
+2025-08-07 23:10:21,734 - AresTradingSystem.System - INFO - Data loaded and split: X_train shape (800, 16), X_val shape (200, 16)
+2025-08-07 23:10:21,734 - AresTradingSystem.System - INFO - Target classes in training: [1 0], in validation: [0 1]
+2025-08-07 23:10:21,734 - AresTradingSystem.System - INFO - Enhancing xgboost for BULL...
+2025-08-07 23:10:21,734 - AresTradingSystem.System - INFO - Original model accuracy: 0.8399370026525199
+2025-08-07 23:10:21,734 - AresTradingSystem.System - INFO - Running Optuna HPO with pruning for xgboost...
+2025-08-07 23:11:35,245 - AresTradingSystem.System - INFO - HPO complete. Best score: 1.0000
+2025-08-07 23:11:35,579 - AresTradingSystem.System - INFO - Selecting optimal features using robust methods...
+2025-08-07 23:11:35,667 - AresTradingSystem.System - INFO - Retraining final model with 10 optimal features...
+2025-08-07 23:11:35,982 - AresTradingSystem.System - INFO - Enhanced model accuracy: 1.0000
+2025-08-07 23:11:35,984 - AresTradingSystem.System - INFO - Enhancing svm for BULL...
+2025-08-07 23:11:35,984 - AresTradingSystem.System - INFO - Original model accuracy: 0.5370523872679045
+2025-08-07 23:11:35,984 - AresTradingSystem.System - INFO - Running Optuna HPO with pruning for svm...
+2025-08-07 23:14:11,815 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Received SIGINT signal
+2025-08-07 23:14:11,815 - AresTradingSystem.System.SignalHandler - WARNING - 🛑 Initiating graceful shutdown: SIGINT
+2025-08-07 23:14:11,815 - AresTradingSystem.System.SignalHandler - INFO - Running 1 shutdown callbacks...
+2025-08-07 23:14:11,815 - AresTradingSystem.System.SignalHandler - INFO - ✅ Shutdown callback 1 completed
+2025-08-07 23:14:11,816 - AresTradingSystem.System.SignalHandler - INFO - ✅ All shutdown callbacks completed

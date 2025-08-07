@@ -1,0 +1,205 @@
+2025-08-07 20:27:56,014 - AresGlobal - INFO - ================================================================================
+2025-08-07 20:27:56,014 - AresGlobal - INFO - 📊 SESSION SUMMARY
+2025-08-07 20:27:56,014 - AresGlobal - INFO - Session started: 2025-08-07 20:27:56
+2025-08-07 20:27:56,014 - AresGlobal - INFO - Global log file: ares_global_20250807_202756.log
+2025-08-07 20:27:56,014 - AresGlobal - INFO - This file contains ALL logs for this session
+2025-08-07 20:27:56,014 - AresGlobal - INFO - ================================================================================
+2025-08-07 20:27:56,014 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 20:27:56,014 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION
+2025-08-07 20:27:56,014 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-07 20:27:56
+2025-08-07 20:27:56,014 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-07 20:27:56,014 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 20:27:56,014 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-07 20:27:56,014 - AresGlobal.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-08-07 20:27:56,014 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-07 20:27:56,015 - AresGlobal.AresLauncher - INFO - Start time: 2025-08-07 20:27:56
+2025-08-07 20:27:56,015 - AresGlobal.AresLauncher - INFO - Log directory: log
+2025-08-07 20:27:56,015 - AresGlobal.AresLauncher - INFO - Log level: INFO
+2025-08-07 20:27:56,015 - AresGlobal.AresLauncher - INFO - Global log file: ares_global_20250807_202756.log
+2025-08-07 20:27:56,015 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-07 20:27:56,015 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 20:27:56,015 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: blank - Symbol: ETHUSDT - Exchange: BINANCE
+2025-08-07 20:27:56,015 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-07 20:27:56
+2025-08-07 20:27:56,015 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-07 20:27:56,015 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 20:27:56,015 - AresGlobal.AresLauncher - INFO - 🚀 Running enhanced 16-step training pipeline for ETHUSDT on BINANCE
+2025-08-07 20:27:56,015 - AresGlobal.AresLauncher - INFO - Starting from step: step2_market_regime_classification
+2025-08-07 20:27:56,016 - AresGlobal.AresLauncher - INFO - 📁 Using pre-consolidated data for step2
+2025-08-07 20:27:56,016 - AresGlobal.AresLauncher - INFO - ✅ Found consolidated data: data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet
+2025-08-07 20:27:56,016 - AresGlobal.ProgressManager - INFO - Initialized ProgressManager for ETHUSDT on BINANCE
+2025-08-07 20:27:56,017 - AresGlobal.ProgressManager - INFO - Progress directory: data/training/progress/BINANCE_ETHUSDT
+2025-08-07 20:27:56,017 - AresGlobal.StepOrchestrator - INFO - Initialized StepOrchestrator for ETHUSDT on BINANCE
+2025-08-07 20:27:56,017 - AresGlobal.StepOrchestrator - INFO - 🚀 Starting execution from step: step2_market_regime_classification
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO - 🚀 Initializing Enhanced Training Manager...
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO - 📊 Blank training mode: False
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO - 🔧 Max trials: 200
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO - 🔧 N trials: 100
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO - 📈 Lookback days: 30
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO - 🚀 Computational optimization: True
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO - 📊 Resource Analysis:
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO -    💾 System Memory: 16.0 GB
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO -    🖥️ CPU Cores: 8
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO -    📈 Estimated Memory Usage: 8.0 GB
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO -    ⏱️ Estimated Time: 720 minutes (12.0 hours)
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO -    🤖 Models to Train: 12
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO -    🔧 Optimization Trials: 200
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO - 📋 Step-by-Step Time Estimates:
+2025-08-07 20:27:56,985 - AresGlobal.EnhancedTrainingManager - INFO -    step1_data_collection: 15 min (2.3%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step2_market_regime_classification: 8 min (1.2%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step3_regime_data_splitting: 5 min (0.8%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step4_analyst_labeling_feature_engineering: 60 min (9.0%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step5_analyst_specialist_training: 30 min (4.5%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step6_analyst_enhancement: 25 min (3.8%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step7_analyst_ensemble_creation: 35 min (5.3%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step8_tactician_labeling: 15 min (2.3%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step9_tactician_specialist_training: 30 min (4.5%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step10_tactician_ensemble_creation: 35 min (5.3%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step11_confidence_calibration: 10 min (1.5%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step12_final_parameters_optimization: 240 min (36.2%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step13_walk_forward_validation: 60 min (9.0%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step14_monte_carlo_validation: 60 min (9.0%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step15_ab_testing: 30 min (4.5%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    step16_saving: 5 min (0.8%)
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO - 💡 Recommendations:
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO -    ✅ Full training mode should work well on your system
+2025-08-07 20:27:56,986 - AresGlobal.EnhancedTrainingManager - INFO - 🚀 Initializing computational optimization components...
+2025-08-07 20:27:56,987 - AresGlobal.ComputationalOptimizationManager - INFO - Computational Optimization Manager initialized
+2025-08-07 20:27:56,987 - AresGlobal.ComputationalOptimizationManager - INFO - Initializing computational optimization components...
+2025-08-07 20:27:56,987 - AresGlobal.MemoryEfficientData - INFO - Optimized DataFrame memory usage
+2025-08-07 20:27:56,987 - AresGlobal.PrecomputedFeatureEngine - INFO - Precomputing all features...
+2025-08-07 20:27:56,987 - AresGlobal.ComputationalOptimizationManager - ERROR - Failed to initialize computational optimization manager: 'close'
+2025-08-07 20:27:56,987 - AresGlobal.EnhancedTrainingManager - WARNING - ⚠️ Failed to initialize computational optimization components
+2025-08-07 20:27:56,987 - AresGlobal.EnhancedTrainingManager - INFO - ✅ Enhanced Training Manager initialized successfully
+2025-08-07 20:27:56,987 - AresGlobal.StepOrchestrator - INFO - ✅ Enhanced training manager setup successfully
+2025-08-07 20:27:56,987 - AresGlobal.EnhancedTrainingManager - INFO - ================================================================================
+2025-08-07 20:27:56,987 - AresGlobal.EnhancedTrainingManager - INFO - 🚀 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE START
+2025-08-07 20:27:56,987 - AresGlobal.EnhancedTrainingManager - INFO - ================================================================================
+2025-08-07 20:27:56,987 - AresGlobal.EnhancedTrainingManager - INFO - 📅 Started at: 2025-08-07 20:27:56
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - 🎯 Symbol: ETHUSDT
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - 🏢 Exchange: BINANCE
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - 📊 Training Mode: N/A
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - 📈 Lookback Days: 30
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - 🔧 Blank Training Mode: False
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - 🔧 Max Trials: 200
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - 🔧 N Trials: 100
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - 📂 Checkpoint loaded: step3_regime_data_splitting
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - 🔄 Resuming from checkpoint...
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - 📂 Last completed step: step3_regime_data_splitting
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - ====================================================================================================
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - 🚀 COMPREHENSIVE TRAINING PIPELINE START
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - ====================================================================================================
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - 📅 Started at: 2025-08-07 20:27:56
+2025-08-07 20:27:56,988 - AresGlobal.EnhancedTrainingManager - INFO - 🎯 Symbol: ETHUSDT
+2025-08-07 20:27:56,989 - AresGlobal.EnhancedTrainingManager - INFO - 🏢 Exchange: BINANCE
+2025-08-07 20:27:56,989 - AresGlobal.EnhancedTrainingManager - INFO - 📊 Timeframe: 1m
+2025-08-07 20:27:56,989 - AresGlobal.EnhancedTrainingManager - INFO - 🧠 Training Mode: Full
+2025-08-07 20:27:56,989 - AresGlobal.EnhancedTrainingManager - INFO - 🔧 Max Trials: 200
+2025-08-07 20:27:56,989 - AresGlobal.EnhancedTrainingManager - INFO - 📈 Lookback Days: 30
+2025-08-07 20:27:56,989 - AresGlobal.EnhancedTrainingManager - INFO - 💾 Memory Optimization: Enabled
+2025-08-07 20:27:56,989 - AresGlobal.EnhancedTrainingManager - INFO - 🚀 Starting from step: step2_market_regime_classification
+2025-08-07 20:27:56,989 - AresGlobal.EnhancedTrainingManager - INFO - ====================================================================================================
+2025-08-07 20:27:56,990 - AresGlobal.EnhancedTrainingManager - INFO - ⏭️  Skipping Step 1: Data Collection (using pre-consolidated data)
+2025-08-07 20:27:56,990 - AresGlobal.EnhancedTrainingManager - INFO - 🎭 STEP 2: Market Regime Classification...
+2025-08-07 20:27:56,990 - AresGlobal.EnhancedTrainingManager - INFO -    🧠 Analyzing market regimes and volatility patterns...
+2025-08-07 20:27:57,258 - AresGlobal.UnifiedRegimeClassifier - INFO - Initializing UnifiedRegimeClassifier for BINANCE_ETHUSDT
+2025-08-07 20:27:57,259 - AresGlobal.UnifiedRegimeClassifier - INFO - ✅ Loaded existing models successfully
+2025-08-07 20:27:57,259 - AresGlobal.UnifiedRegimeClassifier - INFO - ✅ UnifiedRegimeClassifier initialized successfully
+2025-08-07 20:27:58,699 - AresGlobal.UnifiedRegimeClassifier - WARNING - Insufficient data: 879 < 1000
+2025-08-07 20:27:58,713 - AresGlobal.EnhancedTrainingManager - INFO - 🔍 Running validator for step2_market_regime_classification
+2025-08-07 20:27:58,713 - AresGlobal.ValidatorOrchestrator - INFO - 🔍 Running validator for step2_market_regime_classification
+2025-08-07 20:27:58,716 - AresGlobal.Step2MarketRegimeClassificationValidator - INFO - 🔍 Validating market regime classification step...
+2025-08-07 20:27:58,716 - AresGlobal.Step2MarketRegimeClassificationValidator - ERROR - ❌ Regime classification validation failed - stopping process
+2025-08-07 20:27:58,716 - AresGlobal.ValidatorOrchestrator - INFO - ✅ Validator for step2_market_regime_classification completed: False
+2025-08-07 20:27:58,716 - AresGlobal.EnhancedTrainingManager - WARNING - ⚠️ step2_market_regime_classification validation failed: Unknown error
+2025-08-07 20:27:58,717 - AresGlobal.EnhancedTrainingManager - INFO - ✅ Step 2: Market Regime Classification: completed successfully in 1.73s
+2025-08-07 20:27:58,717 - AresGlobal.EnhancedTrainingManager - INFO - 💾 Process Memory: 1026.4 MB | CPU: 0.0%
+2025-08-07 20:27:58,717 - AresGlobal.EnhancedTrainingManager - INFO - 🖥️ System Memory: 52.6% | Available: 7.6 GB
+2025-08-07 20:27:58,717 - AresGlobal.EnhancedTrainingManager - INFO - 📊 Progress: 6.2% (1/16)
+2025-08-07 20:27:58,717 - AresGlobal.EnhancedTrainingManager - INFO - ⏱️ Elapsed: 0.0 min | ETA: 0.4 min
+2025-08-07 20:27:58,717 - AresGlobal.EnhancedTrainingManager - INFO - 💾 Checkpoint saved: step2_market_regime_classification
+2025-08-07 20:27:58,717 - AresGlobal.EnhancedTrainingManager - INFO - 📊 STEP 3: Regime Data Splitting...
+2025-08-07 20:27:58,717 - AresGlobal.EnhancedTrainingManager - INFO -    📈 Splitting data by market regimes for specialized training...
+2025-08-07 20:27:58,911 - AresGlobal.EnhancedTrainingManager - INFO - 🔍 Running validator for step3_regime_data_splitting
+2025-08-07 20:27:58,911 - AresGlobal.ValidatorOrchestrator - INFO - 🔍 Running validator for step3_regime_data_splitting
+2025-08-07 20:27:58,911 - AresGlobal.Step3RegimeDataSplittingValidator - INFO - 🔍 Validating regime data splitting step...
+2025-08-07 20:27:58,911 - AresGlobal.Step3RegimeDataSplittingValidator - INFO - ✅ All split data files exist
+2025-08-07 20:27:58,922 - AresGlobal.Step3RegimeDataSplittingValidator - INFO - ✅ train split characteristics validation passed
+2025-08-07 20:27:58,924 - AresGlobal.Step3RegimeDataSplittingValidator - INFO - ✅ validation split characteristics validation passed
+2025-08-07 20:27:58,927 - AresGlobal.Step3RegimeDataSplittingValidator - INFO - ✅ test split characteristics validation passed
+2025-08-07 20:27:58,928 - AresGlobal.Step3RegimeDataSplittingValidator - INFO - ✅ All split data quality validation passed
+2025-08-07 20:27:58,929 - AresGlobal.Step3RegimeDataSplittingValidator - INFO - ✅ train proportion 0.800 within expected range (0.500-0.850)
+2025-08-07 20:27:58,929 - AresGlobal.Step3RegimeDataSplittingValidator - INFO - ✅ validation proportion 0.100 within expected range (0.050-0.250)
+2025-08-07 20:27:58,929 - AresGlobal.Step3RegimeDataSplittingValidator - INFO - ✅ test proportion 0.100 within expected range (0.050-0.250)
+2025-08-07 20:27:58,930 - AresGlobal.Step3RegimeDataSplittingValidator - INFO - ✅ Split proportions validation passed: {'train': 0.7999900607948051, 'validation': 0.10000496960259744, 'test': 0.10000496960259744}
+2025-08-07 20:27:58,932 - AresGlobal.Step3RegimeDataSplittingValidator - INFO - ✅ Split consistency validation passed
+2025-08-07 20:27:58,932 - AresGlobal.Step3RegimeDataSplittingValidator - INFO - ✅ Regime data splitting validation passed (critical checks only)
+2025-08-07 20:27:58,932 - AresGlobal.ValidatorOrchestrator - ERROR - ❌ Error in validator for step3_regime_data_splitting: name 'asyncio' is not defined
+2025-08-07 20:27:58,932 - AresGlobal.ValidatorOrchestrator - ERROR - ❌ Error running validator for step3_regime_data_splitting: name 'asyncio' is not defined
+2025-08-07 20:27:58,932 - AresGlobal.EnhancedTrainingManager - WARNING - ⚠️ step3_regime_data_splitting validation failed: name 'asyncio' is not defined
+2025-08-07 20:27:58,932 - AresGlobal.EnhancedTrainingManager - INFO - ✅ Step 3: Regime Data Splitting: completed successfully in 0.21s
+2025-08-07 20:27:58,932 - AresGlobal.EnhancedTrainingManager - INFO - 💾 Process Memory: 1042.2 MB | CPU: 0.0%
+2025-08-07 20:27:58,932 - AresGlobal.EnhancedTrainingManager - INFO - 🖥️ System Memory: 52.8% | Available: 7.6 GB
+2025-08-07 20:27:58,932 - AresGlobal.EnhancedTrainingManager - INFO - 📊 Progress: 12.5% (2/16)
+2025-08-07 20:27:58,932 - AresGlobal.EnhancedTrainingManager - INFO - ⏱️ Elapsed: 0.0 min | ETA: 0.2 min
+2025-08-07 20:27:58,933 - AresGlobal.EnhancedTrainingManager - INFO - 💾 Checkpoint saved: step3_regime_data_splitting
+2025-08-07 20:27:58,933 - AresGlobal.EnhancedTrainingManager - INFO - 🧠 STEP 4: Analyst Labeling & Feature Engineering...
+2025-08-07 20:27:58,937 - AresGlobal.AnalystLabelingFeatureEngineeringStep - INFO - Initializing Analyst Labeling and Feature Engineering Step...
+2025-08-07 20:27:58,970 - AresGlobal.VectorizedLabellingOrchestrator - INFO - 🚀 Initializing vectorized labeling orchestrator...
+2025-08-07 20:27:58,986 - AresGlobal.VectorizedAdvancedFeatureEngineering - INFO - 🚀 Initializing vectorized advanced feature engineering...
+2025-08-07 20:27:58,986 - AresGlobal.WaveletFeatureCache - INFO - ✅ Cache directory initialized: data/wavelet_cache
+2025-08-07 20:27:58,986 - AresGlobal.VectorizedVolatilityRegimeModel - INFO - 🚀 Initializing vectorized volatility regime model...
+2025-08-07 20:27:58,986 - AresGlobal.VectorizedVolatilityRegimeModel - INFO - ✅ Vectorized volatility regime model initialized successfully
+2025-08-07 20:27:58,986 - AresGlobal.VectorizedCorrelationAnalyzer - INFO - 🚀 Initializing vectorized correlation analyzer...
+2025-08-07 20:27:58,986 - AresGlobal.VectorizedCorrelationAnalyzer - INFO - ✅ Vectorized correlation analyzer initialized successfully
+2025-08-07 20:27:58,986 - AresGlobal.VectorizedMomentumAnalyzer - INFO - 🚀 Initializing vectorized momentum analyzer...
+2025-08-07 20:27:58,986 - AresGlobal.VectorizedMomentumAnalyzer - INFO - ✅ Vectorized momentum analyzer initialized successfully
+2025-08-07 20:27:58,986 - AresGlobal.VectorizedLiquidityAnalyzer - INFO - 🚀 Initializing vectorized liquidity analyzer...
+2025-08-07 20:27:58,986 - AresGlobal.VectorizedLiquidityAnalyzer - INFO - ✅ Vectorized liquidity analyzer initialized successfully
+2025-08-07 20:27:58,986 - AresGlobal.VectorizedCandlestickPatternAnalyzer - INFO - 🚀 Initializing vectorized candlestick pattern analyzer...
+2025-08-07 20:27:58,987 - AresGlobal.VectorizedCandlestickPatternAnalyzer - INFO - ✅ Vectorized candlestick pattern analyzer initialized successfully
+2025-08-07 20:27:58,987 - AresGlobal.VectorizedSRDistanceCalculator - INFO - 🚀 Initializing vectorized S/R distance calculator...
+2025-08-07 20:27:58,987 - AresGlobal.VectorizedSRDistanceCalculator - INFO - ✅ Vectorized S/R distance calculator initialized successfully
+2025-08-07 20:27:58,987 - AresGlobal.VectorizedWaveletTransformAnalyzer - INFO - 🚀 Initializing enhanced vectorized wavelet transform analyzer...
+2025-08-07 20:27:58,987 - AresGlobal.VectorizedWaveletTransformAnalyzer - INFO - ✅ Enhanced vectorized wavelet transform analyzer initialized successfully
+2025-08-07 20:27:58,987 - AresGlobal.VectorizedWaveletTransformAnalyzer - INFO - 📊 Configuration: padding_mode=symmetric, cwt_scale_method=logarithmic, max_features_per_wavelet=20
+2025-08-07 20:27:58,994 - AresGlobal.MetaLabelingSystem - INFO - 🚀 Initializing meta-labeling system...
+2025-08-07 20:27:58,994 - AresGlobal.MetaLabelingSystem - INFO - ✅ Meta-labeling system initialized successfully
+2025-08-07 20:27:58,995 - AresGlobal.VectorizedAdvancedFeatureEngineering - INFO - ✅ Vectorized advanced feature engineering initialized successfully
+2025-08-07 20:28:03,566 - AresGlobal.VectorizedLabellingOrchestrator - ERROR - ❌ Error initializing vectorized labeling orchestrator: Required dependencies not available: 
+Could not find `optuna-integration` for `tfkeras`.
+Please run `pip install optuna-integration[tfkeras]`.
+2025-08-07 20:28:03,566 - AresGlobal.AnalystLabelingFeatureEngineeringStep - INFO - Analyst Labeling and Feature Engineering Step initialized successfully
+2025-08-07 20:28:03,566 - AresGlobal.AnalystLabelingFeatureEngineeringStep - INFO - Executing analyst labeling and feature engineering step...
+2025-08-07 20:28:03,568 - AresGlobal.AnalystLabelingFeatureEngineeringStep - INFO - ✅ Extracted klines data: (60367, 5)
+2025-08-07 20:28:03,568 - AresGlobal.VectorizedLabellingOrchestrator - ERROR - Vectorized labeling orchestrator not initialized
+2025-08-07 20:28:03,569 - AresGlobal.AnalystLabelingFeatureEngineeringStep - INFO - ✅ Analyst labeling and feature engineering completed successfully
+2025-08-07 20:28:03,569 - AresGlobal.EnhancedTrainingManager - INFO - ✅ Step 4: Analyst Labeling & Feature Engineering: completed successfully in 4.85s
+2025-08-07 20:28:03,569 - AresGlobal.EnhancedTrainingManager - INFO - 💾 Process Memory: 1371.0 MB | CPU: 0.0%
+2025-08-07 20:28:03,569 - AresGlobal.EnhancedTrainingManager - INFO - 🖥️ System Memory: 54.1% | Available: 7.3 GB
+2025-08-07 20:28:03,569 - AresGlobal.EnhancedTrainingManager - INFO - 📊 Progress: 18.8% (3/16)
+2025-08-07 20:28:03,569 - AresGlobal.EnhancedTrainingManager - INFO - ⏱️ Elapsed: 0.1 min | ETA: 0.5 min
+2025-08-07 20:28:03,569 - AresGlobal.EnhancedTrainingManager - INFO - 💾 Checkpoint saved: step4_analyst_labeling_feature_engineering
+2025-08-07 20:28:03,644 - AresGlobal.EnhancedTrainingManager - INFO - 🧹 Memory optimization: 1371.0 MB before cleanup
+2025-08-07 20:28:03,715 - AresGlobal.EnhancedTrainingManager - INFO - 🧹 Memory optimization: 1371.0 MB after cleanup (saved 0.0 MB)
+2025-08-07 20:28:03,716 - AresGlobal.EnhancedTrainingManager - INFO - 🎯 STEP 5: Analyst Specialist Training...
+2025-08-07 20:28:03,717 - AresGlobal.EnhancedTrainingManager - INFO - 🔍 Running validator for step4_analyst_labeling_feature_engineering
+2025-08-07 20:28:03,717 - AresGlobal.ValidatorOrchestrator - INFO - 🔍 Running validator for step4_analyst_labeling_feature_engineering
+2025-08-07 20:28:03,720 - AresGlobal.Step4AnalystLabelingFeatureEngineeringValidator - INFO - 🔍 Validating analyst labeling and feature engineering step...
+2025-08-07 20:28:03,720 - AresGlobal.Step4AnalystLabelingFeatureEngineeringValidator - ERROR - ❌ feature_engineering file not found: data/training/BINANCE_ETHUSDT_features_train.pkl
+2025-08-07 20:28:03,720 - AresGlobal.Step4AnalystLabelingFeatureEngineeringValidator - ERROR - ❌ feature_engineering file not found: data/training/BINANCE_ETHUSDT_features_validation.pkl
+2025-08-07 20:28:03,720 - AresGlobal.Step4AnalystLabelingFeatureEngineeringValidator - ERROR - ❌ feature_engineering file not found: data/training/BINANCE_ETHUSDT_features_test.pkl
+2025-08-07 20:28:03,720 - AresGlobal.Step4AnalystLabelingFeatureEngineeringValidator - ERROR - ❌ Missing feature engineering files: ['data/training/BINANCE_ETHUSDT_features_train.pkl', 'data/training/BINANCE_ETHUSDT_features_validation.pkl', 'data/training/BINANCE_ETHUSDT_features_test.pkl'] - stopping process
+2025-08-07 20:28:03,720 - AresGlobal.Step4AnalystLabelingFeatureEngineeringValidator - ERROR - ❌ Feature engineering outputs validation failed - stopping process
+2025-08-07 20:28:03,720 - AresGlobal.ValidatorOrchestrator - ERROR - ❌ Error in validator for step4_analyst_labeling_feature_engineering: name 'asyncio' is not defined
+2025-08-07 20:28:03,720 - AresGlobal.ValidatorOrchestrator - ERROR - ❌ Error running validator for step4_analyst_labeling_feature_engineering: name 'asyncio' is not defined
+2025-08-07 20:28:03,720 - AresGlobal.EnhancedTrainingManager - WARNING - ⚠️ step4_analyst_labeling_feature_engineering validation failed: name 'asyncio' is not defined
+2025-08-07 20:28:03,720 - AresGlobal.EnhancedTrainingManager - ERROR - ❌ Step 5: Analyst Specialist Training failed
+2025-08-07 20:28:03,720 - AresGlobal.EnhancedTrainingManager - ERROR - ❌ Enhanced training pipeline failed
+2025-08-07 20:28:03,720 - AresGlobal.StepOrchestrator - ERROR - ❌ Enhanced 16-step training pipeline failed
+2025-08-07 20:28:03,721 - AresGlobal.AresLauncher - ERROR - ❌ Enhanced 16-step training pipeline failed
+2025-08-07 20:28:03,721 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 20:28:03,721 - AresGlobal - INFO - [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1
+2025-08-07 20:28:03,721 - AresGlobal - INFO - [SYSTEM] End time: 2025-08-07 20:28:03
+2025-08-07 20:28:03,721 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 20:28:03,721 - AresGlobal.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-08-07 20:28:03,721 - AresGlobal.AresLauncher - INFO - ✅ Cleanup completed

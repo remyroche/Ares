@@ -1,0 +1,23 @@
+2025-08-07 22:55:57,257 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 22:55:57,289 - AresTradingSystem.System - INFO - Using device: MPS for PyTorch operations.
+2025-08-07 22:55:57,289 - AresTradingSystem.System - INFO - Initializing Analyst Enhancement Step...
+2025-08-07 22:55:57,289 - AresTradingSystem.System - INFO - Analyst Enhancement Step initialized successfully.
+2025-08-07 22:55:57,289 - AresTradingSystem.System - INFO - 🔄 Executing Analyst Enhancement...
+2025-08-07 22:55:57,290 - AresTradingSystem.System - INFO - --- Enhancing models for regime: BULL ---
+2025-08-07 22:55:57,290 - AresTradingSystem.System - INFO - Loading data for regime 'BULL'...
+2025-08-07 22:55:57,290 - AresTradingSystem.System - INFO - Loaded data shape: (1000, 7), columns: ['value', 'index', 'close', 'volume', 'feature1', 'feature2', 'feature3']
+2025-08-07 22:55:57,290 - AresTradingSystem.System - INFO - After numeric filtering: (1000, 7), columns: ['value', 'index', 'close', 'volume', 'feature1', 'feature2', 'feature3']
+2025-08-07 22:55:57,291 - AresTradingSystem.System - WARNING - No target column found in regime data. Available columns: ['value', 'index', 'close', 'volume', 'feature1', 'feature2', 'feature3']
+2025-08-07 22:55:57,291 - AresTradingSystem.System - INFO - Created momentum-based target from value
+2025-08-07 22:55:57,291 - AresTradingSystem.System - INFO - Successfully created target column from available data
+2025-08-07 22:55:57,292 - AresTradingSystem.System - INFO - Target distribution: {0: np.int64(944), 1: np.int64(56)}
+2025-08-07 22:55:57,292 - AresTradingSystem.System - INFO - Data loaded and split: X_train shape (800, 7), X_val shape (200, 7)
+2025-08-07 22:55:57,292 - AresTradingSystem.System - INFO - Target classes in training: [0 1], in validation: [0 1]
+2025-08-07 22:55:57,292 - AresTradingSystem.System - INFO - Enhancing random_forest for BULL...
+2025-08-07 22:55:57,293 - AresTradingSystem.System - INFO - Original model accuracy: 0.75
+2025-08-07 22:55:57,293 - AresTradingSystem.System - INFO - Running Optuna HPO with pruning for random_forest...
+2025-08-07 22:56:29,509 - AresTradingSystem.System - INFO - HPO complete. Best score: 0.9350
+2025-08-07 22:56:29,571 - AresTradingSystem.System - INFO - Selecting optimal features using robust methods...
+2025-08-07 22:56:30,074 - AresTradingSystem.System - INFO - Retraining final model with 7 optimal features...
+2025-08-07 22:56:30,151 - AresTradingSystem.System - INFO - Enhanced model accuracy: 0.9350
+2025-08-07 22:56:30,163 - AresTradingSystem.System - INFO - ✅ Analyst enhancement completed in 32.87s. Results saved to test_data/enhanced_analyst_models

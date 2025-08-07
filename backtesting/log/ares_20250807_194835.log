@@ -1,0 +1,748 @@
+2025-08-07 19:48:35,316 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 19:48:35,323 - AresTradingSystem.System - INFO - Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE
+2025-08-07 19:48:35,769 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 19:48:35,770 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STARTING OPTIMIZED DATA DOWNLOAD PROCESS
+2025-08-07 19:48:35,770 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Configuration: BINANCE ETHUSDT 1m
+2025-08-07 19:48:35,770 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔧 STEP 1: Initializing optimized downloader...
+2025-08-07 19:48:35,770 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Configuration: exchange=BINANCE, symbol=ETHUSDT, interval=1m, lookback_years=2
+2025-08-07 19:48:35,770 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Creating exchange client...
+2025-08-07 19:48:35,770 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Exchange client created: BinanceExchange
+2025-08-07 19:48:35,770 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🌐 Setting up HTTP session...
+2025-08-07 19:48:35,771 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ HTTP session configured
+2025-08-07 19:48:35,771 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 Ensuring cache directory exists...
+2025-08-07 19:48:35,771 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Cache directory ready: data_cache
+2025-08-07 19:48:35,771 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ STEP 1 COMPLETED: Optimized downloader initialized successfully
+2025-08-07 19:48:35,771 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 STEP 4: Starting parallel downloads for all data types...
+2025-08-07 19:48:35,771 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Created 3 parallel download tasks
+2025-08-07 19:48:35,771 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing all tasks concurrently...
+2025-08-07 19:48:35,771 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STEP 3: Starting parallel klines download...
+2025-08-07 19:48:35,771 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📅 STEP 2: Calculating time periods for klines...
+2025-08-07 19:48:35,771 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Date range: 2023-08-08 to 2025-08-07
+2025-08-07 19:48:35,771 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Total days: 730
+2025-08-07 19:48:35,771 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Processing klines (monthly periods)...
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2023-08.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2023-09.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2023-10.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2023-11.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2023-12.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2024-01.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2024-02.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2024-03.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2024-04.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2024-05.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2024-06.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2024-07.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2024-08.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2024-09.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2024-10.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2024-11.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2024-12.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2025-01.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2025-02.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2025-03.csv
+2025-08-07 19:48:35,772 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2025-04.csv
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2025-05.csv
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2025-06.csv
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2025-07.csv
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: klines_BINANCE_ETHUSDT_1m_2025-08.csv
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Summary: 25 months to download, 0 months skipped
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Found 25 monthly periods to download
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Creating 25 parallel download tasks...
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 1: 2023-08 to 2023-09
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 2: 2023-09 to 2023-10
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 3: 2023-10 to 2023-11
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 4: 2023-11 to 2023-12
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 5: 2023-12 to 2024-01
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 6: 2024-01 to 2024-02
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 7: 2024-02 to 2024-03
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 8: 2024-03 to 2024-04
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 9: 2024-04 to 2024-05
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 10: 2024-05 to 2024-06
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 11: 2024-06 to 2024-07
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 12: 2024-07 to 2024-08
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 13: 2024-08 to 2024-09
+2025-08-07 19:48:35,773 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 14: 2024-09 to 2024-10
+2025-08-07 19:48:35,774 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 15: 2024-10 to 2024-11
+2025-08-07 19:48:35,774 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 16: 2024-11 to 2024-12
+2025-08-07 19:48:35,774 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 17: 2024-12 to 2025-01
+2025-08-07 19:48:35,774 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 18: 2025-01 to 2025-02
+2025-08-07 19:48:35,774 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 19: 2025-02 to 2025-03
+2025-08-07 19:48:35,774 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 20: 2025-03 to 2025-04
+2025-08-07 19:48:35,774 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 21: 2025-04 to 2025-05
+2025-08-07 19:48:35,774 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 22: 2025-05 to 2025-06
+2025-08-07 19:48:35,774 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 23: 2025-06 to 2025-07
+2025-08-07 19:48:35,774 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 24: 2025-07 to 2025-08
+2025-08-07 19:48:35,774 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 25: 2025-08 to 2025-08
+2025-08-07 19:48:35,774 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing 25 tasks concurrently...
+2025-08-07 19:48:35,775 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STEP 3B: Starting parallel aggtrades download...
+2025-08-07 19:48:35,775 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📅 STEP 2: Calculating time periods for aggtrades...
+2025-08-07 19:48:35,775 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Date range: 2023-08-08 to 2025-08-07
+2025-08-07 19:48:35,775 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Total days: 730
+2025-08-07 19:48:35,775 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Processing aggtrades (daily periods)...
+2025-08-07 19:48:35,775 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2023-08-08.csv
+2025-08-07 19:48:35,775 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2023-08-09.csv
+2025-08-07 19:48:35,775 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2023-08-10.csv
+2025-08-07 19:48:35,775 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2023-08-11.csv
+2025-08-07 19:48:35,775 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2023-08-12.csv
+2025-08-07 19:48:35,776 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2023-09-26.csv
+2025-08-07 19:48:35,776 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2023-11-15.csv
+2025-08-07 19:48:35,776 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2024-01-04.csv
+2025-08-07 19:48:35,777 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2024-02-23.csv
+2025-08-07 19:48:35,777 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2024-04-13.csv
+2025-08-07 19:48:35,777 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2024-06-02.csv
+2025-08-07 19:48:35,778 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2024-07-22.csv
+2025-08-07 19:48:35,778 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2024-09-10.csv
+2025-08-07 19:48:35,779 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2024-10-30.csv
+2025-08-07 19:48:35,779 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2024-12-19.csv
+2025-08-07 19:48:35,779 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2025-02-07.csv
+2025-08-07 19:48:35,780 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2025-03-29.csv
+2025-08-07 19:48:35,780 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2025-05-18.csv
+2025-08-07 19:48:35,780 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: aggtrades_BINANCE_ETHUSDT_2025-07-07.csv
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Summary: 731 days to download, 0 days skipped
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Found 731 daily periods to download
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Creating 731 parallel download tasks...
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 1: 2023-08-08 to 2023-08-09
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 2: 2023-08-09 to 2023-08-10
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 3: 2023-08-10 to 2023-08-11
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 4: 2023-08-11 to 2023-08-12
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 5: 2023-08-12 to 2023-08-13
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 51: 2023-09-27 to 2023-09-28
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 101: 2023-11-16 to 2023-11-17
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 151: 2024-01-05 to 2024-01-06
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 201: 2024-02-24 to 2024-02-25
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 251: 2024-04-14 to 2024-04-15
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 301: 2024-06-03 to 2024-06-04
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 351: 2024-07-23 to 2024-07-24
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 401: 2024-09-11 to 2024-09-12
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 451: 2024-10-31 to 2024-11-01
+2025-08-07 19:48:35,781 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 501: 2024-12-20 to 2024-12-21
+2025-08-07 19:48:35,782 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 551: 2025-02-08 to 2025-02-09
+2025-08-07 19:48:35,782 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 601: 2025-03-30 to 2025-03-31
+2025-08-07 19:48:35,782 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 651: 2025-05-19 to 2025-05-20
+2025-08-07 19:48:35,782 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 701: 2025-07-08 to 2025-07-09
+2025-08-07 19:48:35,782 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing 731 tasks concurrently...
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🚀 STEP 3C: Starting parallel futures download...
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📅 STEP 2: Calculating time periods for futures...
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Date range: 2023-08-08 to 2025-08-07
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Total days: 730
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📈 Processing futures (monthly periods)...
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2023-08.csv
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2023-09.csv
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2023-10.csv
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2023-11.csv
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2023-12.csv
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2024-01.csv
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2024-02.csv
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2024-03.csv
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2024-04.csv
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2024-05.csv
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2024-06.csv
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2024-07.csv
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2024-08.csv
+2025-08-07 19:48:35,784 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2024-09.csv
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2024-10.csv
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2024-11.csv
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2024-12.csv
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2025-01.csv
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2025-02.csv
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2025-03.csv
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2025-04.csv
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2025-05.csv
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2025-06.csv
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2025-07.csv
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Will download: futures_BINANCE_ETHUSDT_2025-08.csv
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Summary: 25 months to download, 0 months skipped
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Found 25 daily periods to download
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔄 Creating 25 parallel download tasks...
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 1: 2023-08-01 to 2023-09-01
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 2: 2023-09-01 to 2023-10-01
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 3: 2023-10-01 to 2023-11-01
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 4: 2023-11-01 to 2023-12-01
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📋 Task 5: 2023-12-01 to 2024-01-01
+2025-08-07 19:48:35,785 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏳ Executing 25 tasks concurrently...
+2025-08-07 19:48:35,786 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2023-08
+2025-08-07 19:48:35,786 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-08-01 00:00:00 to 2023-09-01 00:00:00
+2025-08-07 19:48:35,786 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1690840800000 to 1693519200000
+2025-08-07 19:48:35,786 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:48:35,797 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2023-09
+2025-08-07 19:48:35,797 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-09-01 00:00:00 to 2023-10-01 00:00:00
+2025-08-07 19:48:35,797 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1693519200000 to 1696111200000
+2025-08-07 19:48:35,797 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:48:35,798 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2023-10
+2025-08-07 19:48:35,798 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-10-01 00:00:00 to 2023-11-01 00:00:00
+2025-08-07 19:48:35,798 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1696111200000 to 1698793200000
+2025-08-07 19:48:35,798 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:48:35,798 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2023-11
+2025-08-07 19:48:35,798 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-11-01 00:00:00 to 2023-12-01 00:00:00
+2025-08-07 19:48:35,798 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1698793200000 to 1701385200000
+2025-08-07 19:48:35,798 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:48:35,798 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2023-12
+2025-08-07 19:48:35,798 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-12-01 00:00:00 to 2024-01-01 00:00:00
+2025-08-07 19:48:35,798 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1701385200000 to 1704063600000
+2025-08-07 19:48:35,798 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:48:36,824 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:36,825 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:36,825 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:36,827 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:36,828 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:38,088 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:38,089 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:38,089 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:38,090 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:38,090 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:40,349 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:40,350 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:40,352 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:40,354 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:40,359 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:44,610 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:44,612 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:44,613 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:44,617 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:44,620 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:52,870 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:52,874 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:52,875 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:52,880 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:48:52,881 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:09,232 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:09,233 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1698793200000&endTime=1701385200000&limit=5000'
+2025-08-07 19:49:09,238 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:49:09,239 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2023-11
+2025-08-07 19:49:09,239 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2024-01
+2025-08-07 19:49:09,239 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2024-01-01 00:00:00 to 2024-02-01 00:00:00
+2025-08-07 19:49:09,239 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1704063600000 to 1706742000000
+2025-08-07 19:49:09,240 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:49:09,241 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:09,241 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1696111200000&endTime=1698793200000&limit=5000'
+2025-08-07 19:49:09,243 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:49:09,243 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2023-10
+2025-08-07 19:49:09,243 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:09,243 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1690840800000&endTime=1693519200000&limit=5000'
+2025-08-07 19:49:09,244 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:49:09,244 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2023-08
+2025-08-07 19:49:09,244 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:09,244 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1693519200000&endTime=1696111200000&limit=5000'
+2025-08-07 19:49:09,245 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:49:09,245 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2023-09
+2025-08-07 19:49:09,246 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2024-02
+2025-08-07 19:49:09,246 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2024-02-01 00:00:00 to 2024-03-01 00:00:00
+2025-08-07 19:49:09,246 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1706742000000 to 1709247600000
+2025-08-07 19:49:09,246 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:49:09,247 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2024-03
+2025-08-07 19:49:09,247 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2024-03-01 00:00:00 to 2024-04-01 00:00:00
+2025-08-07 19:49:09,247 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1709247600000 to 1711922400000
+2025-08-07 19:49:09,248 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:49:09,248 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2024-04
+2025-08-07 19:49:09,248 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2024-04-01 00:00:00 to 2024-05-01 00:00:00
+2025-08-07 19:49:09,248 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1711922400000 to 1714514400000
+2025-08-07 19:49:09,249 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:49:09,499 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:09,508 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:09,514 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:09,515 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:09,699 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:09,700 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1701385200000&endTime=1704063600000&limit=5000'
+2025-08-07 19:49:09,701 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:49:09,701 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2023-12
+2025-08-07 19:49:09,702 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2024-05
+2025-08-07 19:49:09,702 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2024-05-01 00:00:00 to 2024-06-01 00:00:00
+2025-08-07 19:49:09,702 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1714514400000 to 1717192800000
+2025-08-07 19:49:09,702 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:49:09,967 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:10,797 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:10,797 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:10,798 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:10,798 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:11,231 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:13,059 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:13,060 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:13,060 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:13,061 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:13,492 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:17,323 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:17,324 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:17,324 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:17,325 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:17,753 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:25,584 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:25,585 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:25,586 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:25,596 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:26,020 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:42,024 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:42,024 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1709247600000&endTime=1711922400000&limit=5000'
+2025-08-07 19:49:42,026 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:49:42,026 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2024-03
+2025-08-07 19:49:42,026 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2024-06
+2025-08-07 19:49:42,026 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2024-06-01 00:00:00 to 2024-07-01 00:00:00
+2025-08-07 19:49:42,026 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1717192800000 to 1719784800000
+2025-08-07 19:49:42,027 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:49:42,028 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:42,028 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1706742000000&endTime=1709247600000&limit=5000'
+2025-08-07 19:49:42,029 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:49:42,029 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2024-02
+2025-08-07 19:49:42,029 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2024-07
+2025-08-07 19:49:42,029 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2024-07-01 00:00:00 to 2024-08-01 00:00:00
+2025-08-07 19:49:42,029 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1719784800000 to 1722463200000
+2025-08-07 19:49:42,029 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:49:42,036 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:42,036 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1704063600000&endTime=1706742000000&limit=5000'
+2025-08-07 19:49:42,037 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:49:42,037 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2024-01
+2025-08-07 19:49:42,037 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2024-08
+2025-08-07 19:49:42,038 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2024-08-01 00:00:00 to 2024-09-01 00:00:00
+2025-08-07 19:49:42,038 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1722463200000 to 1725141600000
+2025-08-07 19:49:42,038 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:49:42,047 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:42,047 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1711922400000&endTime=1714514400000&limit=5000'
+2025-08-07 19:49:42,048 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:49:42,048 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2024-04
+2025-08-07 19:49:42,048 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2024-09
+2025-08-07 19:49:42,048 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2024-09-01 00:00:00 to 2024-10-01 00:00:00
+2025-08-07 19:49:42,048 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1725141600000 to 1727733600000
+2025-08-07 19:49:42,048 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:49:42,290 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:42,302 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:42,307 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:42,378 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:42,378 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1714514400000&endTime=1717192800000&limit=5000'
+2025-08-07 19:49:42,379 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:49:42,379 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2024-05
+2025-08-07 19:49:42,379 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2024-10
+2025-08-07 19:49:42,379 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2024-10-01 00:00:00 to 2024-11-01 00:00:00
+2025-08-07 19:49:42,379 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1727733600000 to 1730415600000
+2025-08-07 19:49:42,379 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:49:42,641 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:42,745 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:43,554 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:43,563 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:43,571 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:43,904 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:44,008 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:45,825 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:45,826 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:45,837 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:46,169 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:46,274 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:50,264 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:50,265 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:50,266 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:50,435 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:50,538 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:58,525 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:58,526 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:58,527 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:58,696 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:49:58,798 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:14,882 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:14,883 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1722463200000&endTime=1725141600000&limit=5000'
+2025-08-07 19:50:14,884 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:50:14,884 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2024-08
+2025-08-07 19:50:14,885 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2024-11
+2025-08-07 19:50:14,885 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2024-11-01 00:00:00 to 2024-12-01 00:00:00
+2025-08-07 19:50:14,885 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1730415600000 to 1733007600000
+2025-08-07 19:50:14,885 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:50:14,887 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:14,888 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1719784800000&endTime=1722463200000&limit=5000'
+2025-08-07 19:50:14,889 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:50:14,889 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2024-07
+2025-08-07 19:50:14,889 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2024-12
+2025-08-07 19:50:14,890 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2024-12-01 00:00:00 to 2025-01-01 00:00:00
+2025-08-07 19:50:14,890 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1733007600000 to 1735686000000
+2025-08-07 19:50:14,890 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:50:14,894 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:14,894 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1725141600000&endTime=1727733600000&limit=5000'
+2025-08-07 19:50:14,895 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:50:14,895 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2024-09
+2025-08-07 19:50:14,895 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2025-01
+2025-08-07 19:50:14,895 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-01-01 00:00:00 to 2025-02-01 00:00:00
+2025-08-07 19:50:14,896 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1735686000000 to 1738364400000
+2025-08-07 19:50:14,896 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:50:15,051 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:15,052 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1727733600000&endTime=1730415600000&limit=5000'
+2025-08-07 19:50:15,053 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:50:15,053 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2024-10
+2025-08-07 19:50:15,054 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2025-02
+2025-08-07 19:50:15,054 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-02-01 00:00:00 to 2025-03-01 00:00:00
+2025-08-07 19:50:15,054 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1738364400000 to 1740783600000
+2025-08-07 19:50:15,054 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:50:15,145 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:15,152 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:15,154 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:15,154 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1717192800000&endTime=1719784800000&limit=5000'
+2025-08-07 19:50:15,155 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:50:15,155 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2024-06
+2025-08-07 19:50:15,156 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2025-03
+2025-08-07 19:50:15,156 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-03-01 00:00:00 to 2025-04-01 00:00:00
+2025-08-07 19:50:15,156 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1740783600000 to 1743458400000
+2025-08-07 19:50:15,156 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:50:15,157 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:15,318 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:15,415 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:16,406 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:16,412 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:16,417 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:16,579 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:16,674 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:18,674 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:18,676 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:18,679 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:18,844 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:18,938 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:22,942 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:22,944 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:22,945 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:23,108 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:23,201 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:31,349 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:31,350 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:31,350 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:33,716 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:33,717 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:47,618 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:47,619 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1735686000000&endTime=1738364400000&limit=5000'
+2025-08-07 19:50:47,620 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:50:47,620 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2025-01
+2025-08-07 19:50:47,620 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2025-04
+2025-08-07 19:50:47,620 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-04-01 00:00:00 to 2025-05-01 00:00:00
+2025-08-07 19:50:47,620 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1743458400000 to 1746050400000
+2025-08-07 19:50:47,621 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:50:47,621 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:47,622 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1733007600000&endTime=1735686000000&limit=5000'
+2025-08-07 19:50:47,622 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:50:47,623 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2024-12
+2025-08-07 19:50:47,623 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2025-05
+2025-08-07 19:50:47,623 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-05-01 00:00:00 to 2025-06-01 00:00:00
+2025-08-07 19:50:47,623 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1746050400000 to 1748728800000
+2025-08-07 19:50:47,623 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:50:47,753 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:47,753 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1730415600000&endTime=1733007600000&limit=5000'
+2025-08-07 19:50:47,754 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:50:47,754 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2024-11
+2025-08-07 19:50:47,754 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2025-06
+2025-08-07 19:50:47,754 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-06-01 00:00:00 to 2025-07-01 00:00:00
+2025-08-07 19:50:47,755 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1748728800000 to 1751320800000
+2025-08-07 19:50:47,755 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:50:47,879 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:47,883 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:48,017 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:49,150 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:49,152 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:49,283 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:50,088 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:50,089 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1740783600000&endTime=1743458400000&limit=5000'
+2025-08-07 19:50:50,090 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:50:50,090 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2025-03
+2025-08-07 19:50:50,090 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2025-07
+2025-08-07 19:50:50,091 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-07-01 00:00:00 to 2025-08-01 00:00:00
+2025-08-07 19:50:50,091 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1751320800000 to 1753999200000
+2025-08-07 19:50:50,091 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:50:50,091 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:50,092 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1738364400000&endTime=1740783600000&limit=5000'
+2025-08-07 19:50:50,093 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:50:50,093 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2025-02
+2025-08-07 19:50:50,093 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading klines for 2025-08
+2025-08-07 19:50:50,093 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2025-08-01 00:00:00 to 2025-08-07 19:48:35.771850
+2025-08-07 19:50:50,093 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1753999200000 to 1754588915771
+2025-08-07 19:50:50,094 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:50:50,395 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:50,396 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:51,418 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:51,422 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:51,548 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:51,743 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:51,759 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:54,081 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:54,082 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:55,686 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:55,687 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:55,809 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:58,382 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:50:58,382 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:51:04,218 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:51:04,219 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:51:04,221 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:51:06,676 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:51:06,677 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:51:20,489 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:51:20,489 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1746050400000&endTime=1748728800000&limit=5000'
+2025-08-07 19:51:20,490 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:51:20,490 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2025-05
+2025-08-07 19:51:20,491 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:51:20,491 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1743458400000&endTime=1746050400000&limit=5000'
+2025-08-07 19:51:20,491 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:51:20,491 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2025-04
+2025-08-07 19:51:20,492 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2023-08-08
+2025-08-07 19:51:20,492 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-08-08 00:00:00 to 2023-08-09 00:00:00
+2025-08-07 19:51:20,492 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1691445600000 to 1691532000000
+2025-08-07 19:51:20,492 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:51:20,493 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2023-08-09
+2025-08-07 19:51:20,493 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-08-09 00:00:00 to 2023-08-10 00:00:00
+2025-08-07 19:51:20,493 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1691532000000 to 1691618400000
+2025-08-07 19:51:20,494 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:51:20,583 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:51:20,584 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1748728800000&endTime=1751320800000&limit=5000'
+2025-08-07 19:51:20,585 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:51:20,585 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2025-06
+2025-08-07 19:51:20,585 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2023-08-10
+2025-08-07 19:51:20,585 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-08-10 00:00:00 to 2023-08-11 00:00:00
+2025-08-07 19:51:20,585 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1691618400000 to 1691704800000
+2025-08-07 19:51:20,586 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:51:20,752 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/aggTrades: Bad Request. Response: Could not read response body
+2025-08-07 19:51:20,754 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/aggTrades: Bad Request. Response: Could not read response body
+2025-08-07 19:51:20,849 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/aggTrades: Bad Request. Response: Could not read response body
+2025-08-07 19:51:22,021 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/aggTrades: Bad Request. Response: Could not read response body
+2025-08-07 19:51:22,022 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/aggTrades: Bad Request. Response: Could not read response body
+2025-08-07 19:51:22,112 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/aggTrades: Bad Request. Response: Could not read response body
+2025-08-07 19:51:22,958 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:51:22,959 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1753999200000&endTime=1754588915771&limit=5000'
+2025-08-07 19:51:22,960 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:51:22,960 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2025-08
+2025-08-07 19:51:22,960 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2023-08-11
+2025-08-07 19:51:22,961 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-08-11 00:00:00 to 2023-08-12 00:00:00
+2025-08-07 19:51:22,961 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1691704800000 to 1691791200000
+2025-08-07 19:51:22,961 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:51:22,961 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/klines: Bad Request. Response: Could not read response body
+2025-08-07 19:51:22,962 - AresTradingSystem.System - ERROR - Max retries (5) reached. Returning default value.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/backtesting/../src/utils/error_handler.py", line 716, in _execute_with_retries
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/backtesting/../exchange/binance.py", line 319, in _request
+    response.raise_for_status()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/aiohttp/client_reqrep.py", line 629, in raise_for_status
+    raise ClientResponseError(
+aiohttp.client_exceptions.ClientResponseError: 400, message='Bad Request', url='https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1m&startTime=1751320800000&endTime=1753999200000&limit=5000'
+2025-08-07 19:51:22,963 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Received 0 klines
+2025-08-07 19:51:22,963 - AresTradingSystem.System.OptimizedDataDownloader - WARNING - ⚠️ No klines received for 2025-07
+2025-08-07 19:51:22,963 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📥 Downloading aggtrades for 2023-08-12
+2025-08-07 19:51:22,963 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ⏰ Time range: 2023-08-12 00:00:00 to 2023-08-13 00:00:00
+2025-08-07 19:51:22,963 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔢 Timestamps: 1691791200000 to 1691877600000
+2025-08-07 19:51:22,963 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🔌 Making API call to BINANCE
+2025-08-07 19:51:22,964 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📊 Processing results...
+2025-08-07 19:51:22,965 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ STEP 3 COMPLETED: Klines download finished - 0/25 periods successful, 0 errors
+2025-08-07 19:51:22,965 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 📁 CSV Files: 0 monthly klines files created
+2025-08-07 19:51:23,219 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/aggTrades: Bad Request. Response: Could not read response body
+2025-08-07 19:51:23,222 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/aggTrades: Bad Request. Response: Could not read response body
+2025-08-07 19:51:24,284 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/aggTrades: Bad Request. Response: Could not read response body
+2025-08-07 19:51:24,287 - AresTradingSystem.System - ERROR - HTTP Error 400 for GET /fapi/v1/aggTrades: Bad Request. Response: Could not read response body
+2025-08-07 19:52:18,152 - AresTradingSystem.System.OptimizedDataDownloader - INFO - 🧹 Cleaning up resources...
+2025-08-07 19:52:18,153 - AresTradingSystem.System - INFO - HTTP session closed.
+2025-08-07 19:52:18,153 - AresTradingSystem.System.OptimizedDataDownloader - INFO - ✅ Cleanup completed

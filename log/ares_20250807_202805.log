@@ -1,0 +1,5 @@
+2025-08-07 20:28:05,654 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 20:28:05,690 - AresTradingSystem.System.ValidatorOrchestrator - INFO - 🔍 Running validator for step1_data_collection
+2025-08-07 20:28:06,049 - AresTradingSystem.System - INFO - Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE
+2025-08-07 20:28:06,053 - AresTradingSystem.System.ValidatorOrchestrator - ERROR - ❌ Error in validator for step1_data_collection: name 'asyncio' is not defined
+2025-08-07 20:28:06,053 - AresTradingSystem.System.ValidatorOrchestrator - ERROR - ❌ Error running validator for step1_data_collection: name 'asyncio' is not defined

@@ -17,6 +17,7 @@ import BotManagement from './components/BotManagement.jsx';
 import ABTesting from './components/ABTesting.jsx';
 import TokenManagement from './components/TokenManagement';
 import ModelComparison from './components/ModelComparison';
+import MonitoringDashboard from './components/MonitoringDashboard.jsx';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -30,6 +31,8 @@ export default function App() {
     switch (activePage) {
       case 'dashboard':
         return <Dashboard killSwitchStatus={killSwitchStatus} systemStatus={systemStatus} />;
+      case 'monitoring':
+        return <MonitoringDashboard />;
       case 'backtesting':
         return <Backtesting />;
       case 'ab-testing':
@@ -53,6 +56,7 @@ export default function App() {
 
   const navigationItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'monitoring', label: 'Monitoring', icon: Monitor },
     { id: 'token-management', label: 'Token Management', icon: Settings },
     { id: 'model-comparison', label: 'Model Comparison', icon: GitCompare },
     { id: 'backtesting', label: 'Backtesting', icon: TestTube2 },
@@ -77,6 +81,7 @@ export default function App() {
 const Sidebar = ({ activePage, setActivePage, killSwitchStatus }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'monitoring', label: 'Monitoring', icon: Monitor },
     { id: 'token-management', label: 'Token Management', icon: Settings },
     { id: 'model-comparison', label: 'Model Comparison', icon: GitCompare },
     { id: 'backtesting', label: 'Backtesting', icon: TestTube2 },

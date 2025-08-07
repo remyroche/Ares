@@ -551,11 +551,11 @@ class BaseEnsemble:
         sr_analyzer=None,
     ) -> pd.DataFrame:
         """
-        Calculate SR context features for enhanced prediction capabilities.
+        Calculate SR context features using unified regime classifier's S/R levels.
 
         Args:
             df: DataFrame with OHLCV data
-            sr_analyzer: Optional SR analyzer instance
+            sr_analyzer: Optional SR analyzer instance (unified regime classifier)
 
         Returns:
             DataFrame with SR context features
@@ -566,32 +566,73 @@ class BaseEnsemble:
             sr_features["distance_to_sr"] = 1.0  # Default: far from SR
             sr_features["sr_strength"] = 0.0  # Default: no SR
             sr_features["sr_type"] = 0.5  # Default: neutral
+            
+            # New features for unified S/R levels
+            sr_features["distance_to_pivot_support"] = 1.0
+            sr_features["distance_to_pivot_resistance"] = 1.0
+            sr_features["distance_to_hvn_support"] = 1.0
+            sr_features["distance_to_hvn_resistance"] = 1.0
+            sr_features["is_pivot_support"] = 0.0
+            sr_features["is_pivot_resistance"] = 0.0
+            sr_features["is_hvn_support"] = 0.0
+            sr_features["is_hvn_resistance"] = 0.0
+            sr_features["is_confluence"] = 0.0
+            sr_features["is_open_range"] = 1.0
+            
+            # Strength features for S/R levels
+            sr_features["nearest_pivot_strength"] = 0.0
+            sr_features["nearest_pivot_touches"] = 0.0
+            sr_features["nearest_pivot_volume"] = 0.0
+            sr_features["nearest_pivot_age"] = 0.0
+            sr_features["nearest_pivot_resistance_strength"] = 0.0
+            sr_features["nearest_pivot_resistance_touches"] = 0.0
+            sr_features["nearest_pivot_resistance_volume"] = 0.0
+            sr_features["nearest_pivot_resistance_age"] = 0.0
+            sr_features["nearest_hvn_strength"] = 0.0
+            sr_features["nearest_hvn_touches"] = 0.0
+            sr_features["nearest_hvn_volume"] = 0.0
+            sr_features["nearest_hvn_age"] = 0.0
+            sr_features["nearest_hvn_resistance_strength"] = 0.0
+            sr_features["nearest_hvn_resistance_touches"] = 0.0
+            sr_features["nearest_hvn_resistance_volume"] = 0.0
+            sr_features["nearest_hvn_resistance_age"] = 0.0
 
-            # Legacy S/R code removed - using simplified approach
-
-            # Calculate SR context for each row (simplified)
-            for i in range(len(df)):
+            # Use unified regime classifier if available
+            if sr_analyzer and hasattr(sr_analyzer, '_calculate_features'):
                 try:
-                    current_price = df.iloc[i]["close"]
-
-                    # Simplified SR context calculation
-                    # Default values for SR features
-                    sr_features.iloc[
-                        i,
-                        sr_features.columns.get_loc("distance_to_sr"),
-                    ] = 1.0  # Default distance
-                    sr_features.iloc[i, sr_features.columns.get_loc("sr_strength")] = (
-                        0.0  # Default strength
-                    )
-                    sr_features.iloc[i, sr_features.columns.get_loc("sr_type")] = (
-                        0.5  # Default type
-                    )
-
+                    # Calculate features using unified regime classifier
+                    features_df = sr_analyzer._calculate_features(df)
+                    if not features_df.empty:
+                        # Get location classification
+                        location_labels = sr_analyzer._classify_location(features_df)
+                        
+                        # Extract S/R levels
+                        pivot_levels = self._extract_pivot_levels(sr_analyzer, features_df)
+                        hvn_levels = self._extract_hvn_levels(sr_analyzer, features_df)
+                        
+                        # Calculate S/R features for each row
+                        for i in range(len(df)):
+                            try:
+                                current_price = df.iloc[i]["close"]
+                                current_location = location_labels[i] if i < len(location_labels) else "OPEN_RANGE"
+                                
+                                # Calculate distances to S/R levels
+                                self._calculate_sr_distances(
+                                    sr_features, i, current_price, pivot_levels, hvn_levels, current_location
+                                )
+                                
+                            except Exception as e:
+                                self.logger.warning(
+                                    f"Error calculating SR features for row {i}: {e}",
+                                )
+                                continue
                 except Exception as e:
-                    self.logger.warning(
-                        f"Error calculating SR features for row {i}: {e}",
-                    )
-                    continue
+                    self.logger.warning(f"Error using unified regime classifier: {e}")
+                    # Fall back to simplified approach
+                    self._calculate_simplified_sr_features(sr_features, df)
+            else:
+                # Fall back to simplified approach
+                self._calculate_simplified_sr_features(sr_features, df)
 
             # Calculate additional momentum and volatility features
             if len(df) >= 5:
@@ -646,9 +687,284 @@ class BaseEnsemble:
                 "momentum_10",
                 "volume_ratio",
                 "volatility",
+                "distance_to_pivot_support",
+                "distance_to_pivot_resistance",
+                "distance_to_hvn_support",
+                "distance_to_hvn_resistance",
+                "is_pivot_support",
+                "is_pivot_resistance",
+                "is_hvn_support",
+                "is_hvn_resistance",
+                "is_confluence",
+                "is_open_range",
+                "nearest_pivot_strength",
+                "nearest_pivot_touches",
+                "nearest_pivot_volume",
+                "nearest_pivot_age",
+                "nearest_pivot_resistance_strength",
+                "nearest_pivot_resistance_touches",
+                "nearest_pivot_resistance_volume",
+                "nearest_pivot_resistance_age",
+                "nearest_hvn_strength",
+                "nearest_hvn_touches",
+                "nearest_hvn_volume",
+                "nearest_hvn_age",
+                "nearest_hvn_resistance_strength",
+                "nearest_hvn_resistance_touches",
+                "nearest_hvn_resistance_volume",
+                "nearest_hvn_resistance_age",
             ]:
                 default_features[feature] = 0.0
             return default_features
+
+    def _extract_pivot_levels(self, sr_analyzer, features_df: pd.DataFrame) -> dict[str, list[float]]:
+        """
+        Extract pivot levels from features DataFrame.
+        
+        Args:
+            sr_analyzer: Unified regime classifier
+            features_df: Features DataFrame
+            
+        Returns:
+            dict: Pivot support and resistance levels
+        """
+        try:
+            supports = []
+            resistances = []
+            
+            # Calculate rolling pivots for the last few periods
+            for i in range(max(0, len(features_df) - 24), len(features_df)):
+                if i < 5:  # Need at least 5 data points
+                    continue
+                    
+                window = features_df.iloc[max(0, i-24):i+1]
+                if len(window) < 5:
+                    continue
+                    
+                pivots = sr_analyzer._calculate_rolling_pivots(window)
+                
+                if pivots["s1"] > 0:
+                    supports.append(pivots["s1"])
+                if pivots["s2"] > 0:
+                    supports.append(pivots["s2"])
+                if pivots["r1"] > 0:
+                    resistances.append(pivots["r1"])
+                if pivots["r2"] > 0:
+                    resistances.append(pivots["r2"])
+            
+            return {
+                "supports": list(set(supports)),  # Remove duplicates
+                "resistances": list(set(resistances))
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting pivot levels: {e}")
+            return {"supports": [], "resistances": []}
+
+    def _extract_hvn_levels(self, sr_analyzer, features_df: pd.DataFrame) -> dict[str, list[float]]:
+        """
+        Extract HVN levels from features DataFrame.
+        
+        Args:
+            sr_analyzer: Unified regime classifier
+            features_df: Features DataFrame
+            
+        Returns:
+            dict: HVN support and resistance levels
+        """
+        try:
+            supports = []
+            resistances = []
+            
+            # Analyze volume levels for the last period
+            if len(features_df) >= 720:  # Need enough data for HVN analysis
+                hvn_window = features_df.iloc[-720:]
+                volume_levels = sr_analyzer._analyze_volume_levels(hvn_window)
+                
+                if volume_levels:
+                    for level_data in volume_levels.values():
+                        level_price = level_data["price"]
+                        current_price = features_df["close"].iloc[-1]
+                        
+                        # Classify as support or resistance based on current price
+                        if current_price > level_price:
+                            supports.append(level_price)
+                        else:
+                            resistances.append(level_price)
+            
+            return {
+                "supports": list(set(supports)),  # Remove duplicates
+                "resistances": list(set(resistances))
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting HVN levels: {e}")
+            return {"supports": [], "resistances": []}
+
+    def _calculate_sr_distances(
+        self, 
+        sr_features: pd.DataFrame, 
+        row_idx: int, 
+        current_price: float, 
+        pivot_levels: dict, 
+        hvn_levels: dict, 
+        current_location: str
+    ) -> None:
+        """
+        Calculate S/R distances and strength metrics for a specific row.
+        
+        Args:
+            sr_features: DataFrame to update
+            row_idx: Row index to update
+            current_price: Current price
+            pivot_levels: Pivot support/resistance levels with strength data
+            hvn_levels: HVN support/resistance levels with strength data
+            current_location: Current location classification
+        """
+        try:
+            # Calculate distances to pivot levels
+            pivot_supports = pivot_levels.get('supports', [])
+            pivot_resistances = pivot_levels.get('resistances', [])
+            pivot_strengths = pivot_levels.get('strengths', {})
+            
+            if pivot_supports:
+                nearest_pivot_support = min(pivot_supports, key=lambda x: abs(x - current_price))
+                sr_features.iloc[row_idx, sr_features.columns.get_loc("distance_to_pivot_support")] = (
+                    current_price - nearest_pivot_support
+                ) / current_price
+                
+                # Add pivot strength features
+                if pivot_strengths:
+                    strength_data = self._get_nearest_level_strength_data(nearest_pivot_support, pivot_supports, pivot_strengths)
+                    if strength_data:
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_pivot_strength")] = strength_data.get("strength", 0.0)
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_pivot_touches")] = strength_data.get("touches", 0.0)
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_pivot_volume")] = strength_data.get("volume", 0.0)
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_pivot_age")] = strength_data.get("age", 0.0)
+                
+            if pivot_resistances:
+                nearest_pivot_resistance = min(pivot_resistances, key=lambda x: abs(x - current_price))
+                sr_features.iloc[row_idx, sr_features.columns.get_loc("distance_to_pivot_resistance")] = (
+                    nearest_pivot_resistance - current_price
+                ) / current_price
+                
+                # Add pivot resistance strength features
+                if pivot_strengths:
+                    strength_data = self._get_nearest_level_strength_data(nearest_pivot_resistance, pivot_resistances, pivot_strengths)
+                    if strength_data:
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_pivot_resistance_strength")] = strength_data.get("strength", 0.0)
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_pivot_resistance_touches")] = strength_data.get("touches", 0.0)
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_pivot_resistance_volume")] = strength_data.get("volume", 0.0)
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_pivot_resistance_age")] = strength_data.get("age", 0.0)
+            
+            # Calculate distances to HVN levels
+            hvn_supports = hvn_levels.get('supports', [])
+            hvn_resistances = hvn_levels.get('resistances', [])
+            hvn_strengths = hvn_levels.get('strengths', {})
+            
+            if hvn_supports:
+                nearest_hvn_support = min(hvn_supports, key=lambda x: abs(x - current_price))
+                sr_features.iloc[row_idx, sr_features.columns.get_loc("distance_to_hvn_support")] = (
+                    current_price - nearest_hvn_support
+                ) / current_price
+                
+                # Add HVN strength features
+                if hvn_strengths:
+                    strength_data = self._get_nearest_level_strength_data(nearest_hvn_support, hvn_supports, hvn_strengths)
+                    if strength_data:
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_hvn_strength")] = strength_data.get("strength", 0.0)
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_hvn_touches")] = strength_data.get("touches", 0.0)
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_hvn_volume")] = strength_data.get("volume", 0.0)
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_hvn_age")] = strength_data.get("age", 0.0)
+                
+            if hvn_resistances:
+                nearest_hvn_resistance = min(hvn_resistances, key=lambda x: abs(x - current_price))
+                sr_features.iloc[row_idx, sr_features.columns.get_loc("distance_to_hvn_resistance")] = (
+                    nearest_hvn_resistance - current_price
+                ) / current_price
+                
+                # Add HVN resistance strength features
+                if hvn_strengths:
+                    strength_data = self._get_nearest_level_strength_data(nearest_hvn_resistance, hvn_resistances, hvn_strengths)
+                    if strength_data:
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_hvn_resistance_strength")] = strength_data.get("strength", 0.0)
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_hvn_resistance_touches")] = strength_data.get("touches", 0.0)
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_hvn_resistance_volume")] = strength_data.get("volume", 0.0)
+                        sr_features.iloc[row_idx, sr_features.columns.get_loc("nearest_hvn_resistance_age")] = strength_data.get("age", 0.0)
+            
+            # Set location classification features
+            sr_features.iloc[row_idx, sr_features.columns.get_loc("is_pivot_support")] = (
+                1.0 if 'PIVOT_S' in current_location else 0.0
+            )
+            sr_features.iloc[row_idx, sr_features.columns.get_loc("is_pivot_resistance")] = (
+                1.0 if 'PIVOT_R' in current_location else 0.0
+            )
+            sr_features.iloc[row_idx, sr_features.columns.get_loc("is_hvn_support")] = (
+                1.0 if 'HVN_SUPPORT' in current_location else 0.0
+            )
+            sr_features.iloc[row_idx, sr_features.columns.get_loc("is_hvn_resistance")] = (
+                1.0 if 'HVN_RESISTANCE' in current_location else 0.0
+            )
+            sr_features.iloc[row_idx, sr_features.columns.get_loc("is_confluence")] = (
+                1.0 if 'CONFLUENCE' in current_location else 0.0
+            )
+            sr_features.iloc[row_idx, sr_features.columns.get_loc("is_open_range")] = (
+                1.0 if current_location == 'OPEN_RANGE' else 0.0
+            )
+            
+        except Exception as e:
+            self.logger.warning(f"Error calculating S/R distances for row {row_idx}: {e}")
+
+    def _get_nearest_level_strength_data(self, nearest_level: float, levels: list[float], strengths: dict) -> dict:
+        """Get strength data for the nearest level."""
+        try:
+            if not levels or not strengths:
+                return {}
+            
+            # Find the strength data for the nearest level
+            for level_key, strength_data in strengths.items():
+                if isinstance(strength_data, dict):
+                    return strength_data
+            
+            return {}
+        except Exception as e:
+            self.logger.warning(f"Error getting nearest level strength data: {e}")
+            return {}
+
+    def _calculate_simplified_sr_features(self, sr_features: pd.DataFrame, df: pd.DataFrame) -> None:
+        """
+        Calculate simplified S/R features as fallback.
+        
+        Args:
+            sr_features: DataFrame to update
+            df: Input DataFrame
+        """
+        try:
+            for i in range(len(df)):
+                try:
+                    current_price = df.iloc[i]["close"]
+
+                    # Simplified SR context calculation
+                    # Default values for SR features
+                    sr_features.iloc[
+                        i,
+                        sr_features.columns.get_loc("distance_to_sr"),
+                    ] = 1.0  # Default distance
+                    sr_features.iloc[i, sr_features.columns.get_loc("sr_strength")] = (
+                        0.0  # Default strength
+                    )
+                    sr_features.iloc[i, sr_features.columns.get_loc("sr_type")] = (
+                        0.5  # Default type
+                    )
+
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error calculating simplified SR features for row {i}: {e}",
+                    )
+                    continue
+                    
+        except Exception as e:
+            self.logger.error(f"Error calculating simplified SR features: {e}")
 
     def _get_meta_features(
         self,

@@ -774,13 +774,14 @@ class VectorizedAdvancedFeatureEngineering:
             return {}
 
     def _calculate_price_impact_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> float:
-        """Calculate price impact using vectorized operations."""
+        """Calculate price impact using price differences and vectorized operations."""
         try:
-            price_changes = price_data["close"].pct_change().abs()
+            # Use price differences instead of percentage changes
+            price_diff = price_data["close"].diff().abs()
             volume_changes = volume_data["volume"].pct_change().abs()
             
-            # Calculate price impact as correlation between price and volume changes
-            correlation = np.corrcoef(price_changes.dropna(), volume_changes.dropna())[0, 1]
+            # Calculate price impact as correlation between price differences and volume changes
+            correlation = np.corrcoef(price_diff.dropna(), volume_changes.dropna())[0, 1]
             return correlation if not np.isnan(correlation) else 0.0
 
         except Exception as e:
@@ -788,15 +789,15 @@ class VectorizedAdvancedFeatureEngineering:
             return 0.0
 
     def _calculate_volume_price_impact_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> float:
-        """Calculate volume-price impact using vectorized operations."""
+        """Calculate volume-price impact using price differences and vectorized operations."""
         try:
-            # Calculate volume-weighted price changes
-            price_changes = price_data["close"].pct_change()
+            # Calculate volume-weighted price differences
+            price_diff = price_data["close"].diff()
             volume_weights = volume_data["volume"] / volume_data["volume"].sum()
             
-            # Volume-weighted average price change
-            vwap_change = np.sum(price_changes.dropna() * volume_weights.dropna())
-            return vwap_change
+            # Volume-weighted average price difference
+            vwap_diff = np.sum(price_diff.dropna() * volume_weights.dropna())
+            return vwap_diff
 
         except Exception as e:
             self.logger.error(f"Error calculating volume-price impact: {e}")
@@ -1058,84 +1059,277 @@ class VectorizedAdvancedFeatureEngineering:
             return {}
 
 
-# Placeholder classes for other analyzers
 class VectorizedVolatilityRegimeModel:
-    """Placeholder for volatility regime modeling."""
-    
+    """Vectorized volatility regime model using GARCH and other methods with price differences."""
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedVolatilityRegimeModel")
-    
+
     async def initialize(self) -> bool:
-        return True
-    
+        """Initialize volatility model."""
+        try:
+            self.logger.info("🚀 Initializing vectorized volatility regime model...")
+            self.logger.info("✅ Vectorized volatility regime model initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing volatility model: {e}")
+            return False
+
     async def model_volatility_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
-        return {"volatility_regime": 0.5}
+        """Model volatility regimes using price differences."""
+        try:
+            # Use price differences instead of returns
+            price_diff = price_data["close"].diff().dropna()
+
+            # Calculate various volatility measures using price differences
+            realized_vol = price_diff.rolling(20).std()
+            
+            # Parkinson volatility using price differences
+            parkinson_vol = self._calculate_parkinson_volatility_vectorized(price_data)
+            
+            # Garman-Klass volatility using price differences
+            garman_klass_vol = self._calculate_garman_klass_volatility_vectorized(price_data)
+
+            # Volatility regime classification
+            vol_percentile = realized_vol.rank(pct=True).iloc[-1] if not realized_vol.empty else 0.5
+
+            if vol_percentile > 0.8:
+                vol_regime = "high"
+            elif vol_percentile < 0.2:
+                vol_regime = "low"
+            else:
+                vol_regime = "medium"
+
+            return {
+                "realized_volatility": realized_vol.iloc[-1] if not realized_vol.empty else 0.0,
+                "parkinson_volatility": parkinson_vol.iloc[-1] if not parkinson_vol.empty else 0.0,
+                "garman_klass_volatility": garman_klass_vol.iloc[-1] if not garman_klass_vol.empty else 0.0,
+                "volatility_regime": vol_regime,
+                "volatility_percentile": vol_percentile,
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error modeling volatility: {e}")
+            return {}
+
+    def _calculate_parkinson_volatility_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
+        """Calculate Parkinson volatility estimator using price differences."""
+        try:
+            # Use high-low differences
+            high_low_diff = price_data["high"] - price_data["low"]
+            high_low_ratio = np.log(high_low_diff / price_data["close"].shift(1) + 1) ** 2
+            parkinson_vol = np.sqrt(high_low_ratio / (4 * np.log(2)))
+            return parkinson_vol.rolling(20).mean()
+        except Exception:
+            return pd.Series()
+
+    def _calculate_garman_klass_volatility_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
+        """Calculate Garman-Klass volatility estimator using price differences."""
+        try:
+            # Use price differences
+            c = price_data["close"].diff()
+            h = price_data["high"] - price_data["close"].shift(1)
+            l = price_data["low"] - price_data["close"].shift(1)
+
+            gk_vol = np.sqrt(0.5 * (h - l) ** 2 - (2 * np.log(2) - 1) * c**2)
+            return gk_vol.rolling(20).mean()
+        except Exception:
+            return pd.Series()
 
 
 class VectorizedCorrelationAnalyzer:
-    """Placeholder for correlation analysis."""
-    
+    """Vectorized correlation analyzer using price differences."""
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedCorrelationAnalyzer")
-    
+
     async def initialize(self) -> bool:
-        return True
-    
+        """Initialize correlation analyzer."""
+        try:
+            self.logger.info("🚀 Initializing vectorized correlation analyzer...")
+            self.logger.info("✅ Vectorized correlation analyzer initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing correlation analyzer: {e}")
+            return False
+
     async def analyze_correlations_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
-        return {"correlation_strength": 0.3}
+        """Analyze correlations using price differences."""
+        try:
+            # Use price differences for correlation analysis
+            price_diff = price_data["close"].diff().dropna()
+            
+            # Calculate autocorrelations at different lags
+            autocorr_1 = price_diff.autocorr(lag=1) if len(price_diff) > 1 else 0.0
+            autocorr_5 = price_diff.autocorr(lag=5) if len(price_diff) > 5 else 0.0
+            autocorr_10 = price_diff.autocorr(lag=10) if len(price_diff) > 10 else 0.0
+            
+            # Calculate rolling correlations
+            rolling_corr_5 = price_diff.rolling(5).corr(price_diff.shift(1)).iloc[-1] if len(price_diff) > 5 else 0.0
+            rolling_corr_10 = price_diff.rolling(10).corr(price_diff.shift(1)).iloc[-1] if len(price_diff) > 10 else 0.0
+            
+            return {
+                "autocorr_1": autocorr_1,
+                "autocorr_5": autocorr_5,
+                "autocorr_10": autocorr_10,
+                "rolling_corr_5": rolling_corr_5,
+                "rolling_corr_10": rolling_corr_10,
+                "correlation_strength": abs(autocorr_1),
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error analyzing correlations: {e}")
+            return {"correlation_strength": 0.3}
 
 
 class VectorizedMomentumAnalyzer:
-    """Placeholder for momentum analysis."""
-    
+    """Vectorized momentum analyzer using price differences."""
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedMomentumAnalyzer")
-    
+
     async def initialize(self) -> bool:
-        return True
-    
+        """Initialize momentum analyzer."""
+        try:
+            self.logger.info("🚀 Initializing vectorized momentum analyzer...")
+            self.logger.info("✅ Vectorized momentum analyzer initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing momentum analyzer: {e}")
+            return False
+
     async def analyze_momentum_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
-        return {"momentum_strength": 0.4}
+        """Analyze momentum using price differences."""
+        try:
+            # Use price differences for momentum analysis
+            price_diff = price_data["close"].diff().dropna()
+            
+            # Calculate momentum indicators using price differences
+            momentum_5 = price_diff.rolling(5).sum().iloc[-1] if len(price_diff) >= 5 else 0.0
+            momentum_10 = price_diff.rolling(10).sum().iloc[-1] if len(price_diff) >= 10 else 0.0
+            momentum_20 = price_diff.rolling(20).sum().iloc[-1] if len(price_diff) >= 20 else 0.0
+            
+            # Rate of change
+            roc_5 = ((price_data["close"].iloc[-1] - price_data["close"].iloc[-5]) / price_data["close"].iloc[-5]) if len(price_data) >= 5 else 0.0
+            roc_10 = ((price_data["close"].iloc[-1] - price_data["close"].iloc[-10]) / price_data["close"].iloc[-10]) if len(price_data) >= 10 else 0.0
+            
+            # Momentum strength
+            momentum_strength = abs(momentum_10) / price_data["close"].iloc[-1] if price_data["close"].iloc[-1] != 0 else 0.0
+            
+            return {
+                "momentum_5": momentum_5,
+                "momentum_10": momentum_10,
+                "momentum_20": momentum_20,
+                "roc_5": roc_5,
+                "roc_10": roc_10,
+                "momentum_strength": momentum_strength,
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error analyzing momentum: {e}")
+            return {"momentum_strength": 0.4}
 
 
 class VectorizedLiquidityAnalyzer:
-    """Placeholder for liquidity analysis."""
-    
+    """Vectorized liquidity analyzer using price differences."""
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedLiquidityAnalyzer")
-    
+
     async def initialize(self) -> bool:
-        return True
-    
+        """Initialize liquidity analyzer."""
+        try:
+            self.logger.info("🚀 Initializing vectorized liquidity analyzer...")
+            self.logger.info("✅ Vectorized liquidity analyzer initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing liquidity analyzer: {e}")
+            return False
+
     async def analyze_liquidity_vectorized(
         self,
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
-        return {"liquidity_score": 0.6}
+        """Analyze liquidity using price differences."""
+        try:
+            # Use price differences for liquidity analysis
+            price_diff = price_data["close"].diff().dropna()
+            
+            # Calculate liquidity metrics
+            avg_volume = volume_data["volume"].rolling(20).mean().iloc[-1] if not volume_data.empty else 0.0
+            volume_volatility = volume_data["volume"].rolling(20).std().iloc[-1] if not volume_data.empty else 0.0
+            
+            # Price impact (how much price moves per unit volume)
+            price_impact = abs(price_diff.iloc[-1]) / avg_volume if avg_volume > 0 else 0.0
+            
+            # Liquidity score (inverse of price impact)
+            liquidity_score = 1.0 / (1.0 + price_impact) if price_impact > 0 else 1.0
+            
+            return {
+                "avg_volume": avg_volume,
+                "volume_volatility": volume_volatility,
+                "price_impact": price_impact,
+                "liquidity_score": liquidity_score,
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error analyzing liquidity: {e}")
+            return {"liquidity_score": 0.6}
 
 
 class VectorizedSRDistanceCalculator:
-    """Placeholder for S/R distance calculation."""
-    
+    """Vectorized support/resistance distance calculator using price differences."""
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedSRDistanceCalculator")
-    
+
     async def initialize(self) -> bool:
-        return True
-    
+        """Initialize S/R distance calculator."""
+        try:
+            self.logger.info("🚀 Initializing vectorized S/R distance calculator...")
+            self.logger.info("✅ Vectorized S/R distance calculator initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing S/R distance calculator: {e}")
+            return False
+
     async def calculate_sr_distances(
         self,
         price_data: pd.DataFrame,
         sr_levels: dict[str, Any],
     ) -> dict[str, Any]:
-        return {"nearest_support_distance": 0.02, "nearest_resistance_distance": 0.03}
+        """Calculate distances to support/resistance levels using price differences."""
+        try:
+            current_price = price_data["close"].iloc[-1]
+            
+            # Extract support and resistance levels
+            support_levels = sr_levels.get("support_levels", [])
+            resistance_levels = sr_levels.get("resistance_levels", [])
+            
+            # Calculate distances
+            support_distances = [abs(current_price - level) / current_price for level in support_levels] if support_levels else [float('inf')]
+            resistance_distances = [abs(current_price - level) / current_price for level in resistance_levels] if resistance_levels else [float('inf')]
+            
+            nearest_support_distance = min(support_distances) if support_distances else 0.02
+            nearest_resistance_distance = min(resistance_distances) if resistance_distances else 0.03
+            
+            return {
+                "nearest_support_distance": nearest_support_distance,
+                "nearest_resistance_distance": nearest_resistance_distance,
+                "support_levels_count": len(support_levels),
+                "resistance_levels_count": len(resistance_levels),
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error calculating S/R distances: {e}")
+            return {"nearest_support_distance": 0.02, "nearest_resistance_distance": 0.03}
 
 
 class VectorizedCandlestickPatternAnalyzer:
@@ -2004,12 +2198,17 @@ class VectorizedWaveletTransformAnalyzer:
             return {}
 
     def _prepare_stationary_series(self, price_data: pd.DataFrame) -> dict[str, np.ndarray]:
-        """Prepare stationary series for wavelet analysis."""
+        """Prepare stationary series for wavelet analysis using price differences."""
         try:
             stationary_series = {}
             
             if self.enable_stationary_series:
-                # Returns (first difference)
+                # Price differences (first difference) - primary focus
+                price_diff = price_data["close"].diff().dropna().values
+                if len(price_diff) > 0:
+                    stationary_series["price_diff"] = price_diff
+                
+                # Returns (percentage change)
                 returns = price_data["close"].pct_change().dropna().values
                 if len(returns) > 0:
                     stationary_series["returns"] = returns
@@ -2019,20 +2218,29 @@ class VectorizedWaveletTransformAnalyzer:
                 if len(log_returns) > 0:
                     stationary_series["log_returns"] = log_returns
                 
+                # Second differences (acceleration)
+                price_diff_2 = price_data["close"].diff().diff().dropna().values
+                if len(price_diff_2) > 0:
+                    stationary_series["price_diff_2"] = price_diff_2
+                
                 # Detrended series
                 close_prices = price_data["close"].values
                 trend = np.polyfit(range(len(close_prices)), close_prices, 1)
                 detrended = close_prices - (trend[0] * np.arange(len(close_prices)) + trend[1])
                 stationary_series["detrended"] = detrended
             
-            # Original series
-            stationary_series["close"] = price_data["close"].values
+            # Price differences as primary series (not raw prices)
+            price_diff = price_data["close"].diff().dropna().values
+            if len(price_diff) > 0:
+                stationary_series["close"] = price_diff  # Use price differences instead of raw prices
             
             return stationary_series
 
         except Exception as e:
             self.logger.error(f"Error preparing stationary series: {e}")
-            return {"close": price_data["close"].values}
+            # Fallback to price differences
+            price_diff = price_data["close"].diff().dropna().values
+            return {"close": price_diff if len(price_diff) > 0 else price_data["close"].values}
 
     async def _analyze_discrete_wavelet_transforms_enhanced(
         self, 

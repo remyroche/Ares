@@ -24,6 +24,7 @@ class ReportType(Enum):
     MODEL_ANALYSIS = "model_analysis"
     RISK_ASSESSMENT = "risk_assessment"
     EXECUTIVE_SUMMARY = "executive_summary"
+    CONTINUOUS_IMPROVEMENT = "continuous_improvement"
 
 
 class ReportSchedule(Enum):
@@ -267,6 +268,8 @@ class ReportScheduler:
                 return await self._generate_risk_assessment()
             if report_type == ReportType.EXECUTIVE_SUMMARY:
                 return await self._generate_executive_summary()
+            if report_type == ReportType.CONTINUOUS_IMPROVEMENT:
+                return await self._generate_continuous_improvement_report()
             return {"error": "Unknown report type"}
 
         except Exception as e:
@@ -349,6 +352,111 @@ class ReportScheduler:
         except Exception as e:
             self.logger.error(f"Error generating executive summary: {e}")
             return {}
+
+    async def _generate_continuous_improvement_report(self) -> dict[str, Any]:
+        """Generate continuous improvement report with actionable insights."""
+        try:
+            # Get monitoring data for improvement analysis
+            monitoring_data = self.config.get("monitoring_data", {})
+            
+            # Analyze improvement opportunities
+            improvement_opportunities = []
+            
+            # Performance improvement opportunities
+            performance_metrics = monitoring_data.get("performance", {})
+            if performance_metrics.get("model_accuracy", 0.0) < 0.8:
+                improvement_opportunities.append({
+                    "category": "model_performance",
+                    "issue": "Model accuracy below target",
+                    "current_value": performance_metrics.get("model_accuracy", 0.0),
+                    "target_value": 0.8,
+                    "priority": "high",
+                    "recommended_action": "Retrain models with additional data",
+                    "estimated_impact": "High - Improved prediction accuracy"
+                })
+            
+            if performance_metrics.get("trading_win_rate", 0.0) < 0.6:
+                improvement_opportunities.append({
+                    "category": "trading_performance",
+                    "issue": "Trading win rate below target",
+                    "current_value": performance_metrics.get("trading_win_rate", 0.0),
+                    "target_value": 0.6,
+                    "priority": "high",
+                    "recommended_action": "Review and optimize trading strategies",
+                    "estimated_impact": "High - Improved profitability"
+                })
+            
+            # System optimization opportunities
+            system_metrics = monitoring_data.get("system", {})
+            if system_metrics.get("memory_usage", 0.0) > 0.7:
+                improvement_opportunities.append({
+                    "category": "system_optimization",
+                    "issue": "High memory usage",
+                    "current_value": system_metrics.get("memory_usage", 0.0),
+                    "target_value": 0.5,
+                    "priority": "medium",
+                    "recommended_action": "Optimize memory usage and implement garbage collection",
+                    "estimated_impact": "Medium - Improved system stability"
+                })
+            
+            # Risk management improvements
+            risk_metrics = monitoring_data.get("risk", {})
+            if risk_metrics.get("portfolio_var", 0.0) > 0.05:
+                improvement_opportunities.append({
+                    "category": "risk_management",
+                    "issue": "Portfolio VaR above acceptable level",
+                    "current_value": risk_metrics.get("portfolio_var", 0.0),
+                    "target_value": 0.03,
+                    "priority": "critical",
+                    "recommended_action": "Reduce position sizes and diversify portfolio",
+                    "estimated_impact": "Critical - Risk reduction"
+                })
+            
+            # Anomaly detection insights
+            anomalies = monitoring_data.get("anomalies", [])
+            anomaly_insights = []
+            for anomaly in anomalies:
+                anomaly_insights.append({
+                    "metric": anomaly.get("metric", "unknown"),
+                    "severity": anomaly.get("severity", "medium"),
+                    "description": anomaly.get("description", ""),
+                    "recommended_action": anomaly.get("recommended_action", "")
+                })
+            
+            # Predictive analytics insights
+            predictions = monitoring_data.get("predictions", {})
+            predictive_insights = []
+            for metric, prediction_data in predictions.items():
+                if prediction_data.get("trend") == "declining":
+                    predictive_insights.append({
+                        "metric": metric,
+                        "trend": "declining",
+                        "confidence": prediction_data.get("confidence", 0.0),
+                        "recommended_action": f"Monitor {metric} closely and prepare intervention if needed"
+                    })
+            
+            return {
+                "report_type": "continuous_improvement",
+                "timestamp": datetime.now().isoformat(),
+                "improvement_opportunities": improvement_opportunities,
+                "anomaly_insights": anomaly_insights,
+                "predictive_insights": predictive_insights,
+                "priority_summary": {
+                    "critical": len([opp for opp in improvement_opportunities if opp["priority"] == "critical"]),
+                    "high": len([opp for opp in improvement_opportunities if opp["priority"] == "high"]),
+                    "medium": len([opp for opp in improvement_opportunities if opp["priority"] == "medium"]),
+                    "low": len([opp for opp in improvement_opportunities if opp["priority"] == "low"])
+                },
+                "recommendations": {
+                    "immediate_actions": [opp for opp in improvement_opportunities if opp["priority"] in ["critical", "high"]],
+                    "monitoring_focus": [insight for insight in predictive_insights if insight["confidence"] > 0.7],
+                    "long_term_improvements": [opp for opp in improvement_opportunities if opp["priority"] == "medium"]
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error generating continuous improvement report: {e}")
+            return {"error": f"Continuous improvement report generation failed: {e}"}
 
     @handle_errors(
         exceptions=(Exception,),

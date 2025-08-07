@@ -48,6 +48,20 @@ class PerformanceMetrics:
     training_duration: float = 0.0
     feature_engineering_performance: float = 0.0
     meta_labeling_performance: float = 0.0
+    
+    # Risk management metrics
+    portfolio_var: float = 0.0
+    portfolio_correlation: float = 0.0
+    portfolio_concentration: float = 0.0
+    portfolio_leverage: float = 1.0
+    position_count: int = 0
+    max_position_size: float = 0.0
+    avg_position_size: float = 0.0
+    position_duration: float = 0.0
+    market_volatility: float = 0.0
+    market_liquidity: float = 0.0
+    market_stress: float = 0.0
+    market_regime: str = "unknown"
 
 
 @dataclass
@@ -279,8 +293,46 @@ class PerformanceMonitor:
             metrics.trading_max_drawdown = -0.05
             metrics.trading_total_return = 0.25
 
+            # Enhanced risk management metrics
+            await self._collect_risk_management_metrics(metrics)
+
         except Exception as e:
             self.logger.error(f"Error collecting trading metrics: {e}")
+
+    async def _collect_risk_management_metrics(self, metrics: PerformanceMetrics) -> None:
+        """Collect enhanced risk management metrics."""
+        try:
+            # Get risk management data from configuration or external systems
+            risk_system = self.config.get("risk_management", {})
+            
+            # Portfolio risk metrics
+            portfolio_metrics = risk_system.get("portfolio", {})
+            metrics.portfolio_var = portfolio_metrics.get("value_at_risk", 0.0)
+            metrics.portfolio_correlation = portfolio_metrics.get("correlation", 0.0)
+            metrics.portfolio_concentration = portfolio_metrics.get("concentration", 0.0)
+            metrics.portfolio_leverage = portfolio_metrics.get("leverage", 1.0)
+            
+            # Position risk metrics
+            position_metrics = risk_system.get("positions", {})
+            metrics.position_count = position_metrics.get("active_positions", 0)
+            metrics.max_position_size = position_metrics.get("max_position_size", 0.0)
+            metrics.avg_position_size = position_metrics.get("avg_position_size", 0.0)
+            metrics.position_duration = position_metrics.get("avg_duration", 0.0)
+            
+            # Market risk metrics
+            market_metrics = risk_system.get("market", {})
+            metrics.market_volatility = market_metrics.get("volatility", 0.0)
+            metrics.market_liquidity = market_metrics.get("liquidity_score", 0.0)
+            metrics.market_stress = market_metrics.get("stress_score", 0.0)
+            metrics.market_regime = market_metrics.get("regime", "unknown")
+            
+            # Risk alerts
+            risk_alerts = risk_system.get("alerts", [])
+            if risk_alerts:
+                self.logger.warning(f"Risk alerts detected: {len(risk_alerts)} active alerts")
+
+        except Exception as e:
+            self.logger.error(f"Error collecting risk management metrics: {e}")
 
     async def _collect_system_metrics(self, metrics: PerformanceMetrics) -> None:
         """Collect system performance metrics."""
@@ -475,8 +527,71 @@ class PerformanceMonitor:
             # Analyze confidence optimization
             await self._analyze_confidence_optimization()
 
+            # Analyze anomaly detection
+            await self._analyze_anomaly_detection()
+
         except Exception as e:
             self.logger.error(f"Error analyzing optimization opportunities: {e}")
+
+    async def _analyze_anomaly_detection(self) -> None:
+        """Analyze system for anomalies and unusual patterns."""
+        try:
+            # Get recent metrics for anomaly analysis
+            recent_metrics = list(self.metrics_history)[-50:] if self.metrics_history else []
+            
+            if len(recent_metrics) < 10:
+                return
+
+            # Calculate statistical baselines
+            baseline_metrics = {
+                'trading_win_rate': np.mean([m.trading_win_rate for m in recent_metrics]),
+                'trading_profit_factor': np.mean([m.trading_profit_factor for m in recent_metrics]),
+                'trading_sharpe_ratio': np.mean([m.trading_sharpe_ratio for m in recent_metrics]),
+                'model_accuracy': np.mean([m.model_accuracy for m in recent_metrics]),
+                'confidence_final': np.mean([m.confidence_final for m in recent_metrics]),
+                'system_memory_usage': np.mean([m.system_memory_usage for m in recent_metrics]),
+                'system_cpu_usage': np.mean([m.system_cpu_usage for m in recent_metrics]),
+            }
+
+            # Calculate standard deviations for threshold setting
+            std_metrics = {
+                'trading_win_rate': np.std([m.trading_win_rate for m in recent_metrics]),
+                'trading_profit_factor': np.std([m.trading_profit_factor for m in recent_metrics]),
+                'trading_sharpe_ratio': np.std([m.trading_sharpe_ratio for m in recent_metrics]),
+                'model_accuracy': np.std([m.model_accuracy for m in recent_metrics]),
+                'confidence_final': np.std([m.confidence_final for m in recent_metrics]),
+                'system_memory_usage': np.std([m.system_memory_usage for m in recent_metrics]),
+                'system_cpu_usage': np.std([m.system_cpu_usage for m in recent_metrics]),
+            }
+
+            # Check for anomalies in current metrics
+            current_metrics = self.metrics_history[-1] if self.metrics_history else None
+            if current_metrics:
+                anomalies = []
+                
+                for metric_name, baseline in baseline_metrics.items():
+                    current_value = getattr(current_metrics, metric_name, 0.0)
+                    threshold = std_metrics.get(metric_name, 0.1) * 2  # 2 standard deviations
+                    
+                    if abs(current_value - baseline) > threshold:
+                        anomaly = OptimizationOpportunity(
+                            category="anomaly_detection",
+                            metric=metric_name,
+                            current_value=current_value,
+                            target_value=baseline,
+                            improvement_potential=abs(current_value - baseline),
+                            priority="high" if abs(current_value - baseline) > threshold * 1.5 else "medium",
+                            description=f"Anomaly detected in {metric_name}: {current_value:.3f} (baseline: {baseline:.3f})",
+                            recommended_action="Investigate unusual pattern in system behavior",
+                            estimated_impact="High - may indicate system issues or market changes"
+                        )
+                        anomalies.append(anomaly)
+
+                # Add anomalies to optimization opportunities
+                self.optimization_opportunities.extend(anomalies)
+
+        except Exception as e:
+            self.logger.error(f"Error in anomaly detection: {e}")
 
     async def _analyze_model_optimization(self) -> None:
         """Analyze model performance optimization opportunities."""

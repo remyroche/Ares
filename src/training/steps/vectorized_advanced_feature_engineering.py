@@ -16,6 +16,626 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 
+class VectorizedAdvancedFeatureEngineering:
+    """
+    Comprehensive vectorized advanced feature engineering system.
+    Integrates all feature engineering components including wavelet transforms.
+    """
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild("VectorizedAdvancedFeatureEngineering")
+
+        # Configuration
+        self.feature_config = config.get("vectorized_advanced_features", {})
+        self.enable_volatility_modeling = self.feature_config.get("enable_volatility_modeling", True)
+        self.enable_correlation_analysis = self.feature_config.get("enable_correlation_analysis", True)
+        self.enable_momentum_analysis = self.feature_config.get("enable_momentum_analysis", True)
+        self.enable_liquidity_analysis = self.feature_config.get("enable_liquidity_analysis", True)
+        self.enable_candlestick_patterns = self.feature_config.get("enable_candlestick_patterns", True)
+        self.enable_sr_distance = self.feature_config.get("enable_sr_distance", True)
+        self.enable_wavelet_transforms = self.feature_config.get("enable_wavelet_transforms", True)
+        self.enable_multi_timeframe = self.feature_config.get("enable_multi_timeframe", True)
+        self.enable_meta_labeling = self.feature_config.get("enable_meta_labeling", True)
+
+        # Multi-timeframe configuration
+        self.timeframes = ["1m", "5m", "15m", "30m"]
+
+        # Initialize components
+        self.volatility_model = None
+        self.correlation_analyzer = None
+        self.momentum_analyzer = None
+        self.liquidity_analyzer = None
+        self.candlestick_analyzer = None
+        self.sr_distance_calculator = None
+        self.wavelet_analyzer = None
+
+        self.is_initialized = False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="vectorized advanced feature engineering initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize vectorized advanced feature engineering components."""
+        try:
+            self.logger.info("🚀 Initializing vectorized advanced feature engineering...")
+
+            # Initialize volatility modeling
+            if self.enable_volatility_modeling:
+                self.volatility_model = VectorizedVolatilityRegimeModel(self.config)
+                await self.volatility_model.initialize()
+
+            # Initialize correlation analysis
+            if self.enable_correlation_analysis:
+                self.correlation_analyzer = VectorizedCorrelationAnalyzer(self.config)
+                await self.correlation_analyzer.initialize()
+
+            # Initialize momentum analysis
+            if self.enable_momentum_analysis:
+                self.momentum_analyzer = VectorizedMomentumAnalyzer(self.config)
+                await self.momentum_analyzer.initialize()
+
+            # Initialize liquidity analysis
+            if self.enable_liquidity_analysis:
+                self.liquidity_analyzer = VectorizedLiquidityAnalyzer(self.config)
+                await self.liquidity_analyzer.initialize()
+
+            # Initialize candlestick pattern analyzer
+            if self.enable_candlestick_patterns:
+                self.candlestick_analyzer = VectorizedCandlestickPatternAnalyzer(self.config)
+                await self.candlestick_analyzer.initialize()
+
+            # Initialize S/R distance calculator
+            if self.enable_sr_distance:
+                self.sr_distance_calculator = VectorizedSRDistanceCalculator(self.config)
+                await self.sr_distance_calculator.initialize()
+
+            # Initialize wavelet transform analyzer
+            if self.enable_wavelet_transforms:
+                self.wavelet_analyzer = VectorizedWaveletTransformAnalyzer(self.config)
+                await self.wavelet_analyzer.initialize()
+
+            # Initialize meta-labeling system
+            if self.enable_meta_labeling:
+                from src.analyst.meta_labeling_system import MetaLabelingSystem
+
+                self.meta_labeling_system = MetaLabelingSystem(self.config)
+                await self.meta_labeling_system.initialize()
+
+            self.is_initialized = True
+            self.logger.info("✅ Vectorized advanced feature engineering initialized successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(
+                f"❌ Error initializing vectorized advanced feature engineering: {e}",
+            )
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="vectorized advanced feature engineering",
+    )
+    async def engineer_features(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: pd.DataFrame | None = None,
+        sr_levels: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Engineer advanced features for improved prediction accuracy using vectorized operations.
+
+        Args:
+            price_data: OHLCV price data
+            volume_data: Volume and trade flow data
+            order_flow_data: Order book and flow data (optional)
+            sr_levels: Support/resistance levels (optional)
+
+        Returns:
+            Dictionary containing engineered features
+        """
+        try:
+            if not self.is_initialized:
+                self.logger.error("Vectorized advanced feature engineering not initialized")
+                return {}
+
+            features = {}
+
+            # Market microstructure features
+            microstructure_features = await self._engineer_microstructure_features_vectorized(
+                price_data,
+                volume_data,
+                order_flow_data,
+            )
+            features.update(microstructure_features)
+
+            # Volatility regime features
+            if self.volatility_model:
+                volatility_features = await self.volatility_model.model_volatility_vectorized(
+                    price_data,
+                )
+                features.update(volatility_features)
+
+            # Correlation analysis features
+            if self.correlation_analyzer:
+                correlation_features = (
+                    await self.correlation_analyzer.analyze_correlations_vectorized(price_data)
+                )
+                features.update(correlation_features)
+
+            # Momentum analysis features
+            if self.momentum_analyzer:
+                momentum_features = await self.momentum_analyzer.analyze_momentum_vectorized(
+                    price_data,
+                )
+                features.update(momentum_features)
+
+            # Liquidity analysis features
+            if self.liquidity_analyzer:
+                liquidity_features = await self.liquidity_analyzer.analyze_liquidity_vectorized(
+                    price_data,
+                    volume_data,
+                    order_flow_data,
+                )
+                features.update(liquidity_features)
+
+            # Candlestick pattern features
+            if self.candlestick_analyzer:
+                candlestick_features = await self.candlestick_analyzer.analyze_patterns(
+                    price_data,
+                )
+                features.update(candlestick_features)
+
+            # S/R distance features
+            if self.sr_distance_calculator and sr_levels:
+                sr_distance_features = await self.sr_distance_calculator.calculate_sr_distances(
+                    price_data,
+                    sr_levels,
+                )
+                features.update(sr_distance_features)
+
+            # Wavelet transform features
+            if self.wavelet_analyzer:
+                wavelet_features = await self.wavelet_analyzer.analyze_wavelet_transforms(
+                    price_data,
+                    volume_data,
+                )
+                features.update(wavelet_features)
+
+            # Adaptive indicators
+            adaptive_features = self._engineer_adaptive_indicators_vectorized(price_data)
+            features.update(adaptive_features)
+
+            # Feature selection and dimensionality reduction
+            selected_features = self._select_optimal_features_vectorized(features)
+
+            # Add multi-timeframe features if enabled
+            if self.enable_multi_timeframe:
+                multi_timeframe_features = (
+                    await self._engineer_multi_timeframe_features_vectorized(
+                        price_data,
+                        volume_data,
+                        order_flow_data,
+                        sr_levels,
+                    )
+                )
+                selected_features.update(multi_timeframe_features)
+
+            # Add meta-labeling if enabled
+            if self.enable_meta_labeling:
+                meta_labels = await self._generate_meta_labels_vectorized(
+                    price_data,
+                    volume_data,
+                    order_flow_data,
+                )
+                selected_features.update(meta_labels)
+
+            self.logger.info(
+                f"✅ Engineered {len(selected_features)} vectorized advanced features including wavelet transforms",
+            )
+            return selected_features
+
+        except Exception as e:
+            self.logger.error(f"Error engineering vectorized advanced features: {e}")
+            return {}
+
+    async def _engineer_microstructure_features_vectorized(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: pd.DataFrame | None = None,
+    ) -> dict[str, Any]:
+        """Engineer market microstructure features using vectorized operations."""
+        try:
+            features = {}
+
+            # Price impact features
+            features["price_impact"] = self._calculate_price_impact_vectorized(price_data, volume_data)
+            features["volume_price_impact"] = self._calculate_volume_price_impact_vectorized(price_data, volume_data)
+
+            # Order flow imbalance features
+            if order_flow_data is not None:
+                features["order_flow_imbalance"] = self._calculate_order_flow_imbalance_vectorized(order_flow_data)
+                features["bid_ask_spread"] = self._calculate_bid_ask_spread_vectorized(order_flow_data)
+
+            # Market depth features
+            features["market_depth"] = self._calculate_market_depth_vectorized(price_data, volume_data)
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error engineering microstructure features: {e}")
+            return {}
+
+    def _calculate_price_impact_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> float:
+        """Calculate price impact using vectorized operations."""
+        try:
+            price_changes = price_data["close"].pct_change().abs()
+            volume_changes = volume_data["volume"].pct_change().abs()
+            
+            # Calculate price impact as correlation between price and volume changes
+            correlation = np.corrcoef(price_changes.dropna(), volume_changes.dropna())[0, 1]
+            return correlation if not np.isnan(correlation) else 0.0
+
+        except Exception as e:
+            self.logger.error(f"Error calculating price impact: {e}")
+            return 0.0
+
+    def _calculate_volume_price_impact_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> float:
+        """Calculate volume-price impact using vectorized operations."""
+        try:
+            # Calculate volume-weighted price changes
+            price_changes = price_data["close"].pct_change()
+            volume_weights = volume_data["volume"] / volume_data["volume"].sum()
+            
+            # Volume-weighted average price change
+            vwap_change = np.sum(price_changes.dropna() * volume_weights.dropna())
+            return vwap_change
+
+        except Exception as e:
+            self.logger.error(f"Error calculating volume-price impact: {e}")
+            return 0.0
+
+    def _calculate_order_flow_imbalance_vectorized(self, order_flow_data: pd.DataFrame) -> float:
+        """Calculate order flow imbalance using vectorized operations."""
+        try:
+            # Simplified order flow imbalance calculation
+            # In practice, this would use actual order book data
+            return 0.0  # Placeholder
+
+        except Exception as e:
+            self.logger.error(f"Error calculating order flow imbalance: {e}")
+            return 0.0
+
+    def _calculate_bid_ask_spread_vectorized(self, order_flow_data: pd.DataFrame) -> float:
+        """Calculate bid-ask spread using vectorized operations."""
+        try:
+            # Simplified bid-ask spread calculation
+            # In practice, this would use actual order book data
+            return 0.0  # Placeholder
+
+        except Exception as e:
+            self.logger.error(f"Error calculating bid-ask spread: {e}")
+            return 0.0
+
+    def _calculate_market_depth_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> float:
+        """Calculate market depth using vectorized operations."""
+        try:
+            # Market depth as average volume over time
+            market_depth = volume_data["volume"].rolling(window=20).mean().iloc[-1]
+            return market_depth
+
+        except Exception as e:
+            self.logger.error(f"Error calculating market depth: {e}")
+            return 0.0
+
+    def _engineer_adaptive_indicators_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
+        """Engineer adaptive indicators using vectorized operations."""
+        try:
+            features = {}
+
+            # Adaptive moving averages
+            features["adaptive_sma"] = self._calculate_adaptive_sma_vectorized(price_data)
+            features["adaptive_ema"] = self._calculate_adaptive_ema_vectorized(price_data)
+
+            # Adaptive volatility indicators
+            features["adaptive_atr"] = self._calculate_adaptive_atr_vectorized(price_data)
+            features["adaptive_bollinger"] = self._calculate_adaptive_bollinger_vectorized(price_data)
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error engineering adaptive indicators: {e}")
+            return {}
+
+    def _calculate_adaptive_sma_vectorized(self, price_data: pd.DataFrame) -> float:
+        """Calculate adaptive SMA using vectorized operations."""
+        try:
+            # Adaptive SMA based on volatility
+            volatility = price_data["close"].pct_change().rolling(window=20).std()
+            adaptive_window = np.clip(20 / (1 + volatility * 100), 5, 50).astype(int)
+            
+            # Calculate adaptive SMA
+            adaptive_sma = price_data["close"].rolling(window=adaptive_window.iloc[-1]).mean().iloc[-1]
+            return adaptive_sma
+
+        except Exception as e:
+            self.logger.error(f"Error calculating adaptive SMA: {e}")
+            return 0.0
+
+    def _calculate_adaptive_ema_vectorized(self, price_data: pd.DataFrame) -> float:
+        """Calculate adaptive EMA using vectorized operations."""
+        try:
+            # Adaptive EMA based on volatility
+            volatility = price_data["close"].pct_change().rolling(window=20).std()
+            adaptive_span = np.clip(12 / (1 + volatility * 100), 2, 50)
+            
+            # Calculate adaptive EMA
+            adaptive_ema = price_data["close"].ewm(span=adaptive_span.iloc[-1]).mean().iloc[-1]
+            return adaptive_ema
+
+        except Exception as e:
+            self.logger.error(f"Error calculating adaptive EMA: {e}")
+            return 0.0
+
+    def _calculate_adaptive_atr_vectorized(self, price_data: pd.DataFrame) -> float:
+        """Calculate adaptive ATR using vectorized operations."""
+        try:
+            # Adaptive ATR based on volatility regime
+            high_low = price_data["high"] - price_data["low"]
+            high_close = np.abs(price_data["high"] - price_data["close"].shift())
+            low_close = np.abs(price_data["low"] - price_data["close"].shift())
+            
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            
+            # Adaptive window based on volatility
+            volatility = true_range.rolling(window=20).std()
+            adaptive_window = np.clip(14 / (1 + volatility * 10), 5, 30).astype(int)
+            
+            adaptive_atr = true_range.rolling(window=adaptive_window.iloc[-1]).mean().iloc[-1]
+            return adaptive_atr
+
+        except Exception as e:
+            self.logger.error(f"Error calculating adaptive ATR: {e}")
+            return 0.0
+
+    def _calculate_adaptive_bollinger_vectorized(self, price_data: pd.DataFrame) -> float:
+        """Calculate adaptive Bollinger Bands using vectorized operations."""
+        try:
+            # Adaptive Bollinger Bands based on volatility
+            volatility = price_data["close"].pct_change().rolling(window=20).std()
+            adaptive_window = np.clip(20 / (1 + volatility * 100), 10, 50).astype(int)
+            
+            # Calculate adaptive Bollinger Bands
+            sma = price_data["close"].rolling(window=adaptive_window.iloc[-1]).mean()
+            std = price_data["close"].rolling(window=adaptive_window.iloc[-1]).std()
+            
+            upper_band = sma + (std * 2)
+            lower_band = sma - (std * 2)
+            
+            # Return position within bands
+            current_price = price_data["close"].iloc[-1]
+            position = (current_price - lower_band.iloc[-1]) / (upper_band.iloc[-1] - lower_band.iloc[-1])
+            return position
+
+        except Exception as e:
+            self.logger.error(f"Error calculating adaptive Bollinger Bands: {e}")
+            return 0.0
+
+    def _select_optimal_features_vectorized(self, features: dict[str, Any]) -> dict[str, Any]:
+        """Select optimal features using vectorized operations."""
+        try:
+            # Simple feature selection based on variance
+            selected_features = {}
+            
+            for feature_name, feature_value in features.items():
+                if isinstance(feature_value, (int, float)) and not np.isnan(feature_value):
+                    selected_features[feature_name] = feature_value
+            
+            return selected_features
+
+        except Exception as e:
+            self.logger.error(f"Error selecting optimal features: {e}")
+            return features
+
+    async def _engineer_multi_timeframe_features_vectorized(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: pd.DataFrame | None = None,
+        sr_levels: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Engineer multi-timeframe features using vectorized operations."""
+        try:
+            features = {}
+
+            # Multi-timeframe features for different timeframes
+            for timeframe in self.timeframes:
+                # Resample data to timeframe
+                resampled_price = self._resample_data_vectorized(price_data, timeframe)
+                resampled_volume = self._resample_data_vectorized(volume_data, timeframe)
+                
+                # Calculate features for this timeframe
+                timeframe_features = await self._calculate_timeframe_features_vectorized(
+                    resampled_price,
+                    resampled_volume,
+                    timeframe,
+                )
+                
+                # Add timeframe prefix to features
+                for feature_name, feature_value in timeframe_features.items():
+                    features[f"{timeframe}_{feature_name}"] = feature_value
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error engineering multi-timeframe features: {e}")
+            return {}
+
+    def _resample_data_vectorized(self, data: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+        """Resample data to specified timeframe using vectorized operations."""
+        try:
+            # Convert timeframe string to pandas offset
+            timeframe_map = {
+                "1m": "1T",
+                "5m": "5T",
+                "15m": "15T",
+                "30m": "30T",
+            }
+            
+            offset = timeframe_map.get(timeframe, "1T")
+            resampled = data.resample(offset).agg({
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum',
+            })
+            
+            return resampled.dropna()
+
+        except Exception as e:
+            self.logger.error(f"Error resampling data: {e}")
+            return data
+
+    async def _calculate_timeframe_features_vectorized(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        timeframe: str,
+    ) -> dict[str, Any]:
+        """Calculate features for specific timeframe using vectorized operations."""
+        try:
+            features = {}
+
+            # Basic price features
+            features["price_change"] = price_data["close"].pct_change().iloc[-1]
+            features["price_volatility"] = price_data["close"].pct_change().rolling(window=20).std().iloc[-1]
+            
+            # Volume features
+            features["volume_change"] = volume_data["volume"].pct_change().iloc[-1]
+            features["volume_ma_ratio"] = volume_data["volume"].iloc[-1] / volume_data["volume"].rolling(window=20).mean().iloc[-1]
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error calculating timeframe features: {e}")
+            return {}
+
+    async def _generate_meta_labels_vectorized(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: pd.DataFrame | None = None,
+    ) -> dict[str, Any]:
+        """Generate meta labels using vectorized operations."""
+        try:
+            features = {}
+
+            # Meta-labeling based on volatility regime
+            volatility = price_data["close"].pct_change().rolling(window=20).std()
+            features["volatility_regime"] = 1 if volatility.iloc[-1] > volatility.quantile(0.75) else 0
+
+            # Meta-labeling based on volume regime
+            volume_ma = volume_data["volume"].rolling(window=20).mean()
+            features["volume_regime"] = 1 if volume_data["volume"].iloc[-1] > volume_ma.iloc[-1] else 0
+
+            # Meta-labeling based on trend regime
+            sma_short = price_data["close"].rolling(window=10).mean()
+            sma_long = price_data["close"].rolling(window=30).mean()
+            features["trend_regime"] = 1 if sma_short.iloc[-1] > sma_long.iloc[-1] else 0
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error generating meta labels: {e}")
+            return {}
+
+
+# Placeholder classes for other analyzers
+class VectorizedVolatilityRegimeModel:
+    """Placeholder for volatility regime modeling."""
+    
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild("VectorizedVolatilityRegimeModel")
+    
+    async def initialize(self) -> bool:
+        return True
+    
+    async def model_volatility_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
+        return {"volatility_regime": 0.5}
+
+
+class VectorizedCorrelationAnalyzer:
+    """Placeholder for correlation analysis."""
+    
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild("VectorizedCorrelationAnalyzer")
+    
+    async def initialize(self) -> bool:
+        return True
+    
+    async def analyze_correlations_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
+        return {"correlation_strength": 0.3}
+
+
+class VectorizedMomentumAnalyzer:
+    """Placeholder for momentum analysis."""
+    
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild("VectorizedMomentumAnalyzer")
+    
+    async def initialize(self) -> bool:
+        return True
+    
+    async def analyze_momentum_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
+        return {"momentum_strength": 0.4}
+
+
+class VectorizedLiquidityAnalyzer:
+    """Placeholder for liquidity analysis."""
+    
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild("VectorizedLiquidityAnalyzer")
+    
+    async def initialize(self) -> bool:
+        return True
+    
+    async def analyze_liquidity_vectorized(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: pd.DataFrame | None = None,
+    ) -> dict[str, Any]:
+        return {"liquidity_score": 0.6}
+
+
+class VectorizedSRDistanceCalculator:
+    """Placeholder for S/R distance calculation."""
+    
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild("VectorizedSRDistanceCalculator")
+    
+    async def initialize(self) -> bool:
+        return True
+    
+    async def calculate_sr_distances(
+        self,
+        price_data: pd.DataFrame,
+        sr_levels: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {"nearest_support_distance": 0.02, "nearest_resistance_distance": 0.03}
+
+
 class VectorizedCandlestickPatternAnalyzer:
     """
     Comprehensive candlestick pattern analyzer implementing all major patterns
@@ -634,3 +1254,516 @@ class VectorizedCandlestickPatternAnalyzer:
         except Exception as e:
             self.logger.error(f"Error converting patterns to features: {e}")
             return {}
+
+
+class VectorizedWaveletTransformAnalyzer:
+    """
+    Comprehensive wavelet transform analyzer for signal processing and feature extraction.
+    Implements various wavelet transforms for financial time series analysis.
+    """
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild("VectorizedWaveletTransformAnalyzer")
+
+        # Wavelet configuration
+        self.wavelet_config = config.get("wavelet_transforms", {})
+        self.wavelet_type = self.wavelet_config.get("wavelet_type", "db4")
+        self.decomposition_level = self.wavelet_config.get("decomposition_level", 4)
+        self.enable_continuous_wavelet = self.wavelet_config.get("enable_continuous_wavelet", True)
+        self.enable_discrete_wavelet = self.wavelet_config.get("enable_discrete_wavelet", True)
+        self.enable_wavelet_packet = self.wavelet_config.get("enable_wavelet_packet", True)
+        self.enable_denoising = self.wavelet_config.get("enable_denoising", True)
+
+        # Wavelet types for different analyses
+        self.wavelet_types = ["db1", "db2", "db4", "db8", "haar", "sym2", "sym4", "coif1", "coif2"]
+        
+        self.is_initialized = False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="wavelet transform analyzer initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize wavelet transform analyzer."""
+        try:
+            self.logger.info("🚀 Initializing vectorized wavelet transform analyzer...")
+            self.is_initialized = True
+            self.logger.info("✅ Vectorized wavelet transform analyzer initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.error(
+                f"❌ Error initializing vectorized wavelet transform analyzer: {e}",
+            )
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return={},
+        context="wavelet transform analysis",
+    )
+    async def analyze_wavelet_transforms(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame | None = None,
+    ) -> dict[str, Any]:
+        """
+        Analyze wavelet transforms for signal processing and feature extraction.
+
+        Args:
+            price_data: OHLCV price data
+            volume_data: Volume data (optional)
+
+        Returns:
+            Dictionary containing wavelet transform features
+        """
+        try:
+            if not self.is_initialized:
+                self.logger.error("Wavelet transform analyzer not initialized")
+                return {}
+
+            if price_data.empty:
+                self.logger.warning("Empty price data provided for wavelet analysis")
+                return {}
+
+            self.logger.info("🔍 Performing wavelet transform analysis...")
+
+            features = {}
+
+            # 1. Discrete Wavelet Transform (DWT) analysis
+            if self.enable_discrete_wavelet:
+                dwt_features = self._analyze_discrete_wavelet_transforms(price_data)
+                features.update(dwt_features)
+
+            # 2. Continuous Wavelet Transform (CWT) analysis
+            if self.enable_continuous_wavelet:
+                cwt_features = self._analyze_continuous_wavelet_transforms(price_data)
+                features.update(cwt_features)
+
+            # 3. Wavelet Packet analysis
+            if self.enable_wavelet_packet:
+                packet_features = self._analyze_wavelet_packets(price_data)
+                features.update(packet_features)
+
+            # 4. Wavelet denoising
+            if self.enable_denoising:
+                denoising_features = self._analyze_wavelet_denoising(price_data)
+                features.update(denoising_features)
+
+            # 5. Multi-wavelet analysis
+            multi_wavelet_features = self._analyze_multi_wavelet_transforms(price_data)
+            features.update(multi_wavelet_features)
+
+            # 6. Volume wavelet analysis (if available)
+            if volume_data is not None and not volume_data.empty:
+                volume_wavelet_features = self._analyze_volume_wavelet_transforms(volume_data)
+                features.update(volume_wavelet_features)
+
+            self.logger.info(f"✅ Wavelet transform analysis completed. Generated {len(features)} features")
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error in wavelet transform analysis: {e}")
+            return {}
+
+    def _analyze_discrete_wavelet_transforms(self, price_data: pd.DataFrame) -> dict[str, float]:
+        """Analyze discrete wavelet transforms using vectorized operations."""
+        try:
+            features = {}
+            
+            # Use close prices for wavelet analysis
+            close_prices = price_data["close"].values
+            
+            # Perform DWT for different wavelet types
+            for wavelet_type in self.wavelet_types[:3]:  # Use first 3 types for efficiency
+                try:
+                    # Perform wavelet decomposition
+                    coeffs = pywt.wavedec(close_prices, wavelet_type, level=self.decomposition_level)
+                    
+                    # Extract features from coefficients
+                    dwt_features = self._extract_dwt_features(coeffs, wavelet_type)
+                    features.update(dwt_features)
+                    
+                except Exception as e:
+                    self.logger.warning(f"Error with wavelet type {wavelet_type}: {e}")
+                    continue
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error in discrete wavelet transform analysis: {e}")
+            return {}
+
+    def _extract_dwt_features(self, coeffs: list, wavelet_type: str) -> dict[str, float]:
+        """Extract features from DWT coefficients using vectorized operations."""
+        try:
+            features = {}
+            
+            # Energy features for each level
+            for i, coeff in enumerate(coeffs):
+                if len(coeff) > 0:
+                    energy = np.sum(coeff ** 2)
+                    features[f"{wavelet_type}_level_{i}_energy"] = energy
+                    features[f"{wavelet_type}_level_{i}_energy_normalized"] = energy / len(coeff)
+                    
+                    # Statistical features
+                    features[f"{wavelet_type}_level_{i}_mean"] = np.mean(coeff)
+                    features[f"{wavelet_type}_level_{i}_std"] = np.std(coeff)
+                    features[f"{wavelet_type}_level_{i}_max"] = np.max(coeff)
+                    features[f"{wavelet_type}_level_{i}_min"] = np.min(coeff)
+                    
+                    # Entropy features
+                    if energy > 0:
+                        entropy = -np.sum((coeff ** 2) / energy * np.log((coeff ** 2) / energy + 1e-10))
+                        features[f"{wavelet_type}_level_{i}_entropy"] = entropy
+
+            # Cross-level features
+            if len(coeffs) > 1:
+                # Energy ratio between levels
+                for i in range(len(coeffs) - 1):
+                    if np.sum(coeffs[i] ** 2) > 0:
+                        energy_ratio = np.sum(coeffs[i + 1] ** 2) / np.sum(coeffs[i] ** 2)
+                        features[f"{wavelet_type}_energy_ratio_{i}_{i+1}"] = energy_ratio
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error extracting DWT features: {e}")
+            return {}
+
+    def _analyze_continuous_wavelet_transforms(self, price_data: pd.DataFrame) -> dict[str, float]:
+        """Analyze continuous wavelet transforms using vectorized operations."""
+        try:
+            features = {}
+            
+            # Use close prices for CWT analysis
+            close_prices = price_data["close"].values
+            
+            # Perform CWT for different scales
+            scales = np.arange(1, 32, 2)  # Use fewer scales for efficiency
+            
+            for wavelet_type in ["morl", "cmor1.5-1.0"]:  # Morlet and complex Morlet wavelets
+                try:
+                    # Perform continuous wavelet transform
+                    coeffs, freqs = pywt.cwt(close_prices, scales, wavelet_type)
+                    
+                    # Extract CWT features
+                    cwt_features = self._extract_cwt_features(coeffs, freqs, wavelet_type)
+                    features.update(cwt_features)
+                    
+                except Exception as e:
+                    self.logger.warning(f"Error with CWT wavelet type {wavelet_type}: {e}")
+                    continue
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error in continuous wavelet transform analysis: {e}")
+            return {}
+
+    def _extract_cwt_features(self, coeffs: np.ndarray, freqs: np.ndarray, wavelet_type: str) -> dict[str, float]:
+        """Extract features from CWT coefficients using vectorized operations."""
+        try:
+            features = {}
+            
+            # Energy features
+            energy = np.sum(np.abs(coeffs) ** 2, axis=1)
+            features[f"{wavelet_type}_total_energy"] = np.sum(energy)
+            features[f"{wavelet_type}_max_energy"] = np.max(energy)
+            features[f"{wavelet_type}_min_energy"] = np.min(energy)
+            features[f"{wavelet_type}_energy_std"] = np.std(energy)
+            
+            # Frequency features
+            features[f"{wavelet_type}_dominant_freq"] = freqs[np.argmax(energy)]
+            features[f"{wavelet_type}_freq_range"] = np.max(freqs) - np.min(freqs)
+            
+            # Statistical features
+            features[f"{wavelet_type}_coeff_mean"] = np.mean(np.abs(coeffs))
+            features[f"{wavelet_type}_coeff_std"] = np.std(np.abs(coeffs))
+            features[f"{wavelet_type}_coeff_max"] = np.max(np.abs(coeffs))
+            features[f"{wavelet_type}_coeff_min"] = np.min(np.abs(coeffs))
+            
+            # Entropy features
+            total_energy = np.sum(np.abs(coeffs) ** 2)
+            if total_energy > 0:
+                entropy = -np.sum((np.abs(coeffs) ** 2) / total_energy * 
+                                np.log((np.abs(coeffs) ** 2) / total_energy + 1e-10))
+                features[f"{wavelet_type}_entropy"] = entropy
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error extracting CWT features: {e}")
+            return {}
+
+    def _analyze_wavelet_packets(self, price_data: pd.DataFrame) -> dict[str, float]:
+        """Analyze wavelet packets using vectorized operations."""
+        try:
+            features = {}
+            
+            # Use close prices for wavelet packet analysis
+            close_prices = price_data["close"].values
+            
+            # Perform wavelet packet decomposition
+            for wavelet_type in ["db4", "sym4"]:  # Use common wavelet types
+                try:
+                    # Create wavelet packet tree
+                    wp = pywt.WaveletPacket(close_prices, wavelet_type, mode='symmetric')
+                    
+                    # Extract packet features
+                    packet_features = self._extract_wavelet_packet_features(wp, wavelet_type)
+                    features.update(packet_features)
+                    
+                except Exception as e:
+                    self.logger.warning(f"Error with wavelet packet type {wavelet_type}: {e}")
+                    continue
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error in wavelet packet analysis: {e}")
+            return {}
+
+    def _extract_wavelet_packet_features(self, wp: pywt.WaveletPacket, wavelet_type: str) -> dict[str, float]:
+        """Extract features from wavelet packets using vectorized operations."""
+        try:
+            features = {}
+            
+            # Get packet coefficients
+            packets = []
+            for node in wp.get_level(3):  # Level 3 decomposition
+                packets.append(node.data)
+            
+            if packets:
+                # Energy features
+                energies = [np.sum(packet ** 2) for packet in packets]
+                features[f"{wavelet_type}_packet_total_energy"] = np.sum(energies)
+                features[f"{wavelet_type}_packet_max_energy"] = np.max(energies)
+                features[f"{wavelet_type}_packet_min_energy"] = np.min(energies)
+                features[f"{wavelet_type}_packet_energy_std"] = np.std(energies)
+                
+                # Statistical features
+                all_coeffs = np.concatenate(packets)
+                features[f"{wavelet_type}_packet_coeff_mean"] = np.mean(all_coeffs)
+                features[f"{wavelet_type}_packet_coeff_std"] = np.std(all_coeffs)
+                features[f"{wavelet_type}_packet_coeff_max"] = np.max(all_coeffs)
+                features[f"{wavelet_type}_packet_coeff_min"] = np.min(all_coeffs)
+                
+                # Entropy features
+                total_energy = np.sum(energies)
+                if total_energy > 0:
+                    entropy = -np.sum(np.array(energies) / total_energy * 
+                                    np.log(np.array(energies) / total_energy + 1e-10))
+                    features[f"{wavelet_type}_packet_entropy"] = entropy
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error extracting wavelet packet features: {e}")
+            return {}
+
+    def _analyze_wavelet_denoising(self, price_data: pd.DataFrame) -> dict[str, float]:
+        """Analyze wavelet denoising using vectorized operations."""
+        try:
+            features = {}
+            
+            # Use close prices for denoising analysis
+            close_prices = price_data["close"].values
+            
+            # Perform wavelet denoising
+            for wavelet_type in ["db4", "sym4"]:
+                try:
+                    # Denoise signal
+                    denoised = pywt.threshold(close_prices, np.std(close_prices) * 0.1, mode='soft')
+                    
+                    # Extract denoising features
+                    denoising_features = self._extract_denoising_features(close_prices, denoised, wavelet_type)
+                    features.update(denoising_features)
+                    
+                except Exception as e:
+                    self.logger.warning(f"Error with denoising wavelet type {wavelet_type}: {e}")
+                    continue
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error in wavelet denoising analysis: {e}")
+            return {}
+
+    def _extract_denoising_features(self, original: np.ndarray, denoised: np.ndarray, wavelet_type: str) -> dict[str, float]:
+        """Extract features from denoising analysis using vectorized operations."""
+        try:
+            features = {}
+            
+            # Noise estimation
+            noise = original - denoised
+            features[f"{wavelet_type}_noise_std"] = np.std(noise)
+            features[f"{wavelet_type}_noise_mean"] = np.mean(noise)
+            features[f"{wavelet_type}_noise_energy"] = np.sum(noise ** 2)
+            
+            # Signal quality metrics
+            signal_energy = np.sum(denoised ** 2)
+            total_energy = np.sum(original ** 2)
+            if total_energy > 0:
+                features[f"{wavelet_type}_signal_to_noise_ratio"] = signal_energy / np.sum(noise ** 2)
+                features[f"{wavelet_type}_signal_energy_ratio"] = signal_energy / total_energy
+            
+            # Correlation between original and denoised
+            correlation = np.corrcoef(original, denoised)[0, 1]
+            features[f"{wavelet_type}_denoising_correlation"] = correlation if not np.isnan(correlation) else 0.0
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error extracting denoising features: {e}")
+            return {}
+
+    def _analyze_multi_wavelet_transforms(self, price_data: pd.DataFrame) -> dict[str, float]:
+        """Analyze multiple wavelet transforms for comprehensive feature extraction."""
+        try:
+            features = {}
+            
+            # Use different price series for wavelet analysis
+            price_series = {
+                "close": price_data["close"].values,
+                "returns": price_data["close"].pct_change().dropna().values,
+                "log_returns": np.log(price_data["close"] / price_data["close"].shift(1)).dropna().values,
+            }
+            
+            for series_name, series_data in price_series.items():
+                if len(series_data) > 0:
+                    # Perform DWT for each series
+                    for wavelet_type in ["db4", "sym4"]:
+                        try:
+                            coeffs = pywt.wavedec(series_data, wavelet_type, level=3)
+                            
+                            # Extract multi-series features
+                            multi_features = self._extract_multi_series_features(coeffs, wavelet_type, series_name)
+                            features.update(multi_features)
+                            
+                        except Exception as e:
+                            self.logger.warning(f"Error with multi-wavelet {series_name} {wavelet_type}: {e}")
+                            continue
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error in multi-wavelet transform analysis: {e}")
+            return {}
+
+    def _extract_multi_series_features(self, coeffs: list, wavelet_type: str, series_name: str) -> dict[str, float]:
+        """Extract features from multiple series wavelet analysis using vectorized operations."""
+        try:
+            features = {}
+            
+            # Energy distribution features
+            energies = [np.sum(coeff ** 2) for coeff in coeffs]
+            total_energy = np.sum(energies)
+            
+            if total_energy > 0:
+                # Energy distribution
+                for i, energy in enumerate(energies):
+                    features[f"{wavelet_type}_{series_name}_level_{i}_energy_ratio"] = energy / total_energy
+                
+                # Energy concentration
+                features[f"{wavelet_type}_{series_name}_energy_concentration"] = np.max(energies) / total_energy
+                
+                # Energy spread
+                features[f"{wavelet_type}_{series_name}_energy_spread"] = np.std(energies) / np.mean(energies) if np.mean(energies) > 0 else 0.0
+            
+            # Statistical features across levels
+            all_coeffs = np.concatenate(coeffs)
+            features[f"{wavelet_type}_{series_name}_total_coeff_mean"] = np.mean(all_coeffs)
+            features[f"{wavelet_type}_{series_name}_total_coeff_std"] = np.std(all_coeffs)
+            features[f"{wavelet_type}_{series_name}_total_coeff_kurtosis"] = self._calculate_kurtosis(all_coeffs)
+            features[f"{wavelet_type}_{series_name}_total_coeff_skewness"] = self._calculate_skewness(all_coeffs)
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error extracting multi-series features: {e}")
+            return {}
+
+    def _analyze_volume_wavelet_transforms(self, volume_data: pd.DataFrame) -> dict[str, float]:
+        """Analyze wavelet transforms for volume data using vectorized operations."""
+        try:
+            features = {}
+            
+            if "volume" in volume_data.columns:
+                volume_series = volume_data["volume"].values
+                
+                # Perform DWT on volume data
+                for wavelet_type in ["db4", "sym4"]:
+                    try:
+                        coeffs = pywt.wavedec(volume_series, wavelet_type, level=3)
+                        
+                        # Extract volume-specific features
+                        volume_features = self._extract_volume_wavelet_features(coeffs, wavelet_type)
+                        features.update(volume_features)
+                        
+                    except Exception as e:
+                        self.logger.warning(f"Error with volume wavelet {wavelet_type}: {e}")
+                        continue
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error in volume wavelet transform analysis: {e}")
+            return {}
+
+    def _extract_volume_wavelet_features(self, coeffs: list, wavelet_type: str) -> dict[str, float]:
+        """Extract volume-specific wavelet features using vectorized operations."""
+        try:
+            features = {}
+            
+            # Volume energy features
+            energies = [np.sum(coeff ** 2) for coeff in coeffs]
+            total_energy = np.sum(energies)
+            
+            if total_energy > 0:
+                features[f"{wavelet_type}_volume_total_energy"] = total_energy
+                features[f"{wavelet_type}_volume_max_energy"] = np.max(energies)
+                features[f"{wavelet_type}_volume_min_energy"] = np.min(energies)
+                features[f"{wavelet_type}_volume_energy_std"] = np.std(energies)
+                
+                # Volume energy distribution
+                for i, energy in enumerate(energies):
+                    features[f"{wavelet_type}_volume_level_{i}_energy_ratio"] = energy / total_energy
+            
+            # Volume statistical features
+            all_coeffs = np.concatenate(coeffs)
+            features[f"{wavelet_type}_volume_coeff_mean"] = np.mean(all_coeffs)
+            features[f"{wavelet_type}_volume_coeff_std"] = np.std(all_coeffs)
+            features[f"{wavelet_type}_volume_coeff_max"] = np.max(all_coeffs)
+            features[f"{wavelet_type}_volume_coeff_min"] = np.min(all_coeffs)
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error extracting volume wavelet features: {e}")
+            return {}
+
+    def _calculate_kurtosis(self, data: np.ndarray) -> float:
+        """Calculate kurtosis using vectorized operations."""
+        try:
+            mean = np.mean(data)
+            std = np.std(data)
+            if std > 0:
+                kurtosis = np.mean(((data - mean) / std) ** 4) - 3
+                return kurtosis
+            return 0.0
+        except Exception:
+            return 0.0
+
+    def _calculate_skewness(self, data: np.ndarray) -> float:
+        """Calculate skewness using vectorized operations."""
+        try:
+            mean = np.mean(data)
+            std = np.std(data)
+            if std > 0:
+                skewness = np.mean(((data - mean) / std) ** 3)
+                return skewness
+            return 0.0
+        except Exception:
+            return 0.0

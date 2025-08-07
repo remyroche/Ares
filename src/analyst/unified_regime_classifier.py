@@ -339,7 +339,45 @@ class UnifiedRegimeClassifier:
     
             return state_analysis
 
-    # Replace _calculate_poc with this comprehensive analyzer
+    def _calculate_rolling_pivots(self, df_window: pd.DataFrame) -> dict:
+        """
+        Calculate rolling pivot points for dynamic support and resistance.
+        
+        Args:
+            df_window: DataFrame window for pivot calculation
+            
+        Returns:
+            Dict containing pivot levels
+        """
+        try:
+            if len(df_window) < 5:
+                return {"s1": 0, "s2": 0, "r1": 0, "r2": 0}
+            
+            # Calculate pivot point
+            high = df_window["high"].max()
+            low = df_window["low"].min()
+            close = df_window["close"].iloc[-1]
+            
+            pivot = (high + low + close) / 3
+            
+            # Calculate support and resistance levels
+            r1 = 2 * pivot - low
+            r2 = pivot + (high - low)
+            s1 = 2 * pivot - high
+            s2 = pivot - (high - low)
+            
+            return {
+                "s1": s1,
+                "s2": s2,
+                "r1": r1,
+                "r2": r2,
+                "pivot": pivot
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating rolling pivots: {e}")
+            return {"s1": 0, "s2": 0, "r1": 0, "r2": 0}
+
     def _analyze_volume_levels(self, df_window: pd.DataFrame) -> dict | None:
         """
         Analyzes the volume profile to find the two most significant High Volume Nodes (HVNs),
@@ -550,18 +588,19 @@ class UnifiedRegimeClassifier:
 
     async def train_location_classifier(self, historical_klines: pd.DataFrame) -> bool:
         """
-        Train location classifier for SUPPORT, RESISTANCE, OPEN_RANGE.
+        Train location classifier for OPEN_RANGE, PIVOT_S, PIVOT_R, HVN_SUPPORT, HVN_RESISTANCE, CONFLUENCE_S, CONFLUENCE_R.
         """
         try:
             self.logger.info("🎓 Training Location Classifier...")
 
-            # Legacy S/R code removed
-            return False
+            # Calculate features
+            features_df = self._calculate_features(historical_klines)
+            if features_df.empty:
+                self.logger.error("No features available for location classifier training")
+                return False
 
-            for i, row in features_df.iterrows():
-                current_price = row["close"]
-                location = self._classify_location(current_price, sr_levels)
-                location_labels.append(location)
+            # Get location labels using the new _classify_location method
+            location_labels = self._classify_location(features_df)
 
             # Encode location labels
             self.location_label_encoder = LabelEncoder()
@@ -705,6 +744,74 @@ class UnifiedRegimeClassifier:
             self.logger.error(f"❌ Failed to train complete system: {e}")
             return False
 
+    def predict_regime(
+        self,
+        current_klines: pd.DataFrame,
+    ) -> tuple[str, float, dict]:
+        """
+        Predict only the regime (for backward compatibility).
+
+        Args:
+            current_klines: Current market data
+
+        Returns:
+            Tuple of (regime, confidence, additional_info)
+        """
+        try:
+            if not self.trained:
+                self.logger.warning("Models not trained, returning default prediction")
+                return "SIDEWAYS", 0.5, {}
+
+            # Calculate features
+            features_df = self._calculate_features(current_klines)
+            if features_df.empty:
+                return "SIDEWAYS", 0.5, {}
+
+            current_features = features_df.iloc[-1] if len(features_df) > 0 else None
+            if current_features is None:
+                return "SIDEWAYS", 0.5, {}
+
+            # Predict regime
+            regime_features = features_df[
+                [
+                    "log_returns",
+                    "volatility_20",
+                    "volume_ratio",
+                    "rsi",
+                    "macd",
+                    "macd_signal",
+                    "macd_histogram",
+                    "bb_position",
+                    "bb_width",
+                    "atr",
+                    "volatility_regime",
+                    "volatility_acceleration",
+                ]
+            ].fillna(0)
+
+            if self.basic_ensemble:
+                regime_proba = self.basic_ensemble.predict_proba(
+                    regime_features.iloc[-1:],
+                )
+                regime_pred = self.basic_ensemble.predict(regime_features.iloc[-1:])[0]
+                regime = self.basic_label_encoder.inverse_transform([regime_pred])[0]
+                regime_confidence = np.max(regime_proba)
+            else:
+                regime = "SIDEWAYS"
+                regime_confidence = 0.5
+
+            additional_info = {
+                "regime_confidence": regime_confidence,
+                "features_used": list(features_df.columns),
+                "prediction_time": datetime.now().isoformat(),
+            }
+
+            return regime, regime_confidence, additional_info
+
+        except Exception as e:
+            self.logger.error(f"❌ Error in regime prediction: {e}")
+            return "SIDEWAYS", 0.5, {"error": str(e)}
+
     def predict_regime_and_location(
         self,
         current_klines: pd.DataFrame,
@@ -779,12 +886,8 @@ class UnifiedRegimeClassifier:
                 location_confidence = np.max(location_proba)
             else:
                 # Fallback to rule-based location classification
-                current_price = current_features["close"]
-                sr_levels = {
-                    # Legacy S/R code removed,
-                    # Legacy S/R code removed
-                }
-                location = self._classify_location(current_price, sr_levels)
+                location_labels = self._classify_location(features_df)
+                location = location_labels[-1] if location_labels else "OPEN_RANGE"
                 location_confidence = 0.7
 
             # Calculate overall confidence
@@ -877,6 +980,72 @@ class UnifiedRegimeClassifier:
         except Exception as e:
             self.logger.error(f"❌ Error loading models: {e}")
             return False
+
+    async def classify_regimes(self, historical_klines: pd.DataFrame) -> dict[str, Any]:
+        """
+        Classify regimes for historical data (for training purposes).
+        
+        Args:
+            historical_klines: Historical market data
+            
+        Returns:
+            Dict containing regime classification results
+        """
+        try:
+            if not self.trained:
+                self.logger.warning("Models not trained, training now...")
+                await self.train_complete_system(historical_klines)
+            
+            # Calculate features
+            features_df = self._calculate_features(historical_klines)
+            if features_df.empty:
+                return {"error": "No features available for classification"}
+            
+            # Get regime predictions
+            regime_features = features_df[
+                [
+                    "log_returns",
+                    "volatility_20",
+                    "volume_ratio",
+                    "rsi",
+                    "macd",
+                    "macd_signal",
+                    "macd_histogram",
+                    "bb_position",
+                    "bb_width",
+                    "atr",
+                    "volatility_regime",
+                    "volatility_acceleration",
+                ]
+            ].fillna(0)
+            
+            regimes = []
+            if self.basic_ensemble:
+                regime_predictions = self.basic_ensemble.predict(regime_features)
+                regimes = self.basic_label_encoder.inverse_transform(regime_predictions).tolist()
+            else:
+                # Fallback to HMM states
+                if self.hmm_model and self.scaler:
+                    hmm_features_scaled = self.scaler.transform(regime_features)
+                    state_sequence = self.hmm_model.predict(hmm_features_scaled)
+                    regimes = [self.state_to_regime_map.get(state, "SIDEWAYS") for state in state_sequence]
+                else:
+                    regimes = ["SIDEWAYS"] * len(features_df)
+            
+            # Get location predictions
+            location_labels = self._classify_location(features_df)
+            
+            return {
+                "regimes": regimes,
+                "locations": location_labels,
+                "total_records": len(features_df),
+                "regime_distribution": dict(pd.Series(regimes).value_counts()),
+                "location_distribution": dict(pd.Series(location_labels).value_counts()),
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in regime classification: {e}")
+            return {"error": str(e)}
 
     def get_system_status(self) -> dict[str, Any]:
         """Get system status and statistics."""

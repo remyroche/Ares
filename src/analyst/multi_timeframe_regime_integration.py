@@ -29,7 +29,7 @@ sys.path.insert(0, str(project_root))
 
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from src.config import CONFIG
-from src.training.regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
+from src.training.steps.analyst_training_components.regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 

@@ -179,7 +179,7 @@ async def main():
             print("🔄 Using CSV formatting script to ensure proper data format...")
 
             # Import and run the CSV formatting script
-            from src.training.aggtrades_data_formatting import (
+            from src.training.steps.data_preparation_components.aggtrades_data_formatting import (
                 auto_reformat_aggtrades_files_for_exchange,
             )
 
@@ -213,7 +213,7 @@ async def main():
             logger.info("🔍 Running data quality validation...")
             print("🔍 Running data quality validation...")
 
-            from src.training.training_validation_config import (
+            from src.training.steps.data_preparation_components.training_validation_config import (
                 validate_data_format,
                 validate_data_quality,
             )

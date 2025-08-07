@@ -1,0 +1,122 @@
+# Live Trading Wavelet Configuration
+# Computationally-aware settings for real-time wavelet analysis
+
+# Enable/disable live wavelet integration
+enable_live_wavelet: true
+
+# Wavelet signal weight in trading decisions (0.0 to 1.0)
+wavelet_signal_weight: 0.3
+
+# Minimum confidence threshold for wavelet signals
+min_wavelet_confidence: 0.6
+
+# Maximum age of signals in seconds
+max_signal_age: 60
+
+# Live Wavelet Analyzer Configuration
+live_wavelet_analyzer:
+  # Performance constraints
+  max_computation_time: 0.1  # 100ms maximum computation time
+  max_data_points: 256       # Power of 2 for efficient computation
+  sliding_window_size: 128   # Sliding window size (power of 2)
+  
+  # Wavelet configuration (minimal for speed)
+  wavelet_type: "db4"        # Single wavelet type for speed
+  decomposition_level: 2     # Minimal decomposition levels
+  padding_mode: "symmetric"  # Efficient padding mode
+  
+  # Signal thresholds
+  energy_threshold: 0.01     # Energy threshold for signal generation
+  entropy_threshold: 0.5     # Entropy threshold for signal generation
+  confidence_threshold: 0.7  # Confidence threshold for signal validation
+
+# Performance monitoring
+performance_monitoring:
+  enable_performance_tracking: true
+  max_history_size: 1000
+  performance_check_interval: 60  # seconds
+  
+# Integration settings
+integration:
+  # How to combine wavelet signals with existing signals
+  signal_combination_method: "weighted"  # "weighted", "majority", "conservative"
+  
+  # Fallback behavior when wavelet analysis fails
+  fallback_behavior: "disable"  # "disable", "use_last_signal", "ignore"
+  
+  # Health check settings
+  health_check_interval: 30  # seconds
+  max_avg_computation_time: 0.2  # 200ms
+  min_signal_rate: 0.01  # 1%
+
+# Advanced settings (use with caution)
+advanced:
+  # Enable experimental optimizations
+  enable_experimental_optimizations: false
+  
+  # Custom wavelet parameters
+  custom_wavelet_params:
+    enable_custom_scales: false
+    custom_scales: [1, 2, 4, 8, 16]
+  
+  # Memory optimization
+  enable_memory_optimization: true
+  max_memory_usage: 100  # MB
+  
+  # Threading settings
+  enable_async_computation: true
+  max_threads: 2
+  computation_timeout: 0.05  # 50ms timeout
+
+# Logging configuration
+logging:
+  enable_detailed_logging: false
+  log_performance_metrics: true
+  log_signal_details: false
+  log_computation_times: true
+
+# Trading strategy integration
+trading_strategy:
+  # How wavelet signals affect trading decisions
+  wavelet_signal_impact: "moderate"  # "conservative", "moderate", "aggressive"
+  
+  # Position sizing based on wavelet confidence
+  enable_confidence_based_sizing: true
+  min_position_size: 0.1
+  max_position_size: 1.0
+  
+  # Risk management
+  enable_wavelet_risk_management: true
+  max_wavelet_exposure: 0.3  # Maximum 30% exposure from wavelet signals
+  
+  # Stop loss based on wavelet entropy
+  enable_entropy_based_stops: false
+  entropy_stop_threshold: 0.8
+
+# Market conditions adaptation
+market_adaptation:
+  # Adapt thresholds based on market volatility
+  enable_volatility_adaptation: true
+  
+  # Adapt window size based on market conditions
+  enable_dynamic_window_sizing: false
+  min_window_size: 64
+  max_window_size: 256
+  
+  # Adapt wavelet type based on market conditions
+  enable_dynamic_wavelet_selection: false
+  alternative_wavelets: ["haar", "db2", "sym2"]
+
+# Testing and validation
+testing:
+  # Enable backtesting mode
+  enable_backtesting_mode: false
+  
+  # Performance benchmarks
+  target_computation_time: 0.05  # 50ms target
+  target_signal_accuracy: 0.6    # 60% accuracy target
+  
+  # Validation settings
+  enable_signal_validation: true
+  validation_window_size: 100
+  min_validation_signals: 10

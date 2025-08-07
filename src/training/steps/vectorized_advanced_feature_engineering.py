@@ -11,11 +11,431 @@ import pandas as pd
 import pywt
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import timedelta
-import time # Added for performance tracking
-import random # Added for random feature selection
+import time
+import random
+import os
+import hashlib
+import json
+from pathlib import Path
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+
+
+class WaveletFeatureCache:
+    """
+    Comprehensive caching system for wavelet features with pre-computation support.
+    Saves expensive wavelet calculations to fast-loading Parquet files for backtesting.
+    """
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild("WaveletFeatureCache")
+
+        # Cache configuration
+        self.cache_config = config.get("wavelet_cache", {})
+        self.cache_enabled = self.cache_config.get("cache_enabled", True)
+        self.cache_dir = self.cache_config.get("cache_dir", "data/wavelet_cache")
+        self.cache_format = self.cache_config.get("cache_format", "parquet")  # parquet, feather, h5
+        self.compression = self.cache_config.get("compression", "snappy")
+        self.cache_metadata = self.cache_config.get("cache_metadata", True)
+        
+        # Cache validation
+        self.validate_cache_integrity = self.cache_config.get("validate_cache_integrity", True)
+        self.cache_expiry_days = self.cache_config.get("cache_expiry_days", 30)
+        
+        # Performance settings
+        self.enable_parallel_caching = self.cache_config.get("enable_parallel_caching", False)
+        self.chunk_size = self.cache_config.get("chunk_size", 10000)
+        
+        # Initialize cache directory
+        self._initialize_cache_directory()
+
+    def _initialize_cache_directory(self) -> None:
+        """Initialize cache directory structure."""
+        try:
+            cache_path = Path(self.cache_dir)
+            cache_path.mkdir(parents=True, exist_ok=True)
+            
+            # Create subdirectories
+            (cache_path / "features").mkdir(exist_ok=True)
+            (cache_path / "metadata").mkdir(exist_ok=True)
+            (cache_path / "temp").mkdir(exist_ok=True)
+            
+            self.logger.info(f"✅ Cache directory initialized: {cache_path}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing cache directory: {e}")
+
+    def generate_cache_key(
+        self,
+        price_data: pd.DataFrame,
+        wavelet_config: dict[str, Any],
+        additional_params: dict[str, Any] | None = None,
+    ) -> str:
+        """
+        Generate a unique cache key based on data and configuration.
+        
+        Args:
+            price_data: Price data for hashing
+            wavelet_config: Wavelet configuration
+            additional_params: Additional parameters for cache key
+            
+        Returns:
+            Unique cache key string
+        """
+        try:
+            # Create a hashable representation of the data
+            data_hash = self._hash_dataframe(price_data)
+            
+            # Create configuration hash
+            config_str = json.dumps(wavelet_config, sort_keys=True)
+            config_hash = hashlib.md5(config_str.encode()).hexdigest()
+            
+            # Create additional parameters hash
+            params_hash = ""
+            if additional_params:
+                params_str = json.dumps(additional_params, sort_keys=True)
+                params_hash = hashlib.md5(params_str.encode()).hexdigest()
+            
+            # Combine hashes
+            combined_hash = f"{data_hash}_{config_hash}_{params_hash}"
+            
+            # Create final cache key
+            cache_key = hashlib.sha256(combined_hash.encode()).hexdigest()[:16]
+            
+            return cache_key
+            
+        except Exception as e:
+            self.logger.error(f"Error generating cache key: {e}")
+            return "default_cache_key"
+
+    def _hash_dataframe(self, df: pd.DataFrame) -> str:
+        """Generate hash for DataFrame content."""
+        try:
+            # Convert DataFrame to bytes for hashing
+            df_bytes = df.to_string().encode()
+            return hashlib.md5(df_bytes).hexdigest()
+            
+        except Exception as e:
+            self.logger.error(f"Error hashing DataFrame: {e}")
+            return "default_hash"
+
+    def get_cache_filepath(self, cache_key: str) -> Tuple[Path, Path]:
+        """
+        Get file paths for cache files.
+        
+        Args:
+            cache_key: Unique cache key
+            
+        Returns:
+            Tuple of (features_filepath, metadata_filepath)
+        """
+        try:
+            cache_path = Path(self.cache_dir)
+            
+            if self.cache_format == "parquet":
+                features_file = cache_path / "features" / f"{cache_key}_features.parquet"
+                metadata_file = cache_path / "metadata" / f"{cache_key}_metadata.json"
+            elif self.cache_format == "feather":
+                features_file = cache_path / "features" / f"{cache_key}_features.feather"
+                metadata_file = cache_path / "metadata" / f"{cache_key}_metadata.json"
+            elif self.cache_format == "h5":
+                features_file = cache_path / "features" / f"{cache_key}_features.h5"
+                metadata_file = cache_path / "metadata" / f"{cache_key}_metadata.json"
+            else:
+                features_file = cache_path / "features" / f"{cache_key}_features.parquet"
+                metadata_file = cache_path / "metadata" / f"{cache_key}_metadata.json"
+            
+            return features_file, metadata_file
+            
+        except Exception as e:
+            self.logger.error(f"Error getting cache filepath: {e}")
+            return Path(""), Path("")
+
+    def cache_exists(self, cache_key: str) -> bool:
+        """
+        Check if cache exists and is valid.
+        
+        Args:
+            cache_key: Unique cache key
+            
+        Returns:
+            True if valid cache exists, False otherwise
+        """
+        try:
+            features_file, metadata_file = self.get_cache_filepath(cache_key)
+            
+            # Check if files exist
+            if not features_file.exists() or not metadata_file.exists():
+                return False
+            
+            # Check cache expiry
+            if self.cache_expiry_days > 0:
+                file_age = time.time() - features_file.stat().st_mtime
+                if file_age > (self.cache_expiry_days * 24 * 3600):
+                    self.logger.info(f"Cache expired for key: {cache_key}")
+                    return False
+            
+            # Validate cache integrity if enabled
+            if self.validate_cache_integrity:
+                return self._validate_cache_integrity(cache_key)
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error checking cache existence: {e}")
+            return False
+
+    def _validate_cache_integrity(self, cache_key: str) -> bool:
+        """Validate cache file integrity."""
+        try:
+            features_file, metadata_file = self.get_cache_filepath(cache_key)
+            
+            # Check file sizes
+            if features_file.stat().st_size == 0:
+                self.logger.warning(f"Cache file is empty: {features_file}")
+                return False
+            
+            # Try to read metadata
+            try:
+                with open(metadata_file, 'r') as f:
+                    metadata = json.load(f)
+                
+                # Validate metadata structure
+                required_keys = ["cache_key", "timestamp", "data_shape", "feature_count"]
+                if not all(key in metadata for key in required_keys):
+                    self.logger.warning(f"Invalid metadata structure for key: {cache_key}")
+                    return False
+                
+                # Validate cache key match
+                if metadata.get("cache_key") != cache_key:
+                    self.logger.warning(f"Cache key mismatch for key: {cache_key}")
+                    return False
+                
+                return True
+                
+            except Exception as e:
+                self.logger.warning(f"Error reading cache metadata: {e}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error validating cache integrity: {e}")
+            return False
+
+    def save_to_cache(
+        self,
+        cache_key: str,
+        features: dict[str, Any],
+        metadata: dict[str, Any] | None = None,
+    ) -> bool:
+        """
+        Save wavelet features to cache.
+        
+        Args:
+            cache_key: Unique cache key
+            features: Wavelet features to cache
+            metadata: Additional metadata
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not self.cache_enabled:
+                return False
+            
+            features_file, metadata_file = self.get_cache_filepath(cache_key)
+            
+            # Prepare metadata
+            cache_metadata = {
+                "cache_key": cache_key,
+                "timestamp": time.time(),
+                "feature_count": len(features),
+                "cache_format": self.cache_format,
+                "compression": self.compression,
+                "data_shape": list(features.keys()) if features else [],
+            }
+            
+            if metadata:
+                cache_metadata.update(metadata)
+            
+            # Convert features to DataFrame for caching
+            features_df = self._features_to_dataframe(features)
+            
+            # Save features based on format
+            if self.cache_format == "parquet":
+                features_df.to_parquet(
+                    features_file,
+                    compression=self.compression,
+                    index=True
+                )
+            elif self.cache_format == "feather":
+                features_df.to_feather(features_file)
+            elif self.cache_format == "h5":
+                features_df.to_hdf(features_file, key="wavelet_features", mode="w")
+            
+            # Save metadata
+            with open(metadata_file, 'w') as f:
+                json.dump(cache_metadata, f, indent=2)
+            
+            self.logger.info(f"✅ Cached {len(features)} wavelet features to {features_file}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error saving to cache: {e}")
+            return False
+
+    def load_from_cache(self, cache_key: str) -> Tuple[dict[str, Any], dict[str, Any] | None]:
+        """
+        Load wavelet features from cache.
+        
+        Args:
+            cache_key: Unique cache key
+            
+        Returns:
+            Tuple of (features, metadata)
+        """
+        try:
+            features_file, metadata_file = self.get_cache_filepath(cache_key)
+            
+            # Load features based on format
+            if self.cache_format == "parquet":
+                features_df = pd.read_parquet(features_file)
+            elif self.cache_format == "feather":
+                features_df = pd.read_feather(features_file)
+            elif self.cache_format == "h5":
+                features_df = pd.read_hdf(features_file, key="wavelet_features")
+            else:
+                features_df = pd.read_parquet(features_file)
+            
+            # Convert DataFrame back to features dictionary
+            features = self._dataframe_to_features(features_df)
+            
+            # Load metadata
+            metadata = None
+            if metadata_file.exists():
+                with open(metadata_file, 'r') as f:
+                    metadata = json.load(f)
+            
+            self.logger.info(f"✅ Loaded {len(features)} wavelet features from cache: {cache_key}")
+            return features, metadata
+            
+        except Exception as e:
+            self.logger.error(f"Error loading from cache: {e}")
+            return {}, None
+
+    def _features_to_dataframe(self, features: dict[str, Any]) -> pd.DataFrame:
+        """Convert features dictionary to DataFrame for caching."""
+        try:
+            # Convert features to DataFrame format
+            if features:
+                # Handle different feature types
+                feature_data = {}
+                for key, value in features.items():
+                    if isinstance(value, (int, float, np.number)):
+                        feature_data[key] = [value]
+                    elif isinstance(value, (list, np.ndarray)):
+                        feature_data[key] = value
+                    else:
+                        feature_data[key] = [str(value)]
+                
+                df = pd.DataFrame(feature_data)
+            else:
+                df = pd.DataFrame()
+            
+            return df
+            
+        except Exception as e:
+            self.logger.error(f"Error converting features to DataFrame: {e}")
+            return pd.DataFrame()
+
+    def _dataframe_to_features(self, df: pd.DataFrame) -> dict[str, Any]:
+        """Convert DataFrame back to features dictionary."""
+        try:
+            features = {}
+            
+            if not df.empty:
+                # Convert DataFrame back to features
+                for column in df.columns:
+                    if len(df[column]) == 1:
+                        # Single value feature
+                        features[column] = df[column].iloc[0]
+                    else:
+                        # Array feature
+                        features[column] = df[column].values
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error converting DataFrame to features: {e}")
+            return {}
+
+    def clear_cache(self, cache_key: str | None = None) -> bool:
+        """
+        Clear cache files.
+        
+        Args:
+            cache_key: Specific cache key to clear, or None to clear all
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            cache_path = Path(self.cache_dir)
+            
+            if cache_key:
+                # Clear specific cache
+                features_file, metadata_file = self.get_cache_filepath(cache_key)
+                if features_file.exists():
+                    features_file.unlink()
+                if metadata_file.exists():
+                    metadata_file.unlink()
+                self.logger.info(f"Cleared cache for key: {cache_key}")
+            else:
+                # Clear all cache
+                for file_path in cache_path.rglob("*"):
+                    if file_path.is_file():
+                        file_path.unlink()
+                self.logger.info("Cleared all cache files")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error clearing cache: {e}")
+            return False
+
+    def get_cache_stats(self) -> dict[str, Any]:
+        """Get cache statistics."""
+        try:
+            cache_path = Path(self.cache_dir)
+            stats = {
+                "cache_dir": str(cache_path),
+                "cache_format": self.cache_format,
+                "compression": self.compression,
+                "total_files": 0,
+                "total_size_mb": 0,
+                "oldest_file": None,
+                "newest_file": None,
+            }
+            
+            if cache_path.exists():
+                files = list(cache_path.rglob("*"))
+                files = [f for f in files if f.is_file()]
+                
+                if files:
+                    stats["total_files"] = len(files)
+                    stats["total_size_mb"] = sum(f.stat().st_size for f in files) / (1024 * 1024)
+                    
+                    # File timestamps
+                    timestamps = [f.stat().st_mtime for f in files]
+                    stats["oldest_file"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(min(timestamps)))
+                    stats["newest_file"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(max(timestamps)))
+            
+            return stats
+            
+        except Exception as e:
+            self.logger.error(f"Error getting cache stats: {e}")
+            return {}
 
 
 class VectorizedAdvancedFeatureEngineering:
@@ -51,6 +471,7 @@ class VectorizedAdvancedFeatureEngineering:
         self.candlestick_analyzer = None
         self.sr_distance_calculator = None
         self.wavelet_analyzer = None
+        self.wavelet_cache = None
 
         self.is_initialized = False
 
@@ -63,6 +484,10 @@ class VectorizedAdvancedFeatureEngineering:
         """Initialize vectorized advanced feature engineering components."""
         try:
             self.logger.info("🚀 Initializing vectorized advanced feature engineering...")
+
+            # Initialize wavelet cache
+            if self.enable_wavelet_transforms:
+                self.wavelet_cache = WaveletFeatureCache(self.config)
 
             # Initialize volatility modeling
             if self.enable_volatility_modeling:
@@ -200,9 +625,9 @@ class VectorizedAdvancedFeatureEngineering:
                 )
                 features.update(sr_distance_features)
 
-            # Wavelet transform features
+            # Wavelet transform features with caching
             if self.wavelet_analyzer:
-                wavelet_features = await self.wavelet_analyzer.analyze_wavelet_transforms(
+                wavelet_features = await self._get_wavelet_features_with_caching(
                     price_data,
                     volume_data,
                 )
@@ -244,6 +669,81 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.error(f"Error engineering vectorized advanced features: {e}")
             return {}
+
+    async def _get_wavelet_features_with_caching(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+    ) -> dict[str, Any]:
+        """
+        Get wavelet features with caching support.
+        
+        Args:
+            price_data: OHLCV price data
+            volume_data: Volume data
+            
+        Returns:
+            Dictionary containing wavelet features
+        """
+        try:
+            if not self.wavelet_cache:
+                # Fallback to direct computation if cache is not available
+                return await self.wavelet_analyzer.analyze_wavelet_transforms(
+                    price_data,
+                    volume_data,
+                )
+
+            # Generate cache key
+            wavelet_config = self.wavelet_analyzer.wavelet_config
+            cache_key = self.wavelet_cache.generate_cache_key(
+                price_data,
+                wavelet_config,
+                {"volume_data_shape": volume_data.shape if volume_data is not None else None}
+            )
+
+            # Check if cache exists
+            if self.wavelet_cache.cache_exists(cache_key):
+                self.logger.info(f"📦 Loading wavelet features from cache: {cache_key}")
+                cached_features, metadata = self.wavelet_cache.load_from_cache(cache_key)
+                return cached_features
+
+            # Compute wavelet features
+            self.logger.info(f"🔧 Computing wavelet features (not cached): {cache_key}")
+            wavelet_features = await self.wavelet_analyzer.analyze_wavelet_transforms(
+                price_data,
+                volume_data,
+            )
+
+            # Save to cache
+            metadata = {
+                "data_shape": price_data.shape,
+                "volume_data_shape": volume_data.shape if volume_data is not None else None,
+                "computation_time": time.time(),
+            }
+            
+            cache_success = self.wavelet_cache.save_to_cache(cache_key, wavelet_features, metadata)
+            if cache_success:
+                self.logger.info(f"💾 Cached wavelet features: {cache_key}")
+            else:
+                self.logger.warning(f"⚠️ Failed to cache wavelet features: {cache_key}")
+
+            return wavelet_features
+
+        except Exception as e:
+            self.logger.error(f"Error getting wavelet features with caching: {e}")
+            return {}
+
+    def get_cache_stats(self) -> dict[str, Any]:
+        """Get cache statistics."""
+        if self.wavelet_cache:
+            return self.wavelet_cache.get_cache_stats()
+        return {"error": "Wavelet cache not initialized"}
+
+    def clear_wavelet_cache(self, cache_key: str | None = None) -> bool:
+        """Clear wavelet cache."""
+        if self.wavelet_cache:
+            return self.wavelet_cache.clear_cache(cache_key)
+        return False
 
     async def _engineer_microstructure_features_vectorized(
         self,

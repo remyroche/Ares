@@ -1,0 +1,159 @@
+# config/wavelet_caching_config.yaml
+
+# Comprehensive configuration for wavelet feature caching and pre-computation
+# This enables fast backtesting by pre-computing expensive wavelet calculations
+
+wavelet_cache:
+  # Cache system configuration
+  cache_enabled: true
+  cache_dir: "data/wavelet_cache"
+  cache_format: "parquet"  # parquet, feather, h5
+  compression: "snappy"     # snappy, gzip, brotli
+  cache_metadata: true
+  cache_expiry_days: 30
+  
+  # Cache validation
+  validate_cache_integrity: true
+  
+  # Performance settings
+  enable_parallel_caching: false
+  chunk_size: 10000
+
+wavelet_precompute:
+  # Pre-computation settings
+  enable_batch_processing: true
+  batch_size: 10000
+  enable_progress_tracking: true
+  enable_parallel_processing: false
+  max_workers: 4
+
+backtesting_with_cache:
+  # Backtesting with cached features
+  enable_feature_caching: true
+  cache_lookup_timeout: 5.0
+  enable_performance_monitoring: true
+  max_backtest_iterations: 1000
+
+vectorized_advanced_features:
+  # Feature engineering components
+  enable_wavelet_transforms: true
+  enable_volatility_modeling: true
+  enable_correlation_analysis: true
+  enable_momentum_analysis: true
+  enable_liquidity_analysis: true
+  enable_candlestick_patterns: true
+  enable_sr_distance: true
+  enable_multi_timeframe: true
+  enable_meta_labeling: true
+
+wavelet_transforms:
+  # Wavelet transform configuration
+  wavelet_type: "db4"
+  decomposition_level: 4
+  
+  # Boundary handling
+  padding_mode: "symmetric"  # symmetric, periodic, zero, constant, edge, reflect
+  boundary_handling: "truncate"
+  edge_effect_threshold: 0.1
+  
+  # CWT scale selection
+  cwt_scale_method: "logarithmic"  # linear, logarithmic, octave, adaptive
+  min_scale: 1
+  max_scale: 32
+  num_scales: 16
+  scale_resolution: "octave"
+  
+  # Feature dimensionality management
+  max_features_per_wavelet: 20
+  feature_selection_method: "variance"  # variance, energy, entropy, random
+  min_feature_variance: 1e-6
+  
+  # Stationarity handling
+  enable_stationary_series: true
+  stationary_transforms: ["returns", "log_returns"]
+  
+  # Computational cost management
+  max_wavelet_types: 3
+  enable_parallel_processing: false
+  computation_timeout: 30
+  
+  # Enable/disable specific transforms
+  enable_continuous_wavelet: true
+  enable_discrete_wavelet: true
+  enable_wavelet_packet: true
+  enable_denoising: true
+
+# Dataset configurations for pre-computation
+datasets:
+  - name: "ETHUSDT_1m"
+    data_path: "data/price_data/ETHUSDT_1m.parquet"
+    volume_path: "data/volume_data/ETHUSDT_1m.parquet"
+    symbol: "ETHUSDT"
+    start_date: "2024-01-01"
+    end_date: "2024-12-31"
+    timeframe: "1m"
+    
+  - name: "BTCUSDT_1m"
+    data_path: "data/price_data/BTCUSDT_1m.parquet"
+    volume_path: "data/volume_data/BTCUSDT_1m.parquet"
+    symbol: "BTCUSDT"
+    start_date: "2024-01-01"
+    end_date: "2024-12-31"
+    timeframe: "1m"
+    
+  - name: "ETHUSDT_5m"
+    data_path: "data/price_data/ETHUSDT_5m.parquet"
+    volume_path: "data/volume_data/ETHUSDT_5m.parquet"
+    symbol: "ETHUSDT"
+    start_date: "2024-01-01"
+    end_date: "2024-12-31"
+    timeframe: "5m"
+
+# Backtesting configurations
+backtest_strategies:
+  - name: "wavelet_energy_strategy"
+    strategy_type: "wavelet_energy"
+    parameters:
+      energy_threshold: 0.5
+      lookback_period: 20
+      position_size: 0.1
+      
+  - name: "wavelet_entropy_strategy"
+    strategy_type: "wavelet_entropy"
+    parameters:
+      entropy_threshold: 0.3
+      lookback_period: 15
+      position_size: 0.1
+      
+  - name: "wavelet_hybrid_strategy"
+    strategy_type: "wavelet_hybrid"
+    parameters:
+      energy_weight: 0.6
+      entropy_weight: 0.4
+      lookback_period: 25
+      position_size: 0.15
+
+# Performance monitoring
+performance_monitoring:
+  enable_detailed_logging: true
+  log_cache_hits: true
+  log_computation_times: true
+  log_feature_counts: true
+  save_performance_reports: true
+  performance_report_path: "reports/wavelet_performance.json"
+
+# Memory optimization
+memory_optimization:
+  use_memory_efficient_types: true
+  float_precision: "float32"  # float32, float64
+  int_precision: "int16"       # int8, int16, int32
+  enable_garbage_collection: true
+  max_memory_usage_mb: 2048
+
+# Error handling
+error_handling:
+  enable_graceful_degradation: true
+  max_retry_attempts: 3
+  retry_delay_seconds: 1.0
+  log_all_errors: true
+  save_error_reports: true

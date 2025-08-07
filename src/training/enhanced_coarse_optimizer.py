@@ -3,7 +3,7 @@
 import gc
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any
+from typing import Any, Number, Union
 
 import lightgbm as lgb
 import numpy as np
@@ -232,7 +232,7 @@ class EnhancedCoarseOptimizer:
 
         return results
 
-    def _calculate_feature_importance(self, feature: str) -> float:
+    def _calculate_feature_importance(self, feature: str) -> Number:
         """Calculate feature importance for a single feature."""
         try:
             # Use mutual information as a robust importance measure
@@ -264,7 +264,7 @@ class EnhancedCoarseOptimizer:
             )
             return 0.0
 
-    def _sequential_feature_selection(self, features: list[str]) -> dict[str, float]:
+    def _sequential_feature_selection(self, features: list[str]) -> dict[str, Number]:
         """Sequential feature selection as fallback."""
         results = {}
         total = len(features)
@@ -287,7 +287,7 @@ class EnhancedCoarseOptimizer:
         self,
         X_sample: pd.DataFrame,
         y_sample: pd.Series,
-    ) -> dict[str, float]:
+    ) -> dict[str, Number]:
         """Robust SHAP analysis with multiple fallback strategies."""
         models_to_try = [
             (
@@ -332,7 +332,7 @@ class EnhancedCoarseOptimizer:
         self,
         X: pd.DataFrame,
         y: pd.Series,
-    ) -> dict[str, float]:
+    ) -> dict[str, Number]:
         """Correlation-based feature importance as fallback."""
         try:
             correlations = X.corrwith(y).abs()
@@ -346,7 +346,7 @@ class EnhancedCoarseOptimizer:
         model,
         X: pd.DataFrame,
         y: pd.Series,
-    ) -> dict[str, dict[str, float]]:
+    ) -> dict[str, dict[str, Number]]:
         """Enhanced cross-validation with multiple metrics."""
 
         # Enhanced time series cross-validation for financial data

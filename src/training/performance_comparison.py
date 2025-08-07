@@ -15,7 +15,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Number
 
 import numpy as np
 import pandas as pd
@@ -403,7 +403,7 @@ class PerformanceComparison:
         self,
         current_metrics: PerformanceMetrics,
         baseline_metrics: PerformanceMetrics,
-    ) -> dict[str, float]:
+    ) -> dict[str, Number]:
         """Calculate improvements over baseline."""
         improvements = {}
 
@@ -606,22 +606,22 @@ class PerformanceComparison:
         """Calculate ensemble-specific metrics."""
         return await self._calculate_model_metrics(ensemble, test_data)
 
-    async def _calculate_ensemble_diversity(self, ensemble: Any) -> dict[str, float]:
+    async def _calculate_ensemble_diversity(self, ensemble: Any) -> dict[str, Number]:
         """Calculate ensemble diversity metrics."""
         return {"diversity_score": np.random.uniform(0.5, 0.9)}
 
-    async def _calculate_ensemble_stability(self, ensemble: Any) -> dict[str, float]:
+    async def _calculate_ensemble_stability(self, ensemble: Any) -> dict[str, Number]:
         """Calculate ensemble stability metrics."""
         return {"stability_score": np.random.uniform(0.6, 0.95)}
 
-    async def _calculate_ensemble_complexity(self, ensemble: Any) -> dict[str, float]:
+    async def _calculate_ensemble_complexity(self, ensemble: Any) -> dict[str, Number]:
         """Calculate ensemble complexity metrics."""
         return {"complexity_score": np.random.uniform(0.3, 0.8)}
 
     async def _calculate_optimization_metrics(
         self,
         results: dict[str, Any],
-    ) -> dict[str, float]:
+    ) -> dict[str, Number]:
         """Calculate optimization-specific metrics."""
         return {
             "convergence_speed": np.random.uniform(0.5, 1.0),
@@ -632,21 +632,21 @@ class PerformanceComparison:
     async def _calculate_convergence_metrics(
         self,
         results: dict[str, Any],
-    ) -> dict[str, float]:
+    ) -> dict[str, Number]:
         """Calculate convergence metrics."""
         return {"convergence_rate": np.random.uniform(0.8, 1.0)}
 
     async def _calculate_efficiency_metrics(
         self,
         results: dict[str, Any],
-    ) -> dict[str, float]:
+    ) -> dict[str, Number]:
         """Calculate efficiency metrics."""
         return {"efficiency_score": np.random.uniform(0.6, 0.9)}
 
     async def _calculate_robustness_metrics(
         self,
         results: dict[str, Any],
-    ) -> dict[str, float]:
+    ) -> dict[str, Number]:
         """Calculate robustness metrics."""
         return {"robustness_score": np.random.uniform(0.7, 0.95)}
 
@@ -671,7 +671,7 @@ class PerformanceComparison:
         self,
         before: dict[str, Any],
         after: dict[str, Any],
-    ) -> dict[str, float]:
+    ) -> dict[str, Number]:
         """Calculate overall performance improvements."""
         return {"total_return_improvement": np.random.uniform(5, 25)}
 
@@ -687,7 +687,7 @@ class PerformanceComparison:
         self,
         before: dict[str, Any],
         after: dict[str, Any],
-    ) -> dict[str, float]:
+    ) -> dict[str, Number]:
         """Calculate risk metrics improvements."""
         return {"max_drawdown_reduction": np.random.uniform(5, 20)}
 

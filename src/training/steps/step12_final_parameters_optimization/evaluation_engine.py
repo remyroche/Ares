@@ -458,31 +458,36 @@ class AdvancedEvaluationEngine:
             return False
     
     def calculate_composite_score(self, metrics: PerformanceMetrics) -> float:
-        """Calculate a composite score for optimization."""
+        """Calculate a composite score prioritizing win rate and win/loss ratio."""
         try:
-            # Weighted combination of key metrics
+            # Primary focus on win rate and win/loss ratio (profit factor)
             weights = {
-                "sharpe_ratio": 0.3,
-                "profit_factor": 0.25,
-                "win_rate": 0.2,
-                "max_drawdown": 0.15,
-                "total_return": 0.1
+                "win_rate": 0.4,              # 40% weight on win rate
+                "profit_factor": 0.35,        # 35% weight on win/loss ratio
+                "sharpe_ratio": 0.15,         # 15% weight on risk-adjusted return
+                "max_drawdown": 0.1           # 10% weight on risk management
             }
             
-            # Normalize metrics to 0-1 range
+            # Calculate win/loss ratio from profit factor
+            win_loss_ratio = metrics.profit_factor
+            
+            # Normalize metrics to 0-1 range with focus on win rate and win/loss ratio
             normalized_metrics = {
-                "sharpe_ratio": min(metrics.sharpe_ratio / 2.0, 1.0),  # Cap at 2.0
-                "profit_factor": min(metrics.profit_factor / 3.0, 1.0),  # Cap at 3.0
-                "win_rate": metrics.win_rate,
-                "max_drawdown": max(0, 1 - metrics.max_drawdown / 0.5),  # Invert and cap at 50%
-                "total_return": min(max(metrics.total_return / 0.5, 0), 1.0)  # Cap at 50%
+                "win_rate": metrics.win_rate,  # Already 0-1
+                "profit_factor": min(win_loss_ratio / 2.0, 1.0),  # Cap at 2.0 win/loss ratio
+                "sharpe_ratio": min(max(metrics.sharpe_ratio / 1.5, 0), 1.0),  # Cap at 1.5
+                "max_drawdown": max(0, 1 - metrics.max_drawdown / 0.3),  # Invert and cap at 30%
             }
             
-            # Calculate weighted score
+            # Calculate weighted score with emphasis on win rate and win/loss ratio
             composite_score = sum(
                 weights[metric] * normalized_metrics[metric]
                 for metric in weights.keys()
             )
+            
+            # Bonus for high win rate and good win/loss ratio
+            if metrics.win_rate > 0.6 and win_loss_ratio > 1.5:
+                composite_score *= 1.1  # 10% bonus
             
             return composite_score
             

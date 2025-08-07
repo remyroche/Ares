@@ -116,7 +116,7 @@ class SRBreakoutPredictor:
             self.logger.info("Initializing SR prediction models and regime classifier...")
             
             # Initialize unified regime classifier for S/R levels
-            self.regime_classifier = UnifiedRegimeClassifier(self.config)
+            self.regime_classifier = UnifiedRegimeClassifier(self.config, "UNKNOWN", "UNKNOWN")
             await self.regime_classifier.initialize()
             
             # Load or train the regime classifier if needed

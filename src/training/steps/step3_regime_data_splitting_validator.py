@@ -268,15 +268,23 @@ class Step3RegimeDataSplittingValidator(BaseValidator):
             # Validate proportions
             expected_proportions = {
                 "train": (0.6, 0.8),      # 60-80%
-                "validation": (0.1, 0.2),  # 10-20%
-                "test": (0.1, 0.2)        # 10-20%
+                "validation": (0.100, 0.200),  # 10-20%
+                "test": (0.100, 0.200)        # 10-20% 
             }
             
             for split_name, (min_prop, max_prop) in expected_proportions.items():
                 actual_prop = proportions.get(split_name, 0)
-                if actual_prop < min_prop or actual_prop > max_prop:
-                    self.logger.warning(f"⚠️ {split_name} proportion {actual_prop:.3f} outside expected range ({min_prop:.3f}-{max_prop:.3f})")
-            
+                tolerance = 1e-6
+                # Check if proportion is within range (inclusive of boundaries)
+                if actual_prop < min_prop - tolerance or actual_prop > max_prop + tolerance:
+                    self.logger.warning(f"⚠️ {split_name} proportion {actual_prop:.6f} outside expected range ({min_prop:.6f}-{max_prop:.6f})")
+                    self.logger.debug(f"Debug: actual_prop={actual_prop}, min_prop={min_prop}, max_prop={max_prop}")
+                    self.logger.debug(f"Debug: actual_prop < min_prop = {actual_prop < min_prop}")
+                    self.logger.debug(f"Debug: actual_prop > max_prop = {actual_prop > max_prop}")
+                    # Don't fail validation for proportion warnings, just log them
+                else:
+                    self.logger.info(f"✅ {split_name} proportion {actual_prop:.6f} within expected range ({min_prop:.6f}-{max_prop:.6f})")
+                    
             # Check that proportions sum to approximately 1
             total_proportion = sum(proportions.values())
             if abs(total_proportion - 1.0) > 0.01:

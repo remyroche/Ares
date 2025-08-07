@@ -2,6 +2,9 @@
 
 import asyncio
 import pandas as pd
+import time
+import psutil
+import os
 from datetime import datetime
 from typing import Any
 
@@ -70,6 +73,171 @@ class EnhancedTrainingManager:
         self.computational_optimization_manager: ComputationalOptimizationManager | None = None
         self.optimization_statistics: dict[str, Any] = {}
         
+    def _get_system_resources(self) -> dict[str, float]:
+        """
+        Get current system resource usage.
+        
+        Returns:
+            dict: System resource information
+        """
+        try:
+            process = psutil.Process(os.getpid())
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            cpu_percent = process.cpu_percent()
+            
+            # Get system-wide memory info
+            system_memory = psutil.virtual_memory()
+            system_memory_percent = system_memory.percent
+            
+            return {
+                "memory_mb": memory_mb,
+                "cpu_percent": cpu_percent,
+                "system_memory_percent": system_memory_percent,
+                "available_memory_gb": system_memory.available / 1024 / 1024 / 1024
+            }
+        except Exception as e:
+            self.logger.warning(f"Could not get system resources: {e}")
+            return {"memory_mb": 0, "cpu_percent": 0, "system_memory_percent": 0, "available_memory_gb": 0}
+    
+    def _analyze_resource_requirements(self) -> dict[str, Any]:
+        """
+        Analyze resource requirements for the training process.
+        
+        Returns:
+            dict: Resource analysis information
+        """
+        try:
+            # Get system info
+            cpu_count = psutil.cpu_count()
+            memory_gb = psutil.virtual_memory().total / 1024 / 1024 / 1024
+            
+            # Estimate requirements based on training mode
+            if self.blank_training_mode:
+                estimated_memory_gb = 4.0  # Blank training uses less memory
+                estimated_time_minutes = 15  # Quick training
+                memory_warning_threshold = 6.0
+            else:
+                estimated_memory_gb = 8.0  # Full training uses more memory
+                estimated_time_minutes = 120  # Full training takes longer
+                memory_warning_threshold = 12.0
+            
+            # Check if system meets requirements
+            memory_sufficient = memory_gb >= memory_warning_threshold
+            cpu_sufficient = cpu_count >= 4
+            
+            return {
+                "system_memory_gb": memory_gb,
+                "cpu_count": cpu_count,
+                "estimated_memory_gb": estimated_memory_gb,
+                "estimated_time_minutes": estimated_time_minutes,
+                "memory_sufficient": memory_sufficient,
+                "cpu_sufficient": cpu_sufficient,
+                "memory_warning_threshold": memory_warning_threshold,
+                "recommendations": self._get_resource_recommendations(memory_gb, cpu_count)
+            }
+        except Exception as e:
+            self.logger.warning(f"Could not analyze resource requirements: {e}")
+            return {}
+    
+    def _get_resource_recommendations(self, memory_gb: float, cpu_count: int) -> list[str]:
+        """
+        Get resource recommendations based on system specs.
+        
+        Args:
+            memory_gb: Available memory in GB
+            cpu_count: Number of CPU cores
+            
+        Returns:
+            list: Recommendations
+        """
+        recommendations = []
+        
+        if memory_gb < 8:
+            recommendations.append("⚠️ Consider upgrading to 16GB RAM for optimal performance")
+        elif memory_gb < 12:
+            recommendations.append("💡 16GB RAM recommended for full training mode")
+        
+        if cpu_count < 4:
+            recommendations.append("⚠️ Consider using a system with at least 4 CPU cores")
+        elif cpu_count < 8:
+            recommendations.append("💡 8+ CPU cores recommended for faster training")
+        
+        if self.blank_training_mode:
+            recommendations.append("✅ Blank training mode is suitable for your system")
+        else:
+            if memory_gb < 12:
+                recommendations.append("⚠️ Full training mode may be slow on your system")
+            else:
+                recommendations.append("✅ Full training mode should work well on your system")
+        
+        return recommendations
+    
+    def _optimize_memory_usage(self) -> None:
+        """
+        Perform memory optimization to reduce memory footprint.
+        """
+        try:
+            import gc
+            
+            # Force garbage collection
+            gc.collect()
+            
+            # Log memory before and after optimization
+            before_memory = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+            self.logger.info(f"🧹 Memory optimization: {before_memory:.1f} MB before cleanup")
+            
+            # Force another garbage collection
+            gc.collect()
+            
+            after_memory = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+            memory_saved = before_memory - after_memory
+            
+            self.logger.info(f"🧹 Memory optimization: {after_memory:.1f} MB after cleanup (saved {memory_saved:.1f} MB)")
+            
+            if memory_saved > 10:  # If we saved more than 10MB
+                print(f"   🧹 Memory optimization saved {memory_saved:.1f} MB")
+                
+        except Exception as e:
+            self.logger.warning(f"Memory optimization failed: {e}")
+        
+    def _log_step_completion(self, step_name: str, step_start: float, step_times: dict, success: bool = True) -> None:
+        """
+        Log step completion with timing and memory usage.
+        
+        Args:
+            step_name: Name of the completed step
+            step_start: Start time of the step
+            step_times: Dictionary to store step times
+            success: Whether the step was successful
+        """
+        step_time = time.time() - step_start
+        step_times[step_name] = step_time
+        
+        # Get comprehensive system resources
+        resources = self._get_system_resources()
+        
+        status_icon = "✅" if success else "❌"
+        status_text = "completed successfully" if success else "failed"
+        
+        self.logger.info(f"{status_icon} {step_name}: {status_text} in {step_time:.2f}s")
+        self.logger.info(f"💾 Process Memory: {resources['memory_mb']:.1f} MB | CPU: {resources['cpu_percent']:.1f}%")
+        self.logger.info(f"🖥️ System Memory: {resources['system_memory_percent']:.1f}% | Available: {resources['available_memory_gb']:.1f} GB")
+        
+        print(f"   {status_icon} {step_name}: {status_text} in {step_time:.2f}s")
+        print(f"   💾 Process Memory: {resources['memory_mb']:.1f} MB | CPU: {resources['cpu_percent']:.1f}%")
+        print(f"   🖥️ System Memory: {resources['system_memory_percent']:.1f}% | Available: {resources['available_memory_gb']:.1f} GB")
+        
+        # Memory warning system
+        if resources['system_memory_percent'] > 85:
+            warning_msg = f"⚠️ HIGH MEMORY USAGE: {resources['system_memory_percent']:.1f}% - Consider closing other applications"
+            self.logger.warning(warning_msg)
+            print(f"   {warning_msg}")
+        
+        if resources['available_memory_gb'] < 2.0:
+            warning_msg = f"⚠️ LOW AVAILABLE MEMORY: {resources['available_memory_gb']:.1f} GB remaining"
+            self.logger.warning(warning_msg)
+            print(f"   {warning_msg}")
+        
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid enhanced training manager configuration"),
@@ -93,6 +261,29 @@ class EnhancedTrainingManager:
             self.logger.info(f"🔧 N trials: {self.n_trials}")
             self.logger.info(f"📈 Lookback days: {self.lookback_days}")
             self.logger.info(f"🚀 Computational optimization: {self.enable_computational_optimization}")
+            
+            # Analyze resource requirements
+            resource_analysis = self._analyze_resource_requirements()
+            if resource_analysis:
+                self.logger.info("📊 Resource Analysis:")
+                self.logger.info(f"   💾 System Memory: {resource_analysis['system_memory_gb']:.1f} GB")
+                self.logger.info(f"   🖥️ CPU Cores: {resource_analysis['cpu_count']}")
+                self.logger.info(f"   📈 Estimated Memory Usage: {resource_analysis['estimated_memory_gb']:.1f} GB")
+                self.logger.info(f"   ⏱️ Estimated Time: {resource_analysis['estimated_time_minutes']} minutes")
+                
+                print("📊 Resource Analysis:")
+                print(f"   💾 System Memory: {resource_analysis['system_memory_gb']:.1f} GB")
+                print(f"   🖥️ CPU Cores: {resource_analysis['cpu_count']}")
+                print(f"   📈 Estimated Memory Usage: {resource_analysis['estimated_memory_gb']:.1f} GB")
+                print(f"   ⏱️ Estimated Time: {resource_analysis['estimated_time_minutes']} minutes")
+                
+                # Log recommendations
+                if resource_analysis['recommendations']:
+                    self.logger.info("💡 Recommendations:")
+                    print("💡 Recommendations:")
+                    for rec in resource_analysis['recommendations']:
+                        self.logger.info(f"   {rec}")
+                        print(f"   {rec}")
             
             # Validate configuration
             if not self._validate_configuration():
@@ -341,13 +532,44 @@ class EnhancedTrainingManager:
             timeframe = training_input.get("timeframe", "1m")
             data_dir = "data/training"
 
-            
-            # Initialize pipeline state
+            # Initialize pipeline state and timing
             pipeline_state = {}
+            start_time = time.time()
+            step_times = {}
+            
+            # Enhanced logging setup
+            self.logger.info("=" * 100)
+            self.logger.info("🚀 COMPREHENSIVE TRAINING PIPELINE START")
+            self.logger.info("=" * 100)
+            self.logger.info(f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            self.logger.info(f"🎯 Symbol: {symbol}")
+            self.logger.info(f"🏢 Exchange: {exchange}")
+            self.logger.info(f"📊 Timeframe: {timeframe}")
+            self.logger.info(f"🧠 Training Mode: {'Blank' if self.blank_training_mode else 'Full'}")
+            self.logger.info(f"🔧 Max Trials: {self.max_trials}")
+            self.logger.info(f"📈 Lookback Days: {self.lookback_days}")
+            self.logger.info(f"💾 Memory Optimization: {'Enabled' if self.enable_computational_optimization else 'Disabled'}")
+            self.logger.info("=" * 100)
+            
+            print("=" * 100)
+            print("🚀 COMPREHENSIVE TRAINING PIPELINE START")
+            print("=" * 100)
+            print(f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"🎯 Symbol: {symbol}")
+            print(f"🏢 Exchange: {exchange}")
+            print(f"📊 Timeframe: {timeframe}")
+            print(f"🧠 Training Mode: {'Blank' if self.blank_training_mode else 'Full'}")
+            print(f"🔧 Max Trials: {self.max_trials}")
+            print(f"📈 Lookback Days: {self.lookback_days}")
+            print(f"💾 Memory Optimization: {'Enabled' if self.enable_computational_optimization else 'Disabled'}")
+            print("=" * 100)
             
             # Step 1: Data Collection
+            step_start = time.time()
             self.logger.info("📊 STEP 1: Data Collection...")
+            self.logger.info("   🔍 Downloading and preparing market data...")
             print("   📊 Step 1: Data Collection...")
+            print("   🔍 Downloading and preparing market data...")
             
             from src.training.steps import step1_data_collection
             step1_result = await step1_data_collection.run_step(
@@ -375,12 +597,17 @@ class EnhancedTrainingManager:
                 "step1_data_collection", training_input, pipeline_state
             )
             
-            self.logger.info("✅ Step 1: Data Collection completed successfully")
-            print("   ✅ Step 1: Data Collection completed successfully")
+            self._log_step_completion("Step 1: Data Collection", step_start, step_times)
+            
+            # Memory optimization after data collection
+            self._optimize_memory_usage()
 
             # Step 2: Market Regime Classification
+            step_start = time.time()
             self.logger.info("🎭 STEP 2: Market Regime Classification...")
+            self.logger.info("   🧠 Analyzing market regimes and volatility patterns...")
             print("   🎭 Step 2: Market Regime Classification...")
+            print("   🧠 Analyzing market regimes and volatility patterns...")
             
             from src.training.steps import step2_market_regime_classification
             step2_success = await step2_market_regime_classification.run_step(
@@ -391,8 +618,7 @@ class EnhancedTrainingManager:
             )
             
             if not step2_success:
-                self.logger.error("❌ Step 2: Market Regime Classification failed")
-                print("❌ Step 2: Market Regime Classification failed")
+                self._log_step_completion("Step 2: Market Regime Classification", step_start, step_times, success=False)
                 return False
             
             # Update pipeline state
@@ -406,12 +632,14 @@ class EnhancedTrainingManager:
                 "step2_market_regime_classification", training_input, pipeline_state
             )
             
-            self.logger.info("✅ Step 2: Market Regime Classification completed successfully")
-            print("   ✅ Step 2: Market Regime Classification completed successfully")
+            self._log_step_completion("Step 2: Market Regime Classification", step_start, step_times)
 
             # Step 3: Regime Data Splitting
+            step_start = time.time()
             self.logger.info("📊 STEP 3: Regime Data Splitting...")
+            self.logger.info("   📈 Splitting data by market regimes for specialized training...")
             print("   📊 Step 3: Regime Data Splitting...")
+            print("   📈 Splitting data by market regimes for specialized training...")
             
             from src.training.steps import step3_regime_data_splitting
             step3_success = await step3_regime_data_splitting.run_step(
@@ -422,8 +650,7 @@ class EnhancedTrainingManager:
             )
             
             if not step3_success:
-                self.logger.error("❌ Step 3: Regime Data Splitting failed")
-                print("❌ Step 3: Regime Data Splitting failed")
+                self._log_step_completion("Step 3: Regime Data Splitting", step_start, step_times, success=False)
                 return False
             
             # Update pipeline state
@@ -437,8 +664,7 @@ class EnhancedTrainingManager:
                 "step3_regime_data_splitting", training_input, pipeline_state
             )
             
-            self.logger.info("✅ Step 3: Regime Data Splitting completed successfully")
-            print("   ✅ Step 3: Regime Data Splitting completed successfully")
+            self._log_step_completion("Step 3: Regime Data Splitting", step_start, step_times)
 
             # Step 4: Analyst Labeling & Feature Engineering
             self.logger.info("🧠 STEP 4: Analyst Labeling & Feature Engineering...")
@@ -453,12 +679,13 @@ class EnhancedTrainingManager:
             )
             
             if not step4_success:
-                self.logger.error("❌ Step 4: Analyst Labeling & Feature Engineering failed")
-                print("❌ Step 4: Analyst Labeling & Feature Engineering failed")
+                self._log_step_completion("Step 4: Analyst Labeling & Feature Engineering", step_start, step_times, success=False)
                 return False
             
-            self.logger.info("✅ Step 4: Analyst Labeling & Feature Engineering completed successfully")
-            print("   ✅ Step 4: Analyst Labeling & Feature Engineering completed successfully")
+            self._log_step_completion("Step 4: Analyst Labeling & Feature Engineering", step_start, step_times)
+            
+            # Memory optimization after feature engineering (most memory-intensive step)
+            self._optimize_memory_usage()
 
             # Step 5: Analyst Specialist Training
             self.logger.info("🎯 STEP 5: Analyst Specialist Training...")
@@ -732,13 +959,53 @@ class EnhancedTrainingManager:
             self.logger.info("✅ Step 16: Saving Results completed successfully")
             print("   ✅ Step 16: Saving Results completed successfully")
 
+            # Calculate total time and summary
+            total_time = time.time() - start_time
+            total_memory = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024  # MB
+            
+            # Log comprehensive summary
+            self.logger.info("=" * 100)
+            self.logger.info("🎉 COMPREHENSIVE TRAINING PIPELINE COMPLETED SUCCESSFULLY")
+            self.logger.info("=" * 100)
+            self.logger.info(f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            self.logger.info(f"⏱️ Total Time: {total_time:.2f}s ({total_time/60:.1f} minutes)")
+            self.logger.info(f"💾 Final Memory Usage: {total_memory:.1f} MB")
+            self.logger.info(f"🎯 Symbol: {symbol}")
+            self.logger.info(f"🏢 Exchange: {exchange}")
+            self.logger.info(f"📊 Timeframe: {timeframe}")
+            self.logger.info(f"🧠 Training Mode: {'Blank' if self.blank_training_mode else 'Full'}")
+            
+            # Log step-by-step timing
+            self.logger.info("📊 Step-by-Step Timing:")
+            for step_name, step_time in step_times.items():
+                percentage = (step_time / total_time) * 100
+                self.logger.info(f"   {step_name}: {step_time:.2f}s ({percentage:.1f}%)")
+            
+            print("=" * 100)
+            print("🎉 COMPREHENSIVE TRAINING PIPELINE COMPLETED SUCCESSFULLY")
+            print("=" * 100)
+            print(f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"⏱️ Total Time: {total_time:.2f}s ({total_time/60:.1f} minutes)")
+            print(f"💾 Final Memory Usage: {total_memory:.1f} MB")
+            print(f"🎯 Symbol: {symbol}")
+            print(f"🏢 Exchange: {exchange}")
+            print(f"📊 Timeframe: {timeframe}")
+            print(f"🧠 Training Mode: {'Blank' if self.blank_training_mode else 'Full'}")
+            print("📊 Step-by-Step Timing:")
+            for step_name, step_time in step_times.items():
+                percentage = (step_time / total_time) * 100
+                print(f"   {step_name}: {step_time:.2f}s ({percentage:.1f}%)")
+            
             return True
             
         except Exception as e:
+            total_time = time.time() - start_time if 'start_time' in locals() else 0
             self.logger.error(f"💥 COMPREHENSIVE PIPELINE FAILED: {str(e)}")
             self.logger.error(f"📋 Error details: {type(e).__name__}: {str(e)}")
+            self.logger.error(f"⏱️ Time elapsed before failure: {total_time:.2f}s")
             print(f"💥 COMPREHENSIVE PIPELINE FAILED: {str(e)}")
             print(f"📋 Error details: {type(e).__name__}: {str(e)}")
+            print(f"⏱️ Time elapsed before failure: {total_time:.2f}s")
             return False
 
     @handle_errors(

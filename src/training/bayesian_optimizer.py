@@ -1,7 +1,7 @@
 # src/training/bayesian_optimizer.py
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Number
 
 import numpy as np
 import optuna
@@ -211,7 +211,7 @@ class AdvancedBayesianOptimizer:
         default_return=None,
         context="objective function evaluation",
     )
-    def objective(self, trial: optuna.trial.Trial) -> float:
+    def objective(self, trial: optuna.trial.Trial) -> Number:
         """Objective function with early stopping and pruning."""
 
         # Suggest hyperparameters
@@ -241,7 +241,7 @@ class AdvancedBayesianOptimizer:
 
         return score
 
-    def _evaluate_parameters(self, params: dict[str, Any]) -> float:
+    def _evaluate_parameters(self, params: dict[str, Any]) -> Number:
         """Evaluate parameters using backtesting."""
         # This would integrate with your existing backtesting infrastructure
         # For now, using a mock evaluation
@@ -268,7 +268,7 @@ class AdvancedBayesianOptimizer:
 
         return max(0, min(1, final_score))  # Clamp between 0 and 1
 
-    def _should_stop_early(self, score: float) -> bool:
+    def _should_stop_early(self, score: Number) -> bool:
         """Check if optimization should stop early."""
         if score > self.best_score:
             self.best_score = score

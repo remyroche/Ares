@@ -322,7 +322,7 @@ class Analyst:
     async def _initialize_regime_classifier(self) -> None:
         """Initialize Unified Regime Classifier."""
         self.logger.info("Initializing Unified Regime Classifier...")
-        # Regime classifier initialization logic here
+        self.regime_classifier = UnifiedRegimeClassifier(self.config, "UNKNOWN", "UNKNOWN")
         self.logger.info("Unified Regime Classifier initialized successfully")
 
     @handle_specific_errors(

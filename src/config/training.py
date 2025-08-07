@@ -69,6 +69,8 @@ def get_training_config() -> dict[str, Any]:
             "database_cleanup_threshold_mb": 1000,  # Database size threshold for cleanup
             "enable_checkpointing": True,  # Enable training checkpoint/resume
             "max_segment_size": 50000,  # Maximum rows per segment
+            "enable_computational_optimization": True,  # Enable computational optimization strategies
+            "enable_validators": True,  # Enable step validators
         },
         
         # --- Multi-Timeframe Training Configuration ---

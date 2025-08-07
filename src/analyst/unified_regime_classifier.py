@@ -23,12 +23,14 @@ class UnifiedRegimeClassifier:
     2. Ensemble prediction with majority voting for basic regimes
     3. Location classification (SUPPORT, RESISTANCE, OPEN_RANGE)
     """
-
-    def __init__(self, config: dict[str, Any]):
+    
+    def __init__(self, config: dict[str, Any], exchange: str = "UNKNOWN", symbol: str = "UNKNOWN"):
         self.config = config.get("analyst", {}).get("unified_regime_classifier", {})
         self.global_config = config
         self.logger = system_logger.getChild("UnifiedRegimeClassifier")
-
+        self.exchange = exchange
+        self.symbol = symbol
+        
         # HMM Configuration - now 4 states for 4 regimes
         self.n_states = self.config.get("n_states", 4)  # BULL, BEAR, SIDEWAYS, VOLATILE
         self.n_iter = self.config.get("n_iter", 100)
@@ -66,15 +68,15 @@ class UnifiedRegimeClassifier:
 
         self.hmm_model_path = os.path.join(
             self.model_dir,
-            f"unified_hmm_model_{self.target_timeframe}.joblib",
+            f"unified_hmm_model_{self.exchange}_{self.symbol}_{self.target_timeframe}.joblib",
         )
         self.ensemble_model_path = os.path.join(
             self.model_dir,
-            f"unified_ensemble_model_{self.target_timeframe}.joblib",
+            f"unified_ensemble_model_{self.exchange}_{self.symbol}_{self.target_timeframe}.joblib",
         )
         self.location_model_path = os.path.join(
             self.model_dir,
-            f"unified_location_model_{self.target_timeframe}.joblib",
+            f"unified_location_model_{self.exchange}_{self.symbol}_{self.target_timeframe}.joblib",
         )
 
 

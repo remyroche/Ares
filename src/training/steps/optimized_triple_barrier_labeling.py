@@ -12,6 +12,7 @@ class OptimizedTripleBarrierLabeling:
     
     This implementation provides significant performance improvements over the
     original O(n²) implementation by using NumPy vectorized operations.
+    Focuses specifically on triple barrier labeling without feature engineering.
     """
     
     def __init__(self, 
@@ -224,94 +225,6 @@ class OptimizedTripleBarrierLabeling:
             Processed chunk with labels
         """
         return self.apply_triple_barrier_labeling_vectorized(chunk)
-    
-    def calculate_features_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Calculate technical features using vectorized operations.
-        
-        Args:
-            data: Market data
-            
-        Returns:
-            DataFrame with features added
-        """
-        features = data.copy()
-        
-        # Vectorized price features
-        features['price_change'] = data['close'].pct_change()
-        features['price_change_abs'] = features['price_change'].abs()
-        features['high_low_ratio'] = data['high'] / data['low']
-        features['volume_price_ratio'] = data['volume'] / data['close']
-        
-        # Vectorized moving averages
-        features['sma_5'] = data['close'].rolling(window=5, min_periods=1).mean()
-        features['sma_10'] = data['close'].rolling(window=10, min_periods=1).mean()
-        features['sma_20'] = data['close'].rolling(window=20, min_periods=1).mean()
-        features['ema_12'] = data['close'].ewm(span=12).mean()
-        features['ema_26'] = data['close'].ewm(span=26).mean()
-        
-        # Vectorized technical indicators
-        features['rsi'] = self._calculate_rsi_vectorized(data['close'])
-        macd, signal = self._calculate_macd_vectorized(data['close'])
-        features['macd'] = macd
-        features['macd_signal'] = signal
-        features['macd_histogram'] = macd - signal
-        
-        bb_upper, bb_lower = self._calculate_bollinger_bands_vectorized(data['close'])
-        features['bb_upper'] = bb_upper
-        features['bb_lower'] = bb_lower
-        features['bb_width'] = bb_upper - bb_lower
-        features['bb_position'] = (data['close'] - bb_lower) / (bb_upper - bb_lower)
-        
-        features['atr'] = self._calculate_atr_vectorized(data)
-        
-        return features
-    
-    def _calculate_rsi_vectorized(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI using vectorized operations."""
-        delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        return rsi
-    
-    def _calculate_macd_vectorized(
-        self,
-        prices: pd.Series,
-        fast: int = 12,
-        slow: int = 26,
-        signal: int = 9
-    ) -> Tuple[pd.Series, pd.Series]:
-        """Calculate MACD using vectorized operations."""
-        ema_fast = prices.ewm(span=fast).mean()
-        ema_slow = prices.ewm(span=slow).mean()
-        macd = ema_fast - ema_slow
-        signal_line = macd.ewm(span=signal).mean()
-        return macd, signal_line
-    
-    def _calculate_bollinger_bands_vectorized(
-        self,
-        prices: pd.Series,
-        period: int = 20,
-        std_dev: int = 2
-    ) -> Tuple[pd.Series, pd.Series]:
-        """Calculate Bollinger Bands using vectorized operations."""
-        sma = prices.rolling(window=period).mean()
-        std = prices.rolling(window=period).std()
-        upper_band = sma + (std * std_dev)
-        lower_band = sma - (std * std_dev)
-        return upper_band, lower_band
-    
-    def _calculate_atr_vectorized(self, data: pd.DataFrame, period: int = 14) -> pd.Series:
-        """Calculate ATR using vectorized operations."""
-        high_low = data['high'] - data['low']
-        high_close = np.abs(data['high'] - data['close'].shift())
-        low_close = np.abs(data['low'] - data['close'].shift())
-        
-        true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        atr = true_range.rolling(window=period).mean()
-        return atr
 
 
 def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:

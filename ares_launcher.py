@@ -463,6 +463,52 @@ class AresLauncher:
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
+        context="resume_training",
+    )
+    def resume_training(
+        self,
+        symbol: str,
+        exchange: str,
+        with_gui: bool = False,
+    ):
+        """Resume training from the last checkpoint."""
+        self.logger.info(f"🔄 Resuming training for {symbol} on {exchange}")
+        print(f"🔄 Resuming training for {symbol} on {exchange}")
+        
+        # Check if checkpoint exists
+        checkpoint_file = Path("checkpoints/training_progress.json")
+        if not checkpoint_file.exists():
+            self.logger.error("❌ No checkpoint found to resume from")
+            print("❌ No checkpoint found to resume from")
+            return False
+        
+        try:
+            with open(checkpoint_file, 'r') as f:
+                checkpoint_data = json.load(f)
+            
+            training_mode = checkpoint_data.get("training_mode", "blank")
+            lookback_days = checkpoint_data.get("lookback_days", 30)
+            last_step = checkpoint_data.get("current_step", "")
+            
+            self.logger.info(f"📂 Found checkpoint: {last_step}")
+            print(f"📂 Found checkpoint: {last_step}")
+            
+            return self._run_unified_training(
+                symbol=symbol,
+                exchange=exchange,
+                training_mode=training_mode,
+                lookback_days=lookback_days,
+                with_gui=with_gui,
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to resume training: {e}")
+            print(f"❌ Failed to resume training: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
         context="precompute_wavelet_features",
     )
     def precompute_wavelet_features(self, symbol: str, exchange: str) -> bool:
@@ -1569,6 +1615,7 @@ Examples:
             "load",
             "regime",
             "precompute",
+            "resume",
         ],
         help="The command to execute",
     )
@@ -1756,6 +1803,11 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
         "precompute": lambda: launcher.precompute_wavelet_features(
             args.symbol,
             args.exchange,
+        ),
+        "resume": lambda: launcher.resume_training(
+            args.symbol,
+            args.exchange,
+            args.gui,
         ),
     }
 

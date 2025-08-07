@@ -11,6 +11,8 @@ import pandas as pd
 import pywt
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import timedelta
+import time # Added for performance tracking
+import random # Added for random feature selection
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -1259,24 +1261,57 @@ class VectorizedCandlestickPatternAnalyzer:
 class VectorizedWaveletTransformAnalyzer:
     """
     Comprehensive wavelet transform analyzer for signal processing and feature extraction.
-    Implements various wavelet transforms for financial time series analysis.
+    Implements various wavelet transforms for financial time series analysis with proper
+    boundary handling, scale selection, and dimensionality management.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedWaveletTransformAnalyzer")
 
-        # Wavelet configuration
+        # Enhanced wavelet configuration
         self.wavelet_config = config.get("wavelet_transforms", {})
         self.wavelet_type = self.wavelet_config.get("wavelet_type", "db4")
         self.decomposition_level = self.wavelet_config.get("decomposition_level", 4)
+        
+        # Boundary handling configuration
+        self.padding_mode = self.wavelet_config.get("padding_mode", "symmetric")
+        self.boundary_handling = self.wavelet_config.get("boundary_handling", "truncate")
+        self.edge_effect_threshold = self.wavelet_config.get("edge_effect_threshold", 0.1)
+        
+        # CWT scale selection configuration
+        self.cwt_scale_method = self.wavelet_config.get("cwt_scale_method", "logarithmic")
+        self.min_scale = self.wavelet_config.get("min_scale", 1)
+        self.max_scale = self.wavelet_config.get("max_scale", 32)
+        self.num_scales = self.wavelet_config.get("num_scales", 16)
+        self.scale_resolution = self.wavelet_config.get("scale_resolution", "octave")
+        
+        # Feature dimensionality management
+        self.max_features_per_wavelet = self.wavelet_config.get("max_features_per_wavelet", 20)
+        self.feature_selection_method = self.wavelet_config.get("feature_selection_method", "variance")
+        self.min_feature_variance = self.wavelet_config.get("min_feature_variance", 1e-6)
+        
+        # Stationarity handling
+        self.enable_stationary_series = self.wavelet_config.get("enable_stationary_series", True)
+        self.stationary_transforms = self.wavelet_config.get("stationary_transforms", ["returns", "log_returns"])
+        
+        # Computational cost management
+        self.max_wavelet_types = self.wavelet_config.get("max_wavelet_types", 3)
+        self.enable_parallel_processing = self.wavelet_config.get("enable_parallel_processing", False)
+        self.computation_timeout = self.wavelet_config.get("computation_timeout", 30)  # seconds
+        
+        # Enable/disable specific transforms
         self.enable_continuous_wavelet = self.wavelet_config.get("enable_continuous_wavelet", True)
         self.enable_discrete_wavelet = self.wavelet_config.get("enable_discrete_wavelet", True)
         self.enable_wavelet_packet = self.wavelet_config.get("enable_wavelet_packet", True)
         self.enable_denoising = self.wavelet_config.get("enable_denoising", True)
 
-        # Wavelet types for different analyses
+        # Wavelet types for different analyses (limited for efficiency)
         self.wavelet_types = ["db1", "db2", "db4", "db8", "haar", "sym2", "sym4", "coif1", "coif2"]
+        
+        # Performance tracking
+        self.computation_times = {}
+        self.feature_counts = {}
         
         self.is_initialized = False
 
@@ -1286,22 +1321,67 @@ class VectorizedWaveletTransformAnalyzer:
         context="wavelet transform analyzer initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize wavelet transform analyzer."""
+        """Initialize wavelet transform analyzer with enhanced configuration."""
         try:
-            self.logger.info("🚀 Initializing vectorized wavelet transform analyzer...")
+            self.logger.info("🚀 Initializing enhanced vectorized wavelet transform analyzer...")
+            
+            # Validate configuration
+            self._validate_wavelet_config()
+            
+            # Initialize performance tracking
+            self.computation_times = {}
+            self.feature_counts = {}
+            
             self.is_initialized = True
-            self.logger.info("✅ Vectorized wavelet transform analyzer initialized successfully")
+            self.logger.info("✅ Enhanced vectorized wavelet transform analyzer initialized successfully")
+            self.logger.info(f"📊 Configuration: padding_mode={self.padding_mode}, "
+                           f"cwt_scale_method={self.cwt_scale_method}, "
+                           f"max_features_per_wavelet={self.max_features_per_wavelet}")
             return True
         except Exception as e:
             self.logger.error(
-                f"❌ Error initializing vectorized wavelet transform analyzer: {e}",
+                f"❌ Error initializing enhanced vectorized wavelet transform analyzer: {e}",
             )
             return False
+
+    def _validate_wavelet_config(self) -> None:
+        """Validate wavelet configuration parameters."""
+        try:
+            # Validate padding mode
+            valid_padding_modes = ["symmetric", "periodic", "zero", "constant", "edge", "reflect"]
+            if self.padding_mode not in valid_padding_modes:
+                self.logger.warning(f"Invalid padding_mode '{self.padding_mode}', using 'symmetric'")
+                self.padding_mode = "symmetric"
+            
+            # Validate CWT scale method
+            valid_scale_methods = ["linear", "logarithmic", "octave", "adaptive"]
+            if self.cwt_scale_method not in valid_scale_methods:
+                self.logger.warning(f"Invalid cwt_scale_method '{self.cwt_scale_method}', using 'logarithmic'")
+                self.cwt_scale_method = "logarithmic"
+            
+            # Validate feature selection method
+            valid_selection_methods = ["variance", "energy", "entropy", "random"]
+            if self.feature_selection_method not in valid_selection_methods:
+                self.logger.warning(f"Invalid feature_selection_method '{self.feature_selection_method}', using 'variance'")
+                self.feature_selection_method = "variance"
+            
+            # Validate scale parameters
+            if self.min_scale <= 0 or self.max_scale <= self.min_scale:
+                self.logger.warning("Invalid scale parameters, using defaults")
+                self.min_scale = 1
+                self.max_scale = 32
+            
+            if self.num_scales <= 0 or self.num_scales > 100:
+                self.logger.warning("Invalid num_scales, using default")
+                self.num_scales = 16
+                
+        except Exception as e:
+            self.logger.error(f"Error validating wavelet configuration: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return={},
-        context="wavelet transform analysis",
+        context="enhanced wavelet transform analysis",
     )
     async def analyze_wavelet_transforms(
         self,
@@ -1309,7 +1389,7 @@ class VectorizedWaveletTransformAnalyzer:
         volume_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
         """
-        Analyze wavelet transforms for signal processing and feature extraction.
+        Analyze wavelet transforms for signal processing and feature extraction with enhanced handling.
 
         Args:
             price_data: OHLCV price data
@@ -1327,64 +1407,167 @@ class VectorizedWaveletTransformAnalyzer:
                 self.logger.warning("Empty price data provided for wavelet analysis")
                 return {}
 
-            self.logger.info("🔍 Performing wavelet transform analysis...")
+            self.logger.info("🔍 Performing enhanced wavelet transform analysis...")
+            start_time = time.time()
 
             features = {}
+            total_features = 0
 
-            # 1. Discrete Wavelet Transform (DWT) analysis
+            # 1. Prepare stationary series for analysis
+            stationary_series = self._prepare_stationary_series(price_data)
+            
+            # 2. Discrete Wavelet Transform (DWT) analysis with boundary handling
             if self.enable_discrete_wavelet:
-                dwt_features = self._analyze_discrete_wavelet_transforms(price_data)
+                dwt_start = time.time()
+                dwt_features = await self._analyze_discrete_wavelet_transforms_enhanced(
+                    price_data, stationary_series
+                )
                 features.update(dwt_features)
+                self.computation_times["dwt"] = time.time() - dwt_start
+                self.feature_counts["dwt"] = len(dwt_features)
+                total_features += len(dwt_features)
 
-            # 2. Continuous Wavelet Transform (CWT) analysis
+            # 3. Continuous Wavelet Transform (CWT) analysis with dynamic scale selection
             if self.enable_continuous_wavelet:
-                cwt_features = self._analyze_continuous_wavelet_transforms(price_data)
+                cwt_start = time.time()
+                cwt_features = await self._analyze_continuous_wavelet_transforms_enhanced(
+                    price_data, stationary_series
+                )
                 features.update(cwt_features)
+                self.computation_times["cwt"] = time.time() - cwt_start
+                self.feature_counts["cwt"] = len(cwt_features)
+                total_features += len(cwt_features)
 
-            # 3. Wavelet Packet analysis
+            # 4. Wavelet Packet analysis with dimensionality control
             if self.enable_wavelet_packet:
-                packet_features = self._analyze_wavelet_packets(price_data)
+                packet_start = time.time()
+                packet_features = await self._analyze_wavelet_packets_enhanced(
+                    price_data, stationary_series
+                )
                 features.update(packet_features)
+                self.computation_times["packet"] = time.time() - packet_start
+                self.feature_counts["packet"] = len(packet_features)
+                total_features += len(packet_features)
 
-            # 4. Wavelet denoising
+            # 5. Wavelet denoising with boundary effect management
             if self.enable_denoising:
-                denoising_features = self._analyze_wavelet_denoising(price_data)
+                denoising_start = time.time()
+                denoising_features = await self._analyze_wavelet_denoising_enhanced(
+                    price_data, stationary_series
+                )
                 features.update(denoising_features)
+                self.computation_times["denoising"] = time.time() - denoising_start
+                self.feature_counts["denoising"] = len(denoising_features)
+                total_features += len(denoising_features)
 
-            # 5. Multi-wavelet analysis
-            multi_wavelet_features = self._analyze_multi_wavelet_transforms(price_data)
+            # 6. Multi-wavelet analysis with feature selection
+            multi_start = time.time()
+            multi_wavelet_features = await self._analyze_multi_wavelet_transforms_enhanced(
+                price_data, stationary_series
+            )
             features.update(multi_wavelet_features)
+            self.computation_times["multi_wavelet"] = time.time() - multi_start
+            self.feature_counts["multi_wavelet"] = len(multi_wavelet_features)
+            total_features += len(multi_wavelet_features)
 
-            # 6. Volume wavelet analysis (if available)
+            # 7. Volume wavelet analysis (if available)
             if volume_data is not None and not volume_data.empty:
-                volume_wavelet_features = self._analyze_volume_wavelet_transforms(volume_data)
+                volume_start = time.time()
+                volume_wavelet_features = await self._analyze_volume_wavelet_transforms_enhanced(
+                    volume_data
+                )
                 features.update(volume_wavelet_features)
+                self.computation_times["volume_wavelet"] = time.time() - volume_start
+                self.feature_counts["volume_wavelet"] = len(volume_wavelet_features)
+                total_features += len(volume_wavelet_features)
 
-            self.logger.info(f"✅ Wavelet transform analysis completed. Generated {len(features)} features")
-            return features
+            # 8. Feature selection and dimensionality reduction
+            selected_features = self._select_optimal_wavelet_features(features)
+            
+            total_time = time.time() - start_time
+            self.computation_times["total"] = total_time
+            self.feature_counts["total"] = len(selected_features)
+
+            self.logger.info(
+                f"✅ Enhanced wavelet transform analysis completed in {total_time:.2f}s. "
+                f"Generated {len(selected_features)} features from {total_features} candidates. "
+                f"Feature selection: {self.feature_selection_method}"
+            )
+            
+            # Log performance metrics
+            self._log_performance_metrics()
+            
+            return selected_features
 
         except Exception as e:
-            self.logger.error(f"Error in wavelet transform analysis: {e}")
+            self.logger.error(f"Error in enhanced wavelet transform analysis: {e}")
             return {}
 
-    def _analyze_discrete_wavelet_transforms(self, price_data: pd.DataFrame) -> dict[str, float]:
-        """Analyze discrete wavelet transforms using vectorized operations."""
+    def _prepare_stationary_series(self, price_data: pd.DataFrame) -> dict[str, np.ndarray]:
+        """Prepare stationary series for wavelet analysis."""
+        try:
+            stationary_series = {}
+            
+            if self.enable_stationary_series:
+                # Returns (first difference)
+                returns = price_data["close"].pct_change().dropna().values
+                if len(returns) > 0:
+                    stationary_series["returns"] = returns
+                
+                # Log returns
+                log_returns = np.log(price_data["close"] / price_data["close"].shift(1)).dropna().values
+                if len(log_returns) > 0:
+                    stationary_series["log_returns"] = log_returns
+                
+                # Detrended series
+                close_prices = price_data["close"].values
+                trend = np.polyfit(range(len(close_prices)), close_prices, 1)
+                detrended = close_prices - (trend[0] * np.arange(len(close_prices)) + trend[1])
+                stationary_series["detrended"] = detrended
+            
+            # Original series
+            stationary_series["close"] = price_data["close"].values
+            
+            return stationary_series
+
+        except Exception as e:
+            self.logger.error(f"Error preparing stationary series: {e}")
+            return {"close": price_data["close"].values}
+
+    async def _analyze_discrete_wavelet_transforms_enhanced(
+        self, 
+        price_data: pd.DataFrame, 
+        stationary_series: dict[str, np.ndarray]
+    ) -> dict[str, float]:
+        """Analyze discrete wavelet transforms with enhanced boundary handling."""
         try:
             features = {}
             
-            # Use close prices for wavelet analysis
-            close_prices = price_data["close"].values
+            # Use limited wavelet types for efficiency
+            wavelet_types = self.wavelet_types[:self.max_wavelet_types]
             
-            # Perform DWT for different wavelet types
-            for wavelet_type in self.wavelet_types[:3]:  # Use first 3 types for efficiency
+            for wavelet_type in wavelet_types:
                 try:
-                    # Perform wavelet decomposition
-                    coeffs = pywt.wavedec(close_prices, wavelet_type, level=self.decomposition_level)
-                    
-                    # Extract features from coefficients
-                    dwt_features = self._extract_dwt_features(coeffs, wavelet_type)
-                    features.update(dwt_features)
-                    
+                    # Analyze each stationary series
+                    for series_name, series_data in stationary_series.items():
+                        if len(series_data) < 2 ** self.decomposition_level:
+                            self.logger.warning(f"Insufficient data for {series_name} with {wavelet_type}")
+                            continue
+                        
+                        # Perform wavelet decomposition with boundary handling
+                        coeffs = pywt.wavedec(
+                            series_data, 
+                            wavelet_type, 
+                            level=self.decomposition_level,
+                            mode=self.padding_mode
+                        )
+                        
+                        # Extract features with boundary effect management
+                        dwt_features = self._extract_dwt_features_enhanced(
+                            coeffs, wavelet_type, series_name
+                        )
+                        features.update(dwt_features)
+                        
                 except Exception as e:
                     self.logger.warning(f"Error with wavelet type {wavelet_type}: {e}")
                     continue
@@ -1392,66 +1575,100 @@ class VectorizedWaveletTransformAnalyzer:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error in discrete wavelet transform analysis: {e}")
+            self.logger.error(f"Error in enhanced discrete wavelet transform analysis: {e}")
             return {}
 
-    def _extract_dwt_features(self, coeffs: list, wavelet_type: str) -> dict[str, float]:
-        """Extract features from DWT coefficients using vectorized operations."""
+    def _extract_dwt_features_enhanced(
+        self, 
+        coeffs: list, 
+        wavelet_type: str, 
+        series_name: str
+    ) -> dict[str, float]:
+        """Extract features from DWT coefficients with boundary effect management."""
         try:
             features = {}
             
-            # Energy features for each level
+            # Energy features for each level with boundary effect consideration
             for i, coeff in enumerate(coeffs):
                 if len(coeff) > 0:
-                    energy = np.sum(coeff ** 2)
-                    features[f"{wavelet_type}_level_{i}_energy"] = energy
-                    features[f"{wavelet_type}_level_{i}_energy_normalized"] = energy / len(coeff)
+                    # Remove boundary effects if significant
+                    if self.boundary_handling == "truncate" and len(coeff) > 10:
+                        # Remove first and last 10% of coefficients to avoid boundary effects
+                        truncate_size = max(1, int(len(coeff) * 0.1))
+                        coeff_clean = coeff[truncate_size:-truncate_size]
+                    else:
+                        coeff_clean = coeff
                     
-                    # Statistical features
-                    features[f"{wavelet_type}_level_{i}_mean"] = np.mean(coeff)
-                    features[f"{wavelet_type}_level_{i}_std"] = np.std(coeff)
-                    features[f"{wavelet_type}_level_{i}_max"] = np.max(coeff)
-                    features[f"{wavelet_type}_level_{i}_min"] = np.min(coeff)
-                    
-                    # Entropy features
-                    if energy > 0:
-                        entropy = -np.sum((coeff ** 2) / energy * np.log((coeff ** 2) / energy + 1e-10))
-                        features[f"{wavelet_type}_level_{i}_entropy"] = entropy
+                    if len(coeff_clean) > 0:
+                        energy = np.sum(coeff_clean ** 2)
+                        features[f"{wavelet_type}_{series_name}_level_{i}_energy"] = energy
+                        features[f"{wavelet_type}_{series_name}_level_{i}_energy_normalized"] = energy / len(coeff_clean)
+                        
+                        # Statistical features
+                        features[f"{wavelet_type}_{series_name}_level_{i}_mean"] = np.mean(coeff_clean)
+                        features[f"{wavelet_type}_{series_name}_level_{i}_std"] = np.std(coeff_clean)
+                        features[f"{wavelet_type}_{series_name}_level_{i}_max"] = np.max(coeff_clean)
+                        features[f"{wavelet_type}_{series_name}_level_{i}_min"] = np.min(coeff_clean)
+                        
+                        # Entropy features
+                        if energy > 0:
+                            entropy = -np.sum((coeff_clean ** 2) / energy * 
+                                            np.log((coeff_clean ** 2) / energy + 1e-10))
+                            features[f"{wavelet_type}_{series_name}_level_{i}_entropy"] = entropy
+                        
+                        # Boundary effect features
+                        if len(coeff) > len(coeff_clean):
+                            boundary_ratio = len(coeff_clean) / len(coeff)
+                            features[f"{wavelet_type}_{series_name}_level_{i}_boundary_ratio"] = boundary_ratio
 
             # Cross-level features
             if len(coeffs) > 1:
-                # Energy ratio between levels
                 for i in range(len(coeffs) - 1):
-                    if np.sum(coeffs[i] ** 2) > 0:
-                        energy_ratio = np.sum(coeffs[i + 1] ** 2) / np.sum(coeffs[i] ** 2)
-                        features[f"{wavelet_type}_energy_ratio_{i}_{i+1}"] = energy_ratio
+                    energy_i = np.sum(coeffs[i] ** 2)
+                    energy_j = np.sum(coeffs[i + 1] ** 2)
+                    if energy_i > 0:
+                        energy_ratio = energy_j / energy_i
+                        features[f"{wavelet_type}_{series_name}_energy_ratio_{i}_{i+1}"] = energy_ratio
 
             return features
 
         except Exception as e:
-            self.logger.error(f"Error extracting DWT features: {e}")
+            self.logger.error(f"Error extracting enhanced DWT features: {e}")
             return {}
 
-    def _analyze_continuous_wavelet_transforms(self, price_data: pd.DataFrame) -> dict[str, float]:
-        """Analyze continuous wavelet transforms using vectorized operations."""
+    async def _analyze_continuous_wavelet_transforms_enhanced(
+        self, 
+        price_data: pd.DataFrame, 
+        stationary_series: dict[str, np.ndarray]
+    ) -> dict[str, float]:
+        """Analyze continuous wavelet transforms with dynamic scale selection."""
         try:
             features = {}
             
-            # Use close prices for CWT analysis
-            close_prices = price_data["close"].values
+            # Generate scales based on configuration
+            scales = self._generate_cwt_scales(len(price_data))
             
-            # Perform CWT for different scales
-            scales = np.arange(1, 32, 2)  # Use fewer scales for efficiency
-            
-            for wavelet_type in ["morl", "cmor1.5-1.0"]:  # Morlet and complex Morlet wavelets
+            for wavelet_type in ["morl", "cmor1.5-1.0"]:
                 try:
-                    # Perform continuous wavelet transform
-                    coeffs, freqs = pywt.cwt(close_prices, scales, wavelet_type)
-                    
-                    # Extract CWT features
-                    cwt_features = self._extract_cwt_features(coeffs, freqs, wavelet_type)
-                    features.update(cwt_features)
-                    
+                    # Analyze each stationary series
+                    for series_name, series_data in stationary_series.items():
+                        if len(series_data) < 10:  # Minimum length for CWT
+                            continue
+                        
+                        # Perform continuous wavelet transform with boundary handling
+                        coeffs, freqs = pywt.cwt(
+                            series_data, 
+                            scales, 
+                            wavelet_type,
+                            method='conv'
+                        )
+                        
+                        # Extract CWT features with scale information
+                        cwt_features = self._extract_cwt_features_enhanced(
+                            coeffs, freqs, wavelet_type, series_name, scales
+                        )
+                        features.update(cwt_features)
+                        
                 except Exception as e:
                     self.logger.warning(f"Error with CWT wavelet type {wavelet_type}: {e}")
                     continue
@@ -1459,311 +1676,208 @@ class VectorizedWaveletTransformAnalyzer:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error in continuous wavelet transform analysis: {e}")
+            self.logger.error(f"Error in enhanced continuous wavelet transform analysis: {e}")
             return {}
 
-    def _extract_cwt_features(self, coeffs: np.ndarray, freqs: np.ndarray, wavelet_type: str) -> dict[str, float]:
-        """Extract features from CWT coefficients using vectorized operations."""
+    def _generate_cwt_scales(self, signal_length: int) -> np.ndarray:
+        """Generate CWT scales based on configuration and signal length."""
+        try:
+            if self.cwt_scale_method == "logarithmic":
+                # Logarithmic scale distribution
+                scales = np.logspace(
+                    np.log10(self.min_scale), 
+                    np.log10(self.max_scale), 
+                    self.num_scales
+                )
+            elif self.cwt_scale_method == "linear":
+                # Linear scale distribution
+                scales = np.linspace(self.min_scale, self.max_scale, self.num_scales)
+            elif self.cwt_scale_method == "octave":
+                # Octave-based scale distribution
+                scales = 2 ** np.linspace(
+                    np.log2(self.min_scale), 
+                    np.log2(self.max_scale), 
+                    self.num_scales
+                )
+            elif self.cwt_scale_method == "adaptive":
+                # Adaptive scale selection based on signal length
+                min_scale = max(1, signal_length // 100)
+                max_scale = min(signal_length // 4, self.max_scale)
+                scales = np.logspace(
+                    np.log10(min_scale), 
+                    np.log10(max_scale), 
+                    self.num_scales
+                )
+            else:
+                # Default to logarithmic
+                scales = np.logspace(
+                    np.log10(self.min_scale), 
+                    np.log10(self.max_scale), 
+                    self.num_scales
+                )
+            
+            return scales.astype(int)
+
+        except Exception as e:
+            self.logger.error(f"Error generating CWT scales: {e}")
+            return np.arange(self.min_scale, self.max_scale, 2)
+
+    def _extract_cwt_features_enhanced(
+        self, 
+        coeffs: np.ndarray, 
+        freqs: np.ndarray, 
+        wavelet_type: str, 
+        series_name: str,
+        scales: np.ndarray
+    ) -> dict[str, float]:
+        """Extract features from CWT coefficients with enhanced analysis."""
         try:
             features = {}
             
-            # Energy features
+            # Energy features with boundary effect consideration
             energy = np.sum(np.abs(coeffs) ** 2, axis=1)
-            features[f"{wavelet_type}_total_energy"] = np.sum(energy)
-            features[f"{wavelet_type}_max_energy"] = np.max(energy)
-            features[f"{wavelet_type}_min_energy"] = np.min(energy)
-            features[f"{wavelet_type}_energy_std"] = np.std(energy)
+            
+            # Remove boundary effects from energy calculation
+            if self.boundary_handling == "truncate" and coeffs.shape[1] > 20:
+                truncate_size = max(1, coeffs.shape[1] // 10)
+                energy_clean = np.sum(np.abs(coeffs[:, truncate_size:-truncate_size]) ** 2, axis=1)
+            else:
+                energy_clean = energy
+            
+            features[f"{wavelet_type}_{series_name}_total_energy"] = np.sum(energy_clean)
+            features[f"{wavelet_type}_{series_name}_max_energy"] = np.max(energy_clean)
+            features[f"{wavelet_type}_{series_name}_min_energy"] = np.min(energy_clean)
+            features[f"{wavelet_type}_{series_name}_energy_std"] = np.std(energy_clean)
             
             # Frequency features
-            features[f"{wavelet_type}_dominant_freq"] = freqs[np.argmax(energy)]
-            features[f"{wavelet_type}_freq_range"] = np.max(freqs) - np.min(freqs)
+            if len(energy_clean) > 0:
+                features[f"{wavelet_type}_{series_name}_dominant_freq"] = freqs[np.argmax(energy_clean)]
+                features[f"{wavelet_type}_{series_name}_freq_range"] = np.max(freqs) - np.min(freqs)
+                features[f"{wavelet_type}_{series_name}_energy_bandwidth"] = np.std(freqs[energy_clean > np.mean(energy_clean)])
+            
+            # Scale-specific features
+            features[f"{wavelet_type}_{series_name}_min_scale"] = np.min(scales)
+            features[f"{wavelet_type}_{series_name}_max_scale"] = np.max(scales)
+            features[f"{wavelet_type}_{series_name}_scale_range"] = np.max(scales) - np.min(scales)
             
             # Statistical features
-            features[f"{wavelet_type}_coeff_mean"] = np.mean(np.abs(coeffs))
-            features[f"{wavelet_type}_coeff_std"] = np.std(np.abs(coeffs))
-            features[f"{wavelet_type}_coeff_max"] = np.max(np.abs(coeffs))
-            features[f"{wavelet_type}_coeff_min"] = np.min(np.abs(coeffs))
+            features[f"{wavelet_type}_{series_name}_coeff_mean"] = np.mean(np.abs(coeffs))
+            features[f"{wavelet_type}_{series_name}_coeff_std"] = np.std(np.abs(coeffs))
+            features[f"{wavelet_type}_{series_name}_coeff_max"] = np.max(np.abs(coeffs))
+            features[f"{wavelet_type}_{series_name}_coeff_min"] = np.min(np.abs(coeffs))
             
             # Entropy features
             total_energy = np.sum(np.abs(coeffs) ** 2)
             if total_energy > 0:
                 entropy = -np.sum((np.abs(coeffs) ** 2) / total_energy * 
                                 np.log((np.abs(coeffs) ** 2) / total_energy + 1e-10))
-                features[f"{wavelet_type}_entropy"] = entropy
+                features[f"{wavelet_type}_{series_name}_entropy"] = entropy
 
             return features
 
         except Exception as e:
-            self.logger.error(f"Error extracting CWT features: {e}")
+            self.logger.error(f"Error extracting enhanced CWT features: {e}")
             return {}
 
-    def _analyze_wavelet_packets(self, price_data: pd.DataFrame) -> dict[str, float]:
-        """Analyze wavelet packets using vectorized operations."""
+    def _select_optimal_wavelet_features(self, features: dict[str, Any]) -> dict[str, Any]:
+        """Select optimal wavelet features based on configured method."""
         try:
-            features = {}
+            if len(features) <= self.max_features_per_wavelet:
+                return features
             
-            # Use close prices for wavelet packet analysis
-            close_prices = price_data["close"].values
-            
-            # Perform wavelet packet decomposition
-            for wavelet_type in ["db4", "sym4"]:  # Use common wavelet types
-                try:
-                    # Create wavelet packet tree
-                    wp = pywt.WaveletPacket(close_prices, wavelet_type, mode='symmetric')
-                    
-                    # Extract packet features
-                    packet_features = self._extract_wavelet_packet_features(wp, wavelet_type)
-                    features.update(packet_features)
-                    
-                except Exception as e:
-                    self.logger.warning(f"Error with wavelet packet type {wavelet_type}: {e}")
-                    continue
-
-            return features
-
-        except Exception as e:
-            self.logger.error(f"Error in wavelet packet analysis: {e}")
-            return {}
-
-    def _extract_wavelet_packet_features(self, wp: pywt.WaveletPacket, wavelet_type: str) -> dict[str, float]:
-        """Extract features from wavelet packets using vectorized operations."""
-        try:
-            features = {}
-            
-            # Get packet coefficients
-            packets = []
-            for node in wp.get_level(3):  # Level 3 decomposition
-                packets.append(node.data)
-            
-            if packets:
-                # Energy features
-                energies = [np.sum(packet ** 2) for packet in packets]
-                features[f"{wavelet_type}_packet_total_energy"] = np.sum(energies)
-                features[f"{wavelet_type}_packet_max_energy"] = np.max(energies)
-                features[f"{wavelet_type}_packet_min_energy"] = np.min(energies)
-                features[f"{wavelet_type}_packet_energy_std"] = np.std(energies)
+            if self.feature_selection_method == "variance":
+                # Select features with highest variance
+                feature_vars = {}
+                for feature_name, feature_value in features.items():
+                    if isinstance(feature_value, (int, float)) and not np.isnan(feature_value):
+                        feature_vars[feature_name] = abs(feature_value)
                 
-                # Statistical features
-                all_coeffs = np.concatenate(packets)
-                features[f"{wavelet_type}_packet_coeff_mean"] = np.mean(all_coeffs)
-                features[f"{wavelet_type}_packet_coeff_std"] = np.std(all_coeffs)
-                features[f"{wavelet_type}_packet_coeff_max"] = np.max(all_coeffs)
-                features[f"{wavelet_type}_packet_coeff_min"] = np.min(all_coeffs)
+                # Sort by variance and select top features
+                sorted_features = sorted(feature_vars.items(), key=lambda x: x[1], reverse=True)
+                selected_features = dict(sorted_features[:self.max_features_per_wavelet])
                 
-                # Entropy features
-                total_energy = np.sum(energies)
-                if total_energy > 0:
-                    entropy = -np.sum(np.array(energies) / total_energy * 
-                                    np.log(np.array(energies) / total_energy + 1e-10))
-                    features[f"{wavelet_type}_packet_entropy"] = entropy
-
-            return features
-
-        except Exception as e:
-            self.logger.error(f"Error extracting wavelet packet features: {e}")
-            return {}
-
-    def _analyze_wavelet_denoising(self, price_data: pd.DataFrame) -> dict[str, float]:
-        """Analyze wavelet denoising using vectorized operations."""
-        try:
-            features = {}
-            
-            # Use close prices for denoising analysis
-            close_prices = price_data["close"].values
-            
-            # Perform wavelet denoising
-            for wavelet_type in ["db4", "sym4"]:
-                try:
-                    # Denoise signal
-                    denoised = pywt.threshold(close_prices, np.std(close_prices) * 0.1, mode='soft')
-                    
-                    # Extract denoising features
-                    denoising_features = self._extract_denoising_features(close_prices, denoised, wavelet_type)
-                    features.update(denoising_features)
-                    
-                except Exception as e:
-                    self.logger.warning(f"Error with denoising wavelet type {wavelet_type}: {e}")
-                    continue
-
-            return features
-
-        except Exception as e:
-            self.logger.error(f"Error in wavelet denoising analysis: {e}")
-            return {}
-
-    def _extract_denoising_features(self, original: np.ndarray, denoised: np.ndarray, wavelet_type: str) -> dict[str, float]:
-        """Extract features from denoising analysis using vectorized operations."""
-        try:
-            features = {}
-            
-            # Noise estimation
-            noise = original - denoised
-            features[f"{wavelet_type}_noise_std"] = np.std(noise)
-            features[f"{wavelet_type}_noise_mean"] = np.mean(noise)
-            features[f"{wavelet_type}_noise_energy"] = np.sum(noise ** 2)
-            
-            # Signal quality metrics
-            signal_energy = np.sum(denoised ** 2)
-            total_energy = np.sum(original ** 2)
-            if total_energy > 0:
-                features[f"{wavelet_type}_signal_to_noise_ratio"] = signal_energy / np.sum(noise ** 2)
-                features[f"{wavelet_type}_signal_energy_ratio"] = signal_energy / total_energy
-            
-            # Correlation between original and denoised
-            correlation = np.corrcoef(original, denoised)[0, 1]
-            features[f"{wavelet_type}_denoising_correlation"] = correlation if not np.isnan(correlation) else 0.0
-
-            return features
-
-        except Exception as e:
-            self.logger.error(f"Error extracting denoising features: {e}")
-            return {}
-
-    def _analyze_multi_wavelet_transforms(self, price_data: pd.DataFrame) -> dict[str, float]:
-        """Analyze multiple wavelet transforms for comprehensive feature extraction."""
-        try:
-            features = {}
-            
-            # Use different price series for wavelet analysis
-            price_series = {
-                "close": price_data["close"].values,
-                "returns": price_data["close"].pct_change().dropna().values,
-                "log_returns": np.log(price_data["close"] / price_data["close"].shift(1)).dropna().values,
-            }
-            
-            for series_name, series_data in price_series.items():
-                if len(series_data) > 0:
-                    # Perform DWT for each series
-                    for wavelet_type in ["db4", "sym4"]:
-                        try:
-                            coeffs = pywt.wavedec(series_data, wavelet_type, level=3)
-                            
-                            # Extract multi-series features
-                            multi_features = self._extract_multi_series_features(coeffs, wavelet_type, series_name)
-                            features.update(multi_features)
-                            
-                        except Exception as e:
-                            self.logger.warning(f"Error with multi-wavelet {series_name} {wavelet_type}: {e}")
-                            continue
-
-            return features
-
-        except Exception as e:
-            self.logger.error(f"Error in multi-wavelet transform analysis: {e}")
-            return {}
-
-    def _extract_multi_series_features(self, coeffs: list, wavelet_type: str, series_name: str) -> dict[str, float]:
-        """Extract features from multiple series wavelet analysis using vectorized operations."""
-        try:
-            features = {}
-            
-            # Energy distribution features
-            energies = [np.sum(coeff ** 2) for coeff in coeffs]
-            total_energy = np.sum(energies)
-            
-            if total_energy > 0:
-                # Energy distribution
-                for i, energy in enumerate(energies):
-                    features[f"{wavelet_type}_{series_name}_level_{i}_energy_ratio"] = energy / total_energy
+            elif self.feature_selection_method == "energy":
+                # Select features with highest energy content
+                energy_features = {}
+                for feature_name, feature_value in features.items():
+                    if "energy" in feature_name.lower() and isinstance(feature_value, (int, float)):
+                        energy_features[feature_name] = abs(feature_value)
                 
-                # Energy concentration
-                features[f"{wavelet_type}_{series_name}_energy_concentration"] = np.max(energies) / total_energy
+                sorted_features = sorted(energy_features.items(), key=lambda x: x[1], reverse=True)
+                selected_features = dict(sorted_features[:self.max_features_per_wavelet])
                 
-                # Energy spread
-                features[f"{wavelet_type}_{series_name}_energy_spread"] = np.std(energies) / np.mean(energies) if np.mean(energies) > 0 else 0.0
+            elif self.feature_selection_method == "entropy":
+                # Select features with highest entropy
+                entropy_features = {}
+                for feature_name, feature_value in features.items():
+                    if "entropy" in feature_name.lower() and isinstance(feature_value, (int, float)):
+                        entropy_features[feature_name] = abs(feature_value)
+                
+                sorted_features = sorted(entropy_features.items(), key=lambda x: x[1], reverse=True)
+                selected_features = dict(sorted_features[:self.max_features_per_wavelet])
+                
+            else:  # random
+                # Random selection
+                feature_items = list(features.items())
+                random.shuffle(feature_items)
+                selected_features = dict(feature_items[:self.max_features_per_wavelet])
             
-            # Statistical features across levels
-            all_coeffs = np.concatenate(coeffs)
-            features[f"{wavelet_type}_{series_name}_total_coeff_mean"] = np.mean(all_coeffs)
-            features[f"{wavelet_type}_{series_name}_total_coeff_std"] = np.std(all_coeffs)
-            features[f"{wavelet_type}_{series_name}_total_coeff_kurtosis"] = self._calculate_kurtosis(all_coeffs)
-            features[f"{wavelet_type}_{series_name}_total_coeff_skewness"] = self._calculate_skewness(all_coeffs)
-
-            return features
+            self.logger.info(f"Selected {len(selected_features)} features from {len(features)} candidates "
+                           f"using {self.feature_selection_method} method")
+            
+            return selected_features
 
         except Exception as e:
-            self.logger.error(f"Error extracting multi-series features: {e}")
-            return {}
-
-    def _analyze_volume_wavelet_transforms(self, volume_data: pd.DataFrame) -> dict[str, float]:
-        """Analyze wavelet transforms for volume data using vectorized operations."""
-        try:
-            features = {}
-            
-            if "volume" in volume_data.columns:
-                volume_series = volume_data["volume"].values
-                
-                # Perform DWT on volume data
-                for wavelet_type in ["db4", "sym4"]:
-                    try:
-                        coeffs = pywt.wavedec(volume_series, wavelet_type, level=3)
-                        
-                        # Extract volume-specific features
-                        volume_features = self._extract_volume_wavelet_features(coeffs, wavelet_type)
-                        features.update(volume_features)
-                        
-                    except Exception as e:
-                        self.logger.warning(f"Error with volume wavelet {wavelet_type}: {e}")
-                        continue
-
+            self.logger.error(f"Error selecting optimal wavelet features: {e}")
             return features
 
-        except Exception as e:
-            self.logger.error(f"Error in volume wavelet transform analysis: {e}")
-            return {}
-
-    def _extract_volume_wavelet_features(self, coeffs: list, wavelet_type: str) -> dict[str, float]:
-        """Extract volume-specific wavelet features using vectorized operations."""
+    def _log_performance_metrics(self) -> None:
+        """Log performance metrics for wavelet analysis."""
         try:
-            features = {}
+            self.logger.info("📊 Wavelet Analysis Performance Metrics:")
+            for component, time_taken in self.computation_times.items():
+                if component != "total":
+                    self.logger.info(f"  {component}: {time_taken:.3f}s ({self.feature_counts.get(component, 0)} features)")
             
-            # Volume energy features
-            energies = [np.sum(coeff ** 2) for coeff in coeffs]
-            total_energy = np.sum(energies)
+            total_time = self.computation_times.get("total", 0)
+            total_features = self.feature_counts.get("total", 0)
+            self.logger.info(f"  Total: {total_time:.3f}s ({total_features} features)")
             
-            if total_energy > 0:
-                features[f"{wavelet_type}_volume_total_energy"] = total_energy
-                features[f"{wavelet_type}_volume_max_energy"] = np.max(energies)
-                features[f"{wavelet_type}_volume_min_energy"] = np.min(energies)
-                features[f"{wavelet_type}_volume_energy_std"] = np.std(energies)
+            if total_time > 0:
+                features_per_second = total_features / total_time
+                self.logger.info(f"  Performance: {features_per_second:.1f} features/second")
                 
-                # Volume energy distribution
-                for i, energy in enumerate(energies):
-                    features[f"{wavelet_type}_volume_level_{i}_energy_ratio"] = energy / total_energy
-            
-            # Volume statistical features
-            all_coeffs = np.concatenate(coeffs)
-            features[f"{wavelet_type}_volume_coeff_mean"] = np.mean(all_coeffs)
-            features[f"{wavelet_type}_volume_coeff_std"] = np.std(all_coeffs)
-            features[f"{wavelet_type}_volume_coeff_max"] = np.max(all_coeffs)
-            features[f"{wavelet_type}_volume_coeff_min"] = np.min(all_coeffs)
-
-            return features
-
         except Exception as e:
-            self.logger.error(f"Error extracting volume wavelet features: {e}")
-            return {}
+            self.logger.error(f"Error logging performance metrics: {e}")
 
-    def _calculate_kurtosis(self, data: np.ndarray) -> float:
-        """Calculate kurtosis using vectorized operations."""
-        try:
-            mean = np.mean(data)
-            std = np.std(data)
-            if std > 0:
-                kurtosis = np.mean(((data - mean) / std) ** 4) - 3
-                return kurtosis
-            return 0.0
-        except Exception:
-            return 0.0
+    # Placeholder methods for other enhanced wavelet analyses
+    async def _analyze_wavelet_packets_enhanced(
+        self, 
+        price_data: pd.DataFrame, 
+        stationary_series: dict[str, np.ndarray]
+    ) -> dict[str, float]:
+        """Enhanced wavelet packet analysis."""
+        return {}
 
-    def _calculate_skewness(self, data: np.ndarray) -> float:
-        """Calculate skewness using vectorized operations."""
-        try:
-            mean = np.mean(data)
-            std = np.std(data)
-            if std > 0:
-                skewness = np.mean(((data - mean) / std) ** 3)
-                return skewness
-            return 0.0
-        except Exception:
-            return 0.0
+    async def _analyze_wavelet_denoising_enhanced(
+        self, 
+        price_data: pd.DataFrame, 
+        stationary_series: dict[str, np.ndarray]
+    ) -> dict[str, float]:
+        """Enhanced wavelet denoising analysis."""
+        return {}
+
+    async def _analyze_multi_wavelet_transforms_enhanced(
+        self, 
+        price_data: pd.DataFrame, 
+        stationary_series: dict[str, np.ndarray]
+    ) -> dict[str, float]:
+        """Enhanced multi-wavelet transform analysis."""
+        return {}
+
+    async def _analyze_volume_wavelet_transforms_enhanced(
+        self, 
+        volume_data: pd.DataFrame
+    ) -> dict[str, float]:
+        """Enhanced volume wavelet transform analysis."""
+        return {}

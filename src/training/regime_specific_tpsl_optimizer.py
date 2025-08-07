@@ -50,7 +50,7 @@ class RegimeSpecificTPSLOptimizer:
         self.logger = system_logger.getChild("RegimeSpecificTPSLOptimizer")
 
         # Initialize Unified regime classifier
-        self.regime_classifier = UnifiedRegimeClassifier(config)
+        self.regime_classifier = UnifiedRegimeClassifier(config, "UNKNOWN", "UNKNOWN")
 
         # Regime-specific parameters from timeframe analysis
         self.regime_parameters = {

@@ -341,17 +341,26 @@ class UnifiedRegimeClassifier:
 
     def _calculate_rolling_pivots(self, df_window: pd.DataFrame) -> dict:
         """
-        Calculate rolling pivot points for dynamic support and resistance.
+        Calculate rolling pivot points for dynamic support and resistance with strength metrics.
         
         Args:
             df_window: DataFrame window for pivot calculation
             
         Returns:
-            Dict containing pivot levels
+            Dict containing pivot levels with strength metrics
         """
         try:
             if len(df_window) < 5:
-                return {"s1": 0, "s2": 0, "r1": 0, "r2": 0}
+                return {
+                    "s1": 0, "s2": 0, "r1": 0, "r2": 0,
+                    "pivot": 0,
+                    "strengths": {
+                        "s1": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
+                        "s2": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
+                        "r1": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
+                        "r2": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0}
+                    }
+                }
             
             # Calculate pivot point
             high = df_window["high"].max()
@@ -366,17 +375,76 @@ class UnifiedRegimeClassifier:
             s1 = 2 * pivot - high
             s2 = pivot - (high - low)
             
+            # Calculate strength metrics for each level
+            levels = {"s1": s1, "s2": s2, "r1": r1, "r2": r2}
+            strengths = {}
+            
+            for level_name, level_price in levels.items():
+                if level_price <= 0:
+                    strengths[level_name] = {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0}
+                    continue
+                
+                # Calculate touches (how many times price approached this level)
+                touches = 0
+                tolerance = df_window["close"].std() * 0.1  # 10% of price volatility
+                
+                for i in range(1, len(df_window)):
+                    prev_close = df_window["close"].iloc[i-1]
+                    curr_close = df_window["close"].iloc[i]
+                    
+                    # Check if price approached the level
+                    if abs(curr_close - level_price) <= tolerance:
+                        touches += 1
+                
+                # Calculate volume near this level
+                volume_near_level = 0.0
+                for i in range(len(df_window)):
+                    if abs(df_window["close"].iloc[i] - level_price) <= tolerance:
+                        volume_near_level += df_window["volume"].iloc[i]
+                
+                # Calculate age (how long ago this level was first established)
+                age = 0
+                for i in range(len(df_window)):
+                    if abs(df_window["close"].iloc[i] - level_price) <= tolerance:
+                        age = len(df_window) - i
+                        break
+                
+                # Calculate overall strength (0.0 to 1.0)
+                # Factors: touches (30%), volume (40%), age (30%)
+                touch_strength = min(touches / 5.0, 1.0)  # Normalize touches
+                volume_strength = min(volume_near_level / df_window["volume"].sum(), 1.0)  # Normalize volume
+                age_strength = min(age / len(df_window), 1.0)  # Normalize age
+                
+                overall_strength = (touch_strength * 0.3 + volume_strength * 0.4 + age_strength * 0.3)
+                
+                strengths[level_name] = {
+                    "strength": overall_strength,
+                    "touches": touches,
+                    "volume": volume_near_level,
+                    "age": age
+                }
+            
             return {
                 "s1": s1,
                 "s2": s2,
                 "r1": r1,
                 "r2": r2,
-                "pivot": pivot
+                "pivot": pivot,
+                "strengths": strengths
             }
             
         except Exception as e:
             self.logger.error(f"Error calculating rolling pivots: {e}")
-            return {"s1": 0, "s2": 0, "r1": 0, "r2": 0}
+            return {
+                "s1": 0, "s2": 0, "r1": 0, "r2": 0,
+                "pivot": 0,
+                "strengths": {
+                    "s1": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
+                    "s2": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
+                    "r1": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
+                    "r2": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0}
+                }
+            }
 
     def _analyze_volume_levels(self, df_window: pd.DataFrame) -> dict | None:
         """
@@ -434,12 +502,31 @@ class UnifiedRegimeClassifier:
                 if (prev_low < level_price < curr_high) or (prev_high > level_price > curr_low):
                     touches += 1
             
+            # Calculate additional strength metrics
+            # Volume strength (normalized)
+            total_volume = df_window['volume'].sum()
+            volume_strength = min(level_volume / total_volume, 1.0) if total_volume > 0 else 0.0
+            
+            # Touch strength (normalized)
+            touch_strength = min(touches / 10.0, 1.0)  # Normalize touches
+            
+            # Age strength (normalized)
+            age_strength = min(age / len(df_window), 1.0)  # Normalize age
+            
+            # Calculate overall strength (0.0 to 1.0)
+            # Factors: volume (50%), touches (30%), age (20%)
+            overall_strength = (volume_strength * 0.5 + touch_strength * 0.3 + age_strength * 0.2)
+            
             level_name = "poc" if i == 0 else "hvn_secondary"
             analyzed_levels[level_name] = {
                 "price": level_price,
                 "volume": level_volume,
                 "age": age, # in number of candles
-                "touches": touches
+                "touches": touches,
+                "strength": overall_strength,
+                "volume_strength": volume_strength,
+                "touch_strength": touch_strength,
+                "age_strength": age_strength
             }
             
         return analyzed_levels

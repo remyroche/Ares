@@ -2,7 +2,7 @@
 
 import warnings
 from datetime import datetime
-from typing import Any, NUmber
+from typing import Any, Number
 
 warnings.filterwarnings("ignore")
 

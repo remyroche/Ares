@@ -6,27 +6,26 @@ from typing import Any, Number
 import numpy as np
 import optuna
 import pandas as pd
-from sklearn.gaussian_process.kernels import RBF, Matern, RationalQuadratic
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 
-class AdvancedBayesianOptimizer:
+class AdvancedHyperparameterOptimizer:
     """
-    Advanced Bayesian optimization with multiple sampling strategies and early stopping.
+    Advanced hyperparameter optimization with decomposed search spaces and proper constraints.
 
     Features:
-    - Multiple acquisition functions (EI, PI, UCB)
-    - Adaptive sampling strategies
-    - Early stopping with patience
-    - Pruning of unpromising trials
+    - Decomposed optimization (feature engineering → model → trading strategy)
+    - Proper parameter constraints with pruning
+    - Multiple sampling strategies
+    - Early stopping with optuna callbacks
     - Multi-dimensional optimization
     """
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
-        self.logger = system_logger.getChild("BayesianOptimizer")
+        self.logger = system_logger.getChild("HyperparameterOptimizer")
 
         # Optimization configuration
         self.max_trials = config.get("max_trials", 1000)
@@ -43,17 +42,15 @@ class AdvancedBayesianOptimizer:
         self.patience_counter = 0
         self.trial_history = []
 
-        # Custom kernels for Gaussian Process
-        self.kernels = {
-            "rbf": RBF(length_scale=1.0),
-            "matern": Matern(length_scale=1.0, nu=1.5),
-            "rational_quadratic": RationalQuadratic(length_scale=1.0, alpha=1.0),
-        }
+        # Store results from each optimization stage
+        self.feature_engineering_results = None
+        self.model_optimization_results = None
+        self.trading_strategy_results = None
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
-        context="bayesian optimization setup",
+        context="hyperparameter optimization setup",
     )
     def create_study(self, direction: str = "maximize") -> optuna.Study:
         """Create an Optuna study with advanced configuration."""
@@ -92,8 +89,25 @@ class AdvancedBayesianOptimizer:
 
         return study
 
-    def suggest_hyperparameters(self, trial: optuna.trial.Trial) -> dict[str, Any]:
-        """Suggest hyperparameters with advanced search spaces and constraints."""
+    def suggest_feature_engineering_params(self, trial: optuna.trial.Trial) -> dict[str, Any]:
+        """Suggest hyperparameters for feature engineering optimization."""
+        params = {}
+
+        # Feature engineering parameters only
+        params["lookback_window"] = trial.suggest_int("lookback_window", 5, 200)
+        params["feature_selection_threshold"] = trial.suggest_float(
+            "feature_selection_threshold",
+            0.001,
+            0.1,
+        )
+
+        # Add feature engineering constraints
+        self._add_feature_constraints(trial, params)
+
+        return params
+
+    def suggest_model_params(self, trial: optuna.trial.Trial) -> dict[str, Any]:
+        """Suggest hyperparameters for model optimization."""
         params = {}
 
         # Model architecture parameters
@@ -123,19 +137,6 @@ class AdvancedBayesianOptimizer:
         # Regularization parameters
         params["reg_alpha"] = trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True)
         params["reg_lambda"] = trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True)
-
-        # Feature engineering parameters
-        params["lookback_window"] = trial.suggest_int("lookback_window", 5, 200)
-        params["feature_selection_threshold"] = trial.suggest_float(
-            "feature_selection_threshold",
-            0.001,
-            0.1,
-        )
-
-        # Trading parameters
-        params["tp_multiplier"] = trial.suggest_float("tp_multiplier", 1.2, 10.0)
-        params["sl_multiplier"] = trial.suggest_float("sl_multiplier", 0.5, 5.0)
-        params["position_size"] = trial.suggest_float("position_size", 0.01, 0.5)
 
         # Ensemble parameters
         params["ensemble_size"] = trial.suggest_int("ensemble_size", 3, 10)
@@ -181,139 +182,276 @@ class AdvancedBayesianOptimizer:
                 0.5,
             )
 
-        # Add constraints
-        self._add_parameter_constraints(trial, params)
+        # Add model constraints
+        self._add_model_constraints(trial, params)
 
         return params
 
-    def _add_parameter_constraints(
-        self,
-        trial: optuna.trial.Trial,
-        params: dict[str, Any],
-    ):
-        """Add parameter constraints to ensure valid combinations."""
+    def suggest_trading_params(self, trial: optuna.trial.Trial) -> dict[str, Any]:
+        """Suggest hyperparameters for trading strategy optimization."""
+        params = {}
 
-        # Ensure TP > SL
-        if params["tp_multiplier"] <= params["sl_multiplier"]:
-            params["tp_multiplier"] = params["sl_multiplier"] * 1.5
+        # Trading parameters
+        params["tp_multiplier"] = trial.suggest_float("tp_multiplier", 1.2, 10.0)
+        params["sl_multiplier"] = trial.suggest_float("sl_multiplier", 0.5, 5.0)
+        params["position_size"] = trial.suggest_float("position_size", 0.01, 0.5)
 
-        # Ensure reasonable position size
-        params["position_size"] = min(params["position_size"], 0.3)
+        # Add trading constraints
+        self._add_trading_constraints(trial, params)
 
+        return params
+
+    def _add_feature_constraints(self, trial: optuna.trial.Trial, params: dict[str, Any]):
+        """Add constraints for feature engineering parameters."""
+        
+        # Ensure lookback window is reasonable for the data
+        if params["lookback_window"] > 100:
+            # Prune trials with very large lookback windows
+            raise optuna.TrialPruned("Lookback window too large")
+        
+        # Ensure feature selection threshold is not too restrictive
+        if params["feature_selection_threshold"] > 0.05:
+            # Prune trials with very high thresholds
+            raise optuna.TrialPruned("Feature selection threshold too high")
+
+    def _add_model_constraints(self, trial: optuna.trial.Trial, params: dict[str, Any]):
+        """Add constraints for model parameters."""
+        
         # Model-specific constraints
         if params["model_type"] == "random_forest":
-            params["max_depth"] = min(params["max_depth"], 20)
+            if params["max_depth"] > 20:
+                raise optuna.TrialPruned("Random forest max_depth too high")
         elif params["model_type"] in ["xgboost", "lightgbm"]:
-            params["max_depth"] = min(params["max_depth"], 12)
+            if params["max_depth"] > 12:
+                raise optuna.TrialPruned("XGBoost/LightGBM max_depth too high")
+        
+        # Ensure reasonable learning rate
+        if params["learning_rate"] < 1e-5:
+            raise optuna.TrialPruned("Learning rate too low")
+        
+        # Ensure reasonable regularization
+        if params["reg_alpha"] > 100 or params["reg_lambda"] > 100:
+            raise optuna.TrialPruned("Regularization too high")
+
+    def _add_trading_constraints(self, trial: optuna.trial.Trial, params: dict[str, Any]):
+        """Add constraints for trading parameters."""
+        
+        # Ensure TP > SL (proper constraint with pruning)
+        if params["tp_multiplier"] <= params["sl_multiplier"]:
+            raise optuna.TrialPruned("TP multiplier must be greater than SL multiplier")
+        
+        # Ensure reasonable position size
+        if params["position_size"] > 0.3:
+            raise optuna.TrialPruned("Position size too high")
+        
+        # Ensure reasonable risk-reward ratio
+        risk_reward_ratio = params["tp_multiplier"] / params["sl_multiplier"]
+        if risk_reward_ratio < 1.5:
+            raise optuna.TrialPruned("Risk-reward ratio too low")
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="objective function evaluation",
     )
-    def objective(self, trial: optuna.trial.Trial) -> Number:
-        """Objective function with early stopping and pruning."""
-
-        # Suggest hyperparameters
-        params = self.suggest_hyperparameters(trial)
-
-        # Run evaluation
-        score = self._evaluate_parameters(params)
-
-        # Early stopping check
-        if self._should_stop_early(score):
-            trial.report(score, step=0)
-            trial.set_user_attr("stopped_early", True)
-            return score
-
+    def feature_engineering_objective(self, trial: optuna.trial.Trial) -> Number:
+        """Objective function for feature engineering optimization."""
+        
+        # Suggest feature engineering parameters
+        params = self.suggest_feature_engineering_params(trial)
+        
+        # Run evaluation with fixed model and trading parameters
+        score = self._evaluate_feature_engineering(params)
+        
         # Report intermediate results for pruning
         trial.report(score, step=0)
-
+        
         # Store trial history
-        self.trial_history.append(
-            {
-                "trial_number": trial.number,
-                "params": params,
-                "score": score,
-                "timestamp": pd.Timestamp.now(),
-            },
-        )
-
+        self.trial_history.append({
+            "trial_number": trial.number,
+            "params": params,
+            "score": score,
+            "timestamp": pd.Timestamp.now(),
+            "stage": "feature_engineering"
+        })
+        
         return score
-
-    def _evaluate_parameters(self, params: dict[str, Any]) -> Number:
-        """Evaluate parameters using backtesting."""
-        # This would integrate with your existing backtesting infrastructure
-        # For now, using a mock evaluation
-
-        # Mock evaluation based on parameter quality
-        base_score = 0.5
-
-        # Adjust score based on parameter combinations
-        if params["model_type"] in ["xgboost", "lightgbm"]:
-            base_score += 0.1
-
-        if 0.01 <= params["learning_rate"] <= 0.1:
-            base_score += 0.2
-
-        if 5 <= params["max_depth"] <= 10:
-            base_score += 0.15
-
-        if params["tp_multiplier"] > params["sl_multiplier"] * 1.5:
-            base_score += 0.1
-
-        # Add some randomness to simulate real evaluation
-        noise = np.random.normal(0, 0.1)
-        final_score = base_score + noise
-
-        return max(0, min(1, final_score))  # Clamp between 0 and 1
-
-    def _should_stop_early(self, score: Number) -> bool:
-        """Check if optimization should stop early."""
-        if score > self.best_score:
-            self.best_score = score
-            self.patience_counter = 0
-        else:
-            self.patience_counter += 1
-
-        return self.patience_counter >= self.patience
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
-        context="bayesian optimization execution",
+        context="objective function evaluation",
     )
-    def run_optimization(
+    def model_optimization_objective(self, trial: optuna.trial.Trial) -> Number:
+        """Objective function for model optimization."""
+        
+        # Suggest model parameters
+        params = self.suggest_model_params(trial)
+        
+        # Combine with best feature engineering results
+        if self.feature_engineering_results:
+            params.update(self.feature_engineering_results["best_params"])
+        
+        # Run evaluation with fixed trading parameters
+        score = self._evaluate_model_optimization(params)
+        
+        # Report intermediate results for pruning
+        trial.report(score, step=0)
+        
+        # Store trial history
+        self.trial_history.append({
+            "trial_number": trial.number,
+            "params": params,
+            "score": score,
+            "timestamp": pd.Timestamp.now(),
+            "stage": "model_optimization"
+        })
+        
+        return score
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="objective function evaluation",
+    )
+    def trading_strategy_objective(self, trial: optuna.trial.Trial) -> Number:
+        """Objective function for trading strategy optimization."""
+        
+        # Suggest trading parameters
+        params = self.suggest_trading_params(trial)
+        
+        # Combine with best results from previous stages
+        if self.feature_engineering_results:
+            params.update(self.feature_engineering_results["best_params"])
+        if self.model_optimization_results:
+            params.update(self.model_optimization_results["best_params"])
+        
+        # Run evaluation
+        score = self._evaluate_trading_strategy(params)
+        
+        # Report intermediate results for pruning
+        trial.report(score, step=0)
+        
+        # Store trial history
+        self.trial_history.append({
+            "trial_number": trial.number,
+            "params": params,
+            "score": score,
+            "timestamp": pd.Timestamp.now(),
+            "stage": "trading_strategy"
+        })
+        
+        return score
+
+    def _evaluate_feature_engineering(self, params: dict[str, Any]) -> Number:
+        """Evaluate feature engineering parameters."""
+        # Mock evaluation - replace with actual feature engineering evaluation
+        base_score = 0.5
+        
+        # Adjust score based on feature engineering quality
+        if 10 <= params["lookback_window"] <= 50:
+            base_score += 0.2
+        
+        if 0.01 <= params["feature_selection_threshold"] <= 0.03:
+            base_score += 0.15
+        
+        # Add some randomness to simulate real evaluation
+        noise = np.random.normal(0, 0.1)
+        final_score = base_score + noise
+        
+        return max(0, min(1, final_score))
+
+    def _evaluate_model_optimization(self, params: dict[str, Any]) -> Number:
+        """Evaluate model optimization parameters."""
+        # Mock evaluation - replace with actual model evaluation
+        base_score = 0.5
+        
+        # Adjust score based on model quality
+        if params["model_type"] in ["xgboost", "lightgbm"]:
+            base_score += 0.1
+        
+        if 0.01 <= params["learning_rate"] <= 0.1:
+            base_score += 0.2
+        
+        if 5 <= params["max_depth"] <= 10:
+            base_score += 0.15
+        
+        # Add some randomness to simulate real evaluation
+        noise = np.random.normal(0, 0.1)
+        final_score = base_score + noise
+        
+        return max(0, min(1, final_score))
+
+    def _evaluate_trading_strategy(self, params: dict[str, Any]) -> Number:
+        """Evaluate trading strategy parameters."""
+        # Mock evaluation - replace with actual trading strategy evaluation
+        base_score = 0.5
+        
+        # Adjust score based on trading strategy quality
+        if params["tp_multiplier"] > params["sl_multiplier"] * 1.5:
+            base_score += 0.1
+        
+        if 0.05 <= params["position_size"] <= 0.2:
+            base_score += 0.15
+        
+        # Add some randomness to simulate real evaluation
+        noise = np.random.normal(0, 0.1)
+        final_score = base_score + noise
+        
+        return max(0, min(1, final_score))
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="hyperparameter optimization execution",
+    )
+    def run_decomposed_optimization(
         self,
         objective_func: Callable | None = None,
     ) -> dict[str, Any]:
-        """Run Bayesian optimization with advanced features."""
+        """Run decomposed hyperparameter optimization with three focused stages."""
 
-        self.logger.info(
-            f"Starting Bayesian optimization with {self.max_trials} trials...",
-        )
+        self.logger.info("Starting decomposed hyperparameter optimization...")
 
-        # Create study
-        study = self.create_study()
-
-        # Use custom objective if provided, otherwise use default
-        if objective_func is None:
-            objective_func = self.objective
-
-        # Run optimization
-        study.optimize(
-            objective_func,
-            n_trials=self.max_trials,
+        # Step 1: Optimize Feature Engineering
+        self.logger.info("Stage 1: Optimizing feature engineering...")
+        feature_study = self.create_study()
+        feature_study.optimize(
+            self.feature_engineering_objective,
+            n_trials=self.max_trials // 3,
             show_progress_bar=True,
             callbacks=[self._optimization_callback],
         )
+        self.feature_engineering_results = self._analyze_optimization_results(feature_study)
 
-        # Analyze results
-        results = self._analyze_optimization_results(study)
+        # Step 2: Optimize Model Hyperparameters
+        self.logger.info("Stage 2: Optimizing model hyperparameters...")
+        model_study = self.create_study()
+        model_study.optimize(
+            self.model_optimization_objective,
+            n_trials=self.max_trials // 3,
+            show_progress_bar=True,
+            callbacks=[self._optimization_callback],
+        )
+        self.model_optimization_results = self._analyze_optimization_results(model_study)
 
-        self.logger.info("Bayesian optimization completed successfully")
+        # Step 3: Optimize Trading Strategy
+        self.logger.info("Stage 3: Optimizing trading strategy...")
+        trading_study = self.create_study()
+        trading_study.optimize(
+            self.trading_strategy_objective,
+            n_trials=self.max_trials // 3,
+            show_progress_bar=True,
+            callbacks=[self._optimization_callback],
+        )
+        self.trading_strategy_results = self._analyze_optimization_results(trading_study)
 
-        return results
+        # Combine results
+        final_results = self._combine_optimization_results()
+
+        self.logger.info("Decomposed hyperparameter optimization completed successfully")
+
+        return final_results
 
     def _optimization_callback(
         self,
@@ -351,6 +489,45 @@ class AdvancedBayesianOptimizer:
             "trials_dataframe": trials_df,
             "convergence_metrics": convergence_metrics,
             "study": study,
+        }
+
+    def _combine_optimization_results(self) -> dict[str, Any]:
+        """Combine results from all optimization stages."""
+        
+        # Combine best parameters from all stages
+        combined_params = {}
+        if self.feature_engineering_results:
+            combined_params.update(self.feature_engineering_results["best_params"])
+        if self.model_optimization_results:
+            combined_params.update(self.model_optimization_results["best_params"])
+        if self.trading_strategy_results:
+            combined_params.update(self.trading_strategy_results["best_params"])
+        
+        # Calculate overall score (weighted average)
+        scores = []
+        weights = []
+        
+        if self.feature_engineering_results:
+            scores.append(self.feature_engineering_results["best_score"])
+            weights.append(0.3)
+        
+        if self.model_optimization_results:
+            scores.append(self.model_optimization_results["best_score"])
+            weights.append(0.4)
+        
+        if self.trading_strategy_results:
+            scores.append(self.trading_strategy_results["best_score"])
+            weights.append(0.3)
+        
+        overall_score = np.average(scores, weights=weights) if scores else 0.0
+        
+        return {
+            "combined_params": combined_params,
+            "overall_score": overall_score,
+            "feature_engineering_results": self.feature_engineering_results,
+            "model_optimization_results": self.model_optimization_results,
+            "trading_strategy_results": self.trading_strategy_results,
+            "trial_history": self.trial_history,
         }
 
     def _calculate_convergence_metrics(self, study: optuna.Study) -> dict[str, Any]:

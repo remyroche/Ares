@@ -1,0 +1,60 @@
+2025-08-06 22:52:45,283 - AresGlobal - INFO - ================================================================================
+2025-08-06 22:52:45,283 - AresGlobal - INFO - 📊 SESSION SUMMARY
+2025-08-06 22:52:45,283 - AresGlobal - INFO - Session started: 2025-08-06 22:52:45
+2025-08-06 22:52:45,283 - AresGlobal - INFO - Global log file: ares_global_20250806_225245.log
+2025-08-06 22:52:45,284 - AresGlobal - INFO - This file contains ALL logs for this session
+2025-08-06 22:52:45,284 - AresGlobal - INFO - ================================================================================
+2025-08-06 22:52:45,284 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-06 22:52:45,284 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION
+2025-08-06 22:52:45,284 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-06 22:52:45
+2025-08-06 22:52:45,284 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-06 22:52:45,284 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-06 22:52:45,284 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-06 22:52:45,284 - AresGlobal.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-08-06 22:52:45,284 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-06 22:52:45,284 - AresGlobal.AresLauncher - INFO - Start time: 2025-08-06 22:52:45
+2025-08-06 22:52:45,284 - AresGlobal.AresLauncher - INFO - Log directory: log
+2025-08-06 22:52:45,284 - AresGlobal.AresLauncher - INFO - Log level: INFO
+2025-08-06 22:52:45,284 - AresGlobal.AresLauncher - INFO - Global log file: ares_global_20250806_225245.log
+2025-08-06 22:52:45,284 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-06 22:52:45,284 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-06 22:52:45,284 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: load - Symbol: ETHUSDT - Exchange: BINANCE
+2025-08-06 22:52:45,284 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-06 22:52:45
+2025-08-06 22:52:45,284 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-06 22:52:45,284 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-06 22:52:45,285 - AresGlobal.AresLauncher - INFO - 🔄 Starting smart data loading for ETHUSDT on BINANCE
+2025-08-06 22:52:45,285 - AresGlobal.AresLauncher - INFO - 🔍 Step 1: Analyzing existing consolidated data...
+2025-08-06 22:52:45,355 - AresGlobal.AresLauncher - INFO - 📅 klines: Latest data from 2025-08-03 21:29:00 (3 days old)
+2025-08-06 22:52:45,355 - AresGlobal.AresLauncher - INFO - ⚠️ klines: Data is 3 days old, needs update
+2025-08-06 22:52:45,545 - AresGlobal.AresLauncher - INFO - 📅 aggtrades: Latest data from 2025-07-29 23:59:59 (7 days old)
+2025-08-06 22:52:45,545 - AresGlobal.AresLauncher - INFO - ⚠️ aggtrades: Data is 7 days old, needs update
+2025-08-06 22:52:45,557 - AresGlobal.AresLauncher - INFO - 📅 futures: Latest data from 2025-08-06 16:00:00 (0 days old)
+2025-08-06 22:52:45,557 - AresGlobal.AresLauncher - INFO - ✅ futures: Data is up to date (less than 1 day old)
+2025-08-06 22:52:45,557 - AresGlobal.AresLauncher - INFO - 📊 Existing consolidated files: 3
+2025-08-06 22:52:45,558 - AresGlobal.AresLauncher - INFO - 📌 Data types needing updates: ['klines', 'aggtrades']
+2025-08-06 22:52:45,558 - AresGlobal.AresLauncher - INFO - 📥 Step 2: Downloading missing/outdated data for ['klines', 'aggtrades']...
+2025-08-06 22:52:45,558 - AresGlobal.AresLauncher - INFO - 🔧 Running download command: /opt/homebrew/Caskroom/miniforge/base/bin/python backtesting/ares_data_downloader_optimized.py --symbol ETHUSDT --exchange BINANCE --lookback-years 1
+2025-08-06 22:52:46,062 - AresGlobal.AresLauncher - INFO - 📥 Download: Logger configuration loaded successfully
+2025-08-06 22:52:46,062 - AresGlobal.AresLauncher - INFO - 📥 Download: Configuration validation successful
+2025-08-06 22:52:46,062 - AresGlobal.AresLauncher - INFO - 📥 Download: Logger setup completed successfully
+2025-08-06 22:52:46,062 - AresGlobal.AresLauncher - INFO - 📥 Download: 2025-08-06 22:52:46,062 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-06 22:52:46,073 - AresGlobal.AresLauncher - INFO - 📥 Download: .env file loaded.
+2025-08-06 22:52:46,073 - AresGlobal.AresLauncher - INFO - 📥 Download: 2025-08-06 22:52:46,073 - AresTradingSystem.System - INFO - Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE
+2025-08-06 22:52:46,354 - AresGlobal.AresLauncher - INFO - 📥 Download: Traceback (most recent call last):
+2025-08-06 22:52:46,354 - AresGlobal.AresLauncher - INFO - 📥 Download: File "/Users/remyroche/Documents/Ares/backtesting/ares_data_downloader_optimized.py", line 48, in <module>
+2025-08-06 22:52:46,354 - AresGlobal.AresLauncher - INFO - 📥 Download: from exchange.factory import ExchangeFactory
+2025-08-06 22:52:46,354 - AresGlobal.AresLauncher - INFO - 📥 Download: File "/Users/remyroche/Documents/Ares/exchange/factory.py", line 5, in <module>
+2025-08-06 22:52:46,354 - AresGlobal.AresLauncher - INFO - 📥 Download: from .binance import BinanceExchange
+2025-08-06 22:52:46,354 - AresGlobal.AresLauncher - INFO - 📥 Download: File "/Users/remyroche/Documents/Ares/exchange/binance.py", line 210, in <module>
+2025-08-06 22:52:46,354 - AresGlobal.AresLauncher - INFO - 📥 Download: class BinanceExchange(BaseExchange):
+2025-08-06 22:52:46,354 - AresGlobal.AresLauncher - INFO - 📥 Download: File "/Users/remyroche/Documents/Ares/exchange/binance.py", line 277, in BinanceExchange
+2025-08-06 22:52:46,354 - AresGlobal.AresLauncher - INFO - 📥 Download: @handle_network_errors(context="binance_api")(
+2025-08-06 22:52:46,354 - AresGlobal.AresLauncher - INFO - 📥 Download: ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-08-06 22:52:46,354 - AresGlobal.AresLauncher - INFO - 📥 Download: TypeError: ErrorHandler.handle_generic_errors.<locals>.decorator() got an unexpected keyword argument 'max_retries'
+2025-08-06 22:52:46,483 - AresGlobal.AresLauncher - ERROR - ❌ Download failed: Download process failed with exit code 1. Last output: class BinanceExchange(BaseExchange):; File "/Users/remyroche/Documents/Ares/exchange/binance.py", line 277, in BinanceExchange; @handle_network_errors(context="binance_api")(; ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^; TypeError: ErrorHandler.handle_generic_errors.<locals>.decorator() got an unexpected keyword argument 'max_retries'
+2025-08-06 22:52:46,484 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-06 22:52:46,484 - AresGlobal - INFO - [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1
+2025-08-06 22:52:46,484 - AresGlobal - INFO - [SYSTEM] End time: 2025-08-06 22:52:46
+2025-08-06 22:52:46,484 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-06 22:52:46,484 - AresGlobal.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-08-06 22:52:46,484 - AresGlobal.AresLauncher - INFO - ✅ Cleanup completed

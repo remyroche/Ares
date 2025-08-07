@@ -40,7 +40,15 @@ class UnifiedRegimeClassifier:
             "1h",
         )  # Strategist works on 1h timeframe
         self.volatility_period = self.config.get("volatility_period", 10)
-        self.min_data_points = self.config.get("min_data_points", 1000)
+        
+        # Detect BLANK mode and adjust minimum data points accordingly
+        import os
+        blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
+        if blank_mode:
+            self.min_data_points = self.config.get("min_data_points", 750)  # Reduced for BLANK mode
+            self.logger.info("🔧 BLANK MODE DETECTED: Using reduced minimum data points (750)")
+        else:
+            self.min_data_points = self.config.get("min_data_points", 1000)  # Default for full mode
 
         # Models
         self.hmm_model = None
@@ -79,6 +87,33 @@ class UnifiedRegimeClassifier:
             f"unified_location_model_{self.exchange}_{self.symbol}_{self.target_timeframe}.joblib",
         )
 
+    async def initialize(self) -> bool:
+        """
+        Initialize the UnifiedRegimeClassifier.
+        
+        Returns:
+            bool: True if initialization successful, False otherwise
+        """
+        try:
+            self.logger.info(f"Initializing UnifiedRegimeClassifier for {self.exchange}_{self.symbol}")
+            
+            # Create model directory if it doesn't exist
+            os.makedirs(self.model_dir, exist_ok=True)
+            
+            # Try to load existing models
+            if self.load_models():
+                self.logger.info("✅ Loaded existing models successfully")
+                self.trained = True
+            else:
+                self.logger.info("ℹ️  No existing models found, will train new models")
+                self.trained = False
+            
+            self.logger.info("✅ UnifiedRegimeClassifier initialized successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize UnifiedRegimeClassifier: {e}")
+            return False
 
     def _calculate_features(
         self,
@@ -100,9 +135,15 @@ class UnifiedRegimeClassifier:
 
         if len(klines_df) < min_data_points:
             self.logger.warning(
-                f"Insufficient data: {len(klines_df)} < {min_data_points}",
+                f"Insufficient data: {len(klines_df)} < {min_data_points}. Consider reducing min_data_points or collecting more data.",
             )
-            return pd.DataFrame()
+            # Try with a lower threshold if possible
+            if len(klines_df) >= 200:  # Minimum viable amount
+                self.logger.info(f"Proceeding with {len(klines_df)} data points (reduced from {min_data_points})")
+                min_data_points = len(klines_df)
+            else:
+                self.logger.error(f"Data too small: {len(klines_df)} < 200 minimum required")
+                return pd.DataFrame()
 
         self.logger.info(f"🔧 Calculating features for {len(klines_df)} periods...")
 
@@ -145,12 +186,47 @@ class UnifiedRegimeClassifier:
             "volatility_20"
         ].shift(5)
         
+        # Improved NaN handling: use forward fill for technical indicators
+        # This preserves more data points while maintaining feature quality
+        technical_columns = [
+            "rsi", "macd", "macd_signal", "macd_histogram", 
+            "bb_upper", "bb_middle", "bb_lower", "bb_position", "bb_width",
+            "atr", "atr_normalized", "adx", "volatility_regime"
+        ]
+        
+        for col in technical_columns:
+            if col in features_df.columns:
+                # Forward fill NaN values for technical indicators
+                features_df[col] = features_df[col].ffill()
+                # Fill any remaining NaN values with 0
+                features_df[col] = features_df[col].fillna(0)
 
-        # Clean features
+        # For log_returns and other price-based features, use 0 for NaN
+        price_features = ["log_returns", "price_change", "volume_change", "volatility_acceleration", "volatility_momentum"]
+        for col in price_features:
+            if col in features_df.columns:
+                features_df[col] = features_df[col].fillna(0)
+
+        # For ratio features, use 1 for NaN (neutral ratio)
+        ratio_features = ["high_low_ratio", "close_open_ratio", "volume_ratio"]
+        for col in ratio_features:
+            if col in features_df.columns:
+                features_df[col] = features_df[col].fillna(1)
+
+        # For volatility features, use 0 for NaN
+        vol_features = ["volatility_20", "volatility_10", "volatility_5"]
+        for col in vol_features:
+            if col in features_df.columns:
+                features_df[col] = features_df[col].fillna(0)
+
+        # Only drop rows that still have NaN values after all the filling
+        # This should be minimal now
+        initial_length = len(features_df)
         features_df = features_df.dropna()
+        dropped_rows = initial_length - len(features_df)
 
         self.logger.info(
-            f"✅ Calculated comprehensive features for {len(features_df)} periods (dropped {len(klines_df) - len(features_df)} rows)",
+            f"✅ Calculated comprehensive features for {len(features_df)} periods (dropped {dropped_rows} rows due to NaN)",
         )
 
         return features_df
@@ -295,8 +371,9 @@ class UnifiedRegimeClassifier:
             analysis_df["state"] = state_sequence
             state_analysis = {}
             
-            # Define the ADX threshold for a sideways market
+            # Define the thresholds for regime classification
             adx_sideways_threshold = self.config.get("adx_sideways_threshold", 25)
+            volatility_threshold = self.config.get("volatility_threshold", 0.015)
     
             for state in range(self.n_states):
                 state_data = analysis_df[analysis_df["state"] == state]
@@ -310,8 +387,8 @@ class UnifiedRegimeClassifier:
                 mean_adx = state_data["adx"].mean() # Calculate the mean ADX for the state
                 mean_atr_norm = state_data["atr_normalized"].mean()
     
-                # New regime classification logic with ADX
-                if mean_volatility > 0.015 or mean_atr_norm > 0.02:
+                # New regime classification logic with configurable thresholds
+                if mean_volatility > volatility_threshold or mean_atr_norm > 0.02:
                     regime = "VOLATILE"
                 elif mean_adx < adx_sideways_threshold:
                     regime = "SIDEWAYS"
@@ -465,11 +542,11 @@ class UnifiedRegimeClassifier:
         bin_size = max(avg_atr * 0.25, 1e-6)
         min_price = df_window['low'].min()
         max_price = df_window['high'].max()
-        bins = pd.arange(min_price, max_price, bin_size)
+        bins = np.arange(min_price, max_price, bin_size)
     
         # --- 2. Find Top 2 HVNs ---
         price_bins = pd.cut(df_window['close'], bins=bins, right=False)
-        volume_by_bin = df_window.groupby(price_bins)['volume'].sum()
+        volume_by_bin = df_window.groupby(price_bins, observed=False)['volume'].sum()
         if volume_by_bin.empty:
             return None
             
@@ -746,6 +823,7 @@ class UnifiedRegimeClassifier:
                     "bb_position",
                     "bb_width",
                     "atr",
+                    "adx",
                     "volatility_regime",
                     "volatility_acceleration",
                 ]
@@ -776,6 +854,7 @@ class UnifiedRegimeClassifier:
                     "bb_position",
                     "bb_width",
                     "atr",
+                    "adx",
                     "volatility_regime",
                     "volatility_acceleration",
                 ]
@@ -1103,6 +1182,7 @@ class UnifiedRegimeClassifier:
                     "bb_position",
                     "bb_width",
                     "atr",
+                    "adx",
                     "volatility_regime",
                     "volatility_acceleration",
                 ]

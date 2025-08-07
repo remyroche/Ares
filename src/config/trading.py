@@ -210,6 +210,27 @@ def get_trading_config() -> dict[str, Any]:
             "max_retries": 3,  # Maximum retries for failed operations
             "timeout_seconds": 30,  # Timeout for operations
         },
+        
+        # --- Analyst Configuration ---
+        "analyst": {
+            "unified_regime_classifier": {
+                "min_data_points": 500,  # Reduced from 1000 to allow smaller datasets
+                "n_states": 4,  # BULL, BEAR, SIDEWAYS, VOLATILE
+                "n_iter": 100,
+                "random_state": 42,
+                "target_timeframe": "1h",
+                "volatility_period": 10,
+                "enable_sr_integration": True,
+                "adx_sideways_threshold": 20,  # Middle ground - balanced regime diversity
+                "volatility_threshold": 0.014,  # Middle ground - balanced volatility classification
+            },
+            "analysis_interval": 3600,
+            "max_analysis_history": 100,
+            "enable_technical_analysis": True,
+            "enable_dual_model_system": True,
+            "enable_market_health_analysis": True,
+            "enable_liquidation_risk_analysis": True,
+        },
     }
 
 

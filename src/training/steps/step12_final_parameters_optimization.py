@@ -254,22 +254,22 @@ class FinalParametersOptimizationStep:
                     ),
                 }
 
-                           # Multi-objective evaluation focusing on actual win/loss amounts
-           win_rate = self._evaluate_win_rate(params, calibration_results)
-           avg_win = self._evaluate_average_win(params, calibration_results)
-           avg_loss = self._evaluate_average_loss(params, calibration_results)
-           sharpe_ratio = self._evaluate_sharpe_ratio(params, calibration_results)
-           max_drawdown = self._evaluate_max_drawdown(params, calibration_results)
+                # Multi-objective evaluation focusing on actual win/loss amounts
+                win_rate = self._evaluate_win_rate(params, calibration_results)
+                avg_win = self._evaluate_average_win(params, calibration_results)
+                avg_loss = self._evaluate_average_loss(params, calibration_results)
+                sharpe_ratio = self._evaluate_sharpe_ratio(params, calibration_results)
+                max_drawdown = self._evaluate_max_drawdown(params, calibration_results)
 
-           # Return multiple objectives
-           return win_rate, avg_win, -avg_loss, sharpe_ratio, -max_drawdown
+                # Return multiple objectives
+                return win_rate, avg_win, -avg_loss, sharpe_ratio, -max_drawdown
 
             # Create multi-objective study
-                       study = optuna.create_study(
-               directions=["maximize", "maximize", "minimize", "maximize", "minimize"],
-               sampler=optuna.samplers.TPESampler(seed=42),
-               pruner=optuna.pruners.HyperbandPruner()
-           )
+            study = optuna.create_study(
+                directions=["maximize", "maximize", "minimize", "maximize", "minimize"],
+                sampler=optuna.samplers.TPESampler(seed=42),
+                pruner=optuna.pruners.HyperbandPruner()
+            )
 
             # Optimize with more trials for multi-objective
             study.optimize(objective, n_trials=100, timeout=1800)  # 30 minutes timeout

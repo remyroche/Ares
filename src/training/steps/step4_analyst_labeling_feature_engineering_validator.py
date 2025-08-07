@@ -2,6 +2,7 @@
 Validator for Step 4: Analyst Labeling and Feature Engineering
 """
 
+import asyncio
 import os
 import sys
 import pickle
@@ -190,6 +191,13 @@ class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
                         self.logger.warning(f"⚠️ No label column found in {file_path} - continuing with caution")
                         return False
                     
+                    # Check for OHLCV columns (optional but recommended)
+                    ohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
+                    missing_ohlcv = [col for col in ohlcv_columns if col not in labeled_data.columns]
+                    if missing_ohlcv:
+                        self.logger.warning(f"⚠️ Missing OHLCV columns in {file_path}: {missing_ohlcv} - this may affect labeling quality")
+                        self.logger.warning("Triple barrier labeling requires proper OHLCV data for accurate labels")
+                    
                     # Validate label values
                     labels = labeled_data["label"]
                     unique_labels = labels.unique()
@@ -197,6 +205,7 @@ class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
                     # Check for reasonable number of classes (more lenient)
                     if len(unique_labels) < 2:
                         self.logger.warning(f"⚠️ Insufficient label classes: {len(unique_labels)} - continuing with caution")
+                        self.logger.warning("This may indicate missing OHLCV data or improper triple barrier labeling")
                         return False
                     
                     if len(unique_labels) > self.max_label_classes:
@@ -408,7 +417,15 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
         Dictionary containing validation results
     """
     validator = Step4AnalystLabelingFeatureEngineeringValidator(CONFIG)
-    return await validator.run_validation(training_input, pipeline_state)
+    validation_passed = await validator.validate(training_input, pipeline_state)
+    
+    return {
+        "step_name": "step4_analyst_labeling_feature_engineering",
+        "validation_passed": validation_passed,
+        "validation_results": validator.validation_results,
+        "duration": 0,  # Could be enhanced to track actual duration
+        "timestamp": asyncio.get_event_loop().time()
+    }
 
 
 if __name__ == "__main__":

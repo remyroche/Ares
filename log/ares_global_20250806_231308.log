@@ -1,0 +1,32 @@
+2025-08-06 23:13:08,314 - AresGlobal - INFO - ================================================================================
+2025-08-06 23:13:08,314 - AresGlobal - INFO - 📊 SESSION SUMMARY
+2025-08-06 23:13:08,314 - AresGlobal - INFO - Session started: 2025-08-06 23:13:08
+2025-08-06 23:13:08,314 - AresGlobal - INFO - Global log file: ares_global_20250806_231308.log
+2025-08-06 23:13:08,314 - AresGlobal - INFO - This file contains ALL logs for this session
+2025-08-06 23:13:08,314 - AresGlobal - INFO - ================================================================================
+2025-08-06 23:13:08,315 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-06 23:13:08,315 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION
+2025-08-06 23:13:08,315 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-06 23:13:08
+2025-08-06 23:13:08,315 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-06 23:13:08,315 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-06 23:13:08,315 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-06 23:13:08,315 - AresGlobal.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-08-06 23:13:08,315 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-06 23:13:08,315 - AresGlobal.AresLauncher - INFO - Start time: 2025-08-06 23:13:08
+2025-08-06 23:13:08,315 - AresGlobal.AresLauncher - INFO - Log directory: log
+2025-08-06 23:13:08,315 - AresGlobal.AresLauncher - INFO - Log level: INFO
+2025-08-06 23:13:08,315 - AresGlobal.AresLauncher - INFO - Global log file: ares_global_20250806_231308.log
+2025-08-06 23:13:08,315 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-06 23:13:08,315 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-06 23:13:08,315 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: blank - Symbol: ETHUSDT - Exchange: BINANCE
+2025-08-06 23:13:08,315 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-06 23:13:08
+2025-08-06 23:13:08,316 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-06 23:13:08,316 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-06 23:13:08,316 - AresGlobal.AresLauncher - INFO - 🚀 Starting blank training for ETHUSDT on BINANCE
+2025-08-06 23:13:08,331 - AresGlobal.AresLauncher - ERROR - ❌ blank training failed
+2025-08-06 23:13:08,331 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-06 23:13:08,331 - AresGlobal - INFO - [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1
+2025-08-06 23:13:08,331 - AresGlobal - INFO - [SYSTEM] End time: 2025-08-06 23:13:08
+2025-08-06 23:13:08,331 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-06 23:13:08,331 - AresGlobal.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-08-06 23:13:08,331 - AresGlobal.AresLauncher - INFO - ✅ Cleanup completed

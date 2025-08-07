@@ -5,6 +5,7 @@ This module provides centralized signal handling for graceful shutdown
 of the application, including both synchronous and asynchronous cleanup.
 """
 
+import asyncio
 import signal
 from collections.abc import Callable
 from typing import Any

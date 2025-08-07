@@ -52,15 +52,20 @@ class WalkForwardValidationStep:
 
             # Import and use the existing walk-forward validation step
             from src.training.steps.step6_walk_forward_validation import (
-                run_step as wfv_run_step,
+                WalkForwardValidationStep,
             )
 
             # Execute walk-forward validation using existing step
-            wfv_result = await wfv_run_step(
-                symbol=symbol,
-                exchange=exchange,
-                data_dir=data_dir,
-                timeframe="1m",
+            wfv_step = WalkForwardValidationStep(config={})
+            await wfv_step.initialize()
+            
+            wfv_result = await wfv_step.execute(
+                training_input={
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "data_dir": data_dir,
+                },
+                pipeline_state=pipeline_state,
             )
 
             if not wfv_result:

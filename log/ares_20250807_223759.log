@@ -1,0 +1,6 @@
+2025-08-07 22:37:59,255 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 22:37:59,267 - AresTradingSystem.System - INFO - Using device: MPS for PyTorch operations.
+2025-08-07 22:37:59,268 - AresTradingSystem.System - INFO - Initializing Analyst Enhancement Step...
+2025-08-07 22:37:59,268 - AresTradingSystem.System - INFO - Analyst Enhancement Step initialized successfully.
+2025-08-07 22:37:59,268 - AresTradingSystem.System - INFO - Loading data for regime 'SIDEWAYS'...
+2025-08-07 22:37:59,268 - AresTradingSystem.System - ERROR - Error loading regime data for 'SIDEWAYS': Data file for regime 'SIDEWAYS' not found in data/regime_data

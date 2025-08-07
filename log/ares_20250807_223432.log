@@ -1,0 +1,2 @@
+2025-08-07 22:34:32,694 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 22:34:32,696 - AresTradingSystem.System.VectorizedStationarityChecker - INFO - ✅ Transformed volume data shape: (1000, 4), columns: ['volume', 'volume_log', 'volume_detrended', 'volume_normalized']

@@ -265,7 +265,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
 
 async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Run the Step 11 Confidence Calibration validator.
+    Run the step11_confidence_calibration validator.
     
     Args:
         training_input: Training input parameters
@@ -275,7 +275,15 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
         Dictionary containing validation results
     """
     validator = Step11ConfidenceCalibrationValidator(CONFIG)
-    return await validator.run_validation(training_input, pipeline_state)
+    validation_passed = await validator.validate(training_input, pipeline_state)
+    
+    return {
+        "step_name": "step11_confidence_calibration",
+        "validation_passed": validation_passed,
+        "validation_results": validator.validation_results,
+        "duration": 0,  # Could be enhanced to track actual duration
+        "timestamp": asyncio.get_event_loop().time()
+    }
 
 
 if __name__ == "__main__":

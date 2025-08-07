@@ -1,0 +1,25 @@
+2025-08-07 22:08:37,001 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 22:08:37,009 - AresTradingSystem.System - INFO - Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE
+2025-08-07 22:08:38,501 - AresTradingSystem.System.UnifiedRegimeClassifier - WARNING - Models not trained, training now...
+2025-08-07 22:08:38,502 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎓 Training Complete Regime Classification System...
+2025-08-07 22:08:38,502 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎓 Training HMM-based Market Regime Classifier...
+2025-08-07 22:08:38,502 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 879 periods...
+2025-08-07 22:08:38,510 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 854 periods (dropped 25 rows)
+2025-08-07 22:08:38,631 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 0: SIDEWAYS (mean_return=-0.0010, mean_vol=0.0061, mean_adx=20.05)
+2025-08-07 22:08:38,631 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 1: SIDEWAYS (mean_return=0.0002, mean_vol=0.0045, mean_adx=19.23)
+2025-08-07 22:08:38,632 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 2: SIDEWAYS (mean_return=0.0007, mean_vol=0.0082, mean_adx=22.63)
+2025-08-07 22:08:38,632 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - State 3: SIDEWAYS (mean_return=0.0158, mean_vol=0.0057, mean_adx=20.85)
+2025-08-07 22:08:38,632 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ HMM-based regime classifier trained successfully
+2025-08-07 22:08:38,632 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🎓 Training Basic Regime Ensemble...
+2025-08-07 22:08:38,632 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 879 periods...
+2025-08-07 22:08:38,639 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 854 periods (dropped 25 rows)
+2025-08-07 22:08:38,640 - AresTradingSystem.System.UnifiedRegimeClassifier - ERROR - ❌ Failed to train basic ensemble: The feature names should match those that were passed during fit.
+Feature names seen at fit time, yet now missing:
+- adx
+
+2025-08-07 22:08:38,640 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - 🔧 Calculating features for 879 periods...
+2025-08-07 22:08:38,646 - AresTradingSystem.System.UnifiedRegimeClassifier - INFO - ✅ Calculated comprehensive features for 854 periods (dropped 25 rows)
+2025-08-07 22:08:38,646 - AresTradingSystem.System.UnifiedRegimeClassifier - ERROR - Error in regime classification: The feature names should match those that were passed during fit.
+Feature names seen at fit time, yet now missing:
+- adx
+

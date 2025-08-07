@@ -3,7 +3,7 @@
 Step Orchestrator for Training Pipeline
 
 This module orchestrates the execution of training steps with progress saving
-and resuming capabilities.
+and resuming capabilities. Now uses EnhancedTrainingManager for 16-step pipeline.
 """
 
 import asyncio
@@ -17,7 +17,7 @@ from src.utils.logger import system_logger
 
 
 class StepOrchestrator:
-    """Orchestrates training step execution with progress management."""
+    """Orchestrates training step execution with progress management using EnhancedTrainingManager."""
 
     def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training"):
         self.symbol = symbol
@@ -28,7 +28,7 @@ class StepOrchestrator:
         # Initialize progress manager
         self.progress_manager = ProgressManager(symbol, exchange, data_dir)
         
-        # Define available steps in order
+        # Define available steps in order (for reference)
         self.available_steps = [
             "step1_data_collection",
             "step2_market_regime_classification",
@@ -48,7 +48,38 @@ class StepOrchestrator:
             "step16_saving"
         ]
         
+        # Enhanced training manager
+        self.enhanced_training_manager = None
+        
         self.logger.info(f"Initialized StepOrchestrator for {symbol} on {exchange}")
+
+    async def _setup_enhanced_training_manager(self, config: Dict[str, Any]) -> bool:
+        """
+        Set up the enhanced training manager.
+        
+        Args:
+            config: Configuration dictionary
+            
+        Returns:
+            True if setup successful, False otherwise
+        """
+        try:
+            from src.training.enhanced_training_manager import setup_enhanced_training_manager
+            
+            self.enhanced_training_manager = await setup_enhanced_training_manager(config)
+            if not self.enhanced_training_manager:
+                self.logger.error("❌ Failed to setup enhanced training manager")
+                return False
+            
+            # The enhanced training manager is already initialized when returned from setup_enhanced_training_manager
+            # No need to call initialize() again
+            
+            self.logger.info("✅ Enhanced training manager setup successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to setup enhanced training manager: {e}")
+            return False
 
     def get_step_module(self, step_name: str) -> Optional[Any]:
         """
@@ -104,7 +135,7 @@ class StepOrchestrator:
         force_rerun: bool = False
     ) -> bool:
         """
-        Execute a single training step.
+        Execute a single training step using enhanced training manager.
         
         Args:
             step_name: Name of the step to execute
@@ -122,60 +153,49 @@ class StepOrchestrator:
             return True
         
         try:
-            # Get step class
-            step_class = self.get_step_class(step_name)
-            if not step_class:
-                self.logger.error(f"❌ Could not load step class for {step_name}")
-                return False
+            # Set up enhanced training manager if not already done
+            if not self.enhanced_training_manager:
+                setup_success = await self._setup_enhanced_training_manager(config)
+                if not setup_success:
+                    return False
             
-            # Initialize step
-            step_instance = step_class(config)
-            
-            # Initialize step if it has an initialize method
-            if hasattr(step_instance, 'initialize'):
-                await step_instance.initialize()
-            
-            # Prepare training input
+            # Prepare training input for enhanced training manager
             training_input = {
                 "symbol": self.symbol,
                 "exchange": self.exchange,
-                "data_dir": self.data_dir
+                "timeframe": "1m",
+                "data_dir": self.data_dir,
+                "start_step": step_name,
+                "force_rerun": force_rerun,
+                "lookback_days": 30  # Add missing lookback_days field
             }
             
-            # Load previous progress to build pipeline state
-            pipeline_state = self._build_pipeline_state(step_name)
+            # Execute the enhanced training pipeline
+            success = await self.enhanced_training_manager.execute_enhanced_training(training_input)
             
-            # Execute step
-            if hasattr(step_instance, 'execute'):
-                result = await step_instance.execute(training_input, pipeline_state)
-            else:
-                # Fallback to run_step function if execute method doesn't exist
-                run_step_func = getattr(step_instance, 'run_step', None)
-                if run_step_func:
-                    result = await run_step_func(self.symbol, self.exchange, self.data_dir)
+            if success:
+                # Save progress
+                step_data = {
+                    "result": {"status": "SUCCESS"},
+                    "pipeline_state": {},
+                    "training_input": training_input
+                }
+                
+                metadata = {
+                    "step_name": step_name,
+                    "symbol": self.symbol,
+                    "exchange": self.exchange,
+                    "force_rerun": force_rerun
+                }
+                
+                if self.progress_manager.save_step_progress(step_name, step_data, metadata):
+                    self.logger.info(f"✅ Step {step_name} completed successfully")
+                    return True
                 else:
-                    self.logger.error(f"❌ No execute or run_step method found in {step_name}")
+                    self.logger.error(f"❌ Failed to save progress for {step_name}")
                     return False
-            
-            # Save progress
-            step_data = {
-                "result": result,
-                "pipeline_state": pipeline_state,
-                "training_input": training_input
-            }
-            
-            metadata = {
-                "step_name": step_name,
-                "symbol": self.symbol,
-                "exchange": self.exchange,
-                "force_rerun": force_rerun
-            }
-            
-            if self.progress_manager.save_step_progress(step_name, step_data, metadata):
-                self.logger.info(f"✅ Step {step_name} completed successfully")
-                return True
             else:
-                self.logger.error(f"❌ Failed to save progress for {step_name}")
+                self.logger.error(f"❌ Step {step_name} failed")
                 return False
                 
         except Exception as e:
@@ -217,7 +237,7 @@ class StepOrchestrator:
         force_rerun: bool = False
     ) -> bool:
         """
-        Execute training pipeline starting from a specific step.
+        Execute training pipeline starting from a specific step using enhanced training manager.
         
         Args:
             start_step: Step to start from
@@ -236,19 +256,31 @@ class StepOrchestrator:
             self.logger.error(f"❌ Unknown step: {start_step}")
             return False
         
-        # Execute steps from start_step onwards
-        steps_to_execute = self.available_steps[start_index:]
+        # Set up enhanced training manager
+        setup_success = await self._setup_enhanced_training_manager(config)
+        if not setup_success:
+            return False
         
-        for step_name in steps_to_execute:
-            self.logger.info(f"🔄 Executing step {step_name} ({steps_to_execute.index(step_name) + 1}/{len(steps_to_execute)})")
-            
-            success = await self.execute_step(step_name, config, force_rerun)
-            if not success:
-                self.logger.error(f"❌ Pipeline failed at step: {step_name}")
-                return False
+        # Prepare training input for enhanced training manager
+        training_input = {
+            "symbol": self.symbol,
+            "exchange": self.exchange,
+            "timeframe": "1m",
+            "data_dir": self.data_dir,
+            "start_step": start_step,
+            "force_rerun": force_rerun,
+            "lookback_days": 30  # Add missing lookback_days field
+        }
         
-        self.logger.info("✅ All steps completed successfully")
-        return True
+        # Execute the enhanced training pipeline
+        success = await self.enhanced_training_manager.execute_enhanced_training(training_input)
+        
+        if success:
+            self.logger.info("✅ Enhanced 16-step training pipeline completed successfully")
+            return True
+        else:
+            self.logger.error("❌ Enhanced 16-step training pipeline failed")
+            return False
 
     async def execute_all_steps(
         self, 
@@ -256,7 +288,7 @@ class StepOrchestrator:
         force_rerun: bool = False
     ) -> bool:
         """
-        Execute all training steps from the beginning.
+        Execute all training steps from the beginning using enhanced training manager.
         
         Args:
             config: Configuration dictionary

@@ -1,0 +1,20 @@
+2025-08-07 22:38:58,260 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 22:38:58,276 - AresTradingSystem.System - INFO - Using device: MPS for PyTorch operations.
+2025-08-07 22:38:58,276 - AresTradingSystem.System - INFO - Initializing Analyst Enhancement Step...
+2025-08-07 22:38:58,277 - AresTradingSystem.System - INFO - Analyst Enhancement Step initialized successfully.
+2025-08-07 22:38:58,277 - AresTradingSystem.System - INFO - 🔄 Executing Analyst Enhancement...
+2025-08-07 22:38:58,300 - AresTradingSystem.System - INFO - --- Enhancing models for regime: BULL ---
+2025-08-07 22:38:58,300 - AresTradingSystem.System - INFO - Loading data for regime 'BULL'...
+2025-08-07 22:38:58,300 - AresTradingSystem.System - INFO - Looking for regime data in: data/training/processed_data/regime_data
+2025-08-07 22:38:58,300 - AresTradingSystem.System - INFO - Current working directory: /Users/remyroche/Documents/Ares
+2025-08-07 22:38:58,300 - AresTradingSystem.System - INFO - Looking for data file: data/training/processed_data/regime_data/BINANCE_ETHUSDT_BULL_data.pkl
+2025-08-07 22:38:58,300 - AresTradingSystem.System - INFO - File exists: False
+2025-08-07 22:38:58,300 - AresTradingSystem.System - ERROR - Error loading regime data for 'BULL': Data file for regime 'BULL' not found in data/training/processed_data/regime_data
+2025-08-07 22:38:58,300 - AresTradingSystem.System - ERROR - ❌ Error in Analyst Enhancement after 0.02s: Data file for regime 'BULL' not found in data/training/processed_data/regime_data
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/src/training/steps/step6_analyst_enhancement.py", line 96, in execute
+    X_train, y_train, X_val, y_val = self._load_regime_data(
+                                     ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/src/training/steps/step6_analyst_enhancement.py", line 167, in _load_regime_data
+    raise FileNotFoundError(f"Data file for regime '{regime_name}' not found in {regime_data_dir}")
+FileNotFoundError: Data file for regime 'BULL' not found in data/training/processed_data/regime_data

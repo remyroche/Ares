@@ -360,11 +360,34 @@ class MultiTimeframeEnsemble:
         try:
             self.logger.debug("🔧 Preparing features and target...")
 
-            # Remove target column if present
+            # First, explicitly drop any datetime columns
+            datetime_columns = data.select_dtypes(include=['datetime64[ns]', 'datetime64', 'datetime']).columns.tolist()
+            if datetime_columns:
+                self.logger.info(f"Dropping datetime columns: {datetime_columns}")
+                data = data.drop(columns=datetime_columns)
+            
+            # Also drop any object columns that might contain datetime strings
+            # But preserve target column
+            target_columns = ["target"]
+            object_columns = data.select_dtypes(include=['object']).columns.tolist()
+            object_columns_to_drop = [col for col in object_columns if col not in target_columns]
+            if object_columns_to_drop:
+                self.logger.info(f"Dropping object columns: {object_columns_to_drop}")
+                data = data.drop(columns=object_columns_to_drop)
+
+            # Remove target column and other non-feature columns
+            excluded_columns = target_columns + ["timestamp"]
             feature_columns = [
-                col for col in data.columns if col not in ["target", "timestamp"]
+                col for col in data.columns if col not in excluded_columns
             ]
             X = data[feature_columns].copy()
+
+            # Additional safety check - ensure all columns are numeric
+            for col in X.columns:
+                if not pd.api.types.is_numeric_dtype(X[col]):
+                    self.logger.warning(f"Non-numeric column detected: {col} with dtype {X[col].dtype}")
+                    X = X.drop(columns=[col])
+                    feature_columns.remove(col)
 
             # Handle missing values
             missing_before = X.isnull().sum().sum()
@@ -373,6 +396,12 @@ class MultiTimeframeEnsemble:
 
             if missing_before > 0:
                 self.logger.info(f"🔧 Filled {missing_before} missing values")
+
+            # Final check - ensure X is purely numeric
+            if not X.select_dtypes(include=[np.number]).shape[1] == X.shape[1]:
+                self.logger.error("Non-numeric columns still present in feature matrix")
+                # Force conversion to numeric, dropping any problematic columns
+                X = X.select_dtypes(include=[np.number])
 
             # Get target
             if "target" in data.columns:

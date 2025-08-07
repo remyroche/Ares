@@ -1,0 +1,2 @@
+2025-08-07 22:34:26,728 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
+2025-08-07 22:34:26,731 - AresTradingSystem.System.VectorizedStationarityChecker - INFO - ✅ Transformed price data shape: (1000, 15), columns: ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'close_returns', 'open_returns', 'high_returns', 'low_returns', 'close_log', 'open_log', 'high_log', 'low_log', 'close_detrended']

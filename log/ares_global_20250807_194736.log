@@ -1,0 +1,47 @@
+2025-08-07 19:47:36,338 - AresGlobal - INFO - ================================================================================
+2025-08-07 19:47:36,338 - AresGlobal - INFO - 📊 SESSION SUMMARY
+2025-08-07 19:47:36,339 - AresGlobal - INFO - Session started: 2025-08-07 19:47:36
+2025-08-07 19:47:36,339 - AresGlobal - INFO - Global log file: ares_global_20250807_194736.log
+2025-08-07 19:47:36,339 - AresGlobal - INFO - This file contains ALL logs for this session
+2025-08-07 19:47:36,339 - AresGlobal - INFO - ================================================================================
+2025-08-07 19:47:36,339 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 19:47:36,339 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION
+2025-08-07 19:47:36,339 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-07 19:47:36
+2025-08-07 19:47:36,339 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-07 19:47:36,339 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 19:47:36,339 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-07 19:47:36,339 - AresGlobal.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-08-07 19:47:36,340 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-07 19:47:36,340 - AresGlobal.AresLauncher - INFO - Start time: 2025-08-07 19:47:36
+2025-08-07 19:47:36,340 - AresGlobal.AresLauncher - INFO - Log directory: log
+2025-08-07 19:47:36,340 - AresGlobal.AresLauncher - INFO - Log level: INFO
+2025-08-07 19:47:36,340 - AresGlobal.AresLauncher - INFO - Global log file: ares_global_20250807_194736.log
+2025-08-07 19:47:36,340 - AresGlobal.AresLauncher - INFO - ================================================================================
+2025-08-07 19:47:36,340 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 19:47:36,340 - AresGlobal - INFO - [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: blank - Symbol: ETHUSDT - Exchange: BINANCE
+2025-08-07 19:47:36,340 - AresGlobal - INFO - [SYSTEM] Start time: 2025-08-07 19:47:36
+2025-08-07 19:47:36,340 - AresGlobal - INFO - [SYSTEM] Log directory: log
+2025-08-07 19:47:36,340 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 19:47:36,340 - AresGlobal.AresLauncher - INFO - 🚀 Running step-based training for ETHUSDT on BINANCE
+2025-08-07 19:47:36,340 - AresGlobal.AresLauncher - INFO - Starting from step: step2_market_regime_classification
+2025-08-07 19:47:36,341 - AresGlobal.ProgressManager - INFO - Initialized ProgressManager for ETHUSDT on BINANCE
+2025-08-07 19:47:36,341 - AresGlobal.ProgressManager - INFO - Progress directory: data/training/progress/BINANCE_ETHUSDT
+2025-08-07 19:47:36,341 - AresGlobal.StepOrchestrator - INFO - Initialized StepOrchestrator for ETHUSDT on BINANCE
+2025-08-07 19:47:36,341 - AresGlobal.AresLauncher - INFO - 📁 Using pre-consolidated data for step2
+2025-08-07 19:47:36,341 - AresGlobal.AresLauncher - INFO - ✅ Found consolidated data: data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet
+2025-08-07 19:47:36,342 - AresGlobal.StepOrchestrator - INFO - 🚀 Starting execution from step: step2_market_regime_classification
+2025-08-07 19:47:36,342 - AresGlobal.StepOrchestrator - INFO - 🔄 Executing step step2_market_regime_classification (1/15)
+2025-08-07 19:47:36,342 - AresGlobal.StepOrchestrator - INFO - 🚀 Executing step: step2_market_regime_classification
+2025-08-07 19:47:37,463 - AresGlobal.StepOrchestrator - INFO - ✅ Loaded step module: step2_market_regime_classification
+2025-08-07 19:47:37,463 - AresGlobal.StepOrchestrator - INFO - ✅ Found step class: MarketRegimeClassificationStep
+2025-08-07 19:47:37,464 - AresGlobal.ProgressManager - INFO - ℹ️  No progress found for step1_data_collection
+2025-08-07 19:47:37,464 - AresGlobal.StepOrchestrator - INFO - 📋 Built pipeline state with 0 items
+2025-08-07 19:47:37,464 - AresGlobal.StepOrchestrator - ERROR - ❌ Step step2_market_regime_classification failed: 'UnifiedRegimeClassifier' object has no attribute 'initialize'
+2025-08-07 19:47:37,464 - AresGlobal.StepOrchestrator - ERROR - ❌ Pipeline failed at step: step2_market_regime_classification
+2025-08-07 19:47:37,464 - AresGlobal.AresLauncher - ERROR - ❌ Step-based training failed
+2025-08-07 19:47:37,464 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 19:47:37,465 - AresGlobal - INFO - [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1
+2025-08-07 19:47:37,465 - AresGlobal - INFO - [SYSTEM] End time: 2025-08-07 19:47:37
+2025-08-07 19:47:37,465 - AresGlobal - INFO - [SYSTEM] ================================================================================
+2025-08-07 19:47:37,465 - AresGlobal.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-08-07 19:47:37,465 - AresGlobal.AresLauncher - INFO - ✅ Cleanup completed

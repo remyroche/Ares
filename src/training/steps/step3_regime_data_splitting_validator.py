@@ -6,6 +6,7 @@ import os
 import sys
 import pickle
 import pandas as pd
+import asyncio
 from typing import Any, Dict, List
 from pathlib import Path
 
@@ -429,7 +430,15 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
         Dictionary containing validation results
     """
     validator = Step3RegimeDataSplittingValidator(CONFIG)
-    return await validator.run_validation(training_input, pipeline_state)
+    validation_passed = await validator.validate(training_input, pipeline_state)
+    
+    return {
+        "step_name": "step3_regime_data_splitting",
+        "validation_passed": validation_passed,
+        "validation_results": validator.validation_results,
+        "duration": 0,  # Could be enhanced to track actual duration
+        "timestamp": asyncio.get_event_loop().time()
+    }
 
 
 if __name__ == "__main__":

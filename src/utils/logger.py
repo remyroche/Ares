@@ -146,7 +146,7 @@ class EnhancedLogger:
             self.logger = logging.getLogger("AresTradingSystem")
             self.logger.setLevel(getattr(logging, self.log_level))
 
-            # Clear existing handlers
+            # Clear existing handlers to prevent duplicates
             self.logger.handlers.clear()
 
             # Create formatter
@@ -175,6 +175,9 @@ class EnhancedLogger:
                 )
                 file_handler.setFormatter(formatter)
                 self.logger.addHandler(file_handler)
+
+            # Prevent propagation to root logger to avoid duplicate messages
+            self.logger.propagate = False
 
             print("Logger setup completed successfully")
             return True
@@ -359,16 +362,22 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
 if system_logger is None:
     system_logger = setup_logging()
 
-    # Try to integrate with comprehensive logging if available
-    try:
-        from src.utils.comprehensive_logger import get_comprehensive_logger
+    # Temporarily disable comprehensive logging integration to prevent duplicate messages
+    # try:
+    #     from src.utils.comprehensive_logger import get_comprehensive_logger
 
-        comprehensive_logger = get_comprehensive_logger()
-        if comprehensive_logger:
-            # Replace with integrated version
-            system_logger = get_system_logger_with_comprehensive_integration()
-    except ImportError:
-        pass
+    #     comprehensive_logger = get_comprehensive_logger()
+    #     if comprehensive_logger:
+    #         # Replace with integrated version
+    #         system_logger = get_system_logger_with_comprehensive_integration()
+    # except ImportError:
+    #     pass
+
+# Temporarily set logging to INFO level for debugging
+import logging
+logging.getLogger().setLevel(logging.INFO)
+for handler in logging.getLogger().handlers:
+    handler.setLevel(logging.INFO)
 
 
 def ensure_logging_setup() -> logging.Logger | None:

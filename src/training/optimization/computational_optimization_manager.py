@@ -66,6 +66,54 @@ class ComputationalOptimizationConfig:
     # Model complexity scaling
     enable_adaptive_complexity: bool = True
     complexity_levels: Dict[str, Dict[str, Any]] = None
+    
+    # Backtesting configuration
+    enable_cached_backtesting: bool = True
+    enable_progressive_evaluation_backtesting: bool = True
+    enable_parallel_backtesting: bool = True
+    max_backtest_workers: int = 4
+    backtest_timeout_seconds: int = 300
+    
+    # Model training configuration
+    enable_incremental_training: bool = True
+    enable_adaptive_complexity_training: bool = True
+    model_cache_size: int = 100
+    warm_start_threshold: float = 0.8
+    
+    # Feature engineering configuration
+    enable_precomputed_features: bool = True
+    enable_feature_caching: bool = True
+    feature_cache_size: int = 500
+    enable_memory_efficient_data: bool = True
+    
+    # Multi-objective optimization
+    enable_surrogate_models_multi: bool = True
+    enable_adaptive_sampling: bool = True
+    surrogate_model_type: str = "gaussian_process"
+    expensive_evaluation_ratio: float = 0.2
+    
+    # Memory management
+    enable_memory_monitoring: bool = True
+    max_memory_usage_mb: int = 8000
+    enable_garbage_collection: bool = True
+    
+    def __post_init__(self):
+        """Post-initialization processing to handle nested configurations."""
+        # Convert evaluation_stages from list of tuples to proper format if needed
+        if self.evaluation_stages is None:
+            self.evaluation_stages = [
+                (0.1, 0.3),   # 10% data, 30% weight
+                (0.3, 0.5),   # 30% data, 50% weight  
+                (1.0, 1.0)    # 100% data, 100% weight
+            ]
+        
+        # Set default complexity levels if None
+        if self.complexity_levels is None:
+            self.complexity_levels = {
+                "light": {"n_estimators": 50, "max_depth": 3},
+                "medium": {"n_estimators": 100, "max_depth": 6},
+                "heavy": {"n_estimators": 200, "max_depth": 10}
+            }
 
 
 class CachedBacktester:
@@ -893,7 +941,58 @@ async def create_computational_optimization_manager(
 ) -> ComputationalOptimizationManager:
     """Create and initialize a computational optimization manager."""
     
-    optimization_config = ComputationalOptimizationConfig(**config.get('computational_optimization', {}))
+    # Extract the computational_optimization config and flatten nested structures
+    optimization_config_raw = config.get('computational_optimization', {})
+    
+    # Get the valid field names for ComputationalOptimizationConfig
+    from dataclasses import fields
+    valid_fields = {field.name for field in fields(ComputationalOptimizationConfig)}
+    
+    # Flatten the nested configuration structure
+    flattened_config = {}
+    
+    # Copy top-level parameters that match valid fields
+    for key, value in optimization_config_raw.items():
+        if key in valid_fields:
+            flattened_config[key] = value
+    
+    # Extract nested configurations and flatten them
+    if 'backtesting' in optimization_config_raw:
+        backtesting_config = optimization_config_raw['backtesting']
+        for key, value in backtesting_config.items():
+            field_name = f"enable_{key}" if key.startswith('enable_') else key
+            if field_name in valid_fields:
+                flattened_config[field_name] = value
+    
+    if 'model_training' in optimization_config_raw:
+        training_config = optimization_config_raw['model_training']
+        for key, value in training_config.items():
+            field_name = f"enable_{key}" if key.startswith('enable_') else key
+            if field_name in valid_fields:
+                flattened_config[field_name] = value
+    
+    if 'feature_engineering' in optimization_config_raw:
+        feature_config = optimization_config_raw['feature_engineering']
+        for key, value in feature_config.items():
+            field_name = f"enable_{key}" if key.startswith('enable_') else key
+            if field_name in valid_fields:
+                flattened_config[field_name] = value
+    
+    if 'multi_objective' in optimization_config_raw:
+        multi_config = optimization_config_raw['multi_objective']
+        for key, value in multi_config.items():
+            field_name = f"enable_{key}_multi" if key.startswith('enable_') else key
+            if field_name in valid_fields:
+                flattened_config[field_name] = value
+    
+    if 'memory_management' in optimization_config_raw:
+        memory_config = optimization_config_raw['memory_management']
+        for key, value in memory_config.items():
+            if key in valid_fields:
+                flattened_config[key] = value
+    
+    # Create the configuration object
+    optimization_config = ComputationalOptimizationConfig(**flattened_config)
     manager = ComputationalOptimizationManager(optimization_config)
     
     if await manager.initialize(market_data, model_config):

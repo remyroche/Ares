@@ -434,7 +434,12 @@ class EnhancedCoarseOptimizer:
 
                 # Quick training with early stopping
                 model.fit(X_sample, y_sample)
-                explainer = shap.TreeExplainer(model)
+                # Try new import path first, then fallback to old path
+                try:
+                    from shap.explainers import TreeExplainer
+                except ImportError:
+                    from shap import TreeExplainer
+                explainer = TreeExplainer(model)
                 shap_values = explainer.shap_values(X_sample)
 
                 # Process SHAP values

@@ -1143,8 +1143,8 @@ class AresLauncher:
         force_rerun: bool = False,
         with_gui: bool = False,
     ):
-        """Run step-based training starting from a specific step."""
-        self.logger.info(f"🚀 Running step-based training for {symbol} on {exchange}")
+        """Run enhanced 16-step training pipeline using the step orchestrator."""
+        self.logger.info(f"🚀 Running enhanced 16-step training pipeline for {symbol} on {exchange}")
         self.logger.info(f"Starting from step: {start_step}")
         
         # Prevent blank mode from being used with step1_data_collection
@@ -1171,9 +1171,6 @@ class AresLauncher:
             from src.training.step_orchestrator import StepOrchestrator
             from src.config import CONFIG
             
-            # Initialize step orchestrator
-            orchestrator = StepOrchestrator(symbol, exchange)
-            
             # Check if starting from step2, use pre-consolidated data
             if start_step == "step2_market_regime_classification":
                 self.logger.info("📁 Using pre-consolidated data for step2")
@@ -1187,7 +1184,10 @@ class AresLauncher:
                 
                 self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
             
-            # Run the step-based training
+            # Initialize step orchestrator
+            orchestrator = StepOrchestrator(symbol, exchange)
+            
+            # Run the step-based training using the orchestrator
             import asyncio
             success = asyncio.run(orchestrator.execute_from_step(
                 start_step=start_step,
@@ -1196,14 +1196,14 @@ class AresLauncher:
             ))
             
             if success:
-                self.logger.info("✅ Step-based training completed successfully")
+                self.logger.info("✅ Enhanced 16-step training pipeline completed successfully")
                 return True
             else:
-                self.logger.error("❌ Step-based training failed")
+                self.logger.error("❌ Enhanced 16-step training pipeline failed")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"❌ Failed to run step-based training: {e}")
+            self.logger.error(f"❌ Failed to run enhanced training pipeline: {e}")
             return False
 
     @handle_errors(
@@ -1356,13 +1356,16 @@ class AresLauncher:
                 f"🔧 Running consolidation command: {' '.join(consolidate_cmd)}",
             )
             # Pass environment with BLANK_TRAINING_MODE set
+            self.logger.info("🔄 Starting consolidation subprocess...")
             consolidate_result = subprocess.run(
                 consolidate_cmd,
                 capture_output=True,
                 text=True,
                 env=env,
                 check=False,
+                timeout=1800,  # 30 minute timeout for large datasets
             )
+            self.logger.info(f"🔄 Consolidation subprocess completed with return code: {consolidate_result.returncode}")
 
             if consolidate_result.returncode != 0:
                 self.logger.error(

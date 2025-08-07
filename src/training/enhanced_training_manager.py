@@ -715,6 +715,7 @@ class EnhancedTrainingManager:
             exchange = training_input.get("exchange", "")
             timeframe = training_input.get("timeframe", "1m")
             data_dir = "data/training"
+            start_step = training_input.get("start_step", "step1_data_collection")
 
             # Initialize pipeline state and timing
             pipeline_state = {}
@@ -751,6 +752,7 @@ class EnhancedTrainingManager:
             self.logger.info(f"🔧 Max Trials: {self.max_trials}")
             self.logger.info(f"📈 Lookback Days: {self.lookback_days}")
             self.logger.info(f"💾 Memory Optimization: {'Enabled' if self.enable_computational_optimization else 'Disabled'}")
+            self.logger.info(f"🚀 Starting from step: {start_step}")
             self.logger.info("=" * 100)
             
             print("=" * 100)
@@ -764,48 +766,58 @@ class EnhancedTrainingManager:
             print(f"🔧 Max Trials: {self.max_trials}")
             print(f"📈 Lookback Days: {self.lookback_days}")
             print(f"💾 Memory Optimization: {'Enabled' if self.enable_computational_optimization else 'Disabled'}")
+            print(f"🚀 Starting from step: {start_step}")
             print("=" * 100)
             
-            # Step 1: Data Collection
-            step_start = time.time()
-            self.logger.info("📊 STEP 1: Data Collection...")
-            self.logger.info("   🔍 Downloading and preparing market data...")
-            print("   📊 Step 1: Data Collection...")
-            print("   🔍 Downloading and preparing market data...")
-            
-            from src.training.steps import step1_data_collection
-            step1_result = await step1_data_collection.run_step(
-                symbol=symbol,
-                exchange_name=exchange,
-                min_data_points="1000",
-                data_dir=data_dir,
-                download_new_data=True,
-                lookback_days=self.lookback_days,
-            )
-            
-            if step1_result is None or step1_result[0] is None:
-                self.logger.error("❌ Step 1: Data Collection failed")
-                print("❌ Step 1: Data Collection failed")
-                return False
-            
-            # Update pipeline state
-            pipeline_state["data_collection"] = {
-                "status": "SUCCESS",
-                "result": step1_result
-            }
-            
-            # Run validator for Step 1
-            validation_result = await self._run_step_validator(
-                "step1_data_collection", training_input, pipeline_state
-            )
-            
-            self._log_step_completion("Step 1: Data Collection", step_start, step_times)
-            
-            # Save checkpoint after step 1
-            self._save_checkpoint("step1_data_collection", pipeline_state)
-            
-            # Memory optimization after data collection
-            self._optimize_memory_usage()
+            # Step 1: Data Collection (skip if starting from step2 or later)
+            if start_step == "step1_data_collection":
+                step_start = time.time()
+                self.logger.info("📊 STEP 1: Data Collection...")
+                self.logger.info("   🔍 Downloading and preparing market data...")
+                print("   📊 Step 1: Data Collection...")
+                print("   🔍 Downloading and preparing market data...")
+                
+                from src.training.steps import step1_data_collection
+                step1_result = await step1_data_collection.run_step(
+                    symbol=symbol,
+                    exchange_name=exchange,
+                    min_data_points="750" if self.blank_training_mode else "1000",
+                    data_dir=data_dir,
+                    download_new_data=True,
+                    lookback_days=self.lookback_days,
+                )
+                
+                if step1_result is None or step1_result[0] is None:
+                    self.logger.error("❌ Step 1: Data Collection failed")
+                    print("❌ Step 1: Data Collection failed")
+                    return False
+                
+                # Update pipeline state
+                pipeline_state["data_collection"] = {
+                    "status": "SUCCESS",
+                    "result": step1_result
+                }
+                
+                # Run validator for Step 1
+                validation_result = await self._run_step_validator(
+                    "step1_data_collection", training_input, pipeline_state
+                )
+                
+                self._log_step_completion("Step 1: Data Collection", step_start, step_times)
+                
+                # Save checkpoint after step 1
+                self._save_checkpoint("step1_data_collection", pipeline_state)
+                
+                # Memory optimization after data collection
+                self._optimize_memory_usage()
+            else:
+                self.logger.info("⏭️  Skipping Step 1: Data Collection (using pre-consolidated data)")
+                print("⏭️  Skipping Step 1: Data Collection (using pre-consolidated data)")
+                # Add placeholder for data collection in pipeline state
+                pipeline_state["data_collection"] = {
+                    "status": "SKIPPED",
+                    "result": {"message": "Using pre-consolidated data"}
+                }
 
             # Step 2: Market Regime Classification
             step_start = time.time()

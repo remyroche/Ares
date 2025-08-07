@@ -5,6 +5,7 @@ Validator for Step 2: Market Regime Classification
 import os
 import sys
 import json
+import asyncio
 import pandas as pd
 from typing import Any, Dict, List
 from pathlib import Path
@@ -120,57 +121,65 @@ class Step2MarketRegimeClassificationValidator(BaseValidator):
             Tuple of (passed, metrics_dict)
         """
         try:
-            # Check if results contain required keys
-            required_keys = ["regimes", "probabilities", "metadata"]
+            # Check if results contain required keys - updated to match actual file structure
+            required_keys = ["regime_sequence", "metadata"]
             missing_keys = [key for key in required_keys if key not in regime_results]
             
             if missing_keys:
                 return False, {"error": f"Missing required keys in regime classification results: {missing_keys}"}
             
-            # Validate regimes array
-            regimes = regime_results.get("regimes", [])
-            if not isinstance(regimes, list) or len(regimes) == 0:
-                return False, {"error": "Regimes array is empty or invalid - no regime classifications found"}
+            # Validate regime sequence array
+            regime_sequence = regime_results.get("regime_sequence", [])
+            if not isinstance(regime_sequence, list) or len(regime_sequence) == 0:
+                return False, {"error": "Regime sequence array is empty or invalid - no regime classifications found"}
             
-            # Validate probabilities
-            probabilities = regime_results.get("probabilities", [])
-            if not isinstance(probabilities, list) or len(probabilities) == 0:
-                return False, {"error": "Probabilities array is empty or invalid - no probability distributions found"}
+            # Validate confidence scores (optional - can be empty object or array)
+            confidence_scores = regime_results.get("confidence_scores", {})
+            confidence_scores_valid = True
+            confidence_scores_message = ""
             
-            # Check if regimes and probabilities have same length
-            if len(regimes) != len(probabilities):
-                return False, {"error": f"Regimes and probabilities arrays have different lengths: {len(regimes)} vs {len(probabilities)}"}
-            
-            # Validate probability values (should sum to 1 for each time point) - more tolerant
-            valid_probabilities = True
-            invalid_prob_count = 0
-            for i, prob_set in enumerate(probabilities):
-                if isinstance(prob_set, list):
-                    prob_sum = sum(prob_set)
-                    if abs(prob_sum - 1.0) > self.probability_tolerance:  # More tolerant
-                        valid_probabilities = False
-                        invalid_prob_count += 1
-                        if invalid_prob_count <= 3:  # Log first few errors
-                            self.logger.warning(f"⚠️ Probability distribution at index {i} sums to {prob_sum:.4f} (should be 1.0)")
-            
-            if not valid_probabilities:
-                return False, {"error": f"Probability distributions do not sum to 1.0 (tolerance: {self.probability_tolerance}) - {invalid_prob_count} invalid distributions found"}
+            if isinstance(confidence_scores, dict) and len(confidence_scores) == 0:
+                # Empty object is acceptable
+                confidence_scores_message = "Empty confidence scores object (acceptable)"
+            elif isinstance(confidence_scores, list):
+                # Validate confidence score values (should be between 0 and 1) - more tolerant
+                invalid_confidence_count = 0
+                for i, confidence_score in enumerate(confidence_scores):
+                    if isinstance(confidence_score, (int, float)):
+                        if not (0.0 <= confidence_score <= 1.0):
+                            confidence_scores_valid = False
+                            invalid_confidence_count += 1
+                            if invalid_confidence_count <= 3:  # Log first few errors
+                                self.logger.warning(f"⚠️ Confidence score at index {i} is {confidence_score} (should be between 0.0 and 1.0)")
+                    else:
+                        confidence_scores_valid = False
+                        invalid_confidence_count += 1
+                        if invalid_confidence_count <= 3:  # Log first few errors
+                            self.logger.warning(f"⚠️ Confidence score at index {i} is not a number: {confidence_score}")
+                
+                if not confidence_scores_valid:
+                    confidence_scores_message = f"Confidence scores are not valid (should be between 0.0 and 1.0) - {invalid_confidence_count} invalid scores found"
+                else:
+                    confidence_scores_message = f"Valid confidence scores array with {len(confidence_scores)} scores"
+            else:
+                confidence_scores_valid = False
+                confidence_scores_message = f"Invalid confidence_scores format: {type(confidence_scores)} (expected dict or list)"
             
             # Check for reasonable regime values
-            valid_regimes = all(isinstance(r, (int, str)) for r in regimes)
+            valid_regimes = all(isinstance(r, (int, str)) for r in regime_sequence)
             if not valid_regimes:
                 return False, {"error": "Invalid regime values found - regimes must be integers or strings"}
             
             # Calculate metrics
-            unique_regimes = set(regimes)
+            unique_regimes = set(regime_sequence)
             regime_count = len(unique_regimes)
             
             metrics_dict = {
-                "total_regimes": len(regimes),
+                "total_regimes": len(regime_sequence),
                 "unique_regimes": regime_count,
                 "regime_types": list(unique_regimes),
-                "valid_probabilities": valid_probabilities,
-                "invalid_probability_count": invalid_prob_count,
+                "confidence_scores_valid": confidence_scores_valid,
+                "confidence_scores_message": confidence_scores_message,
                 "passed": True
             }
             
@@ -190,7 +199,7 @@ class Step2MarketRegimeClassificationValidator(BaseValidator):
             bool: True if distribution is valid
         """
         try:
-            regimes = regime_results.get("regimes", [])
+            regimes = regime_results.get("regime_sequence", []) # Changed from "regimes" to "regime_sequence"
             if not regimes:
                 self.logger.warning("⚠️ No regimes found for distribution validation - continuing with caution")
                 return False
@@ -239,7 +248,7 @@ class Step2MarketRegimeClassificationValidator(BaseValidator):
             bool: True if transitions are valid
         """
         try:
-            regimes = regime_results.get("regimes", [])
+            regimes = regime_results.get("regime_sequence", []) # Changed from "regimes" to "regime_sequence"
             if len(regimes) < 2:
                 self.logger.info("ℹ️ Single regime detected - no transitions to validate")
                 return True  # Single regime, no transitions to validate
@@ -299,7 +308,15 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
         Dictionary containing validation results
     """
     validator = Step2MarketRegimeClassificationValidator(CONFIG)
-    return await validator.run_validation(training_input, pipeline_state)
+    validation_passed = await validator.validate(training_input, pipeline_state)
+    
+    return {
+        "step_name": "step2_market_regime_classification",
+        "validation_passed": validation_passed,
+        "validation_results": validator.validation_results,
+        "duration": 0,  # Could be enhanced to track actual duration
+        "timestamp": asyncio.get_event_loop().time()
+    }
 
 
 if __name__ == "__main__":

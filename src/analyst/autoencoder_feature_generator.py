@@ -50,9 +50,11 @@ class AutoencoderConfig:
         if not DEPENDENCIES_AVAILABLE:
             raise ImportError(f"Required dependencies not available: {MISSING_DEPENDENCY}")
             
+        # Initialize logger first
+        self.logger = system_logger.getChild("AutoencoderConfig")
+        
         self.config_path = config_path or "src/analyst/autoencoder_config.yaml"
         self.config = self._load_config()
-        self.logger = system_logger.getChild("AutoencoderConfig")
         
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from YAML file."""
@@ -133,7 +135,12 @@ class FeatureFilter:
             )
             rf_model.fit(X, y)
             
-            explainer = shap.TreeExplainer(rf_model)
+            # Try new import path first, then fallback to old path
+            try:
+                from shap.explainers import TreeExplainer
+            except ImportError:
+                from shap import TreeExplainer
+            explainer = TreeExplainer(rf_model)
             shap_values = explainer.shap_values(X)
             
             # Use mean absolute SHAP values across all classes for importance
@@ -233,6 +240,10 @@ def create_sequences_with_index(X: np.ndarray, timesteps: int, original_index: p
     """Convert 2D array to 3D sequences, tracking the index of the target."""
     sequences, targets, target_indices = [], [], []
     
+    # Ensure X is 2D
+    if X.ndim == 1:
+        X = X.reshape(-1, 1)
+    
     for i in range(len(X) - timesteps + 1):
         sequence = X[i : i + timesteps]
         target = X[i + timesteps - 1]
@@ -318,58 +329,85 @@ class SequenceAwareAutoencoder:
 class AutoencoderFeatureGenerator:
     """Main class for the complete autoencoder feature generation workflow."""
     
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config: Optional[str | dict] = None):
         if not DEPENDENCIES_AVAILABLE:
             raise ImportError(f"Required dependencies not available: {MISSING_DEPENDENCY}")
-        self.config = AutoencoderConfig(config_path)
+        
+        # Handle both string (config path) and dict (config object) inputs
+        if isinstance(config, dict):
+            # Create a config object with proper initialization
+            temp_config = AutoencoderConfig()
+            temp_config.config = config
+            # Ensure logger is properly set
+            temp_config.logger = system_logger.getChild("AutoencoderConfig")
+            self.config = temp_config
+        else:
+            # Handle string path or None
+            self.config = AutoencoderConfig(config)
+        
         self.logger = system_logger.getChild("AutoencoderFeatureGenerator")
         
     def generate_features(self, features_df: pd.DataFrame, regime_name: str, labels: np.ndarray) -> pd.DataFrame:
         """Generate autoencoder-based features for a specific market regime."""
-        self.logger.info(f"🚀 Starting autoencoder feature generation for regime: {regime_name}")
-        
-        # Step 1: Filter features using Random Forest + SHAP
-        feature_filter = FeatureFilter(self.config)
-        filtered_features = feature_filter.filter_features(features_df, labels)
-        
-        # Step 2: Preprocess and create sequences
-        preprocessor = ImprovedAutoencoderPreprocessor(self.config)
-        preprocessor.fit(filtered_features)
-        X_processed = preprocessor.transform(filtered_features)
-        
-        timesteps = self.config.get("sequence.timesteps", 10)
-        X_sequences, y_targets, target_indices = create_sequences_with_index(X_processed, timesteps, filtered_features.index)
-        
-        # Step 3: Optimize hyperparameters with Optuna
-        split_idx = int(0.8 * len(X_sequences))
-        X_train, y_train = X_sequences[:split_idx], y_targets[:split_idx]
-        X_val, y_val = X_sequences[split_idx:], y_targets[split_idx:]
-        
-        best_params = self._run_optuna_optimization(X_train, y_train, X_val, y_val)
-        self.config.config['best_params'] = best_params # Store best params for final training
+        try:
+            self.logger.info(f"🚀 Starting autoencoder feature generation for regime: {regime_name}")
+            
+            # Check if we have enough data
+            if len(features_df) < 10:
+                self.logger.warning("Insufficient data for autoencoder feature generation, returning original features")
+                return features_df
+            
+            # Step 1: Filter features using Random Forest + SHAP
+            feature_filter = FeatureFilter(self.config)
+            filtered_features = feature_filter.filter_features(features_df, labels)
+            
+            # Step 2: Preprocess and create sequences
+            preprocessor = ImprovedAutoencoderPreprocessor(self.config)
+            preprocessor.fit(filtered_features)
+            X_processed = preprocessor.transform(filtered_features)
+            
+            timesteps = self.config.get("sequence.timesteps", 10)
+            X_sequences, y_targets, target_indices = create_sequences_with_index(X_processed, timesteps, filtered_features.index)
+            
+            # Check if we have enough sequences
+            if len(X_sequences) < 5:
+                self.logger.warning("Insufficient sequences for autoencoder training, returning original features")
+                return features_df
+            
+            # Step 3: Optimize hyperparameters with Optuna
+            split_idx = int(0.8 * len(X_sequences))
+            X_train, y_train = X_sequences[:split_idx], y_targets[:split_idx]
+            X_val, y_val = X_sequences[split_idx:], y_targets[split_idx:]
+            
+            best_params = self._run_optuna_optimization(X_train, y_train, X_val, y_val)
+            self.config.config['best_params'] = best_params # Store best params for final training
 
-        # Step 4: Train final model and generate features
-        final_autoencoder = SequenceAwareAutoencoder(self.config)
-        final_autoencoder.build_model(X_sequences.shape[1:])
-        final_autoencoder.fit(X_train, y_train, X_val, y_val)
-        
-        encoded_features = final_autoencoder.encoder.predict(X_sequences)
-        reconstructed = final_autoencoder.autoencoder.predict(X_sequences)
-        recon_error = np.mean((y_targets - reconstructed) ** 2, axis=1)
+            # Step 4: Train final model and generate features
+            final_autoencoder = SequenceAwareAutoencoder(self.config)
+            final_autoencoder.build_model(X_sequences.shape[1:])
+            final_autoencoder.fit(X_train, y_train, X_val, y_val)
+            
+            encoded_features = final_autoencoder.encoder.predict(X_sequences)
+            reconstructed = final_autoencoder.autoencoder.predict(X_sequences)
+            recon_error = np.mean((y_targets - reconstructed) ** 2, axis=1)
 
-        # Step 5: Create enriched DataFrame
-        encoded_df = pd.DataFrame(
-            encoded_features, index=target_indices,
-            columns=[f"autoencoder_{i+1}" for i in range(encoded_features.shape[1])]
-        )
-        encoded_df["autoencoder_recon_error"] = recon_error
-        
-        result_df = features_df.merge(encoded_df, left_index=True, right_index=True, how='left')
-        autoencoder_cols = [col for col in result_df.columns if 'autoencoder' in col]
-        result_df[autoencoder_cols] = result_df[autoencoder_cols].fillna(0)
-        
-        self.logger.info(f"✅ Autoencoder feature generation completed. Added {len(autoencoder_cols)} new features.")
-        return result_df
+            # Step 5: Create enriched DataFrame
+            encoded_df = pd.DataFrame(
+                encoded_features, index=target_indices,
+                columns=[f"autoencoder_{i+1}" for i in range(encoded_features.shape[1])]
+            )
+            encoded_df["autoencoder_recon_error"] = recon_error
+            
+            result_df = features_df.merge(encoded_df, left_index=True, right_index=True, how='left')
+            autoencoder_cols = [col for col in result_df.columns if 'autoencoder' in col]
+            result_df[autoencoder_cols] = result_df[autoencoder_cols].fillna(0)
+            
+            self.logger.info(f"✅ Autoencoder feature generation completed. Added {len(autoencoder_cols)} new features.")
+            return result_df
+            
+        except Exception as e:
+            self.logger.error(f"Error in autoencoder feature generation: {e}")
+            return features_df
 
     def _run_optuna_optimization(self, X_train, y_train, X_val, y_val):
         """Helper to encapsulate the Optuna study logic."""

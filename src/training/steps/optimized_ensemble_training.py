@@ -1,526 +1,218 @@
 # src/training/steps/optimized_ensemble_training.py
 
-import asyncio
-import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Tuple
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from sklearn.model_selection import StratifiedKFold, cross_val_score
-from sklearn.ensemble import StackingClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-import multiprocessing as mp
+import numpy as np
+import lightgbm as lgb
+import xgboost as xgb
+from sklearn.ensemble import RandomForestClassifier, StackingClassifier
+from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.metrics import accuracy_score
+from typing import Any, Dict, List, Optional
+import logging
+import time
+import ray
+from joblib import Memory
 
+# --- Configuration ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-class OptimizedEnsembleTraining:
+# --- Caching Setup ---
+# Use joblib.Memory to cache the results of our training function.
+# This prevents re-computation if the same model is trained on the same data.
+CACHE_DIR = "./cachedir"
+memory = Memory(CACHE_DIR, verbose=0)
+
+# --- Ray Worker Function for Parallel Execution ---
+@ray.remote
+def train_and_evaluate_worker_ray(
+    model_config: Dict[str, Any],
+    X_train_ref: ray.ObjectRef,
+    y_train_ref: ray.ObjectRef,
+    X_val_ref: Optional[ray.ObjectRef] = None,
+    y_val_ref: Optional[ray.ObjectRef] = None,
+    early_stopping_patience: int = 10
+) -> Dict[str, Any]:
     """
-    Optimized ensemble training with parallel processing and early stopping.
-    
-    This implementation provides significant performance improvements over
-    sequential ensemble training by using parallel processing and optimized
-    cross-validation strategies.
+    A self-contained, cacheable Ray worker function to train a single model.
+    It receives references to data in Ray's shared object store to avoid serialization costs.
     """
+    # De-reference objects from Ray's object store
+    X_train, y_train = ray.get(X_train_ref), ray.get(y_train_ref)
+    X_val, y_val = (ray.get(X_val_ref), ray.get(y_val_ref)) if X_val_ref else (None, None)
+
+    model_name = model_config["name"]
+    model_class = model_config["class"]
+    params = model_config["params"]
+    params['n_jobs'] = 1 # Ensure model runs on a single core within the process
+    if 'random_state' not in params:
+        params['random_state'] = 42
     
-    def __init__(self, 
-                 n_jobs: int = -1,
-                 cv_folds: int = 3,  # Reduced from 5 for speed
-                 early_stopping_patience: int = 5,
-                 memory_efficient: bool = True):
-        """
-        Initialize the optimized ensemble trainer.
-        
-        Args:
-            n_jobs: Number of parallel jobs (-1 for all cores)
-            cv_folds: Number of cross-validation folds
-            early_stopping_patience: Patience for early stopping
-            memory_efficient: Use memory-efficient operations
-        """
-        self.n_jobs = n_jobs if n_jobs != -1 else mp.cpu_count()
-        self.cv_folds = cv_folds
-        self.early_stopping_patience = early_stopping_patience
-        self.memory_efficient = memory_efficient
-        
-    async def train_models_parallel(
-        self, 
-        models_config: Dict[str, Any],
-        X_train: pd.DataFrame,
-        y_train: pd.Series,
-        X_val: pd.DataFrame = None,
-        y_val: pd.Series = None
-    ) -> Dict[str, Any]:
-        """
-        Train multiple models in parallel.
-        
-        Args:
-            models_config: Configuration for each model
-            X_train: Training features
-            y_train: Training labels
-            X_val: Validation features
-            y_val: Validation labels
-            
-        Returns:
-            Dictionary of trained models
-        """
-        # Create tasks for parallel execution
-        tasks = []
-        for model_name, config in models_config.items():
-            task = self._train_single_model_async(
-                model_name, config, X_train, y_train, X_val, y_val
-            )
-            tasks.append(task)
-        
-        # Execute in parallel
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Combine results
-        trained_models = {}
-        for i, (model_name, _) in enumerate(models_config.items()):
-            if isinstance(results[i], Exception):
-                print(f"Error training {model_name}: {results[i]}")
-                continue
-            trained_models[model_name] = results[i]
-        
-        return trained_models
-    
-    async def _train_single_model_async(
-        self,
-        model_name: str,
-        config: Dict[str, Any],
-        X_train: pd.DataFrame,
-        y_train: pd.Series,
-        X_val: pd.DataFrame = None,
-        y_val: pd.Series = None
-    ) -> Tuple[str, Any]:
-        """
-        Train a single model asynchronously.
-        
-        Args:
-            model_name: Name of the model
-            config: Model configuration
-            X_train: Training features
-            y_train: Training labels
-            X_val: Validation features
-            y_val: Validation labels
-            
-        Returns:
-            Tuple of (model_name, trained_model)
-        """
+    model = model_class(**params)
+
+    # --- Caching Wrapper ---
+    # We define the core logic inside a function that joblib can cache.
+    # The hash is computed based on the model, its parameters, and the data's hash.
+    @memory.cache
+    def _cached_train(model_instance, X_tr, y_tr, X_va, y_va):
         try:
-            # Create model based on configuration
-            model = self._create_model(model_name, config)
+            if model_name in ['lightgbm', 'xgboost'] and X_va is not None and y_va is not None:
+                if model_name == 'lightgbm':
+                    model_instance.fit(X_tr, y_tr, eval_set=[(X_va, y_va)],
+                                       callbacks=[lgb.early_stopping(early_stopping_patience, verbose=False)])
+                else:
+                    model_instance.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
+            else:
+                model_instance.fit(X_tr, y_tr)
             
-            # Train model with early stopping
-            trained_model = await self._train_with_early_stopping(
-                model, X_train, y_train, X_val, y_val
-            )
-            
-            # Evaluate model
-            metrics = self._evaluate_model(trained_model, X_val, y_val)
-            
-            return model_name, {
-                'model': trained_model,
-                'metrics': metrics,
-                'config': config
-            }
-            
+            score = accuracy_score(y_va, model_instance.predict(X_va)) if X_va is not None else None
+            return {"model": model_instance, "validation_accuracy": score, "error": None}
         except Exception as e:
-            print(f"Error training {model_name}: {e}")
-            raise
-    
-    def _create_model(self, model_name: str, config: Dict[str, Any]) -> Any:
-        """Create a model instance based on configuration."""
-        if model_name == 'random_forest':
-            from sklearn.ensemble import RandomForestClassifier
-            return RandomForestClassifier(
-                n_estimators=config.get('n_estimators', 100),
-                max_depth=config.get('max_depth', 10),
-                random_state=42,
-                n_jobs=1  # Single job for parallel training
-            )
-        elif model_name == 'lightgbm':
-            import lightgbm as lgb
-            return lgb.LGBMClassifier(
-                n_estimators=config.get('n_estimators', 100),
-                max_depth=config.get('max_depth', 6),
-                random_state=42,
-                n_jobs=1,
-                verbose=-1
-            )
-        elif model_name == 'xgboost':
-            import xgboost as xgb
-            return xgb.XGBClassifier(
-                n_estimators=config.get('n_estimators', 100),
-                max_depth=config.get('max_depth', 6),
-                random_state=42,
-                n_jobs=1,
-                verbosity=0
-            )
-        else:
-            raise ValueError(f"Unknown model type: {model_name}")
-    
-    async def _train_with_early_stopping(
+            return {"model": None, "validation_accuracy": None, "error": str(e)}
+
+    # Execute the cached function
+    result = _cached_train(model, X_train, y_train, X_val, y_val)
+    result["model_name"] = model_name
+    return result
+
+
+class HighPerformanceEnsembleManager:
+    """
+    Manages ensemble training using Ray for parallelization, Joblib for caching,
+    and a sophisticated meta-learner for improved outcomes.
+    """
+
+    def __init__(self):
+        self.logger = logging.getLogger(self.__class__.__name__)
+        if not ray.is_initialized():
+            ray.init(logging_level=logging.ERROR)
+            self.logger.info(f"Ray initialized successfully. Dashboard URL: {ray.dashboard_url}")
+        
+        self.logger.info(f"Caching enabled. Cache directory: {CACHE_DIR}")
+
+    def train_base_models(
         self,
-        model: Any,
+        model_configs: List[Dict[str, Any]],
         X_train: pd.DataFrame,
         y_train: pd.Series,
-        X_val: pd.DataFrame = None,
-        y_val: pd.Series = None
-    ) -> Any:
-        """
-        Train model with early stopping.
-        
-        Args:
-            model: Model to train
-            X_train: Training features
-            y_train: Training labels
-            X_val: Validation features
-            y_val: Validation labels
-            
-        Returns:
-            Trained model
-        """
-        if X_val is not None and y_val is not None:
-            # Use validation set for early stopping
-            if hasattr(model, 'fit'):
-                model.fit(
-                    X_train, y_train,
-                    eval_set=[(X_val, y_val)],
-                    early_stopping_rounds=self.early_stopping_patience,
-                    verbose=False
-                )
-        else:
-            # Use cross-validation for early stopping
-            cv_scores = cross_val_score(
-                model, X_train, y_train,
-                cv=self.cv_folds,
-                scoring='accuracy',
-                n_jobs=1  # Single job for parallel training
-            )
-            
-            if cv_scores.mean() < 0.5:
-                # Early stopping if performance is poor
-                print(f"Early stopping due to poor CV performance: {cv_scores.mean():.3f}")
-                return None
-            
-            model.fit(X_train, y_train)
-        
-        return model
-    
-    def _evaluate_model(
-        self,
-        model: Any,
         X_val: pd.DataFrame,
         y_val: pd.Series
-    ) -> Dict[str, float]:
-        """Evaluate model performance."""
-        if model is None or X_val is None or y_val is None:
-            return {}
+    ) -> List[Dict[str, Any]]:
+        """
+        Trains multiple models in parallel using Ray for optimal performance.
+        """
+        self.logger.info(f"Starting parallel training for {len(model_configs)} models using Ray...")
         
-        try:
-            y_pred = model.predict(X_val)
-            y_pred_proba = model.predict_proba(X_val)[:, 1] if hasattr(model, 'predict_proba') else None
-            
-            metrics = {
-                'accuracy': accuracy_score(y_val, y_pred),
-                'precision': precision_score(y_val, y_pred, average='weighted', zero_division=0),
-                'recall': recall_score(y_val, y_pred, average='weighted', zero_division=0),
-                'f1': f1_score(y_val, y_pred, average='weighted', zero_division=0)
-            }
-            
-            return metrics
-        except Exception as e:
-            print(f"Error evaluating model: {e}")
-            return {}
-    
-    def create_optimized_stacking_ensemble(
+        # Put data into Ray's object store once to be shared across all workers
+        X_train_ref = ray.put(X_train)
+        y_train_ref = ray.put(y_train)
+        X_val_ref = ray.put(X_val)
+        y_val_ref = ray.put(y_val)
+
+        tasks = [
+            train_and_evaluate_worker_ray.remote(config, X_train_ref, y_train_ref, X_val_ref, y_val_ref)
+            for config in model_configs
+        ]
+        
+        results = ray.get(tasks)
+        
+        trained_models = []
+        for res in results:
+            if res["error"]:
+                self.logger.error(f"Training failed for {res['model_name']}: {res['error']}")
+            else:
+                self.logger.info(f"Successfully trained {res['model_name']}. Validation Accuracy: {res['validation_accuracy']:.4f}")
+                trained_models.append(res)
+        
+        return trained_models
+
+    def create_stacking_ensemble(
         self,
-        models: List[Any],
-        model_names: List[str],
+        trained_models: List[Dict[str, Any]],
         X_train: pd.DataFrame,
         y_train: pd.Series,
-        X_val: pd.DataFrame = None,
-        y_val: pd.Series = None
-    ) -> Dict[str, Any]:
+        cv_folds: int = 5
+    ) -> StackingClassifier:
         """
-        Create optimized stacking ensemble.
-        
-        Args:
-            models: List of base models
-            model_names: List of model names
-            X_train: Training features
-            y_train: Training labels
-            X_val: Validation features
-            y_val: Validation labels
-            
-        Returns:
-            Ensemble configuration
+        Creates a StackingClassifier with a sophisticated XGBoost meta-learner.
         """
-        # Filter out None models
-        valid_models = [(name, model) for name, model in zip(model_names, models) if model is not None]
+        self.logger.info("Creating stacking ensemble with XGBoost meta-learner...")
         
-        if len(valid_models) < 2:
-            print("Not enough valid models for ensemble")
-            return {}
-        
-        model_names, models = zip(*valid_models)
-        
-        # Create estimators for stacking
-        estimators = [(name, model) for name, model in zip(model_names, models)]
-        
-        # Use reduced cross-validation for speed
-        cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=42)
-        
-        # Create meta-learner with regularization
-        meta_learner = LogisticRegression(
+        estimators = [(res["model_name"], res["model"]) for res in trained_models if res["model"]]
+
+        if len(estimators) < 2:
+            self.logger.warning("Cannot create an ensemble with fewer than 2 valid base models.")
+            return None
+
+        # --- Sophisticated Meta-Learner ---
+        # Use a well-regularized XGBoost classifier to capture complex interactions.
+        meta_learner = xgb.XGBClassifier(
+            n_estimators=100,
+            max_depth=3,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            objective='binary:logistic',
+            use_label_encoder=False,
+            eval_metric='logloss',
             random_state=42,
-            max_iter=1000,
-            C=1.0,
-            penalty='l2',
-            solver='lbfgs'
+            n_jobs=1
         )
         
-        # Create stacking classifier
+        cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
+        
         stacking_classifier = StackingClassifier(
             estimators=estimators,
             final_estimator=meta_learner,
             cv=cv,
-            stack_method="predict_proba",
-            n_jobs=1,  # Single job for parallel training
-            passthrough=False
+            n_jobs=-1 # CV for the meta-learner can be parallelized
         )
-        
-        # Fit the stacking classifier
+
+        self.logger.info("Fitting the stacking ensemble...")
         stacking_classifier.fit(X_train, y_train)
+        self.logger.info("Stacking ensemble fitted successfully.")
         
-        # Evaluate ensemble
-        ensemble_metrics = {}
-        if X_val is not None and y_val is not None:
-            val_predictions = stacking_classifier.predict(X_val)
-            val_probabilities = stacking_classifier.predict_proba(X_val)
-            
-            ensemble_metrics = {
-                "accuracy": accuracy_score(y_val, val_predictions),
-                "precision": precision_score(y_val, val_predictions, average='weighted', zero_division=0),
-                "recall": recall_score(y_val, val_predictions, average='weighted', zero_division=0),
-                "f1": f1_score(y_val, val_predictions, average='weighted', zero_division=0),
-            }
-        
-        # Optimized cross-validation scores
-        cv_scores = cross_val_score(
-            stacking_classifier, X_train, y_train,
-            cv=cv, scoring='accuracy', n_jobs=1
-        )
-        
-        return {
-            "ensemble": stacking_classifier,
-            "ensemble_type": "OptimizedStackingCV",
-            "base_models": list(model_names),
-            "meta_learner": "LogisticRegression",
-            "cv_folds": self.cv_folds,
-            "validation_metrics": ensemble_metrics,
-            "cv_scores": {
-                "mean": cv_scores.mean(),
-                "std": cv_scores.std(),
-                "scores": cv_scores.tolist()
-            },
-            "optimization_features": {
-                "parallel_training": True,
-                "early_stopping": True,
-                "reduced_cv_folds": True,
-                "memory_efficient": self.memory_efficient
-            }
-        }
-    
-    def create_parallel_weighted_ensemble(
-        self,
-        models: List[Any],
-        model_names: List[str],
-        X_val: pd.DataFrame,
-        y_val: pd.Series
-    ) -> Dict[str, Any]:
-        """
-        Create parallel weighted ensemble.
-        
-        Args:
-            models: List of base models
-            model_names: List of model names
-            X_val: Validation features
-            y_val: Validation labels
-            
-        Returns:
-            Ensemble configuration
-        """
-        # Calculate model weights based on validation performance
-        model_weights = {}
-        
-        for name, model in zip(model_names, models):
-            if model is None:
-                continue
-            
-            try:
-                # Evaluate model performance
-                y_pred = model.predict(X_val)
-                accuracy = accuracy_score(y_val, y_pred)
-                
-                # Use accuracy as weight (can be improved with other metrics)
-                model_weights[name] = max(0.1, accuracy)  # Minimum weight of 0.1
-                
-            except Exception as e:
-                print(f"Error evaluating {name}: {e}")
-                model_weights[name] = 0.0
-        
-        # Normalize weights
-        total_weight = sum(model_weights.values())
-        if total_weight > 0:
-            model_weights = {k: v / total_weight for k, v in model_weights.items()}
-        
-        return {
-            "ensemble_type": "ParallelWeightedEnsemble",
-            "base_models": list(model_names),
-            "model_weights": model_weights,
-            "optimization_features": {
-                "parallel_evaluation": True,
-                "weighted_combination": True,
-                "early_stopping": True
-            }
-        }
-    
-    def optimize_memory_usage(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Optimize DataFrame memory usage.
-        
-        Args:
-            df: DataFrame to optimize
-            
-        Returns:
-            Optimized DataFrame
-        """
-        if not self.memory_efficient:
-            return df
-        
-        optimized_df = df.copy()
-        
-        # Downcast numeric columns
-        for col in optimized_df.select_dtypes(include=['float64']).columns:
-            optimized_df[col] = pd.to_numeric(optimized_df[col], downcast='float')
-        
-        for col in optimized_df.select_dtypes(include=['int64']).columns:
-            optimized_df[col] = pd.to_numeric(optimized_df[col], downcast='integer')
-        
-        # Optimize categorical columns
-        for col in optimized_df.select_dtypes(include=['object']).columns:
-            if optimized_df[col].nunique() / len(optimized_df) < 0.5:
-                optimized_df[col] = optimized_df[col].astype('category')
-        
-        return optimized_df
+        return stacking_classifier
 
-
-def benchmark_ensemble_training_methods(
-    X_train: pd.DataFrame,
-    y_train: pd.Series,
-    X_val: pd.DataFrame,
-    y_val: pd.Series
-) -> Dict[str, float]:
-    """
-    Benchmark different ensemble training methods.
-    
-    Args:
-        X_train: Training features
-        y_train: Training labels
-        X_val: Validation features
-        y_val: Validation labels
-        
-    Returns:
-        Dictionary with timing results
-    """
-    import time
-    
-    # Sample model configurations
-    models_config = {
-        'random_forest': {'n_estimators': 100, 'max_depth': 10},
-        'lightgbm': {'n_estimators': 100, 'max_depth': 6},
-        'xgboost': {'n_estimators': 100, 'max_depth': 6}
-    }
-    
-    # Sequential training (baseline)
-    start_time = time.time()
-    # Simulate sequential training
-    time.sleep(0.5)
-    sequential_time = time.time() - start_time
-    
-    # Parallel training
-    optimizer = OptimizedEnsembleTraining(n_jobs=-1, cv_folds=3)
-    start_time = time.time()
-    
-    async def run_parallel_training():
-        return await optimizer.train_models_parallel(
-            models_config, X_train, y_train, X_val, y_val
-        )
-    
-    trained_models = asyncio.run(run_parallel_training())
-    parallel_time = time.time() - start_time
-    
-    # Optimized ensemble creation
-    start_time = time.time()
-    ensemble = optimizer.create_optimized_stacking_ensemble(
-        [m['model'] for m in trained_models.values()],
-        list(trained_models.keys()),
-        X_train, y_train, X_val, y_val
-    )
-    ensemble_time = time.time() - start_time
-    
-    return {
-        'sequential_time': sequential_time,
-        'parallel_time': parallel_time,
-        'ensemble_time': ensemble_time,
-        'parallel_speedup': sequential_time / parallel_time,
-        'total_optimized_time': parallel_time + ensemble_time,
-        'total_speedup': sequential_time / (parallel_time + ensemble_time)
-    }
+    def shutdown(self):
+        """Shuts down the Ray instance."""
+        if ray.is_initialized():
+            ray.shutdown()
+            self.logger.info("Ray has been shut down.")
 
 
 if __name__ == "__main__":
-    # Example usage
-    import numpy as np
+    # --- Example Usage ---
+    MODEL_CONFIGS = [
+        {"name": "rf", "class": RandomForestClassifier, "params": {"n_estimators": 100, "max_depth": 15}},
+        {"name": "lgbm", "class": lgb.LGBMClassifier, "params": {"n_estimators": 200, "learning_rate": 0.1}},
+        {"name": "xgb", "class": xgb.XGBClassifier, "params": {"n_estimators": 150, "learning_rate": 0.1}}
+    ]
+
+    X, y = pd.DataFrame(np.random.randn(2000, 25)), pd.Series(np.random.randint(0, 2, 2000))
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)
     
-    # Create sample data
-    np.random.seed(42)
-    n_samples = 1000
-    n_features = 20
+    manager = HighPerformanceEnsembleManager()
     
-    X_train = pd.DataFrame(np.random.randn(n_samples, n_features))
-    y_train = pd.Series(np.random.randint(0, 2, n_samples))
-    X_val = pd.DataFrame(np.random.randn(n_samples // 2, n_features))
-    y_val = pd.Series(np.random.randint(0, 2, n_samples // 2))
-    
-    # Benchmark
-    results = benchmark_ensemble_training_methods(X_train, y_train, X_val, y_val)
-    print(f"Benchmark results: {results}")
-    
-    # Test optimization
-    optimizer = OptimizedEnsembleTraining(n_jobs=-1, cv_folds=3)
-    
-    models_config = {
-        'random_forest': {'n_estimators': 50, 'max_depth': 5},
-        'lightgbm': {'n_estimators': 50, 'max_depth': 4},
-        'xgboost': {'n_estimators': 50, 'max_depth': 4}
-    }
-    
-    async def test_optimization():
-        trained_models = await optimizer.train_models_parallel(
-            models_config, X_train, y_train, X_val, y_val
-        )
+    try:
+        # First run: will execute and cache results
+        print("\n--- First Run: Training and Caching ---")
+        start_time = time.time()
+        base_models = manager.train_base_models(MODEL_CONFIGS, X_train, y_train, X_val, y_val)
+        print(f"First run took: {time.time() - start_time:.2f}s")
         
-        ensemble = optimizer.create_optimized_stacking_ensemble(
-            [m['model'] for m in trained_models.values()],
-            list(trained_models.keys()),
-            X_train, y_train, X_val, y_val
-        )
-        
-        return trained_models, ensemble
-    
-    trained_models, ensemble = asyncio.run(test_optimization())
-    
-    print(f"Trained {len(trained_models)} models")
-    print(f"Ensemble created: {ensemble['ensemble_type']}")
-    print(f"CV Score: {ensemble['cv_scores']['mean']:.3f} ± {ensemble['cv_scores']['std']:.3f}")
+        # Second run: should be much faster due to caching
+        print("\n--- Second Run: Loading from Cache ---")
+        start_time = time.time()
+        cached_models = manager.train_base_models(MODEL_CONFIGS, X_train, y_train, X_val, y_val)
+        print(f"Second run took: {time.time() - start_time:.2f}s")
+
+        if base_models:
+            stacking_model = manager.create_stacking_ensemble(base_models, X_train, y_train)
+            if stacking_model:
+                y_pred_ensemble = stacking_model.predict(X_val)
+                accuracy = accuracy_score(y_val, y_pred_ensemble)
+                print(f"\n--- Final Ensemble Performance ---")
+                print(f"Validation Accuracy: {accuracy:.4f}")
+    finally:
+        manager.shutdown()
+

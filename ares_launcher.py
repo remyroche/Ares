@@ -24,8 +24,8 @@ Usage:
     # Enhanced model training with efficiency optimizations (uses existing data)
     python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE
 
-    # Model training with backtesting and paper trading
-    python ares_launcher.py model_trainer --symbol ETHUSDT --exchange BINANCE
+    # Multi-timeframe ensemble training (trains models on 1m, 5m, 15m, 1h, 4h, 1d and creates ensembles)
+    python ares_launcher.py multi-timeframe --symbol ETHUSDT --exchange BINANCE
 
     # Live trading for single token
     python ares_launcher.py live --symbol ETHUSDT --exchange BINANCE
@@ -692,40 +692,7 @@ class AresLauncher:
             with_gui=with_gui,
         )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="run_model_trainer",
-    )
-    def run_model_trainer(self, symbol: str, exchange: str, with_gui: bool = False):
-        """Run model training with optional GUI."""
-        self.logger.info(f"🧠 Running model training for {symbol} on {exchange}")
-
-        if with_gui:
-            if not self.launch_gui("training", symbol, exchange):
-                return False
-
-        try:
-            # Run the model training script
-            process = subprocess.Popen(
-                [sys.executable, "scripts/training_cli.py", symbol, exchange],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            self.processes.append(process)
-
-            stdout, stderr = process.communicate()
-
-            if process.returncode == 0:
-                self.logger.info("✅ Model training completed successfully")
-                return True
-            self.logger.error(f"❌ Model training failed: {stderr}")
-            return False
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to run model training: {e}")
-            return False
+    # REMOVED: run_model_trainer method - Use blank command with step5_analyst_specialist_training instead
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1095,6 +1062,20 @@ class AresLauncher:
         self.logger.info(f"🚀 Running step-based training for {symbol} on {exchange}")
         self.logger.info(f"Starting from step: {start_step}")
         
+        # Prevent blank mode from being used with step1_data_collection
+        if start_step == "step1_data_collection":
+            # Check if we're in blank mode (30 days lookback)
+            import os
+            blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
+            if blank_mode:
+                self.logger.error("❌ Cannot use blank mode with step1_data_collection")
+                self.logger.error("Blank mode is designed for quick testing with limited data")
+                self.logger.error("step1_data_collection processes all available data files")
+                self.logger.error("Use one of the following instead:")
+                self.logger.error("  - python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE (for full data)")
+                self.logger.error("  - python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification (for blank mode)")
+                return False
+        
         if with_gui:
             if not self.launch_gui("training", symbol, exchange):
                 return False
@@ -1454,7 +1435,7 @@ Examples:
             "paper",
             "challenger",
             "backtest",
-            "model_trainer",
+            # "model_trainer",  # REMOVED: Use blank command with step5_analyst_specialist_training instead
             "live",
             "portfolio",
             "gui",
@@ -1500,7 +1481,7 @@ Examples:
             "paper",
             "challenger",
             "backtest",
-            "model_trainer",
+            # "model_trainer",  # REMOVED: Use blank command with step5_analyst_specialist_training instead
             "live",
             "portfolio",
             "load",
@@ -1560,7 +1541,7 @@ def validate_arguments(args: argparse.Namespace) -> None:
         "paper",
         "challenger",
         "backtest",
-        "model_trainer",
+        # "model_trainer",  # REMOVED: Use blank command with step5_analyst_specialist_training instead
         "live",
         "blank",
         "multi-timeframe",

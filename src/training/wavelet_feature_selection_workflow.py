@@ -1,12 +1,18 @@
 """
 Wavelet Feature Selection Workflow
 
-This module implements a comprehensive workflow to:
+This module implements a comprehensive workflow using the two-model strategy:
+1. Discovery Model: Trained on full feature set to identify winning features
+2. Production Model: Trained on lean feature set for live deployment
+
+The workflow:
 1. Run full, extensive wavelet analysis (as in backtesting/training)
-2. Build ML models using the rich feature set
+2. Build Discovery Model using the rich feature set
 3. Perform feature selection using permutation importance and SHAP
-4. Identify the most important wavelet features
-5. Create optimized live trading configurations
+4. Identify the most important features
+5. Create lean dataset with only winning features
+6. Train Production Model on lean dataset
+7. Create optimized live trading configurations
 """
 
 import asyncio
@@ -46,14 +52,16 @@ class FeatureImportanceResult:
 
 class WaveletFeatureSelectionWorkflow:
     """
-    Comprehensive workflow for wavelet feature selection and optimization.
+    Comprehensive workflow for wavelet feature selection using two-model strategy.
     
     This workflow:
     1. Runs full wavelet analysis with all features
-    2. Builds ML models on the rich feature set
+    2. Builds Discovery Model on the rich feature set
     3. Performs feature selection using multiple methods
     4. Identifies the most important features
-    5. Creates optimized live trading configurations
+    5. Creates lean dataset with only winning features
+    6. Trains Production Model on lean dataset
+    7. Creates optimized live trading configurations
     """
     
     def __init__(self, config: dict[str, Any]) -> None:
@@ -77,14 +85,36 @@ class WaveletFeatureSelectionWorkflow:
         self.random_state = self.workflow_config.get("random_state", 42)
         self.cv_folds = self.workflow_config.get("cv_folds", 5)
         
+        # Model configurations
+        self.discovery_model_config = self.workflow_config.get("discovery_model", {
+            "type": "random_forest",
+            "n_estimators": 200,
+            "max_depth": 15,
+            "min_samples_split": 5,
+            "min_samples_leaf": 2
+        })
+        
+        self.production_model_config = self.workflow_config.get("production_model", {
+            "type": "gradient_boosting",
+            "n_estimators": 100,
+            "max_depth": 6,
+            "learning_rate": 0.1,
+            "subsample": 0.8
+        })
+        
         # Initialize components
         self.feature_engineer: Optional[VectorizedAdvancedFeatureEngineering] = None
         self.feature_precomputer: Optional[WaveletFeaturePrecomputer] = None
         
         # Results storage
         self.feature_importance_results: List[FeatureImportanceResult] = []
-        self.model_performance: Dict[str, Any] = {}
+        self.discovery_model_performance: Dict[str, Any] = {}
+        self.production_model_performance: Dict[str, Any] = {}
         self.optimized_configs: Dict[str, Any] = {}
+        
+        # Models
+        self.discovery_model: Optional[Any] = None
+        self.production_model: Optional[Any] = None
         
     @handle_errors(
         exceptions=(Exception,),
@@ -174,25 +204,25 @@ class WaveletFeatureSelectionWorkflow:
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="ML model building",
+        context="discovery model training",
     )
-    async def build_ml_models(
+    async def train_discovery_model(
         self, 
         features: Dict[str, Any], 
         labels: pd.Series
     ) -> Optional[Dict[str, Any]]:
         """
-        Step 2: Build ML models using the rich feature set.
+        Step 2: Train Discovery Model using the rich feature set.
         
         Args:
             features: All engineered features
             labels: Target labels for prediction
             
         Returns:
-            Dictionary containing trained models and performance metrics
+            Dictionary containing trained discovery model and performance metrics
         """
         try:
-            self.logger.info("🤖 Step 2: Building ML models...")
+            self.logger.info("🔍 Step 2: Training Discovery Model...")
             
             # Prepare feature matrix
             feature_df = pd.DataFrame(features)
@@ -205,60 +235,57 @@ class WaveletFeatureSelectionWorkflow:
                 stratify=labels
             )
             
-            # Train multiple models
-            models = {}
-            performance = {}
+            # Train Discovery Model (optimized for feature selection)
+            model_type = self.discovery_model_config.get("type", "random_forest")
             
-            # Random Forest
-            rf_model = RandomForestClassifier(
-                n_estimators=100,
-                max_depth=10,
-                random_state=self.random_state,
-                n_jobs=-1
-            )
-            rf_model.fit(X_train, y_train)
-            models["random_forest"] = rf_model
+            if model_type == "random_forest":
+                discovery_model = RandomForestClassifier(
+                    n_estimators=self.discovery_model_config.get("n_estimators", 200),
+                    max_depth=self.discovery_model_config.get("max_depth", 15),
+                    min_samples_split=self.discovery_model_config.get("min_samples_split", 5),
+                    min_samples_leaf=self.discovery_model_config.get("min_samples_leaf", 2),
+                    random_state=self.random_state,
+                    n_jobs=-1
+                )
+            elif model_type == "gradient_boosting":
+                discovery_model = GradientBoostingClassifier(
+                    n_estimators=self.discovery_model_config.get("n_estimators", 200),
+                    max_depth=self.discovery_model_config.get("max_depth", 15),
+                    learning_rate=self.discovery_model_config.get("learning_rate", 0.1),
+                    random_state=self.random_state
+                )
+            else:
+                raise ValueError(f"Unsupported model type: {model_type}")
             
-            # Gradient Boosting
-            gb_model = GradientBoostingClassifier(
-                n_estimators=100,
-                max_depth=6,
-                random_state=self.random_state
-            )
-            gb_model.fit(X_train, y_train)
-            models["gradient_boosting"] = gb_model
+            # Train the model
+            discovery_model.fit(X_train, y_train)
+            self.discovery_model = discovery_model
             
-            # Evaluate models
-            for name, model in models.items():
-                # Cross-validation score
-                cv_scores = cross_val_score(model, X_train, y_train, cv=self.cv_folds)
-                
-                # Test set predictions
-                y_pred = model.predict(X_test)
-                
-                # Performance metrics
-                performance[name] = {
-                    "cv_mean": cv_scores.mean(),
-                    "cv_std": cv_scores.std(),
-                    "test_accuracy": (y_pred == y_test).mean(),
-                    "classification_report": classification_report(y_test, y_pred, output_dict=True)
-                }
+            # Evaluate Discovery Model
+            cv_scores = cross_val_score(discovery_model, X_train, y_train, cv=self.cv_folds)
+            y_pred = discovery_model.predict(X_test)
             
-            # Save models
-            for name, model in models.items():
-                model_path = self.model_dir / f"{name}_model.pkl"
-                with open(model_path, 'wb') as f:
-                    pickle.dump(model, f)
+            performance = {
+                "cv_mean": cv_scores.mean(),
+                "cv_std": cv_scores.std(),
+                "test_accuracy": (y_pred == y_test).mean(),
+                "classification_report": classification_report(y_test, y_pred, output_dict=True)
+            }
             
-            self.model_performance = performance
+            self.discovery_model_performance = performance
             
-            self.logger.info("✅ ML models built successfully")
-            for name, perf in performance.items():
-                self.logger.info(f"📊 {name}: CV={perf['cv_mean']:.3f}±{perf['cv_std']:.3f}, "
-                               f"Test={perf['test_accuracy']:.3f}")
+            # Save Discovery Model (for analysis purposes)
+            model_path = self.model_dir / "discovery_model.pkl"
+            with open(model_path, 'wb') as f:
+                pickle.dump(discovery_model, f)
+            
+            self.logger.info("✅ Discovery Model trained successfully")
+            self.logger.info(f"📊 Discovery Model Performance:")
+            self.logger.info(f"  CV Score: {performance['cv_mean']:.3f} ± {performance['cv_std']:.3f}")
+            self.logger.info(f"  Test Accuracy: {performance['test_accuracy']:.3f}")
             
             return {
-                "models": models,
+                "model": discovery_model,
                 "performance": performance,
                 "feature_names": list(feature_df.columns),
                 "X_train": X_train,
@@ -268,7 +295,7 @@ class WaveletFeatureSelectionWorkflow:
             }
             
         except Exception as e:
-            self.logger.error(f"Error building ML models: {e}")
+            self.logger.error(f"Error training discovery model: {e}")
             return None
     
     @handle_errors(
@@ -278,13 +305,13 @@ class WaveletFeatureSelectionWorkflow:
     )
     async def perform_feature_selection(
         self, 
-        model_data: Dict[str, Any]
+        discovery_model_data: Dict[str, Any]
     ) -> Optional[List[FeatureImportanceResult]]:
         """
         Step 3: Perform feature selection using permutation importance and SHAP.
         
         Args:
-            model_data: Results from ML model building
+            discovery_model_data: Results from discovery model training
             
         Returns:
             List of feature importance results
@@ -292,55 +319,53 @@ class WaveletFeatureSelectionWorkflow:
         try:
             self.logger.info("🔍 Step 3: Performing feature selection...")
             
-            models = model_data["models"]
-            X_train = model_data["X_train"]
-            X_test = model_data["X_test"]
-            feature_names = model_data["feature_names"]
+            model = discovery_model_data["model"]
+            X_test = discovery_model_data["X_test"]
+            y_test = discovery_model_data["y_test"]
+            feature_names = discovery_model_data["feature_names"]
             
             results = []
             
-            # Analyze each model
-            for model_name, model in models.items():
-                self.logger.info(f"📊 Analyzing {model_name}...")
+            # Permutation Importance
+            self.logger.info("📊 Computing permutation importance...")
+            perm_importance = permutation_importance(
+                model, X_test, y_test,
+                n_repeats=10, random_state=self.random_state
+            )
+            
+            # SHAP Analysis
+            self.logger.info("📊 Computing SHAP importance...")
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X_test)
+            
+            # Calculate SHAP importance (mean absolute SHAP values)
+            if len(shap_values.shape) == 3:  # Multi-class
+                shap_importance = np.mean(np.abs(shap_values), axis=(0, 1))
+            else:  # Binary
+                shap_importance = np.mean(np.abs(shap_values), axis=0)
+            
+            # Combine results
+            for i, feature_name in enumerate(feature_names):
+                # Determine feature type
+                feature_type = self._classify_feature_type(feature_name)
                 
-                # Permutation Importance
-                perm_importance = permutation_importance(
-                    model, X_test, model_data["y_test"],
-                    n_repeats=10, random_state=self.random_state
+                # Estimate computation cost
+                computation_cost = self._estimate_computation_cost(feature_name)
+                
+                # Calculate combined score
+                perm_score = perm_importance.importances_mean[i]
+                shap_score = shap_importance[i]
+                combined_score = (perm_score + shap_score) / 2
+                
+                result = FeatureImportanceResult(
+                    feature_name=feature_name,
+                    permutation_importance=perm_score,
+                    shap_importance=shap_score,
+                    combined_score=combined_score,
+                    feature_type=feature_type,
+                    computation_cost=computation_cost
                 )
-                
-                # SHAP Analysis
-                explainer = shap.TreeExplainer(model)
-                shap_values = explainer.shap_values(X_test)
-                
-                # Calculate SHAP importance (mean absolute SHAP values)
-                if len(shap_values.shape) == 3:  # Multi-class
-                    shap_importance = np.mean(np.abs(shap_values), axis=(0, 1))
-                else:  # Binary
-                    shap_importance = np.mean(np.abs(shap_values), axis=0)
-                
-                # Combine results
-                for i, feature_name in enumerate(feature_names):
-                    # Determine feature type
-                    feature_type = self._classify_feature_type(feature_name)
-                    
-                    # Estimate computation cost
-                    computation_cost = self._estimate_computation_cost(feature_name)
-                    
-                    # Calculate combined score
-                    perm_score = perm_importance.importances_mean[i]
-                    shap_score = shap_importance[i]
-                    combined_score = (perm_score + shap_score) / 2
-                    
-                    result = FeatureImportanceResult(
-                        feature_name=feature_name,
-                        permutation_importance=perm_score,
-                        shap_importance=shap_score,
-                        combined_score=combined_score,
-                        feature_type=feature_type,
-                        computation_cost=computation_cost
-                    )
-                    results.append(result)
+                results.append(result)
             
             # Sort by combined score
             results.sort(key=lambda x: x.combined_score, reverse=True)
@@ -445,23 +470,176 @@ class WaveletFeatureSelectionWorkflow:
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
+        context="lean dataset creation",
+    )
+    async def create_lean_dataset(
+        self, 
+        winner_features: List[FeatureImportanceResult],
+        original_features: Dict[str, Any],
+        labels: pd.Series
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Step 5: Create lean dataset with only winning features.
+        
+        Args:
+            winner_features: List of identified winner features
+            original_features: Original full feature set
+            labels: Target labels
+            
+        Returns:
+            Dictionary containing lean dataset
+        """
+        try:
+            self.logger.info("📊 Step 5: Creating lean dataset...")
+            
+            # Extract only winning features
+            winner_feature_names = [f.feature_name for f in winner_features]
+            lean_features = {name: original_features[name] for name in winner_feature_names}
+            
+            # Create lean feature matrix
+            lean_feature_df = pd.DataFrame(lean_features)
+            
+            # Split lean dataset
+            X_train_lean, X_test_lean, y_train_lean, y_test_lean = train_test_split(
+                lean_feature_df, labels, 
+                test_size=self.test_size, 
+                random_state=self.random_state,
+                stratify=labels
+            )
+            
+            self.logger.info(f"✅ Lean dataset created with {len(winner_features)} features")
+            self.logger.info(f"📊 Lean dataset shape: {lean_feature_df.shape}")
+            
+            return {
+                "lean_features": lean_features,
+                "lean_feature_df": lean_feature_df,
+                "X_train_lean": X_train_lean,
+                "X_test_lean": X_test_lean,
+                "y_train_lean": y_train_lean,
+                "y_test_lean": y_test_lean,
+                "winner_feature_names": winner_feature_names
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error creating lean dataset: {e}")
+            return None
+    
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="production model training",
+    )
+    async def train_production_model(
+        self, 
+        lean_dataset: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Step 6: Train Production Model on lean dataset.
+        
+        Args:
+            lean_dataset: Lean dataset with only winning features
+            
+        Returns:
+            Dictionary containing trained production model and performance metrics
+        """
+        try:
+            self.logger.info("🚀 Step 6: Training Production Model...")
+            
+            X_train_lean = lean_dataset["X_train_lean"]
+            X_test_lean = lean_dataset["X_test_lean"]
+            y_train_lean = lean_dataset["y_train_lean"]
+            y_test_lean = lean_dataset["y_test_lean"]
+            
+            # Train Production Model (optimized for deployment)
+            model_type = self.production_model_config.get("type", "gradient_boosting")
+            
+            if model_type == "gradient_boosting":
+                production_model = GradientBoostingClassifier(
+                    n_estimators=self.production_model_config.get("n_estimators", 100),
+                    max_depth=self.production_model_config.get("max_depth", 6),
+                    learning_rate=self.production_model_config.get("learning_rate", 0.1),
+                    subsample=self.production_model_config.get("subsample", 0.8),
+                    random_state=self.random_state
+                )
+            elif model_type == "random_forest":
+                production_model = RandomForestClassifier(
+                    n_estimators=self.production_model_config.get("n_estimators", 100),
+                    max_depth=self.production_model_config.get("max_depth", 6),
+                    random_state=self.random_state,
+                    n_jobs=-1
+                )
+            else:
+                raise ValueError(f"Unsupported model type: {model_type}")
+            
+            # Train the production model
+            production_model.fit(X_train_lean, y_train_lean)
+            self.production_model = production_model
+            
+            # Evaluate Production Model
+            cv_scores = cross_val_score(production_model, X_train_lean, y_train_lean, cv=self.cv_folds)
+            y_pred_lean = production_model.predict(X_test_lean)
+            
+            performance = {
+                "cv_mean": cv_scores.mean(),
+                "cv_std": cv_scores.std(),
+                "test_accuracy": (y_pred_lean == y_test_lean).mean(),
+                "classification_report": classification_report(y_test_lean, y_pred_lean, output_dict=True)
+            }
+            
+            self.production_model_performance = performance
+            
+            # Save Production Model (for deployment)
+            model_path = self.model_dir / "production_model.pkl"
+            with open(model_path, 'wb') as f:
+                pickle.dump(production_model, f)
+            
+            # Save lean feature names for deployment
+            feature_names_path = self.model_dir / "production_features.json"
+            import json
+            with open(feature_names_path, 'w') as f:
+                json.dump(lean_dataset["winner_feature_names"], f)
+            
+            self.logger.info("✅ Production Model trained successfully")
+            self.logger.info(f"📊 Production Model Performance:")
+            self.logger.info(f"  CV Score: {performance['cv_mean']:.3f} ± {performance['cv_std']:.3f}")
+            self.logger.info(f"  Test Accuracy: {performance['test_accuracy']:.3f}")
+            
+            return {
+                "model": production_model,
+                "performance": performance,
+                "feature_names": lean_dataset["winner_feature_names"],
+                "X_train_lean": X_train_lean,
+                "X_test_lean": X_test_lean,
+                "y_train_lean": y_train_lean,
+                "y_test_lean": y_test_lean
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error training production model: {e}")
+            return None
+    
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
         context="live configuration creation",
     )
     async def create_live_configurations(
         self, 
-        winner_features: List[FeatureImportanceResult]
+        winner_features: List[FeatureImportanceResult],
+        production_model_data: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """
-        Step 5: Create optimized live trading configurations.
+        Step 7: Create optimized live trading configurations.
         
         Args:
             winner_features: List of identified winner features
+            production_model_data: Production model results
             
         Returns:
             Dictionary containing optimized configurations
         """
         try:
-            self.logger.info("⚡ Step 5: Creating live configurations...")
+            self.logger.info("⚡ Step 7: Creating live configurations...")
             
             # Group features by type
             wavelet_features = [f for f in winner_features if f.feature_type == 'wavelet']
@@ -472,7 +650,10 @@ class WaveletFeatureSelectionWorkflow:
             optimized_wavelet_config = self._create_optimized_wavelet_config(wavelet_features)
             
             # Create live trading configuration
-            live_config = self._create_live_trading_config(winner_features)
+            live_config = self._create_live_trading_config(winner_features, production_model_data)
+            
+            # Create production model configuration
+            production_config = self._create_production_model_config(production_model_data)
             
             # Create performance configuration
             performance_config = self._create_performance_config(winner_features)
@@ -481,6 +662,7 @@ class WaveletFeatureSelectionWorkflow:
             configs = {
                 "optimized_wavelet": optimized_wavelet_config,
                 "live_trading": live_config,
+                "production_model": production_config,
                 "performance": performance_config
             }
             
@@ -529,7 +711,7 @@ class WaveletFeatureSelectionWorkflow:
         
         return config
     
-    def _create_live_trading_config(self, winner_features: List[FeatureImportanceResult]) -> Dict[str, Any]:
+    def _create_live_trading_config(self, winner_features: List[FeatureImportanceResult], production_model_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create live trading configuration."""
         config = {
             "live_wavelet_analyzer": {
@@ -546,11 +728,41 @@ class WaveletFeatureSelectionWorkflow:
                 "feature_weights": {f.feature_name: f.combined_score for f in winner_features},
                 "total_computation_cost": sum(f.computation_cost for f in winner_features)
             },
+            "production_model": {
+                "model_path": "data/wavelet_feature_selection/models/production_model.pkl",
+                "feature_names_path": "data/wavelet_feature_selection/models/production_features.json",
+                "model_type": self.production_model_config.get("type", "gradient_boosting"),
+                "performance": production_model_data["performance"]
+            },
             "signal_generation": {
                 "enable_wavelet_signals": True,
                 "wavelet_signal_weight": 0.3,
                 "min_confidence": 0.6,
                 "max_signal_age": 60
+            }
+        }
+        
+        return config
+    
+    def _create_production_model_config(self, production_model_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create production model configuration."""
+        config = {
+            "model_info": {
+                "model_type": self.production_model_config.get("type", "gradient_boosting"),
+                "feature_count": len(production_model_data["feature_names"]),
+                "model_path": "data/wavelet_feature_selection/models/production_model.pkl",
+                "feature_names_path": "data/wavelet_feature_selection/models/production_features.json"
+            },
+            "performance": {
+                "cv_mean": production_model_data["performance"]["cv_mean"],
+                "cv_std": production_model_data["performance"]["cv_std"],
+                "test_accuracy": production_model_data["performance"]["test_accuracy"]
+            },
+            "deployment": {
+                "enable_model_loading": True,
+                "model_cache_size": 1,
+                "prediction_timeout": 0.05,  # 50ms
+                "enable_feature_validation": True
             }
         }
         
@@ -584,7 +796,7 @@ class WaveletFeatureSelectionWorkflow:
         labels: pd.Series
     ) -> Optional[Dict[str, Any]]:
         """
-        Run the complete wavelet feature selection workflow.
+        Run the complete wavelet feature selection workflow using two-model strategy.
         
         Args:
             price_data: OHLCV price data
@@ -602,13 +814,13 @@ class WaveletFeatureSelectionWorkflow:
             if not analysis_results:
                 return None
             
-            # Step 2: Build ML models
-            model_results = await self.build_ml_models(analysis_results["all_features"], labels)
-            if not model_results:
+            # Step 2: Train Discovery Model
+            discovery_model_results = await self.train_discovery_model(analysis_results["all_features"], labels)
+            if not discovery_model_results:
                 return None
             
             # Step 3: Feature selection
-            feature_results = await self.perform_feature_selection(model_results)
+            feature_results = await self.perform_feature_selection(discovery_model_results)
             if not feature_results:
                 return None
             
@@ -617,24 +829,36 @@ class WaveletFeatureSelectionWorkflow:
             if not winner_features:
                 return None
             
-            # Step 5: Create live configurations
-            live_configs = await self.create_live_configurations(winner_features)
+            # Step 5: Create lean dataset
+            lean_dataset = await self.create_lean_dataset(winner_features, analysis_results["all_features"], labels)
+            if not lean_dataset:
+                return None
+            
+            # Step 6: Train Production Model
+            production_model_results = await self.train_production_model(lean_dataset)
+            if not production_model_results:
+                return None
+            
+            # Step 7: Create live configurations
+            live_configs = await self.create_live_configurations(winner_features, production_model_results)
             if not live_configs:
                 return None
             
             # Generate summary report
             summary = self._generate_summary_report(
-                analysis_results, model_results, feature_results, 
-                winner_features, live_configs
+                analysis_results, discovery_model_results, feature_results, 
+                winner_features, production_model_results, live_configs
             )
             
             self.logger.info("✅ Complete workflow finished successfully!")
             
             return {
                 "analysis_results": analysis_results,
-                "model_results": model_results,
+                "discovery_model_results": discovery_model_results,
                 "feature_results": feature_results,
                 "winner_features": winner_features,
+                "lean_dataset": lean_dataset,
+                "production_model_results": production_model_results,
                 "live_configs": live_configs,
                 "summary": summary
             }
@@ -646,9 +870,10 @@ class WaveletFeatureSelectionWorkflow:
     def _generate_summary_report(
         self, 
         analysis_results: Dict[str, Any],
-        model_results: Dict[str, Any],
+        discovery_model_results: Dict[str, Any],
         feature_results: List[FeatureImportanceResult],
         winner_features: List[FeatureImportanceResult],
+        production_model_results: Dict[str, Any],
         live_configs: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Generate comprehensive summary report."""
@@ -657,13 +882,23 @@ class WaveletFeatureSelectionWorkflow:
                 "total_features_generated": analysis_results["feature_count"],
                 "wavelet_features_generated": analysis_results["wavelet_feature_count"],
                 "computation_time_full_analysis": analysis_results["computation_time"],
-                "models_trained": len(model_results["models"]),
-                "best_model_accuracy": max(
-                    perf["test_accuracy"] for perf in model_results["performance"].values()
-                ),
+                "discovery_model_accuracy": discovery_model_results["performance"]["test_accuracy"],
+                "production_model_accuracy": production_model_results["performance"]["test_accuracy"],
                 "features_analyzed": len(feature_results),
                 "winner_features_selected": len(winner_features),
                 "total_computation_cost_ms": sum(f.computation_cost for f in winner_features)
+            },
+            "model_comparison": {
+                "discovery_model": {
+                    "cv_mean": discovery_model_results["performance"]["cv_mean"],
+                    "cv_std": discovery_model_results["performance"]["cv_std"],
+                    "test_accuracy": discovery_model_results["performance"]["test_accuracy"]
+                },
+                "production_model": {
+                    "cv_mean": production_model_results["performance"]["cv_mean"],
+                    "cv_std": production_model_results["performance"]["cv_std"],
+                    "test_accuracy": production_model_results["performance"]["test_accuracy"]
+                }
             },
             "performance_improvement": {
                 "computation_time_reduction": (
@@ -672,7 +907,11 @@ class WaveletFeatureSelectionWorkflow:
                 ) / analysis_results["computation_time"],
                 "feature_count_reduction": (
                     analysis_results["feature_count"] - len(winner_features)
-                ) / analysis_results["feature_count"]
+                ) / analysis_results["feature_count"],
+                "accuracy_preservation": (
+                    production_model_results["performance"]["test_accuracy"] /
+                    discovery_model_results["performance"]["test_accuracy"]
+                )
             },
             "winner_features": [
                 {

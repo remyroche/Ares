@@ -52,7 +52,6 @@ class UnifiedRegimeClassifier:
         self.location_classifier = None
         self.location_label_encoder = None
 
-        # Legacy S/R/Candle code removed integration for location classification
         # Legacy S/R/Candle code removed
         self.enable_sr_integration = self.config.get("enable_sr_integration", True)
         self.basic_label_encoder = None
@@ -340,63 +339,154 @@ class UnifiedRegimeClassifier:
     
             return state_analysis
 
-    def _classify_location(
-        self,
-        current_price: float,
-        sr_levels: dict[str, Any],
-    ) -> str:
+    # Replace _calculate_poc with this comprehensive analyzer
+    def _analyze_volume_levels(self, df_window: pd.DataFrame) -> dict | None:
         """
-        Classify current location relative to S/R levels.
-
-        Args:
-            current_price: Current market price
-            sr_levels: Support and resistance levels from SR analyzer
-
-        Returns:
-            Location classification: SUPPORT, RESISTANCE, or OPEN_RANGE
+        Analyzes the volume profile to find the two most significant High Volume Nodes (HVNs),
+        their age, and the number of times they've been tested.
         """
-        try:
-            if sr_levels is None or not sr_levels:
-                return "OPEN_RANGE"
-
-            support_levels = sr_levels.get("support_levels", [])
-            resistance_levels = sr_levels.get("resistance_levels", [])
-
-            if not support_levels and not resistance_levels:
-                return "OPEN_RANGE"
-
-            # Tolerance for proximity (2% of current price)
-            tolerance = current_price * 0.02
-
-            # Check proximity to support levels
-            for level in support_levels:
-                if isinstance(level, dict):
-                    level_price = level.get("price", 0)
-                elif isinstance(level, (int, float)):
-                    level_price = float(level)
+        if df_window.empty or len(df_window) < 20:
+            return None
+    
+        # --- 1. ATR-Dynamic Binning (same as before) ---
+        high_low = df_window['high'] - df_window['low']
+        high_close = abs(df_window['high'] - df_window['close'].shift())
+        low_close = abs(df_window['low'] - df_window['close'].shift())
+        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        avg_atr = tr.mean()
+        bin_size = max(avg_atr * 0.25, 1e-6)
+        min_price = df_window['low'].min()
+        max_price = df_window['high'].max()
+        bins = pd.arange(min_price, max_price, bin_size)
+    
+        # --- 2. Find Top 2 HVNs ---
+        price_bins = pd.cut(df_window['close'], bins=bins, right=False)
+        volume_by_bin = df_window.groupby(price_bins)['volume'].sum()
+        if volume_by_bin.empty:
+            return None
+            
+        # Get the top 2 HVNs by volume
+        top_hvns = volume_by_bin.nlargest(2)
+        if top_hvns.empty:
+            return None
+    
+        # --- 3. Analyze Each HVN ---
+        analyzed_levels = {}
+        for i, (level_bin, level_volume) in enumerate(top_hvns.items()):
+            level_price = level_bin.mid
+            
+            # Find first time price entered this bin to determine age
+            level_indices = df_window.index[df_window['close'].between(level_bin.left, level_bin.right)]
+            if len(level_indices) == 0:
+                continue
+                
+            first_touch_index = level_indices[0]
+            age = len(df_window) - df_window.index.get_loc(first_touch_index)
+    
+            # Count touches after formation
+            touches = 0
+            data_since_formation = df_window.loc[first_touch_index:]
+            for k in range(1, len(data_since_formation)):
+                prev_high = data_since_formation['high'].iloc[k-1]
+                prev_low = data_since_formation['low'].iloc[k-1]
+                curr_high = data_since_formation['high'].iloc[k]
+                curr_low = data_since_formation['low'].iloc[k]
+                
+                # A "touch" is when price crosses the level
+                if (prev_low < level_price < curr_high) or (prev_high > level_price > curr_low):
+                    touches += 1
+            
+            level_name = "poc" if i == 0 else "hvn_secondary"
+            analyzed_levels[level_name] = {
+                "price": level_price,
+                "volume": level_volume,
+                "age": age, # in number of candles
+                "touches": touches
+            }
+            
+        return analyzed_levels
+            
+    def _classify_location(self, features_df: pd.DataFrame) -> list[str]:
+        """
+        Classifies location using a multi-layered context of short-term Dynamic Pivots (tactical)
+        and long-term High Volume Nodes (strategic).
+        """
+        self.logger.info("Classifying location with tactical pivots and strategic volume levels...")
+    
+        # --- Configuration for dual-timeframe analysis ---
+        long_term_hvn_period = self.config.get("long_term_hvn_period", 720)        # 30 days on a 1h chart
+        short_term_pivot_period = self.config.get("short_term_pivot_period", 24)   # 1 day on a 1h chart
+        tolerance = self.config.get("level_tolerance", 0.01)                       # 1% proximity tolerance
+        max_level_age_pct = self.config.get("max_level_age_pct", 0.9)              # Allow older levels for long-term analysis
+        min_level_touches = self.config.get("min_level_touches", 1)                # Must have at least 1 re-test
+    
+        locations = []
+        
+        # Start loop after the longest period to ensure enough data for all calculations
+        start_index = long_term_hvn_period
+        for i in range(start_index, len(features_df)):
+            current_price = features_df["close"].iloc[i]
+            
+            # --- 1. Tactical Pivot Analysis (Short-Term) ---
+            pivot_window = features_df.iloc[i - short_term_pivot_period : i]
+            pivots = self._calculate_rolling_pivots(pivot_window)
+            pivot_supports = [pivots["s1"], pivots["s2"]]
+            pivot_resistances = [pivots["r1"], pivots["r2"]]
+            
+            # --- 2. Strategic Volume Level Analysis (Long-Term) ---
+            hvn_window = features_df.iloc[i - long_term_hvn_period : i]
+            volume_levels = self._analyze_volume_levels(hvn_window)
+            
+            # --- 3. Classification Logic ---
+            loc_pivot = None
+            loc_hvn = None
+    
+            # Check for Pivot proximity
+            for p_sup in pivot_supports:
+                if abs(current_price - p_sup) / current_price <= tolerance:
+                    loc_pivot = "PIVOT_S"
+                    break
+            if not loc_pivot:
+                for p_res in pivot_resistances:
+                    if abs(current_price - p_res) / current_price <= tolerance:
+                        loc_pivot = "PIVOT_R"
+                        break
+    
+            # Check for HVN proximity using richer data
+            if volume_levels:
+                for level_data in volume_levels.values():
+                    # Intelligence Rule: Filter out untested levels
+                    if level_data["touches"] < min_level_touches:
+                        continue
+    
+                    if abs(current_price - level_data["price"]) / current_price <= tolerance:
+                        hvn_type = "SUPPORT" if current_price > level_data["price"] else "RESISTANCE"
+                        loc_hvn = f"HVN_{hvn_type}"
+                        break # Stop at the first significant HVN found
+    
+            # --- 4. Final Label Assignment ---
+            if loc_pivot and loc_hvn:
+                # A tactical pivot aligns with a strategic volume level - high confluence
+                if "S" in loc_pivot and "SUPPORT" in loc_hvn:
+                    locations.append("CONFLUENCE_S")
+                elif "R" in loc_pivot and "RESISTANCE" in loc_hvn:
+                    locations.append("CONFLUENCE_R")
                 else:
-                    continue
-
-                if abs(current_price - level_price) <= tolerance:
-                    return "SUPPORT"
-
-            # Check proximity to resistance levels
-            for level in resistance_levels:
-                if isinstance(level, dict):
-                    level_price = level.get("price", 0)
-                elif isinstance(level, (int, float)):
-                    level_price = float(level)
-                else:
-                    continue
-
-                if abs(current_price - level_price) <= tolerance:
-                    return "RESISTANCE"
-
-            return "OPEN_RANGE"
-
-        except Exception as e:
-            self.logger.error(f"Error in location classification: {e}")
-            return "OPEN_RANGE"
+                    locations.append(loc_pivot)
+            elif loc_pivot:
+                locations.append(loc_pivot)
+            elif loc_hvn:
+                locations.append(loc_hvn)
+            else:
+                locations.append("OPEN_RANGE")
+        
+        # Pad the beginning of the list for alignment
+        padding = ["OPEN_RANGE"] * start_index
+        final_locations = padding + locations
+        
+        self.logger.info(f"Finished classifying locations. Found: {pd.Series(final_locations).value_counts().to_dict()}")
+        return final_locations
+        
 
     async def train_hmm_labeler(self, historical_klines: pd.DataFrame) -> bool:
         """

@@ -68,7 +68,20 @@ class Step1DataCollectionValidator(BaseValidator):
             
             # Convert to DataFrame if needed
             if not isinstance(historical_data, pd.DataFrame):
-                historical_data = pd.DataFrame(historical_data)
+                # Handle numpy arrays and other data structures
+                if hasattr(historical_data, 'shape') and len(historical_data.shape) == 2:
+                    # It's a 2D array, create DataFrame with default column names
+                    historical_data = pd.DataFrame(historical_data, columns=[f'col_{i}' for i in range(historical_data.shape[1])])
+                elif isinstance(historical_data, (list, tuple)):
+                    # It's a list/tuple, try to create DataFrame
+                    try:
+                        historical_data = pd.DataFrame(historical_data)
+                    except:
+                        # If that fails, wrap in a list
+                        historical_data = pd.DataFrame([historical_data])
+                else:
+                    # For other types, wrap in a list
+                    historical_data = pd.DataFrame([historical_data])
             
             quality_passed, quality_metrics = self.validate_data_quality(historical_data, "historical_data")
             self.validation_results["data_quality"] = quality_metrics

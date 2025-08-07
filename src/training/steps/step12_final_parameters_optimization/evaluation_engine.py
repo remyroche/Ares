@@ -458,36 +458,54 @@ class AdvancedEvaluationEngine:
             return False
     
     def calculate_composite_score(self, metrics: PerformanceMetrics) -> float:
-        """Calculate a composite score prioritizing win rate and win/loss ratio."""
+        """Calculate a composite score prioritizing win rate and actual win/loss amounts."""
         try:
-            # Primary focus on win rate and win/loss ratio (profit factor)
+            # Calculate actual win/loss amounts and ratios
+            avg_win_amount = metrics.average_win if metrics.average_win > 0 else 0.01
+            avg_loss_amount = abs(metrics.average_loss) if metrics.average_loss < 0 else 0.01
+            
+            # Win/loss amount ratio (how much we win vs lose)
+            win_loss_amount_ratio = avg_win_amount / avg_loss_amount
+            
+            # Win/loss frequency ratio (how often we win vs lose)
+            win_loss_frequency_ratio = metrics.win_rate / (1 - metrics.win_rate) if metrics.win_rate < 1.0 else 10.0
+            
+            # Combined win/loss score (both amount and frequency)
+            combined_win_loss_score = (win_loss_amount_ratio * 0.6) + (win_loss_frequency_ratio * 0.4)
+            
+            # Primary focus on win rate and actual win/loss amounts
             weights = {
-                "win_rate": 0.4,              # 40% weight on win rate
-                "profit_factor": 0.35,        # 35% weight on win/loss ratio
-                "sharpe_ratio": 0.15,         # 15% weight on risk-adjusted return
-                "max_drawdown": 0.1           # 10% weight on risk management
+                "win_rate": 0.35,                    # 35% weight on win rate
+                "win_loss_amount_ratio": 0.35,       # 35% weight on actual win/loss amounts
+                "sharpe_ratio": 0.15,                # 15% weight on risk-adjusted return
+                "max_drawdown": 0.15                 # 15% weight on risk management
             }
             
-            # Calculate win/loss ratio from profit factor
-            win_loss_ratio = metrics.profit_factor
-            
-            # Normalize metrics to 0-1 range with focus on win rate and win/loss ratio
+            # Normalize metrics to 0-1 range
             normalized_metrics = {
                 "win_rate": metrics.win_rate,  # Already 0-1
-                "profit_factor": min(win_loss_ratio / 2.0, 1.0),  # Cap at 2.0 win/loss ratio
+                "win_loss_amount_ratio": min(win_loss_amount_ratio / 3.0, 1.0),  # Cap at 3.0 ratio
                 "sharpe_ratio": min(max(metrics.sharpe_ratio / 1.5, 0), 1.0),  # Cap at 1.5
                 "max_drawdown": max(0, 1 - metrics.max_drawdown / 0.3),  # Invert and cap at 30%
             }
             
-            # Calculate weighted score with emphasis on win rate and win/loss ratio
+            # Calculate weighted score with emphasis on actual win/loss amounts
             composite_score = sum(
                 weights[metric] * normalized_metrics[metric]
                 for metric in weights.keys()
             )
             
-            # Bonus for high win rate and good win/loss ratio
-            if metrics.win_rate > 0.6 and win_loss_ratio > 1.5:
-                composite_score *= 1.1  # 10% bonus
+            # Bonus for high win rate and good win/loss amounts
+            if metrics.win_rate > 0.6 and win_loss_amount_ratio > 2.0:
+                composite_score *= 1.15  # 15% bonus for excellent win/loss amounts
+            
+            # Additional bonus for consistent large wins
+            if avg_win_amount > avg_loss_amount * 2.5 and metrics.win_rate > 0.5:
+                composite_score *= 1.1  # 10% bonus for large wins relative to losses
+            
+            # Penalty for small wins relative to large losses
+            if avg_win_amount < avg_loss_amount * 0.5:
+                composite_score *= 0.8  # 20% penalty for small wins vs large losses
             
             return composite_score
             

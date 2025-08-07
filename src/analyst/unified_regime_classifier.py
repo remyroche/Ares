@@ -132,7 +132,8 @@ class UnifiedRegimeClassifier:
         features_df = self._calculate_macd(features_df)
         features_df = self._calculate_bollinger_bands(features_df)
         features_df = self._calculate_atr(features_df)
-
+        features_df = self._calculate_adx(features_df)
+    
         # Enhanced volatility features for VOLATILE regime detection
         features_df["volatility_regime"] = self._calculate_volatility_regime(
             features_df,
@@ -204,6 +205,44 @@ class UnifiedRegimeClassifier:
             df["macd_histogram"] = 0
         return df
 
+    def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+            """Calculate the Average Directional Index (ADX)."""
+            try:
+                high = df["high"]
+                low = df["low"]
+                close = df["close"]
+    
+                # Calculate True Range (TR)
+                tr1 = high - low
+                tr2 = abs(high - close.shift(1))
+                tr3 = abs(low - close.shift(1))
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                atr = tr.ewm(alpha=1/period, adjust=False).mean()
+    
+                # Calculate Directional Movement (+DM, -DM)
+                move_up = high.diff()
+                move_down = low.diff()
+                plus_dm = ((move_up > move_down) & (move_up > 0)) * move_up
+                minus_dm = ((move_down > move_up) & (move_down > 0)) * move_down
+                
+                plus_dm = plus_dm.ewm(alpha=1/period, adjust=False).mean()
+                minus_dm = minus_dm.ewm(alpha=1/period, adjust=False).mean()
+    
+                # Calculate Directional Index (+DI, -DI)
+                plus_di = 100 * (plus_dm / atr)
+                minus_di = 100 * (minus_dm / atr)
+    
+                # Calculate Directional Movement Index (DX) and ADX
+                dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di))
+                df["adx"] = dx.ewm(alpha=1/period, adjust=False).mean()
+                df["adx"] = df["adx"].fillna(25) # Fill initial NaNs with a neutral value
+            
+            except Exception as e:
+                self.logger.warning(f"Error calculating ADX: {e}")
+                df["adx"] = 25  # Default neutral value on error
+            
+            return df
+
     def _calculate_bollinger_bands(
         self,
         df: pd.DataFrame,
@@ -239,70 +278,67 @@ class UnifiedRegimeClassifier:
             df["atr"] = df["close"] * 0.02  # Default to 2% of close
         return df
 
+
     def _interpret_hmm_states(
-        self,
-        features_df: pd.DataFrame,
-        state_sequence: np.ndarray,
-    ) -> dict:
-        """
-        Interpret HMM states and map them to basic market regimes.
-        Now includes VOLATILE regime detection.
-
-        Args:
-            features_df: DataFrame with features
-            state_sequence: Array of predicted state labels
-
-        Returns:
-            Dictionary mapping state indices to regime labels
-        """
-        analysis_df = features_df.copy()
-        analysis_df["state"] = state_sequence
-
-        state_analysis = {}
-
-        for state in range(self.n_states):
-            state_data = analysis_df[analysis_df["state"] == state]
-
-            if len(state_data) == 0:
-                continue
-
-            # Calculate state characteristics
-            mean_return = state_data["log_returns"].mean()
-            mean_volatility = state_data["volatility_20"].mean()
-            mean_volatility_regime = state_data["volatility_regime"].mean()
-
-            # Enhanced regime classification including VOLATILE
-            if (
-                mean_volatility_regime > 0.5 or mean_volatility > 0.015
-            ):  # High volatility threshold
-                regime = "VOLATILE"
-            elif mean_return > 0.0001 and mean_volatility < 0.01:
-                regime = "BULL"
-            elif mean_return < -0.0001 and mean_volatility < 0.01:
-                regime = "BEAR"
-            else:
-                regime = "SIDEWAYS"
-
-            state_analysis[state] = {
-                "regime": regime,
-                "mean_return": mean_return,
-                "mean_volatility": mean_volatility,
-                "mean_volatility_regime": mean_volatility_regime,
-                "count": len(state_data),
+            self,
+            features_df: pd.DataFrame,
+            state_sequence: np.ndarray,
+        ) -> dict:
+            """
+            Interpret HMM states and map them to basic market regimes.
+            Now uses ADX for robust SIDEWAYS detection.
+            """
+            analysis_df = features_df.copy()
+            analysis_df["state"] = state_sequence
+            state_analysis = {}
+            
+            # Define the ADX threshold for a sideways market
+            adx_sideways_threshold = self.config.get("adx_sideways_threshold", 25)
+    
+            for state in range(self.n_states):
+                state_data = analysis_df[analysis_df["state"] == state]
+    
+                if len(state_data) == 0:
+                    continue
+    
+                # Calculate state characteristics
+                mean_return = state_data["log_returns"].mean()
+                mean_volatility = state_data["volatility_20"].mean()
+                mean_adx = state_data["adx"].mean() # Calculate the mean ADX for the state
+    
+                # New regime classification logic with ADX
+                if mean_volatility > 0.015: # Your original volatility threshold
+                    regime = "VOLATILE"
+                elif mean_adx < adx_sideways_threshold:
+                    # If ADX is low, the trend is weak. This is our SIDEWAYS condition.
+                    regime = "SIDEWAYS"
+                elif mean_return > 0: 
+                    # If ADX is > 25 (trending) and returns are positive, it's a BULL trend.
+                    regime = "BULL"
+                else:
+                    # If ADX is > 25 (trending) and returns are not positive, it's a BEAR trend.
+                    regime = "BEAR"
+    
+                state_analysis[state] = {
+                    "regime": regime,
+                    "mean_return": mean_return,
+                    "mean_volatility": mean_volatility,
+                    "mean_adx": mean_adx, # Store for analysis
+                    "count": len(state_data),
+                }
+    
+                self.logger.info(
+                    f"State {state}: {regime} "
+                    f"(mean_return={mean_return:.4f}, mean_vol={mean_volatility:.4f}, mean_adx={mean_adx:.2f})",
+                )
+    
+            # Create state to regime mapping
+            state_to_regime_map = {
+                state: data["regime"] for state, data in state_analysis.items()
             }
-
-            self.logger.info(
-                f"State {state}: {regime} "
-                f"(mean_return={mean_return:.4f}, mean_vol={mean_volatility:.4f}, vol_regime={mean_volatility_regime:.3f})",
-            )
-
-        # Create state to regime mapping
-        state_to_regime_map = {
-            state: data["regime"] for state, data in state_analysis.items()
-        }
-        state_analysis["state_to_regime_map"] = state_to_regime_map
-
-        return state_analysis
+            state_analysis["state_to_regime_map"] = state_to_regime_map
+    
+            return state_analysis
 
     def _classify_location(
         self,
@@ -388,6 +424,7 @@ class UnifiedRegimeClassifier:
                     "bb_position",
                     "bb_width",
                     "atr",
+                    "adx",
                     "volatility_regime",
                     "volatility_acceleration",
                 ]

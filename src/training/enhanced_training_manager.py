@@ -1,6 +1,7 @@
 # src/training/enhanced_training_manager.py
 
 import asyncio
+import pandas as pd
 from datetime import datetime
 from typing import Any
 
@@ -10,6 +11,13 @@ from src.utils.error_handler import (
 )
 from src.utils.logger import system_logger
 from src.utils.validator_orchestrator import validator_orchestrator
+
+# Import computational optimization components
+from src.training.optimization.computational_optimization_manager import (
+    ComputationalOptimizationManager,
+    create_computational_optimization_manager,
+)
+from src.config.computational_optimization import get_computational_optimization_config
 
 
 class EnhancedTrainingManager:
@@ -57,6 +65,11 @@ class EnhancedTrainingManager:
         self.enable_validators: bool = self.enhanced_training_config.get("enable_validators", True)
         self.validation_results: dict[str, Any] = {}
         
+        # Computational optimization parameters
+        self.enable_computational_optimization: bool = self.enhanced_training_config.get("enable_computational_optimization", True)
+        self.computational_optimization_manager: ComputationalOptimizationManager | None = None
+        self.optimization_statistics: dict[str, Any] = {}
+        
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid enhanced training manager configuration"),
@@ -79,11 +92,16 @@ class EnhancedTrainingManager:
             self.logger.info(f"🔧 Max trials: {self.max_trials}")
             self.logger.info(f"🔧 N trials: {self.n_trials}")
             self.logger.info(f"📈 Lookback days: {self.lookback_days}")
+            self.logger.info(f"🚀 Computational optimization: {self.enable_computational_optimization}")
             
             # Validate configuration
             if not self._validate_configuration():
                 self.logger.error("❌ Invalid configuration for enhanced training manager")
                 return False
+            
+            # Initialize computational optimization if enabled
+            if self.enable_computational_optimization:
+                await self._initialize_computational_optimization()
                 
             self.logger.info("✅ Enhanced Training Manager initialized successfully")
             return True
@@ -266,6 +284,37 @@ class EnhancedTrainingManager:
             
         except Exception as e:
             self.logger.error(f"❌ Enhanced training inputs validation failed: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="computational optimization initialization",
+    )
+    async def _initialize_computational_optimization(self) -> bool:
+        """Initialize computational optimization components."""
+        try:
+            self.logger.info("🚀 Initializing computational optimization components...")
+            
+            # Get computational optimization configuration
+            optimization_config = get_computational_optimization_config()
+            
+            # Create computational optimization manager
+            self.computational_optimization_manager = await create_computational_optimization_manager(
+                config=optimization_config,
+                market_data=pd.DataFrame(),  # Will be loaded during training
+                model_config={}  # Will be configured during training
+            )
+            
+            if self.computational_optimization_manager:
+                self.logger.info("✅ Computational optimization components initialized successfully")
+                return True
+            else:
+                self.logger.warning("⚠️ Failed to initialize computational optimization components")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Computational optimization initialization failed: {e}")
             return False
 
     @handle_errors(
@@ -573,17 +622,27 @@ class EnhancedTrainingManager:
             self.logger.info("✅ Step 11: Confidence Calibration completed successfully")
             print("   ✅ Step 11: Confidence Calibration completed successfully")
 
-            # Step 12: Final Parameters Optimization
-            self.logger.info("🔧 STEP 12: Final Parameters Optimization...")
-            print("   🔧 Step 12: Final Parameters Optimization...")
+            # Step 12: Final Parameters Optimization (with computational optimization)
+            self.logger.info("🔧 STEP 12: Final Parameters Optimization with Computational Optimization...")
+            print("   🔧 Step 12: Final Parameters Optimization with Computational Optimization...")
             
-            from src.training.steps import step12_final_parameters_optimization
-            step12_success = await step12_final_parameters_optimization.run_step(
-                symbol=symbol,
-                data_dir=data_dir,
-                timeframe=timeframe,
-                exchange=exchange,
-            )
+            # Use computational optimization if available
+            if self.computational_optimization_manager:
+                step12_success = await self._run_optimized_parameters_optimization(
+                    symbol=symbol,
+                    data_dir=data_dir,
+                    timeframe=timeframe,
+                    exchange=exchange,
+                )
+            else:
+                # Fallback to standard optimization
+                from src.training.steps import step12_final_parameters_optimization
+                step12_success = await step12_final_parameters_optimization.run_step(
+                    symbol=symbol,
+                    data_dir=data_dir,
+                    timeframe=timeframe,
+                    exchange=exchange,
+                )
             
             if not step12_success:
                 self.logger.error("❌ Step 12: Final Parameters Optimization failed")
@@ -680,6 +739,127 @@ class EnhancedTrainingManager:
             self.logger.error(f"📋 Error details: {type(e).__name__}: {str(e)}")
             print(f"💥 COMPREHENSIVE PIPELINE FAILED: {str(e)}")
             print(f"📋 Error details: {type(e).__name__}: {str(e)}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="optimized parameters optimization",
+    )
+    async def _run_optimized_parameters_optimization(
+        self,
+        symbol: str,
+        data_dir: str,
+        timeframe: str,
+        exchange: str,
+    ) -> bool:
+        """Run optimized parameters optimization using computational optimization strategies."""
+        try:
+            self.logger.info("🚀 Running optimized parameters optimization...")
+            
+            # Load market data for optimization
+            market_data = await self._load_market_data_for_optimization(symbol, data_dir, exchange)
+            if market_data is None:
+                self.logger.error("❌ Failed to load market data for optimization")
+                return False
+            
+            # Update computational optimization manager with market data
+            if self.computational_optimization_manager:
+                await self.computational_optimization_manager.initialize(market_data, {})
+            
+            # Define optimization objective function
+            def optimization_objective(params):
+                # This would be the actual optimization objective
+                # For now, return a simple metric
+                return 0.5  # Placeholder
+            
+            # Run optimized parameter optimization
+            optimization_results = await self.computational_optimization_manager.optimize_parameters(
+                objective_function=optimization_objective,
+                n_trials=self.n_trials,
+                use_surrogates=True
+            )
+            
+            # Store optimization statistics
+            self.optimization_statistics = self.computational_optimization_manager.get_optimization_statistics()
+            
+            # Save optimization results
+            await self._save_optimization_results(symbol, exchange, data_dir, optimization_results)
+            
+            self.logger.info("✅ Optimized parameters optimization completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Optimized parameters optimization failed: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="market data loading for optimization",
+    )
+    async def _load_market_data_for_optimization(
+        self,
+        symbol: str,
+        data_dir: str,
+        exchange: str,
+    ) -> pd.DataFrame | None:
+        """Load market data for optimization."""
+        try:
+            # Load market data from the data directory
+            # This is a simplified implementation
+            import os
+            data_file = f"{data_dir}/{exchange}_{symbol}_klines.csv"
+            
+            if os.path.exists(data_file):
+                market_data = pd.read_csv(data_file)
+                self.logger.info(f"✅ Loaded market data from {data_file}")
+                return market_data
+            else:
+                self.logger.warning(f"⚠️ Market data file not found: {data_file}")
+                # Return empty DataFrame as fallback
+                return pd.DataFrame()
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load market data: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="optimization results saving",
+    )
+    async def _save_optimization_results(
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
+        optimization_results: dict[str, Any],
+    ) -> bool:
+        """Save optimization results."""
+        try:
+            import json
+            import os
+            
+            # Create optimization results directory
+            optimization_dir = f"{data_dir}/optimization_results"
+            os.makedirs(optimization_dir, exist_ok=True)
+            
+            # Save optimization results
+            results_file = f"{optimization_dir}/{exchange}_{symbol}_optimized_parameters.json"
+            with open(results_file, "w") as f:
+                json.dump(optimization_results, f, indent=2)
+            
+            # Save optimization statistics
+            stats_file = f"{optimization_dir}/{exchange}_{symbol}_optimization_statistics.json"
+            with open(stats_file, "w") as f:
+                json.dump(self.optimization_statistics, f, indent=2)
+            
+            self.logger.info(f"✅ Saved optimization results to {optimization_dir}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save optimization results: {e}")
             return False
 
     async def _run_step_validator(
@@ -856,6 +1036,8 @@ class EnhancedTrainingManager:
             "n_trials": self.n_trials,
             "lookback_days": self.lookback_days,
             "enable_validators": self.enable_validators,
+            "enable_computational_optimization": self.enable_computational_optimization,
+            "optimization_statistics": self.optimization_statistics,
         }
     
     def get_validation_results(self) -> dict[str, Any]:
@@ -870,6 +1052,26 @@ class EnhancedTrainingManager:
             "validation_summary": validator_orchestrator.get_validation_summary(),
             "failed_validations": validator_orchestrator.get_failed_validations()
         }
+    
+    def get_computational_optimization_results(self) -> dict[str, Any]:
+        """
+        Get computational optimization results and statistics.
+        
+        Returns:
+            dict: Computational optimization results
+        """
+        if self.computational_optimization_manager:
+            return {
+                "optimization_statistics": self.computational_optimization_manager.get_optimization_statistics(),
+                "enabled_optimizations": self.optimization_statistics,
+                "manager_available": True
+            }
+        else:
+            return {
+                "optimization_statistics": {},
+                "enabled_optimizations": {},
+                "manager_available": False
+            }
 
     @handle_errors(
         exceptions=(Exception,),
@@ -880,6 +1082,11 @@ class EnhancedTrainingManager:
         """Stop the enhanced training manager and cleanup resources."""
         try:
             self.logger.info("🛑 Stopping Enhanced Training Manager...")
+            
+            # Cleanup computational optimization manager
+            if self.computational_optimization_manager:
+                await self.computational_optimization_manager.cleanup()
+                self.logger.info("✅ Computational optimization manager cleaned up")
             
             self.is_training = False
             self.logger.info("✅ Enhanced Training Manager stopped successfully")

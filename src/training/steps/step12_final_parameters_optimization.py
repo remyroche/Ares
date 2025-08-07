@@ -254,21 +254,22 @@ class FinalParametersOptimizationStep:
                     ),
                 }
 
-                # Multi-objective evaluation
-                win_rate = self._evaluate_win_rate(params, calibration_results)
-                profit_factor = self._evaluate_profit_factor(params, calibration_results)
-                sharpe_ratio = self._evaluate_sharpe_ratio(params, calibration_results)
-                max_drawdown = self._evaluate_max_drawdown(params, calibration_results)
+                           # Multi-objective evaluation focusing on actual win/loss amounts
+           win_rate = self._evaluate_win_rate(params, calibration_results)
+           avg_win = self._evaluate_average_win(params, calibration_results)
+           avg_loss = self._evaluate_average_loss(params, calibration_results)
+           sharpe_ratio = self._evaluate_sharpe_ratio(params, calibration_results)
+           max_drawdown = self._evaluate_max_drawdown(params, calibration_results)
 
-                # Return multiple objectives
-                return win_rate, profit_factor, sharpe_ratio, -max_drawdown
+           # Return multiple objectives
+           return win_rate, avg_win, -avg_loss, sharpe_ratio, -max_drawdown
 
             # Create multi-objective study
-            study = optuna.create_study(
-                directions=["maximize", "maximize", "maximize", "maximize"],
-                sampler=optuna.samplers.TPESampler(seed=42),
-                pruner=optuna.pruners.HyperbandPruner()
-            )
+                       study = optuna.create_study(
+               directions=["maximize", "maximize", "minimize", "maximize", "minimize"],
+               sampler=optuna.samplers.TPESampler(seed=42),
+               pruner=optuna.pruners.HyperbandPruner()
+           )
 
             # Optimize with more trials for multi-objective
             study.optimize(objective, n_trials=100, timeout=1800)  # 30 minutes timeout
@@ -737,6 +738,38 @@ class FinalParametersOptimizationStep:
         except Exception as e:
             self.logger.error(f"Error evaluating max drawdown: {e}")
             return 0.2
+
+    def _evaluate_average_win(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+        """Evaluate average win amount based on parameters."""
+        try:
+            # Simulate average win evaluation
+            base_avg_win = 0.02  # 2% average win
+            confidence_factor = params.get("analyst_confidence_threshold", 0.7) * 0.01
+            position_size_factor = params.get("base_position_size", 0.05) * 0.5
+            volatility_factor = params.get("target_volatility", 0.15) * 0.1
+            
+            # Higher confidence and position size should lead to larger wins
+            avg_win = base_avg_win + confidence_factor + position_size_factor + volatility_factor
+            return max(0.005, avg_win)  # Minimum 0.5% win
+        except Exception as e:
+            self.logger.error(f"Error evaluating average win: {e}")
+            return 0.02
+
+    def _evaluate_average_loss(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+        """Evaluate average loss amount based on parameters."""
+        try:
+            # Simulate average loss evaluation
+            base_avg_loss = 0.015  # 1.5% average loss
+            stop_loss_factor = params.get("stop_loss_atr_multiplier", 2.0) * 0.005
+            position_size_factor = params.get("base_position_size", 0.05) * 0.3
+            risk_factor = params.get("max_position_size", 0.25) * 0.1
+            
+            # Tighter stop losses should lead to smaller losses
+            avg_loss = base_avg_loss + stop_loss_factor + position_size_factor + risk_factor
+            return max(0.005, avg_loss)  # Minimum 0.5% loss
+        except Exception as e:
+            self.logger.error(f"Error evaluating average loss: {e}")
+            return 0.015
 
     def _evaluate_volatility_performance(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate volatility parameter performance."""

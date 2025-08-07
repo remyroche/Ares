@@ -64,12 +64,13 @@ class ConfidenceThresholdsSearchSpace(SearchSpace):
         self.optimization_strategy = OptimizationStrategy.MULTI_OBJECTIVE
         self.n_trials = 100
         self.timeout_seconds = 1800
-        self.evaluation_metrics = [
-            EvaluationMetric.WIN_RATE,
-            EvaluationMetric.PROFIT_FACTOR,
-            EvaluationMetric.SHARPE_RATIO,
-            EvaluationMetric.MAX_DRAWDOWN
-        ]
+                       self.evaluation_metrics = [
+                   EvaluationMetric.WIN_RATE,
+                   EvaluationMetric.AVERAGE_WIN,
+                   EvaluationMetric.AVERAGE_LOSS,
+                   EvaluationMetric.SHARPE_RATIO,
+                   EvaluationMetric.MAX_DRAWDOWN
+               ]
         
         self.parameters = {
             "analyst_confidence_threshold": {

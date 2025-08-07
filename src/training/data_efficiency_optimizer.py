@@ -6,7 +6,7 @@ import pickle
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Number
 
 import pandas as pd
 import psutil
@@ -141,7 +141,7 @@ class DataEfficiencyOptimizer:
 
             conn.commit()
 
-    def get_memory_usage(self) -> float:
+    def get_memory_usage(self) -> Number:
         """Get current memory usage as a percentage."""
         process = psutil.Process()
         memory_percent = process.memory_percent()

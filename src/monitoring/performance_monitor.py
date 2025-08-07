@@ -18,6 +18,7 @@ import psutil
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.monitoring.csv_exporter import CSVExporter
 
 
 @dataclass
@@ -178,6 +179,29 @@ class PerformanceMonitor:
             "response_time": deque(maxlen=100),
             "confidence_final": deque(maxlen=100),
         }
+
+        # CSV exporter
+        self.csv_exporter: CSVExporter | None = None
+
+        # Initialize baseline metrics
+        await self._initialize_baseline_metrics()
+
+        # Initialize CSV exporter
+        await self._initialize_csv_exporter()
+
+        # Initialize monitoring tasks
+        await self._start_monitoring_tasks()
+
+        self.logger.info("📊 Monitoring components initialized")
+
+    async def _initialize_csv_exporter(self) -> None:
+        """Initialize CSV exporter for data export."""
+        try:
+            self.csv_exporter = CSVExporter(self.config)
+            await self.csv_exporter.initialize()
+            self.logger.info("📊 CSV exporter initialized")
+        except Exception as e:
+            self.logger.error(f"Error initializing CSV exporter: {e}")
 
     async def _start_monitoring_tasks(self) -> None:
         """Start monitoring tasks."""
@@ -845,6 +869,106 @@ class PerformanceMonitor:
         except Exception as e:
             self.logger.error(f"Error exporting performance report: {e}")
             return False
+
+    async def export_all_monitoring_data(self, time_range: str = "24h") -> Dict[str, Optional[str]]:
+        """Export all monitoring data to CSV files."""
+        try:
+            if not self.csv_exporter:
+                self.logger.error("CSV exporter not initialized")
+                return {}
+
+            export_results = {}
+
+            # Export performance metrics
+            if self.metrics_history:
+                performance_data = []
+                for metrics in self.metrics_history:
+                    performance_data.append({
+                        'timestamp': metrics.timestamp.isoformat(),
+                        'model_accuracy': metrics.model_accuracy,
+                        'model_precision': metrics.model_precision,
+                        'model_recall': metrics.model_recall,
+                        'model_f1_score': metrics.model_f1_score,
+                        'model_auc': metrics.model_auc,
+                        'trading_win_rate': metrics.trading_win_rate,
+                        'trading_profit_factor': metrics.trading_profit_factor,
+                        'trading_sharpe_ratio': metrics.trading_sharpe_ratio,
+                        'trading_max_drawdown': metrics.trading_max_drawdown,
+                        'trading_total_return': metrics.trading_total_return,
+                        'system_memory_usage': metrics.system_memory_usage,
+                        'system_cpu_usage': metrics.system_cpu_usage,
+                        'system_response_time': metrics.system_response_time,
+                        'system_throughput': metrics.system_throughput,
+                        'confidence_analyst': metrics.confidence_analyst,
+                        'confidence_tactician': metrics.confidence_tactician,
+                        'confidence_final': metrics.confidence_final,
+                    })
+                
+                export_results['performance'] = await self.csv_exporter.export_performance_metrics(
+                    performance_data, time_range
+                )
+
+            # Export risk metrics
+            if self.metrics_history:
+                risk_data = []
+                for metrics in self.metrics_history:
+                    risk_data.append({
+                        'timestamp': metrics.timestamp.isoformat(),
+                        'portfolio_var': metrics.portfolio_var,
+                        'portfolio_correlation': metrics.portfolio_correlation,
+                        'portfolio_concentration': metrics.portfolio_concentration,
+                        'portfolio_leverage': metrics.portfolio_leverage,
+                        'position_count': metrics.position_count,
+                        'max_position_size': metrics.max_position_size,
+                        'avg_position_size': metrics.avg_position_size,
+                        'position_duration': metrics.position_duration,
+                        'market_volatility': metrics.market_volatility,
+                        'market_liquidity': metrics.market_liquidity,
+                        'market_stress': metrics.market_stress,
+                        'market_regime': metrics.market_regime,
+                    })
+                
+                export_results['risk_metrics'] = await self.csv_exporter.export_risk_metrics(
+                    risk_data, time_range
+                )
+
+            # Export system health data
+            if self.metrics_history:
+                system_data = []
+                for metrics in self.metrics_history:
+                    system_data.append({
+                        'timestamp': metrics.timestamp.isoformat(),
+                        'health_score': (metrics.model_accuracy + metrics.trading_win_rate) / 2,
+                        'memory_usage': metrics.system_memory_usage,
+                        'cpu_usage': metrics.system_cpu_usage,
+                        'response_time': metrics.system_response_time,
+                        'throughput': metrics.system_throughput,
+                        'error_rate': 0.0,  # Would be calculated from actual errors
+                        'uptime': 0.0,  # Would be calculated from system uptime
+                        'active_connections': 0,  # Would be tracked from actual connections
+                    })
+                
+                export_results['system_health'] = await self.csv_exporter.export_system_health(
+                    system_data, time_range
+                )
+
+            self.logger.info(f"✅ All monitoring data exported: {export_results}")
+            return export_results
+
+        except Exception as e:
+            self.logger.error(f"Error exporting all monitoring data: {e}")
+            return {}
+
+    def get_csv_export_summary(self) -> Dict[str, Any]:
+        """Get CSV export summary."""
+        try:
+            if not self.csv_exporter:
+                return {'error': 'CSV exporter not initialized'}
+            
+            return self.csv_exporter.get_export_summary()
+        except Exception as e:
+            self.logger.error(f"Error getting CSV export summary: {e}")
+            return {'error': str(e)}
 
     @handle_errors(
         exceptions=(Exception,),

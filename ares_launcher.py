@@ -1523,8 +1523,24 @@ Examples:
   python ares_launcher.py backtest --symbol ETHUSDT --exchange BINANCE --gui
   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --gui
   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step3_regime_data_splitting
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step3_regime_data_splitting
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step4_analyst_labeling_feature_engineering
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_analyst_specialist_training
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step6_analyst_enhancement
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step7_analyst_ensemble_creation
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step8_tactician_labeling
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step9_tactician_specialist_training
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step10_tactician_ensemble_creation
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step11_confidence_calibration
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step12_final_parameters_optimization
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step13_walk_forward_validation
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step14_monte_carlo_validation
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step15_ab_testing
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step16_saving
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification --force-rerun
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_analyst_specialist_training --force-rerun --gui
   python ares_launcher.py model_trainer --symbol ETHUSDT --exchange BINANCE --step step4_analyst_labeling_feature_engineering
   python ares_launcher.py live --symbol ETHUSDT --exchange BINANCE
   python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE

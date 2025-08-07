@@ -144,7 +144,7 @@ class Strategist:
         """Initialize ML Regime Classifier for market regime determination."""
         from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 
-        self.regime_classifier = UnifiedRegimeClassifier(self.config)
+        self.regime_classifier = UnifiedRegimeClassifier(self.config, "UNKNOWN", "UNKNOWN")
         if not self.regime_classifier.load_models():
             self.logger.info(
                 "No existing regime classifier models found. Will train when needed.",

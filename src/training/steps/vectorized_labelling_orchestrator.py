@@ -67,7 +67,7 @@ class VectorizedLabellingOrchestrator:
             self.logger.info("🚀 Initializing vectorized labeling orchestrator...")
 
             # Initialize triple barrier labeler
-            from src.training.steps.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+            from src.training.steps.step4_analyst_labeling_feature_engineering.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
             self.triple_barrier_labeler = OptimizedTripleBarrierLabeling(
                 profit_take_multiplier=self.orchestrator_config.get("profit_take_multiplier", 0.002),
                 stop_loss_multiplier=self.orchestrator_config.get("stop_loss_multiplier", 0.001),

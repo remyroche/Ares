@@ -20,7 +20,7 @@ sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
-from src.training.multi_timeframe_training_manager import MultiTimeframeTrainingManager
+from src.training.steps.multi_timeframe_training.multi_timeframe_training_manager import MultiTimeframeTrainingManager
 from src.utils.logger import system_logger
 
 

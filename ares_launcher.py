@@ -1111,7 +1111,7 @@ class AresLauncher:
 
             self.logger.info("🔧 Initializing unified regime classifier...")
             # Initialize unified regime classifier
-            regime_classifier = UnifiedRegimeClassifier(CONFIG)
+            regime_classifier = UnifiedRegimeClassifier(CONFIG, exchange, symbol)
             self.logger.info("✅ Unified regime classifier initialized successfully")
 
             if subcommand == "load":

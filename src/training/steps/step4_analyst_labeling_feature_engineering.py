@@ -79,17 +79,10 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
         labeled_data = data.copy()
 
         # Define barrier parameters based on regime
-        if regime_name.upper() in ["BULL", "BEAR", "SIDEWAYS"]:
-            # High-data regimes: more aggressive barriers
-            profit_take_multiplier = 0.002  # 0.2%
-            stop_loss_multiplier = 0.001  # 0.1%
-            time_barrier_minutes = 30  # 30 minutes
-        else:
-            # Low-data regimes: more conservative barriers
-            profit_take_multiplier = 0.001  # 0.1%
-            stop_loss_multiplier = 0.0005  # 0.05%
-            time_barrier_minutes = 15  # 15 minutes
-
+        profit_take_multiplier = 0.002  # 0.2%
+        stop_loss_multiplier = 0.001  # 0.1%
+        time_barrier_minutes = 30  # 30 minutes
+        
         # Apply triple barrier labeling
         labels = []
         for i in range(len(data)):

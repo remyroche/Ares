@@ -1071,6 +1071,20 @@ class AresLauncher:
                 return False
 
             self.logger.info("✅ Data consolidation completed successfully")
+
+            # Step 3: Convert consolidated data to ETHUSDT_1h.csv format
+            if symbol == "ETHUSDT" and exchange == "BINANCE":
+                self.logger.info("🔄 Step 3: Converting data to ETHUSDT_1h.csv format...")
+                from src.analyst.data_utils import create_ethusdt_1h_csv
+                
+                conversion_success = create_ethusdt_1h_csv()
+                if conversion_success:
+                    self.logger.info("✅ Data conversion completed successfully")
+                else:
+                    self.logger.warning("⚠️ Data conversion failed, but continuing...")
+            else:
+                self.logger.info(f"⏭️ Skipping ETHUSDT_1h.csv conversion for {symbol} on {exchange}")
+
             return True
 
         except Exception as e:

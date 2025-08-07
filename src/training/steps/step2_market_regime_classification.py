@@ -24,9 +24,8 @@ class MarketRegimeClassificationStep:
         """Initialize the market regime classification step."""
         self.logger.info("Initializing Market Regime Classification Step...")
 
-        # Initialize the unified regime classifier
-        self.regime_classifier = UnifiedRegimeClassifier(self.config)
-        await self.regime_classifier.initialize()
+        # Initialize the unified regime classifier (will be re-initialized with exchange/symbol in execute)
+        self.regime_classifier = None
 
         self.logger.info(
             "Market Regime Classification Step initialized successfully",
@@ -53,6 +52,11 @@ class MarketRegimeClassificationStep:
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         data_dir = training_input.get("data_dir", "data/training")
+        
+        # Initialize the unified regime classifier with exchange and symbol
+        if self.regime_classifier is None:
+            self.regime_classifier = UnifiedRegimeClassifier(self.config, exchange, symbol)
+            await self.regime_classifier.initialize()
         
         # Try to load pre-consolidated data first
         consolidated_file = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"

@@ -4,11 +4,12 @@ Ares Comprehensive Launcher
 
 This script provides a unified interface for launching the Ares trading bot with various modes:
 1. Paper trading for robust trade information and performance metrics
-2. Enhanced backtesting with efficiency optimizations for large datasets (uses existing data)
+2. Enhanced backtesting with cached wavelet features for efficiency (uses existing data)
 3. Enhanced model training with efficiency optimizations for large datasets (uses existing data)
 4. Live trading for production
 5. Portfolio management for multi-token trading
 6. HMM regime classification and ML model training
+7. Wavelet feature precomputation for fast backtesting
 
 Usage:
     # Paper trading (robust trade info and performance metrics)
@@ -17,7 +18,7 @@ Usage:
     # Challenger paper trading (with challenger model)
     python ares_launcher.py challenger --symbol ETHUSDT --exchange BINANCE
 
-    # Enhanced backtesting with efficiency optimizations (uses existing data)
+    # Enhanced backtesting with cached wavelet features (uses existing data)
     python ares_launcher.py backtest --symbol ETHUSDT --exchange BINANCE
 
     # Enhanced model training with efficiency optimizations (uses existing data)
@@ -33,6 +34,9 @@ Usage:
     python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE
     python ares_launcher.py load --symbol ETHUSDT --exchange MEXC
     python ares_launcher.py load --symbol ETHUSDT --exchange GATEIO
+
+    # Wavelet feature precomputation for fast backtesting
+    python ares_launcher.py precompute --symbol ETHUSDT --exchange BINANCE
 
     # Unified Regime Classifier operations
     python ares_launcher.py regime --regime-subcommand load --symbol ETHUSDT --exchange BINANCE
@@ -420,17 +424,180 @@ class AresLauncher:
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
+        context="precompute_wavelet_features",
+    )
+    def precompute_wavelet_features(self, symbol: str, exchange: str) -> bool:
+        """Precompute wavelet features for backtesting if they don't exist."""
+        self.logger.info(f"🔧 Precomputing wavelet features for {symbol} on {exchange}")
+        print(f"🔧 Precomputing wavelet features for {symbol} on {exchange}")
+
+        try:
+            # Import the precomputation system
+            import asyncio
+            from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
+            from src.config import CONFIG
+
+            # Initialize precomputer
+            precomputer = WaveletFeaturePrecomputer(CONFIG)
+            init_success = asyncio.run(precomputer.initialize())
+            
+            if not init_success:
+                self.logger.error("❌ Failed to initialize wavelet precomputer")
+                return False
+
+            # Check if cache already exists
+            cache_dir = CONFIG.get("wavelet_cache", {}).get("cache_dir", "data/wavelet_cache")
+            import os
+            if os.path.exists(cache_dir) and len(os.listdir(cache_dir)) > 0:
+                self.logger.info("✅ Wavelet features already cached, skipping precomputation")
+                print("✅ Wavelet features already cached, skipping precomputation")
+                return True
+
+            # Data path for precomputation
+            data_path = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+            
+            if not os.path.exists(data_path):
+                self.logger.error(f"❌ Consolidated data file not found: {data_path}")
+                self.logger.error("Please run data loading first")
+                return False
+
+            # Precompute features
+            self.logger.info("🚀 Starting wavelet feature precomputation...")
+            print("🚀 Starting wavelet feature precomputation...")
+            
+            success = asyncio.run(precomputer.precompute_dataset(
+                data_path=data_path,
+                symbol=symbol
+            ))
+
+            if success:
+                self.logger.info("✅ Wavelet feature precomputation completed successfully")
+                print("✅ Wavelet feature precomputation completed successfully")
+                
+                # Print statistics
+                stats = precomputer.get_precomputation_stats()
+                print(f"📊 Precomputation Statistics: {stats}")
+                return True
+            else:
+                self.logger.error("❌ Wavelet feature precomputation failed")
+                print("❌ Wavelet feature precomputation failed")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to precompute wavelet features: {e}")
+            print(f"❌ Failed to precompute wavelet features: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
         context="run_backtesting",
     )
     def run_backtesting(self, symbol: str, exchange: str, with_gui: bool = False):
-        """Run enhanced backtesting using unified training method."""
-        return self._run_unified_training(
-            symbol=symbol,
-            exchange=exchange,
-            training_mode="backtesting",
-            lookback_days=730,  # 2 years for comprehensive backtesting
-            with_gui=with_gui,
-        )
+        """Run enhanced backtesting using cached wavelet features by default."""
+        self.logger.info(f"📊 Running backtesting with cached wavelet features for {symbol} on {exchange}")
+        print(f"📊 Running backtesting with cached wavelet features for {symbol} on {exchange}")
+        print("=" * 80)
+
+        if with_gui:
+            if not self.launch_gui("backtesting", symbol, exchange):
+                return False
+
+        try:
+            # First, ensure wavelet features are precomputed
+            if not self.precompute_wavelet_features(symbol, exchange):
+                self.logger.warning("⚠️ Wavelet precomputation failed, continuing with direct computation")
+                print("⚠️ Wavelet precomputation failed, continuing with direct computation")
+
+            # Import and use the cached backtesting system
+            import asyncio
+            from src.training.steps.backtesting_with_cached_features import BacktestingWithCachedFeatures
+            from src.config import CONFIG
+
+            # Initialize backtesting with cached features
+            backtester = BacktestingWithCachedFeatures(CONFIG)
+            
+            # Initialize the backtesting system
+            init_success = asyncio.run(backtester.initialize())
+            if not init_success:
+                self.logger.error("❌ Failed to initialize backtesting system")
+                return False
+
+            # Load data for backtesting
+            data_path = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+            volume_path = f"data_cache/volume_{exchange}_{symbol}_consolidated.parquet"
+            
+            # Check if consolidated data exists
+            import os
+            if not os.path.exists(data_path):
+                self.logger.error(f"❌ Consolidated data file not found: {data_path}")
+                self.logger.error("Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE")
+                return False
+
+            # Load data
+            price_data = asyncio.run(backtester._load_backtest_data(data_path))
+            volume_data = asyncio.run(backtester._load_volume_data(volume_path)) if os.path.exists(volume_path) else None
+
+            if price_data is None or price_data.empty:
+                self.logger.error("❌ Failed to load price data for backtesting")
+                return False
+
+            # Run backtest with cached features
+            self.logger.info(f"🚀 Starting backtest with {len(price_data)} data points")
+            print(f"🚀 Starting backtest with {len(price_data)} data points")
+            
+            # Strategy configuration
+            strategy_config = {
+                "strategy_type": "wavelet_energy_entropy",
+                "parameters": {
+                    "energy_threshold": 0.5,
+                    "entropy_threshold": 0.3,
+                    "use_cached_features": True
+                }
+            }
+
+            # Run the backtest
+            results = asyncio.run(backtester.run_backtest(
+                price_data=price_data,
+                volume_data=volume_data,
+                strategy_config=strategy_config
+            ))
+
+            if "error" in results:
+                self.logger.error(f"❌ Backtesting failed: {results['error']}")
+                print(f"❌ Backtesting failed: {results['error']}")
+                return False
+
+            # Print results
+            strategy_results = results.get("strategy_results", {})
+            print("=" * 80)
+            print("📊 BACKTESTING RESULTS")
+            print("=" * 80)
+            print(f"Total Return: {strategy_results.get('total_return', 0):.4f}")
+            print(f"Sharpe Ratio: {strategy_results.get('sharpe_ratio', 0):.4f}")
+            print(f"Max Drawdown: {strategy_results.get('max_drawdown', 0):.4f}")
+            print(f"Win Rate: {strategy_results.get('win_rate', 0):.2%}")
+            print(f"Signal Count: {strategy_results.get('signal_count', 0)}")
+            print(f"Feature Count: {results.get('feature_count', 0)}")
+            print("=" * 80)
+
+            # Print performance stats
+            stats = backtester.get_performance_stats()
+            print("📈 PERFORMANCE STATISTICS")
+            print(f"Cache Hit Rate: {stats.get('cache_hit_rate', 0):.2%}")
+            print(f"Avg Backtest Time: {stats.get('avg_backtest_time', 0):.3f}s")
+            print(f"Avg Feature Load Time: {stats.get('avg_feature_load_time', 0):.3f}s")
+            print(f"Iterations Completed: {stats.get('iterations_completed', 0)}")
+            print("=" * 80)
+
+            self.logger.info("✅ Backtesting with cached wavelet features completed successfully")
+            print("✅ Backtesting with cached wavelet features completed successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to run backtesting: {e}")
+            print(f"❌ Failed to run backtesting: {e}")
+            return False
 
     def _run_unified_trading(
         self,
@@ -1277,6 +1444,7 @@ Examples:
   python ares_launcher.py load --symbol ETHUSDT --exchange GATEIO
   python ares_launcher.py portfolio --gui
   python ares_launcher.py gui --mode paper --symbol ETHUSDT --exchange BINANCE
+  python ares_launcher.py precompute --symbol ETHUSDT --exchange BINANCE
         """,
     )
 
@@ -1294,6 +1462,7 @@ Examples:
             "multi-timeframe",
             "load",
             "regime",
+            "precompute",
         ],
         help="The command to execute",
     )
@@ -1396,6 +1565,7 @@ def validate_arguments(args: argparse.Namespace) -> None:
         "blank",
         "multi-timeframe",
         "load",
+        "precompute",
     ]
 
     if args.command in commands_requiring_symbol:
@@ -1473,6 +1643,10 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 args.regime_subcommand,
                 with_gui=args.gui,
             ),
+        ),
+        "precompute": lambda: launcher.precompute_wavelet_features(
+            args.symbol,
+            args.exchange,
         ),
     }
 

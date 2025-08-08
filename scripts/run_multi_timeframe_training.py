@@ -107,7 +107,7 @@ async def run_quick_multi_timeframe_test(symbol: str):
 
     # Use limited timeframes and data for quick testing
     timeframes = ["1h", "4h"]  # Reduced timeframes
-    lookback_days = 30  # Limited data
+    lookback_days = 60  # Limited data (expanded for better regime coverage)
 
     # Update configuration for quick test
     CONFIG["MULTI_TIMEFRAME_TRAINING"]["enable_parallel_training"] = False

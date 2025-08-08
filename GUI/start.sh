@@ -46,7 +46,7 @@ echo "🔍 Checking Python dependencies..."
 if ! python3 -c "import fastapi, uvicorn, psutil, prometheus_client" 2>/dev/null; then
     echo "📦 Installing Python dependencies (fastapi, uvicorn, psutil, prometheus-client)..."
     # Fallback installs for constrained environments
-    pip3 install fastapi uvicorn psutil prometheus-client || pip3 install --break-system-packages fastapi uvicorn psutil prometheus-client || true
+    pip3 install fastapi uvicorn psutil prometheus-client || pip3 install --break-system-packages fastapi uvicorn psutil prometheus-client || { echo "❌ Failed to install Python dependencies"; exit 1; }
 fi
 
 echo "✅ Dependencies check passed"

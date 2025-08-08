@@ -7,15 +7,6 @@ import sys
 from datetime import datetime, timedelta
 from typing import Any
 
-# Ensure project root and src are on path BEFORE importing project modules
-_current_dir = os.path.dirname(os.path.abspath(__file__))
-_project_root = os.path.abspath(os.path.join(_current_dir, ".."))
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
-_src_path = os.path.join(_project_root, "src")
-if _src_path not in sys.path:
-    sys.path.insert(0, _src_path)
-
 import psutil
 from fastapi import (
     BackgroundTasks,
@@ -94,11 +85,7 @@ except ImportError as e:
         def __init__(self):
             pass
 
-    class AresConfig:
-        def __init__(self):
-            self.exchange_name = "BINANCE"
-
-    ares_config = AresConfig()
+    ares_config = type("AresConfig", (), {"exchange_name": "BINANCE"})()
 
 # --- FastAPI App Initialization ---
 app = FastAPI(

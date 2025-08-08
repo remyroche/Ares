@@ -5,6 +5,10 @@
 
 set -euo pipefail
 
+# Resolve script and project directories
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 echo "🚀 Starting Ares Trading Bot GUI..."
 
 API_PORT="${API_PORT:-8000}"
@@ -32,9 +36,9 @@ fi
 echo "✅ Prerequisites check passed"
 
 # Install frontend dependencies if node_modules doesn't exist
-if [ ! -d "node_modules" ]; then
+if [ ! -d "${SCRIPT_DIR}/node_modules" ]; then
     echo "📦 Installing frontend dependencies..."
-    npm install
+    (cd "${SCRIPT_DIR}" && npm install)
     if [ $? -ne 0 ]; then
         echo "❌ Failed to install frontend dependencies"
         exit 1
@@ -54,16 +58,18 @@ echo "✅ Dependencies check passed"
 # Function to cleanup background processes
 cleanup() {
     echo "🛑 Shutting down..."
-    kill $API_PID $FRONTEND_PID 2>/dev/null || true
+    kill ${API_PID:-} ${FRONTEND_PID:-} 2>/dev/null || true
     exit 0
 }
 
 # Set up signal handlers
 trap cleanup SIGINT SIGTERM
 
-# Start the API server in the background
+# Start the API server in the background (run as module from project root)
 echo "🔧 Starting API server on port ${API_PORT}..."
-API_PORT="$API_PORT" python3 api_server.py &
+(
+  cd "${ROOT_DIR}" && API_PORT="${API_PORT}" python3 -m GUI.api_server &
+)
 API_PID=$!
 
 # Wait a moment for the API server to start
@@ -72,7 +78,7 @@ sleep 3
 # Check if API server started successfully
 if ! curl -s "http://localhost:${API_PORT}" > /dev/null; then
     echo "❌ API server failed to start (port ${API_PORT})"
-    kill $API_PID 2>/dev/null || true
+    kill ${API_PID:-} 2>/dev/null || true
     exit 1
 fi
 
@@ -82,10 +88,10 @@ echo "✅ API server started on http://localhost:${API_PORT}"
 echo "🌐 Starting frontend on port ${FRONTEND_PORT}..."
 if [ -n "$VITE_API_BASE_URL" ]; then
   echo "↪ Using VITE_API_BASE_URL=$VITE_API_BASE_URL"
-  VITE_API_BASE_URL="$VITE_API_BASE_URL" npm run dev -- --port ${FRONTEND_PORT} &
+  (cd "${SCRIPT_DIR}" && API_PORT="${API_PORT}" VITE_API_BASE_URL="$VITE_API_BASE_URL" npm run dev -- --port ${FRONTEND_PORT} &)
 else
   # Use proxy to API if no explicit base URL
-  npm run dev -- --port ${FRONTEND_PORT} &
+  (cd "${SCRIPT_DIR}" && API_PORT="${API_PORT}" npm run dev -- --port ${FRONTEND_PORT} &)
 fi
 FRONTEND_PID=$!
 
@@ -95,7 +101,7 @@ sleep 5
 # Check if frontend started successfully
 if ! curl -s "http://localhost:${FRONTEND_PORT}" > /dev/null; then
     echo "❌ Frontend failed to start (port ${FRONTEND_PORT})"
-    kill $API_PID $FRONTEND_PID 2>/dev/null || true
+    kill ${API_PID:-} ${FRONTEND_PID:-} 2>/dev/null || true
     exit 1
 fi
 

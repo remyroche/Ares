@@ -347,6 +347,14 @@ class BinanceExchange:
         order_type: str,
         quantity: float,
         price: float | None = None,
+        time_in_force: str | None = None,
+        stop_price: float | None = None,
+        new_client_order_id: str | None = None,
+        reduce_only: bool | None = None,
+        close_on_trigger: bool | None = None,
+        take_profit: float | None = None,
+        stop_loss: float | None = None,
+        post_only: bool | None = None,
     ) -> dict[str, Any] | None:
         """
         Create an order.
@@ -383,7 +391,7 @@ class BinanceExchange:
                 self.logger.error("Price required for LIMIT orders")
                 return None
 
-            # Prepare request
+                        # Prepare request
             params = {
                 "symbol": symbol,
                 "side": side,
@@ -392,8 +400,22 @@ class BinanceExchange:
                 "timestamp": int(time.time() * 1000),
             }
 
-            if price:
+            if price is not None:
                 params["price"] = price
+            if time_in_force:
+                params["timeInForce"] = time_in_force
+            if stop_price is not None:
+                params["stopPrice"] = stop_price
+            if new_client_order_id:
+                params["newClientOrderId"] = new_client_order_id
+            # reduce_only/close_on_trigger are futures-only; include if supported downstream
+            if reduce_only is not None:
+                params["reduceOnly"] = str(reduce_only).lower()
+            if close_on_trigger is not None:
+                params["closePosition"] = str(close_on_trigger).lower()
+            if post_only is not None:
+                params["postOnly"] = str(post_only).lower()
+            # take_profit/stop_loss are strategy-level; for spot we skip; for futures these may map to working orders
 
             # Add signature
             signature = self._generate_signature(params)

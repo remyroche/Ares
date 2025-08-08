@@ -82,6 +82,20 @@ class SystemConfig(TypedDict, total=False):
     data_cache_size_mb: Optional[int]
 
 
+class TrainingConfig(TypedDict, total=False):
+    """Type-safe training configuration."""
+    training_pipeline: Dict[str, Union[int, float]]
+    MODEL_TRAINING: Dict[str, Union[int, float, str, bool, Dict[str, Union[int, float, str, bool]]]]
+    DATA_CONFIG: Dict[str, Union[int, float, str]]
+    ENHANCED_TRAINING: Dict[str, Union[int, float, str, bool]]
+    MULTI_TIMEFRAME_TRAINING: Dict[str, Union[int, float, str, bool, Dict[str, Union[int, float, str, bool]]]]
+    TIMEFRAMES: Dict[str, Dict[str, Union[int, float, str]]]
+    TIMEFRAME_SETS: Dict[str, Dict[str, Union[List[str], str]]]
+    DEFAULT_TIMEFRAME_SET: str
+    TWO_TIER_DECISION: Dict[str, Union[int, float, str, bool, List[str]]]
+    ENHANCED_ENSEMBLE: Dict[str, Union[int, float, str, bool, Dict[str, Union[int, float, str]]]]
+
+
 # Main configuration type
 class ConfigDict(TypedDict, total=False):
     """Complete type-safe configuration dictionary."""
@@ -91,3 +105,4 @@ class ConfigDict(TypedDict, total=False):
     ml: MLConfig
     monitoring: MonitoringConfig
     system: SystemConfig
+    training: TrainingConfig

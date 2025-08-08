@@ -487,7 +487,7 @@ class ErrorHandler:
         """Log error with context."""
         if self.logger:
             self.logger.exception(
-                f"Error in {self.context}.{func_name}: {error} | correlation_id={get_correlation_id()}",
+                f"Error in {self.context}.{func_name}: {error}",
             )
         else:
             _logger = logging.getLogger(__name__)
@@ -499,9 +499,7 @@ class ErrorHandler:
                 )
                 handler.setFormatter(formatter)
                 _logger.addHandler(handler)
-            _logger.exception(
-                f"Error in {self.context}.{func_name}: {error} | correlation_id={get_correlation_id()}",
-            )
+            _logger.exception(f"Error in {self.context}.{func_name}: {error}")
 
     def _handle_specific_error(
         self,
@@ -568,9 +566,7 @@ def safe_operation(
     try:
         return operation(*args, **kwargs)
     except Exception as e:
-        logging.getLogger(__name__).exception(
-            f"Operation failed: {e} | correlation_id={get_correlation_id()}",
-        )
+        logging.getLogger(__name__).exception(f"Operation failed: {e}")
         return None
 
 
@@ -583,9 +579,7 @@ async def safe_async_operation(
     try:
         return await operation(*args, **kwargs)
     except Exception as e:
-        logging.getLogger(__name__).exception(
-            f"Async operation failed: {e} | correlation_id={get_correlation_id()}",
-        )
+        logging.getLogger(__name__).exception(f"Async operation failed: {e}")
         return None
 
 
@@ -804,13 +798,15 @@ def _log_retry_attempt(
     attempt_duration = time.time() - attempt_start_time
     total_duration = time.time() - start_time
 
-    logger.exception(f"💥 Network operation failed: | correlation_id={get_correlation_id()}")
-    logger.exception(f"   Attempt: {attempt + 1}/{max_retries + 1}")
-    logger.exception(f"   Attempt duration: {attempt_duration:.2f} seconds")
-    logger.exception(f"   Total duration: {total_duration:.2f} seconds")
-    logger.exception(f"   Error type: {type(error).__name__}")
-    logger.exception("Full traceback:")
-    logger.exception(traceback.format_exc())
+    log_message = (
+        "💥 Network operation failed:\n"
+        f"   Attempt: {attempt + 1}/{max_retries + 1}\n"
+        f"   Attempt duration: {attempt_duration:.2f} seconds\n"
+        f"   Total duration: {total_duration:.2f} seconds\n"
+        f"   Error type: {type(error).__name__}\n"
+        f"   Full traceback:\n{traceback.format_exc()}"
+    )
+    logger.exception(log_message)
 
 
 def handle_data_processing_errors(
@@ -838,7 +834,7 @@ def handle_data_processing_errors(
                 context_str = f" ({context})" if context else ""
                 system_logger = get_system_logger()
                 system_logger.exception(
-                    f"DataFrame operation failed{context_str}: {e} | correlation_id={get_correlation_id()}",
+                    f"DataFrame operation failed{context_str}: {e}",
                 )
                 return default_return
 
@@ -851,7 +847,7 @@ def handle_data_processing_errors(
                 context_str = f" ({context})" if context else ""
                 system_logger = get_system_logger()
                 system_logger.exception(
-                    f"DataFrame operation failed{context_str}: {e} | correlation_id={get_correlation_id()}",
+                    f"DataFrame operation failed{context_str}: {e}",
                 )
                 return default_return
 
@@ -900,14 +896,14 @@ def handle_file_operations(
                 context_str = f" ({context})" if context else ""
                 system_logger = get_system_logger()
                 system_logger.exception(
-                    f"OS error during file operation{context_str}: {e} | correlation_id={get_correlation_id()}",
+                    f"OS error during file operation{context_str}: {e}",
                 )
                 return default_return
             except Exception as e:
                 context_str = f" ({context})" if context else ""
                 system_logger = get_system_logger()
                 system_logger.exception(
-                    f"Unexpected error in file operation{context_str}: {e} | correlation_id={get_correlation_id()}",
+                    f"Unexpected error in file operation{context_str}: {e}",
                 )
                 return default_return
 
@@ -919,14 +915,14 @@ def handle_file_operations(
                 context_str = f" ({context})" if context else ""
                 system_logger = get_system_logger()
                 system_logger.exception(
-                    f"OS error during file operation{context_str}: {e} | correlation_id={get_correlation_id()}",
+                    f"OS error during file operation{context_str}: {e}",
                 )
                 return default_return
             except Exception as e:
                 context_str = f" ({context})" if context else ""
                 system_logger = get_system_logger()
                 system_logger.exception(
-                    f"Unexpected error in file operation{context_str}: {e} | correlation_id={get_correlation_id()}",
+                    f"Unexpected error in file operation{context_str}: {e}",
                 )
                 return default_return
 
@@ -970,7 +966,7 @@ def handle_type_conversions(
                 if log_errors:
                     system_logger = get_system_logger()
                     system_logger.exception(
-                        f"Unexpected error in {func.__name__}: {e} | correlation_id={get_correlation_id()}",
+                        f"Unexpected error in {func.__name__}: {e}",
                     )
                 return default_return
 
@@ -990,7 +986,7 @@ def handle_type_conversions(
                 if log_errors:
                     system_logger = get_system_logger()
                     system_logger.exception(
-                        f"Unexpected error in {func.__name__}: {e} | correlation_id={get_correlation_id()}",
+                        f"Unexpected error in {func.__name__}: {e}",
                     )
                 return default_return
 
@@ -1054,21 +1050,17 @@ async def safe_network_operation(
                 else:
                     system_logger = get_system_logger()
                     system_logger.exception(
-                        f"Network operation failed after {max_retries} attempts: {e} | correlation_id={get_correlation_id()}",
+                        f"Network operation failed after {max_retries} attempts: {e}",
                     )
                     return None
             except Exception as e:
                 system_logger = get_system_logger()
-                system_logger.exception(
-                    f"Unexpected error in network operation: {e} | correlation_id={get_correlation_id()}",
-                )
+                system_logger.exception(f"Unexpected error in network operation: {e}")
                 return None
         return None
     except Exception as e:
         system_logger = get_system_logger()
-        system_logger.exception(
-            f"Error in safe network operation: {e} | correlation_id={get_correlation_id()}",
-        )
+        system_logger.exception(f"Error in safe network operation: {e}")
         return None
 
 
@@ -1088,9 +1080,7 @@ def safe_database_operation(operation: Callable, *args, **kwargs) -> Any:
         return operation(*args, **kwargs)
     except Exception as e:
         system_logger = get_system_logger()
-        system_logger.exception(
-            f"Database operation failed: {e} | correlation_id={get_correlation_id()}",
-        )
+        system_logger.exception(f"Database operation failed: {e}")
         return None
 
 
@@ -1111,9 +1101,7 @@ def safe_dataframe_operation(operation: Callable, *args, **kwargs) -> Any:
         return _clean_data_result(result)
     except Exception as e:
         system_logger = get_system_logger()
-        system_logger.exception(
-            f"DataFrame operation failed: {e} | correlation_id={get_correlation_id()}",
-        )
+        system_logger.exception(f"DataFrame operation failed: {e}")
         return None
 
 
@@ -1134,15 +1122,11 @@ def safe_numeric_operation(operation: Callable, *args, **kwargs) -> Any:
         return _clean_numeric_result(result)
     except (ZeroDivisionError, ValueError, TypeError, OverflowError) as e:
         system_logger = get_system_logger()
-        system_logger.exception(
-            f"Numeric operation failed: {e} | correlation_id={get_correlation_id()}",
-        )
+        system_logger.exception(f"Numeric operation failed: {e}")
         return 0.0
     except Exception as e:
         system_logger = get_system_logger()
-        system_logger.exception(
-            f"Unexpected error in numeric operation: {e} | correlation_id={get_correlation_id()}",
-        )
+        system_logger.exception(f"Unexpected error in numeric operation: {e}")
         return 0.0
 
 
@@ -1219,7 +1203,7 @@ class ErrorRecoveryStrategies:
                 if attempt == max_retries:
                     system_logger = get_system_logger()
                     system_logger.exception(
-                        f"Operation failed after {max_retries} retries: {e} | correlation_id={get_correlation_id()}",
+                        f"Operation failed after {max_retries} retries: {e}",
                     )
                     return None
 
@@ -1257,9 +1241,7 @@ class ErrorRecoveryStrategies:
                 system_logger.warning(f"Fallback operation {i + 1} failed: {e}")
                 if i == len(operations) - 1:
                     system_logger = get_system_logger()
-                    system_logger.exception(
-                        f"All fallback operations failed | correlation_id={get_correlation_id()}",
-                    )
+                    system_logger.exception("All fallback operations failed")
                     return None
 
         return None
@@ -1307,18 +1289,14 @@ class ErrorContext:
                     self.error_handler(exc_type, exc_val, exc_tb)
                 except Exception as e:
                     system_logger = get_system_logger()
-                    system_logger.exception(
-                        f"Error in error handler: {e} | correlation_id={get_correlation_id()}",
-                    )
+                    system_logger.exception(f"Error in error handler: {e}")
 
             if self.cleanup_handler:
                 try:
                     self.cleanup_handler()
                 except Exception as e:
                     system_logger = get_system_logger()
-                    system_logger.exception(
-                        f"Error in cleanup handler: {e} | correlation_id={get_correlation_id()}",
-                    )
+                    system_logger.exception(f"Error in cleanup handler: {e}")
 
             return not self.reraise
 
@@ -1364,7 +1342,7 @@ def handle_assertion_errors(
                 if log_errors:
                     system_logger = get_system_logger()
                     system_logger.exception(
-                        f"Unexpected error in {context}.{func.__name__}: {e} | correlation_id={get_correlation_id()}",
+                        f"Unexpected error in {context}.{func.__name__}: {e}",
                     )
                 return default_return
 
@@ -1383,7 +1361,7 @@ def handle_assertion_errors(
                 if log_errors:
                     system_logger = get_system_logger()
                     system_logger.exception(
-                        f"Unexpected error in {context}.{func.__name__}: {e} | correlation_id={get_correlation_id()}",
+                        f"Unexpected error in {context}.{func.__name__}: {e}",
                     )
                 return default_return
 

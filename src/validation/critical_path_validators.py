@@ -52,7 +52,7 @@ class CriticalPathValidator:
             
         except Exception as e:
             logger.error(
-                f"Trading signal validation failed: {e} | correlation_id={get_correlation_id()}",
+                f"Trading signal validation failed: {e}",
             )
             raise
     
@@ -83,7 +83,7 @@ class CriticalPathValidator:
             
         except Exception as e:
             logger.error(
-                f"Trade decision validation failed: {e} | correlation_id={get_correlation_id()}",
+                f"Trade decision validation failed: {e}",
             )
             raise
     
@@ -107,7 +107,7 @@ class CriticalPathValidator:
             
         except Exception as e:
             logger.error(
-                f"Order request validation failed: {e} | correlation_id={get_correlation_id()}",
+                f"Order request validation failed: {e}",
             )
             raise
     
@@ -128,7 +128,7 @@ class CriticalPathValidator:
             
         except Exception as e:
             logger.error(
-                f"Position info validation failed: {e} | correlation_id={get_correlation_id()}",
+                f"Position info validation failed: {e}",
             )
             raise
 
@@ -212,9 +212,9 @@ class TypeSafetyMonitor:
         violation_key = f"{violation.expected_type}_{violation.context}"
         self.violation_counts[violation_key] = self.violation_counts.get(violation_key, 0) + 1
         
-        # Log critical violations
+        # Log critical violations (correlation_id is included by filter)
         logger.warning(
-            f"Type safety violation: {violation} | correlation_id={get_correlation_id()}",
+            f"Type safety violation: {violation}",
         )
     
     def get_violation_summary(self) -> dict:

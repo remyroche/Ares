@@ -17,6 +17,7 @@ from src.types import (
     MonitoringConfig,
     SystemConfig,
     TradingConfig,
+    TrainingConfig,
 )
 from src.types.validation import (
     RuntimeTypeError,
@@ -111,7 +112,11 @@ class TypedConfigManager:
             
             # Validate system configuration
             if "system" in raw_config:
-                config["system"] = self._validate_system_config(raw_config["system"])
+                config["system"] = self._validate_system_config(raw_config["system"]) 
+
+            # Validate training configuration
+            if "training" in raw_config:
+                config["training"] = self._validate_training_config(raw_config["training"])
             
             return config
             
@@ -141,6 +146,10 @@ class TypedConfigManager:
     def _validate_system_config(self, config: Dict[str, Any]) -> SystemConfig:
         """Validate system configuration."""
         return self._validator.validate_type(config, SystemConfig, "system_config")
+
+    def _validate_training_config(self, config: Dict[str, Any]) -> TrainingConfig:
+        """Validate training configuration."""
+        return self._validator.validate_type(config, TrainingConfig, "training_config")
     
     def get_config(self) -> ConfigDict:
         """

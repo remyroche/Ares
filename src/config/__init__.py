@@ -6,6 +6,7 @@ from src.config.environment import get_environment_settings
 from src.config.system import get_system_config
 from src.config.trading import get_trading_config
 from src.config.training import get_training_config
+from src.config.validation import validate_complete_config
 
 
 def get_complete_config() -> dict[str, Any]:
@@ -51,6 +52,15 @@ def get_complete_config() -> dict[str, Any]:
     # Add CHECKPOINT_DIR for backward compatibility
     checkpointing_config = system_config.get("checkpointing", {})
     complete_config["CHECKPOINT_DIR"] = checkpointing_config.get("checkpoint_dir", "checkpoints")
+
+    # Validate the complete config structure
+    ok, errors = validate_complete_config(complete_config)
+    if not ok:
+        # Import logger lazily to avoid cycles
+        from src.utils.logger import system_logger
+        for err in errors:
+            system_logger.error(f"Config validation error: {err}")
+        raise ValueError("Configuration validation failed. Check logs for details.")
     
     return complete_config
 

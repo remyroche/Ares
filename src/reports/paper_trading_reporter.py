@@ -179,11 +179,8 @@ class PaperTradingReporter:
         os.makedirs(self.report_directory, exist_ok=True)
         # Log current working directory and report directory
         cwd = os.getcwd()
-        abs_report_dir = os.path.abspath(self.report_directory)
-        print(f"[DEBUG] CWD: {cwd}")
-        print(f"[DEBUG] Report directory (abs): {abs_report_dir}")
-        self.logger.info(f"[DEBUG] CWD: {cwd}")
-        self.logger.info(f"[DEBUG] Report directory (abs): {abs_report_dir}")
+        self.logger.debug(f"CWD: {cwd}")
+        self.logger.debug(f"Report directory (abs): {self.report_directory}")
     
     @handle_specific_errors(
         error_handlers={

@@ -457,8 +457,7 @@ class PaperTrader:
                 mark = self.prices.get(sym, avg)
                 if qty > 0 and mark > 0 and avg > 0:
                     equity += qty * (mark - avg)
-            if equity > 0:
-                self.equity_history.append(equity)
+            self.equity_history.append(equity)
         except Exception as e:
             self.logger.error(f"Error updating equity: {e}")
 

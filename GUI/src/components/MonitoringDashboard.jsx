@@ -116,7 +116,7 @@ const MonitoringDashboard = () => {
     }
   };
 
-  const renderChart = (data, config, title) => {
+  const renderChart = (data, config, title, onBarClick) => {
     const { type, timeRange } = config;
     
     switch (type) {
@@ -146,7 +146,7 @@ const MonitoringDashboard = () => {
               <Tooltip />
               <Legend />
               {Object.keys(data[0] || {}).filter(key => key !== 'timestamp').map((key, index) => (
-                <Bar key={key} dataKey={key} fill={`hsl(${index * 60}, 70%, 50%)`} />
+                <Bar key={key} dataKey={key} fill={`hsl(${index * 60}, 70%, 50%)`} onClick={onBarClick} />
               ))}
             </BarChart>
           </ResponsiveContainer>
@@ -175,7 +175,7 @@ const MonitoringDashboard = () => {
               <PolarGrid />
               <PolarAngleAxis dataKey="metric" />
               <PolarRadiusAxis />
-              <Radar name="Value" dataKey="value" stroke="#8884d8" fill="#8884d8" fillOpacity={0.6} />
+              <Radar name="Value" dataKey="value" stroke="#8884d8" fill="#8884d8" fillOpacity={0.6} onClick={onBarClick} />
             </RadarChart>
           </ResponsiveContainer>
         );
@@ -193,6 +193,7 @@ const MonitoringDashboard = () => {
                 outerRadius={80}
                 fill="#8884d8"
                 dataKey="value"
+                onClick={onBarClick}
               >
                 {data.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={`hsl(${index * 60}, 70%, 50%)`} />
@@ -211,7 +212,7 @@ const MonitoringDashboard = () => {
               <XAxis dataKey="x" />
               <YAxis dataKey="y" />
               <Tooltip />
-              <Scatter fill="#8884d8" />
+              <Scatter fill="#8884d8" onClick={onBarClick} />
             </ScatterChart>
           </ResponsiveContainer>
         );
@@ -225,7 +226,7 @@ const MonitoringDashboard = () => {
               <YAxis />
               <Tooltip />
               <Legend />
-              <Bar dataKey="volume" fill="#8884d8" />
+              <Bar dataKey="volume" fill="#8884d8" onClick={onBarClick} />
               <Line type="monotone" dataKey="value" stroke="#82ca9d" />
             </ComposedChart>
           </ResponsiveContainer>
@@ -262,16 +263,7 @@ const MonitoringDashboard = () => {
         </div>
       </div>
       <div className="h-80">
-        {data && data.length > 0 ? (
-          <div onClick={e => {
-            // Try to extract model from clicked bar (for bar/radar charts)
-            if (onBarClick && e.target && e.target.__data__ && e.target.__data__.model) {
-              onBarClick(e.target.__data__);
-            }
-          }}>
-            {renderChart(data, config, title)}
-          </div>
-        ) : (
+        {data && data.length > 0 ? renderChart(data, config, title, onBarClick) : (
           <div className="flex items-center justify-center h-full text-gray-400">
             No data available
           </div>

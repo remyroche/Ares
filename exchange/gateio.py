@@ -725,7 +725,7 @@ class GateioExchange(BaseExchange):
         start_time_ms: int,
         end_time_ms: int,
         limit: int,
-    ) -> list[dict[str, Any]]:
+    ) -> list[list[Any]]:
         """Get raw historical kline data from exchange using CCXT pagination (OHLCV lists)."""
         try:
             market_id = await self._get_market_id(symbol)

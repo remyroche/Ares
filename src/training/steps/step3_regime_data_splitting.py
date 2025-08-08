@@ -237,12 +237,13 @@ class RegimeDataSplittingStep:
 
             # Align lengths: interpolate/truncate as needed
             if len(regime_sequence) < len(data):
-                regime_indices = np.linspace(0, len(data) - 1, len(regime_sequence), dtype=int)
-                full_seq = np.empty(len(data), dtype=object)
-                for i in range(len(data)):
-                    closest = int(np.argmin(np.abs(regime_indices - i)))
-                    full_seq[i] = regime_sequence[closest]
-                regime_sequence = list(full_seq)
+                # Vectorized nearest mapping from regime_sequence to data length
+                src_idx = np.linspace(0, len(data) - 1, len(regime_sequence))
+                dst_idx = np.arange(len(data))
+                # For each dst index, find nearest src index via interpolation rounding
+                nearest_src = np.rint(np.interp(dst_idx, src_idx, np.arange(len(regime_sequence)))).astype(int)
+                nearest_src = np.clip(nearest_src, 0, len(regime_sequence) - 1)
+                regime_sequence = [regime_sequence[j] for j in nearest_src]
             elif len(regime_sequence) > len(data):
                 regime_sequence = regime_sequence[: len(data)]
 

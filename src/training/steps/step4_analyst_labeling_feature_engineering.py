@@ -171,6 +171,37 @@ class AnalystLabelingFeatureEngineeringStep:
                     pickle.dump(data, f)
                 self.logger.info(f"✅ Saved labeled data to {file_path}")
             
+            # Integrate UnifiedDataManager to create time-based train/validation/test splits
+            try:
+                from src.training.data_manager import UnifiedDataManager
+                lookback_days = training_input.get(
+                    "lookback_days",
+                    60 if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else 730,
+                )
+
+                labeled_full = labeled_data.copy()
+                # Ensure datetime index for time-based splits
+                if "timestamp" in labeled_full.columns:
+                    labeled_full["timestamp"] = pd.to_datetime(labeled_full["timestamp"], errors="coerce")
+                    labeled_full = labeled_full.dropna(subset=["timestamp"])  # drop rows with invalid timestamps
+                    labeled_full = labeled_full.set_index("timestamp").sort_index()
+                elif not pd.api.types.is_datetime64_any_dtype(labeled_full.index):
+                    # Fallback: create a synthetic datetime index to preserve ordering
+                    self.logger.warning("No timestamp column found; creating synthetic datetime index for splits")
+                    labeled_full = labeled_full.copy()
+                    labeled_full.index = pd.date_range(
+                        end=pd.Timestamp.utcnow(), periods=len(labeled_full), freq="T"
+                    )
+
+                data_manager = UnifiedDataManager(
+                    data_dir=data_dir, symbol=symbol, exchange=exchange, lookback_days=lookback_days
+                )
+                db_result = data_manager.create_unified_database(labeled_full)
+                pipeline_state["unified_database"] = db_result
+                self.logger.info("✅ UnifiedDataManager created train/validation/test split files")
+            except Exception as e:
+                self.logger.error(f"❌ UnifiedDataManager failed to create splits: {e}")
+
             # Update pipeline state with results
             pipeline_state.update({
                 "labeled_data": result.get("data", price_data),

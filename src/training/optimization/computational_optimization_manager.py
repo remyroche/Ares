@@ -995,7 +995,5 @@ async def create_computational_optimization_manager(
     optimization_config = ComputationalOptimizationConfig(**flattened_config)
     manager = ComputationalOptimizationManager(optimization_config)
     
-    if await manager.initialize(market_data, model_config):
-        return manager
-    else:
-        return None
+    # Defer initialization until real market data is available
+    return manager

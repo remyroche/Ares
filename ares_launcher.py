@@ -435,7 +435,7 @@ class AresLauncher:
             symbol=symbol,
             exchange=exchange,
             training_mode="blank",
-            lookback_days=30,  # 30 days for blank training (minimal dataset)
+            lookback_days=60,  # 60 days for blank training (expanded for better regime coverage)
             with_gui=with_gui,
         )
 
@@ -1126,7 +1126,7 @@ class AresLauncher:
             symbol=symbol,
             exchange=exchange,
             training_mode="blank",
-            lookback_days=30,  # 30 days for blank training (minimal dataset)
+            lookback_days=60,  # 60 days for blank training (expanded for better regime coverage)
             with_gui=with_gui,
         )
 
@@ -1147,10 +1147,15 @@ class AresLauncher:
         self.logger.info(f"🚀 Running enhanced 16-step training pipeline for {symbol} on {exchange}")
         self.logger.info(f"Starting from step: {start_step}")
         
+        # Ensure BLANK_TRAINING_MODE is set for step-based blank training
+        import os
+        os.environ["BLANK_TRAINING_MODE"] = "1"
+        os.environ["FULL_TRAINING_MODE"] = "0"
+        self.logger.info("🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training")
+        
         # Prevent blank mode from being used with step1_data_collection
         if start_step == "step1_data_collection":
             # Check if we're in blank mode (30 days lookback)
-            import os
             blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
             if blank_mode:
                 self.logger.error("❌ Cannot use blank mode with step1_data_collection")
@@ -1529,7 +1534,7 @@ class AresLauncher:
                 historical_data = await load_klines_data(
                     symbol,
                     exchange,
-                    lookback_days=30,
+                    lookback_days=60,
                 )
 
                 if historical_data is None or historical_data.empty:

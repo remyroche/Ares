@@ -2,6 +2,7 @@
 Validator for Step 8: Tactician Labeling
 """
 
+import asyncio
 import os
 import sys
 import pickle

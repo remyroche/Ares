@@ -9,6 +9,8 @@ from src.utils.error_handler import (
 )
 from src.utils.logger import system_logger
 
+DEFAULT_SUPERVISOR_CONFIG = {"supervisor": {"supervision_interval": 60, "max_history": 100}}
+
 
 class CircuitBreaker:
     """Circuit breaker pattern for external services."""
@@ -1068,32 +1070,6 @@ class Supervisor:
         """Get component monitors status."""
         return self.component_monitors.copy()
 
-
-supervisor: Supervisor | None = None
-
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="supervisor setup",
-)
-async def setup_supervisor(
-    config: dict[str, Any] | None = None,
-) -> Supervisor | None:
-    try:
-        global supervisor
-        if config is None:
-            config = {"supervisor": {"supervision_interval": 60, "max_history": 100}}
-        supervisor = Supervisor(config)
-        success = await supervisor.initialize()
-        if success:
-            return supervisor
-        return None
-    except Exception as e:
-        print(f"Error setting up supervisor: {e}")
-        return None
-
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
@@ -1117,7 +1093,7 @@ async def setup_supervisor(
             total_return = float(metrics.get("total_return", 0.0))
 
             risk_cfg = self.supervisor_config.get("portfolio_guards", {})
-            dd_limit = float(risk_cfg.get("max_drawdown_limit", -0.15))  # -15%
+            dd_limit = float(risk_cfg.get("max_drawdown_limit", -0.05))  # -5%
             daily_loss_limit = float(risk_cfg.get("max_daily_loss", -0.05))  # -5%
 
             # For daily loss, if available via metrics
@@ -1141,3 +1117,24 @@ async def setup_supervisor(
         except Exception as e:
             self.logger.error(f"Error enforcing portfolio guards: {e}")
             return
+
+
+supervisor: Supervisor | None = None
+
+
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="supervisor setup",
+)
+async def setup_supervisor(
+    config: dict[str, Any] | None = None,
+) -> Supervisor | None:
+    global supervisor
+    if config is None:
+        config = DEFAULT_SUPERVISOR_CONFIG
+    supervisor = Supervisor(config)
+    success = await supervisor.initialize()
+    if success:
+        return supervisor
+    return None

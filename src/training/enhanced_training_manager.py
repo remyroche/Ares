@@ -315,7 +315,7 @@ class MemoryManager:
         self.cleanup_counter += 1
         self.logger.info(f"Performing memory cleanup #{self.cleanup_counter}")
         gc.collect()
-        _ = psutil.virtual_memory().percent  # touch to record after status
+        self.logger.info(f"Memory usage after cleanup: {psutil.virtual_memory().percent:.1%}")
 
     def profile_memory_usage(self) -> dict[str, float]:
         memory_info = psutil.virtual_memory()

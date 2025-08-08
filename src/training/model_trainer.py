@@ -309,18 +309,31 @@ class RayModelTrainer:
         try:
             self.logger.info("📊 Preparing training data...")
             prepared_data = {}
-            # Ingest real data (placeholder, to be implemented)
-            # Example: data = ingest_real_data(training_input)
-            data = None  # TODO: Implement real data ingestion
-            if data is None:
-                self.logger.error("No real data available for training.")
+            # Load consolidated data from step 1
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            data_path = f"data_cache/klines_{exchange}_{symbol}_1m_consolidated.csv"
+            import pandas as pd
+            if not os.path.exists(data_path):
+                self.logger.error(f"Consolidated data file not found: {data_path}")
                 return None
+            data = pd.read_csv(data_path, parse_dates=["timestamp"])
             data = handle_missing_data(data)
             feature_generator = FeatureGenerator()
             features = feature_generator.generate(data)
             labels = feature_generator.generate_labels(data)
-            # ... assign to prepared_data as before ...
-            # (rest of the method updated accordingly)
+            # Example: assign to prepared_data for 1m tactician model
+            prepared_data["tactician_1m"] = TrainingData(
+                features=features,
+                labels=labels,
+                timeframe="1m",
+                model_type="tactician",
+                data_info={
+                    "rows": len(data),
+                    "columns": len(features.columns),
+                    "timeframe": "1m",
+                }
+            )
             self.logger.info("✅ Training data prepared successfully")
             return prepared_data
         except Exception as e:

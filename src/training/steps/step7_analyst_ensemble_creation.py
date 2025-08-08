@@ -17,6 +17,11 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from src.utils.logger import system_logger
 from src.analyst.data_utils import load_klines_data
 
+try:
+    import joblib  # Optional; used for .joblib artifacts
+except Exception:  # pragma: no cover
+    joblib = None
+
 
 class DynamicWeightedEnsemble:
     """Dynamic weighted ensemble using Sharpe Ratio for model weighting."""
@@ -125,17 +130,16 @@ class AnalystEnsembleCreationStep:
                 regime_path = os.path.join(enhanced_models_dir, regime_dir)
                 if os.path.isdir(regime_path):
                     regime_models = {}
-                                            for model_file in os.listdir(regime_path):
-                            if model_file.endswith((".pkl", ".joblib")):
-                                model_name = model_file.replace(".pkl", "").replace(".joblib", "")
-                                model_path = os.path.join(regime_path, model_file)
+                    for model_file in os.listdir(regime_path):
+                        if model_file.endswith((".pkl", ".joblib")):
+                            model_name = model_file.replace(".pkl", "").replace(".joblib", "")
+                            model_path = os.path.join(regime_path, model_file)
 
-                                if model_file.endswith(".joblib"):
-                                    import joblib
-                                    regime_models[model_name] = joblib.load(model_path)
-                                else:
-                                    with open(model_path, "rb") as f:
-                                        regime_models[model_name] = pickle.load(f)
+                            if model_file.endswith(".joblib") and joblib is not None:
+                                regime_models[model_name] = joblib.load(model_path)
+                            else:
+                                with open(model_path, "rb") as f:
+                                    regime_models[model_name] = pickle.load(f)
 
                     enhanced_models[regime_dir] = regime_models
 

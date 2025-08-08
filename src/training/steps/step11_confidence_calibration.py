@@ -14,6 +14,11 @@ from sklearn.metrics import accuracy_score, f1_score
 
 from src.utils.logger import system_logger
 
+try:
+    import joblib  # Optional; used when loading joblib artifacts
+except Exception:  # pragma: no cover
+    joblib = None
+
 
 class ConfidenceCalibrationStep:
     """Step 11: Confidence Calibration for individual models and ensembles."""
@@ -403,15 +408,16 @@ class _PrefitWrapper:
             return self.base.predict_proba(X)
         # Fallback: construct probabilities from class predictions (uniform confidence)
         preds = self.base.predict(X)
-        classes = np.unique(preds)
-        n_classes = int(classes.max() - classes.min() + 1) if len(classes) > 1 else 2
+        # Assume classes in set {-1, 0, 1}
+        n_classes = 3
         proba = np.zeros((len(preds), n_classes))
-        # Map labels to indices (assume binary 0/1 if ambiguous)
-        if set(classes) == {-1, 0, 1}:
-            idx = preds + 1
-        else:
-            idx = preds
-        proba[np.arange(len(preds)), idx] = 1.0
+        # Map labels to indices: -1 -> 0, 0 -> 1, 1 -> 2
+        idx = preds + 1
+        valid_mask = (idx >= 0) & (idx < n_classes)
+        if np.any(valid_mask):
+            proba[np.arange(len(preds))[valid_mask], idx[valid_mask]] = 1.0
+        if not np.all(valid_mask):  # log once
+            system_logger.warning("Predictions outside expected {-1,0,1} encountered in _PrefitWrapper; ignored in probability mapping")
         return proba
 
 

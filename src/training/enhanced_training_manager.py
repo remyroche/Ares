@@ -348,7 +348,8 @@ class MemoryManager:
         """Return current memory usage as a fraction (0.0 - 1.0)."""
         try:
             return psutil.virtual_memory().percent / 100.0
-        except Exception:
+        except Exception as e:
+            self.logger.warning(f"Could not get memory usage: {e}")
             return 0.0
 
     def cleanup_memory(self) -> None:
@@ -1865,21 +1866,18 @@ class EnhancedTrainingManager:
                 self.logger.info(f"Loading data from Parquet: {parquet_path}")
                 try:
                     data = self.data_manager.load_from_parquet(str(parquet_path)) if self.data_manager else pd.read_parquet(parquet_path)
+                    return data
                 except Exception as e:
                     self.logger.warning(f"Parquet load failed ({e}); falling back to CSV if available")
-                    data = pd.DataFrame()
-                return data
             if csv_path.exists():
                 self.logger.info(f"Loading data from CSV: {csv_path}")
                 try:
                     data = pd.read_csv(csv_path)
+                    return data
                 except Exception as e:
                     self.logger.warning(f"CSV load failed ({e}); returning empty DataFrame")
-                    data = pd.DataFrame()
-                return data
 
             self.logger.warning(f"⚠️ Market data files not found in {data_dir} for {exchange} {symbol}")
-            print(f"⚠️ Market data files not found in {data_dir} for {exchange} {symbol}")
             return pd.DataFrame()
                 
         except Exception as e:

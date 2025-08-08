@@ -16,12 +16,20 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.preprocessing import StandardScaler
 import joblib
+import mlflow
+from src.utils.mlflow_utils import log_training_metadata_to_mlflow
 
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.training.feature_engineering import FeatureGenerator
+from src.training.data_cleaning import handle_missing_data
+from src.training.steps.step12_final_parameters_optimization.optimized_optuna_optimization import AdvancedOptunaManager
+import shap
+import matplotlib.pyplot as plt
+import tempfile
 
 
 @dataclass
@@ -220,39 +228,83 @@ class RayModelTrainer:
     def train_models(
         self,
         training_input: Dict[str, Any],
+        use_hpo: bool = True,
+        hpo_trials: int = 50,
+        hpo_model_type: str = "random_forest",
     ) -> Optional[Dict[str, Any]]:
         """
         Train all required models based on configuration using Ray.
-
-        Args:
-            training_input: Training input parameters
-
-        Returns:
-            dict: Training results for all models
+        If use_hpo is True, run Optuna HPO before final model training.
+        Logs all training runs to MLflow.
         """
         try:
             self.logger.info("🚀 Starting Ray-based model training...")
             self.is_training = True
-            
-            # Validate training input
             if not self._validate_training_input(training_input):
                 return None
-            
-            # Prepare training data
             training_data = self._prepare_training_data(training_input)
             if training_data is None:
                 return None
-            
-            # Train models using Ray
-            training_results = self._train_models_with_ray(training_data, training_input)
-            
-            # Store trained models
-            self._store_trained_models(training_results)
-            
-            self.is_training = False
-            self.logger.info("✅ Ray-based model training completed successfully")
-            return training_results
-            
+            best_params = None
+            hpo_result = None
+            with mlflow.start_run() as run:
+                # Log training metadata
+                log_training_metadata_to_mlflow(
+                    symbol=training_input.get("symbol", "ETHUSDT"),
+                    timeframe="1m",
+                    model_type=hpo_model_type,
+                    run_id=run.info.run_id
+                )
+                if use_hpo:
+                    self.logger.info("🔍 Running Optuna HPO before model training...")
+                    tactician_data = training_data.get("tactician_1m")
+                    if tactician_data is None:
+                        self.logger.error("No tactician_1m data for HPO.")
+                        return None
+                    X = tactician_data.features
+                    y = tactician_data.labels
+                    hpo_manager = AdvancedOptunaManager()
+                    hpo_result = hpo_manager.optimize(
+                        model_type=hpo_model_type,
+                        X=X,
+                        y=y,
+                        n_trials=hpo_trials,
+                        cv_folds=5,
+                        early_stopping_patience=10
+                    )
+                    best_params = hpo_result.get("best_params")
+                    mlflow.log_params(best_params)
+                    self.logger.info(f"Optuna HPO best params: {best_params}")
+                training_results = self._train_models_with_ray(training_data, training_input, best_params=best_params)
+                self._store_trained_models(training_results)
+                # Log model metrics and artifacts
+                tactician_models = training_results.get("tactician_models", {})
+                for tf, result in tactician_models.items():
+                    if result["training_status"] == "completed":
+                        mlflow.log_metrics(result["model_metrics"], step=0)
+                        if "model_path" in result:
+                            mlflow.log_artifact(result["model_path"])
+                        if "scaler_path" in result:
+                            mlflow.log_artifact(result["scaler_path"])
+                        # SHAP explainability integration
+                        try:
+                            model = joblib.load(result["model_path"])
+                            scaler = joblib.load(result["scaler_path"])
+                            X_sample = training_data["tactician_1m"].features.iloc[:200]
+                            X_sample_scaled = scaler.transform(X_sample)
+                            explainer = shap.TreeExplainer(model)
+                            shap_values = explainer.shap_values(X_sample_scaled)
+                            plt.figure()
+                            shap.summary_plot(shap_values, X_sample, show=False)
+                            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+                                plt.savefig(tmpfile.name)
+                                mlflow.log_artifact(tmpfile.name, artifact_path="shap")
+                            plt.close()
+                        except Exception as e:
+                            self.logger.warning(f"SHAP explainability failed: {e}")
+                self.is_training = False
+                self.logger.info("✅ Ray-based model training completed successfully")
+                return training_results
         except Exception as e:
             self.logger.error(f"❌ Ray-based model training failed: {e}")
             self.is_training = False
@@ -303,195 +355,70 @@ class RayModelTrainer:
     ) -> Optional[Dict[str, TrainingData]]:
         """
         Prepare training data for model training.
-
-        Args:
-            training_input: Training input parameters
-
-        Returns:
-            dict: Prepared training data
+        Loads the labeled/enhanced feature file produced by the previous pipeline step (step 4),
+        not the raw data from step 1.
         """
         try:
-            self.logger.info("📊 Preparing training data...")
-            
-            # Generate synthetic data for demonstration
-            # In practice, this would load from data collection step
+            self.logger.info("📊 Preparing training data from labeled/enhanced pipeline output...")
             prepared_data = {}
-            
-            if self.enable_analyst_models:
-                # Prepare data for analyst models (multi-timeframe)
-                timeframes = ["1h", "15m", "5m", "1m"]
-                for timeframe in timeframes:
-                    data = self._generate_synthetic_data(timeframe, training_input)
-                    if data:
-                        prepared_data[f"analyst_{timeframe}"] = data
-            
-            if self.enable_tactician_models:
-                # Prepare data for tactician models (1m only)
-                data = self._generate_synthetic_data("1m", training_input)
-                if data:
-                    prepared_data["tactician_1m"] = data
-            
-            self.logger.info("✅ Training data prepared successfully")
-            return prepared_data
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to prepare training data: {e}")
-            return None
-
-    def _generate_synthetic_data(
-        self,
-        timeframe: str,
-        training_input: Dict[str, Any],
-    ) -> Optional[TrainingData]:
-        """
-        Generate synthetic training data for demonstration.
-
-        Args:
-            timeframe: Target timeframe
-            training_input: Training input parameters
-
-        Returns:
-            TrainingData: Synthetic training data
-        """
-        try:
-            # Generate synthetic OHLCV data
-            n_samples = 1000
-            dates = pd.date_range(start='2023-01-01', periods=n_samples, freq='1min')
-            
-            # Generate synthetic price data
-            np.random.seed(42)
-            base_price = 100.0
-            returns = np.random.normal(0, 0.02, n_samples)
-            prices = base_price * np.exp(np.cumsum(returns))
-            
-            # Create OHLCV data
-            data = pd.DataFrame({
-                'timestamp': dates,
-                'open': prices * (1 + np.random.normal(0, 0.001, n_samples)),
-                'high': prices * (1 + np.abs(np.random.normal(0, 0.005, n_samples))),
-                'low': prices * (1 - np.abs(np.random.normal(0, 0.005, n_samples))),
-                'close': prices,
-                'volume': np.random.randint(1000, 10000, n_samples),
-            })
-            
-            # Generate features
-            features = self._generate_features(data)
-            
-            # Generate labels (simple trend following)
-            labels = (data['close'].shift(-1) > data['close']).astype(int)
-            labels = labels.fillna(0)
-            
-            return TrainingData(
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            data_dir = training_input.get("data_dir", "data/training")
+            labeled_path = f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet"
+            import pandas as pd
+            import os
+            if os.path.exists(labeled_path):
+                data = pd.read_parquet(labeled_path)
+                self.logger.info(f"Loaded labeled data from {labeled_path}")
+            else:
+                # Fallback to CSV if Parquet is not available
+                labeled_csv = labeled_path.replace('.parquet', '.csv')
+                if os.path.exists(labeled_csv):
+                    data = pd.read_csv(labeled_csv, parse_dates=["timestamp"])
+                    self.logger.info(f"Loaded labeled data from {labeled_csv}")
+                else:
+                    self.logger.error(f"Labeled/enhanced data file not found: {labeled_path} or {labeled_csv}")
+                    return None
+            data = handle_missing_data(data)
+            feature_generator = FeatureGenerator()
+            # Use all columns except label as features, and 'label' as target
+            feature_cols = [col for col in data.columns if col not in ("label", "tactician_label", "target")]
+            label_col = "label" if "label" in data.columns else ("tactician_label" if "tactician_label" in data.columns else "target")
+            features = data[feature_cols]
+            labels = data[label_col]
+            prepared_data["tactician_1m"] = TrainingData(
                 features=features,
                 labels=labels,
-                timeframe=timeframe,
-                model_type="analyst" if timeframe != "1m" else "tactician",
+                timeframe="1m",
+                model_type="tactician",
                 data_info={
                     "rows": len(data),
                     "columns": len(features.columns),
-                    "timeframe": timeframe,
+                    "timeframe": "1m",
                 }
             )
-            
+            self.logger.info("✅ Training data prepared successfully from labeled/enhanced pipeline output")
+            return prepared_data
         except Exception as e:
-            self.logger.error(f"❌ Failed to generate synthetic data for {timeframe}: {e}")
+            self.logger.error(f"❌ Failed to prepare training data: {e}")
             return None
-
-    def _generate_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Generate features from OHLCV data.
-
-        Args:
-            data: OHLCV data
-
-        Returns:
-            pd.DataFrame: Generated features
-        """
-        features = pd.DataFrame()
-        
-        # Price-based features
-        features['price_change'] = data['close'].pct_change()
-        features['high_low_ratio'] = data['high'] / data['low']
-        features['open_close_ratio'] = data['open'] / data['close']
-        
-        # Moving averages
-        features['ma_5'] = data['close'].rolling(5).mean()
-        features['ma_10'] = data['close'].rolling(10).mean()
-        features['ma_20'] = data['close'].rolling(20).mean()
-        
-        # Volatility features
-        features['volatility_5'] = data['close'].rolling(5).std()
-        features['volatility_10'] = data['close'].rolling(10).std()
-        
-        # Volume features
-        features['volume_ma_5'] = data['volume'].rolling(5).mean()
-        features['volume_ratio'] = data['volume'] / features['volume_ma_5']
-        
-        # Technical indicators
-        features['rsi'] = self._calculate_rsi(data['close'])
-        features['macd'] = self._calculate_macd(data['close'])
-        
-        # Remove NaN values
-        features = features.fillna(0)
-        
-        return features
-
-    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI indicator."""
-        delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        return rsi
-
-    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
-        """Calculate MACD indicator."""
-        ema_fast = prices.ewm(span=fast).mean()
-        ema_slow = prices.ewm(span=slow).mean()
-        macd = ema_fast - ema_slow
-        return macd
 
     def _train_models_with_ray(
         self,
         training_data: Dict[str, TrainingData],
         training_input: Dict[str, Any],
+        best_params: dict = None,
     ) -> Dict[str, Any]:
         """
         Train models using Ray for distributed processing.
-
-        Args:
-            training_data: Prepared training data
-            training_input: Training input parameters
-
-        Returns:
-            dict: Training results
+        Accepts best_params from HPO for model instantiation.
         """
         try:
             self.logger.info("🧠 Starting Ray-based model training...")
-            
-            # Create Ray remote functions for model training
             @ray.remote
-            def train_single_model(model_config: ModelConfig, training_data: TrainingData) -> Dict[str, Any]:
-                return self._train_single_model_remote(model_config, training_data)
-            
-            # Prepare model configurations
+            def train_single_model(model_config: ModelConfig, training_data: TrainingData, best_params: dict = None) -> Dict[str, Any]:
+                return self._train_single_model_remote(model_config, training_data, best_params=best_params)
             model_configs = []
-            
-            # Analyst models
-            if self.enable_analyst_models:
-                for timeframe in ["1h", "15m", "5m", "1m"]:
-                    data_key = f"analyst_{timeframe}"
-                    if data_key in training_data:
-                        config = ModelConfig(
-                            model_type="analyst",
-                            timeframe=timeframe,
-                            features=list(training_data[data_key].features.columns),
-                            target_column="target"
-                        )
-                        model_configs.append((config, training_data[data_key]))
-            
-            # Tactician models
             if self.enable_tactician_models:
                 data_key = "tactician_1m"
                 if data_key in training_data:
@@ -502,33 +429,19 @@ class RayModelTrainer:
                         target_column="target"
                     )
                     model_configs.append((config, training_data[data_key]))
-            
-            # Submit training tasks to Ray
             training_futures = []
             for config, data in model_configs:
-                future = train_single_model.remote(config, data)
+                future = train_single_model.remote(config, data, best_params)
                 training_futures.append(future)
-            
-            # Wait for all training to complete
             training_results = ray.get(training_futures)
-            
-            # Organize results
-            analyst_results = {}
             tactician_results = {}
-            
             for result in training_results:
-                if result["model_type"] == "analyst":
-                    analyst_results[result["timeframe"]] = result
-                else:
-                    tactician_results[result["timeframe"]] = result
-            
+                tactician_results[result["timeframe"]] = result
             return {
-                "analyst_models": analyst_results,
                 "tactician_models": tactician_results,
                 "training_input": training_input,
                 "training_timestamp": datetime.now().isoformat(),
             }
-            
         except Exception as e:
             self.logger.error(f"❌ Ray-based model training failed: {e}")
             return {}
@@ -537,66 +450,42 @@ class RayModelTrainer:
         self,
         model_config: ModelConfig,
         training_data: TrainingData,
+        best_params: dict = None,
     ) -> Dict[str, Any]:
         """
         Train a single model (Ray remote function).
-
-        Args:
-            model_config: Model configuration
-            training_data: Training data
-
-        Returns:
-            dict: Model training result
+        Accepts best_params from HPO for model instantiation.
         """
         try:
-            # Prepare data
             X = training_data.features
             y = training_data.labels
-            
-            # Split data
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=model_config.test_size, random_state=model_config.random_state
             )
-            
-            # Scale features
             scaler = StandardScaler()
             X_train_scaled = scaler.fit_transform(X_train)
             X_test_scaled = scaler.transform(X_test)
-            
-            # Train model
-            if model_config.model_type == "analyst":
+            # Use best_params if provided
+            if best_params:
+                model = RandomForestClassifier(**best_params)
+            else:
                 model = RandomForestClassifier(
                     n_estimators=model_config.n_estimators,
                     max_depth=model_config.max_depth,
                     random_state=model_config.random_state
                 )
-            else:
-                model = GradientBoostingClassifier(
-                    n_estimators=model_config.n_estimators,
-                    max_depth=model_config.max_depth,
-                    random_state=model_config.random_state
-                )
-            
-            # Train and evaluate
             model.fit(X_train_scaled, y_train)
             y_pred = model.predict(X_test_scaled)
-            
-            # Calculate metrics
             metrics = {
                 "accuracy": accuracy_score(y_test, y_pred),
                 "precision": precision_score(y_test, y_pred, zero_division=0),
                 "recall": recall_score(y_test, y_pred, zero_division=0),
                 "f1": f1_score(y_test, y_pred, zero_division=0),
             }
-            
-            # Cross-validation
             cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=5)
             metrics["cv_mean"] = cv_scores.mean()
             metrics["cv_std"] = cv_scores.std()
-            
-            # Feature importance
             feature_importance = dict(zip(X.columns, model.feature_importances_))
-            
             result = {
                 "timeframe": model_config.timeframe,
                 "model_type": model_config.model_type,
@@ -606,12 +495,8 @@ class RayModelTrainer:
                 "model_path": f"models/{model_config.model_type}_{model_config.timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
                 "scaler_path": f"models/{model_config.model_type}_{model_config.timeframe}_scaler_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
             }
-            
-            # Store model and scaler
             self._store_model_remote(result, model, scaler)
-            
             return result
-            
         except Exception as e:
             self.logger.error(f"❌ Failed to train {model_config.model_type} model for {model_config.timeframe}: {e}")
             return {
@@ -852,7 +737,8 @@ if __name__ == "__main__":
             "symbol": "BTCUSDT",
             "exchange": "binance",
             "timeframe": "1m",
-            "lookback_days": 30
+            "lookback_days": 30,
+            "data_dir": "data/training" # Added data_dir for the new _prepare_training_data
         }
         
         # Train models

@@ -9,15 +9,15 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: `http://localhost:${process.env.API_PORT || '8000'}`,
         changeOrigin: true,
       },
       '/metrics': {
-        target: 'http://localhost:8000',
+        target: `http://localhost:${process.env.API_PORT || '8000'}`,
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:8000',
+        target: `ws://localhost:${process.env.API_PORT || '8000'}`,
         ws: true,
         changeOrigin: true,
       },

@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable, Awaitable
 
 from src.interfaces.base_interfaces import IExchangeClient, MarketData
 
@@ -326,28 +326,20 @@ class BaseExchange(IExchangeClient, ABC):
         if not self.exchange:
             return False
 
-        try:
-            # Try common ccxt shapes
-            if hasattr(self.exchange, "set_leverage"):
-                # Some exchanges accept (leverage, symbol)
+        attempts = [
+            ("set_leverage", (leverage, market_id), {}),
+            ("set_leverage", (), {"leverage": leverage, "symbol": market_id}),
+            ("setLeverage", (leverage, market_id), {}),
+        ]
+
+        for method, args, kwargs in attempts:
+            if hasattr(self.exchange, method):
                 try:
-                    await getattr(self.exchange, "set_leverage")(leverage, market_id)
+                    await getattr(self.exchange, method)(*args, **kwargs)
                     return True
                 except Exception:
-                    # Some accept keyword args
-                    try:
-                        await getattr(self.exchange, "set_leverage")(leverage=leverage, symbol=market_id)
-                        return True
-                    except Exception:
-                        pass
-            if hasattr(self.exchange, "setLeverage"):
-                try:
-                    await getattr(self.exchange, "setLeverage")(leverage, market_id)
-                    return True
-                except Exception:
-                    pass
-        except Exception:
-            return False
+                    # Intentionally continue to try next known signature
+                    continue
         return False
 
     async def set_margin_mode(self, symbol: str, mode: str) -> bool:
@@ -360,25 +352,19 @@ class BaseExchange(IExchangeClient, ABC):
         if not self.exchange:
             return False
 
-        try:
-            if hasattr(self.exchange, "set_margin_mode"):
+        attempts = [
+            ("set_margin_mode", (mode, market_id), {}),
+            ("set_margin_mode", (), {"marginMode": mode, "symbol": market_id}),
+            ("setMarginMode", (mode, market_id), {}),
+        ]
+
+        for method, args, kwargs in attempts:
+            if hasattr(self.exchange, method):
                 try:
-                    await getattr(self.exchange, "set_margin_mode")(mode, market_id)
+                    await getattr(self.exchange, method)(*args, **kwargs)
                     return True
                 except Exception:
-                    try:
-                        await getattr(self.exchange, "set_margin_mode")(marginMode=mode, symbol=market_id)
-                        return True
-                    except Exception:
-                        pass
-            if hasattr(self.exchange, "setMarginMode"):
-                try:
-                    await getattr(self.exchange, "setMarginMode")(mode, market_id)
-                    return True
-                except Exception:
-                    pass
-        except Exception:
-            return False
+                    continue
         return False
 
     async def close(self) -> None:
@@ -419,15 +405,15 @@ class BaseExchange(IExchangeClient, ABC):
             raise ValueError(f"Unsupported timestamp type: {type(timestamp)}")
 
     # --- Optional streaming hooks (to be implemented by subclasses as needed) ---
-    async def subscribe_trades(self, symbol: str, callback) -> None:
+    async def subscribe_trades(self, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
         """Subscribe to live trades for symbol and invoke callback(trade_dict)."""
         raise NotImplementedError
 
-    async def subscribe_ticker(self, symbol: str, callback) -> None:
+    async def subscribe_ticker(self, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
         """Subscribe to live ticker/mark price updates and invoke callback(ticker_dict)."""
         raise NotImplementedError
 
-    async def subscribe_order_book(self, symbol: str, callback) -> None:
+    async def subscribe_order_book(self, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
         """Subscribe to live order book updates and invoke callback(book_dict)."""
         raise NotImplementedError
 

@@ -36,6 +36,8 @@ class PaperTrader:
         self.positions: dict[str, dict[str, Any]] = {}
         self.trade_history: list[dict[str, Any]] = []
         self.balance: float = 10000.0  # Starting balance
+        self.equity_history: list[float] = []
+        self.prices: dict[str, float] = {}
 
         # Configuration
         self.trader_config: dict[str, Any] = self.config.get("paper_trader", {})
@@ -158,6 +160,8 @@ class PaperTrader:
         try:
             # Set initial balance
             self.balance = self.initial_balance
+            self.equity_history = [self.initial_balance]
+            self.prices.clear()
 
             # Clear positions and history
             self.positions.clear()
@@ -433,6 +437,31 @@ class PaperTrader:
             self.logger.error(f"Error getting position for {symbol}: {e}")
             return None
 
+    def mark_price(self, symbol: str, price: float) -> None:
+        """Update latest price for symbol for mark-to-market accounting."""
+        try:
+            if price <= 0:
+                return
+            self.prices[symbol] = price
+            self._update_equity()
+        except Exception as e:
+            self.logger.error(f"Error marking price for {symbol}: {e}")
+
+    def _update_equity(self) -> None:
+        """Recompute total equity using current prices and unrealized PnL."""
+        try:
+            equity = self.balance
+            for sym, pos in self.positions.items():
+                qty = pos.get("quantity", 0.0)
+                avg = pos.get("avg_price", 0.0)
+                mark = self.prices.get(sym, avg)
+                if qty > 0 and mark > 0 and avg > 0:
+                    equity += qty * (mark - avg)
+            if equity > 0:
+                self.equity_history.append(equity)
+        except Exception as e:
+            self.logger.error(f"Error updating equity: {e}")
+
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -526,42 +555,36 @@ class PaperTrader:
 
             # Calculate P&L
             total_buy_cost = sum(t["total_cost"] for t in buy_trades)
-            total_sell_proceeds = sum(t["net_proceeds"] for t in sell_trades)
+            total_sell_proceeds = sum(t.get("net_proceeds", 0.0) for t in sell_trades)
             total_pnl = total_sell_proceeds - total_buy_cost
 
             # Calculate win rate
-            profitable_trades = len([t for t in sell_trades if t["net_proceeds"] > 0])
+            profitable_trades = len([t for t in sell_trades if t.get("net_proceeds", 0.0) > 0])
             win_rate = profitable_trades / len(sell_trades) if sell_trades else 0.0
 
-            # Calculate max drawdown
-            balance_history = [self.initial_balance]
-            for trade in self.trade_history:
-                if trade["side"] == "BUY":
-                    balance_history.append(trade["balance_after"])
-                else:
-                    balance_history.append(trade["balance_after"])
-
-            max_drawdown = 0.0
-            peak = balance_history[0]
-            for balance in balance_history:
-                peak = max(balance, peak)
-                drawdown = (peak - balance) / peak
-                max_drawdown = max(max_drawdown, drawdown)
-
-            # Calculate Sharpe ratio (simplified)
-            returns = []
-            for i in range(1, len(balance_history)):
-                ret = (balance_history[i] - balance_history[i - 1]) / balance_history[
-                    i - 1
-                ]
-                returns.append(ret)
-
-            if returns:
-                avg_return = np.mean(returns)
-                std_return = np.std(returns)
-                sharpe_ratio = avg_return / std_return if std_return > 0 else 0.0
-            else:
+            # Calculate max drawdown using equity history
+            if len(self.equity_history) < 2:
+                max_drawdown = 0.0
                 sharpe_ratio = 0.0
+            else:
+                equity_series = self.equity_history
+                peak = equity_series[0]
+                max_drawdown = 0.0
+                returns = []
+                for i in range(1, len(equity_series)):
+                    eq = equity_series[i]
+                    prev = equity_series[i - 1]
+                    peak = max(peak, eq)
+                    dd = (peak - eq) / peak
+                    max_drawdown = max(max_drawdown, dd)
+                    ret = (eq - prev) / prev if prev > 0 else 0.0
+                    returns.append(ret)
+                if returns:
+                    avg_return = float(np.mean(returns))
+                    std_return = float(np.std(returns))
+                    sharpe_ratio = avg_return / std_return if std_return > 0 else 0.0
+                else:
+                    sharpe_ratio = 0.0
 
             return {
                 "total_trades": total_trades,
@@ -570,10 +593,10 @@ class PaperTrader:
                 "win_rate": win_rate,
                 "total_pnl": total_pnl,
                 "current_balance": self.balance,
+                "current_equity": self.equity_history[-1] if self.equity_history else self.balance,
                 "max_drawdown": max_drawdown,
                 "sharpe_ratio": sharpe_ratio,
-                "total_return": (self.balance - self.initial_balance)
-                / self.initial_balance,
+                "total_return": (self.equity_history[-1] - self.initial_balance) / self.initial_balance if self.equity_history else 0.0,
             }
 
         except Exception as e:

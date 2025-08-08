@@ -345,35 +345,41 @@ class PositionSizer:
         price_target_confidences: dict[str, float],
         adversarial_confidences: dict[str, float],
     ) -> str:
-        """Generate sizing reason for traditional ML-based sizing."""
+        """Generate reason for position sizing decision."""
         try:
-            # Calculate average confidence
-            if movement_confidence:
-                avg_confidence = sum(movement_confidence.values()) / len(
-                    movement_confidence,
+            # Get average confidence and risk
+            key_levels = [0.5, 1.0, 1.5, 2.0]
+            confidences = []
+            risks = []
+
+            for level in key_levels:
+                closest_confidence = min(
+                    price_target_confidences.keys(),
+                    key=lambda x: abs(float(x.replace("%", "")) - level),
                 )
-            else:
-                avg_confidence = 0.5
-
-            # Calculate average adverse risk
-            if adverse_movement_risks:
-                avg_adverse_risk = sum(adverse_movement_risks.values()) / len(
-                    adverse_movement_risks,
+                closest_risk = min(
+                    adversarial_confidences.keys(),
+                    key=lambda x: abs(float(x.replace("%", "")) - level),
                 )
-            else:
-                avg_adverse_risk = 0.3
+                confidences.append(
+                    price_target_confidences.get(closest_confidence, 0.5),
+                )
+                risks.append(adversarial_confidences.get(closest_risk, 0.3))
 
-            reason = (
-                f"Position size: {final_position_size:.4f} "
-                f"(Kelly: {kelly_position_size:.4f}, ML: {ml_position_size:.4f}) "
-                f"Confidence: {avg_confidence:.2f}, Risk: {avg_adverse_risk:.2f}"
-            )
+            avg_confidence = sum(confidences) / len(confidences)
+            avg_risk = sum(risks) / len(risks)
 
-            return reason
+            if final_position_size >= self.max_position_size * 0.8:
+                return f"Maximum position size due to high confidence ({avg_confidence:.2f}) and low risk ({avg_risk:.2f})"
+            if final_position_size >= self.max_position_size * 0.5:
+                return f"Large position size based on Kelly criterion ({kelly_position_size:.3f}) and ML confidence ({ml_position_size:.3f})"
+            if final_position_size >= self.min_position_size * 2:
+                return "Moderate position size with balanced risk-reward profile"
+            return f"Conservative position size due to low confidence ({avg_confidence:.2f}) or high risk ({avg_risk:.2f})"
 
         except Exception as e:
             self.logger.error(f"Error generating sizing reason: {e}")
-            return f"Position size: {final_position_size:.4f} (Error generating reason)"
+            return "Position size calculated using ML intelligence and Kelly criterion"
 
     def _generate_dual_confidence_sizing_reason(
         self,
@@ -418,50 +424,6 @@ class PositionSizer:
         except Exception as e:
             self.logger.error(f"Error getting historical performance: {e}")
             return 0.5, 1.5  # Default fallback values
-
-    def _generate_sizing_reason(
-        self,
-        final_position_size: float,
-        kelly_position_size: float,
-        ml_position_size: float,
-        price_target_confidences: dict[str, float],
-        adversarial_confidences: dict[str, float],
-    ) -> str:
-        """Generate reason for position sizing decision."""
-        try:
-            # Get average confidence and risk
-            key_levels = [0.5, 1.0, 1.5, 2.0]
-            confidences = []
-            risks = []
-
-            for level in key_levels:
-                closest_confidence = min(
-                    price_target_confidences.keys(),
-                    key=lambda x: abs(float(x.replace("%", "")) - level),
-                )
-                closest_risk = min(
-                    adversarial_confidences.keys(),
-                    key=lambda x: abs(float(x.replace("%", "")) - level),
-                )
-                confidences.append(
-                    price_target_confidences.get(closest_confidence, 0.5),
-                )
-                risks.append(adversarial_confidences.get(closest_risk, 0.3))
-
-            avg_confidence = sum(confidences) / len(confidences)
-            avg_risk = sum(risks) / len(risks)
-
-            if final_position_size >= self.max_position_size * 0.8:
-                return f"Maximum position size due to high confidence ({avg_confidence:.2f}) and low risk ({avg_risk:.2f})"
-            if final_position_size >= self.max_position_size * 0.5:
-                return f"Large position size based on Kelly criterion ({kelly_position_size:.3f}) and ML confidence ({ml_position_size:.3f})"
-            if final_position_size >= self.min_position_size * 2:
-                return "Moderate position size with balanced risk-reward profile"
-            return f"Conservative position size due to low confidence ({avg_confidence:.2f}) or high risk ({avg_risk:.2f})"
-
-        except Exception as e:
-            self.logger.error(f"Error generating sizing reason: {e}")
-            return "Position size calculated using ML intelligence and Kelly criterion"
 
     def get_position_sizing_history(
         self,

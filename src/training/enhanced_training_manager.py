@@ -2221,8 +2221,8 @@ class EnhancedTrainingManager:
         """Generate a robust cache key using the _make_hashable utility."""
         return str(hash(_make_hashable(params)))
     
-    async def initialize(self) -> bool:
-        """Initialize the enhanced training manager and all its components."""
+    async def initialize_components(self) -> bool:
+        """Initialize the enhanced training manager and all its components (auxiliary)."""
         try:
             self.logger.info("🚀 Initializing Enhanced Training Manager...")
             print("🚀 Initializing Enhanced Training Manager...")

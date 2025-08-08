@@ -39,6 +39,7 @@ try:
     from src.monitoring.performance_dashboard import PerformanceDashboard
     from src.monitoring.enhanced_ml_tracker import EnhancedMLTracker
     from src.monitoring.ml_monitor import MLMonitor
+    from src.monitoring.performance_monitor import PerformanceMonitor
     print("Successfully imported Ares modules.")
 except ImportError as e:
     print(f"Error importing Ares modules: {e}")
@@ -80,7 +81,6 @@ except ImportError as e:
         def __init__(self):
             pass
 
-
 # --- FastAPI App Initialization ---
 app = FastAPI(
     title="Ares Trading Bot API",
@@ -102,6 +102,8 @@ db_manager = SQLiteManager()
 state_manager = StateManager()
 performance_reporter = PerformanceReporter()
 websocket_connections = []
+# Add performance monitor placeholder for proper initialization
+performance_monitor = None
 
 # --- Monitoring/Reporting Instances ---
 metrics_dashboard = None
@@ -111,12 +113,53 @@ ml_monitor = None
 
 @app.on_event("startup")
 async def startup_event():
-    global metrics_dashboard, performance_dashboard, enhanced_ml_tracker, ml_monitor
-    # Setup/configure monitoring/reporting modules
-    metrics_dashboard = await MetricsDashboard(CONFIG).initialize() or None
-    performance_dashboard = await PerformanceDashboard(CONFIG).initialize() or None
-    enhanced_ml_tracker = await EnhancedMLTracker(CONFIG).initialize() or None
-    ml_monitor = await MLMonitor(CONFIG).initialize() or None
+    global metrics_dashboard, performance_dashboard, enhanced_ml_tracker, ml_monitor, performance_monitor, websocket_manager
+    # Initialize Performance Monitor first (used by dashboards)
+    try:
+        performance_monitor = PerformanceMonitor(CONFIG)
+        init_ok = await performance_monitor.initialize()
+        if not init_ok:
+            logger.warning("PerformanceMonitor failed to initialize")
+    except Exception as e:
+        logger.error(f"Failed to initialize PerformanceMonitor: {e}")
+        performance_monitor = None
+
+    # Setup/configure monitoring/reporting modules (keep instances, then initialize)
+    try:
+        metrics_dashboard = MetricsDashboard(CONFIG)
+        await metrics_dashboard.initialize()
+        # Start real-time loop
+        await metrics_dashboard.start()
+    except Exception as e:
+        logger.error(f"Failed to initialize MetricsDashboard: {e}")
+        metrics_dashboard = None
+
+    try:
+        # PerformanceDashboard requires a PerformanceMonitor instance
+        performance_dashboard = PerformanceDashboard(CONFIG)
+        if performance_monitor is not None:
+            await performance_dashboard.initialize(performance_monitor)
+        else:
+            logger.warning("PerformanceDashboard not started: PerformanceMonitor unavailable")
+    except Exception as e:
+        logger.error(f"Failed to initialize PerformanceDashboard: {e}")
+        performance_dashboard = None
+
+    try:
+        enhanced_ml_tracker = EnhancedMLTracker(CONFIG)
+        await enhanced_ml_tracker.initialize()
+    except Exception as e:
+        logger.error(f"Failed to initialize EnhancedMLTracker: {e}")
+        enhanced_ml_tracker = None
+
+    try:
+        ml_monitor = MLMonitor(CONFIG)
+        await ml_monitor.initialize()
+        # Start ML monitoring loops
+        await ml_monitor.start_monitoring()
+    except Exception as e:
+        logger.error(f"Failed to initialize MLMonitor: {e}")
+        ml_monitor = None
 
 # Add new global variables for token and model management
 token_configs: dict[str, Any] = {}
@@ -285,6 +328,8 @@ class WebSocketManager:
 
 
 manager = WebSocketManager()
+# Ensure websocket_manager references the active manager
+websocket_manager = manager
 
 
 # --- Mock Data Generation ---
@@ -461,6 +506,19 @@ async def get_dashboard_data(days: int = 7):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Expose Prometheus metrics via FastAPI to avoid separate port conflicts
+@app.get("/metrics")
+async def prometheus_metrics_endpoint():
+    try:
+        from fastapi.responses import Response
+        from prometheus_client import CONTENT_TYPE_LATEST
+        from src.utils.prometheus_metrics import metrics as prometheus_metrics
+        data = prometheus_metrics.get_metrics()
+        return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+    except Exception as e:
+        return {"error": str(e)}
 
 
 # --- Kill Switch Endpoints ---

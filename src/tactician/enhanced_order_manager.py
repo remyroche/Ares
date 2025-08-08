@@ -706,7 +706,7 @@ class EnhancedOrderManager:
             self.total_orders_placed += 1
 
             # Simple fill simulation for paper/sim contexts
-            simulated_fill_qty = min(order_state.original_quantity, order_state.original_quantity)
+            simulated_fill_qty = order_state.original_quantity
             simulated_price = order_request.price or 0.0
             if simulated_fill_qty > 0 and simulated_price > 0:
                 fill = OrderFill(

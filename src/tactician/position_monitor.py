@@ -17,6 +17,7 @@ from src.config_optuna import get_parameter_value
 from src.tactician.position_division_strategy import PositionDivisionStrategy
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.confidence import normalize_dual_confidence
 
 
 class PositionAction(Enum):
@@ -228,11 +229,10 @@ class PositionMonitor:
         """Assess a single position and determine recommended action."""
         try:
             # Calculate final confidence using dual model formula
-            final_confidence = analyst_confidence * (tactician_confidence**2)
-
-            # Calculate normalized confidence
-            normalized_confidence = (final_confidence - 0.216) / 0.784
-            normalized_confidence = max(0.0, min(1.0, normalized_confidence))
+            final_confidence, normalized_confidence = normalize_dual_confidence(
+                analyst_confidence,
+                tactician_confidence,
+            )
 
             # Get current confidence score (use dual confidence as primary)
             current_confidence = normalized_confidence
@@ -298,8 +298,7 @@ class PositionMonitor:
     ) -> None:
         """Adjust trailing stop and take-profit dynamically based on evolving confidence."""
         # Compute normalized dual confidence
-        dual_conf = analyst_confidence * (tactician_confidence ** 2)
-        normalized = max(0.0, min(1.0, (dual_conf - 0.216) / 0.784))
+        _, normalized = normalize_dual_confidence(analyst_confidence, tactician_confidence)
 
         # Determine new trailing offsets as a function of confidence
         # Higher confidence -> wider trailing stop, more ambitious TP; lower confidence -> tighten

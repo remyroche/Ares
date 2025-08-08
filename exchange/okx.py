@@ -231,6 +231,75 @@ class OkxExchange(BaseExchange):
             )
             return []
 
+    @retry_on_rate_limit()
+    @handle_network_operations(max_retries=3, default_return=[])
+    async def get_historical_futures_data(
+        self,
+        symbol: str,
+        start_time_ms: int,
+        end_time_ms: int,
+    ) -> list[dict[str, Any]]:
+        """Get historical futures data (funding rates) for a symbol within a time range."""
+        try:
+            market_id = await self._get_market_id(symbol)
+
+            # Prefer CCXT funding rate history if available
+            if hasattr(self.exchange, "fetch_funding_rate_history"):
+                try:
+                    since = start_time_ms
+                    all_rates: list[dict[str, Any]] = []
+                    # CCXT typical limit defaults; paginate by adjusting since
+                    while since < end_time_ms:
+                        batch = await self.exchange.fetch_funding_rate_history(
+                            market_id,
+                            since=since,
+                            limit=100,
+                        )
+                        if not batch:
+                            break
+                        for item in batch:
+                            ts = item.get("timestamp") or item.get("fundingTime") or item.get("time")
+                            if ts is None:
+                                continue
+                            if ts < start_time_ms or ts > end_time_ms:
+                                continue
+                            all_rates.append(
+                                {
+                                    "symbol": item.get("symbol", market_id),
+                                    "funding_rate": item.get("fundingRate") or item.get("rate") or item.get("fundingRateDaily"),
+                                    "funding_time": ts,
+                                    "next_funding_time": item.get("nextFundingTime", 0),
+                                }
+                            )
+                        since = max(i.get("timestamp", since) or since for i in batch) + 1
+                        await asyncio.sleep(0.1)
+                    return all_rates
+                except Exception as e:
+                    logger.warning(f"CCXT funding rate history failed on OKX: {e}")
+
+            # Fallback to current funding rate (single point) if history unavailable
+            try:
+                info = await self.exchange.fetch_funding_rate(market_id)
+                if info:
+                    ts = info.get("timestamp") or info.get("fundingTime") or info.get("time")
+                    if ts and start_time_ms <= ts <= end_time_ms:
+                        return [
+                            {
+                                "symbol": info.get("symbol", market_id),
+                                "funding_rate": info.get("fundingRate") or info.get("rate"),
+                                "funding_time": ts,
+                                "next_funding_time": info.get("nextFundingTime", 0),
+                            }
+                        ]
+            except Exception as e:
+                logger.warning(f"CCXT fetch_funding_rate failed on OKX: {e}")
+
+            logger.info("No funding rate data available for OKX in the requested range")
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching historical futures data from OKX for {symbol}: {e}")
+            return []
+
     async def close(self):
         """Closes the CCXT exchange instance."""
         if self.exchange:

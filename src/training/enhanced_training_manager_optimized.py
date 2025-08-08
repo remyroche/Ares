@@ -19,7 +19,7 @@ import pandas as pd
 try:
     import pyarrow as pa  # type: ignore
     import pyarrow.parquet as pq  # type: ignore
-except Exception:
+except ImportError:
     pa = None  # type: ignore
     pq = None  # type: ignore
 from sklearn.base import BaseEstimator
@@ -37,7 +37,9 @@ def _make_hashable(obj: Any) -> Any:
     """
     if isinstance(obj, dict):
         return tuple(sorted((k, _make_hashable(v)) for k, v in obj.items()))
-    if isinstance(obj, (list, tuple, set)):
+    if isinstance(obj, set):
+        return tuple(sorted(map(_make_hashable, obj)))
+    if isinstance(obj, (list, tuple)):
         return tuple(_make_hashable(v) for v in obj)
     if isinstance(obj, np.ndarray):
         return tuple(obj.tolist())
@@ -63,13 +65,13 @@ class CachedBacktester:
         
         # Precompute common indicators
         indicators['sma_20'] = (
-            self.market_data['close'].rolling(20).mean().fillna(0).values
+            self.market_data['close'].rolling(20).mean().fillna(method='ffill').values
         )
         indicators['sma_50'] = (
-            self.market_data['close'].rolling(50).mean().fillna(0).values
+            self.market_data['close'].rolling(50).mean().fillna(method='ffill').values
         )
-        indicators['ema_12'] = self.market_data['close'].ewm(span=12).mean().fillna(0).values
-        indicators['ema_26'] = self.market_data['close'].ewm(span=26).mean().fillna(0).values
+        indicators['ema_12'] = self.market_data['close'].ewm(span=12).mean().fillna(method='ffill').values
+        indicators['ema_26'] = self.market_data['close'].ewm(span=26).mean().fillna(method='ffill').values
         
         # RSI calculation with zero-loss guard
         delta = self.market_data['close'].diff()
@@ -85,19 +87,19 @@ class CachedBacktester:
             low_close = np.abs(self.market_data['low'] - self.market_data['close'].shift())
             tr = np.maximum(high_low.values, np.maximum(high_close.values, low_close.values))
             indicators['atr'] = (
-                pd.Series(tr, index=self.market_data.index).rolling(window=14).mean().fillna(0).values
+                pd.Series(tr, index=self.market_data.index).rolling(window=14).mean().fillna(method='ffill').values
             )
         else:
             self.logger.warning("Missing 'high'/'low' columns; skipping ATR calculation")
         
         # Volatility
         indicators['volatility'] = (
-            self.market_data['close'].pct_change().rolling(20).std().fillna(0).values
+            self.market_data['close'].pct_change().rolling(20).std().fillna(method='ffill').values
         )
         
         # Volume indicators
         if 'volume' in self.market_data.columns:
-            indicators['volume_sma'] = self.market_data['volume'].rolling(20).mean().fillna(0).values
+            indicators['volume_sma'] = self.market_data['volume'].rolling(20).mean().fillna(method='ffill').values
         
         self.logger.info(f"Precomputed {len(indicators)} technical indicators")
         return indicators
@@ -268,20 +270,14 @@ class StreamingDataProcessor:
     
     def _process_parquet_stream(self, file_path: str) -> pd.DataFrame:
         """Process Parquet file in chunks."""
-        chunks: List[pd.DataFrame] = []
-        
-        if pq is None:
-            self.logger.warning("pyarrow not available; falling back to pandas read_parquet")
-            try:
-                return pd.read_parquet(file_path)
-            except FileNotFoundError as e:
-                self.logger.error(f"Parquet file not found: {file_path}")
-                raise
-            except Exception as e:
-                self.logger.error(f"Error reading Parquet with pandas: {e}")
-                raise
-        
         try:
+            chunks: List[pd.DataFrame] = []
+            
+            if pq is None:
+                self.logger.warning("pyarrow not available; falling back to pandas read_parquet")
+                return pd.read_parquet(file_path)
+            
+            # Use pyarrow for streaming
             parquet_file = pq.ParquetFile(file_path)
             for batch in parquet_file.iter_batches(batch_size=self.chunk_size):
                 chunk = batch.to_pandas()
@@ -290,15 +286,20 @@ class StreamingDataProcessor:
             
             self.logger.info(f"Processed {len(chunks)} chunks from Parquet file")
             return pd.concat(chunks, ignore_index=True)
+            
         except FileNotFoundError:
             self.logger.error(f"Parquet file not found: {file_path}")
             raise
+        except (ValueError, OSError) as e:
+            # Handle common file format or reading issues
+            self.logger.error(f"Error reading Parquet file {file_path}: {e}")
+            raise
         except Exception as e:
-            # Provide better diagnostics for common pyarrow errors when available
-            if pa is not None and isinstance(e, pa.lib.ArrowInvalid):  # type: ignore[attr-defined]
-                self.logger.error(f"Invalid Parquet file format: {e}")
+            # Provide better diagnostics for pyarrow-specific errors when available
+            if pa is not None and hasattr(pa.lib, 'ArrowInvalid') and isinstance(e, pa.lib.ArrowInvalid):  # type: ignore[attr-defined]
+                self.logger.error(f"Invalid Parquet file format in {file_path}: {e}")
             else:
-                self.logger.error(f"Error processing Parquet stream: {e}")
+                self.logger.error(f"Unexpected error processing Parquet file {file_path}: {e}")
             raise
     
     def _process_csv_stream(self, file_path: str) -> pd.DataFrame:

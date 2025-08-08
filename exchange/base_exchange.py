@@ -485,3 +485,28 @@ class BaseExchange(IExchangeClient, ABC):
         except Exception:
             return None
         return None
+
+    # --- Default CCXT-based helpers (can be overridden by subclasses) ---
+    async def get_ticker(self, symbol: str | None = None) -> dict[str, Any]:
+        """Default ticker fetch using ccxt."""
+        try:
+            if not self.exchange:
+                return {}
+            market_id = await self._get_market_id(symbol) if symbol else None
+            if market_id:
+                return await self.exchange.fetch_ticker(market_id)
+            # All tickers fallback
+            tickers = await self.exchange.fetch_tickers()
+            return tickers or {}
+        except Exception:
+            return {}
+
+    async def get_order_book(self, symbol: str, limit: int = 10) -> dict[str, Any]:
+        """Default order book fetch using ccxt."""
+        try:
+            if not self.exchange:
+                return {}
+            market_id = await self._get_market_id(symbol)
+            return await self.exchange.fetch_order_book(market_id, limit)
+        except Exception:
+            return {}

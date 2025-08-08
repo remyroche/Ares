@@ -200,6 +200,8 @@ class DIAnalyst(AnalystBase, IAnalyst):
                 feature_result = await self.feature_engineering_orchestrator.analyze(market_data)
                 if feature_result:
                     features.update(feature_result.get("features", {}))
+                    technical_indicators.update(feature_result.get("technical_indicators", {}))
+                    support_resistance.update(feature_result.get("support_resistance", {}))
 
             # Build analysis result
             analysis_result = AnalysisResult(
@@ -223,10 +225,11 @@ class DIAnalyst(AnalystBase, IAnalyst):
         """Store analysis result in history."""
         try:
             record = {
-                "timestamp": analysis_result.timestamp,
+                "timestamp": analysis_result.timestamp.isoformat(),
                 "symbol": analysis_result.symbol,
                 "confidence": analysis_result.confidence,
                 "signal": analysis_result.signal,
+                "market_regime": analysis_result.market_regime,
             }
             self.analysis_history.append(record)
             if len(self.analysis_history) > self.max_analysis_history:

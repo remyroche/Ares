@@ -492,6 +492,52 @@ class BinanceExchange:
         )
         return bool(result)
 
+    async def get_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]] | None:
+        """Get all open orders, optionally filtered by symbol."""
+        params: dict[str, Any] = {}
+        if symbol:
+            params["symbol"] = symbol
+        result = await self._signed_request(
+            method="GET",
+            path="/api/v3/openOrders",
+            params=params,
+        )
+        return result if isinstance(result, list) else None
+
+    async def set_margin_mode(self, symbol: str, mode: str) -> bool:
+        """Set margin mode (isolated/cross). Note: For futures endpoints; stubbed for spot."""
+        try:
+            # Spot API doesn't support margin mode here; return True for compatibility
+            return True
+        except Exception:
+            return False
+
+    async def set_leverage(self, symbol: str, leverage: float) -> bool:
+        """Set leverage for symbol. Note: For futures endpoints; stubbed for spot."""
+        try:
+            # Spot API doesn't support leverage; return True for compatibility
+            return True
+        except Exception:
+            return False
+
+    # --- WebSocket fills support (skeleton) ---
+    async def subscribe_fills(self, callback: callable) -> bool:
+        """Subscribe to user trade/fill events and call callback(event_dict)."""
+        try:
+            # TODO: Implement Binance user data stream listenKey + ws connect
+            self._fills_callback = callback
+            return True
+        except Exception as e:
+            self.logger.error(f"Error subscribing to fills: {e}")
+            return False
+
+    async def unsubscribe_fills(self) -> bool:
+        try:
+            self._fills_callback = None
+            return True
+        except Exception:
+            return False
+
     @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Invalid status parameters"),

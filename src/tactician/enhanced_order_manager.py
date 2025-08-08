@@ -16,6 +16,8 @@ import uuid
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+import uuid
+from src.utils.prometheus_metrics import metrics
 
 
 class OrderType(Enum):
@@ -169,6 +171,13 @@ class EnhancedOrderManager:
         # }
         self.symbol_constraints: dict[str, dict[str, float]] = self.order_config.get(
             "symbol_constraints",
+            {},
+        )
+
+        # Optional per-symbol risk/margin settings
+        # Example: {"BTCUSDT": {"max_leverage": 50.0, "margin_mode": "isolated"}}
+        self.symbol_risk_limits: dict[str, dict[str, Any]] = self.order_config.get(
+            "symbol_risk_limits",
             {},
         )
 
@@ -938,6 +947,23 @@ class EnhancedOrderManager:
                 qty = float(max(order_state.original_quantity, 0.0))
                 price = float(order_state.price) if order_state.price else None
 
+                # Enforce symbol-specific leverage and margin mode if provided
+                limits = self.symbol_risk_limits.get(order_request.symbol, {})
+                per_symbol_max = float(limits.get("max_leverage", self.max_leverage))
+                if order_request.leverage is not None and order_request.leverage > per_symbol_max:
+                    self.logger.warning(
+                        f"Leverage {order_request.leverage} > symbol max {per_symbol_max}; clamping"
+                    )
+                    order_request.leverage = per_symbol_max
+                margin_mode = limits.get("margin_mode")
+                try:
+                    if margin_mode and hasattr(self.exchange_client, "set_margin_mode"):
+                        await self.exchange_client.set_margin_mode(symbol=order_request.symbol, mode=margin_mode)
+                    if order_request.leverage and hasattr(self.exchange_client, "set_leverage"):
+                        await self.exchange_client.set_leverage(symbol=order_request.symbol, leverage=float(order_request.leverage))
+                except Exception as lev_err:
+                    self.logger.error(f"Error setting margin/leverage on exchange: {lev_err}")
+
                 # Duck-typed order creation to be exchange-agnostic
                 if hasattr(self.exchange_client, "create_order"):
                     # Pass through extended parameters when supported by the client
@@ -961,9 +987,17 @@ class EnhancedOrderManager:
                     resp = None
                 if resp is None:
                     order_state.status = OrderStatus.REJECTED
+                    try:
+                        metrics.step_failure_counter.labels(step_name="order_create", error_type="reject").inc()
+                    except Exception:
+                        pass
                 else:
                     # Keep pending/open; fills will be tracked by polling get_order_status elsewhere
                     order_state.status = OrderStatus.PENDING
+                    try:
+                        metrics.step_success_counter.labels(step_name="order_create").inc()
+                    except Exception:
+                        pass
 
             self.logger.info(
                 f"Order placed: order_id={order_id} link_id={order_request.order_link_id} strategy={order_request.strategy_type}",
@@ -1004,12 +1038,20 @@ class EnhancedOrderManager:
                     del self.active_orders[order_id]
 
                 self.logger.info(f"Order cancelled: order_id={order_id} link_id={order_state.order_link_id}")
+                try:
+                    metrics.step_success_counter.labels(step_name="order_cancel").inc()
+                except Exception:
+                    pass
                 return True
 
             return False
 
         except Exception as e:
             self.logger.error(f"Error cancelling order: {e}")
+            try:
+                metrics.step_failure_counter.labels(step_name="order_cancel", error_type="exception").inc()
+            except Exception:
+                pass
             return False
 
     async def _reconcile_open_orders(self) -> None:

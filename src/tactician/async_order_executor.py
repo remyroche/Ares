@@ -280,6 +280,11 @@ class AsyncOrderExecutor:
             # Add to execution queue
             priority = max(0, 10 - int(execution_request.priority))  # lower is higher priority
             await self.execution_queue.put((priority, execution_id, execution_request))
+            try:
+                # Use data_size_gauge to track queue depth under a label
+                metrics.data_size_gauge.set_function(lambda: self.execution_queue.qsize())
+            except Exception:
+                pass
 
             self.logger.info(f"Order submitted for async execution: {execution_id}")
             return execution_id
@@ -294,9 +299,8 @@ class AsyncOrderExecutor:
             while True:
                 # Get execution request from queue
                 _, execution_id, execution_request = await self.execution_queue.get()
-                # Observe queue depth
                 try:
-                    metrics.data_size_gauge.labels if False else None  # noop to satisfy static use
+                    metrics.data_size_gauge.set_function(lambda: self.execution_queue.qsize())
                 except Exception:
                     pass
 

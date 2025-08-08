@@ -9,7 +9,6 @@ and ML ensemble confidence scores.
 
 import json
 import os
-import sys
 from datetime import datetime
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
@@ -586,7 +585,7 @@ class PaperTradingReporter:
             Dict[str, Any]: Generated report
         """
         try:
-            print(f"[DEBUG] Generating {report_type} report with formats: {export_formats}")
+            self.logger.debug(f"[DEBUG] Generating {report_type} report with formats: {export_formats}")
             self.logger.info(f"[DEBUG] Generating {report_type} report with formats: {export_formats}")
             if export_formats is None:
                 export_formats = self.export_formats
@@ -603,16 +602,16 @@ class PaperTradingReporter:
             
             # Export reports
             for format_type in export_formats:
-                print(f"[DEBUG] Exporting report as {format_type}")
+                self.logger.debug(f"[DEBUG] Exporting report as {format_type}")
                 self.logger.info(f"[DEBUG] Exporting report as {format_type}")
                 await self._export_report(report_data, format_type)
             self.logger.info(f"✅ Generated {report_type} report")
-            print(f"[DEBUG] Generated {report_type} report")
+            self.logger.debug(f"[DEBUG] Generated {report_type} report")
             return report_data
             
         except Exception as e:
-            self.logger.error(f"Error generating report: {e}")
-            print(f"[DEBUG] Error generating report: {e}")
+            self.logger.error(f"Error generating report: {e}", exc_info=True)
+            self.logger.debug(f"[DEBUG] Error generating report: {e}")
             return {}
     
     @handle_errors(
@@ -669,7 +668,7 @@ class PaperTradingReporter:
             }
             
         except Exception as e:
-            self.logger.error(f"Error generating analysis: {e}")
+            self.logger.error(f"Error generating analysis: {e}", exc_info=True)
             return {}
     
     def _calculate_distribution(self, values: List[float]) -> Dict[str, int]:
@@ -692,7 +691,7 @@ class PaperTradingReporter:
             return distribution
             
         except Exception as e:
-            self.logger.error(f"Error calculating distribution: {e}")
+            self.logger.error(f"Error calculating distribution: {e}", exc_info=True)
             return {}
     
     @handle_errors(
@@ -705,41 +704,32 @@ class PaperTradingReporter:
         report_data: Dict[str, Any],
         format_type: str,
     ) -> None:
-        """
-        Export report in specified format.
-        """
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            abs_report_dir = os.path.abspath(self.report_directory)
-            os.makedirs(abs_report_dir, exist_ok=True)  # Ensure directory exists before every write
             if format_type == "json":
                 filename = f"paper_trading_report_{timestamp}.json"
-                filepath = os.path.join(abs_report_dir, filename)
-                abs_filepath = os.path.abspath(filepath)
+                filepath = os.path.join(self.report_directory, filename)
                 with open(filepath, "w") as f:
                     json.dump(report_data, f, indent=2, default=str)
-                print(f"[DEBUG] Exported JSON report: {abs_filepath}")
-                self.logger.info(f"[DEBUG] Exported JSON report: {abs_filepath}")
+                self.logger.info(f"✅ Exported JSON report: {filepath}")
+                self.logger.debug(f"Exported JSON report: {filepath}")
             elif format_type == "csv":
                 filename = f"paper_trading_report_{timestamp}.csv"
-                filepath = os.path.join(abs_report_dir, filename)
-                abs_filepath = os.path.abspath(filepath)
+                filepath = os.path.join(self.report_directory, filename)
                 df = self._convert_to_dataframe(report_data)
                 df.to_csv(filepath, index=False)
-                print(f"[DEBUG] Exported CSV report: {abs_filepath}")
-                self.logger.info(f"[DEBUG] Exported CSV report: {abs_filepath}")
+                self.logger.info(f"✅ Exported CSV report: {filepath}")
+                self.logger.debug(f"Exported CSV report: {filepath}")
             elif format_type == "html":
                 filename = f"paper_trading_report_{timestamp}.html"
-                filepath = os.path.join(abs_report_dir, filename)
-                abs_filepath = os.path.abspath(filepath)
+                filepath = os.path.join(self.report_directory, filename)
                 html_content = self._generate_html_report(report_data)
                 with open(filepath, "w") as f:
                     f.write(html_content)
-                print(f"[DEBUG] Exported HTML report: {abs_filepath}")
-                self.logger.info(f"[DEBUG] Exported HTML report: {abs_filepath}")
+                self.logger.info(f"✅ Exported HTML report: {filepath}")
+                self.logger.debug(f"Exported HTML report: {filepath}")
         except Exception as e:
-            self.logger.error(f"Error exporting {format_type} report: {e}")
-            print(f"[DEBUG] Error exporting {format_type} report: {e}")
+            self.logger.error(f"Error exporting {format_type} report: {e}", exc_info=True)
     
     def _convert_to_dataframe(self, report_data: Dict[str, Any]) -> pd.DataFrame:
         """Convert report data to DataFrame for CSV export."""
@@ -768,7 +758,7 @@ class PaperTradingReporter:
             return pd.DataFrame(records)
             
         except Exception as e:
-            self.logger.error(f"Error converting to DataFrame: {e}")
+            self.logger.error(f"Error converting to DataFrame: {e}", exc_info=True)
             return pd.DataFrame()
     
     def _generate_html_report(self, report_data: Dict[str, Any]) -> str:
@@ -850,7 +840,7 @@ class PaperTradingReporter:
             )
             
         except Exception as e:
-            self.logger.error(f"Error generating HTML report: {e}")
+            self.logger.error(f"Error generating HTML report: {e}", exc_info=True)
             return "<html><body><h1>Error generating report</h1></body></html>"
     
     def get_status(self) -> Dict[str, Any]:
@@ -892,46 +882,5 @@ async def setup_paper_trading_reporter(
         return reporter
         
     except Exception as e:
-        system_logger.error(f"Error setting up paper trading reporter: {e}")
+        system_logger.error(f"Error setting up paper trading reporter: {e}", exc_info=True)
         return None
-
-# --- TEST UTILITY ---
-def test_generate_report():
-    import asyncio
-    print("[DEBUG] Running test_generate_report()...")
-    config = {"paper_trading_reporter": {"report_directory": "reports/paper_trading", "export_formats": ["json", "csv", "html"]}}
-    reporter = PaperTradingReporter(config)
-    # Add a fake trade record for testing
-    from datetime import datetime
-    trade_data = {
-        "side": "BUY",
-        "leverage": 1.0,
-        "duration": "scalping",
-        "strategy": "test_strategy",
-        "order_type": "market",
-        "quantity": 1.0,
-        "portfolio_percentage": 0.1,
-        "risk_percentage": 0.01,
-        "max_position_size": 0.1,
-        "position_ranking": 1,
-        "absolute_pnl": 10.0,
-        "percentage_pnl": 0.01,
-        "unrealized_pnl": 0.0,
-        "realized_pnl": 10.0,
-        "total_cost": 100.0,
-        "total_proceeds": 110.0,
-        "commission": 0.1,
-        "slippage": 0.05,
-        "net_pnl": 9.85,
-        "symbol": "TEST",
-        "exchange": "TESTEX",
-        "timestamp": datetime.now().isoformat(),
-    }
-    market_indicators = {"rsi": 50, "macd": 0, "macd_signal": 0, "bollinger_upper": 0, "bollinger_lower": 0, "bollinger_middle": 0, "atr": 0, "volume_sma": 0, "price_sma_20": 0, "price_sma_50": 0, "price_sma_200": 0, "volatility": 0, "momentum": 0, "support_level": 0, "resistance_level": 0}
-    market_health = {"overall_health_score": 1.0, "volatility_regime": "normal", "liquidity_score": 1.0, "stress_score": 0.0, "market_strength": 1.0, "volume_health": "good", "price_trend": "up", "market_regime": "bull"}
-    ml_confidence = {"analyst_confidence": 0.9, "tactician_confidence": 0.8, "ensemble_confidence": 0.85, "meta_learner_confidence": 0.8, "individual_model_confidences": {}, "ensemble_agreement": 0.9, "model_diversity": 0.1, "prediction_consistency": 0.95}
-    async def run():
-        await reporter.record_trade(trade_data, market_indicators, market_health, ml_confidence)
-        await reporter.generate_detailed_report("test_report", ["json", "csv", "html"])
-    asyncio.run(run())
-    print("[DEBUG] test_generate_report() complete.")

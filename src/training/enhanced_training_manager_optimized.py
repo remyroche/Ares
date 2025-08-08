@@ -651,16 +651,22 @@ class EnhancedTrainingManagerOptimized:
             
             if csv_files:
                 self.logger.info(f"Loading and streaming data from {len(csv_files)} CSV files")
-                # Use streaming processor for large datasets
-                data_chunks = []
+                # Use streaming iterator for large datasets and write incrementally to Parquet
+                tmp_parquet_path = f"{parquet_path}.tmp"
+                # Stream each CSV and write incrementally
                 for csv_file in csv_files:
-                    chunk_data = self.streaming_processor.process_data_stream(str(csv_file))
-                    data_chunks.append(chunk_data)
-                data = pd.concat(data_chunks, ignore_index=True)
-                
+                    chunks_iter = self.streaming_processor.process_data_stream(str(csv_file))
+                    self.streaming_processor.write_incremental_parquet(chunks_iter, tmp_parquet_path)
+                # Load consolidated Parquet once
+                data = pd.read_parquet(tmp_parquet_path)
                 # Save optimized version as Parquet for future use
                 optimized_data = self.data_manager.optimize_dataframe(data)
                 self.data_manager.save_to_parquet(optimized_data, parquet_path)
+                # Remove tmp file
+                try:
+                    Path(tmp_parquet_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
                 data = optimized_data
             else:
                 raise FileNotFoundError(f"No data found for {symbol} on {exchange}")

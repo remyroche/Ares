@@ -32,9 +32,10 @@ def validate_system_config(config: dict[str, Any]) -> Tuple[bool, list[str]]:
     db_cfg = config.get("database", {})
     if not isinstance(db_cfg, dict):
         errors.append("database must be a dict")
-    influx_cfg = db_cfg.get("influxdb", {})
-    if influx_cfg and not isinstance(influx_cfg.get("url", ""), str):
-        errors.append("database.influxdb.url must be a string when provided")
+    else:
+        influx_cfg = db_cfg.get("influxdb", {})
+        if influx_cfg and not isinstance(influx_cfg.get("url", ""), str):
+            errors.append("database.influxdb.url must be a string when provided")
 
     return len(errors) == 0, errors
 

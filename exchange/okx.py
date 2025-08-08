@@ -271,7 +271,12 @@ class OkxExchange(BaseExchange):
                                     "next_funding_time": item.get("nextFundingTime", 0),
                                 }
                             )
-                        since = max((i.get("timestamp") for i in batch if i.get("timestamp") is not None), default=since) + 1
+                        # Filter for valid numeric timestamps to avoid TypeError in max()
+                        valid_timestamps = [
+                            i.get("timestamp") for i in batch 
+                            if i.get("timestamp") is not None and isinstance(i.get("timestamp"), (int, float))
+                        ]
+                        since = max(valid_timestamps, default=since) + 1
                         await asyncio.sleep(0.1)
                     return all_rates
                 except Exception as e:

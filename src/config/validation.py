@@ -66,8 +66,11 @@ def validate_training_config(config: dict[str, Any]) -> Tuple[bool, list[str]]:
     _require_keys(config, ["MODEL_TRAINING", "DATA_CONFIG"], "training config", errors)
 
     data_cfg = config.get("DATA_CONFIG", {})
-    if not isinstance(data_cfg.get("default_lookback_days", 730), int):
-        errors.append("DATA_CONFIG.default_lookback_days must be an int")
+    if not isinstance(data_cfg, dict):
+        errors.append("DATA_CONFIG must be a dict")
+    else:
+        if not isinstance(data_cfg.get("default_lookback_days", 730), int):
+            errors.append("DATA_CONFIG.default_lookback_days must be an int")
 
     return len(errors) == 0, errors
 

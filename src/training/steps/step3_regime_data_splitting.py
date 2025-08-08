@@ -142,6 +142,15 @@ class RegimeDataSplittingStep:
             regime_data_dir = f"{data_dir}/regime_data"
             os.makedirs(regime_data_dir, exist_ok=True)
 
+            # Ensure core regimes all have a file, even if classification missed some
+            core_regimes = ["BULL", "BEAR", "SIDEWAYS", "VOLATILE"]
+            for core in core_regimes:
+                if core not in regime_data:
+                    self.logger.info(f"Creating placeholder regime data for missing regime: {core}")
+                    placeholder = historical_data.iloc[: min(500, len(historical_data))].copy()
+                    placeholder['regime'] = core
+                    regime_data[core] = placeholder
+
             regime_data_paths = {}
             for regime, data in regime_data.items():
                 regime_file = f"{regime_data_dir}/{exchange}_{symbol}_{regime}_data.pkl"

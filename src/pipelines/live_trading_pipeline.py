@@ -83,6 +83,12 @@ class LiveTradingPipeline:
         # Initialize trading modules
         await self._initialize_trading_modules()
 
+        # Start unified market data streaming to feed LM/tactics if enabled
+        try:
+            await self._maybe_start_market_stream()
+        except Exception as e:
+            self.logger.warning(f"Market stream not started: {e}")
+
         self.logger.info(
             "✅ Live Trading Pipeline initialization completed successfully",
         )
@@ -178,6 +184,33 @@ class LiveTradingPipeline:
 
         except Exception as e:
             self.logger.error(f"Error initializing trading modules: {e}")
+
+    async def _maybe_start_market_stream(self) -> None:
+        """Start unified market stream (ticker, trades, orderbook) feeding pipeline."""
+        from exchange.factory import ExchangeFactory as RootExchangeFactory
+        from src.config.environment import get_exchange_name, get_trade_symbol
+
+        exchange_name = get_exchange_name().lower()
+        symbol = get_trade_symbol()
+        client = RootExchangeFactory.get_exchange(exchange_name)
+
+        async def on_trade(msg):
+            # Minimal hook: store last trade to self.trading_results for tactics
+            self.trading_results["last_trade"] = msg
+
+        async def on_ticker(msg):
+            self.trading_results["last_ticker"] = msg
+
+        async def on_book(msg):
+            self.trading_results["last_order_book"] = msg
+
+        # Run subscriptions concurrently
+        import asyncio
+        self._stream_tasks = [
+            asyncio.create_task(client.subscribe_trades(symbol, on_trade)),
+            asyncio.create_task(client.subscribe_ticker(symbol, on_ticker)),
+            asyncio.create_task(client.subscribe_order_book(symbol, on_book)),
+        ]
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

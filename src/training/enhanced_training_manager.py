@@ -24,6 +24,8 @@ from src.training.optimization.computational_optimization_manager import (
 )
 from src.config.computational_optimization import get_computational_optimization_config
 
+from contextlib import contextmanager
+
 
 class EnhancedTrainingManager:
     """
@@ -81,6 +83,16 @@ class EnhancedTrainingManager:
         self.checkpoint_file = self.checkpoint_dir / "training_progress.json"
         self.enable_checkpointing = self.enhanced_training_config.get("enable_checkpointing", True)
         
+    @contextmanager
+    def _timed_step(self, name: str, step_times: dict):
+        start = time.time()
+        try:
+            yield
+            self._log_step_completion(name, start, step_times, success=True)
+        except Exception:
+            self._log_step_completion(name, start, step_times, success=False)
+            raise
+
     def _save_checkpoint(self, step_name: str, pipeline_state: dict[str, Any]) -> None:
         """
         Save training progress checkpoint.
@@ -892,93 +904,52 @@ class EnhancedTrainingManager:
             self._save_checkpoint("step3_regime_data_splitting", pipeline_state)
 
             # Step 4: Analyst Labeling & Feature Engineering
-            step_start = time.time()
-            self.logger.info("🧠 STEP 4: Analyst Labeling & Feature Engineering...")
-            print("   🧠 Step 4: Analyst Labeling & Feature Engineering...")
-            
-            from src.training.steps import step4_analyst_labeling_feature_engineering
-            step4_success = await step4_analyst_labeling_feature_engineering.run_step(
-                symbol=symbol,
-                data_dir=data_dir,
-                timeframe=timeframe,
-                exchange=exchange,
-            )
-            
-            if not step4_success:
-                self._log_step_completion("Step 4: Analyst Labeling & Feature Engineering", step_start, step_times, success=False)
-                return False
-            
-            self._log_step_completion("Step 4: Analyst Labeling & Feature Engineering", step_start, step_times)
-            
-            # Save checkpoint after step 4
-            self._save_checkpoint("step4_analyst_labeling_feature_engineering", pipeline_state)
-            
-            # Memory optimization after feature engineering (most memory-intensive step)
-            self._optimize_memory_usage()
+            with self._timed_step("Step 4: Analyst Labeling & Feature Engineering", step_times):
+                self.logger.info("🧠 STEP 4: Analyst Labeling & Feature Engineering...")
+                print("   🧠 Step 4: Analyst Labeling & Feature Engineering...")
+                
+                from src.training.steps import step4_analyst_labeling_feature_engineering
+                step4_success = await step4_analyst_labeling_feature_engineering.run_step(
+                    symbol=symbol,
+                    data_dir=data_dir,
+                    timeframe=timeframe,
+                    exchange=exchange,
+                )
+                
+                if not step4_success:
+                    return False
+                self._save_checkpoint("step4_analyst_labeling_feature_engineering", pipeline_state)
+                self._optimize_memory_usage()
 
             # Step 5: Analyst Specialist Training
-            step_start = time.time()
-            self.logger.info("🎯 STEP 5: Analyst Specialist Training...")
-            print("   🎯 Step 5: Analyst Specialist Training...")
-            
-            from src.training.steps import step5_analyst_specialist_training
-            step5_success = await step5_analyst_specialist_training.run_step(
-                symbol=symbol,
-                data_dir=data_dir,
-                timeframe=timeframe,
-                exchange=exchange,
-            )
-
-            # Update pipeline state
-            pipeline_state["analyst_labeling_feature_engineering"] = {
-                "status": "SUCCESS",
-                "success": step4_success
-            }
-            
-            # Run validator for Step 4
-            validation_result = await self._run_step_validator(
-                "step4_analyst_labeling_feature_engineering", training_input, pipeline_state
-            )
-            
-            if not step5_success:
-                self.logger.error("❌ Step 5: Analyst Specialist Training failed")
-                print("❌ Step 5: Analyst Specialist Training failed")
-                return False
-            
-            # Update pipeline state
-            pipeline_state["analyst_specialist_training"] = {
-                "status": "SUCCESS",
-                "success": step5_success
-            }
-            
-            # Run validator for Step 5
-            validation_result = await self._run_step_validator(
-                "step5_analyst_specialist_training", training_input, pipeline_state
-            )
-            
-            self.logger.info("✅ Step 5: Analyst Specialist Training completed successfully")
-            print("   ✅ Step 5: Analyst Specialist Training completed successfully")
+            with self._timed_step("Step 5: Analyst Specialist Training", step_times):
+                self.logger.info("🎯 STEP 5: Analyst Specialist Training...")
+                print("   🎯 Step 5: Analyst Specialist Training...")
+                
+                from src.training.steps import step5_analyst_specialist_training
+                step5_success = await step5_analyst_specialist_training.run_step(
+                    symbol=symbol,
+                    data_dir=data_dir,
+                    timeframe=timeframe,
+                    exchange=exchange,
+                )
+                if not step5_success:
+                    return False
 
             # Step 6: Analyst Enhancement
-            step_start = time.time()
-            self.logger.info("🔧 STEP 6: Analyst Enhancement...")
-            print("   🔧 Step 6: Analyst Enhancement...")
-            
-            from src.training.steps import step6_analyst_enhancement
-            step6_success = await step6_analyst_enhancement.run_step(
-                symbol=symbol,
-                data_dir=data_dir,
-                timeframe=timeframe,
-                exchange=exchange,
-            )
-            
-            if not step6_success:
-                self.logger.error("❌ Step 6: Analyst Enhancement failed")
-                print("❌ Step 6: Analyst Enhancement failed")
-                return False
-            
-            self.logger.info("✅ Step 6: Analyst Enhancement completed successfully")
-            print("   ✅ Step 6: Analyst Enhancement completed successfully")
+            with self._timed_step("Step 6: Analyst Enhancement", step_times):
+                self.logger.info("🔧 STEP 6: Analyst Enhancement...")
+                print("   🔧 Step 6: Analyst Enhancement...")
+                
+                from src.training.steps import step6_analyst_enhancement
+                step6_success = await step6_analyst_enhancement.run_step(
+                    symbol=symbol,
+                    data_dir=data_dir,
+                    timeframe=timeframe,
+                    exchange=exchange,
+                )
+                if not step6_success:
+                    return False
 
             # Step 7: Analyst Ensemble Creation
             step_start = time.time()

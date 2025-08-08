@@ -10,6 +10,7 @@ from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.confidence import normalize_dual_confidence
 
 
 class PositionSizer:
@@ -411,9 +412,7 @@ class PositionSizer:
 
             # Dynamic confidence-based modulation (analyst and tactician)
             # Use dual confidence similar to monitor normalization
-            dual_conf = analyst_confidence * (tactician_confidence ** 2)
-            # Normalize to 0..1 assuming baseline ~0.216
-            normalized = max(0.0, min(1.0, (dual_conf - 0.216) / 0.784))
+            _, normalized = normalize_dual_confidence(analyst_confidence, tactician_confidence)
             # Scale position by a gentle factor around 1.0 (0.8..1.2)
             conf_scale = 0.8 + 0.4 * normalized
             adjusted *= conf_scale

@@ -611,10 +611,10 @@ class Supervisor:
                     liquidation_risk = analysis.get("liquidation_risk")
  
                 tactics_input = {
-                    "symbol": strategy_data.get("symbol") if strategy_data else None,
-                    "exchange": strategy_data.get("exchange") if strategy_data else None,
-                    "timeframe": strategy_data.get("timeframe") if strategy_data else None,
-                    "current_price": strategy_data.get("current_price") if strategy_data else None,
+                    "symbol": (strategy_data or {}).get("symbol"),
+                    "exchange": (strategy_data or {}).get("exchange"),
+                    "timeframe": (strategy_data or {}).get("timeframe"),
+                    "current_price": (strategy_data or {}).get("current_price"),
                     "ml_predictions": (strategy_data or {}).get("ml_predictions", {}),
                     "market_health_analysis": market_health,
                     "liquidation_risk_analysis": liquidation_risk,

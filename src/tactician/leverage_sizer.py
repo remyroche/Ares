@@ -333,26 +333,26 @@ class LeverageSizer:
                 liq_price = liquidation_risk_analysis.get("estimated_liquidation_price")
                 min_buffer_ratio = liquidation_risk_analysis.get(
                     "min_liquidation_buffer_ratio",
-                    0.02,
-                )  # require at least 2% distance
+                    0.015,
+                )  # require at least 1.5% distance
                 if liq_price and current_price:
                     distance = abs(current_price - liq_price) / current_price
                     if distance < min_buffer_ratio:
-                        # Clamp leverage proportionally to increase buffer
-                        risk_scale = max(0.1, distance / max(min_buffer_ratio, 1e-6))
+                        # Soft scale down (no more than 50% cut) to increase buffer
+                        risk_scale = max(0.5, distance / max(min_buffer_ratio, 1e-6))
                         adjusted = max(self.min_leverage, proposed_leverage * risk_scale)
 
             # Guard 2: Market stress clamp
             if market_health_analysis:
                 stress = market_health_analysis.get("stress_analysis", {})
                 stress_level = float(stress.get("stress_level", 0.5))  # 0..1
-                # In high stress, reduce leverage; if stress >= 0.8, force near-min leverage
+                # In high stress, reduce leverage using gentle caps
                 if stress_level >= 0.8:
-                    adjusted = max(self.min_leverage, min(adjusted, self.min_leverage * 1.5))
+                    adjusted = min(adjusted, max(self.min_leverage, self.max_leverage * 0.2))
                 elif stress_level >= 0.6:
-                    adjusted = max(self.min_leverage, min(adjusted, self.max_leverage * 0.25))
+                    adjusted = min(adjusted, self.max_leverage * 0.35)
                 elif stress_level >= 0.4:
-                    adjusted = max(self.min_leverage, min(adjusted, self.max_leverage * 0.5))
+                    adjusted = min(adjusted, self.max_leverage * 0.6)
 
             return max(self.min_leverage, min(self.max_leverage, adjusted))
         except Exception as e:

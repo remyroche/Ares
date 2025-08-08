@@ -207,9 +207,8 @@ class EnhancedOrderManager:
                 self.exchange_client = BinanceExchange(self.config.get("exchange", {}))
                 connected = await self.exchange_client.connect()
                 if not connected:
-                    self.logger.error("Failed to connect exchange client; falling back to paper mode")
-                    self.exchange_client = None
-                    self.paper_trading = True
+                    self.logger.error("Failed to connect exchange client in live mode. Aborting initialization.")
+                    return False
 
             self.is_initialized = True
             self.logger.info("✅ Enhanced Order Manager initialized successfully")
@@ -818,7 +817,7 @@ class EnhancedOrderManager:
             # Update metrics
             self.total_orders_placed += 1
 
-            if self.paper_trading or not self.exchange_client:
+            if self.paper_trading:
                 # Simple fill simulation for paper/sim contexts
                 simulated_fill_qty = order_state.original_quantity
                 simulated_price = order_request.price or 0.0
@@ -839,6 +838,10 @@ class EnhancedOrderManager:
                     if order_state.remaining_quantity <= 0:
                         order_state.status = OrderStatus.FILLED
             else:
+                if not self.exchange_client:
+                    self.logger.error("Live mode requires an exchange connection. Order not placed.")
+                    order_state.status = OrderStatus.REJECTED
+                    return None
                 # Live execution via exchange client
                 side_map = {OrderSide.BUY: "BUY", OrderSide.SELL: "SELL"}
                 type_map = {

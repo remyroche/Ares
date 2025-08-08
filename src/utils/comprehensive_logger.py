@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .structured_logging import CorrelationIdFilter, get_json_formatter
+
 
 class ComprehensiveLogger:
     """
@@ -104,10 +106,8 @@ class ComprehensiveLogger:
         # Clear existing handlers
         logger.handlers.clear()
 
-        # Create formatter
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        )
+        # Create structured JSON formatter by default
+        formatter = get_json_formatter()
 
         # Add console handler if enabled
         if self.log_config.get("console_output", True):
@@ -125,6 +125,12 @@ class ComprehensiveLogger:
             )
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
+
+        # Add correlation filter to enrich records
+        correlation_filter = CorrelationIdFilter()
+        logger.addFilter(correlation_filter)
+        for handler in logger.handlers:
+            handler.addFilter(correlation_filter)
 
         return logger
 

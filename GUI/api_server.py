@@ -88,6 +88,18 @@ app = FastAPI(
     version="2.0.0",
 )
 
+# Observability and structured logging
+try:
+    from src.utils.structured_logging import CorrelationIdMiddleware
+    from src.utils.observability import init_observability
+
+    init_observability({})
+    # Add correlation ID middleware for request scoping
+    app.add_middleware(CorrelationIdMiddleware)
+except Exception as _obs_exc:
+    # Non-fatal if observability extras are unavailable
+    logging.getLogger(__name__).warning(f"Observability init skipped: {_obs_exc}")
+
 # --- CORS Middleware ---
 app.add_middleware(
     CORSMiddleware,

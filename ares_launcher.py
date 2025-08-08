@@ -62,6 +62,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+import logging
 
 # Try to import requests for GUI health checks
 try:
@@ -80,6 +81,7 @@ from src.utils.logger import (
     ensure_comprehensive_logging_available,
 )
 from src.utils.signal_handler import setup_signal_handlers
+from src.utils.observability import init_observability
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent
@@ -95,6 +97,12 @@ class AresLauncher:
 
         # Ensure comprehensive logging is available for all existing logging calls
         ensure_comprehensive_logging_available()
+
+        # Initialize observability backends (Sentry/OTLP) if configured
+        try:
+            init_observability({})
+        except Exception as _obs_exc:
+            logging.getLogger(__name__).warning(f"Observability init skipped: {_obs_exc}")
 
         self.logger = self.comprehensive_logger.get_component_logger("AresLauncher")
         self.global_logger = self.comprehensive_logger.get_global_logger()

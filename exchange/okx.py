@@ -271,7 +271,7 @@ class OkxExchange(BaseExchange):
                                     "next_funding_time": item.get("nextFundingTime", 0),
                                 }
                             )
-                        since = max(i.get("timestamp", since) or since for i in batch) + 1
+                        since = max((i.get("timestamp") for i in batch if i.get("timestamp") is not None), default=since) + 1
                         await asyncio.sleep(0.1)
                     return all_rates
                 except Exception as e:

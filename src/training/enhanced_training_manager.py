@@ -952,25 +952,20 @@ class EnhancedTrainingManager:
                     return False
 
             # Step 7: Analyst Ensemble Creation
-            step_start = time.time()
-            self.logger.info("🎲 STEP 7: Analyst Ensemble Creation...")
-            print("   🎲 Step 7: Analyst Ensemble Creation...")
-            
-            from src.training.steps import step7_analyst_ensemble_creation
-            step7_success = await step7_analyst_ensemble_creation.run_step(
-                symbol=symbol,
-                data_dir=data_dir,
-                timeframe=timeframe,
-                exchange=exchange,
-            )
-            
-            if not step7_success:
-                self.logger.error("❌ Step 7: Analyst Ensemble Creation failed")
-                print("❌ Step 7: Analyst Ensemble Creation failed")
-                return False
-            
-            self.logger.info("✅ Step 7: Analyst Ensemble Creation completed successfully")
-            print("   ✅ Step 7: Analyst Ensemble Creation completed successfully")
+            with self._timed_step("Step 7: Analyst Ensemble Creation", step_times):
+                self.logger.info("🎲 STEP 7: Analyst Ensemble Creation...")
+                print("   🎲 Step 7: Analyst Ensemble Creation...")
+                
+                from src.training.steps import step7_analyst_ensemble_creation
+                step7_success = await step7_analyst_ensemble_creation.run_step(
+                    symbol=symbol,
+                    data_dir=data_dir,
+                    timeframe=timeframe,
+                    exchange=exchange,
+                )
+                
+                if not step7_success:
+                    return False
 
             # Step 8: Tactician Labeling
             with self._timed_step("Step 8: Tactician Labeling", step_times):

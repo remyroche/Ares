@@ -69,8 +69,16 @@ class Step7AnalystEnsembleCreationValidator(BaseValidator):
             self.logger.error("❌ Analyst ensemble artifacts missing - stopping process")
             return False
 
-        # 3) Critical: summary content integrity and basic metrics
-        summary_passed = self._validate_summary_content(symbol, exchange, data_dir)
+        # 3) Critical: load summary once and validate its content
+        summary_file_path = f"{data_dir}/{exchange}_{symbol}_analyst_ensemble_summary.json"
+        try:
+            with open(summary_file_path, "r") as f:
+                summary_data: Dict[str, Any] = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            self.logger.error(f"❌ Failed to load or parse analyst ensemble summary: {e}")
+            return False
+
+        summary_passed = self._validate_summary_content(summary_data)
         if not summary_passed:
             self.logger.error("❌ Analyst ensemble summary validation failed - stopping process")
             return False
@@ -82,7 +90,7 @@ class Step7AnalystEnsembleCreationValidator(BaseValidator):
             return False
 
         # 5) Warning-level: diversity and performance sanity
-        diversity_ok = self._validate_diversity_and_weights(symbol, exchange, data_dir)
+        diversity_ok = self._validate_diversity_and_weights(summary_data)
         if not diversity_ok:
             self.logger.warning("⚠️ Analyst ensemble diversity/weights validation had issues - continuing with caution")
 
@@ -123,12 +131,12 @@ class Step7AnalystEnsembleCreationValidator(BaseValidator):
             self.logger.error(f"❌ Error validating artifact existence: {e}")
             return False
 
-    def _validate_summary_content(self, symbol: str, exchange: str, data_dir: str) -> bool:
+    def _validate_summary_content(self, summary: Dict[str, Any]) -> bool:
+        """
+        Validate the JSON-loaded summary dictionary content for structure and minimal metrics.
+        Returns False when issues are present to enforce a critical failure in validate().
+        """
         try:
-            summary_file = f"{data_dir}/{exchange}_{symbol}_analyst_ensemble_summary.json"
-            with open(summary_file, "r") as f:
-                summary = json.load(f)
-
             if not isinstance(summary, dict) or len(summary) == 0:
                 self.logger.error("❌ Ensemble summary is empty or invalid format")
                 return False
@@ -188,6 +196,7 @@ class Step7AnalystEnsembleCreationValidator(BaseValidator):
             if issues:
                 for msg in issues[:5]:
                     self.logger.warning(f"⚠️ {msg}")
+            # Critical step: fail when issues are present
             return len(issues) == 0
         except Exception as e:
             self.logger.error(f"❌ Error validating summary content: {e}")
@@ -238,14 +247,12 @@ class Step7AnalystEnsembleCreationValidator(BaseValidator):
             self.logger.error(f"❌ Error validating pickled ensembles: {e}")
             return False
 
-    def _validate_diversity_and_weights(self, symbol: str, exchange: str, data_dir: str) -> bool:
+    def _validate_diversity_and_weights(self, summary: Dict[str, Any]) -> bool:
+        """
+        Warning-level checks for basic model diversity and non-zero weight usage.
+        Returns False when issues exist, but caller treats as warning.
+        """
         try:
-            summary_file = f"{data_dir}/{exchange}_{symbol}_analyst_ensemble_summary.json"
-            if not os.path.exists(summary_file):
-                return True
-            with open(summary_file, "r") as f:
-                summary = json.load(f)
-
             diversity_issues: List[str] = []
             for regime_name, ensembles in summary.items():
                 # model type diversity via base_models names
@@ -268,7 +275,7 @@ class Step7AnalystEnsembleCreationValidator(BaseValidator):
             if diversity_issues:
                 for msg in diversity_issues[:5]:
                     self.logger.warning(f"⚠️ {msg}")
-            return True
+            return len(diversity_issues) == 0
         except Exception as e:
             self.logger.error(f"❌ Error validating diversity/weights: {e}")
             return False

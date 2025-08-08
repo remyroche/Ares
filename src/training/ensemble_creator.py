@@ -487,19 +487,45 @@ class EnsembleCreator:
         self,
         predictions: dict[str, np.ndarray],
     ) -> pd.DataFrame:
-        """Calculate correlations between model predictions."""
+        """Calculate correlations and diversity metrics between model predictions."""
         try:
-            # Convert predictions to DataFrame
             pred_df = pd.DataFrame(predictions)
-
-            # Calculate correlation matrix
             correlation_matrix = pred_df.corr()
-
+            # Diversity metrics
+            diversity_metrics = self._calculate_diversity_metrics(pred_df)
+            self.logger.info(f"Ensemble diversity metrics: {diversity_metrics}")
             return correlation_matrix
-
         except Exception as e:
-            self.logger.error(f"Error calculating prediction correlations: {e}")
+            self.logger.error(f"Error calculating model prediction correlations/diversity: {e}")
             return pd.DataFrame()
+
+    def _calculate_diversity_metrics(self, pred_df: pd.DataFrame) -> dict:
+        """Calculate Q-statistic, disagreement, entropy, double-fault for all model pairs."""
+        metrics = {"q_stat": [], "disagreement": [], "entropy": [], "double_fault": []}
+        n_models = pred_df.shape[1]
+        for i in range(n_models):
+            for j in range(i+1, n_models):
+                p1 = pred_df.iloc[:, i]
+                p2 = pred_df.iloc[:, j]
+                # Binarize predictions for diversity metrics
+                p1b = (p1 > 0.5).astype(int)
+                p2b = (p2 > 0.5).astype(int)
+                N11 = np.sum((p1b == 1) & (p2b == 1))
+                N00 = np.sum((p1b == 0) & (p2b == 0))
+                N10 = np.sum((p1b == 1) & (p2b == 0))
+                N01 = np.sum((p1b == 0) & (p2b == 1))
+                q = (N11 * N00 - N10 * N01) / (N11 * N00 + N10 * N01 + 1e-9)
+                d = (N10 + N01) / (N11 + N00 + N10 + N01 + 1e-9)
+                df = (N10 * N01) / (N11 + N00 + N10 + N01 + 1e-9)
+                metrics["q_stat"].append(q)
+                metrics["disagreement"].append(d)
+                metrics["double_fault"].append(df)
+        # Entropy for each sample
+        preds_bin = (pred_df > 0.5).astype(int)
+        entropy = np.mean([np.mean(-np.bincount(row, minlength=2)/n_models * np.log2(np.bincount(row, minlength=2)/n_models + 1e-9)) for row in preds_bin.values])
+        metrics["entropy"] = entropy
+        # Aggregate
+        return {k: float(np.mean(v)) if isinstance(v, list) and v else v for k, v in metrics.items()}
 
     def _remove_correlated_models(
         self,

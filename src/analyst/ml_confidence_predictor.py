@@ -2797,6 +2797,37 @@ class MLConfidencePredictor:
         except Exception as e:
             self.logger.error(f"Error stopping ML Confidence Predictor: {e}")
 
+    def update_ensemble_weights(self, performance_history: dict[str, float] = None, regime: str = None):
+        """
+        Dynamically update ensemble weights based on recent performance, regime, or meta-model.
+        If a meta-model is available, use it for weighting; otherwise, use recent accuracy.
+        """
+        if performance_history:
+            total = sum(performance_history.values())
+            if total > 0:
+                self.ensemble_weights = {k: v / total for k, v in performance_history.items()}
+            else:
+                self.ensemble_weights = {k: 1.0 / len(performance_history) for k in performance_history}
+        # Placeholder: regime-specific or meta-model weighting can be added here
+        # Example: if regime and regime in self.regime_models: ...
+        self.logger.info(f"Updated ensemble weights: {self.ensemble_weights}")
+
+    def ablation_study(self, features: pd.DataFrame, y_true: np.ndarray) -> dict:
+        """
+        Perform ablation study: remove each ensemble member in turn and measure performance drop.
+        Returns a dict of member: performance_with_removal.
+        """
+        results = {}
+        for member in self.ensemble_models:
+            others = {k: v for k, v in self.ensemble_models.items() if k != member}
+            if not others:
+                continue
+            preds = np.mean([m.predict(features) for m in others.values()], axis=0)
+            acc = np.mean((preds > 0.5) == y_true)
+            results[member] = acc
+        self.logger.info(f"Ablation study results: {results}")
+        return results
+
 
 @handle_errors(
     exceptions=(Exception,),

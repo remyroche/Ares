@@ -27,6 +27,9 @@ from src.utils.logger import system_logger
 from src.training.feature_engineering import FeatureGenerator
 from src.training.data_cleaning import handle_missing_data
 from src.training.steps.step12_final_parameters_optimization.optimized_optuna_optimization import AdvancedOptunaManager
+import shap
+import matplotlib.pyplot as plt
+import tempfile
 
 
 @dataclass
@@ -283,6 +286,22 @@ class RayModelTrainer:
                             mlflow.log_artifact(result["model_path"])
                         if "scaler_path" in result:
                             mlflow.log_artifact(result["scaler_path"])
+                        # SHAP explainability integration
+                        try:
+                            model = joblib.load(result["model_path"])
+                            scaler = joblib.load(result["scaler_path"])
+                            X_sample = training_data["tactician_1m"].features.iloc[:200]
+                            X_sample_scaled = scaler.transform(X_sample)
+                            explainer = shap.TreeExplainer(model)
+                            shap_values = explainer.shap_values(X_sample_scaled)
+                            plt.figure()
+                            shap.summary_plot(shap_values, X_sample, show=False)
+                            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+                                plt.savefig(tmpfile.name)
+                                mlflow.log_artifact(tmpfile.name, artifact_path="shap")
+                            plt.close()
+                        except Exception as e:
+                            self.logger.warning(f"SHAP explainability failed: {e}")
                 self.is_training = False
                 self.logger.info("✅ Ray-based model training completed successfully")
                 return training_results

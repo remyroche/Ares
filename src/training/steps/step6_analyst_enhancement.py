@@ -95,9 +95,13 @@ class AnalystEnhancementStep:
             for regime_name, regime_models in analyst_models.items():
                 self.logger.info(f"--- Enhancing models for regime: {regime_name} ---")
 
-                X_train, y_train, X_val, y_val = self._load_regime_data(
-                    regime_data_dir, regime_name
-                )
+                try:
+                    X_train, y_train, X_val, y_val = self._load_regime_data(
+                        regime_data_dir, regime_name
+                    )
+                except FileNotFoundError as e:
+                    self.logger.warning(f"⚠️ {e} — skipping regime '{regime_name}'")
+                    continue
                 
                 enhanced_regime_models = {}
                 for model_name, model_data in regime_models.items():

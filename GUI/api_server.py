@@ -18,6 +18,9 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from fastapi.responses import Response
+from prometheus_client import CONTENT_TYPE_LATEST
+from src.utils.prometheus_metrics import metrics as prometheus_metrics
 import time
 
 # Setup logger
@@ -39,6 +42,7 @@ try:
     from src.monitoring.performance_dashboard import PerformanceDashboard
     from src.monitoring.enhanced_ml_tracker import EnhancedMLTracker
     from src.monitoring.ml_monitor import MLMonitor
+    from src.monitoring.performance_monitor import PerformanceMonitor
     print("Successfully imported Ares modules.")
 except ImportError as e:
     print(f"Error importing Ares modules: {e}")
@@ -80,7 +84,6 @@ except ImportError as e:
         def __init__(self):
             pass
 
-
 # --- FastAPI App Initialization ---
 app = FastAPI(
     title="Ares Trading Bot API",
@@ -114,6 +117,8 @@ db_manager = SQLiteManager()
 state_manager = StateManager()
 performance_reporter = PerformanceReporter()
 websocket_connections = []
+# Add performance monitor placeholder for proper initialization
+performance_monitor = None
 
 # --- Monitoring/Reporting Instances ---
 metrics_dashboard = None
@@ -123,12 +128,87 @@ ml_monitor = None
 
 @app.on_event("startup")
 async def startup_event():
-    global metrics_dashboard, performance_dashboard, enhanced_ml_tracker, ml_monitor
-    # Setup/configure monitoring/reporting modules
-    metrics_dashboard = await MetricsDashboard(CONFIG).initialize() or None
-    performance_dashboard = await PerformanceDashboard(CONFIG).initialize() or None
-    enhanced_ml_tracker = await EnhancedMLTracker(CONFIG).initialize() or None
-    ml_monitor = await MLMonitor(CONFIG).initialize() or None
+    global metrics_dashboard, performance_dashboard, enhanced_ml_tracker, ml_monitor, performance_monitor, websocket_manager
+
+    async def create_and_initialize(name: str, factory, initializer):
+        try:
+            instance = factory()
+            result = await initializer(instance)
+            if isinstance(result, bool):
+                if not result:
+                    logger.warning(f"{name} failed to initialize")
+                return instance
+            return result if result is not None else instance
+        except Exception as e:
+            logger.error(f"Failed to initialize {name}: {e}")
+            return None
+
+    async def init_only(inst):
+        return await inst.initialize()
+
+    async def init_and_start_dashboard(inst):
+        ok = await inst.initialize()
+        if ok is False:
+            return False
+        await inst.start()
+        return True
+
+    async def init_with_perf(inst):
+        return await inst.initialize(performance_monitor)
+
+    async def init_and_start_ml(inst):
+        ok = await inst.initialize()
+        if ok is False:
+            return False
+        await inst.start_monitoring()
+        return True
+
+    # Initialize Performance Monitor first (used by dashboards)
+    performance_monitor = await create_and_initialize(
+        "PerformanceMonitor",
+        lambda: PerformanceMonitor(CONFIG),
+        init_only,
+    )
+
+    # Metrics Dashboard
+    metrics_dashboard = await create_and_initialize(
+        "MetricsDashboard",
+        lambda: MetricsDashboard(CONFIG),
+        init_and_start_dashboard,
+    )
+
+    # Enhanced ML Tracker
+    enhanced_ml_tracker = await create_and_initialize(
+        "EnhancedMLTracker",
+        lambda: EnhancedMLTracker(CONFIG),
+        init_only,
+    )
+
+    # Inject dependencies into metrics dashboard if available
+    try:
+        if metrics_dashboard:
+            metrics_dashboard.performance_monitor = performance_monitor
+            metrics_dashboard.enhanced_ml_tracker = enhanced_ml_tracker
+    except Exception as e:
+        logger.warning(f"Failed to inject monitors into MetricsDashboard: {e}")
+
+    # Performance Dashboard (requires performance monitor)
+    if performance_monitor is not None:
+        performance_dashboard = await create_and_initialize(
+            "PerformanceDashboard",
+            lambda: PerformanceDashboard(CONFIG),
+            init_with_perf,
+        )
+    else:
+        logger.warning("PerformanceDashboard not started: PerformanceMonitor unavailable")
+        performance_dashboard = None
+
+    # ML Monitor
+    ml_monitor = await create_and_initialize(
+        "MLMonitor",
+        lambda: MLMonitor(CONFIG),
+        init_and_start_ml,
+    )
 
 # Add new global variables for token and model management
 token_configs: dict[str, Any] = {}
@@ -297,6 +377,8 @@ class WebSocketManager:
 
 
 manager = WebSocketManager()
+# Ensure websocket_manager references the active manager
+websocket_manager = manager
 
 
 # --- Mock Data Generation ---
@@ -473,6 +555,16 @@ async def get_dashboard_data(days: int = 7):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Expose Prometheus metrics via FastAPI to avoid separate port conflicts
+@app.get("/metrics")
+async def prometheus_metrics_endpoint():
+    try:
+        data = prometheus_metrics.get_metrics()
+        return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating metrics: {e}")
 
 
 # --- Kill Switch Endpoints ---

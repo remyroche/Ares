@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class PrometheusMetrics:
     """Prometheus metrics collection for training step validators."""
     
-    def __init__(self, port: int = 8000):
+    def __init__(self, port: int = 9000):
         self.port = port
         self.metrics_initialized = False
         

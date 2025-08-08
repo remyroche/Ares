@@ -150,6 +150,7 @@ class EnhancedOrderManager:
 
         # Order management configuration
         self.order_config = config.get("enhanced_order_manager", {})
+        self.paper_trading: bool = bool(config.get("paper_trading", True))
         self.max_leverage = self.order_config.get("max_leverage", 10.0)
         self.min_order_size = self.order_config.get("min_order_size", 0.001)
         self.max_order_size = self.order_config.get("max_order_size", 1000.0)
@@ -179,6 +180,7 @@ class EnhancedOrderManager:
         self.total_commission_paid = 0.0
 
         self.is_initialized = False
+        self.exchange_client: Any | None = None
 
     @handle_errors(
         exceptions=(Exception,),
@@ -199,12 +201,141 @@ class EnhancedOrderManager:
             # Initialize strategy configurations
             self._initialize_strategy_configurations()
 
+            # In live mode, require an injected exchange client to be attached before use
+            if not self.paper_trading and not self.exchange_client:
+                self.logger.error("Live mode requires an injected exchange client. Call attach_exchange_client first.")
+                return False
+
             self.is_initialized = True
             self.logger.info("✅ Enhanced Order Manager initialized successfully")
             return True
-
         except Exception as e:
-            self.logger.error(f"❌ Error initializing enhanced order manager: {e}")
+            self.logger.error(f"Error initializing Enhanced Order Manager: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="attach exchange client",
+    )
+    async def attach_exchange_client(self, client: Any) -> bool:
+        """Attach an exchange client that implements create_order/cancel_order/get_order_status as needed."""
+        try:
+            self.exchange_client = client
+            # If client has a connect method and we're live, try to connect
+            if not self.paper_trading and hasattr(client, "connect"):
+                connected = await client.connect()
+                if not connected:
+                    self.logger.error("Failed to connect injected exchange client.")
+                    return False
+            return True
+        except Exception as e:
+            self.logger.error(f"Error attaching exchange client: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="update trailing levels",
+    )
+    async def update_trailing_levels(
+        self,
+        *,
+        order_link_id: str,
+        symbol: str,
+        side: OrderSide | str,
+        trailing_stop_pct: float | None = None,
+        trailing_tp_pct: float | None = None,
+    ) -> bool:
+        """Update trailing stop / take-profit levels for an active position or OCO group.
+
+        In paper/sim mode, this updates internal metadata; in live mode, integrate with exchange OCO/trailing endpoints.
+        """
+        try:
+            # Update active orders with the same order_link_id
+            updated = False
+            for order in list(self.active_orders.values()):
+                if order.order_link_id == order_link_id and order.symbol == symbol:
+                    if trailing_stop_pct is not None:
+                        order.trailing_stop = trailing_stop_pct
+                    if trailing_tp_pct is not None:
+                        order.take_profit = trailing_tp_pct
+                    order.updated_time = datetime.now()
+                    updated = True
+
+            # Live mode: push updates to exchange by cancelling and recreating closing orders
+            if updated and self.exchange_client and not self.paper_trading:
+                # Normalize side and compute closing side
+                side_str = side.value if isinstance(side, OrderSide) else str(side).lower()
+                is_long = side_str in ("buy", "long")
+                closing_side = "SELL" if is_long else "BUY"
+
+                # Use any one order under the link to derive average price and quantity
+                linked_orders = [o for o in self.active_orders.values() if o.order_link_id == order_link_id and o.symbol == symbol]
+                if linked_orders:
+                    ref = linked_orders[0]
+                    avg_price = ref.average_price or (ref.price or 0.0)
+                    qty = max(0.0, ref.remaining_quantity or ref.original_quantity)
+
+                    # Best effort: cancel existing linked orders on venue (if we have order ids)
+                    for o in linked_orders:
+                        try:
+                            if hasattr(self.exchange_client, "cancel_order"):
+                                await self.exchange_client.cancel_order(symbol=symbol, order_id=o.order_id)
+                        except Exception:
+                            # Ignore cancellation failures and continue
+                            pass
+
+                    # Create new TP/SL closing orders based on trailing percentages
+                    # NOTE: For simplicity we submit LIMIT orders at computed prices.
+                    # Integrating native STOP_LIMIT/OCO endpoints can be added later.
+                    if avg_price > 0 and qty > 0:
+                        # Take Profit
+                        if trailing_tp_pct is not None and trailing_tp_pct > 0:
+                            tp_price = (
+                                avg_price * (1 + trailing_tp_pct) if is_long else avg_price * (1 - trailing_tp_pct)
+                            )
+                            try:
+                                if hasattr(self.exchange_client, "create_order"):
+                                    await self.exchange_client.create_order(
+                                        symbol=symbol,
+                                        side=closing_side,
+                                        order_type="LIMIT",
+                                        quantity=qty,
+                                        price=tp_price,
+                                    )
+                            except Exception as e:
+                                self.logger.error(f"Failed to place TP order for {order_link_id}: {e}")
+
+                        # Stop Loss (submit protective LIMIT as placeholder)
+                        if trailing_stop_pct is not None and trailing_stop_pct > 0:
+                            sl_price = (
+                                avg_price * (1 - trailing_stop_pct) if is_long else avg_price * (1 + trailing_stop_pct)
+                            )
+                            try:
+                                if hasattr(self.exchange_client, "create_order"):
+                                    await self.exchange_client.create_order(
+                                        symbol=symbol,
+                                        side=closing_side,
+                                        order_type="LIMIT",
+                                        quantity=qty,
+                                        price=sl_price,
+                                    )
+                            except Exception as e:
+                                self.logger.error(f"Failed to place SL order for {order_link_id}: {e}")
+
+            if updated:
+                self.logger.info(
+                    f"Updated trailing levels for link {order_link_id}: stop={trailing_stop_pct}, tp={trailing_tp_pct}"
+                )
+                return True
+
+            self.logger.warning(
+                f"No active orders found to update for link {order_link_id} on {symbol}"
+            )
+            return False
+        except Exception as e:
+            self.logger.error(f"Error updating trailing levels: {e}")
             return False
 
     def _validate_configuration(self) -> None:
@@ -705,25 +836,63 @@ class EnhancedOrderManager:
             # Update metrics
             self.total_orders_placed += 1
 
-            # Simple fill simulation for paper/sim contexts
-            simulated_fill_qty = order_state.original_quantity
-            simulated_price = order_request.price or 0.0
-            if simulated_fill_qty > 0 and simulated_price > 0:
-                fill = OrderFill(
-                    order_id=order_id,
-                    symbol=order_request.symbol,
-                    side=order_request.side,
-                    price=simulated_price,
-                    quantity=simulated_fill_qty,
-                    commission=0.0,
-                    commission_asset="USD",
-                    trade_time=datetime.now(),
-                    is_maker=False,
-                )
-                order_state.add_fill(fill)
-                # Force filled status if fully executed
-                if order_state.remaining_quantity <= 0:
-                    order_state.status = OrderStatus.FILLED
+            if self.paper_trading:
+                # Simple fill simulation for paper/sim contexts
+                simulated_fill_qty = order_state.original_quantity
+                simulated_price = order_request.price or 0.0
+                if simulated_fill_qty > 0 and simulated_price > 0:
+                    fill = OrderFill(
+                        order_id=order_id,
+                        symbol=order_request.symbol,
+                        side=order_request.side,
+                        price=simulated_price,
+                        quantity=simulated_fill_qty,
+                        commission=0.0,
+                        commission_asset="USD",
+                        trade_time=datetime.now(),
+                        is_maker=False,
+                    )
+                    order_state.add_fill(fill)
+                    # Force filled status if fully executed
+                    if order_state.remaining_quantity <= 0:
+                        order_state.status = OrderStatus.FILLED
+            else:
+                if not self.exchange_client:
+                    self.logger.error("Live mode requires an exchange connection. Order not placed.")
+                    order_state.status = OrderStatus.REJECTED
+                    return None
+                # Live execution via exchange client
+                side_map = {OrderSide.BUY: "BUY", OrderSide.SELL: "SELL"}
+                type_map = {
+                    OrderType.MARKET: "MARKET",
+                    OrderType.LIMIT: "LIMIT",
+                    OrderType.STOP_LIMIT: "LIMIT",  # map to supported types as needed
+                    OrderType.STOP_MARKET: "MARKET",
+                    OrderType.TAKE_PROFIT: "LIMIT",
+                    OrderType.TAKE_PROFIT_LIMIT: "LIMIT",
+                }
+                side = side_map.get(order_request.side, "BUY")
+                otype = type_map.get(order_request.order_type, "MARKET")
+                qty = float(max(order_request.quantity, 0.0))
+                price = float(order_request.price) if order_request.price else None
+
+                # Duck-typed order creation to be exchange-agnostic
+                if hasattr(self.exchange_client, "create_order"):
+                    resp = await self.exchange_client.create_order(
+                        symbol=order_request.symbol,
+                        side=side,
+                        order_type=otype,
+                        quantity=qty,
+                        price=price,
+                    )
+                else:
+                    self.logger.error("Exchange client missing create_order method")
+                    resp = None
+                if resp is None:
+                    order_state.status = OrderStatus.REJECTED
+                else:
+                    # Keep pending/open; fills will be tracked by polling get_order_status elsewhere
+                    order_state.status = OrderStatus.PENDING
 
             self.logger.info(
                 f"Order placed: {order_id} ({order_request.strategy_type})",

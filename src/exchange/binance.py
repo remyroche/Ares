@@ -418,6 +418,75 @@ class BinanceExchange:
             self.logger.error(f"Error creating order: {e}")
             return None
 
+    async def _signed_request(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any],
+    ) -> dict[str, Any] | bool | None:
+        """Make a signed request; returns JSON dict for GET, True/False for DELETE depending on status."""
+        if not self.is_connected or not self.api_key or not self.api_secret:
+            self.logger.error("Exchange not connected or missing credentials")
+            return None
+        params = {**params, "timestamp": int(time.time() * 1000)}
+        params["signature"] = self._generate_signature(params)
+        url = f"{self._get_base_url()}{path}"
+        headers = {"X-MBX-APIKEY": self.api_key}
+        try:
+            if method == "GET":
+                async with self.session.get(url, params=params, headers=headers) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+                    self.logger.error(f"GET {path} failed: {await resp.text()}")
+                    return None
+            if method == "DELETE":
+                async with self.session.delete(url, params=params, headers=headers) as resp:
+                    if resp.status == 200:
+                        await resp.read()
+                        return True
+                    self.logger.error(f"DELETE {path} failed: {await resp.text()}")
+                    return False
+            self.logger.error(f"Unsupported method {method} for {path}")
+            return None
+        except aiohttp.ClientError as e:
+            self.logger.error(f"Network error calling {path}: {e}")
+            return None
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid cancel parameters"),
+            AttributeError: (False, "Missing cancel components"),
+            KeyError: (False, "Missing required cancel data"),
+        },
+        default_return=False,
+        context="order cancellation",
+    )
+    async def cancel_order(self, symbol: str, order_id: str) -> bool:
+        """Cancel an existing order."""
+        result = await self._signed_request(
+            method="DELETE",
+            path="/api/v3/order",
+            params={"symbol": symbol, "orderId": order_id},
+        )
+        return bool(result)
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (None, "Invalid status parameters"),
+            AttributeError: (None, "Missing status components"),
+            KeyError: (None, "Missing required status data"),
+        },
+        default_return=None,
+        context="order status",
+    )
+    async def get_order_status(self, symbol: str, order_id: str) -> dict[str, Any] | None:
+        """Get the status of an order."""
+        return await self._signed_request(
+            method="GET",
+            path="/api/v3/order",
+            params={"symbol": symbol, "orderId": order_id},
+        )
+
     @handle_network_operations(
         max_retries=3,
         default_return=None,

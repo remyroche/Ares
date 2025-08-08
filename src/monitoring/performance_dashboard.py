@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from src.monitoring.performance_monitor import PerformanceMonitor
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -339,51 +340,39 @@ class PerformanceDashboard:
             
             # Simple linear regression for key metrics
             for metric_name in ["model_accuracy", "trading_win_rate", "system_memory_usage"]:
-                values = []
-                for metric in historical_metrics:
-                    if metric_name == "model_accuracy":
-                        values.append(metric.model_performance.get("accuracy", 0.0))
-                    elif metric_name == "trading_win_rate":
-                        values.append(metric.trading_performance.get("win_rate", 0.0))
-                    elif metric_name == "system_memory_usage":
-                        values.append(metric.system_performance.get("memory_usage", 0.0))
-                
-                timestamps = [i for i in range(len(values))]
-                
+                accessor_map = {
+                    "model_accuracy": lambda m: m.model_performance.get("accuracy", 0.0),
+                    "trading_win_rate": lambda m: m.trading_performance.get("win_rate", 0.0),
+                    "system_memory_usage": lambda m: m.system_performance.get("memory_usage", 0.0),
+                }
+                values = np.array([accessor_map[metric_name](metric) for metric in historical_metrics])
+                timestamps = np.arange(len(values))
                 if len(values) >= 5:
-                    # Simple linear trend prediction
                     try:
-                        # Calculate linear regression coefficients
-                        n = len(values)
-                        sum_x = sum(timestamps)
-                        sum_y = sum(values)
-                        sum_xy = sum(x * y for x, y in zip(timestamps, values))
-                        sum_x2 = sum(x * x for x in timestamps)
-                        
-                        # Linear regression: y = mx + b
-                        slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x)
-                        intercept = (sum_y - slope * sum_x) / n
-                        
-                        # Predict next 5 periods
-                        future_predictions = []
-                        for i in range(1, 6):
-                            prediction = slope * (n + i - 1) + intercept
-                            future_predictions.append(max(0, min(1, prediction)))  # Clamp between 0 and 1
-                        
+                        # Use numpy for linear regression
+                        slope, intercept = np.polyfit(timestamps, values, 1)
+                        # Predict next 5 periods using vectorized operations
+                        future_timestamps = np.arange(len(values), len(values) + 5)
+                        future_predictions_np = slope * future_timestamps + intercept
+                        if metric_name in ["model_accuracy", "trading_win_rate"]:
+                            # Clamp between 0 and 1 for percentage-based metrics
+                            future_predictions_np = np.clip(future_predictions_np, 0, 1)
+                        else:
+                            # Only ensure non-negative for other metrics
+                            future_predictions_np = np.maximum(future_predictions_np, 0)
+                        future_predictions = future_predictions_np.tolist()
                         # Calculate prediction confidence based on R-squared
-                        y_mean = sum_y / n
-                        ss_tot = sum((y - y_mean) ** 2 for y in values)
-                        ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(timestamps, values))
+                        predicted = slope * timestamps + intercept
+                        ss_tot = np.sum((values - np.mean(values)) ** 2)
+                        ss_res = np.sum((values - predicted) ** 2)
                         r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
-                        
                         predictions[metric_name] = {
-                            "current_value": values[-1],
+                            "current_value": float(values[-1]),
                             "predictions": future_predictions,
-                            "confidence": r_squared,
+                            "confidence": float(r_squared),
                             "trend": "increasing" if slope > 0 else "decreasing",
-                            "slope": slope
+                            "slope": float(slope)
                         }
-                        
                     except Exception as e:
                         self.logger.warning(f"Failed to calculate prediction for {metric_name}: {e}")
                         continue

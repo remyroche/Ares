@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Union
 
 from src.utils.error_handler import (
     handle_errors,
@@ -185,16 +185,23 @@ class EventBus:
         try:
             event_type = event.get("type", "unknown")
             subscribers = self.subscribers.get(event_type, [])
+            payload = event.get("data")
 
             for subscriber in subscribers:
                 try:
                     if asyncio.iscoroutinefunction(subscriber):
-                        await subscriber(event)
+                        try:
+                            await subscriber(payload)
+                        except TypeError:
+                            await subscriber()
                     else:
-                        subscriber(event)
+                        try:
+                            subscriber(payload)
+                        except TypeError:
+                            subscriber()
                 except Exception as e:
                     self.logger.error(
-                        f"Error in event subscriber {subscriber.__name__}: {e}",
+                        f"Error in event subscriber {getattr(subscriber, '__name__', str(subscriber))}: {e}",
                     )
 
             # Add to event history
@@ -234,11 +241,12 @@ class EventBus:
         default_return=None,
         context="event subscription",
     )
-    def subscribe(self, event_type: str, callback: Callable) -> None:
+    def subscribe(self, event_type: Union[EventType, str], callback: Callable) -> None:
         """Subscribe to an event type."""
         try:
-            self.subscribers[event_type].append(callback)
-            self.logger.info(f"Subscriber added for event type: {event_type}")
+            event_key = event_type.value if isinstance(event_type, EventType) else str(event_type)
+            self.subscribers[event_key].append(callback)
+            self.logger.info(f"Subscriber added for event type: {event_key}")
         except Exception as e:
             self.logger.error(f"Error subscribing to event: {e}")
 
@@ -247,14 +255,15 @@ class EventBus:
         default_return=None,
         context="event unsubscription",
     )
-    def unsubscribe(self, event_type: str, callback: Callable) -> None:
+    def unsubscribe(self, event_type: Union[EventType, str], callback: Callable) -> None:
         """Unsubscribe from an event type."""
         try:
-            if event_type in self.subscribers:
-                self.subscribers[event_type] = [
-                    sub for sub in self.subscribers[event_type] if sub != callback
+            event_key = event_type.value if isinstance(event_type, EventType) else str(event_type)
+            if event_key in self.subscribers:
+                self.subscribers[event_key] = [
+                    sub for sub in self.subscribers[event_key] if sub != callback
                 ]
-                self.logger.info(f"Subscriber removed for event type: {event_type}")
+                self.logger.info(f"Subscriber removed for event type: {event_key}")
         except Exception as e:
             self.logger.error(f"Error unsubscribing from event: {e}")
 
@@ -263,16 +272,17 @@ class EventBus:
         default_return=None,
         context="event publishing",
     )
-    async def publish(self, event_type: str, data: dict[str, Any]) -> None:
+    async def publish(self, event_type: Union[EventType, str], data: Any) -> None:
         """Publish an event to the bus."""
         try:
+            event_key = event_type.value if isinstance(event_type, EventType) else str(event_type)
             event = {
-                "type": event_type,
+                "type": event_key,
                 "data": data,
                 "timestamp": datetime.now().isoformat(),
             }
             await self.event_queue.put(event)
-            self.logger.info(f"Event '{event_type}' published to queue")
+            self.logger.info(f"Event '{event_key}' published to queue")
         except Exception as e:
             self.logger.error(f"Error publishing event: {e}")
 

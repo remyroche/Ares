@@ -225,59 +225,46 @@ class FinalParametersOptimizationStep:
         try:
             import optuna
 
+            # Load validation frame once
+            val_df = self._load_validation_frame()
+            if val_df is None or "label" not in val_df.columns:
+                raise RuntimeError("Validation frame not available for optimization")
+
             def objective(trial):
-                # Define parameter ranges with more granularity
                 params = {
-                    "analyst_confidence_threshold": trial.suggest_float(
-                        "analyst_confidence_threshold", 0.5, 0.95, step=0.02
-                    ),
-                    "tactician_confidence_threshold": trial.suggest_float(
-                        "tactician_confidence_threshold", 0.5, 0.95, step=0.02
-                    ),
-                    "ensemble_confidence_threshold": trial.suggest_float(
-                        "ensemble_confidence_threshold", 0.5, 0.95, step=0.02
-                    ),
-                    "position_scale_up_threshold": trial.suggest_float(
-                        "position_scale_up_threshold", 0.7, 0.95, step=0.02
-                    ),
-                    "position_scale_down_threshold": trial.suggest_float(
-                        "position_scale_down_threshold", 0.4, 0.7, step=0.02
-                    ),
-                    "position_close_threshold": trial.suggest_float(
-                        "position_close_threshold", 0.2, 0.5, step=0.02
-                    ),
+                    "analyst_confidence_threshold": trial.suggest_float("analyst_confidence_threshold", 0.5, 0.95, step=0.02),
+                    "tactician_confidence_threshold": trial.suggest_float("tactician_confidence_threshold", 0.5, 0.95, step=0.02),
+                    "ensemble_confidence_threshold": trial.suggest_float("ensemble_confidence_threshold", 0.5, 0.95, step=0.02),
+                    "position_scale_up_threshold": trial.suggest_float("position_scale_up_threshold", 0.7, 0.95, step=0.02),
+                    "position_scale_down_threshold": trial.suggest_float("position_scale_down_threshold", 0.4, 0.7, step=0.02),
+                    "position_close_threshold": trial.suggest_float("position_close_threshold", 0.2, 0.5, step=0.02),
                 }
 
-                # Multi-objective evaluation focusing on actual win/loss amounts
-                win_rate = self._evaluate_win_rate(params, calibration_results)
-                avg_win = self._evaluate_average_win(params, calibration_results)
-                avg_loss = self._evaluate_average_loss(params, calibration_results)
-                sharpe_ratio = self._evaluate_sharpe_ratio(params, calibration_results)
-                max_drawdown = self._evaluate_max_drawdown(params, calibration_results)
+                # Evaluate with calibrated analyst + ensemble if available
+                metrics = self._evaluate_predictions(calibration_results, val_df, params)
+                return (
+                    metrics.get("win_rate", 0.5),
+                    metrics.get("avg_win", 0.01),
+                    -metrics.get("avg_loss", 0.01),
+                    metrics.get("sharpe_ratio", 1.0),
+                    -metrics.get("max_drawdown", 0.1),
+                )
 
-                # Return multiple objectives
-                return win_rate, avg_win, -avg_loss, sharpe_ratio, -max_drawdown
-
-            # Create multi-objective study
             study = optuna.create_study(
                 directions=["maximize", "maximize", "minimize", "maximize", "minimize"],
                 sampler=optuna.samplers.TPESampler(seed=42),
-                pruner=optuna.pruners.HyperbandPruner()
+                pruner=optuna.pruners.MedianPruner(n_warmup_steps=5),
             )
 
-            # Warm start: enqueue previous best parameters if available
+            # Warm start
             if previous_results and "confidence_thresholds" in previous_results:
                 prev_params = previous_results["confidence_thresholds"].get("optimized_parameters")
                 if prev_params:
                     study.enqueue_trial(prev_params)
 
-            # Optimize with more trials for multi-objective
-            study.optimize(objective, n_trials=100, timeout=1800)  # 30 minutes timeout
+            study.optimize(objective, n_trials=40)
 
-            # Get Pareto front solutions
             pareto_front = study.best_trials
-
-            # Select best solution based on composite score
             best_solution = self._select_best_pareto_solution(pareto_front)
 
             return {
@@ -1020,6 +1007,75 @@ class FinalParametersOptimizationStep:
             "n_trials": 0,
             "optimization_date": datetime.now().isoformat(),
         }
+
+    # Helper: load validation frame saved by step 4
+    def _load_validation_frame(self) -> Optional[pd.DataFrame]:
+        try:
+            exchange = self.config.get("exchange", "BINANCE")
+            symbol = self.config.get("symbol", "ETHUSDT")
+            data_dir = self.config.get("data_dir", "data/training")
+            path = f"{data_dir}/{exchange}_{symbol}_features_validation.pkl"
+            if os.path.exists(path):
+                with open(path, "rb") as f:
+                    df = pickle.load(f)
+                if isinstance(df, pd.DataFrame):
+                    return df
+        except Exception as e:
+            self.logger.warning(f"Validation frame load failed: {e}")
+        return None
+
+    def _evaluate_predictions(self, calibration_results: dict[str, Any], val_df: pd.DataFrame, params: dict[str, Any]) -> Dict[str, float]:
+        """Compute metrics by applying confidence thresholds to calibrated ensembles/models on validation data.
+        This approximates trading performance with simple proxies: win rate and returns from label correctness.
+        """
+        try:
+            from sklearn.metrics import accuracy_score
+            # Choose an ensemble if available; else pick first calibrated model
+            # Analyst ensembles
+            ens = None
+            analyst_ensembles = calibration_results.get("analyst_ensembles", {})
+            if analyst_ensembles:
+                # Pick any regime with calibrated ensemble
+                for regime_name, payload in analyst_ensembles.items():
+                    ce = payload.get("calibrated_ensemble") if isinstance(payload, dict) else None
+                    if ce is not None:
+                        ens = ce
+                        break
+            X = val_df.drop(columns=["label"], errors="ignore").select_dtypes(include=[np.number]).fillna(0)
+            y = val_df["label"].astype(int)
+
+            if ens is not None and hasattr(ens, "predict_proba"):
+                proba = ens.predict_proba(X)
+                # Binary simplification: class 1 probability
+                pos_proba = proba[:, -1] if proba.shape[1] > 1 else proba[:, 0]
+                preds = (pos_proba >= params.get("ensemble_confidence_threshold", 0.7)).astype(int)
+            else:
+                # Fallback: majority default
+                preds = np.zeros(len(y), dtype=int)
+
+            acc = float(accuracy_score(y, preds))
+            # Proxy PnL stats: +1 for correct, -1 for incorrect; scale to percentages
+            pnl = np.where(preds == y, 0.01, -0.01)  # +1% win, -1% loss proxy
+            wins = pnl[pnl > 0]
+            losses = pnl[pnl < 0]
+            win_rate = float((preds == y).mean())
+            avg_win = float(wins.mean()) if len(wins) else 0.01
+            avg_loss = float(-losses.mean()) if len(losses) else 0.01
+            cum = pnl.cumsum()
+            drawdown = cum - np.maximum.accumulate(cum)
+            max_drawdown = float(-drawdown.min()) if len(drawdown) else 0.0
+            sharpe = float(pnl.mean() / (pnl.std() + 1e-9))
+            return {
+                "accuracy": acc,
+                "win_rate": win_rate,
+                "avg_win": avg_win,
+                "avg_loss": avg_loss,
+                "max_drawdown": max_drawdown,
+                "sharpe_ratio": sharpe,
+            }
+        except Exception as e:
+            self.logger.warning(f"Evaluation failed: {e}")
+            return {"accuracy": 0.5, "win_rate": 0.5, "avg_win": 0.01, "avg_loss": 0.01, "max_drawdown": 0.1, "sharpe_ratio": 1.0}
 
 
 # For backward compatibility with existing step structure

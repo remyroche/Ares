@@ -162,8 +162,10 @@ class AnalystEnhancementStep:
             # Use regime_data directory - fix the path construction
             regime_data_dir = os.path.join(data_dir, "regime_data")
             
+            symbol = self.config.get("symbol", "ETHUSDT")
+            exchange = self.config.get("exchange", "BINANCE")
             # Load the combined data file that Step 3 created
-            data_path = os.path.join(regime_data_dir, f"BINANCE_ETHUSDT_{regime_name}_data.pkl")
+            data_path = os.path.join(regime_data_dir, f"{exchange}_{symbol}_{regime_name}_data.pkl")
 
             if not os.path.exists(data_path):
                 raise FileNotFoundError(f"Data file for regime '{regime_name}' not found in {regime_data_dir}")
@@ -383,9 +385,11 @@ class AnalystEnhancementStep:
 
         # --- 4. Advanced Optimizations ---
         if model_name == "neural_network":
-            final_model = self._apply_quantization(final_model)
-            final_model = self._apply_wanda_pruning(final_model, X_train_optimal)
-            final_model = self._apply_knowledge_distillation(final_model, X_train_optimal, y_train)
+            # Apply advanced optimizations only for PyTorch models (skip for sklearn MLPClassifier)
+            if isinstance(final_model, torch.nn.Module):
+                final_model = self._apply_quantization(final_model)
+                final_model = self._apply_wanda_pruning(final_model, X_train_optimal)
+                final_model = self._apply_knowledge_distillation(final_model, X_train_optimal, y_train)
 
         enhancement_package = {
             "model": final_model,
@@ -522,7 +526,8 @@ class AnalystEnhancementStep:
             pruner=optuna.pruners.MedianPruner(n_warmup_steps=5)
         )
         
-        await asyncio.to_thread(study.optimize, objective, n_trials=100, n_jobs=-1)
+        # Bound parallelism to avoid CPU thrashing
+        await asyncio.to_thread(study.optimize, objective, n_trials=min(50, self.config.get("n_trials", 50)), n_jobs=min(4, os.cpu_count() or 4))
 
         if not study.best_trial:
              self.logger.warning("Optuna study found no best trial, possibly due to all trials being pruned. Returning empty params.")
@@ -570,13 +575,18 @@ class AnalystEnhancementStep:
         try:
             import shap
             
+            # Sample validation set for expensive explainers
+            sample_idx = np.random.RandomState(42).choice(len(X_val), size=min(1000, len(X_val)), replace=False)
+            X_val_sample = X_val.iloc[sample_idx]
+            y_val_sample = y_val.iloc[sample_idx]
+
             # Try different SHAP explainer approaches
             if model_name in ["lightgbm", "xgboost", "random_forest"]:
                 # Try TreeExplainer with proper import
                 try:
                     from shap.explainers import TreeExplainer
                     explainer = TreeExplainer(model)
-                    shap_values = explainer.shap_values(X_val)
+                    shap_values = explainer.shap_values(X_val_sample)
                     
                     # Handle different SHAP output formats
                     if isinstance(shap_values, list):
@@ -586,7 +596,7 @@ class AnalystEnhancementStep:
                     
                 except (ImportError, AttributeError):
                     # Fallback to permutation importance for tree models
-                    feature_importance = permutation_importance(model, X_val, y_val, n_repeats=5, random_state=42).importances_mean
+                    feature_importance = permutation_importance(model, X_val_sample, y_val_sample, n_repeats=3, random_state=42).importances_mean
                     
             elif model_name == "svm":
                 # Use KernelExplainer for SVM models
@@ -601,11 +611,11 @@ class AnalystEnhancementStep:
                     
                 except Exception:
                     # Fallback to permutation importance
-                    feature_importance = permutation_importance(model, X_val, y_val, n_repeats=5, random_state=42).importances_mean
+                    feature_importance = permutation_importance(model, X_val_sample, y_val_sample, n_repeats=3, random_state=42).importances_mean
                     
             else:  # neural_network and others
                 # Use permutation importance for non-tree models
-                feature_importance = permutation_importance(model, X_val, y_val, n_repeats=5, random_state=42).importances_mean
+                feature_importance = permutation_importance(model, X_val_sample, y_val_sample, n_repeats=3, random_state=42).importances_mean
             
             # Select optimal features
             if len(feature_names) <= min_features:
@@ -656,9 +666,10 @@ class AnalystEnhancementStep:
         
         # Method 3: Statistical feature selection
         try:
-            # Use mutual information for feature selection
+            # Use mutual information for feature selection on a sample for speed
+            sample_idx = np.random.RandomState(42).choice(len(X_train), size=min(5000, len(X_train)), replace=False)
             selector = SelectKBest(score_func=mutual_info_classif, k=min(max_features, len(feature_names)))
-            selector.fit(X_train, y_train)
+            selector.fit(X_train.iloc[sample_idx], y_train.iloc[sample_idx])
             stat_scores = selector.scores_
         except Exception:
             stat_scores = np.ones(len(feature_names))

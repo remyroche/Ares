@@ -316,6 +316,71 @@ class BaseExchange(IExchangeClient, ABC):
         Must be implemented by subclasses.
         """
 
+    async def set_leverage(self, symbol: str, leverage: float) -> bool:
+        """Best-effort leverage setter using underlying client if supported."""
+        try:
+            market_id = await self._get_market_id(symbol)
+        except Exception:
+            market_id = symbol
+
+        if not self.exchange:
+            return False
+
+        try:
+            # Try common ccxt shapes
+            if hasattr(self.exchange, "set_leverage"):
+                # Some exchanges accept (leverage, symbol)
+                try:
+                    await getattr(self.exchange, "set_leverage")(leverage, market_id)
+                    return True
+                except Exception:
+                    # Some accept keyword args
+                    try:
+                        await getattr(self.exchange, "set_leverage")(leverage=leverage, symbol=market_id)
+                        return True
+                    except Exception:
+                        pass
+            if hasattr(self.exchange, "setLeverage"):
+                try:
+                    await getattr(self.exchange, "setLeverage")(leverage, market_id)
+                    return True
+                except Exception:
+                    pass
+        except Exception:
+            return False
+        return False
+
+    async def set_margin_mode(self, symbol: str, mode: str) -> bool:
+        """Best-effort margin mode setter using underlying client if supported."""
+        try:
+            market_id = await self._get_market_id(symbol)
+        except Exception:
+            market_id = symbol
+
+        if not self.exchange:
+            return False
+
+        try:
+            if hasattr(self.exchange, "set_margin_mode"):
+                try:
+                    await getattr(self.exchange, "set_margin_mode")(mode, market_id)
+                    return True
+                except Exception:
+                    try:
+                        await getattr(self.exchange, "set_margin_mode")(marginMode=mode, symbol=market_id)
+                        return True
+                    except Exception:
+                        pass
+            if hasattr(self.exchange, "setMarginMode"):
+                try:
+                    await getattr(self.exchange, "setMarginMode")(mode, market_id)
+                    return True
+                except Exception:
+                    pass
+        except Exception:
+            return False
+        return False
+
     async def close(self) -> None:
         """
         Close the exchange connection.

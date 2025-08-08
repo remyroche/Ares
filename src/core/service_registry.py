@@ -133,13 +133,14 @@ class ServiceRegistry:
         """Register exchange client factories."""
         def exchange_factory(container: DependencyContainer) -> IExchangeClient:
             """Factory for creating exchange clients based on configuration."""
-            from exchange.factory import ExchangeFactory
+            from exchange.factory import ExchangeFactory as RootExchangeFactory
             
             exchange_config = config.get("exchange", {})
             exchange_name = exchange_config.get("name", "binance")
             
-            factory = ExchangeFactory()
-            return factory.create_exchange(exchange_name, exchange_config)
+            # Prefer project-level factory mapping
+            from exchange.factory import ExchangeFactory as SrcExchangeFactory
+            return SrcExchangeFactory.get_exchange(exchange_name)
 
         self.container.register_factory(IExchangeClient, exchange_factory)
 

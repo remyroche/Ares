@@ -177,11 +177,13 @@ class AresPipeline:
             print("   🏢 Registering ExchangeClient...")
             self.logger.info("   🏢 Registering ExchangeClient...")
             try:
-                from src.exchange.factory import ExchangeFactory
+                from exchange.factory import ExchangeFactory as RootExchangeFactory
 
-                self.exchange = ExchangeFactory.get_exchange(
-                    "binance",
-                )  # Default to binance
+                # Use environment-configured exchange as default
+                from src.config.environment import get_exchange_name
+                self.exchange = RootExchangeFactory.get_exchange(
+                    get_exchange_name().lower(),
+                )
                 self.container.register("ExchangeClient", self.exchange)
                 print("   ✅ ExchangeClient registered successfully")
                 self.logger.info("   ✅ ExchangeClient registered successfully")

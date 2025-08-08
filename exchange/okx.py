@@ -161,6 +161,31 @@ class OkxExchange(BaseExchange):
             return {"error": str(e), "status": "failed"}
 
     @retry_on_rate_limit()
+    @handle_network_operations(max_retries=3, default_return={})
+    async def get_ticker(self, symbol: str | None = None) -> dict[str, Any]:
+        """Fetch 24h ticker via ccxt for OKX."""
+        try:
+            market_id = await self._get_market_id(symbol) if symbol else None
+            if market_id:
+                return await self.exchange.fetch_ticker(market_id)
+            tickers = await self.exchange.fetch_tickers()
+            return tickers or {}
+        except Exception as e:
+            logger.error(f"Failed to get ticker for {symbol or 'all symbols'} on OKX: {e}")
+            return {}
+
+    @retry_on_rate_limit()
+    @handle_network_operations(max_retries=3, default_return={})
+    async def get_order_book(self, symbol: str, limit: int = 10) -> dict[str, Any]:
+        """Fetch order book via ccxt for OKX."""
+        try:
+            market_id = await self._get_market_id(symbol)
+            return await self.exchange.fetch_order_book(market_id, limit)
+        except Exception as e:
+            logger.error(f"Failed to get order book for {symbol} on OKX: {e}")
+            return {}
+
+    @retry_on_rate_limit()
     @handle_network_operations(
         max_retries=3,
         default_return={"error": "Failed to get order status"},

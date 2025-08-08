@@ -117,52 +117,86 @@ ml_monitor = None
 @app.on_event("startup")
 async def startup_event():
     global metrics_dashboard, performance_dashboard, enhanced_ml_tracker, ml_monitor, performance_monitor, websocket_manager
+
+    async def create_and_initialize(name: str, factory, initializer):
+        try:
+            instance = factory()
+            result = await initializer(instance)
+            if isinstance(result, bool):
+                if not result:
+                    logger.warning(f"{name} failed to initialize")
+                return instance
+            return result if result is not None else instance
+        except Exception as e:
+            logger.error(f"Failed to initialize {name}: {e}")
+            return None
+
+    async def init_only(inst):
+        return await inst.initialize()
+
+    async def init_and_start_dashboard(inst):
+        ok = await inst.initialize()
+        if ok is False:
+            return False
+        await inst.start()
+        return True
+
+    async def init_with_perf(inst):
+        return await inst.initialize(performance_monitor)
+
+    async def init_and_start_ml(inst):
+        ok = await inst.initialize()
+        if ok is False:
+            return False
+        await inst.start_monitoring()
+        return True
+
     # Initialize Performance Monitor first (used by dashboards)
-    try:
-        performance_monitor = PerformanceMonitor(CONFIG)
-        init_ok = await performance_monitor.initialize()
-        if not init_ok:
-            logger.warning("PerformanceMonitor failed to initialize")
-    except Exception as e:
-        logger.error(f"Failed to initialize PerformanceMonitor: {e}")
-        performance_monitor = None
+    performance_monitor = await create_and_initialize(
+        "PerformanceMonitor",
+        lambda: PerformanceMonitor(CONFIG),
+        init_only,
+    )
 
-    # Setup/configure monitoring/reporting modules (keep instances, then initialize)
-    try:
-        metrics_dashboard = MetricsDashboard(CONFIG)
-        await metrics_dashboard.initialize()
-        # Start real-time loop
-        await metrics_dashboard.start()
-    except Exception as e:
-        logger.error(f"Failed to initialize MetricsDashboard: {e}")
-        metrics_dashboard = None
+    # Metrics Dashboard
+    metrics_dashboard = await create_and_initialize(
+        "MetricsDashboard",
+        lambda: MetricsDashboard(CONFIG),
+        init_and_start_dashboard,
+    )
 
+    # Enhanced ML Tracker
+    enhanced_ml_tracker = await create_and_initialize(
+        "EnhancedMLTracker",
+        lambda: EnhancedMLTracker(CONFIG),
+        init_only,
+    )
+
+    # Inject dependencies into metrics dashboard if available
     try:
-        # PerformanceDashboard requires a PerformanceMonitor instance
-        performance_dashboard = PerformanceDashboard(CONFIG)
-        if performance_monitor is not None:
-            await performance_dashboard.initialize(performance_monitor)
-        else:
-            logger.warning("PerformanceDashboard not started: PerformanceMonitor unavailable")
+        if metrics_dashboard:
+            metrics_dashboard.performance_monitor = performance_monitor
+            metrics_dashboard.enhanced_ml_tracker = enhanced_ml_tracker
     except Exception as e:
-        logger.error(f"Failed to initialize PerformanceDashboard: {e}")
+        logger.warning(f"Failed to inject monitors into MetricsDashboard: {e}")
+
+    # Performance Dashboard (requires performance monitor)
+    if performance_monitor is not None:
+        performance_dashboard = await create_and_initialize(
+            "PerformanceDashboard",
+            lambda: PerformanceDashboard(CONFIG),
+            init_with_perf,
+        )
+    else:
+        logger.warning("PerformanceDashboard not started: PerformanceMonitor unavailable")
         performance_dashboard = None
 
-    try:
-        enhanced_ml_tracker = EnhancedMLTracker(CONFIG)
-        await enhanced_ml_tracker.initialize()
-    except Exception as e:
-        logger.error(f"Failed to initialize EnhancedMLTracker: {e}")
-        enhanced_ml_tracker = None
-
-    try:
-        ml_monitor = MLMonitor(CONFIG)
-        await ml_monitor.initialize()
-        # Start ML monitoring loops
-        await ml_monitor.start_monitoring()
-    except Exception as e:
-        logger.error(f"Failed to initialize MLMonitor: {e}")
-        ml_monitor = None
+    # ML Monitor
+    ml_monitor = await create_and_initialize(
+        "MLMonitor",
+        lambda: MLMonitor(CONFIG),
+        init_and_start_ml,
+    )
 
 # Add new global variables for token and model management
 token_configs: dict[str, Any] = {}

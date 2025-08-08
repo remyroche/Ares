@@ -159,6 +159,21 @@ class AnalystLabelingFeatureEngineeringStep:
                     pickle.dump(data, f)
                 self.logger.info(f"✅ Saved feature data to {file_path}")
             
+            # Also save Parquet versions with downcasting for efficiency
+            try:
+                from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                mem_mgr = MemoryEfficientDataManager()
+                parquet_files = [
+                    (f"{data_dir}/{exchange}_{symbol}_features_train.parquet", mem_mgr.optimize_dataframe(train_data.copy())),
+                    (f"{data_dir}/{exchange}_{symbol}_features_validation.parquet", mem_mgr.optimize_dataframe(validation_data.copy())),
+                    (f"{data_dir}/{exchange}_{symbol}_features_test.parquet", mem_mgr.optimize_dataframe(test_data.copy())),
+                ]
+                for file_path, df in parquet_files:
+                    df.to_parquet(file_path, compression="snappy", index=False)
+                    self.logger.info(f"✅ Saved feature data (Parquet) to {file_path}")
+            except Exception as e:
+                self.logger.warning(f"Could not save Parquet features: {e}")
+            
             # Also save labeled data files for compatibility
             labeled_files = [
                 (f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl", train_data),
@@ -170,6 +185,19 @@ class AnalystLabelingFeatureEngineeringStep:
                 with open(file_path, "wb") as f:
                     pickle.dump(data, f)
                 self.logger.info(f"✅ Saved labeled data to {file_path}")
+            
+            # Parquet for labeled data too
+            try:
+                parquet_labeled = [
+                    (f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet", mem_mgr.optimize_dataframe(train_data.copy())),
+                    (f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet", mem_mgr.optimize_dataframe(validation_data.copy())),
+                    (f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet", mem_mgr.optimize_dataframe(test_data.copy())),
+                ]
+                for file_path, df in parquet_labeled:
+                    df.to_parquet(file_path, compression="snappy", index=False)
+                    self.logger.info(f"✅ Saved labeled data (Parquet) to {file_path}")
+            except Exception as e:
+                self.logger.warning(f"Could not save Parquet labeled data: {e}")
             
             # Integrate UnifiedDataManager to create time-based train/validation/test splits
             try:

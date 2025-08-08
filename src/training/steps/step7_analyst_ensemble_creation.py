@@ -35,11 +35,11 @@ class DynamicWeightedEnsemble:
         """Make ensemble predictions using weighted average of model probabilities."""
         all_probabilities = []
         
-        for name, model in zip(self.model_names, self.models, strict=False):
-            if self.weights[name] > 0:
+        for name, model in zip(self.model_names, self.models):
+            if self.weights.get(name, 0) > 0:
                 try:
                     probs = model.predict_proba(X)
-                    weighted_probs = probs * self.weights[name]
+                    weighted_probs = probs * self.weights.get(name, 0)
                     all_probabilities.append(weighted_probs)
                 except Exception:
                     continue
@@ -56,11 +56,11 @@ class DynamicWeightedEnsemble:
         """Get ensemble probability predictions."""
         all_probabilities = []
         
-        for name, model in zip(self.model_names, self.models, strict=False):
-            if self.weights[name] > 0:
+        for name, model in zip(self.model_names, self.models):
+            if self.weights.get(name, 0) > 0:
                 try:
                     probs = model.predict_proba(X)
-                    weighted_probs = probs * self.weights[name]
+                    weighted_probs = probs * self.weights.get(name, 0)
                     all_probabilities.append(weighted_probs)
                 except Exception:
                     continue
@@ -123,27 +123,9 @@ class AnalystEnsembleCreationStep:
 
             # Load enhanced analyst models
             enhanced_models_dir = f"{data_dir}/enhanced_analyst_models"
-            enhanced_models = {}
+            regime_dirs = [d for d in os.listdir(enhanced_models_dir) if os.path.isdir(os.path.join(enhanced_models_dir, d))]
 
-            # Load all regime model directories
-            for regime_dir in os.listdir(enhanced_models_dir):
-                regime_path = os.path.join(enhanced_models_dir, regime_dir)
-                if os.path.isdir(regime_path):
-                    regime_models = {}
-                    for model_file in os.listdir(regime_path):
-                        if model_file.endswith((".pkl", ".joblib")):
-                            model_name = model_file.replace(".pkl", "").replace(".joblib", "")
-                            model_path = os.path.join(regime_path, model_file)
-
-                            if model_file.endswith(".joblib") and joblib is not None:
-                                regime_models[model_name] = joblib.load(model_path)
-                            else:
-                                with open(model_path, "rb") as f:
-                                    regime_models[model_name] = pickle.load(f)
-
-                    enhanced_models[regime_dir] = regime_models
-
-            if not enhanced_models:
+            if not regime_dirs:
                 raise ValueError(
                     f"No enhanced analyst models found in {enhanced_models_dir}",
                 )
@@ -151,7 +133,7 @@ class AnalystEnsembleCreationStep:
             # Create ensembles for each regime
             ensemble_results = {}
 
-            for regime_name, regime_models in enhanced_models.items():
+            for regime_name in regime_dirs:
                 self.logger.info(f"Creating ensemble for regime: {regime_name}")
 
                 # Get regime-specific data
@@ -162,6 +144,20 @@ class AnalystEnsembleCreationStep:
                     self.logger.warning(f"No data available for regime: {regime_name}")
                     continue
 
+                # Lazy-load models for this regime only
+                regime_path = os.path.join(enhanced_models_dir, regime_name)
+                regime_models = {}
+                for model_file in os.listdir(regime_path):
+                    if model_file.endswith((".pkl", ".joblib")):
+                        model_name = model_file.replace(".pkl", "").replace(".joblib", "")
+                        model_path = os.path.join(regime_path, model_file)
+
+                        if model_file.endswith(".joblib") and joblib is not None:
+                            regime_models[model_name] = joblib.load(model_path)
+                        else:
+                            with open(model_path, "rb") as f:
+                                regime_models[model_name] = pickle.load(f)
+
                 # Create ensemble for this regime
                 regime_ensemble = await self._create_regime_ensemble(
                     regime_models,
@@ -170,7 +166,9 @@ class AnalystEnsembleCreationStep:
                     regime_validation_data,
                 )
                 ensemble_results[regime_name] = regime_ensemble
-
+                # Free models from memory before next regime
+                regime_models.clear()
+            
             # Save ensemble models
             ensemble_models_dir = f"{data_dir}/analyst_ensembles"
             os.makedirs(ensemble_models_dir, exist_ok=True)

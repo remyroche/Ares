@@ -305,24 +305,37 @@ class RayModelTrainer:
     ) -> Optional[Dict[str, TrainingData]]:
         """
         Prepare training data for model training.
+        Loads the labeled/enhanced feature file produced by the previous pipeline step (step 4),
+        not the raw data from step 1.
         """
         try:
-            self.logger.info("📊 Preparing training data...")
+            self.logger.info("📊 Preparing training data from labeled/enhanced pipeline output...")
             prepared_data = {}
-            # Load consolidated data from step 1
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
-            data_path = f"data_cache/klines_{exchange}_{symbol}_1m_consolidated.csv"
+            data_dir = training_input.get("data_dir", "data/training")
+            labeled_path = f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet"
             import pandas as pd
-            if not os.path.exists(data_path):
-                self.logger.error(f"Consolidated data file not found: {data_path}")
-                return None
-            data = pd.read_csv(data_path, parse_dates=["timestamp"])
+            import os
+            if os.path.exists(labeled_path):
+                data = pd.read_parquet(labeled_path)
+                self.logger.info(f"Loaded labeled data from {labeled_path}")
+            else:
+                # Fallback to CSV if Parquet is not available
+                labeled_csv = labeled_path.replace('.parquet', '.csv')
+                if os.path.exists(labeled_csv):
+                    data = pd.read_csv(labeled_csv, parse_dates=["timestamp"])
+                    self.logger.info(f"Loaded labeled data from {labeled_csv}")
+                else:
+                    self.logger.error(f"Labeled/enhanced data file not found: {labeled_path} or {labeled_csv}")
+                    return None
             data = handle_missing_data(data)
             feature_generator = FeatureGenerator()
-            features = feature_generator.generate(data)
-            labels = feature_generator.generate_labels(data)
-            # Example: assign to prepared_data for 1m tactician model
+            # Use all columns except label as features, and 'label' as target
+            feature_cols = [col for col in data.columns if col not in ("label", "tactician_label", "target")]
+            label_col = "label" if "label" in data.columns else ("tactician_label" if "tactician_label" in data.columns else "target")
+            features = data[feature_cols]
+            labels = data[label_col]
             prepared_data["tactician_1m"] = TrainingData(
                 features=features,
                 labels=labels,
@@ -334,7 +347,7 @@ class RayModelTrainer:
                     "timeframe": "1m",
                 }
             )
-            self.logger.info("✅ Training data prepared successfully")
+            self.logger.info("✅ Training data prepared successfully from labeled/enhanced pipeline output")
             return prepared_data
         except Exception as e:
             self.logger.error(f"❌ Failed to prepare training data: {e}")
@@ -740,7 +753,8 @@ if __name__ == "__main__":
             "symbol": "BTCUSDT",
             "exchange": "binance",
             "timeframe": "1m",
-            "lookback_days": 30
+            "lookback_days": 30,
+            "data_dir": "data/training" # Added data_dir for the new _prepare_training_data
         }
         
         # Train models

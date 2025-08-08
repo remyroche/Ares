@@ -12,9 +12,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
+import uuid
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+import uuid
+from src.utils.prometheus_metrics import metrics
 
 
 class OrderType(Enum):
@@ -69,6 +72,7 @@ class OrderRequest:
     strategy_type: str | None = (
         None  # "CHASE_MICRO_BREAKOUT", "LIMIT_ORDER_RETURN", etc.
     )
+    post_only: bool | None = None
 
 
 @dataclass
@@ -160,6 +164,23 @@ class EnhancedOrderManager:
             0.1,
         )
 
+        # Optional per-symbol constraints for rounding and validation
+        # Example:
+        # {
+        #   "BTCUSDT": {"tick_size": 0.1, "lot_size": 0.0001, "min_notional": 5.0}
+        # }
+        self.symbol_constraints: dict[str, dict[str, float]] = self.order_config.get(
+            "symbol_constraints",
+            {},
+        )
+
+        # Optional per-symbol risk/margin settings
+        # Example: {"BTCUSDT": {"max_leverage": 50.0, "margin_mode": "isolated"}}
+        self.symbol_risk_limits: dict[str, dict[str, Any]] = self.order_config.get(
+            "symbol_risk_limits",
+            {},
+        )
+
         # Strategy-specific configurations
         self.chase_micro_breakout_config = self.order_config.get(
             "chase_micro_breakout",
@@ -171,6 +192,10 @@ class EnhancedOrderManager:
         self.active_orders: dict[str, OrderState] = {}
         self.order_history: list[OrderState] = []
         self.strategy_orders: dict[str, list[str]] = {}  # strategy_id -> order_ids
+
+        # Concurrency and idempotency
+        self._lock: asyncio.Lock = asyncio.Lock()
+        self._idempotency_cache: dict[str, str] = {}  # order_link_id -> order_id
 
         # Performance tracking
         self.total_orders_placed = 0
@@ -208,6 +233,16 @@ class EnhancedOrderManager:
 
             self.is_initialized = True
             self.logger.info("✅ Enhanced Order Manager initialized successfully")
+            # Best-effort reconciliation of open orders if live and client attached
+            try:
+                if not self.paper_trading and self.exchange_client and hasattr(self.exchange_client, "get_open_orders"):
+                    await self._reconcile_open_orders()
+                # Start order status polling if supported
+                if not self.paper_trading and self.exchange_client and hasattr(self.exchange_client, "get_order_status"):
+                    self._status_poll_interval = float(self.order_config.get("status_poll_interval", 2.0))
+                    self._status_task = asyncio.create_task(self._order_status_worker())
+            except Exception as rec_err:
+                self.logger.warning(f"Open orders reconciliation skipped: {rec_err}")
             return True
         except Exception as e:
             self.logger.error(f"Error initializing Enhanced Order Manager: {e}")
@@ -801,8 +836,40 @@ class EnhancedOrderManager:
     async def _place_order(self, order_request: OrderRequest) -> OrderState | None:
         """Place an order and return the order state."""
         try:
-            # Generate order ID
-            order_id = f"order_{int(time.time() * 1000)}_{order_request.symbol}"
+            # Ensure client-provided idempotency key (order_link_id)
+            if not order_request.order_link_id:
+                order_request.order_link_id = uuid.uuid4().hex
+
+            # Fast-path: idempotency - if we've seen this client ID, return existing order
+            cached = self._idempotency_cache.get(order_request.order_link_id)
+            if cached and cached in self.active_orders:
+                self.logger.info(
+                    f"Idempotent order submission detected for link_id={order_request.order_link_id}; returning existing order {cached}"
+                )
+                return self.active_orders[cached]
+
+            # Normalize parameters (tick/lot/min_notional)
+            norm_qty, norm_price, norm_stop = self._normalize_order_params(
+                order_request.symbol,
+                order_request.quantity,
+                order_request.price,
+                order_request.stop_price,
+            )
+
+            # Validate stop order requires stop price
+            if order_request.order_type in (OrderType.STOP_LIMIT, OrderType.STOP_MARKET) and norm_stop is None:
+                self.logger.error("Stop order requires stop_price; rejecting order")
+                return None
+
+            # Clamp leverage if provided
+            if order_request.leverage is not None and order_request.leverage > self.max_leverage:
+                self.logger.warning(
+                    f"Requested leverage {order_request.leverage} exceeds max {self.max_leverage}; clamping"
+                )
+                order_request.leverage = self.max_leverage
+
+            # Generate internal order ID
+            order_id = f"order_{int(time.time() * 1000)}_{order_request.symbol}_{order_request.order_link_id[:8]}"
 
             # Create order state
             order_state = OrderState(
@@ -810,9 +877,9 @@ class EnhancedOrderManager:
                 symbol=order_request.symbol,
                 side=order_request.side,
                 order_type=order_request.order_type,
-                original_quantity=order_request.quantity,
-                price=order_request.price,
-                stop_price=order_request.stop_price,
+                original_quantity=norm_qty,
+                price=norm_price,
+                stop_price=norm_stop,
                 leverage=order_request.leverage,
                 time_in_force=order_request.time_in_force,
                 strategy_id=order_request.strategy_id,
@@ -825,13 +892,16 @@ class EnhancedOrderManager:
             )
 
             # Add to active orders
-            self.active_orders[order_id] = order_state
+            async with self._lock:
+                self.active_orders[order_id] = order_state
+                self._idempotency_cache[order_request.order_link_id] = order_id
 
             # Track by strategy
             if order_request.strategy_id:
-                if order_request.strategy_id not in self.strategy_orders:
-                    self.strategy_orders[order_request.strategy_id] = []
-                self.strategy_orders[order_request.strategy_id].append(order_id)
+                async with self._lock:
+                    if order_request.strategy_id not in self.strategy_orders:
+                        self.strategy_orders[order_request.strategy_id] = []
+                    self.strategy_orders[order_request.strategy_id].append(order_id)
 
             # Update metrics
             self.total_orders_placed += 1
@@ -839,7 +909,7 @@ class EnhancedOrderManager:
             if self.paper_trading:
                 # Simple fill simulation for paper/sim contexts
                 simulated_fill_qty = order_state.original_quantity
-                simulated_price = order_request.price or 0.0
+                simulated_price = order_state.price or 0.0
                 if simulated_fill_qty > 0 and simulated_price > 0:
                     fill = OrderFill(
                         order_id=order_id,
@@ -863,39 +933,74 @@ class EnhancedOrderManager:
                     return None
                 # Live execution via exchange client
                 side_map = {OrderSide.BUY: "BUY", OrderSide.SELL: "SELL"}
+                # Prefer native stop/take-profit types when available
                 type_map = {
                     OrderType.MARKET: "MARKET",
                     OrderType.LIMIT: "LIMIT",
-                    OrderType.STOP_LIMIT: "LIMIT",  # map to supported types as needed
-                    OrderType.STOP_MARKET: "MARKET",
-                    OrderType.TAKE_PROFIT: "LIMIT",
-                    OrderType.TAKE_PROFIT_LIMIT: "LIMIT",
+                    OrderType.STOP_LIMIT: "STOP_LOSS_LIMIT",
+                    OrderType.STOP_MARKET: "STOP_LOSS",
+                    OrderType.TAKE_PROFIT: "TAKE_PROFIT",
+                    OrderType.TAKE_PROFIT_LIMIT: "TAKE_PROFIT_LIMIT",
                 }
                 side = side_map.get(order_request.side, "BUY")
                 otype = type_map.get(order_request.order_type, "MARKET")
-                qty = float(max(order_request.quantity, 0.0))
-                price = float(order_request.price) if order_request.price else None
+                qty = float(max(order_state.original_quantity, 0.0))
+                price = float(order_state.price) if order_state.price else None
+
+                # Enforce symbol-specific leverage and margin mode if provided
+                limits = self.symbol_risk_limits.get(order_request.symbol, {})
+                per_symbol_max = float(limits.get("max_leverage", self.max_leverage))
+                if order_request.leverage is not None and order_request.leverage > per_symbol_max:
+                    self.logger.warning(
+                        f"Leverage {order_request.leverage} > symbol max {per_symbol_max}; clamping"
+                    )
+                    order_request.leverage = per_symbol_max
+                margin_mode = limits.get("margin_mode")
+                try:
+                    if margin_mode and hasattr(self.exchange_client, "set_margin_mode"):
+                        await self.exchange_client.set_margin_mode(symbol=order_request.symbol, mode=margin_mode)
+                    if order_request.leverage and hasattr(self.exchange_client, "set_leverage"):
+                        await self.exchange_client.set_leverage(symbol=order_request.symbol, leverage=float(order_request.leverage))
+                except Exception as lev_err:
+                    self.logger.error(f"Error setting margin/leverage on exchange: {lev_err}")
 
                 # Duck-typed order creation to be exchange-agnostic
                 if hasattr(self.exchange_client, "create_order"):
+                    # Pass through extended parameters when supported by the client
                     resp = await self.exchange_client.create_order(
                         symbol=order_request.symbol,
                         side=side,
                         order_type=otype,
                         quantity=qty,
                         price=price,
+                        time_in_force=order_state.time_in_force,
+                        stop_price=float(order_state.stop_price) if order_state.stop_price else None,
+                        new_client_order_id=order_state.order_link_id,
+                        reduce_only=order_request.reduce_only,
+                        close_on_trigger=order_request.close_on_trigger,
+                        take_profit=order_request.take_profit,
+                        stop_loss=order_request.stop_loss,
+                        post_only=bool(order_request.post_only) if order_request.post_only is not None else None,
                     )
                 else:
                     self.logger.error("Exchange client missing create_order method")
                     resp = None
                 if resp is None:
                     order_state.status = OrderStatus.REJECTED
+                    try:
+                        metrics.step_failure_counter.labels(step_name="order_create", error_type="reject").inc()
+                    except Exception:
+                        pass
                 else:
                     # Keep pending/open; fills will be tracked by polling get_order_status elsewhere
                     order_state.status = OrderStatus.PENDING
+                    try:
+                        metrics.step_success_counter.labels(step_name="order_create").inc()
+                    except Exception:
+                        pass
 
             self.logger.info(
-                f"Order placed: {order_id} ({order_request.strategy_type})",
+                f"Order placed: order_id={order_id} link_id={order_request.order_link_id} strategy={order_request.strategy_type}",
             )
             return order_state
 
@@ -907,22 +1012,152 @@ class EnhancedOrderManager:
         """Cancel an active order."""
         try:
             if order_id in self.active_orders:
-                order_state = self.active_orders[order_id]
+                async with self._lock:
+                    order_state = self.active_orders[order_id]
+
+                # Attempt server-side cancel if live
+                if not self.paper_trading and self.exchange_client and hasattr(self.exchange_client, "cancel_order"):
+                    try:
+                        cancelled = await self.exchange_client.cancel_order(
+                            symbol=order_state.symbol,
+                            order_id=order_id,
+                        )
+                        if not cancelled:
+                            self.logger.error(f"Exchange failed to cancel order: {order_id}")
+                            return False
+                    except Exception as exc:
+                        self.logger.error(f"Error calling exchange cancel for {order_id}: {exc}")
+                        return False
+
+                # Update local state
                 order_state.status = OrderStatus.CANCELLED
                 order_state.updated_time = datetime.now()
 
-                # Move to history
-                self.order_history.append(order_state)
-                del self.active_orders[order_id]
+                async with self._lock:
+                    self.order_history.append(order_state)
+                    del self.active_orders[order_id]
 
-                self.logger.info(f"Order cancelled: {order_id}")
+                self.logger.info(f"Order cancelled: order_id={order_id} link_id={order_state.order_link_id}")
+                try:
+                    metrics.step_success_counter.labels(step_name="order_cancel").inc()
+                except Exception:
+                    pass
                 return True
 
             return False
 
         except Exception as e:
             self.logger.error(f"Error cancelling order: {e}")
+            try:
+                metrics.step_failure_counter.labels(step_name="order_cancel", error_type="exception").inc()
+            except Exception:
+                pass
             return False
+
+    async def _reconcile_open_orders(self) -> None:
+        """Fetch open orders from exchange and reconcile with local state."""
+        try:
+            assert self.exchange_client is not None
+            if not hasattr(self.exchange_client, "get_open_orders"):
+                return
+            open_orders = await self.exchange_client.get_open_orders()  # type: ignore[attr-defined]
+            if not open_orders:
+                return
+            for o in open_orders:
+                # Expect fields: symbol, orderId, side, type, price, origQty, executedQty, status, stopPrice, clientOrderId
+                order_id = str(o.get("orderId"))
+                if order_id in self.active_orders:
+                    continue
+                try:
+                    side = OrderSide.BUY if str(o.get("side", "")).upper() == "BUY" else OrderSide.SELL
+                    # Map known order types; default to LIMIT
+                    otype_map = {
+                        "MARKET": OrderType.MARKET,
+                        "LIMIT": OrderType.LIMIT,
+                        "STOP_LOSS": OrderType.STOP_MARKET,
+                        "STOP_LOSS_LIMIT": OrderType.STOP_LIMIT,
+                        "TAKE_PROFIT": OrderType.TAKE_PROFIT,
+                        "TAKE_PROFIT_LIMIT": OrderType.TAKE_PROFIT_LIMIT,
+                    }
+                    otype = otype_map.get(str(o.get("type", "")).upper(), OrderType.LIMIT)
+                    state = OrderState(
+                        order_id=order_id,
+                        symbol=str(o.get("symbol")),
+                        side=side,
+                        order_type=otype,
+                        original_quantity=float(o.get("origQty", 0.0)),
+                        executed_quantity=float(o.get("executedQty", 0.0)),
+                        remaining_quantity=max(
+                            0.0,
+                            float(o.get("origQty", 0.0)) - float(o.get("executedQty", 0.0)),
+                        ),
+                        price=float(o.get("price", 0.0)) or None,
+                        stop_price=float(o.get("stopPrice", 0.0)) or None,
+                        time_in_force=str(o.get("timeInForce", "GTC")),
+                        order_link_id=o.get("clientOrderId"),
+                        status=self._map_exchange_status(str(o.get("status", "PENDING"))),
+                    )
+                    async with self._lock:
+                        self.active_orders[order_id] = state
+                except Exception:
+                    continue
+            self.logger.info(f"Reconciled {len(self.active_orders)} open orders from exchange")
+        except Exception as e:
+            self.logger.error(f"Error reconciling open orders: {e}")
+
+    def _map_exchange_status(self, status: str) -> OrderStatus:
+        s = status.upper()
+        if s in ("FILLED",):
+            return OrderStatus.FILLED
+        if s in ("PARTIALLY_FILLED", "PARTIALLYFILLED"):
+            return OrderStatus.PARTIALLY_FILLED
+        if s in ("CANCELED", "CANCELLED"):
+            return OrderStatus.CANCELLED
+        if s in ("REJECTED",):
+            return OrderStatus.REJECTED
+        if s in ("EXPIRED",):
+            return OrderStatus.EXPIRED
+        return OrderStatus.PENDING
+
+    async def _order_status_worker(self) -> None:
+        """Background worker to poll order statuses and update local state."""
+        try:
+            while self.is_initialized:
+                try:
+                    # Copy keys to avoid mutation during iteration
+                    async with self._lock:
+                        order_ids = list(self.active_orders.keys())
+                    for oid in order_ids:
+                        try:
+                            state = self.active_orders.get(oid)
+                            if not state:
+                                continue
+                            if hasattr(self.exchange_client, "get_order_status") and self.exchange_client:
+                                resp = await self.exchange_client.get_order_status(symbol=state.symbol, order_id=oid)  # type: ignore[attr-defined]
+                                if not resp:
+                                    continue
+                                executed_qty = float(resp.get("executedQty", state.executed_quantity))
+                                price = float(resp.get("price", state.price or 0.0)) or state.price
+                                status = self._map_exchange_status(str(resp.get("status", "PENDING")))
+                                # Update
+                                state.executed_quantity = executed_qty
+                                state.remaining_quantity = max(0.0, state.original_quantity - executed_qty)
+                                state.price = price
+                                state.status = status
+                                state.updated_time = datetime.now()
+                                # Auto-move to history if terminal
+                                if status in (OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED, OrderStatus.EXPIRED):
+                                    async with self._lock:
+                                        self.order_history.append(state)
+                                        self.active_orders.pop(oid, None)
+                        except Exception:
+                            continue
+                finally:
+                    await asyncio.sleep(getattr(self, "_status_poll_interval", 2.0))
+        except asyncio.CancelledError:
+            self.logger.info("Order status worker cancelled")
+        except Exception as e:
+            self.logger.error(f"Error in order status worker: {e}")
 
     async def _modify_order_price(self, order_id: str, new_price: float) -> bool:
         """Modify the price of an active order."""
@@ -940,6 +1175,44 @@ class EnhancedOrderManager:
         except Exception as e:
             self.logger.error(f"Error modifying order price: {e}")
             return False
+
+    def _normalize_order_params(
+        self,
+        symbol: str,
+        quantity: float,
+        price: float | None,
+        stop_price: float | None,
+    ) -> tuple[float, float | None, float | None]:
+        """Apply per-symbol tick/lot/min_notional constraints when provided in config."""
+        try:
+            constraints = self.symbol_constraints.get(symbol, {})
+            lot_size = float(constraints.get("lot_size", 0.0))
+            tick_size = float(constraints.get("tick_size", 0.0))
+            min_notional = float(constraints.get("min_notional", 0.0))
+
+            q = max(float(quantity), 0.0)
+            p = float(price) if price is not None else None
+            s = float(stop_price) if stop_price is not None else None
+
+            if lot_size and lot_size > 0:
+                q = (int(q / lot_size)) * lot_size
+            if tick_size and tick_size > 0 and p is not None:
+                p = (int(p / tick_size)) * tick_size
+            if tick_size and tick_size > 0 and s is not None:
+                s = (int(s / tick_size)) * tick_size
+
+            # Enforce min notional if both q and p present
+            if min_notional and p is not None and q * p < min_notional:
+                # increase quantity to meet min notional (conservative: bump to threshold)
+                required_q = min_notional / max(p, 1e-12)
+                if lot_size and lot_size > 0:
+                    required_q = (int(required_q / lot_size) + 1) * lot_size
+                q = max(q, required_q)
+
+            return q, p, s
+        except Exception as e:
+            self.logger.error(f"Error normalizing order params for {symbol}: {e}")
+            return max(float(quantity), 0.0), (float(price) if price is not None else None), (float(stop_price) if stop_price is not None else None)
 
     def get_order_status(self, order_id: str) -> OrderState | None:
         """Get the status of an order."""
@@ -980,6 +1253,15 @@ class EnhancedOrderManager:
             # Cancel all active orders
             for order_id in list(self.active_orders.keys()):
                 await self._cancel_order(order_id)
+
+            # Stop status task
+            status_task = getattr(self, "_status_task", None)
+            if status_task:
+                status_task.cancel()
+                try:
+                    await status_task
+                except Exception:
+                    pass
 
             self.logger.info("✅ Enhanced Order Manager stopped successfully")
 

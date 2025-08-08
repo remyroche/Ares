@@ -347,6 +347,14 @@ class BinanceExchange:
         order_type: str,
         quantity: float,
         price: float | None = None,
+        time_in_force: str | None = None,
+        stop_price: float | None = None,
+        new_client_order_id: str | None = None,
+        reduce_only: bool | None = None,
+        close_on_trigger: bool | None = None,
+        take_profit: float | None = None,
+        stop_loss: float | None = None,
+        post_only: bool | None = None,
     ) -> dict[str, Any] | None:
         """
         Create an order.
@@ -392,8 +400,22 @@ class BinanceExchange:
                 "timestamp": int(time.time() * 1000),
             }
 
-            if price:
+            if price is not None:
                 params["price"] = price
+            if time_in_force:
+                params["timeInForce"] = time_in_force
+            if stop_price is not None:
+                params["stopPrice"] = stop_price
+            if new_client_order_id:
+                params["newClientOrderId"] = new_client_order_id
+            # reduce_only/close_on_trigger are futures-only; include if supported downstream
+            if reduce_only is not None:
+                params["reduceOnly"] = str(reduce_only).lower()
+            if close_on_trigger is not None:
+                params["closePosition"] = str(close_on_trigger).lower()
+            if post_only is not None:
+                params["postOnly"] = str(post_only).lower()
+            # take_profit/stop_loss are strategy-level; for spot we skip; for futures these may map to working orders
 
             # Add signature
             signature = self._generate_signature(params)
@@ -469,6 +491,52 @@ class BinanceExchange:
             params={"symbol": symbol, "orderId": order_id},
         )
         return bool(result)
+
+    async def get_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]] | None:
+        """Get all open orders, optionally filtered by symbol."""
+        params: dict[str, Any] = {}
+        if symbol:
+            params["symbol"] = symbol
+        result = await self._signed_request(
+            method="GET",
+            path="/api/v3/openOrders",
+            params=params,
+        )
+        return result if isinstance(result, list) else None
+
+    async def set_margin_mode(self, symbol: str, mode: str) -> bool:
+        """Set margin mode (isolated/cross). Note: For futures endpoints; stubbed for spot."""
+        try:
+            # Spot API doesn't support margin mode here; return True for compatibility
+            return True
+        except Exception:
+            return False
+
+    async def set_leverage(self, symbol: str, leverage: float) -> bool:
+        """Set leverage for symbol. Note: For futures endpoints; stubbed for spot."""
+        try:
+            # Spot API doesn't support leverage; return True for compatibility
+            return True
+        except Exception:
+            return False
+
+    # --- WebSocket fills support (skeleton) ---
+    async def subscribe_fills(self, callback: callable) -> bool:
+        """Subscribe to user trade/fill events and call callback(event_dict)."""
+        try:
+            # TODO: Implement Binance user data stream listenKey + ws connect
+            self._fills_callback = callback
+            return True
+        except Exception as e:
+            self.logger.error(f"Error subscribing to fills: {e}")
+            return False
+
+    async def unsubscribe_fills(self) -> bool:
+        try:
+            self._fills_callback = None
+            return True
+        except Exception:
+            return False
 
     @handle_specific_errors(
         error_handlers={

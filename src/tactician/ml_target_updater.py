@@ -33,7 +33,7 @@ class MLTargetUpdater:
         config: dict[str, Any],
     ):
         self.ml_target_predictor = ml_target_predictor
-        self.exchange = exchange_client
+        self.exchange = exchange_client  # expected to be a client from exchange/factory
         self.state_manager = state_manager
         self.config = config.get("ml_target_updater", {})
         self.logger = system_logger.getChild("MLTargetUpdater")

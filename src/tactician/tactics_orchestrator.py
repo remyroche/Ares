@@ -122,6 +122,15 @@ class TacticsOrchestrator:
                 from src.tactician.enhanced_order_manager import EnhancedOrderManager
                 self.order_manager = EnhancedOrderManager(self.config)
                 await self.order_manager.initialize()
+                # Wire a real exchange client when not paper trading
+                try:
+                    from src.config.environment import get_exchange_name
+                    from src.exchange.factory import ExchangeFactory
+                    exchange_name = get_exchange_name().lower()
+                    exchange_client = ExchangeFactory.get_exchange(exchange_name)
+                    await self.order_manager.attach_exchange_client(exchange_client)
+                except Exception as e:
+                    self.logger.warning(f"Failed to attach exchange client to order manager: {e}")
                 if hasattr(self.position_monitor, "order_manager"):
                     self.position_monitor.order_manager = self.order_manager
             except Exception as e:

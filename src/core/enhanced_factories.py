@@ -102,8 +102,7 @@ class ExchangeClientFactory:
         try:
             from exchange.factory import ExchangeFactory
             
-            factory = ExchangeFactory()
-            client = factory.create_exchange(exchange_name, config)
+            client = ExchangeFactory.get_exchange(exchange_name)
             
             # Register the client in the container
             self.container.register_instance(IExchangeClient, client)

@@ -21,6 +21,7 @@ from typing import Any, TypeVar, cast
 
 import numpy as np
 import pandas as pd
+from src.utils.structured_logging import get_correlation_id
 
 # Type variables for generic functions
 T = TypeVar("T")
@@ -485,9 +486,20 @@ class ErrorHandler:
     def _log_error(self, func_name: str, error: Exception) -> None:
         """Log error with context."""
         if self.logger:
-            self.logger.exception(f"Error in {self.context}.{func_name}: {error}")
+            self.logger.exception(
+                f"Error in {self.context}.{func_name}: {error}",
+            )
         else:
-            print(f"Error in {self.context}.{func_name}: {error}")
+            _logger = logging.getLogger(__name__)
+            if not _logger.handlers:
+                _logger.setLevel(logging.INFO)
+                handler = logging.StreamHandler()
+                formatter = logging.Formatter(
+                    "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                )
+                handler.setFormatter(formatter)
+                _logger.addHandler(handler)
+            _logger.exception(f"Error in {self.context}.{func_name}: {error}")
 
     def _handle_specific_error(
         self,
@@ -786,13 +798,15 @@ def _log_retry_attempt(
     attempt_duration = time.time() - attempt_start_time
     total_duration = time.time() - start_time
 
-    logger.exception("💥 Network operation failed:")
-    logger.exception(f"   Attempt: {attempt + 1}/{max_retries + 1}")
-    logger.exception(f"   Attempt duration: {attempt_duration:.2f} seconds")
-    logger.exception(f"   Total duration: {total_duration:.2f} seconds")
-    logger.exception(f"   Error type: {type(error).__name__}")
-    logger.exception("Full traceback:")
-    logger.exception(traceback.format_exc())
+    log_message = (
+        "💥 Network operation failed:\n"
+        f"   Attempt: {attempt + 1}/{max_retries + 1}\n"
+        f"   Attempt duration: {attempt_duration:.2f} seconds\n"
+        f"   Total duration: {total_duration:.2f} seconds\n"
+        f"   Error type: {type(error).__name__}\n"
+        f"   Full traceback:\n{traceback.format_exc()}"
+    )
+    logger.exception(log_message)
 
 
 def handle_data_processing_errors(
@@ -819,7 +833,9 @@ def handle_data_processing_errors(
             except Exception as e:
                 context_str = f" ({context})" if context else ""
                 system_logger = get_system_logger()
-                system_logger.exception(f"DataFrame operation failed{context_str}: {e}")
+                system_logger.exception(
+                    f"DataFrame operation failed{context_str}: {e}",
+                )
                 return default_return
 
         @functools.wraps(func)
@@ -830,7 +846,9 @@ def handle_data_processing_errors(
             except Exception as e:
                 context_str = f" ({context})" if context else ""
                 system_logger = get_system_logger()
-                system_logger.exception(f"DataFrame operation failed{context_str}: {e}")
+                system_logger.exception(
+                    f"DataFrame operation failed{context_str}: {e}",
+                )
                 return default_return
 
         if asyncio.iscoroutinefunction(func):
@@ -947,7 +965,9 @@ def handle_type_conversions(
             except Exception as e:
                 if log_errors:
                     system_logger = get_system_logger()
-                    system_logger.exception(f"Unexpected error in {func.__name__}: {e}")
+                    system_logger.exception(
+                        f"Unexpected error in {func.__name__}: {e}",
+                    )
                 return default_return
 
         @functools.wraps(func)
@@ -965,7 +985,9 @@ def handle_type_conversions(
             except Exception as e:
                 if log_errors:
                     system_logger = get_system_logger()
-                    system_logger.exception(f"Unexpected error in {func.__name__}: {e}")
+                    system_logger.exception(
+                        f"Unexpected error in {func.__name__}: {e}",
+                    )
                 return default_return
 
         if asyncio.iscoroutinefunction(func):

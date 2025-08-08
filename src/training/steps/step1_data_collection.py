@@ -44,9 +44,9 @@ except ImportError as e:
         return decorator
     
     def setup_logging():
-        import logging
-        logging.basicConfig(level=logging.INFO)
-        return logging.getLogger("System")
+        from src.utils.logger import setup_logging, system_logger
+        setup_logging()
+        return system_logger
     
     system_logger = setup_logging()
 

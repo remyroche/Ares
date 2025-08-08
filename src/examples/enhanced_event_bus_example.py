@@ -23,10 +23,10 @@ from src.interfaces.enhanced_event_bus import (
     EventType,
     setup_enhanced_event_bus,
 )
-from src.utils.logger import system_logger
+from src.utils.logger import setup_logging, system_logger
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+setup_logging()
 logger = system_logger.getChild("EventBusExample")
 
 

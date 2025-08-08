@@ -7,6 +7,8 @@ Critical path type validators for trading system safety.
 import logging
 from functools import wraps
 from typing import Any, Callable, TypeVar, cast
+from datetime import datetime
+from src.utils.structured_logging import get_correlation_id
 
 from src.types import (
     MarketDataDict,
@@ -49,7 +51,9 @@ class CriticalPathValidator:
             return validated_signal
             
         except Exception as e:
-            logger.error(f"Trading signal validation failed: {e}")
+            logger.error(
+                f"Trading signal validation failed: {e}",
+            )
             raise
     
     @staticmethod
@@ -78,7 +82,9 @@ class CriticalPathValidator:
             return validated_decision
             
         except Exception as e:
-            logger.error(f"Trade decision validation failed: {e}")
+            logger.error(
+                f"Trade decision validation failed: {e}",
+            )
             raise
     
     @staticmethod
@@ -100,7 +106,9 @@ class CriticalPathValidator:
             return validated_order
             
         except Exception as e:
-            logger.error(f"Order request validation failed: {e}")
+            logger.error(
+                f"Order request validation failed: {e}",
+            )
             raise
     
     @staticmethod
@@ -119,7 +127,9 @@ class CriticalPathValidator:
             return validated_position
             
         except Exception as e:
-            logger.error(f"Position info validation failed: {e}")
+            logger.error(
+                f"Position info validation failed: {e}",
+            )
             raise
 
 
@@ -190,19 +200,22 @@ class TypeSafetyMonitor:
     def record_violation(self, violation: RuntimeTypeError) -> None:
         """Record a type safety violation."""
         self.violations.append({
-            'timestamp': logging.Formatter().formatTime,
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
             'expected_type': str(violation.expected_type),
             'actual_type': str(type(violation.actual_value)),
             'context': violation.context,
-            'message': str(violation)
+            'message': str(violation),
+            'correlation_id': get_correlation_id(),
         })
         
         # Count violations by type
         violation_key = f"{violation.expected_type}_{violation.context}"
         self.violation_counts[violation_key] = self.violation_counts.get(violation_key, 0) + 1
         
-        # Log critical violations
-        logger.warning(f"Type safety violation: {violation}")
+        # Log critical violations (correlation_id is included by filter)
+        logger.warning(
+            f"Type safety violation: {violation}",
+        )
     
     def get_violation_summary(self) -> dict:
         """Get summary of type safety violations."""

@@ -14,7 +14,8 @@ import ray
 from joblib import Memory
 
 # --- Configuration ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+from src.utils.logger import setup_logging
+setup_logging()
 
 # --- Caching Setup ---
 # Use joblib.Memory to cache the results of our training function.

@@ -300,6 +300,16 @@ class EnhancedErrorHandler:
                         self.logger.exception(
                             f"Error in {context}.{func.__name__}: {e}",
                         )
+                        try:
+                            from .prometheus_metrics import metrics
+                            metrics.step_failure_counter.labels(
+                                step_name=context or func.__name__,
+                                error_type=type(e).__name__,
+                            ).inc()
+                        except Exception as metrics_exc:
+                            self.logger.warning(
+                                f"Failed to increment Prometheus metrics: {metrics_exc}",
+                            )
 
                     if recovery_strategies:
                         for strategy in recovery_strategies:
@@ -334,6 +344,16 @@ class EnhancedErrorHandler:
                         self.logger.exception(
                             f"Error in {context}.{func.__name__}: {e}",
                         )
+                        try:
+                            from .prometheus_metrics import metrics
+                            metrics.step_failure_counter.labels(
+                                step_name=context or func.__name__,
+                                error_type=type(e).__name__,
+                            ).inc()
+                        except Exception as metrics_exc:
+                            self.logger.warning(
+                                f"Failed to increment Prometheus metrics: {metrics_exc}",
+                            )
 
                     if recovery_strategies:
                         for strategy in recovery_strategies:

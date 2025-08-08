@@ -15,12 +15,10 @@ const API_BASE_URL = 'http://localhost:8000';
 
 const MonitoringDashboard = () => {
   const [monitoringData, setMonitoringData] = useState({
-    performance: [],
-    anomalies: [],
-    predictions: [],
-    correlations: [],
-    riskMetrics: [],
-    systemHealth: []
+    metrics_dashboard: {},
+    performance_dashboard: {},
+    ml_tracker: {},
+    ml_monitor: {},
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -38,6 +36,10 @@ const MonitoringDashboard = () => {
     timeRange: '7d',
     format: 'csv'
   });
+  const [selectedAlert, setSelectedAlert] = useState(null);
+  const [selectedModel, setSelectedModel] = useState(null);
+  const [modelDetails, setModelDetails] = useState(null);
+  const [modelDetailsLoading, setModelDetailsLoading] = useState(false);
 
   // Chart type options
   const chartTypes = [
@@ -234,7 +236,7 @@ const MonitoringDashboard = () => {
     }
   };
 
-  const ChartCard = ({ title, data, config, onConfigChange }) => (
+  const ChartCard = ({ title, data, config, onConfigChange, onBarClick }) => (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-semibold text-white">{title}</h3>
@@ -260,7 +262,16 @@ const MonitoringDashboard = () => {
         </div>
       </div>
       <div className="h-80">
-        {data && data.length > 0 ? renderChart(data, config, title) : (
+        {data && data.length > 0 ? (
+          <div onClick={e => {
+            // Try to extract model from clicked bar (for bar/radar charts)
+            if (onBarClick && e.target && e.target.__data__ && e.target.__data__.model) {
+              onBarClick(e.target.__data__);
+            }
+          }}>
+            {renderChart(data, config, title)}
+          </div>
+        ) : (
           <div className="flex items-center justify-center h-full text-gray-400">
             No data available
           </div>
@@ -287,7 +298,7 @@ const MonitoringDashboard = () => {
     </div>
   );
 
-  const AlertCard = ({ alerts }) => (
+  const AlertCard = ({ alerts, onAlertClick }) => (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
       <div className="flex items-center gap-2 mb-4">
         <AlertTriangle className="w-5 h-5 text-yellow-400" />
@@ -295,7 +306,7 @@ const MonitoringDashboard = () => {
       </div>
       <div className="space-y-2">
         {alerts && alerts.length > 0 ? alerts.map((alert, index) => (
-          <div key={index} className="flex items-center gap-2 p-2 bg-gray-700 rounded">
+          <div key={index} className="flex items-center gap-2 p-2 bg-gray-700 rounded cursor-pointer" onClick={() => onAlertClick && onAlertClick(alert)}>
             <div className={`w-2 h-2 rounded-full ${
               alert.severity === 'critical' ? 'bg-red-400' :
               alert.severity === 'high' ? 'bg-orange-400' :
@@ -309,6 +320,51 @@ const MonitoringDashboard = () => {
       </div>
     </div>
   );
+
+  // Helper functions to extract new metrics
+  const getDriftAnalytics = () => {
+    return monitoringData.ml_monitor?.average_performance || {};
+  };
+  const getFeatureImportanceStability = () => {
+    // Placeholder: extract from metrics_dashboard or ml_monitor if available
+    return monitoringData.metrics_dashboard?.model_behavior_metrics || {};
+  };
+  const getOnlineLearningMetrics = () => {
+    return monitoringData.ml_monitor?.online_learning_enabled ? monitoringData.ml_monitor : {};
+  };
+  const getRetrainingRecommendations = () => {
+    return monitoringData.ml_tracker?.retraining_recommendations || [];
+  };
+  const getRegimePerformance = () => {
+    return monitoringData.ml_tracker?.regime_performance || {};
+  };
+
+  // Drill-down: fetch model details when selectedModel changes
+  useEffect(() => {
+    if (selectedModel) {
+      setModelDetailsLoading(true);
+      Promise.all([
+        fetch(`${API_BASE_URL}/api/monitoring/feature-importance/${selectedModel}`).then(r => r.json()),
+        fetch(`${API_BASE_URL}/api/monitoring/online-learning/${selectedModel}`).then(r => r.json()),
+        fetch(`${API_BASE_URL}/api/monitoring/retraining-recommendations`).then(r => r.json()),
+      ]).then(([featureImportance, onlineLearning, retrainingRecs]) => {
+        setModelDetails({ featureImportance, onlineLearning, retrainingRecs });
+        setModelDetailsLoading(false);
+      });
+    } else {
+      setModelDetails(null);
+    }
+  }, [selectedModel]);
+
+  // Drill-down: fetch drift alert details if needed (could be expanded for more info)
+
+  // Chart click handlers
+  const handleDriftChartClick = (data) => {
+    if (data && data.model) setSelectedModel(data.model);
+  };
+  const handleFeatureImportanceChartClick = (data) => {
+    if (data && data.model) setSelectedModel(data.model);
+  };
 
   if (loading) {
     return (
@@ -356,30 +412,45 @@ const MonitoringDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           title="Model Accuracy"
-          value={`${(monitoringData.performance?.[0]?.model_accuracy * 100 || 0).toFixed(1)}%`}
+          value={`${(monitoringData.performance_dashboard?.[0]?.model_accuracy * 100 || 0).toFixed(1)}%`}
           change={2.5}
           icon={Brain}
           color="blue"
         />
         <MetricCard
           title="Win Rate"
-          value={`${(monitoringData.performance?.[0]?.trading_win_rate * 100 || 0).toFixed(1)}%`}
+          value={`${(monitoringData.performance_dashboard?.[0]?.trading_win_rate * 100 || 0).toFixed(1)}%`}
           change={-1.2}
           icon={Target}
           color="green"
         />
         <MetricCard
           title="System Health"
-          value={`${(monitoringData.systemHealth?.[0]?.health_score * 100 || 0).toFixed(1)}%`}
+          value={`${(monitoringData.ml_monitor?.[0]?.health_score * 100 || 0).toFixed(1)}%`}
           change={0.8}
           icon={Activity}
           color="green"
         />
         <MetricCard
           title="Active Alerts"
-          value={monitoringData.anomalies?.length || 0}
+          value={monitoringData.ml_monitor?.total_alerts || 0}
           icon={AlertTriangle}
           color="yellow"
+        />
+        {/* New: Drift Alerts */}
+        <MetricCard
+          title="Drift Alerts"
+          value={monitoringData.ml_monitor?.total_alerts || 0}
+          change={monitoringData.ml_monitor?.critical_alerts || 0}
+          icon={AlertTriangle}
+          color="red"
+        />
+        {/* New: Online Learning */}
+        <MetricCard
+          title="Online Learning"
+          value={monitoringData.ml_monitor?.online_learning_enabled ? 'Enabled' : 'Disabled'}
+          icon={Brain}
+          color="purple"
         />
       </div>
 
@@ -387,45 +458,130 @@ const MonitoringDashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ChartCard
           title="Performance Metrics"
-          data={monitoringData.performance}
+          data={monitoringData.performance_dashboard}
           config={chartConfigs.performance}
           onConfigChange={(config) => updateChartConfig('performance', config)}
         />
         <ChartCard
           title="Anomaly Detection"
-          data={monitoringData.anomalies}
+          data={monitoringData.ml_monitor}
           config={chartConfigs.anomalies}
           onConfigChange={(config) => updateChartConfig('anomalies', config)}
         />
         <ChartCard
           title="Predictive Analytics"
-          data={monitoringData.predictions}
+          data={monitoringData.ml_tracker}
           config={chartConfigs.predictions}
           onConfigChange={(config) => updateChartConfig('predictions', config)}
         />
         <ChartCard
           title="Correlation Analysis"
-          data={monitoringData.correlations}
+          data={monitoringData.metrics_dashboard}
           config={chartConfigs.correlations}
           onConfigChange={(config) => updateChartConfig('correlations', config)}
         />
         <ChartCard
           title="Risk Metrics"
-          data={monitoringData.riskMetrics}
+          data={monitoringData.ml_tracker}
           config={chartConfigs.riskMetrics}
           onConfigChange={(config) => updateChartConfig('riskMetrics', config)}
         />
         <ChartCard
           title="System Health"
-          data={monitoringData.systemHealth}
+          data={monitoringData.ml_monitor}
           config={chartConfigs.systemHealth}
           onConfigChange={(config) => updateChartConfig('systemHealth', config)}
         />
+        {/* New: Drift Analytics Chart */}
+        <ChartCard
+          title="Drift Analytics"
+          data={Object.entries(getDriftAnalytics()).map(([model, perf]) => ({ model, ...perf }))}
+          config={{ type: 'bar', timeRange: '24h' }}
+          onConfigChange={() => {}}
+          onBarClick={handleDriftChartClick}
+        />
+        {/* New: Feature Importance Stability */}
+        <ChartCard
+          title="Feature Importance Stability"
+          data={Object.entries(getFeatureImportanceStability()).map(([model, metrics]) => ({ model, ...metrics }))}
+          config={{ type: 'radar', timeRange: '24h' }}
+          onConfigChange={() => {}}
+          onBarClick={handleFeatureImportanceChartClick}
+        />
+        {/* New: Online Learning Metrics */}
+        <ChartCard
+          title="Online Learning Metrics"
+          data={[getOnlineLearningMetrics()]}
+          config={{ type: 'line', timeRange: '24h' }}
+          onConfigChange={() => {}}
+        />
+        {/* New: Retraining Recommendations */}
+        <ChartCard
+          title="Retraining Recommendations"
+          data={getRetrainingRecommendations().map((rec, i) => ({ recommendation: rec, idx: i }))}
+          config={{ type: 'bar', timeRange: '7d' }}
+          onConfigChange={() => {}}
+        />
+        {/* New: Regime/Ensemble Performance */}
+        <ChartCard
+          title="Regime Performance"
+          data={Object.entries(getRegimePerformance()).map(([regime, perf]) => ({ regime, perf }))}
+          config={{ type: 'bar', timeRange: '30d' }}
+          onConfigChange={() => {}}
+        />
       </div>
 
-      {/* Alerts Section */}
-      <AlertCard alerts={monitoringData.anomalies} />
-
+      {/* Alerts Section with drill-down */}
+      <AlertCard alerts={monitoringData.ml_monitor?.current_metrics?.alerts || []} onAlertClick={setSelectedAlert} />
+      {/* Alert Drill-down Modal */}
+      {selectedAlert && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-96">
+            <h3 className="text-lg font-semibold text-white mb-4">Alert Details</h3>
+            <div className="space-y-2">
+              <div><b>Severity:</b> {selectedAlert.severity}</div>
+              <div><b>Message:</b> {selectedAlert.message}</div>
+              {selectedAlert.drift_type && <div><b>Drift Type:</b> {selectedAlert.drift_type}</div>}
+              {selectedAlert.features_affected && <div><b>Affected Features:</b> {selectedAlert.features_affected.join(', ')}</div>}
+              <div><b>Timestamp:</b> {selectedAlert.timestamp}</div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setSelectedAlert(null)} className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Model Drill-down Modal */}
+      {selectedModel && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-[32rem] max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-white mb-4">Model Details: {selectedModel}</h3>
+            {modelDetailsLoading ? (
+              <div className="text-gray-300">Loading...</div>
+            ) : modelDetails ? (
+              <div className="space-y-4">
+                <div>
+                  <b>Feature Importance History:</b>
+                  <pre className="bg-gray-900 rounded p-2 text-xs text-gray-200 max-h-40 overflow-y-auto">{JSON.stringify(modelDetails.featureImportance, null, 2)}</pre>
+                </div>
+                <div>
+                  <b>Online Learning Metrics:</b>
+                  <pre className="bg-gray-900 rounded p-2 text-xs text-gray-200 max-h-40 overflow-y-auto">{JSON.stringify(modelDetails.onlineLearning, null, 2)}</pre>
+                </div>
+                <div>
+                  <b>Retraining Recommendations:</b>
+                  <ul className="list-disc ml-6 text-gray-200">
+                    {modelDetails.retrainingRecs.map((rec, i) => <li key={i}>{rec}</li>)}
+                  </ul>
+                </div>
+              </div>
+            ) : <div className="text-gray-300">No details available.</div>}
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setSelectedModel(null)} className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Export Modal */}
       {exportModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

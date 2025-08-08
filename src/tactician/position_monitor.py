@@ -574,22 +574,58 @@ class PositionMonitor:
         self.logger.info(
             f"🚪 EXITING position {assessment.position_id}: {assessment.action_reason}",
         )
-        # This would integrate with the trading system to close the position
-        # For now, just log the action
+        try:
+            if hasattr(self, "order_manager") and self.order_manager:
+                # Close by placing an opposite-side MARKET order for remaining qty
+                pos = self.active_positions.get(assessment.position_id, {})  # type: ignore[attr-defined]
+                symbol = pos.get("symbol")
+                qty = float(max(0.0, pos.get("remaining_qty", pos.get("quantity", 0.0))))
+                side = pos.get("side")
+                if symbol and qty > 0 and side:
+                    from src.tactician.enhanced_order_manager import OrderRequest, OrderSide, OrderType
+                    closing_side = OrderSide.SELL if side.lower() == "long" else OrderSide.BUY
+                    orq = OrderRequest(symbol=symbol, side=closing_side, order_type=OrderType.MARKET, quantity=qty)
+                    await self.order_manager._place_order(orq)
+        except Exception as e:
+            self.logger.error(f"Error executing exit via order manager: {e}")
 
     async def _execute_scale_up(self, assessment: PositionAssessment) -> None:
         """Execute position scale up."""
         self.logger.info(
             f"📈 SCALING UP position {assessment.position_id}: {assessment.action_reason}",
         )
-        # This would integrate with the trading system to increase position size
+        try:
+            if hasattr(self, "order_manager") and self.order_manager:
+                pos = self.active_positions.get(assessment.position_id, {})  # type: ignore[attr-defined]
+                symbol = pos.get("symbol")
+                side = pos.get("side")
+                add_qty = float(max(0.0, pos.get("scale_up_qty", 0.0)))
+                if symbol and side and add_qty > 0:
+                    from src.tactician.enhanced_order_manager import OrderRequest, OrderSide, OrderType
+                    ord_side = OrderSide.BUY if side.lower() == "long" else OrderSide.SELL
+                    orq = OrderRequest(symbol=symbol, side=ord_side, order_type=OrderType.MARKET, quantity=add_qty)
+                    await self.order_manager._place_order(orq)
+        except Exception as e:
+            self.logger.error(f"Error executing scale up via order manager: {e}")
 
     async def _execute_scale_down(self, assessment: PositionAssessment) -> None:
         """Execute position scale down."""
         self.logger.info(
             f"📉 SCALING DOWN position {assessment.position_id}: {assessment.action_reason}",
         )
-        # This would integrate with the trading system to reduce position size
+        try:
+            if hasattr(self, "order_manager") and self.order_manager:
+                pos = self.active_positions.get(assessment.position_id, {})  # type: ignore[attr-defined]
+                symbol = pos.get("symbol")
+                side = pos.get("side")
+                reduce_qty = float(max(0.0, pos.get("scale_down_qty", 0.0)))
+                if symbol and side and reduce_qty > 0:
+                    from src.tactician.enhanced_order_manager import OrderRequest, OrderSide, OrderType
+                    closing_side = OrderSide.SELL if side.lower() == "long" else OrderSide.BUY
+                    orq = OrderRequest(symbol=symbol, side=closing_side, order_type=OrderType.MARKET, quantity=reduce_qty)
+                    await self.order_manager._place_order(orq)
+        except Exception as e:
+            self.logger.error(f"Error executing scale down via order manager: {e}")
 
     async def _execute_hedge(self, assessment: PositionAssessment) -> None:
         """Execute position hedge."""

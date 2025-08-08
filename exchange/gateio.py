@@ -20,6 +20,9 @@ from src.utils.logger import system_logger
 
 from .base_exchange import BaseExchange
 
+import json
+import websockets
+
 logger = logging.getLogger(__name__)
 
 
@@ -612,6 +615,7 @@ class GateioExchange(BaseExchange):
             logger.error(f"Failed to get account info from Gate.io: {e}")
             return {"error": str(e)}
 
+
     @retry_on_rate_limit()
     @handle_network_operations(max_retries=3, default_return=[])
     async def get_position_risk(self, symbol: str = None):
@@ -858,3 +862,101 @@ class GateioExchange(BaseExchange):
         except Exception as e:
             logger.error(f"❌ GATEIO: get_historical_klines_ccxt failed: {e}")
             return []
+
+    # --- Streaming hooks (standardized) ---
+    async def subscribe_trades(self, symbol: str, callback):
+        market_id = await self._get_market_id(symbol)
+        # Gate.io futures public WS
+        url = "wss://fx-ws.gateio.ws/v4/ws/usdt"
+        channel = "trades"
+        payload = {"time": 0, "channel": channel, "event": "subscribe", "payload": [market_id]}
+
+        async def _run():
+            while True:
+                try:
+                    async with websockets.connect(url) as ws:
+                        await ws.send(json.dumps(payload))
+                        async for raw in ws:
+                            try:
+                                msg = json.loads(raw)
+                                if msg.get("channel") == channel and msg.get("event") == "update":
+                                    for t in msg.get("result", []):
+                                        # Normalize trade
+                                        std = {
+                                            "type": "trade",
+                                            "symbol": symbol,
+                                            "price": float(t.get("price")),
+                                            "qty": float(t.get("size", t.get("amount", 0.0))),
+                                            "side": t.get("side"),
+                                            "timestamp": t.get("create_time_ms") or int(float(t.get("create_time", 0)) * 1000),
+                                        }
+                                        await callback(std)
+                            except Exception:
+                                continue
+                except Exception:
+                    await asyncio.sleep(3)
+        import asyncio
+        await _run()
+
+    async def subscribe_ticker(self, symbol: str, callback):
+        market_id = await self._get_market_id(symbol)
+        url = "wss://fx-ws.gateio.ws/v4/ws/usdt"
+        channel = "ticker"
+        payload = {"time": 0, "channel": channel, "event": "subscribe", "payload": [market_id]}
+
+        async def _run():
+            while True:
+                try:
+                    async with websockets.connect(url) as ws:
+                        await ws.send(json.dumps(payload))
+                        async for raw in ws:
+                            try:
+                                msg = json.loads(raw)
+                                if msg.get("channel") == channel and msg.get("event") == "update":
+                                    t = msg.get("result", {})
+                                    std = {
+                                        "type": "ticker",
+                                        "symbol": symbol,
+                                        "last": float(t.get("last")) if t.get("last") is not None else None,
+                                        "bid": float(t.get("lowest_ask")) if t.get("lowest_ask") is not None else None,
+                                        "ask": float(t.get("highest_bid")) if t.get("highest_bid") is not None else None,
+                                        "timestamp": int(float(t.get("time", 0)) * 1000),
+                                    }
+                                    await callback(std)
+                            except Exception:
+                                continue
+                except Exception:
+                    await asyncio.sleep(3)
+        import asyncio
+        await _run()
+
+    async def subscribe_order_book(self, symbol: str, callback):
+        market_id = await self._get_market_id(symbol)
+        url = "wss://fx-ws.gateio.ws/v4/ws/usdt"
+        channel = "book_ticker"
+        payload = {"time": 0, "channel": channel, "event": "subscribe", "payload": [market_id]}
+
+        async def _run():
+            while True:
+                try:
+                    async with websockets.connect(url) as ws:
+                        await ws.send(json.dumps(payload))
+                        async for raw in ws:
+                            try:
+                                msg = json.loads(raw)
+                                if msg.get("channel") == channel and msg.get("event") == "update":
+                                    bt = msg.get("result", {})
+                                    std = {
+                                        "type": "order_book",
+                                        "symbol": symbol,
+                                        "bid": float(bt.get("b")) if bt.get("b") is not None else None,
+                                        "ask": float(bt.get("a")) if bt.get("a") is not None else None,
+                                        "timestamp": int(float(bt.get("t", 0)) * 1000),
+                                    }
+                                    await callback(std)
+                            except Exception:
+                                continue
+                except Exception:
+                    await asyncio.sleep(3)
+        import asyncio
+        await _run()

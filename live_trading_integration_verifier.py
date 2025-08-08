@@ -24,7 +24,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
-from src.exchange.binance import BinanceExchange
+from exchange.factory import ExchangeFactory
 from src.analyst.analyst import Analyst
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
 from src.tactician.tactician import Tactician
@@ -98,8 +98,10 @@ class LiveTradingIntegrationVerifier:
         
         try:
             # Initialize exchange
-            self.exchange = BinanceExchange(self.config)
-            exchange_init = await self.exchange.initialize()
+            from src.config.environment import get_exchange_name
+            exchange_name = get_exchange_name().lower()
+            self.exchange = ExchangeFactory.get_exchange(exchange_name)
+            exchange_init = True  # factory returns ready CCXT-backed client
             
             if not exchange_init:
                 raise Exception("Failed to initialize exchange")

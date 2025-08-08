@@ -14,6 +14,13 @@ from src.utils.error_handler import (
 )
 from src.utils.logger import system_logger
 
+from src.tactician.enhanced_order_manager import (
+    EnhancedOrderManager,
+    OrderRequest,
+    OrderSide,
+    OrderType,
+)
+
 
 class LiveTradingPipeline:
     """
@@ -54,6 +61,10 @@ class LiveTradingPipeline:
             True,
         )
 
+        # Execution runtime components
+        self.order_manager: EnhancedOrderManager | None = None
+        self.exchange_client = None
+
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid live trading pipeline configuration"),
@@ -82,6 +93,12 @@ class LiveTradingPipeline:
 
         # Initialize trading modules
         await self._initialize_trading_modules()
+
+        # Start unified market data streaming to feed LM/tactics if enabled
+        try:
+            await self._maybe_start_market_stream()
+        except Exception as e:
+            self.logger.warning(f"Market stream not started: {e}")
 
         self.logger.info(
             "✅ Live Trading Pipeline initialization completed successfully",
@@ -179,6 +196,34 @@ class LiveTradingPipeline:
         except Exception as e:
             self.logger.error(f"Error initializing trading modules: {e}")
 
+    async def _maybe_start_market_stream(self) -> None:
+        """Start unified market stream (ticker, trades, orderbook) feeding pipeline."""
+        from exchange.factory import ExchangeFactory as RootExchangeFactory
+        from src.config.environment import get_exchange_name, get_trade_symbol
+
+        exchange_name = get_exchange_name().lower()
+        symbol = get_trade_symbol()
+        client = RootExchangeFactory.get_exchange(exchange_name)
+        self.exchange_client = client
+
+        async def on_trade(msg):
+            # Minimal hook: store last trade to self.trading_results for tactics
+            self.trading_results["last_trade"] = msg
+
+        async def on_ticker(msg):
+            self.trading_results["last_ticker"] = msg
+
+        async def on_book(msg):
+            self.trading_results["last_order_book"] = msg
+
+        # Run subscriptions concurrently
+        import asyncio
+        self._stream_tasks = [
+            asyncio.create_task(client.subscribe_trades(symbol, on_trade)),
+            asyncio.create_task(client.subscribe_ticker(symbol, on_ticker)),
+            asyncio.create_task(client.subscribe_order_book(symbol, on_book)),
+        ]
+
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -238,6 +283,20 @@ class LiveTradingPipeline:
             }
 
             self.logger.info("Order execution module initialized")
+
+            # Initialize EnhancedOrderManager and attach exchange client
+            if self.order_manager is None:
+                self.order_manager = EnhancedOrderManager(self.config)
+                await self.order_manager.initialize()
+                try:
+                    # Reuse the streaming client if available; otherwise create here
+                    if not self.exchange_client:
+                        from exchange.factory import ExchangeFactory as RootExchangeFactory
+                        from src.config.environment import get_exchange_name
+                        self.exchange_client = RootExchangeFactory.get_exchange(get_exchange_name().lower())
+                    await self.order_manager.attach_exchange_client(self.exchange_client)
+                except Exception as e:
+                    self.logger.warning(f"Failed to attach exchange client to order manager: {e}")
 
         except Exception as e:
             self.logger.error(f"Error initializing order execution: {e}")
@@ -478,7 +537,12 @@ class LiveTradingPipeline:
 
             # Perform order placement
             if self.order_execution_components.get("order_placement", False):
-                results["order_placement"] = self._perform_order_placement(market_data)
+                # Derive trading decision from signals and execute via tactician
+                decision = await self._derive_decision(market_data)
+                if decision:
+                    results["order_placement"] = await self._execute_decision(decision)
+                else:
+                    results["order_placement"] = {"status": "skipped"}
 
             # Perform order modification
             if self.order_execution_components.get("order_modification", False):
@@ -986,3 +1050,90 @@ async def setup_live_trading_pipeline(
     except Exception as e:
         print(f"Error setting up live trading pipeline: {e}")
         return None
+
+    async def _derive_decision(self, market_data: dict[str, Any]) -> dict[str, Any] | None:
+        """Create a normalized trading decision from latest signals/analyst outputs."""
+        try:
+            symbol = market_data.get("symbol")
+            if not symbol:
+                return None
+            # Prefer explicit analyst decision if provided in market_data
+            analyst_decision = market_data.get("analyst_decision")
+            if analyst_decision and analyst_decision.get("action"):
+                return analyst_decision | {"symbol": symbol}
+
+            # Fallback: use the pipeline's last signal_generation results
+            signals = self.trading_results.get("signal_generation", {})
+            momentum = (signals.get("momentum_indicators") or {})
+            pattern = (signals.get("pattern_recognition") or {})
+            action = None
+            confidence = float(momentum.get("confidence", pattern.get("confidence", 0.0)) or 0.0)
+
+            # Minimal heuristic: expect a 'signal' field like 'buy'/'sell'
+            sig = str(momentum.get("signal") or pattern.get("signal") or "").lower()
+            if sig == "buy":
+                action = "OPEN_LONG"
+            elif sig == "sell":
+                action = "OPEN_SHORT"
+            elif sig == "close":
+                action = "CLOSE"
+
+            if not action:
+                return None
+
+            return {
+                "symbol": symbol,
+                "action": action,
+                "confidence": confidence,
+                # Optional tactical hints
+                "take_profit": momentum.get("take_profit") or pattern.get("take_profit"),
+                "stop_loss": momentum.get("stop_loss") or pattern.get("stop_loss"),
+            }
+        except Exception as e:
+            self.logger.error(f"Error deriving decision: {e}")
+            return None
+
+    async def _execute_decision(self, decision: dict[str, Any]) -> dict[str, Any]:
+        """Execute a normalized decision via EnhancedOrderManager."""
+        try:
+            if not self.order_manager:
+                return {"status": "unavailable"}
+
+            symbol = decision["symbol"]
+            action = decision["action"].upper()
+            conf = float(decision.get("confidence", 0.0) or 0.0)
+
+            # Determine side and size
+            if action == "OPEN_LONG":
+                side = OrderSide.BUY
+                qty = float(self.trading_config.get("base_order_quantity", 0.01)) * max(0.5, min(2.0, 1.0 + (conf - 0.5)))
+            elif action == "OPEN_SHORT":
+                side = OrderSide.SELL
+                qty = float(self.trading_config.get("base_order_quantity", 0.01)) * max(0.5, min(2.0, 1.0 + (conf - 0.5)))
+            elif action == "CLOSE":
+                # Let PositionMonitor/EnhancedOrderManager compute remaining qty; place market opposite for small default
+                # For safety default to a small closing size if we can't infer
+                side = OrderSide.SELL  # will be adjusted by internal logic if needed
+                qty = float(self.trading_config.get("base_order_quantity", 0.01))
+            else:
+                return {"status": "skipped"}
+
+            orq = OrderRequest(
+                symbol=symbol,
+                side=side,
+                order_type=OrderType.MARKET,
+                quantity=max(0.0, qty),
+                take_profit=decision.get("take_profit"),
+                stop_loss=decision.get("stop_loss"),
+                strategy_type="ANALYST_SIGNAL",
+                order_link_id=f"sig_{int(self._now_ts())}_{symbol}",
+            )
+            state = await self.order_manager._place_order(orq)
+            return {"status": "submitted" if state else "failed", "order_id": getattr(state, "order_id", None)}
+        except Exception as e:
+            self.logger.error(f"Error executing decision: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def _now_ts(self) -> float:
+        from time import time
+        return time()

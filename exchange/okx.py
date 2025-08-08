@@ -18,6 +18,9 @@ from src.utils.logger import system_logger
 
 from .base_exchange import BaseExchange
 
+import json
+import websockets
+
 logger = logging.getLogger(__name__)
 
 
@@ -159,6 +162,7 @@ class OkxExchange(BaseExchange):
         except Exception as e:
             logger.error(f"Error creating order on OKX for {symbol}: {e}")
             return {"error": str(e), "status": "failed"}
+
 
     @retry_on_rate_limit()
     @handle_network_operations(
@@ -511,7 +515,10 @@ class OkxExchange(BaseExchange):
             return {"error": str(e)}
 
     async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Get raw order status from exchange."""
+        """
+        Get raw order status from exchange.
+        Must be implemented by subclasses.
+        """
         try:
             market_id = await self._get_market_id(symbol)
             return await self.exchange.fetch_order(order_id, market_id)
@@ -520,3 +527,100 @@ class OkxExchange(BaseExchange):
                 f"Failed to get status for order {order_id} on OKX {symbol}: {e}",
             )
             return {"error": str(e)}
+
+    # --- Streaming hooks (standardized) ---
+    async def subscribe_trades(self, symbol: str, callback):
+        market_id = await self._get_market_id(symbol)
+        url = "wss://ws.okx.com:8443/ws/v5/public"
+        sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": market_id}]}
+
+        async def _run():
+            while True:
+                try:
+                    async with websockets.connect(url) as ws:
+                        await ws.send(json.dumps(sub))
+                        async for raw in ws:
+                            try:
+                                msg = json.loads(raw)
+                                if msg.get("arg", {}).get("channel") == "trades" and msg.get("arg", {}).get("instId") == market_id:
+                                    for t in msg.get("data", []):
+                                        std = {
+                                            "type": "trade",
+                                            "symbol": symbol,
+                                            "price": float(t.get("px")),
+                                            "qty": float(t.get("sz")),
+                                            "side": t.get("side"),
+                                            "timestamp": int(t.get("ts", 0)),
+                                        }
+                                        await callback(std)
+                            except Exception:
+                                continue
+                except Exception:
+                    await asyncio.sleep(3)
+        import asyncio
+        await _run()
+
+    async def subscribe_ticker(self, symbol: str, callback):
+        market_id = await self._get_market_id(symbol)
+        url = "wss://ws.okx.com:8443/ws/v5/public"
+        sub = {"op": "subscribe", "args": [{"channel": "tickers", "instId": market_id}]}
+
+        async def _run():
+            while True:
+                try:
+                    async with websockets.connect(url) as ws:
+                        await ws.send(json.dumps(sub))
+                        async for raw in ws:
+                            try:
+                                msg = json.loads(raw)
+                                if msg.get("arg", {}).get("channel") == "tickers" and msg.get("arg", {}).get("instId") == market_id:
+                                    t = (msg.get("data") or [{}])[0]
+                                    std = {
+                                        "type": "ticker",
+                                        "symbol": symbol,
+                                        "last": float(t.get("last")) if t.get("last") is not None else None,
+                                        "bid": float(t.get("bidPx")) if t.get("bidPx") is not None else None,
+                                        "ask": float(t.get("askPx")) if t.get("askPx") is not None else None,
+                                        "timestamp": int(t.get("ts", 0)),
+                                    }
+                                    await callback(std)
+                            except Exception:
+                                continue
+                except Exception:
+                    await asyncio.sleep(3)
+        import asyncio
+        await _run()
+
+    async def subscribe_order_book(self, symbol: str, callback):
+        market_id = await self._get_market_id(symbol)
+        url = "wss://ws.okx.com:8443/ws/v5/public"
+        sub = {"op": "subscribe", "args": [{"channel": "books", "instId": market_id}]}
+
+        async def _run():
+            while True:
+                try:
+                    async with websockets.connect(url) as ws:
+                        await ws.send(json.dumps(sub))
+                        async for raw in ws:
+                            try:
+                                msg = json.loads(raw)
+                                if msg.get("arg", {}).get("channel") == "books" and msg.get("arg", {}).get("instId") == market_id:
+                                    d = (msg.get("data") or [{}])[0]
+                                    bids = d.get("bids") or []
+                                    asks = d.get("asks") or []
+                                    best_bid = float(bids[0][0]) if bids else None
+                                    best_ask = float(asks[0][0]) if asks else None
+                                    std = {
+                                        "type": "order_book",
+                                        "symbol": symbol,
+                                        "bid": best_bid,
+                                        "ask": best_ask,
+                                        "timestamp": int(d.get("ts", 0)),
+                                    }
+                                    await callback(std)
+                            except Exception:
+                                continue
+                except Exception:
+                    await asyncio.sleep(3)
+        import asyncio
+        await _run()

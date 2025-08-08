@@ -1673,6 +1673,43 @@ class BinanceExchange(BaseExchange):
             f"Trade ({symbol})",
         )
 
+    # BaseExchange streaming hooks
+    async def subscribe_trades(self, symbol: str, callback):
+        async def _cb(msg):
+            try:
+                await callback(msg)
+            except Exception as e:
+                logger.error(f"Error in trade subscription callback for {symbol}: {e}", exc_info=True)
+        await self._websocket_handler(
+            f"{self.WS_BASE_URL}/ws/{symbol.lower()}@trade",
+            _cb,
+            f"Trade ({symbol})",
+        )
+
+    async def subscribe_ticker(self, symbol: str, callback):
+        async def _cb(msg):
+            try:
+                await callback(msg)
+            except Exception as e:
+                logger.error(f"Error in ticker subscription callback for {symbol}: {e}", exc_info=True)
+        await self._websocket_handler(
+            f"{self.WS_BASE_URL}/ws/{symbol.lower()}@markPrice",
+            _cb,
+            f"Mark Price ({symbol})",
+        )
+
+    async def subscribe_order_book(self, symbol: str, callback):
+        async def _cb(msg):
+            try:
+                await callback(msg)
+            except Exception as e:
+                logger.error(f"Error in order book subscription callback for {symbol}: {e}", exc_info=True)
+        await self._websocket_handler(
+            f"{self.WS_BASE_URL}/ws/{symbol.lower()}@depth",
+            _cb,
+            f"Depth ({symbol})",
+        )
+
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,

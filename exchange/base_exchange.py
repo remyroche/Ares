@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable, Awaitable
 
 from src.interfaces.base_interfaces import IExchangeClient, MarketData
 
@@ -316,6 +316,57 @@ class BaseExchange(IExchangeClient, ABC):
         Must be implemented by subclasses.
         """
 
+    async def set_leverage(self, symbol: str, leverage: float) -> bool:
+        """Best-effort leverage setter using underlying client if supported."""
+        try:
+            market_id = await self._get_market_id(symbol)
+        except Exception:
+            market_id = symbol
+
+        if not self.exchange:
+            return False
+
+        attempts = [
+            ("set_leverage", (leverage, market_id), {}),
+            ("set_leverage", (), {"leverage": leverage, "symbol": market_id}),
+            ("setLeverage", (leverage, market_id), {}),
+        ]
+
+        for method, args, kwargs in attempts:
+            if hasattr(self.exchange, method):
+                try:
+                    await getattr(self.exchange, method)(*args, **kwargs)
+                    return True
+                except Exception:
+                    # Intentionally continue to try next known signature
+                    continue
+        return False
+
+    async def set_margin_mode(self, symbol: str, mode: str) -> bool:
+        """Best-effort margin mode setter using underlying client if supported."""
+        try:
+            market_id = await self._get_market_id(symbol)
+        except Exception:
+            market_id = symbol
+
+        if not self.exchange:
+            return False
+
+        attempts = [
+            ("set_margin_mode", (mode, market_id), {}),
+            ("set_margin_mode", (), {"marginMode": mode, "symbol": market_id}),
+            ("setMarginMode", (mode, market_id), {}),
+        ]
+
+        for method, args, kwargs in attempts:
+            if hasattr(self.exchange, method):
+                try:
+                    await getattr(self.exchange, method)(*args, **kwargs)
+                    return True
+                except Exception:
+                    continue
+        return False
+
     async def close(self) -> None:
         """
         Close the exchange connection.
@@ -352,3 +403,96 @@ class BaseExchange(IExchangeClient, ABC):
                 raise ValueError(f"Unable to parse timestamp: {timestamp}")
         else:
             raise ValueError(f"Unsupported timestamp type: {type(timestamp)}")
+
+    # --- Optional streaming hooks (to be implemented by subclasses as needed) ---
+    async def subscribe_trades(self, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+        """Subscribe to live trades for symbol and invoke callback(trade_dict)."""
+        raise NotImplementedError
+
+    async def subscribe_ticker(self, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+        """Subscribe to live ticker/mark price updates and invoke callback(ticker_dict)."""
+        raise NotImplementedError
+
+    async def subscribe_order_book(self, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+        """Subscribe to live order book updates and invoke callback(book_dict)."""
+        raise NotImplementedError
+
+    # --- Convenience polling helpers ---
+    async def fetch_price(self, symbol: str) -> float | None:
+        """Fetch current price using ticker or order book mid as fallback."""
+        try:
+            # Prefer a direct ticker if subclass implements get_ticker
+            if hasattr(self, "get_ticker"):
+                ticker = await getattr(self, "get_ticker")(symbol)
+                if ticker:
+                    last = ticker.get("last") or ticker.get("mark") or ticker.get("close")
+                    if last is not None:
+                        return float(last)
+                    # derive mid if possible
+                    bid = ticker.get("bid")
+                    ask = ticker.get("ask")
+                    if bid is not None and ask is not None:
+                        return (float(bid) + float(ask)) / 2.0
+            # Fallback to order book mid
+            if hasattr(self, "get_order_book"):
+                book = await getattr(self, "get_order_book")(symbol, 5)
+                bids = book.get("bids") or []
+                asks = book.get("asks") or []
+                best_bid = float(bids[0][0]) if bids else None
+                best_ask = float(asks[0][0]) if asks else None
+                if best_bid is not None and best_ask is not None:
+                    return (best_bid + best_ask) / 2.0
+                if best_bid is not None:
+                    return best_bid
+                if best_ask is not None:
+                    return best_ask
+        except Exception:
+            return None
+        return None
+
+    async def get_liquidation_price(self, symbol: str) -> float | None:
+        """Best-effort liquidation price for current position on symbol."""
+        try:
+            risk = await self.get_position_risk(symbol)
+            # Try common ccxt fields
+            if isinstance(risk, list) and risk:
+                # Find matching symbol
+                for p in risk:
+                    inst = p.get("symbol") or p.get("info", {}).get("symbol")
+                    if inst and inst.replace("-", "").replace("_", "").upper().startswith(symbol.upper().replace("USDT", "")):
+                        liq = p.get("liquidationPrice") or p.get("liqPrice") or p.get("liquidation_price")
+                        if liq:
+                            return float(liq)
+                # Otherwise take first
+                p = risk[0]
+                liq = p.get("liquidationPrice") or p.get("liqPrice") or p.get("liquidation_price")
+                if liq:
+                    return float(liq)
+        except Exception:
+            return None
+        return None
+
+    # --- Default CCXT-based helpers (can be overridden by subclasses) ---
+    async def get_ticker(self, symbol: str | None = None) -> dict[str, Any]:
+        """Default ticker fetch using ccxt."""
+        try:
+            if not self.exchange:
+                return {}
+            market_id = await self._get_market_id(symbol) if symbol else None
+            if market_id:
+                return await self.exchange.fetch_ticker(market_id)
+            # All tickers fallback
+            tickers = await self.exchange.fetch_tickers()
+            return tickers or {}
+        except Exception:
+            return {}
+
+    async def get_order_book(self, symbol: str, limit: int = 10) -> dict[str, Any]:
+        """Default order book fetch using ccxt."""
+        try:
+            if not self.exchange:
+                return {}
+            market_id = await self._get_market_id(symbol)
+            return await self.exchange.fetch_order_book(market_id, limit)
+        except Exception:
+            return {}

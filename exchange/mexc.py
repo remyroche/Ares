@@ -20,6 +20,9 @@ from src.utils.logger import system_logger
 
 from .base_exchange import BaseExchange
 
+import json
+import websockets
+
 logger = logging.getLogger(__name__)
 
 
@@ -130,6 +133,7 @@ class MexcExchange(BaseExchange):
         except Exception as e:
             logger.error(f"Error fetching klines from MEXC for {symbol}: {e}")
             return []
+
 
     @retry_on_rate_limit()
     @handle_network_operations(max_retries=3, default_return=[])
@@ -1377,8 +1381,116 @@ class MexcExchange(BaseExchange):
         return await self.cancel_order(symbol, order_id)
 
     async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Get raw order status from exchange."""
-        return await self.get_order_status(symbol, order_id)
+        """
+        Get raw order status from exchange.
+        Must be implemented by subclasses.
+        """
+        try:
+            market_id = await self._get_market_id(symbol)
+            return await self.exchange.fetch_order(order_id, market_id)
+        except Exception as e:
+            logger.error(
+                f"Failed to get status for order {order_id} on MEXC {symbol}: {e}",
+            )
+            return {"error": str(e)}
+
+    # --- Streaming hooks (standardized) ---
+    async def subscribe_trades(self, symbol: str, callback):
+        market_id = await self._get_market_id(symbol)
+        # MEXC futures (contract) WS API v1
+        url = "wss://contract.mexc.com/ws"
+        sub = {"method": "sub.deal", "params": [market_id]}
+
+        async def _run():
+            while True:
+                try:
+                    async with websockets.connect(url) as ws:
+                        await ws.send(json.dumps(sub))
+                        async for raw in ws:
+                            try:
+                                msg = json.loads(raw)
+                                if msg.get("channel") == "push.deal" and msg.get("symbol") == market_id:
+                                    for t in msg.get("data", []):
+                                        std = {
+                                            "type": "trade",
+                                            "symbol": symbol,
+                                            "price": float(t.get("p")),
+                                            "qty": float(t.get("v")),
+                                            "side": "buy" if t.get("T") == 1 else "sell",
+                                            "timestamp": int(t.get("t", 0)),
+                                        }
+                                        await callback(std)
+                            except Exception:
+                                continue
+                except Exception:
+                    await asyncio.sleep(3)
+        import asyncio
+        await _run()
+
+    async def subscribe_ticker(self, symbol: str, callback):
+        market_id = await self._get_market_id(symbol)
+        url = "wss://contract.mexc.com/ws"
+        sub = {"method": "sub.ticker", "params": [market_id]}
+
+        async def _run():
+            while True:
+                try:
+                    async with websockets.connect(url) as ws:
+                        await ws.send(json.dumps(sub))
+                        async for raw in ws:
+                            try:
+                                msg = json.loads(raw)
+                                if msg.get("channel") == "push.ticker" and msg.get("symbol") == market_id:
+                                    t = msg.get("data", {})
+                                    std = {
+                                        "type": "ticker",
+                                        "symbol": symbol,
+                                        "last": float(t.get("lastPrice")) if t.get("lastPrice") is not None else None,
+                                        "bid": float(t.get("bid1")) if t.get("bid1") is not None else None,
+                                        "ask": float(t.get("ask1")) if t.get("ask1") is not None else None,
+                                        "timestamp": int(t.get("time", 0)),
+                                    }
+                                    await callback(std)
+                            except Exception:
+                                continue
+                except Exception:
+                    await asyncio.sleep(3)
+        import asyncio
+        await _run()
+
+    async def subscribe_order_book(self, symbol: str, callback):
+        market_id = await self._get_market_id(symbol)
+        url = "wss://contract.mexc.com/ws"
+        sub = {"method": "sub.depth", "params": [market_id]}
+
+        async def _run():
+            while True:
+                try:
+                    async with websockets.connect(url) as ws:
+                        await ws.send(json.dumps(sub))
+                        async for raw in ws:
+                            try:
+                                msg = json.loads(raw)
+                                if msg.get("channel") == "push.depth" and msg.get("symbol") == market_id:
+                                    d = msg.get("data", {})
+                                    bids = d.get("bids") or []
+                                    asks = d.get("asks") or []
+                                    best_bid = float(bids[0][0]) if bids else None
+                                    best_ask = float(asks[0][0]) if asks else None
+                                    std = {
+                                        "type": "order_book",
+                                        "symbol": symbol,
+                                        "bid": best_bid,
+                                        "ask": best_ask,
+                                        "timestamp": int(d.get("t", 0)),
+                                    }
+                                    await callback(std)
+                            except Exception:
+                                continue
+                except Exception:
+                    await asyncio.sleep(3)
+        import asyncio
+        await _run()
 
     async def get_historical_agg_trades_ccxt(
         self,

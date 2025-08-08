@@ -495,7 +495,7 @@ pipeline_status = live_pipeline.get_trading_status()
 python live_trading_integration_verifier.py
 
 # Test individual components
-python -c "from src.exchange.binance import BinanceExchange; print('Exchange OK')"
+python -c "from exchange.factory import ExchangeFactory; print('Factory OK')"
 python -c "from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator; print('Feature Engineering OK')"
 python -c "from src.analyst.analyst import Analyst; print('Analyst OK')"
 python -c "from src.tactician.tactician import Tactician; print('Tactician OK')"

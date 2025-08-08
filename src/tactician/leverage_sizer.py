@@ -58,12 +58,7 @@ class LeverageSizer:
 
         self.is_initialized: bool = False
         self.leverage_sizing_history: list[dict[str, Any]] = []
-        # Smoothing and governance
-        self._last_leverage: float | None = None
-        self._last_update_ts: float | None = None
-        self.smoothing_alpha: float = float(self.leverage_config.get("smoothing_alpha", 0.3))
-        self.min_step: float = float(self.leverage_config.get("min_step", 2.0))
-        self.cooldown_seconds: float = float(self.leverage_config.get("cooldown_seconds", 15.0))
+        
 
     @handle_specific_errors(
         error_handlers={
@@ -368,27 +363,9 @@ class LeverageSizer:
                 elif stress_level >= 0.4:
                     adjusted = min(adjusted, self.max_leverage * 0.6)
 
-            # Clamp to global bounds
+            # Clamp to global bounds and return
             adjusted = max(self.min_leverage, min(self.max_leverage, adjusted))
-
-            # Smoothing (EMA) and minimum step to avoid oscillations
-            now_ts = datetime.utcnow().timestamp()
-            if self._last_leverage is not None:
-                # Enforce cooldown between changes
-                if self._last_update_ts and (now_ts - self._last_update_ts) < self.cooldown_seconds:
-                    adjusted = self._last_leverage
-                else:
-                    ema = self.smoothing_alpha * adjusted + (1 - self.smoothing_alpha) * self._last_leverage
-                    # Enforce minimum step size
-                    if abs(ema - self._last_leverage) < self.min_step:
-                        adjusted = self._last_leverage
-                    else:
-                        adjusted = ema
-            # Record
-            self._last_leverage = float(adjusted)
-            self._last_update_ts = now_ts
-
-            return float(adjusted)
+            return adjusted
         except Exception as e:
             self.logger.error(f"Error applying leverage guards: {e}")
             return max(self.min_leverage, min(self.max_leverage, proposed_leverage))

@@ -24,9 +24,10 @@ class DatabaseConfig(TypedDict, total=False):
 
 class ExchangeConfig(TypedDict, total=False):
     """Type-safe exchange configuration."""
-    name: Literal["binance", "coinbase", "kraken", "bybit"]
+    name: Literal["binance", "gateio", "mexc", "okx", "coinbase", "kraken", "bybit"]
     api_key: str
     api_secret: str
+    password: Optional[str]
     sandbox: bool
     testnet: bool
     rate_limit: Optional[int]

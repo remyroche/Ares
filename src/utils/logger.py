@@ -13,6 +13,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+# Set root logger to DEBUG at import time
+logging.basicConfig(level=logging.DEBUG)
+logging.getLogger().setLevel(logging.DEBUG)
+print(f"[DEBUG] Root logger level: {logging.getLogger().level}")
+
 
 class EnhancedLogger:
     """

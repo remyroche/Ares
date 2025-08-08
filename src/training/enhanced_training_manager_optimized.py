@@ -535,7 +535,7 @@ class EnhancedTrainingManagerOptimized:
         self.calibration_systems = {}
         
     def _load_optimization_config(self):
-        """Load optimization configuration."""
+        """Load optimization configuration from enhanced_training_manager_optimized."""
         # Caching configuration
         caching_config = self.optimization_config.get("caching", {})
         self.enable_caching = caching_config.get("enabled", True)
@@ -559,6 +559,11 @@ class EnhancedTrainingManagerOptimized:
         self.enable_memory_management = memory_config.get("enabled", True)
         self.memory_threshold = memory_config.get("memory_threshold", 0.8)
         self.cleanup_frequency = memory_config.get("cleanup_frequency", 100)
+        
+        # Streaming output configuration
+        streaming_config = self.optimization_config.get("streaming", {})
+        # If true, write streamed chunks directly to final parquet (no tmp consolidation)
+        self.stream_direct_to_final = streaming_config.get("direct_to_final", False)
         
         self.logger.info("Loaded optimization configuration")
     
@@ -651,23 +656,27 @@ class EnhancedTrainingManagerOptimized:
             
             if csv_files:
                 self.logger.info(f"Loading and streaming data from {len(csv_files)} CSV files")
-                # Use streaming iterator for large datasets and write incrementally to Parquet
-                tmp_parquet_path = f"{parquet_path}.tmp"
-                # Stream each CSV and write incrementally
-                for csv_file in csv_files:
-                    chunks_iter = self.streaming_processor.process_data_stream(str(csv_file))
-                    self.streaming_processor.write_incremental_parquet(chunks_iter, tmp_parquet_path)
-                # Load consolidated Parquet once
-                data = pd.read_parquet(tmp_parquet_path)
-                # Save optimized version as Parquet for future use
-                optimized_data = self.data_manager.optimize_dataframe(data)
-                self.data_manager.save_to_parquet(optimized_data, parquet_path)
-                # Remove tmp file
-                try:
-                    Path(tmp_parquet_path).unlink(missing_ok=True)
-                except Exception:
-                    pass
-                data = optimized_data
+                if self.stream_direct_to_final:
+                    # Stream directly to final Parquet file (lower disk usage, less atomic)
+                    for csv_file in csv_files:
+                        chunks_iter = self.streaming_processor.process_data_stream(str(csv_file))
+                        self.streaming_processor.write_incremental_parquet(chunks_iter, parquet_path)
+                    data = pd.read_parquet(parquet_path)
+                else:
+                    # Use tmp consolidation for safer finalize
+                    tmp_parquet_path = f"{parquet_path}.tmp"
+                    for csv_file in csv_files:
+                        chunks_iter = self.streaming_processor.process_data_stream(str(csv_file))
+                        self.streaming_processor.write_incremental_parquet(chunks_iter, tmp_parquet_path)
+                    data = pd.read_parquet(tmp_parquet_path)
+                    # Save optimized version as Parquet for future use
+                    optimized_data = self.data_manager.optimize_dataframe(data)
+                    self.data_manager.save_to_parquet(optimized_data, parquet_path)
+                    try:
+                        Path(tmp_parquet_path).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    data = optimized_data
             else:
                 raise FileNotFoundError(f"No data found for {symbol} on {exchange}")
         
@@ -847,9 +856,6 @@ class EnhancedTrainingManagerOptimized:
     
     async def _parallel_ensemble_creation(self, model_results: Dict[str, Any]) -> Dict[str, Any]:
         """Parallel ensemble creation."""
-        if not self.parallel_backtester:
-            self.parallel_backtester = ParallelBacktester(n_workers=self.max_workers)
-        
         # Create ensemble parameters for parallel evaluation
         ensemble_params = [
             {'model_type': 'xgb', 'weight': 0.4},
@@ -863,16 +869,16 @@ class EnhancedTrainingManagerOptimized:
             'volume': np.random.randn(1000)
         })
         
-        # Parallel evaluation
-        ensemble_scores = self.parallel_backtester.evaluate_batch(
-            ensemble_params, dummy_data
-        )
+        # Parallel evaluation with context manager for robust cleanup
+        with ParallelBacktester(n_workers=self.max_workers) as pb:
+            ensemble_scores = pb.evaluate_batch(
+                ensemble_params, dummy_data
+            )
         
         return {
             'status': 'success',
             'ensemble_models': len(ensemble_params),
             'ensemble_scores': ensemble_scores,
-            'parallel_workers': self.max_workers
         }
     
     def get_memory_profile(self) -> Dict[str, Any]:

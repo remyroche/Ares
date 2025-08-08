@@ -1380,16 +1380,17 @@ class EnhancedTrainingManager:
             
             # Use parallel backtester if enabled
             optimization_results = {}
-            if self.enable_parallelization and self.parallel_backtester:
+            if self.enable_parallelization:
                 self.logger.info("🔄 Using parallel backtesting for optimization...")
                 
                 # Generate parameter combinations for parallel evaluation
                 param_combinations = self._generate_parameter_combinations()
                 
-                # Run parallel backtesting
-                parallel_results = self.parallel_backtester.evaluate_batch(
-                    param_combinations, market_data
-                )
+                # Run parallel backtesting with context manager
+                with ParallelBacktester(n_workers=self.max_workers) as pb:
+                    parallel_results = pb.evaluate_batch(
+                        param_combinations, market_data
+                    )
                 
                 # Find best parameters from parallel results
                 if parallel_results:

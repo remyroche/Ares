@@ -137,7 +137,7 @@ optimizer = DataEfficiencyOptimizer(
 )
 
 # Load data with modern caching
-data = await optimizer.load_data_with_caching(lookback_days=30)
+data = await optimizer.load_data_with_caching(lookback_days=60)
 
 # Store features in wide format
 optimizer.store_features_in_database(features_df, "technical")

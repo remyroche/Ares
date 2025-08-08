@@ -16,6 +16,8 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.preprocessing import StandardScaler
 import joblib
+import mlflow
+from src.utils.mlflow_utils import log_training_metadata_to_mlflow
 
 from src.utils.error_handler import (
     handle_errors,
@@ -230,6 +232,7 @@ class RayModelTrainer:
         """
         Train all required models based on configuration using Ray.
         If use_hpo is True, run Optuna HPO before final model training.
+        Logs all training runs to MLflow.
         """
         try:
             self.logger.info("🚀 Starting Ray-based model training...")
@@ -239,34 +242,50 @@ class RayModelTrainer:
             training_data = self._prepare_training_data(training_input)
             if training_data is None:
                 return None
-            # HPO integration
             best_params = None
-            if use_hpo:
-                self.logger.info("🔍 Running Optuna HPO before model training...")
-                tactician_data = training_data.get("tactician_1m")
-                if tactician_data is None:
-                    self.logger.error("No tactician_1m data for HPO.")
-                    return None
-                X = tactician_data.features
-                y = tactician_data.labels
-                hpo_manager = AdvancedOptunaManager()
-                hpo_result = hpo_manager.optimize(
+            hpo_result = None
+            with mlflow.start_run() as run:
+                # Log training metadata
+                log_training_metadata_to_mlflow(
+                    symbol=training_input.get("symbol", "ETHUSDT"),
+                    timeframe="1m",
                     model_type=hpo_model_type,
-                    X=X,
-                    y=y,
-                    n_trials=hpo_trials,
-                    cv_folds=5,
-                    early_stopping_patience=10
+                    run_id=run.info.run_id
                 )
-                best_params = hpo_result.get("best_params")
-                self.logger.info(f"Optuna HPO best params: {best_params}")
-            # Pass best_params to model training (if found)
-            # (You may need to update _train_models_with_ray and _train_single_model_remote to accept and use best_params)
-            training_results = self._train_models_with_ray(training_data, training_input, best_params=best_params)
-            self._store_trained_models(training_results)
-            self.is_training = False
-            self.logger.info("✅ Ray-based model training completed successfully")
-            return training_results
+                if use_hpo:
+                    self.logger.info("🔍 Running Optuna HPO before model training...")
+                    tactician_data = training_data.get("tactician_1m")
+                    if tactician_data is None:
+                        self.logger.error("No tactician_1m data for HPO.")
+                        return None
+                    X = tactician_data.features
+                    y = tactician_data.labels
+                    hpo_manager = AdvancedOptunaManager()
+                    hpo_result = hpo_manager.optimize(
+                        model_type=hpo_model_type,
+                        X=X,
+                        y=y,
+                        n_trials=hpo_trials,
+                        cv_folds=5,
+                        early_stopping_patience=10
+                    )
+                    best_params = hpo_result.get("best_params")
+                    mlflow.log_params(best_params)
+                    self.logger.info(f"Optuna HPO best params: {best_params}")
+                training_results = self._train_models_with_ray(training_data, training_input, best_params=best_params)
+                self._store_trained_models(training_results)
+                # Log model metrics and artifacts
+                tactician_models = training_results.get("tactician_models", {})
+                for tf, result in tactician_models.items():
+                    if result["training_status"] == "completed":
+                        mlflow.log_metrics(result["model_metrics"], step=0)
+                        if "model_path" in result:
+                            mlflow.log_artifact(result["model_path"])
+                        if "scaler_path" in result:
+                            mlflow.log_artifact(result["scaler_path"])
+                self.is_training = False
+                self.logger.info("✅ Ray-based model training completed successfully")
+                return training_results
         except Exception as e:
             self.logger.error(f"❌ Ray-based model training failed: {e}")
             self.is_training = False

@@ -57,304 +57,8 @@ from src.training.enhanced_training_manager_optimized import (
 )
 
 from contextlib import contextmanager
-import numpy as np
 
 
-# === Optimization helper classes (ported from optimized manager) ===
-class CachedBacktester:
-    """Cached backtesting to avoid redundant calculations."""
-
-    def __init__(self, market_data: pd.DataFrame):
-        self.market_data = market_data
-        self.cache: dict[str, float] = {}
-        self.technical_indicators = self._precompute_indicators()
-        self.logger = system_logger.getChild("CachedBacktester")
-
-    def _precompute_indicators(self) -> dict[str, np.ndarray]:
-        indicators: dict[str, np.ndarray] = {}
-        if 'close' in self.market_data:
-            indicators['sma_20'] = self.market_data['close'].rolling(20).mean().values
-            indicators['sma_50'] = self.market_data['close'].rolling(50).mean().values
-            indicators['ema_12'] = self.market_data['close'].ewm(span=12).mean().values
-            indicators['ema_26'] = self.market_data['close'].ewm(span=26).mean().values
-            delta = self.market_data['close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-            rs = gain / (loss.replace(0, np.nan))
-            indicators['rsi'] = (100 - (100 / (1 + rs))).fillna(50).values
-            high_low = self.market_data.get('high', pd.Series(index=self.market_data.index)).fillna(0) - self.market_data.get('low', pd.Series(index=self.market_data.index)).fillna(0)
-            high_close = (self.market_data.get('high', pd.Series(index=self.market_data.index)).fillna(0) - self.market_data.get('close', pd.Series(index=self.market_data.index)).shift()).abs()
-            low_close = (self.market_data.get('low', pd.Series(index=self.market_data.index)).fillna(0) - self.market_data.get('close', pd.Series(index=self.market_data.index)).shift()).abs()
-            tr = np.maximum(high_low.values, np.maximum(high_close.values, low_close.values))
-            indicators['atr'] = pd.Series(tr, index=self.market_data.index).rolling(window=14).mean().fillna(0).values
-            indicators['volatility'] = self.market_data['close'].pct_change().rolling(20).std().fillna(0).values
-        if 'volume' in self.market_data:
-            indicators['volume_sma'] = self.market_data['volume'].rolling(20).mean().fillna(0).values
-        self.logger.info(f"Precomputed {len(indicators)} technical indicators")
-        return indicators
-
-    def run_cached_backtest(self, params: dict[str, Any]) -> float:
-        cache_key = str(hash(frozenset(params.items())))
-        if cache_key in self.cache:
-            return self.cache[cache_key]
-        result = self._run_simplified_backtest(params)
-        self.cache[cache_key] = result
-        return result
-
-    def _run_simplified_backtest(self, params: dict[str, Any]) -> float:
-        # Placeholder for actual backtest logic using precomputed indicators
-        return random.uniform(-1.0, 1.0)
-
-
-class ProgressiveEvaluator:
-    """Progressive evaluation to stop unpromising trials early."""
-
-    def __init__(self, full_data: pd.DataFrame):
-        self.full_data = full_data
-        self.evaluation_stages: list[tuple[float, float]] = [
-            (0.1, 0.3),
-            (0.3, 0.5),
-            (1.0, 1.0),
-        ]
-        self.logger = system_logger.getChild("ProgressiveEvaluator")
-
-    def evaluate_progressively(self, params: dict[str, Any], evaluator_func) -> float:
-        total_score = 0.0
-        total_weight = 0.0
-        for data_ratio, weight in self.evaluation_stages:
-            subset_size = max(1, int(len(self.full_data) * data_ratio))
-            subset_data = self.full_data.iloc[:subset_size]
-            score = evaluator_func(subset_data, params)
-            total_score += score * weight
-            total_weight += weight
-            if data_ratio < 1.0 and score < -0.5:
-                self.logger.info(f"Early stopping at {data_ratio*100:.0f}% data due to poor performance")
-                return -1.0
-        return total_score / max(total_weight, 1e-9)
-
-
-class ParallelBacktester:
-    """Parallel backtesting for multiple parameter combinations."""
-
-    def __init__(self, n_workers: int | None = None):
-        self.n_workers = n_workers or min(mp.cpu_count() or 1, 8)
-        self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
-        self.logger = system_logger.getChild("ParallelBacktester")
-
-    def evaluate_batch(self, param_batch: list[dict[str, Any]], market_data: pd.DataFrame) -> list[float]:
-        data_pickle = pickle.dumps(market_data)
-        futures = [
-            self.executor.submit(self._evaluate_single_params, data_pickle, params)
-            for params in param_batch
-        ]
-        results = [future.result() for future in futures]
-        self.logger.info(f"Evaluated {len(results)} parameter sets in parallel")
-        return results
-
-    @staticmethod
-    def _evaluate_single_params(data_pickle: bytes, params: dict[str, Any]) -> float:
-        _ = pickle.loads(data_pickle)
-        return random.uniform(-1.0, 1.0)
-
-    def shutdown(self) -> None:
-        if hasattr(self, 'executor') and self.executor:
-            self.executor.shutdown(wait=True)
-
-
-class IncrementalTrainer:
-    """Incremental training to reuse model states."""
-
-    def __init__(self, base_model_config: dict[str, Any]):
-        self.base_config = base_model_config
-        self.model_cache: dict[str, Any] = {}
-        self.logger = system_logger.getChild("IncrementalTrainer")
-
-    def train_incrementally(self, params: dict[str, Any], X: np.ndarray, y: np.ndarray) -> Any:
-        model_key = self._generate_model_key(params)
-        if model_key in self.model_cache:
-            model = self.model_cache[model_key]
-            self.logger.info("Continuing training from cached model state")
-        else:
-            model = self._create_model(params)
-            self.logger.info("Training new model")
-            self.model_cache[model_key] = model
-        return model
-
-    def _generate_model_key(self, params: dict[str, Any]) -> str:
-        core_params = {
-            'max_depth': params.get('max_depth'),
-            'learning_rate': params.get('learning_rate'),
-            'subsample': params.get('subsample'),
-            'colsample_bytree': params.get('colsample_bytree'),
-        }
-        return str(hash(frozenset(core_params.items())))
-
-    def _create_model(self, params: dict[str, Any]) -> Any:
-        # Placeholder - implement model creation as needed
-        return None
-
-
-class StreamingDataProcessor:
-    """Streaming processor for large datasets."""
-
-    def __init__(self, chunk_size: int = 10000):
-        self.chunk_size = chunk_size
-        self.logger = system_logger.getChild("StreamingDataProcessor")
-
-    def process_data_stream(self, data_path: str) -> pd.DataFrame:
-        try:
-            if data_path.endswith('.parquet'):
-                return self._process_parquet_stream(data_path)
-            elif data_path.endswith('.csv'):
-                return self._process_csv_stream(data_path)
-            else:
-                raise ValueError(f"Unsupported file format: {data_path}")
-        except Exception as e:
-            self.logger.error(f"Error processing data stream: {e}")
-            raise
-
-    def _process_parquet_stream(self, file_path: str) -> pd.DataFrame:
-        chunks: list[pd.DataFrame] = []
-        if pq is None:
-            self.logger.warning("pyarrow not available; falling back to standard read_parquet")
-            try:
-                return pd.read_parquet(file_path)
-            except Exception as e:
-                self.logger.error(f"Failed to read parquet without pyarrow: {e}")
-                return pd.DataFrame()
-        parquet_file = pq.ParquetFile(file_path)  # type: ignore
-        for batch in parquet_file.iter_batches(batch_size=self.chunk_size):
-            chunk = batch.to_pandas()
-            chunks.append(chunk)
-        self.logger.info(f"Processed {len(chunks)} chunks from Parquet file")
-        return pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
-
-    def _process_csv_stream(self, file_path: str) -> pd.DataFrame:
-        chunks: list[pd.DataFrame] = []
-        for chunk in pd.read_csv(file_path, chunksize=self.chunk_size):
-            chunks.append(chunk)
-        self.logger.info(f"Processed {len(chunks)} chunks from CSV file")
-        return pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
-
-
-class AdaptiveSampler:
-    """Adaptive sampling to focus on promising regions."""
-
-    def __init__(self, initial_samples: int = 100):
-        self.initial_samples = initial_samples
-        self.promising_regions: list[dict[str, Any]] = []
-        self.trial_history: list[dict[str, Any]] = []
-        self.logger = system_logger.getChild("AdaptiveSampler")
-
-    def suggest_parameters(self, parameter_bounds: dict[str, tuple[float, float]]) -> dict[str, Any]:
-        if len(self.trial_history) < self.initial_samples:
-            return self._random_sampling(parameter_bounds)
-        return self._adaptive_sampling(parameter_bounds)
-
-    def update_trial_history(self, params: dict[str, Any], score: float) -> None:
-        self.trial_history.append({'params': params, 'score': score})
-
-    def _adaptive_sampling(self, parameter_bounds: dict[str, tuple[float, float]]) -> dict[str, Any]:
-        sorted_trials = sorted(self.trial_history, key=lambda x: x['score'], reverse=True)
-        top_quartile = sorted_trials[: max(1, len(sorted_trials)//4)]
-        if not top_quartile:
-            return self._random_sampling(parameter_bounds)
-        reference_trial = random.choice(top_quartile)
-        return self._perturb_parameters(reference_trial['params'], parameter_bounds)
-
-    def _random_sampling(self, parameter_bounds: dict[str, tuple[float, float]]) -> dict[str, Any]:
-        params: dict[str, Any] = {}
-        for name, (min_val, max_val) in parameter_bounds.items():
-            params[name] = random.uniform(min_val, max_val)
-        return params
-
-    def _perturb_parameters(self, base_params: dict[str, Any], parameter_bounds: dict[str, tuple[float, float]]) -> dict[str, Any]:
-        perturbed: dict[str, Any] = {}
-        perturbation_factor = 0.1
-        for name, base_value in base_params.items():
-            if name in parameter_bounds:
-                min_val, max_val = parameter_bounds[name]
-                range_val = max_val - min_val
-                noise = random.uniform(-perturbation_factor, perturbation_factor) * range_val
-                new_value = float(np.clip(base_value + noise, min_val, max_val))
-                perturbed[name] = new_value
-            else:
-                perturbed[name] = base_value
-        return perturbed
-
-
-class MemoryEfficientDataManager:
-    """Memory-efficient data structures for large datasets."""
-
-    def __init__(self):
-        self.logger = system_logger.getChild("MemoryEfficientDataManager")
-
-    def optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
-        for col in df.select_dtypes(include=['float64']).columns:
-            df[col] = pd.to_numeric(df[col], downcast='float')
-        for col in df.select_dtypes(include=['int64']).columns:
-            df[col] = pd.to_numeric(df[col], downcast='integer')
-        for col in df.select_dtypes(include=['object']).columns:
-            try:
-                if len(df) > 0 and (df[col].nunique() / max(len(df), 1)) < 0.5:
-                    df[col] = df[col].astype('category')
-            except Exception:
-                pass
-        self.logger.info("Optimized DataFrame memory usage")
-        return df
-
-    def save_to_parquet(self, df: pd.DataFrame, file_path: str, compression: str = 'snappy') -> None:
-        df.to_parquet(file_path, compression=compression, index=False)
-        self.logger.info(f"Saved DataFrame to Parquet: {file_path}")
-
-    def load_from_parquet(self, file_path: str) -> pd.DataFrame:
-        df = pd.read_parquet(file_path)
-        self.logger.info(f"Loaded DataFrame from Parquet: {file_path}")
-        return df
-
-
-class MemoryManager:
-    """Manage memory usage during optimization."""
-
-    def __init__(self, memory_threshold: float = 0.8):
-        self.memory_threshold = memory_threshold
-        self.logger = system_logger.getChild("MemoryManager")
-        self.cleanup_counter = 0
-
-    def check_memory_usage(self) -> bool:
-        memory_percent = psutil.virtual_memory().percent / 100.0
-        if memory_percent > self.memory_threshold:
-            self.logger.warning(f"Memory usage high: {memory_percent:.1%}")
-            self._cleanup_memory()
-            return True
-        return False
-
-    def _cleanup_memory(self) -> None:
-        self.cleanup_counter += 1
-        self.logger.info(f"Performing memory cleanup #{self.cleanup_counter}")
-        gc.collect()
-        self.logger.info(f"Memory usage after cleanup: {psutil.virtual_memory().percent:.1%}")
-
-    def profile_memory_usage(self) -> dict[str, float]:
-        memory_info = psutil.virtual_memory()
-        return {
-            'total_gb': memory_info.total / (1024**3),
-            'available_gb': memory_info.available / (1024**3),
-            'used_gb': memory_info.used / (1024**3),
-            'percentage': float(memory_info.percent),
-        }
-
-    def get_memory_usage(self) -> float:
-        """Return current memory usage as a fraction (0.0 - 1.0)."""
-        try:
-            return psutil.virtual_memory().percent / 100.0
-        except Exception as e:
-            self.logger.warning(f"Could not get memory usage: {e}")
-            return 0.0
-
-    def cleanup_memory(self) -> None:
-        """Public wrapper to trigger memory cleanup."""
-        self._cleanup_memory()
 
 
 class EnhancedTrainingManager:
@@ -443,6 +147,7 @@ class EnhancedTrainingManager:
         self.memory_threshold: float = optimization_root.get("memory_threshold", 0.8)
 
         # Optimization components (lazy init)
+        # Using classes from enhanced_training_manager_optimized
         self.cached_backtester: CachedBacktester | None = None
         self.progressive_evaluator: ProgressiveEvaluator | None = None
         self.parallel_backtester: ParallelBacktester | None = None
@@ -455,8 +160,7 @@ class EnhancedTrainingManager:
         # Checkpointing configuration
         self.checkpoint_dir = Path("checkpoints")
         self.checkpoint_dir.mkdir(exist_ok=True)
-        # Note: final names are namespaced per symbol/exchange/timeframe at save-time
-        self.checkpoint_file = self.checkpoint_dir / "training_progress.json"
+        # Note: final paths are namespaced per symbol/exchange/timeframe at save-time
         self.enable_checkpointing = self.enhanced_training_config.get("enable_checkpointing", True)
         
         # Initialize optimized tools from enhanced_training_manager_optimized
@@ -475,6 +179,9 @@ class EnhancedTrainingManager:
         
         # Initialize the underlying optimized training manager for advanced operations
         self.optimized_manager = EnhancedTrainingManagerOptimized(config)
+        
+        # Logging verbosity
+        self.verbosity: str = self.enhanced_training_config.get("verbosity", "info")  # "info" or "debug"
         
     def _load_optimization_config(self):
         """Load optimization configuration from enhanced_training_manager_optimized."""
@@ -771,8 +478,8 @@ class EnhancedTrainingManager:
             self.logger.info(f"🧹 Memory optimization: {after_memory:.1f} MB after cleanup (saved {memory_saved:.1f} MB)")
             
             if memory_saved > 10:  # If we saved more than 10MB
-                print(f"   🧹 Memory optimization saved {memory_saved:.1f} MB")
-                
+                self.logger.info(f"   🧹 Memory optimization saved {memory_saved:.1f} MB")
+            
         except Exception as e:
             self.logger.warning(f"Memory optimization failed: {e}")
     
@@ -799,18 +506,18 @@ class EnhancedTrainingManager:
             elapsed_time: Time elapsed so far
         """
         progress = self._get_progress_percentage(current_step, total_steps)
-        
-        if elapsed_time > 0 and current_step > 0:
-            # Estimate remaining time based on current progress
-            estimated_total_time = (elapsed_time / current_step) * total_steps
-            remaining_time = estimated_total_time - elapsed_time
-            eta_minutes = remaining_time / 60
-            
-            self.logger.info(f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
-            self.logger.info(f"⏱️ Elapsed: {elapsed_time/60:.1f} min | ETA: {eta_minutes:.1f} min")
+        if elapsed_time > 0:
+            avg_time = elapsed_time / max(current_step, 1)
+            remaining_steps = total_steps - current_step
+            eta_minutes = (avg_time * remaining_steps) / 60
+        else:
+            eta_minutes = 0
+        if self.verbosity == "debug":
+            self.logger.debug(f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
+            self.logger.debug(f"⏱️ Elapsed: {elapsed_time/60:.1f} min | ETA: {eta_minutes:.1f} min")
         else:
             self.logger.info(f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
-        
+    
     def _log_step_completion(self, step_name: str, step_start: float, step_times: dict, success: bool = True) -> None:
         """
         Log step completion with timing and memory usage.
@@ -908,16 +615,8 @@ class EnhancedTrainingManager:
             if self.enable_computational_optimization:
                 await self._initialize_computational_optimization()
 
-            # Initialize optimization components
-            self.data_manager = MemoryEfficientDataManager()
-            self.streaming_processor = StreamingDataProcessor(chunk_size=self.chunk_size)
-            if self.enable_memory_management:
-                self.memory_manager = MemoryManager(memory_threshold=self.memory_threshold)
-            if self.enable_parallelization:
-                self.parallel_backtester = ParallelBacktester(n_workers=self.max_workers)
-            self.adaptive_sampler = AdaptiveSampler()
-            self.incremental_trainer = IncrementalTrainer(self.config.get("model", {}))
-            
+            # Optimization components are initialized in _initialize_optimized_tools()
+            # to ensure a single, consistent initialization path.
             self.logger.info("✅ Enhanced Training Manager initialized successfully")
             return True
             
@@ -1034,11 +733,6 @@ class EnhancedTrainingManager:
                 self.logger.info("   14. Monte Carlo Validation")
                 self.logger.info("   15. A/B Testing")
                 self.logger.info("   16. Saving Results")
-                
-                print("=" * 80)
-                print("🎉 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY")
-                print("=" * 80)
-                print("   ✅ All 16 training steps completed successfully!")
             else:
                 self.logger.error("❌ Enhanced training pipeline failed")
             
@@ -1199,22 +893,18 @@ class EnhancedTrainingManager:
                 if market_data is not None and not market_data.empty:
                     pipeline_state["market_data"] = market_data
                     self.logger.info(f"   ✅ Data loaded: {len(market_data)} rows")
-                    print(f"   ✅ Data loaded: {len(market_data)} rows")
                     
                     # Initialize cached backtester with the data
                     if self.enable_caching:
                         self.cached_backtester = CachedBacktester(market_data)
                         self.logger.info("   ✅ Cached backtester initialized")
-                        print("   ✅ Cached backtester initialized")
                     
                     # Initialize progressive evaluator for early stopping
                     if self.enable_early_stopping:
                         self.progressive_evaluator = ProgressiveEvaluator(market_data)
                         self.logger.info("   ✅ Progressive evaluator initialized")
-                        print("   ✅ Progressive evaluator initialized")
                 else:
                     self.logger.error("   ❌ Failed to load market data")
-                    print("   ❌ Failed to load market data")
                     return False
                 
                 # Save checkpoint after data collection
@@ -1265,8 +955,6 @@ class EnhancedTrainingManager:
             step_start = time.time()
             self.logger.info("📊 STEP 3: Regime Data Splitting...")
             self.logger.info("   📈 Splitting data by market regimes for specialized training...")
-            print("   📊 Step 3: Regime Data Splitting...")
-            print("   📈 Splitting data by market regimes for specialized training...")
             
             from src.training.steps import step3_regime_data_splitting
             step3_success = await step3_regime_data_splitting.run_step(
@@ -1370,7 +1058,6 @@ class EnhancedTrainingManager:
             
             if not step7_success:
                 self.logger.error("❌ Step 7: Analyst Ensemble Creation failed")
-                print("❌ Step 7: Analyst Ensemble Creation failed")
                 return False
             
             self.logger.info("✅ Step 7: Analyst Ensemble Creation completed successfully")
@@ -1602,38 +1289,31 @@ class EnhancedTrainingManager:
             # Initialize the underlying optimized training manager
             await self.optimized_manager.initialize()
             self.logger.info("   ✅ Optimized training manager initialized")
-            print("   ✅ Optimized training manager initialized")
             
             # Initialize streaming processor
             if self.chunk_size:
                 self.streaming_processor = StreamingDataProcessor(chunk_size=self.chunk_size)
                 self.logger.info("   ✅ Streaming processor initialized")
-                print("   ✅ Streaming processor initialized")
             
             # Initialize parallel backtester if enabled
             if self.enable_parallelization:
                 self.parallel_backtester = ParallelBacktester(n_workers=self.max_workers)
                 self.logger.info(f"   ✅ Parallel backtester initialized with {self.max_workers} workers")
-                print(f"   ✅ Parallel backtester initialized with {self.max_workers} workers")
             
             # Initialize adaptive sampler
             self.adaptive_sampler = AdaptiveSampler()
             self.logger.info("   ✅ Adaptive sampler initialized")
-            print("   ✅ Adaptive sampler initialized")
             
             # Initialize incremental trainer
             base_model_config = self.config.get("model", {})
             self.incremental_trainer = IncrementalTrainer(base_model_config)
             self.logger.info("   ✅ Incremental trainer initialized")
-            print("   ✅ Incremental trainer initialized")
             
             self.logger.info("✅ All optimized tools initialized successfully")
-            print("✅ All optimized tools initialized successfully")
             return True
             
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize optimized tools: {e}")
-            print(f"❌ Failed to initialize optimized tools: {e}")
             return False
 
     @handle_errors(
@@ -1651,7 +1331,6 @@ class EnhancedTrainingManager:
         """Run optimized parameters optimization using computational optimization strategies."""
         try:
             self.logger.info("🚀 Running optimized parameters optimization with enhanced tools...")
-            print("   🚀 Running optimized parameters optimization with enhanced tools...")
             
             # Use optimized data loading from the optimized manager
             market_data = await self.optimized_manager._load_and_optimize_data(
@@ -1661,23 +1340,19 @@ class EnhancedTrainingManager:
             if market_data is None or market_data.empty:
 
                 self.logger.error("❌ Failed to load market data for optimization")
-                print("❌ Failed to load market data for optimization")
                 return False
             
             self.logger.info(f"✅ Loaded optimized market data: {len(market_data)} rows")
-            print(f"✅ Loaded optimized market data: {len(market_data)} rows")
             
             # Initialize cached backtester if not already done
             if self.enable_caching and self.cached_backtester is None:
                 self.cached_backtester = CachedBacktester(market_data)
                 self.logger.info("✅ Cached backtester initialized for optimization")
-                print("✅ Cached backtester initialized for optimization")
             
             # Initialize progressive evaluator if not already done
             if self.enable_early_stopping and self.progressive_evaluator is None:
                 self.progressive_evaluator = ProgressiveEvaluator(market_data)
                 self.logger.info("✅ Progressive evaluator initialized for optimization")
-                print("✅ Progressive evaluator initialized for optimization")
             
             # Define optimization objective function using cached backtester
             def optimization_objective(params):
@@ -1705,29 +1380,27 @@ class EnhancedTrainingManager:
             
             # Use parallel backtester if enabled
             optimization_results = {}
-            if self.enable_parallelization and self.parallel_backtester:
+            if self.enable_parallelization:
                 self.logger.info("🔄 Using parallel backtesting for optimization...")
-                print("🔄 Using parallel backtesting for optimization...")
                 
                 # Generate parameter combinations for parallel evaluation
                 param_combinations = self._generate_parameter_combinations()
                 
-                # Run parallel backtesting
-                parallel_results = self.parallel_backtester.evaluate_batch(
-                    param_combinations, market_data
-                )
+                # Run parallel backtesting with context manager
+                with ParallelBacktester(n_workers=self.max_workers) as pb:
+                    parallel_results = pb.evaluate_batch(
+                        param_combinations, market_data
+                    )
                 
                 # Find best parameters from parallel results
                 if parallel_results:
                     best_result = max(parallel_results, key=lambda x: x.get('score', -float('inf')))
                     optimization_results = best_result
                     self.logger.info(f"✅ Parallel optimization completed. Best score: {best_result.get('score', 'N/A')}")
-                    print(f"✅ Parallel optimization completed. Best score: {best_result.get('score', 'N/A')}")
             
             # Use progressive evaluation if enabled
             elif self.enable_early_stopping and self.progressive_evaluator:
                 self.logger.info("🔄 Using progressive evaluation for optimization...")
-                print("🔄 Using progressive evaluation for optimization...")
                 
                 # Run optimization with progressive evaluation
                 best_params = None
@@ -1746,7 +1419,6 @@ class EnhancedTrainingManager:
                         best_score = score
                         best_params = params
                         self.logger.info(f"📈 New best score: {score} at trial {trial + 1}")
-                        print(f"📈 New best score: {score} at trial {trial + 1}")
                 
                 optimization_results = {
                     'best_params': best_params,
@@ -1757,7 +1429,6 @@ class EnhancedTrainingManager:
             # Fallback to computational optimization manager
             else:
                 self.logger.info("🔄 Using standard computational optimization...")
-                print("🔄 Using standard computational optimization...")
                 
                 # Update computational optimization manager with market data
                 if self.computational_optimization_manager:
@@ -1786,28 +1457,24 @@ class EnhancedTrainingManager:
                     'trials_completed': optimization_results.get('trials_completed', self.n_trials),
                     'best_score': optimization_results.get('best_score', 0.0),
                     'cache_hits': getattr(self.cached_backtester, 'cache', {}) if self.cached_backtester else {},
-                    'memory_usage': self.memory_manager.get_memory_usage() if self.memory_manager else {}
+                    'memory_profile': self.memory_manager.profile_memory_usage() if self.memory_manager else {}
                 }
             
             # Perform memory cleanup if enabled
             if self.enable_memory_management:
+                # Check and cleanup if above threshold
                 self.memory_manager.check_memory_usage()
-                if self.memory_manager.get_memory_usage() > self.memory_threshold:
-                    self.memory_manager.cleanup_memory()
-                    self.logger.info("🧹 Memory cleanup performed")
-                    print("🧹 Memory cleanup performed")
+                self.logger.info("🧹 Memory cleanup check completed")
             
             # Save optimization results
             await self._save_optimization_results(symbol, exchange, data_dir, optimization_results)
             
             self.logger.info("✅ Enhanced optimized parameters optimization completed successfully")
-            print("✅ Enhanced optimized parameters optimization completed successfully")
 
             return True
 
         except Exception as e:
             self.logger.error(f"❌ Enhanced optimized parameters optimization failed: {e}")
-            print(f"❌ Enhanced optimized parameters optimization failed: {e}")
             return False
     
     def _generate_parameter_combinations(self) -> list[dict]:
@@ -1882,7 +1549,6 @@ class EnhancedTrainingManager:
                 
         except Exception as e:
             self.logger.error(f"❌ Failed to load market data: {e}")
-            print(f"❌ Failed to load market data: {e}")
             return None
 
     def _evaluate_params_with_cache(self, market_data: pd.DataFrame, params: dict[str, Any]) -> float:
@@ -2144,7 +1810,9 @@ class EnhancedTrainingManager:
 
             # Cleanup parallel backtester
             if self.parallel_backtester is not None:
-                self.parallel_backtester.shutdown()
+                shutdown = getattr(self.parallel_backtester, "shutdown", None)
+                if callable(shutdown):
+                    shutdown()
                 self.parallel_backtester = None
 
             # Force memory cleanup
@@ -2185,7 +1853,6 @@ class EnhancedTrainingManager:
         """Execute training using the optimized manager directly for advanced operations."""
         try:
             self.logger.info(f"🚀 Executing optimized training for {symbol} on {exchange}")
-            print(f"🚀 Executing optimized training for {symbol} on {exchange}")
             
             # Delegate to optimized manager
             result = await self.optimized_manager.execute_optimized_training(symbol, exchange, timeframe)
@@ -2198,7 +1865,6 @@ class EnhancedTrainingManager:
             
         except Exception as e:
             self.logger.error(f"❌ Optimized training execution failed: {e}")
-            print(f"❌ Optimized training execution failed: {e}")
             return {}
     
     def use_cached_backtesting(self, params: dict[str, Any]) -> float:
@@ -2225,12 +1891,10 @@ class EnhancedTrainingManager:
         """Initialize the enhanced training manager and all its components (auxiliary)."""
         try:
             self.logger.info("🚀 Initializing Enhanced Training Manager...")
-            print("🚀 Initializing Enhanced Training Manager...")
             
             # Initialize optimized tools first
             if not await self._initialize_optimized_tools():
                 self.logger.error("❌ Failed to initialize optimized tools")
-                print("❌ Failed to initialize optimized tools")
                 return False
             
             # Initialize computational optimization manager if enabled
@@ -2243,19 +1907,15 @@ class EnhancedTrainingManager:
                         {}
                     )
                     self.logger.info("✅ Computational optimization manager initialized")
-                    print("✅ Computational optimization manager initialized")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to initialize computational optimization manager: {e}")
-                    print(f"⚠️ Failed to initialize computational optimization manager: {e}")
                     self.enable_computational_optimization = False
             
             self.logger.info("✅ Enhanced Training Manager initialized successfully")
-            print("✅ Enhanced Training Manager initialized successfully")
             return True
             
         except Exception as e:
             self.logger.error(f"❌ Enhanced Training Manager initialization failed: {e}")
-            print(f"❌ Enhanced Training Manager initialization failed: {e}")
             return False
 
 

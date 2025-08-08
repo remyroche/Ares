@@ -18,6 +18,9 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from fastapi.responses import Response
+from prometheus_client import CONTENT_TYPE_LATEST
+from src.utils.prometheus_metrics import metrics as prometheus_metrics
 import time
 
 # Setup logger
@@ -512,9 +515,6 @@ async def get_dashboard_data(days: int = 7):
 @app.get("/metrics")
 async def prometheus_metrics_endpoint():
     try:
-        from fastapi.responses import Response
-        from prometheus_client import CONTENT_TYPE_LATEST
-        from src.utils.prometheus_metrics import metrics as prometheus_metrics
         data = prometheus_metrics.get_metrics()
         return Response(content=data, media_type=CONTENT_TYPE_LATEST)
     except Exception as e:

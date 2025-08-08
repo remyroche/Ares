@@ -55,6 +55,8 @@ from src.training.enhanced_training_manager_optimized import (
     MemoryManager,
     EnhancedTrainingManagerOptimized,
 )
+# Add model trainer import
+from src.training.model_trainer import setup_model_trainer
 
 from contextlib import contextmanager
 
@@ -120,6 +122,7 @@ class EnhancedTrainingManager:
         )
         
         # Training parameters
+        self.enable_model_training: bool = self.enhanced_training_config.get("enable_model_training", True)
         self.blank_training_mode: bool = self.enhanced_training_config.get("blank_training_mode", False)
         self.max_trials: int = self.enhanced_training_config.get("max_trials", 200)
         self.n_trials: int = self.enhanced_training_config.get("n_trials", 100)
@@ -1088,6 +1091,80 @@ class EnhancedTrainingManager:
                 await self._run_step_validator(
                     "step8_tactician_labeling", training_input, pipeline_state
                 )
+
+            # New: Model Training using RayModelTrainer with labeled data from previous steps
+            if self.enable_model_training:
+                with self._timed_step("Model Training (Ray)", step_times):
+                    try:
+                        self.logger.info("🧠 MODEL TRAINING (Ray) using labeled data from previous steps...")
+                        # Build input for trainer ensuring it has data_dir and required fields
+                        trainer_input = {
+                            "symbol": symbol,
+                            "exchange": exchange,
+                            "timeframe": timeframe,
+                            "lookback_days": self.lookback_days,
+                            "data_dir": data_dir,
+                        }
+
+                        # Config-driven HPO parameters (optional)
+                        model_trainer_cfg = self.config.get("model_trainer", {})
+                        use_hpo_val = model_trainer_cfg.get("use_hpo", True)
+                        use_hpo: bool = (str(use_hpo_val).lower() in ("true", "1", "yes") if isinstance(use_hpo_val, str) else bool(use_hpo_val))
+                        hpo_trials: int = int(model_trainer_cfg.get("hpo_trials", 25))
+                        hpo_model_type: str = str(model_trainer_cfg.get("hpo_model_type", "random_forest"))
+
+                        # Initialize trainer
+                        trainer = None
+                        try:
+                            trainer = setup_model_trainer(self.config)
+                            if trainer is None:
+                                self.logger.error("❌ Failed to setup Ray model trainer")
+                                return False
+
+                            # Run training in a worker thread to avoid blocking the event loop
+                            training_results = await asyncio.to_thread(
+                                trainer.train_models,
+                                trainer_input,
+                                use_hpo,
+                                hpo_trials,
+                                hpo_model_type,
+                            )
+
+                            if not training_results:
+                                self.logger.error("❌ Ray model training returned no results")
+                                return False
+                        finally:
+                            # Ensure cleanup of Ray regardless of success
+                            if trainer is not None:
+                                try:
+                                    trainer.stop()
+                                except Exception as e:
+                                    self.logger.warning(f"Trainer cleanup warning: {e}")
+
+                        # Store results in pipeline state and manager results
+                        pipeline_state["ray_model_training"] = {
+                            "status": "SUCCESS",
+                            "results_summary": {
+                                "tactician_models_trained": len(training_results.get("tactician_models", {})),
+                                "timestamp": training_results.get("training_timestamp"),
+                            },
+                        }
+                        # Merge into enhanced training results
+                        self.enhanced_training_results.setdefault("model_training", {})
+                        self.enhanced_training_results["model_training"].update(training_results)
+
+                        # Save checkpoint after model training
+                        self._save_checkpoint("model_training_ray", pipeline_state)
+                        self.logger.info("✅ Model training (Ray) completed and checkpoint saved")
+                    except Exception as e:
+                        self.logger.error(f"❌ Model training (Ray) failed: {e}")
+                        return False
+            else:
+                self.logger.info("⏭️  Skipping Model Training (Ray) — disabled via configuration")
+                pipeline_state["ray_model_training"] = {
+                    "status": "SKIPPED",
+                    "reason": "enable_model_training is False",
+                }
 
             # Step 9: Tactician Specialist Training
             with self._timed_step("Step 9: Tactician Specialist Training", step_times):

@@ -1147,10 +1147,15 @@ class AresLauncher:
         self.logger.info(f"🚀 Running enhanced 16-step training pipeline for {symbol} on {exchange}")
         self.logger.info(f"Starting from step: {start_step}")
         
+        # Ensure BLANK_TRAINING_MODE is set for step-based blank training
+        import os
+        os.environ["BLANK_TRAINING_MODE"] = "1"
+        os.environ["FULL_TRAINING_MODE"] = "0"
+        self.logger.info("🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training")
+        
         # Prevent blank mode from being used with step1_data_collection
         if start_step == "step1_data_collection":
             # Check if we're in blank mode (30 days lookback)
-            import os
             blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
             if blank_mode:
                 self.logger.error("❌ Cannot use blank mode with step1_data_collection")

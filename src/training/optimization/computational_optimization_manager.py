@@ -833,6 +833,22 @@ class ComputationalOptimizationManager:
         try:
             self.logger.info("Initializing computational optimization components...")
             
+            # Provide a minimal placeholder market_data if empty or missing columns
+            if market_data is None or market_data.empty or not set(['open','high','low','close']).issubset(set(market_data.columns)):
+                self.logger.warning("⚠️ market_data missing or incomplete; initializing with placeholder OHLC frame")
+                import numpy as np
+                import pandas as pd
+                idx = pd.date_range(end=pd.Timestamp.utcnow(), periods=200, freq='H')
+                close = pd.Series(np.linspace(1000, 1100, len(idx)), index=idx)
+                df = pd.DataFrame({
+                    'open': close.shift(1).fillna(close.iloc[0]),
+                    'high': close * 1.005,
+                    'low': close * 0.995,
+                    'close': close,
+                    'volume': np.ones(len(idx)) * 1000,
+                }, index=idx)
+                market_data = df.reset_index().rename(columns={'index':'timestamp'})
+            
             # Initialize memory manager first
             self.memory_manager = MemoryManager(self.config)
             

@@ -314,7 +314,7 @@ class OkxExchange(BaseExchange):
     async def _get_position_risk_raw(
         self,
         symbol: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> list[dict[str, Any]]:
         """Get raw position risk information from exchange."""
         try:
             market_id = await self._get_market_id(symbol) if symbol else None
@@ -334,7 +334,7 @@ class OkxExchange(BaseExchange):
         start_time_ms: int,
         end_time_ms: int,
         limit: int,
-    ) -> list[dict[str, Any]]:
+    ) -> list[list[Any]]:
         """Get raw historical kline data from exchange with pagination."""
         try:
             market_id = await self._get_market_id(symbol)

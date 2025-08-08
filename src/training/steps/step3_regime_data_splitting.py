@@ -114,7 +114,7 @@ class RegimeDataSplittingStep:
             with open(regime_file_path) as f:
                 regime_results = json.load(f)
 
-            # Split data by regimes
+            # Split data by regimes (vectorized)
             regime_data = await self._split_data_by_regimes(
                 historical_data,
                 regime_results,
@@ -133,7 +133,7 @@ class RegimeDataSplittingStep:
                     if regime not in regime_data:
                         self.logger.info(f"Creating regime data for {regime} (has models but no classification)")
                         # Use a subset of data for this regime
-                        subset_size = min(1000, len(historical_data) // len(existing_regimes))
+                        subset_size = min(1000, len(historical_data) // max(1, len(existing_regimes)))
                         subset_data = historical_data.iloc[:subset_size].copy()
                         subset_data['regime'] = regime
                         regime_data[regime] = subset_data
@@ -185,7 +185,7 @@ class RegimeDataSplittingStep:
                 
                 splitting_summary["regime_statistics"][regime] = {
                     "record_count": len(data),
-                    "percentage": len(data) / len(historical_data) * 100,
+                    "percentage": len(data) / max(1, len(historical_data)) * 100,
                     "date_range": date_range,
                 }
 
@@ -225,133 +225,37 @@ class RegimeDataSplittingStep:
         exchange: str,
     ) -> dict[str, pd.DataFrame]:
         """
-        Split data by market regimes.
-
-        Args:
-            data: Historical market data
-            regime_results: Regime classification results
-            symbol: Trading symbol
-            exchange: Exchange name
-
-        Returns:
-            Dict mapping regime names to their respective data
+        Split data by market regimes (vectorized).
         """
         try:
             self.logger.info(f"Splitting data by regimes for {symbol} on {exchange}...")
 
-            # Extract regime sequence from results
             regime_sequence = regime_results.get("regime_sequence", [])
-
             if not regime_sequence:
-                # Create a default regime sequence if none exists
-                self.logger.warning("No regime sequence found, creating default sequence")
-                regime_sequence = ["BULL"] * len(data)  # Default to BULL regime
+                self.logger.warning("No regime sequence found, creating default BULL sequence")
+                regime_sequence = ["BULL"] * len(data)
 
-            # Handle the case where regime sequence is much shorter than data
-            # This happens because feature calculation drops NaN values
+            # Align lengths: interpolate/truncate as needed
             if len(regime_sequence) < len(data):
-                self.logger.info(
-                    f"Regime sequence length ({len(regime_sequence)}) is shorter than data length ({len(data)}). "
-                    f"This is expected due to feature calculation dropping NaN values."
-                )
-                
-                # Calculate the ratio of regime sequence to data
-                ratio = len(regime_sequence) / len(data)
-                self.logger.info(f"Regime sequence covers {ratio:.2%} of the data")
-                
-                # Create a more sophisticated regime mapping
-                # We'll use interpolation to map regimes to the full data length
-                if len(regime_sequence) > 0:
-                    # Create a regime index that maps to the original data
-                    regime_indices = np.linspace(0, len(data) - 1, len(regime_sequence), dtype=int)
-                    
-                    # Create a full-length regime sequence by interpolating
-                    full_regime_sequence = []
-                    for i in range(len(data)):
-                        # Find the closest regime index
-                        closest_idx = np.argmin(np.abs(regime_indices - i))
-                        full_regime_sequence.append(regime_sequence[closest_idx])
-                    
-                    regime_sequence = full_regime_sequence
-                    self.logger.info(f"Interpolated regime sequence to match data length: {len(regime_sequence)}")
-                else:
-                    # Fallback: repeat the regime sequence
-                    repeats_needed = (len(data) // len(regime_sequence)) + 1
-                    regime_sequence = (regime_sequence * repeats_needed)[:len(data)]
-                    self.logger.info(f"Repeated regime sequence to match data length: {len(regime_sequence)}")
-                    
+                regime_indices = np.linspace(0, len(data) - 1, len(regime_sequence), dtype=int)
+                full_seq = np.empty(len(data), dtype=object)
+                for i in range(len(data)):
+                    closest = int(np.argmin(np.abs(regime_indices - i)))
+                    full_seq[i] = regime_sequence[closest]
+                regime_sequence = list(full_seq)
             elif len(regime_sequence) > len(data):
-                self.logger.warning(
-                    f"Regime sequence length ({len(regime_sequence)}) is longer than data length ({len(data)}). "
-                    f"Truncating regime sequence to match data length."
-                )
-                regime_sequence = regime_sequence[:len(data)]
+                regime_sequence = regime_sequence[: len(data)]
 
-            # Final validation: ensure data and regime sequence have the same length
-            if len(data) != len(regime_sequence):
-                self.logger.warning(
-                    f"Data length ({len(data)}) doesn't match regime sequence length ({len(regime_sequence)})",
-                )
-                # Truncate to the shorter length
-                min_length = min(len(data), len(regime_sequence))
-                data = data.iloc[:min_length]
-                regime_sequence = regime_sequence[:min_length]
+            # Vectorized assignment
+            df = data.iloc[: len(regime_sequence)].copy()
+            df["regime"] = regime_sequence
 
-            # Create regime data dictionary
-            regime_data = {}
+            # Groupby regimes
+            regime_data: dict[str, pd.DataFrame] = {k: v.copy() for k, v in df.groupby("regime")}
 
-            # Group data by regime
-            for i, regime in enumerate(regime_sequence):
-                if regime not in regime_data:
-                    regime_data[regime] = []
-
-                # Get the corresponding data row
-                if i < len(data):
-                    # Include the entire data row with all features and labels
-                    row_data = data.iloc[i].to_dict()
-                    # Add regime information
-                    row_data['regime'] = regime
-                    regime_data[regime].append(row_data)
-
-            # Convert lists to DataFrames
-            for regime in regime_data:
-                regime_data[regime] = pd.DataFrame(regime_data[regime])
-
-                self.logger.info(
-                    f"Regime '{regime}': {len(regime_data[regime])} records",
-                )
-
-            # Handle high-data vs low-data regimes
-            high_data_regimes = ["BULL", "BEAR", "SIDEWAYS"]
-            low_data_regimes = [
-                "SUPPORT_RESISTANCE",
-                "CANDLES",
-                "HUGE_CANDLE",
-                "SR_ZONE_ACTION",
-            ]
-
-            # Categorize regimes
-            regime_categories = {"high_data": {}, "low_data": {}, "other": {}}
-
-            for regime, regime_df in regime_data.items():
-                if regime.upper() in high_data_regimes:
-                    regime_categories["high_data"][regime] = regime_df
-                elif regime.upper() in low_data_regimes:
-                    regime_categories["low_data"][regime] = regime_df
-                else:
-                    regime_categories["other"][regime] = regime_df
-
-            # Log regime categorization
             self.logger.info(
-                f"High-data regimes: {list(regime_categories['high_data'].keys())}",
+                f"Regime split complete: {', '.join([f'{k}:{len(v)}' for k,v in regime_data.items()])}"
             )
-            self.logger.info(
-                f"Low-data regimes: {list(regime_categories['low_data'].keys())}",
-            )
-            self.logger.info(
-                f"Other regimes: {list(regime_categories['other'].keys())}",
-            )
-
             return regime_data
 
         except Exception as e:

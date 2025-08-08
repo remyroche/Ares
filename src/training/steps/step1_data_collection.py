@@ -482,8 +482,8 @@ def consolidate_files(
     print("⏳ Waiting for data files to be created...")
     logger.info("⏳ Waiting for data files to be created...")
     
-    # Check for files every 5 seconds for up to 10 minutes
-    max_wait_time = 600  # 10 minutes
+    # Check for files briefly; avoid long polling in training runs
+    max_wait_time = 60  # 1 minute
     check_interval = 5  # 5 seconds
     waited_time = 0
     

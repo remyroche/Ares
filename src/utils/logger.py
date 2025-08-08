@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .structured_logging import CorrelationIdFilter, get_json_formatter  # added
+
 
 class EnhancedLogger:
     """
@@ -42,6 +44,9 @@ class EnhancedLogger:
             10 * 1024 * 1024,
         )  # 10MB
         self.backup_count: int = self.log_config.get("backup_count", 5)
+        # Structured logging options
+        self.enable_json: bool = bool(self.log_config.get("json", True))
+        self.enable_correlation: bool = bool(self.log_config.get("correlation", True))
 
     async def initialize(self) -> bool:
         """
@@ -85,6 +90,8 @@ class EnhancedLogger:
             self.log_config.setdefault("backup_count", 5)
             self.log_config.setdefault("console_output", True)
             self.log_config.setdefault("file_output", True)
+            self.log_config.setdefault("json", True)
+            self.log_config.setdefault("correlation", True)
 
             # Update configuration
             self.log_level = self.log_config["level"]
@@ -92,6 +99,8 @@ class EnhancedLogger:
             self.log_file = self.log_config["file"]
             self.max_file_size = self.log_config["max_file_size"]
             self.backup_count = self.log_config["backup_count"]
+            self.enable_json = bool(self.log_config.get("json", True))
+            self.enable_correlation = bool(self.log_config.get("correlation", True))
 
             print("Logger configuration loaded successfully")
 
@@ -150,7 +159,10 @@ class EnhancedLogger:
             self.logger.handlers.clear()
 
             # Create formatter
-            formatter = logging.Formatter(self.log_format)
+            if self.enable_json:
+                formatter = get_json_formatter()
+            else:
+                formatter = logging.Formatter(self.log_format)
 
             # Add console handler
             if self.log_config.get("console_output", True):
@@ -175,6 +187,13 @@ class EnhancedLogger:
                 )
                 file_handler.setFormatter(formatter)
                 self.logger.addHandler(file_handler)
+
+            # Add correlation filter if enabled
+            if self.enable_correlation:
+                correlation_filter = CorrelationIdFilter()
+                self.logger.addFilter(correlation_filter)
+                for handler in self.logger.handlers:
+                    handler.addFilter(correlation_filter)
 
             # Prevent propagation to root logger to avoid duplicate messages
             self.logger.propagate = False
@@ -242,6 +261,8 @@ class EnhancedLogger:
             "backup_count": self.backup_count,
             "console_output": self.log_config.get("console_output", True),
             "file_output": self.log_config.get("file_output", True),
+            "json": self.enable_json,
+            "correlation": self.enable_correlation,
         }
 
     async def stop(self) -> None:
@@ -299,6 +320,8 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
                     "file_output": True,
                     "max_file_size": 10 * 1024 * 1024,  # 10MB
                     "backup_count": 5,
+                    "json": True,
+                    "correlation": True,
                 },
             }
 

@@ -413,9 +413,8 @@ storage_url = "sqlite:///:memory:"
 
 ### Debug Mode
 ```python
-# Enable debug logging
-import logging
-logging.basicConfig(level=logging.DEBUG)
+from src.utils.logger import setup_logging
+setup_logging()
 
 # Enable Optuna logging
 import optuna

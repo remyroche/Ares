@@ -12,10 +12,11 @@ from typing import Any, Dict, Callable, Optional, List
 import logging
 import sys
 import time
+from src.utils.logger import setup_logging
+setup_logging()
 
 # --- Configuration ---
 # Configure logging for Optuna to provide clear output without being overly verbose.
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 

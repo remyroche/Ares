@@ -16,6 +16,7 @@ from enum import Enum, auto
 from typing import Any, TypeVar, cast
 
 import numpy as np
+from .structured_logging import get_correlation_id
 
 # Type variables for generic functions
 T = TypeVar("T")
@@ -297,9 +298,18 @@ class EnhancedErrorHandler:
                     return cast(T | None, result)
                 except exceptions as e:
                     if log_errors:
+                        cid = get_correlation_id()
                         self.logger.exception(
-                            f"Error in {context}.{func.__name__}: {e}",
+                            f"Error in {context}.{func.__name__}: {e} | correlation_id={cid}",
                         )
+                        try:
+                            from .prometheus_metrics import metrics
+                            metrics.step_failure_counter.labels(
+                                step_name=context or func.__name__,
+                                error_type=type(e).__name__,
+                            ).inc()
+                        except Exception:
+                            pass
 
                     if recovery_strategies:
                         for strategy in recovery_strategies:
@@ -331,9 +341,18 @@ class EnhancedErrorHandler:
                     return cast(T | None, result)
                 except exceptions as e:
                     if log_errors:
+                        cid = get_correlation_id()
                         self.logger.exception(
-                            f"Error in {context}.{func.__name__}: {e}",
+                            f"Error in {context}.{func.__name__}: {e} | correlation_id={cid}",
                         )
+                        try:
+                            from .prometheus_metrics import metrics
+                            metrics.step_failure_counter.labels(
+                                step_name=context or func.__name__,
+                                error_type=type(e).__name__,
+                            ).inc()
+                        except Exception:
+                            pass
 
                     if recovery_strategies:
                         for strategy in recovery_strategies:
@@ -394,14 +413,16 @@ class EnhancedErrorHandler:
                     if error_type in error_handlers:
                         return_value, message = error_handlers[error_type]
                         if log_errors:
+                            cid = get_correlation_id()
                             self.logger.error(
-                                f"{message} in {context}.{func.__name__}: {e}",
+                                f"{message} in {context}.{func.__name__}: {e} | correlation_id={cid}",
                             )
                         return cast(T | None, return_value)
 
                     if log_errors:
+                        cid = get_correlation_id()
                         self.logger.exception(
-                            f"Unexpected error in {context}.{func.__name__}: {e}",
+                            f"Unexpected error in {context}.{func.__name__}: {e} | correlation_id={cid}",
                         )
                     return default_return
 
@@ -415,14 +436,16 @@ class EnhancedErrorHandler:
                     if error_type in error_handlers:
                         return_value, message = error_handlers[error_type]
                         if log_errors:
+                            cid = get_correlation_id()
                             self.logger.error(
-                                f"{message} in {context}.{func.__name__}: {e}",
+                                f"{message} in {context}.{func.__name__}: {e} | correlation_id={cid}",
                             )
                         return cast(T | None, return_value)
 
                     if log_errors:
+                        cid = get_correlation_id()
                         self.logger.exception(
-                            f"Unexpected error in {context}.{func.__name__}: {e}",
+                            f"Unexpected error in {context}.{func.__name__}: {e} | correlation_id={cid}",
                         )
                     return default_return
 
@@ -484,7 +507,9 @@ def safe_operation(
     try:
         return operation(*args, **kwargs)
     except Exception as e:
-        logging.getLogger(__name__).exception(f"Operation failed: {e}")
+        logging.getLogger(__name__).exception(
+            f"Operation failed: {e} | correlation_id={get_correlation_id()}",
+        )
         return None
 
 
@@ -497,7 +522,9 @@ async def safe_async_operation(
     try:
         return await operation(*args, **kwargs)
     except Exception as e:
-        logging.getLogger(__name__).exception(f"Async operation failed: {e}")
+        logging.getLogger(__name__).exception(
+            f"Async operation failed: {e} | correlation_id={get_correlation_id()}",
+        )
         return None
 
 

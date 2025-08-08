@@ -28,10 +28,8 @@ except ImportError as e:
     print("   pip install numpy pandas scikit-learn tensorflow optuna shap pyyaml")
 
 # Set up comprehensive logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+from src.utils.logger import setup_logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # Add project root to path for imports

@@ -203,7 +203,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
 
             # Build analysis result
             analysis_result = AnalysisResult(
-                timestamp=datetime.now(),
+                timestamp=market_data.timestamp,
                 symbol=market_data.symbol,
                 confidence=confidence,
                 signal=signal,

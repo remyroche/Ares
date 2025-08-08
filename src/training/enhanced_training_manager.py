@@ -120,9 +120,9 @@ class EnhancedTrainingManager:
             }
             
             # Namespaced checkpoint path
-            symbol = checkpoint_data.get('symbol', 'unknown')
-            exchange = checkpoint_data.get('exchange', 'unknown')
-            timeframe = checkpoint_data.get('timeframe', 'unknown')
+            symbol = checkpoint_data.get('symbol') or 'unknown'
+            exchange = checkpoint_data.get('exchange') or 'unknown'
+            timeframe = checkpoint_data.get('timeframe') or 'unknown'
             ns_dir = self.checkpoint_dir / exchange / symbol / timeframe
             ns_dir.mkdir(parents=True, exist_ok=True)
             target_file = ns_dir / "training_progress.json"

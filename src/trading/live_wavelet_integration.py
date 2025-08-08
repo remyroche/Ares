@@ -108,9 +108,14 @@ class LiveWaveletIntegration:
             
             if signal is None:
                 return None
+
+            # Correlation context for observability
+            correlation_id = market_data.get("correlation_id") or market_data.get("order_link_id")
+            log = self.logger if correlation_id is None else self.logger.getChild(str(correlation_id))
             
             # Validate signal
             if not self._validate_signal(signal):
+                log.info("Wavelet signal rejected by validator")
                 return None
             
             # Create analysis results
@@ -119,6 +124,7 @@ class LiveWaveletIntegration:
             # Update performance stats
             self._update_performance_stats(signal)
             
+            log.info("Wavelet signal processed")
             return results
             
         except Exception as e:

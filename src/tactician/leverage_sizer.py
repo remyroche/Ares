@@ -26,6 +26,8 @@ class LeverageSizer:
         from src.config_optuna import get_parameter_value
 
         self.leverage_config: dict[str, Any] = self.config.get("leverage_sizing", {})
+        self.symbol_risk_limits: dict[str, Any] = self.leverage_config.get("symbol_risk_limits", {})
+        # Example: {"BTCUSDT": {"max_leverage": 50.0, "margin_mode": "isolated"}}
         self.max_leverage: float = get_parameter_value(
             "position_sizing_parameters.max_leverage",
             100.0,
@@ -56,6 +58,7 @@ class LeverageSizer:
 
         self.is_initialized: bool = False
         self.leverage_sizing_history: list[dict[str, Any]] = []
+        
 
     @handle_specific_errors(
         error_handlers={
@@ -128,6 +131,7 @@ class LeverageSizer:
         target_direction: str = "long",
         analyst_confidence: float = 0.5,
         tactician_confidence: float = 0.5,
+        symbol: str | None = None,
     ) -> dict[str, Any]:
         """
         Calculate leverage using ML confidence scores, liquidation risk analysis, and market health.
@@ -188,15 +192,24 @@ class LeverageSizer:
                 market_health_analysis=market_health_analysis,
             )
 
+            # Enforce symbol-specific leverage caps and include margin mode
+            symbol_limits = self.symbol_risk_limits.get(symbol or "", {}) if symbol else {}
+            per_symbol_max = float(symbol_limits.get("max_leverage", self.max_leverage))
+            final_leverage = min(final_leverage, per_symbol_max)
+            margin_mode = symbol_limits.get("margin_mode", self.leverage_config.get("default_margin_mode", "cross"))
+
             # Create leverage sizing analysis
             leverage_analysis = {
                 "timestamp": datetime.now(),
                 "current_price": current_price,
                 "target_direction": target_direction,
+                "symbol": symbol,
                 "ml_leverage": ml_leverage,
                 "liquidation_leverage": liquidation_leverage,
                 "market_health_leverage": market_health_leverage,
                 "final_leverage": final_leverage,
+                "per_symbol_max_leverage": per_symbol_max,
+                "margin_mode": margin_mode,
                 "price_target_confidences": price_target_confidences,
                 "adversarial_confidences": adversarial_confidences,
                 "directional_confidence": directional_confidence,
@@ -262,7 +275,7 @@ class LeverageSizer:
             risk_factor = 1.0 - avg_adverse_risk
 
             # Base leverage calculation (10x to 100x range)
-            base_leverage = (
+            ml_leverage = (
                 self.min_leverage
                 + (self.max_leverage - self.min_leverage)
                 * confidence_factor
@@ -270,12 +283,8 @@ class LeverageSizer:
             )
 
             # Apply risk tolerance adjustment
-            risk_adjusted_leverage = base_leverage * (1.0 - self.risk_tolerance)
-
-            return max(
-                self.min_leverage,
-                min(self.max_leverage, risk_adjusted_leverage),
-            )
+            risk_adjusted_leverage = ml_leverage * (1.0 - self.risk_tolerance)
+            return max(self.min_leverage, min(self.max_leverage, risk_adjusted_leverage))
 
         except Exception as e:
             self.logger.error(f"Error calculating ML leverage: {e}")
@@ -354,7 +363,9 @@ class LeverageSizer:
                 elif stress_level >= 0.4:
                     adjusted = min(adjusted, self.max_leverage * 0.6)
 
-            return max(self.min_leverage, min(self.max_leverage, adjusted))
+            # Clamp to global bounds and return
+            adjusted = max(self.min_leverage, min(self.max_leverage, adjusted))
+            return adjusted
         except Exception as e:
             self.logger.error(f"Error applying leverage guards: {e}")
             return max(self.min_leverage, min(self.max_leverage, proposed_leverage))

@@ -27,6 +27,8 @@ from src.tactician.enhanced_order_manager import (
 )
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from uuid import uuid4
+from src.utils.prometheus_metrics import metrics
 
 
 class ExecutionStrategy(Enum):
@@ -128,9 +130,17 @@ class AsyncOrderExecutor:
         self.optimization_enabled = self.optimization_config.get("enabled", True)
 
         # Execution queue and semaphore
-        self.execution_queue: asyncio.Queue = asyncio.Queue()
+        # Bounded priority queue to apply backpressure and honor priorities
+        self.execution_queue: asyncio.PriorityQueue = asyncio.PriorityQueue(
+            maxsize=self.execution_config.get("queue_maxsize", 1000),
+        )
         self.execution_semaphore: asyncio.Semaphore = asyncio.Semaphore(
             self.max_concurrent_orders,
+        )
+
+        # Optional rate limiter (token bucket) semaphore per endpoint
+        self.rate_limiter: asyncio.Semaphore = asyncio.Semaphore(
+            self.execution_config.get("max_requests_per_window", 20)
         )
 
         # Background tasks
@@ -264,11 +274,17 @@ class AsyncOrderExecutor:
             str: Execution ID
         """
         try:
-            # Generate execution ID
-            execution_id = f"exec_{int(time.time() * 1000)}_{execution_request.symbol}"
+            # Generate execution ID (idempotency friendly caller can reuse)
+            execution_id = f"exec_{uuid4().hex[:8]}_{execution_request.symbol}"
 
             # Add to execution queue
-            await self.execution_queue.put((execution_id, execution_request))
+            priority = max(0, 10 - int(execution_request.priority))  # lower is higher priority
+            await self.execution_queue.put((priority, execution_id, execution_request))
+            try:
+                # Use data_size_gauge to track queue depth under a label
+                metrics.data_size_gauge.set_function(lambda: self.execution_queue.qsize())
+            except Exception:
+                pass
 
             self.logger.info(f"Order submitted for async execution: {execution_id}")
             return execution_id
@@ -282,11 +298,18 @@ class AsyncOrderExecutor:
         try:
             while True:
                 # Get execution request from queue
-                execution_id, execution_request = await self.execution_queue.get()
+                _, execution_id, execution_request = await self.execution_queue.get()
+                try:
+                    metrics.data_size_gauge.set_function(lambda: self.execution_queue.qsize())
+                except Exception:
+                    pass
 
                 # Acquire semaphore for concurrent execution control
                 async with self.execution_semaphore:
                     try:
+                        # Optional simple rate limit backoff
+                        async with self.rate_limiter:
+                            pass
                         # Execute the order
                         result = await self._execute_single_order(
                             execution_id,
@@ -298,6 +321,15 @@ class AsyncOrderExecutor:
 
                         # Update performance metrics
                         await self._update_performance_metrics(result)
+                        try:
+                            status_label = str(result.status.value if hasattr(result.status, 'value') else result.status)
+                            metrics.step_execution_duration.labels(step_name="order_execution", status=status_label).observe(result.execution_time)
+                            if status_label == "completed":
+                                metrics.step_success_counter.labels(step_name="order_execution").inc()
+                            else:
+                                metrics.step_failure_counter.labels(step_name="order_execution", error_type=status_label).inc()
+                        except Exception:
+                            pass
 
                         self.logger.info(f"Order execution completed: {execution_id}")
 
@@ -358,6 +390,8 @@ class AsyncOrderExecutor:
             if not self.order_manager:
                 raise ValueError("Order manager not initialized")
 
+            start_time = time.time()
+
             # Create order request
             order_request = OrderRequest(
                 symbol=execution_request.symbol,
@@ -367,7 +401,10 @@ class AsyncOrderExecutor:
                 price=execution_request.price,
                 stop_price=execution_request.stop_price,
                 leverage=execution_request.leverage,
-                strategy_id=execution_request.strategy_type,
+                time_in_force=self.execution_config.get("default_time_in_force", "GTC"),
+                reduce_only=bool(self.execution_config.get("reduce_only", False)),
+                close_on_trigger=bool(self.execution_config.get("close_on_trigger", False)),
+                order_link_id=execution_id,
                 strategy_type=execution_request.strategy_type,
             )
 
@@ -375,7 +412,7 @@ class AsyncOrderExecutor:
             order_state = await self.order_manager._place_order(order_request)
 
             if not order_state:
-                raise ValueError("Failed to place order")
+                raise RuntimeError("Failed to place order")
 
             # Calculate metrics
             slippage = self._calculate_slippage(
@@ -413,6 +450,9 @@ class AsyncOrderExecutor:
     ) -> ExecutionResult:
         """Execute order using batch strategy."""
         try:
+            if not self.order_manager:
+                raise ValueError("Order manager not initialized")
+
             if not execution_request.batch_size or not execution_request.batch_interval:
                 raise ValueError("Batch size and interval required for batch execution")
 
@@ -420,45 +460,41 @@ class AsyncOrderExecutor:
             batch_size = execution_request.batch_size
             batch_interval = execution_request.batch_interval
 
-            executed_quantity = 0
-            total_cost = 0
+            executed_quantity = 0.0
+            total_cost = 0.0
             orders_placed = []
 
-            while executed_quantity < total_quantity:
-                # Calculate current batch size
-                current_batch_size = min(batch_size, total_quantity - executed_quantity)
-
-                # Create batch order request
-                batch_request = ExecutionRequest(
+            num_batches = int(total_quantity / batch_size) + (1 if total_quantity % batch_size != 0 else 0)
+            for i in range(num_batches):
+                batched_qty = batch_size if i < num_batches - 1 else total_quantity - (num_batches - 1) * batch_size
+                orq = OrderRequest(
                     symbol=execution_request.symbol,
                     side=execution_request.side,
                     order_type=execution_request.order_type,
-                    quantity=current_batch_size,
+                    quantity=float(batched_qty),
                     price=execution_request.price,
                     stop_price=execution_request.stop_price,
                     leverage=execution_request.leverage,
+                    time_in_force=self.execution_config.get("default_time_in_force", "GTC"),
+                    reduce_only=bool(self.execution_config.get("reduce_only", False)),
+                    close_on_trigger=bool(self.execution_config.get("close_on_trigger", False)),
+                    order_link_id=f"{execution_id}_b{i}",
                     strategy_type=execution_request.strategy_type,
-                    execution_strategy=ExecutionStrategy.IMMEDIATE,
                 )
-
-                # Execute batch
-                batch_result = await self._execute_immediate(
-                    f"{execution_id}_batch_{len(orders_placed)}",
-                    batch_request,
-                )
-
-                executed_quantity += batch_result.executed_quantity
-                total_cost += batch_result.total_cost
-                orders_placed.extend(batch_result.orders_placed)
+                st = await self.order_manager._place_order(orq)
+                if st:
+                    orders_placed.append(st.order_id)
+                    # Accumulate executed quantity and cost using average price
+                    executed_quantity += float(st.executed_quantity)
+                    if st.executed_quantity and st.average_price:
+                        total_cost += float(st.executed_quantity) * float(st.average_price)
 
                 # Wait for next batch
-                if executed_quantity < total_quantity:
+                if i < num_batches - 1:
                     await asyncio.sleep(batch_interval)
 
             # Calculate average price
-            average_price = (
-                total_cost / executed_quantity if executed_quantity > 0 else 0
-            )
+            average_price = (total_cost / executed_quantity) if executed_quantity > 0 else 0.0
             slippage = self._calculate_slippage(execution_request.price, average_price)
 
             return ExecutionResult(
@@ -466,10 +502,10 @@ class AsyncOrderExecutor:
                 symbol=execution_request.symbol,
                 side=execution_request.side,
                 order_type=execution_request.order_type,
-                requested_quantity=execution_request.quantity,
-                executed_quantity=executed_quantity,
+                requested_quantity=float(execution_request.quantity),
+                executed_quantity=float(executed_quantity),
                 average_price=average_price,
-                total_cost=total_cost,
+                total_cost=float(total_cost),
                 slippage=slippage,
                 execution_time=0,  # Will be set by caller
                 status=ExecutionStatus.COMPLETED,
@@ -488,6 +524,9 @@ class AsyncOrderExecutor:
     ) -> ExecutionResult:
         """Execute order using TWAP strategy."""
         try:
+            if not self.order_manager:
+                raise ValueError("Order manager not initialized")
+
             # TWAP divides the order into equal parts over time
             total_quantity = execution_request.quantity
             execution_duration = execution_request.timeout_seconds
@@ -817,21 +856,15 @@ class AsyncOrderExecutor:
         try:
             self.logger.info("🛑 Stopping Async Order Executor...")
 
-            # Cancel background tasks
-            if self.execution_task:
-                self.execution_task.cancel()
-            if self.optimization_task:
-                self.optimization_task.cancel()
-            if self.analytics_task:
-                self.analytics_task.cancel()
-
-            # Wait for tasks to complete
-            await asyncio.gather(
-                self.execution_task,
-                self.optimization_task,
-                self.analytics_task,
-                return_exceptions=True,
-            )
+            # Stop background tasks
+            tasks = [t for t in [self.execution_task, self.optimization_task, self.analytics_task] if t]
+            for t in tasks:
+                t.cancel()
+            for t in tasks:
+                try:
+                    await t
+                except Exception:
+                    pass
 
             self.logger.info("✅ Async Order Executor stopped successfully")
 

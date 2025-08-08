@@ -381,6 +381,11 @@ class PositionDivisionStrategy:
                 f"📊 Input data: {len(current_positions)} positions, price: ${current_price:.2f}",
             )
 
+            # Normalize ml_predictions keys
+            price_target_confidences = ml_predictions.get("price_target_confidences") or ml_predictions.get("movement_confidence_scores") or {}
+            adversarial_confidences = ml_predictions.get("adversarial_confidences") or {}
+            directional_confidence = ml_predictions.get("directional_confidence") or {}
+
             # Calculate final confidence using dual model formula
             final_confidence = analyst_confidence * (tactician_confidence**2)
 
@@ -389,12 +394,7 @@ class PositionDivisionStrategy:
             normalized_confidence = max(0.0, min(1.0, normalized_confidence))
 
             # Extract ML confidence scores
-            price_target_confidences = ml_predictions.get(
-                "price_target_confidences",
-                {},
-            )
-            adversarial_confidences = ml_predictions.get("adversarial_confidences", {})
-            directional_confidence = ml_predictions.get("directional_confidence", {})
+            # already normalized above
 
             self.logger.info(
                 f"📈 ML confidence levels: {len(price_target_confidences)} movement levels",
@@ -564,18 +564,18 @@ class PositionDivisionStrategy:
                     # Find closest available level
                     available_levels = [
                         float(k)
-                        for k in movement_confidence.keys()
+                        for k in price_target_confidences.keys()
                         if k.replace(".", "").isdigit()
                     ]
                     if not available_levels:
                         self.logger.warning(
-                            f"⚠️ No numeric levels found in movement_confidence, using default 0.5 for level {level}",
+                            f"⚠️ No numeric levels found in price_target_confidences, using default 0.5 for level {level}",
                         )
                         confidences.append(0.5)
                         continue
 
                     closest_level = min(available_levels, key=lambda x: abs(x - level))
-                    confidence = movement_confidence.get(str(closest_level), 0.5)
+                    confidence = price_target_confidences.get(str(closest_level), 0.5)
                     confidences.append(confidence)
                     self.logger.debug(
                         f"📊 Target {level}% -> closest {closest_level}% -> confidence {confidence:.3f}",

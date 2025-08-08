@@ -229,6 +229,8 @@ class PositionMonitor:
                 position_id,
                 position_data,
                 current_confidence,
+                analyst_confidence,
+                tactician_confidence,
             )
 
             # Determine recommended action based on division strategy
@@ -273,41 +275,41 @@ class PositionMonitor:
         position_id: str,
         position_data: dict[str, Any],
         current_confidence: float,
+        analyst_confidence: float,
+        tactician_confidence: float,
     ) -> dict[str, Any] | None:
         """Analyze position using the position division strategy."""
         try:
             # Prepare ML predictions for the division strategy
-            ml_predictions = {
-                "movement_confidence_scores": {
-                    "0.5": current_confidence,
-                    "1.0": current_confidence * 0.9,
-                    "1.5": current_confidence * 0.8,
-                    "2.0": current_confidence * 0.7,
-                },
-                "current_price": position_data.get("current_price", 0.0),
-            }
-
-            # Prepare current positions list for analysis
-            current_positions = [
-                {
-                    "position_id": position_id,
-                    "entry_price": position_data.get("entry_price", 0.0),
-                    "position_size": position_data.get("position_size", 0.0),
-                    "entry_confidence": position_data.get("entry_confidence", 0.5),
-                    "current_price": position_data.get("current_price", 0.0),
-                },
-            ]
-
-            # Get short-term analysis if available
-            short_term_analysis = position_data.get("short_term_analysis")
-
-            # Use the position division strategy with dual confidence scores
             division_result = (
                 await self.position_division_strategy.analyze_position_division(
-                    ml_predictions=ml_predictions,
-                    current_positions=current_positions,
+                    ml_predictions={
+                        "price_target_confidences": {
+                            "0.5": current_confidence,
+                            "1.0": max(0.0, current_confidence * 0.9),
+                            "1.5": max(0.0, current_confidence * 0.8),
+                            "2.0": max(0.0, current_confidence * 0.7),
+                        },
+                        "adversarial_confidences": {
+                            "0.5": max(0.0, 1.0 - current_confidence),
+                            "1.0": max(0.0, 1.0 - current_confidence * 0.9),
+                            "1.5": max(0.0, 1.0 - current_confidence * 0.8),
+                            "2.0": max(0.0, 1.0 - current_confidence * 0.7),
+                        },
+                        "directional_confidence": {"current": current_confidence},
+                    },
+                    current_positions=[
+                        {
+                            "position_id": position_id,
+                            "entry_price": position_data.get("entry_price", 0.0),
+                            "position_size": position_data.get("position_size", 0.0),
+                            "entry_confidence": position_data.get("entry_confidence", 0.5),
+                            "current_price": position_data.get("current_price", 0.0),
+                            "normalized_confidence": current_confidence,
+                        },
+                    ],
                     current_price=position_data.get("current_price", 0.0),
-                    short_term_analysis=short_term_analysis,
+                    short_term_analysis=position_data.get("short_term_analysis"),
                     analyst_confidence=analyst_confidence,
                     tactician_confidence=tactician_confidence,
                 )

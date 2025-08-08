@@ -246,7 +246,7 @@ class LeverageSizer:
                 risk = adversarial_confidences.get(closest_level, 0.3)
                 adverse_risks.append(risk)
 
-            avg_adverse_risk = sum(adversarial_risks) / len(adversarial_risks)
+            avg_adverse_risk = sum(adverse_risks) / len(adverse_risks)
 
             # Calculate leverage based on confidence and risk
             # Higher confidence and lower risk = higher leverage
@@ -521,71 +521,6 @@ class LeverageSizer:
         except Exception as e:
             self.logger.error(f"Error calculating weighted leverage: {e}")
             return ml_leverage
-
-    def _generate_leverage_reason(
-        self,
-        final_leverage: float,
-        ml_leverage: float,
-        liquidation_leverage: float,
-        market_health_leverage: float,
-        price_target_confidences: dict[str, float],
-        adversarial_confidences: dict[str, float],
-    ) -> str:
-        """Generate leverage reason for traditional ML-based leverage."""
-        try:
-            # Calculate average confidence
-            if movement_confidence:
-                avg_confidence = sum(movement_confidence.values()) / len(
-                    movement_confidence,
-                )
-            else:
-                avg_confidence = 0.5
-
-            # Calculate average adverse risk
-            if adverse_movement_risks:
-                avg_adverse_risk = sum(adverse_movement_risks.values()) / len(
-                    adverse_movement_risks,
-                )
-            else:
-                avg_adverse_risk = 0.3
-
-            reason = (
-                f"Leverage: {final_leverage:.2f}x "
-                f"(ML: {ml_leverage:.2f}x, Liquidation: {liquidation_leverage:.2f}x, "
-                f"Market Health: {market_health_leverage:.2f}x) "
-                f"Confidence: {avg_confidence:.2f}, Risk: {avg_adverse_risk:.2f}"
-            )
-
-            return reason
-
-        except Exception as e:
-            self.logger.error(f"Error generating leverage reason: {e}")
-            return f"Leverage: {final_leverage:.2f}x (Error generating reason)"
-
-    def _generate_dual_confidence_leverage_reason(
-        self,
-        final_leverage: float,
-        final_confidence: float,
-        normalized_confidence: float,
-        analyst_confidence: float,
-        tactician_confidence: float,
-        liquidation_leverage: float,
-        market_health_leverage: float,
-    ) -> str:
-        """Generate leverage reason for dual confidence system."""
-        try:
-            reason = (
-                f"Leverage: {final_leverage:.2f}x "
-                f"(Final confidence: {final_confidence:.3f}, Normalized: {normalized_confidence:.3f}) "
-                f"Analyst: {analyst_confidence:.2f}, Tactician: {tactician_confidence:.2f} "
-                f"Liquidation cap: {liquidation_leverage:.2f}x, Market health cap: {market_health_leverage:.2f}x"
-            )
-
-            return reason
-
-        except Exception as e:
-            self.logger.error(f"Error generating dual confidence leverage reason: {e}")
-            return f"Leverage: {final_leverage:.2f}x (Error generating reason)"
 
     def _generate_leverage_reason(
         self,

@@ -705,6 +705,26 @@ class EnhancedOrderManager:
             # Update metrics
             self.total_orders_placed += 1
 
+            # Simple fill simulation for paper/sim contexts
+            simulated_fill_qty = order_state.original_quantity
+            simulated_price = order_request.price or 0.0
+            if simulated_fill_qty > 0 and simulated_price > 0:
+                fill = OrderFill(
+                    order_id=order_id,
+                    symbol=order_request.symbol,
+                    side=order_request.side,
+                    price=simulated_price,
+                    quantity=simulated_fill_qty,
+                    commission=0.0,
+                    commission_asset="USD",
+                    trade_time=datetime.now(),
+                    is_maker=False,
+                )
+                order_state.add_fill(fill)
+                # Force filled status if fully executed
+                if order_state.remaining_quantity <= 0:
+                    order_state.status = OrderStatus.FILLED
+
             self.logger.info(
                 f"Order placed: {order_id} ({order_request.strategy_type})",
             )

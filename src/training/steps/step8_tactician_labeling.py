@@ -12,6 +12,9 @@ import pandas as pd
 from src.utils.logger import system_logger
 
 
+# Preference order for selecting analyst ensembles
+ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
+
 # Removing duplicate earlier TacticianLabelingStep definition to avoid conflicts
 
     async def _generate_strategic_signals(
@@ -392,7 +395,7 @@ class TacticianLabelingStep:
                 chosen_ensemble = None
                 if isinstance(loaded, dict):
                     # Prefer stacking_cv, then dynamic_weighting, then voting
-                    for key in ("stacking_cv", "dynamic_weighting", "voting"):
+                    for key in ENSEMBLE_PREFERENCE_ORDER:
                         if key in loaded and isinstance(loaded[key], dict):
                             obj = loaded[key].get("ensemble")
                             if obj is not None:

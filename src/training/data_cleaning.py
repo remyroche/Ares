@@ -3,7 +3,7 @@ from typing import Optional
 import numpy as np
 import logging
 
-def handle_missing_data(df: pd.DataFrame, strategy: str = 'fill', fill_value: Optional[float] = 0) -> pd.DataFrame:
+def handle_missing_data(df: pd.DataFrame, strategy: str = 'fill', fill_value: Optional[Any] = 0) -> pd.DataFrame:
     """
     Handle missing data in a DataFrame with various strategies.
     Supported strategies: 'drop', 'fill', 'mean', 'median', 'mode', 'ffill', 'bfill', 'knn' (placeholder).

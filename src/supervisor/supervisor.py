@@ -1068,6 +1068,54 @@ class Supervisor:
         """Get component monitors status."""
         return self.component_monitors.copy()
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="portfolio guards enforcement",
+    )
+    async def _enforce_portfolio_guards(self) -> None:
+        """Pause tactician or reduce risk when daily loss / drawdown limits are breached."""
+        try:
+            perf_monitor = self.components.get("performance_monitor")
+            tactician = self.components.get("tactician")
+            if not perf_monitor or not tactician:
+                return
+
+            # Get performance metrics
+            if hasattr(perf_monitor, "get_performance_metrics"):
+                metrics = perf_monitor.get_performance_metrics()
+            else:
+                metrics = {}
+
+            max_drawdown = float(metrics.get("max_drawdown", 0.0))  # negative when losing
+            total_return = float(metrics.get("total_return", 0.0))
+
+            risk_cfg = self.supervisor_config.get("portfolio_guards", {})
+            dd_limit = float(risk_cfg.get("max_drawdown_limit", -0.05))  # -5%
+            daily_loss_limit = float(risk_cfg.get("max_daily_loss", -0.05))  # -5%
+
+            # For daily loss, if available via metrics
+            daily_return = float(metrics.get("daily_return", total_return))
+
+            breach = (max_drawdown <= dd_limit) or (daily_return <= daily_loss_limit)
+            if breach:
+                # Pause tactician run loop or set is_running flag down
+                if hasattr(tactician, "is_running"):
+                    tactician.is_running = False
+                self.logger.warning(
+                    f"⛔ Portfolio guard triggered. MDD={max_drawdown:.2%}, Daily={daily_return:.2%}. Pausing Tactician."
+                )
+                # Record in supervision results
+                self.supervision_results.setdefault("guards", {})["paused"] = True
+                self.supervision_results["guards"]["reason"] = {
+                    "max_drawdown": max_drawdown,
+                    "daily_return": daily_return,
+                    "limits": {"dd_limit": dd_limit, "daily_limit": daily_loss_limit},
+                }
+        except Exception as e:
+            self.logger.error(f"Error enforcing portfolio guards: {e}")
+            return
+
 
 supervisor: Supervisor | None = None
 
@@ -1092,52 +1140,3 @@ async def setup_supervisor(
     except Exception as e:
         print(f"Error setting up supervisor: {e}")
         return None
-
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="portfolio guards enforcement",
-    )
-    async def _enforce_portfolio_guards(self) -> None:
-        """Pause tactician or reduce risk when daily loss / drawdown limits are breached."""
-        try:
-            perf_monitor = self.components.get("performance_monitor")
-            tactician = self.components.get("tactician")
-            if not perf_monitor or not tactician:
-                return
-
-            # Get performance metrics
-            if hasattr(perf_monitor, "get_performance_metrics"):
-                metrics = perf_monitor.get_performance_metrics()
-            else:
-                metrics = {}
-
-            max_drawdown = float(metrics.get("max_drawdown", 0.0))  # negative when losing
-            total_return = float(metrics.get("total_return", 0.0))
-
-            risk_cfg = self.supervisor_config.get("portfolio_guards", {})
-            dd_limit = float(risk_cfg.get("max_drawdown_limit", -0.15))  # -15%
-            daily_loss_limit = float(risk_cfg.get("max_daily_loss", -0.05))  # -5%
-
-            # For daily loss, if available via metrics
-            daily_return = float(metrics.get("daily_return", total_return))
-
-            breach = (max_drawdown <= dd_limit) or (daily_return <= daily_loss_limit)
-            if breach:
-                # Pause tactician run loop or set is_running flag down
-                if hasattr(tactician, "is_running"):
-                    tactician.is_running = False
-                self.logger.warning(
-                    f"⛔ Portfolio guard triggered. MDD={max_drawdown:.2%}, Daily={daily_return:.2%}. Pausing Tactician."
-                )
-                # Record in supervision results
-                self.supervision_results.setdefault("guards", {})["paused"] = True
-                self.supervision_results["guards"]["reason"] = {
-                    "max_drawdown": max_drawdown,
-                    "daily_return": daily_return,
-                    "limits": {"dd_limit": dd_limit, "daily_limit": daily_loss_limit},
-                }
-        except Exception as e:
-            self.logger.error(f"Error enforcing portfolio guards: {e}")
-            return

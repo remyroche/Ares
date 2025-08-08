@@ -24,6 +24,7 @@ from src.utils.error_handler import (
 from src.utils.logger import system_logger
 from src.training.feature_engineering import FeatureGenerator
 from src.training.data_cleaning import handle_missing_data
+from src.training.steps.step12_final_parameters_optimization.optimized_optuna_optimization import AdvancedOptunaManager
 
 
 @dataclass
@@ -222,39 +223,50 @@ class RayModelTrainer:
     def train_models(
         self,
         training_input: Dict[str, Any],
+        use_hpo: bool = True,
+        hpo_trials: int = 50,
+        hpo_model_type: str = "random_forest",
     ) -> Optional[Dict[str, Any]]:
         """
         Train all required models based on configuration using Ray.
-
-        Args:
-            training_input: Training input parameters
-
-        Returns:
-            dict: Training results for all models
+        If use_hpo is True, run Optuna HPO before final model training.
         """
         try:
             self.logger.info("🚀 Starting Ray-based model training...")
             self.is_training = True
-            
-            # Validate training input
             if not self._validate_training_input(training_input):
                 return None
-            
-            # Prepare training data
             training_data = self._prepare_training_data(training_input)
             if training_data is None:
                 return None
-            
-            # Train models using Ray
-            training_results = self._train_models_with_ray(training_data, training_input)
-            
-            # Store trained models
+            # HPO integration
+            best_params = None
+            if use_hpo:
+                self.logger.info("🔍 Running Optuna HPO before model training...")
+                tactician_data = training_data.get("tactician_1m")
+                if tactician_data is None:
+                    self.logger.error("No tactician_1m data for HPO.")
+                    return None
+                X = tactician_data.features
+                y = tactician_data.labels
+                hpo_manager = AdvancedOptunaManager()
+                hpo_result = hpo_manager.optimize(
+                    model_type=hpo_model_type,
+                    X=X,
+                    y=y,
+                    n_trials=hpo_trials,
+                    cv_folds=5,
+                    early_stopping_patience=10
+                )
+                best_params = hpo_result.get("best_params")
+                self.logger.info(f"Optuna HPO best params: {best_params}")
+            # Pass best_params to model training (if found)
+            # (You may need to update _train_models_with_ray and _train_single_model_remote to accept and use best_params)
+            training_results = self._train_models_with_ray(training_data, training_input, best_params=best_params)
             self._store_trained_models(training_results)
-            
             self.is_training = False
             self.logger.info("✅ Ray-based model training completed successfully")
             return training_results
-            
         except Exception as e:
             self.logger.error(f"❌ Ray-based model training failed: {e}")
             self.is_training = False
@@ -357,42 +369,18 @@ class RayModelTrainer:
         self,
         training_data: Dict[str, TrainingData],
         training_input: Dict[str, Any],
+        best_params: dict = None,
     ) -> Dict[str, Any]:
         """
         Train models using Ray for distributed processing.
-
-        Args:
-            training_data: Prepared training data
-            training_input: Training input parameters
-
-        Returns:
-            dict: Training results
+        Accepts best_params from HPO for model instantiation.
         """
         try:
             self.logger.info("🧠 Starting Ray-based model training...")
-            
-            # Create Ray remote functions for model training
             @ray.remote
-            def train_single_model(model_config: ModelConfig, training_data: TrainingData) -> Dict[str, Any]:
-                return self._train_single_model_remote(model_config, training_data)
-            
-            # Prepare model configurations
+            def train_single_model(model_config: ModelConfig, training_data: TrainingData, best_params: dict = None) -> Dict[str, Any]:
+                return self._train_single_model_remote(model_config, training_data, best_params=best_params)
             model_configs = []
-            
-            # Analyst models
-            if self.enable_analyst_models:
-                for timeframe in ["1h", "15m", "5m", "1m"]:
-                    data_key = f"analyst_{timeframe}"
-                    if data_key in training_data:
-                        config = ModelConfig(
-                            model_type="analyst",
-                            timeframe=timeframe,
-                            features=list(training_data[data_key].features.columns),
-                            target_column="target"
-                        )
-                        model_configs.append((config, training_data[data_key]))
-            
-            # Tactician models
             if self.enable_tactician_models:
                 data_key = "tactician_1m"
                 if data_key in training_data:
@@ -403,33 +391,19 @@ class RayModelTrainer:
                         target_column="target"
                     )
                     model_configs.append((config, training_data[data_key]))
-            
-            # Submit training tasks to Ray
             training_futures = []
             for config, data in model_configs:
-                future = train_single_model.remote(config, data)
+                future = train_single_model.remote(config, data, best_params)
                 training_futures.append(future)
-            
-            # Wait for all training to complete
             training_results = ray.get(training_futures)
-            
-            # Organize results
-            analyst_results = {}
             tactician_results = {}
-            
             for result in training_results:
-                if result["model_type"] == "analyst":
-                    analyst_results[result["timeframe"]] = result
-                else:
-                    tactician_results[result["timeframe"]] = result
-            
+                tactician_results[result["timeframe"]] = result
             return {
-                "analyst_models": analyst_results,
                 "tactician_models": tactician_results,
                 "training_input": training_input,
                 "training_timestamp": datetime.now().isoformat(),
             }
-            
         except Exception as e:
             self.logger.error(f"❌ Ray-based model training failed: {e}")
             return {}
@@ -438,66 +412,42 @@ class RayModelTrainer:
         self,
         model_config: ModelConfig,
         training_data: TrainingData,
+        best_params: dict = None,
     ) -> Dict[str, Any]:
         """
         Train a single model (Ray remote function).
-
-        Args:
-            model_config: Model configuration
-            training_data: Training data
-
-        Returns:
-            dict: Model training result
+        Accepts best_params from HPO for model instantiation.
         """
         try:
-            # Prepare data
             X = training_data.features
             y = training_data.labels
-            
-            # Split data
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=model_config.test_size, random_state=model_config.random_state
             )
-            
-            # Scale features
             scaler = StandardScaler()
             X_train_scaled = scaler.fit_transform(X_train)
             X_test_scaled = scaler.transform(X_test)
-            
-            # Train model
-            if model_config.model_type == "analyst":
+            # Use best_params if provided
+            if best_params:
+                model = RandomForestClassifier(**best_params)
+            else:
                 model = RandomForestClassifier(
                     n_estimators=model_config.n_estimators,
                     max_depth=model_config.max_depth,
                     random_state=model_config.random_state
                 )
-            else:
-                model = GradientBoostingClassifier(
-                    n_estimators=model_config.n_estimators,
-                    max_depth=model_config.max_depth,
-                    random_state=model_config.random_state
-                )
-            
-            # Train and evaluate
             model.fit(X_train_scaled, y_train)
             y_pred = model.predict(X_test_scaled)
-            
-            # Calculate metrics
             metrics = {
                 "accuracy": accuracy_score(y_test, y_pred),
                 "precision": precision_score(y_test, y_pred, zero_division=0),
                 "recall": recall_score(y_test, y_pred, zero_division=0),
                 "f1": f1_score(y_test, y_pred, zero_division=0),
             }
-            
-            # Cross-validation
             cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=5)
             metrics["cv_mean"] = cv_scores.mean()
             metrics["cv_std"] = cv_scores.std()
-            
-            # Feature importance
             feature_importance = dict(zip(X.columns, model.feature_importances_))
-            
             result = {
                 "timeframe": model_config.timeframe,
                 "model_type": model_config.model_type,
@@ -507,12 +457,8 @@ class RayModelTrainer:
                 "model_path": f"models/{model_config.model_type}_{model_config.timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
                 "scaler_path": f"models/{model_config.model_type}_{model_config.timeframe}_scaler_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
             }
-            
-            # Store model and scaler
             self._store_model_remote(result, model, scaler)
-            
             return result
-            
         except Exception as e:
             self.logger.error(f"❌ Failed to train {model_config.model_type} model for {model_config.timeframe}: {e}")
             return {

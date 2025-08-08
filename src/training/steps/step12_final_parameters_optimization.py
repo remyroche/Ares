@@ -85,8 +85,6 @@ class FinalParametersOptimizationStep:
             optimization_results = await self._optimize_all_parameters(
                 calibration_results,
                 previous_results,
-                symbol,
-                exchange,
             )
 
             # Validate optimization results
@@ -154,8 +152,6 @@ class FinalParametersOptimizationStep:
         self,
         calibration_results: dict[str, Any],
         previous_results: Optional[dict[str, Any]],
-        symbol: str,
-        exchange: str,
     ) -> dict[str, Any]:
         """
         Optimize all parameters using advanced Optuna features.
@@ -163,14 +159,12 @@ class FinalParametersOptimizationStep:
         Args:
             calibration_results: Results from confidence calibration
             previous_results: Previous optimization results for warm start
-            symbol: Trading symbol
-            exchange: Exchange name
 
         Returns:
             Dict containing optimized parameters
         """
         try:
-            self.logger.info(f"Optimizing all parameters for {symbol} on {exchange}...")
+            self.logger.info(f"Optimizing all parameters...")
 
             optimization_results = {}
 
@@ -271,6 +265,12 @@ class FinalParametersOptimizationStep:
                 pruner=optuna.pruners.HyperbandPruner()
             )
 
+            # Warm start: enqueue previous best parameters if available
+            if previous_results and "confidence_thresholds" in previous_results:
+                prev_params = previous_results["confidence_thresholds"].get("optimized_parameters")
+                if prev_params:
+                    study.enqueue_trial(prev_params)
+
             # Optimize with more trials for multi-objective
             study.optimize(objective, n_trials=100, timeout=1800)  # 30 minutes timeout
 
@@ -317,13 +317,18 @@ class FinalParametersOptimizationStep:
                 return score
 
             study = optuna.create_study(direction="maximize")
+            # Warm start: enqueue previous best parameters if available
+            if previous_results and "volatility_parameters" in previous_results:
+                prev_params = previous_results["volatility_parameters"].get("optimized_parameters")
+                if prev_params:
+                    study.enqueue_trial(prev_params)
             study.optimize(objective, n_trials=50)
 
             return {
                 "optimized_parameters": study.best_params,
                 "best_score": study.best_value,
                 "optimization_method": "optuna",
-                "n_trials": 50,
+                "n_trials": len(study.trials),
                 "optimization_date": datetime.now().isoformat(),
             }
 
@@ -336,7 +341,7 @@ class FinalParametersOptimizationStep:
         calibration_results: dict[str, Any],
         previous_results: Optional[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Optimize position sizing with Kelly criterion and advanced features."""
+        """Optimize position sizing parameters with advanced features."""
         try:
             import optuna
 
@@ -349,20 +354,27 @@ class FinalParametersOptimizationStep:
                     "fractional_kelly": trial.suggest_categorical("fractional_kelly", [True, False]),
                     "confidence_based_scaling": trial.suggest_categorical("confidence_based_scaling", [True, False]),
                     "low_confidence_multiplier": trial.suggest_float("low_confidence_multiplier", 0.3, 0.8),
+                    "medium_confidence_multiplier": trial.suggest_float("medium_confidence_multiplier", 0.8, 1.2),
                     "high_confidence_multiplier": trial.suggest_float("high_confidence_multiplier", 1.2, 2.5),
+                    "very_high_confidence_multiplier": trial.suggest_float("very_high_confidence_multiplier", 1.5, 3.0),
                 }
 
                 score = self._evaluate_position_sizing_performance(params, calibration_results)
                 return score
 
             study = optuna.create_study(direction="maximize")
+            # Warm start: enqueue previous best parameters if available
+            if previous_results and "position_sizing_parameters" in previous_results:
+                prev_params = previous_results["position_sizing_parameters"].get("optimized_parameters")
+                if prev_params:
+                    study.enqueue_trial(prev_params)
             study.optimize(objective, n_trials=60)
 
             return {
                 "optimized_parameters": study.best_params,
                 "best_score": study.best_value,
                 "optimization_method": "optuna",
-                "n_trials": 60,
+                "n_trials": len(study.trials),
                 "optimization_date": datetime.now().isoformat(),
             }
 
@@ -389,19 +401,26 @@ class FinalParametersOptimizationStep:
                     "regime_based_sl": trial.suggest_categorical("regime_based_sl", [True, False]),
                     "sl_tightening_threshold": trial.suggest_float("sl_tightening_threshold", 0.3, 0.6),
                     "sl_loosening_threshold": trial.suggest_float("sl_loosening_threshold", 0.7, 0.9),
+                    "max_drawdown_threshold": trial.suggest_float("max_drawdown_threshold", 0.1, 0.3),
+                    "max_daily_loss": trial.suggest_float("max_daily_loss", 0.05, 0.15),
                 }
 
                 score = self._evaluate_risk_management_performance(params, calibration_results)
                 return score
 
             study = optuna.create_study(direction="maximize")
+            # Warm start: enqueue previous best parameters if available
+            if previous_results and "risk_management_parameters" in previous_results:
+                prev_params = previous_results["risk_management_parameters"].get("optimized_parameters")
+                if prev_params:
+                    study.enqueue_trial(prev_params)
             study.optimize(objective, n_trials=50)
 
             return {
                 "optimized_parameters": study.best_params,
                 "best_score": study.best_value,
                 "optimization_method": "optuna",
-                "n_trials": 50,
+                "n_trials": len(study.trials),
                 "optimization_date": datetime.now().isoformat(),
             }
 
@@ -414,34 +433,37 @@ class FinalParametersOptimizationStep:
         calibration_results: dict[str, Any],
         previous_results: Optional[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Optimize ensemble parameters."""
+        """Optimize ensemble parameters with advanced features."""
         try:
             import optuna
 
             def objective(trial):
                 params = {
-                    "ensemble_method": trial.suggest_categorical(
-                        "ensemble_method", 
-                        ["confidence_weighted", "weighted_average", "meta_learner"]
-                    ),
+                    "ensemble_method": trial.suggest_categorical("ensemble_method", ["confidence_weighted", "weighted_average", "meta_learner", "majority_vote"]),
                     "analyst_weight": trial.suggest_float("analyst_weight", 0.2, 0.6),
                     "tactician_weight": trial.suggest_float("tactician_weight", 0.2, 0.6),
                     "strategist_weight": trial.suggest_float("strategist_weight", 0.1, 0.4),
                     "min_ensemble_agreement": trial.suggest_float("min_ensemble_agreement", 0.5, 0.8),
                     "max_ensemble_disagreement": trial.suggest_float("max_ensemble_disagreement", 0.2, 0.5),
+                    "ensemble_minimum_models": trial.suggest_int("ensemble_minimum_models", 2, 5),
                 }
 
                 score = self._evaluate_ensemble_performance(params, calibration_results)
                 return score
 
             study = optuna.create_study(direction="maximize")
+            # Warm start: enqueue previous best parameters if available
+            if previous_results and "ensemble_parameters" in previous_results:
+                prev_params = previous_results["ensemble_parameters"].get("optimized_parameters")
+                if prev_params:
+                    study.enqueue_trial(prev_params)
             study.optimize(objective, n_trials=40)
 
             return {
                 "optimized_parameters": study.best_params,
                 "best_score": study.best_value,
                 "optimization_method": "optuna",
-                "n_trials": 40,
+                "n_trials": len(study.trials),
                 "optimization_date": datetime.now().isoformat(),
             }
 
@@ -454,7 +476,7 @@ class FinalParametersOptimizationStep:
         calibration_results: dict[str, Any],
         previous_results: Optional[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Optimize regime-specific parameters."""
+        """Optimize regime-specific parameters with advanced features."""
         try:
             import optuna
 
@@ -473,13 +495,18 @@ class FinalParametersOptimizationStep:
                 return score
 
             study = optuna.create_study(direction="maximize")
+            # Warm start: enqueue previous best parameters if available
+            if previous_results and "regime_specific_parameters" in previous_results:
+                prev_params = previous_results["regime_specific_parameters"].get("optimized_parameters")
+                if prev_params:
+                    study.enqueue_trial(prev_params)
             study.optimize(objective, n_trials=30)
 
             return {
                 "optimized_parameters": study.best_params,
                 "best_score": study.best_value,
                 "optimization_method": "optuna",
-                "n_trials": 30,
+                "n_trials": len(study.trials),
                 "optimization_date": datetime.now().isoformat(),
             }
 
@@ -492,32 +519,37 @@ class FinalParametersOptimizationStep:
         calibration_results: dict[str, Any],
         previous_results: Optional[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Optimize timing parameters."""
+        """Optimize timing parameters with advanced features."""
         try:
             import optuna
 
             def objective(trial):
                 params = {
-                    "base_cooldown_minutes": trial.suggest_int("base_cooldown_minutes", 15, 60),
-                    "high_confidence_cooldown": trial.suggest_int("high_confidence_cooldown", 5, 30),
-                    "low_confidence_cooldown": trial.suggest_int("low_confidence_cooldown", 30, 120),
-                    "bull_trend_cooldown": trial.suggest_int("bull_trend_cooldown", 10, 40),
-                    "bear_trend_cooldown": trial.suggest_int("bear_trend_cooldown", 20, 60),
-                    "sideways_cooldown": trial.suggest_int("sideways_cooldown", 30, 90),
-                    "high_impact_cooldown": trial.suggest_int("high_impact_cooldown", 60, 180),
+                    "base_cooldown_minutes": trial.suggest_int("base_cooldown_minutes", 15, 60, 5),
+                    "high_confidence_cooldown": trial.suggest_int("high_confidence_cooldown", 5, 30, 5),
+                    "low_confidence_cooldown": trial.suggest_int("low_confidence_cooldown", 30, 120, 10),
+                    "bull_trend_cooldown": trial.suggest_int("bull_trend_cooldown", 10, 40, 5),
+                    "bear_trend_cooldown": trial.suggest_int("bear_trend_cooldown", 20, 60, 5),
+                    "sideways_cooldown": trial.suggest_int("sideways_cooldown", 30, 90, 10),
+                    "high_impact_cooldown": trial.suggest_int("high_impact_cooldown", 60, 180, 15),
                 }
 
                 score = self._evaluate_timing_performance(params, calibration_results)
                 return score
 
             study = optuna.create_study(direction="maximize")
+            # Warm start: enqueue previous best parameters if available
+            if previous_results and "timing_parameters" in previous_results:
+                prev_params = previous_results["timing_parameters"].get("optimized_parameters")
+                if prev_params:
+                    study.enqueue_trial(prev_params)
             study.optimize(objective, n_trials=30)
 
             return {
                 "optimized_parameters": study.best_params,
                 "best_score": study.best_value,
                 "optimization_method": "optuna",
-                "n_trials": 30,
+                "n_trials": len(study.trials),
                 "optimization_date": datetime.now().isoformat(),
             }
 
@@ -601,14 +633,13 @@ class FinalParametersOptimizationStep:
             with open(summary_file, "w") as f:
                 json.dump(results, f, indent=2, default=str)
 
-            # Save detailed report
-            report_file = f"{data_dir}/{exchange}_{symbol}_optimization_report.json"
-            report = await self._generate_optimization_report(results, datetime.now())
-            with open(report_file, "w") as f:
-                json.dump(report, f, indent=2, default=str)
+            # Save detailed report (use report from execute, not regenerate)
+            # report_file = f"{data_dir}/{exchange}_{symbol}_optimization_report.json"
+            # report = await self._generate_optimization_report(results, datetime.now())
+            # with open(report_file, "w") as f:
+            #     json.dump(report, f, indent=2, default=str)
 
             self.logger.info(f"Optimization results saved to {optimization_dir}")
-
         except Exception as e:
             self.logger.error(f"Error saving optimization results: {e}")
 
@@ -844,25 +875,28 @@ class FinalParametersOptimizationStep:
     def _select_best_pareto_solution(self, pareto_front: List) -> Any:
         """Select the best solution from Pareto front."""
         try:
-            # Simple selection based on composite score
+            # Use configurable weights for composite score
+            from src.training.steps.step12_final_parameters_optimization.hyperparameter_optimization_config import get_hyperparameter_config
+            config = get_hyperparameter_config()
+            weights = getattr(config, "composite_score_weights", {
+                "win_rate": 0.3,
+                "profit_factor": 0.3,
+                "sharpe_ratio": 0.3,
+                "max_drawdown": 0.1
+            })
             best_solution = None
             best_score = -float('inf')
-            
             for solution in pareto_front:
-                # Composite score: weighted sum of objectives
                 composite_score = (
-                    solution.values[0] * 0.3 +  # win_rate
-                    solution.values[1] * 0.3 +  # profit_factor
-                    solution.values[2] * 0.3 +  # sharpe_ratio
-                    solution.values[3] * 0.1    # -max_drawdown
+                    solution.values[0] * weights.get("win_rate", 0.3) +
+                    solution.values[1] * weights.get("profit_factor", 0.3) +
+                    solution.values[2] * weights.get("sharpe_ratio", 0.3) +
+                    solution.values[3] * weights.get("max_drawdown", 0.1)
                 )
-                
                 if composite_score > best_score:
                     best_score = composite_score
                     best_solution = solution
-            
             return best_solution
-            
         except Exception as e:
             self.logger.error(f"Error selecting Pareto solution: {e}")
             return pareto_front[0] if pareto_front else None

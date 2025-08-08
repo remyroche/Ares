@@ -699,7 +699,7 @@ def get_optimization_plan() -> Dict[str, Any]:
     
     plan = {
         "optimization_plan": {
-            "total_estimated_time_hours": summary["total_trials"] * 0.5 / 3600,  # 30 min per trial
+            "total_estimated_time_hours": summary["total_trials"] * 0.5,  # 30 min (0.5 hours) per trial
             "total_estimated_cost": summary["total_trials"] * 0.1,  # $0.10 per trial
             "parallel_execution": config.global_config["n_jobs"] > 1,
             "search_spaces_order": list(config.search_spaces.keys()),

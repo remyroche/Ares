@@ -495,17 +495,35 @@ class PositionSizer:
     def _get_historical_performance(self) -> tuple[float, float]:
         """Get historical performance data for Kelly criterion calculation."""
         try:
-            # TODO: Implement actual historical performance tracking
-            # For now, use default values
-            # p_avg = historical average win rate
-            # b_avg = historical average win/loss ratio
+            # Use local sizing history as a proxy when available
+            # Expect entries with keys: {"pnl": float}
+            history = self.position_sizing_history[-500:]  # recent window
+            if not history:
+                return 0.5, 1.5
 
-            # Default to 50% success rate if less than 200 trades
-            p_avg = 0.5
-            b_avg = 1.5  # Assume 1.5:1 win/loss ratio
+            pnls = [float(h.get("pnl", 0.0)) for h in history if "pnl" in h]
+            if not pnls:
+                return 0.5, 1.5
+
+            wins = [p for p in pnls if p > 0]
+            losses = [-p for p in pnls if p < 0]
+
+            num_trades = len(pnls)
+            win_rate = (len(wins) / num_trades) if num_trades > 0 else 0.5
+            avg_win = (sum(wins) / len(wins)) if wins else 1.0
+            avg_loss = (sum(losses) / len(losses)) if losses else 1.0
+            payoff = (avg_win / max(avg_loss, 1e-9)) if avg_loss else 1.5
+
+            # Conservative shrinkage towards priors
+            alpha = min(1.0, num_trades / 200.0)  # confidence weight up to 200 trades
+            p_avg = (1 - alpha) * 0.5 + alpha * win_rate
+            b_avg = (1 - alpha) * 1.5 + alpha * payoff
+
+            # Clamp to reasonable bounds
+            p_avg = max(0.3, min(0.7, p_avg))
+            b_avg = max(0.8, min(2.5, b_avg))
 
             return p_avg, b_avg
-
         except Exception as e:
             self.logger.error(f"Error getting historical performance: {e}")
             return 0.5, 1.5  # Default fallback values

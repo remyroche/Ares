@@ -9,6 +9,7 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.types.trading_types import RiskParameters
 
 
 class Strategist:
@@ -307,6 +308,9 @@ class Strategist:
 
             self.logger.info("✅ Strategy generated successfully")
             return strategy
+        except Exception as e:
+            self.logger.error(f"Error generating strategy: {e}")
+            return None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -358,6 +362,9 @@ class Strategist:
                 f"🎯 Market regime classified as: {regime} (confidence: {confidence:.2f})",
             )
             return regime_info
+        except Exception as e:
+            self.logger.error(f"Error classifying market regime: {e}")
+            return None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -701,7 +708,7 @@ class Strategist:
     async def _calculate_risk_parameters(
         self,
         regime_info: dict[str, Any],
-        volatility_info: dict[str, Any],
+        volatility_info: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         """
         Calculate risk parameters based on regime and volatility.
@@ -717,31 +724,32 @@ class Strategist:
             regime = regime_info["regime"]
             regime_confidence = regime_info["confidence"]
 
-            # Base risk parameters
-            risk_params = {
-                "max_daily_loss": self.risk_config["max_daily_loss"],
-                "stop_loss_distance": 0.01,  # 1% base stop loss
-                "take_profit_distance": 0.02,  # 2% base take profit
-                "max_correlation": self.risk_config["max_correlation"],
-                "note": "Position sizing handled by tactician/position_sizer.py",
+            base_sl = float(self.risk_config.get("stop_loss_distance", 0.01))
+            base_tp = float(self.risk_config.get("take_profit_distance", 0.02))
+            risk_params: RiskParameters | dict[str, Any] = {
+                "max_position_size": float(self.strategy_config.get("max_position_size", 0.1)),
+                "max_leverage": float(self.strategy_config.get("max_leverage", 10.0)),
+                "stop_loss_percentage": base_sl,
+                "take_profit_percentage": base_tp,
+                "max_drawdown": float(self.risk_config.get("max_daily_loss", 0.02)),
             }
 
             # Adjust based on regime
             if regime == "BEAR":
-                risk_params["stop_loss_distance"] *= 0.8  # Tighter stop loss
-                risk_params["take_profit_distance"] *= 0.7  # Lower take profit
+                risk_params["stop_loss_percentage"] *= 0.8  # Tighter stop loss
+                risk_params["take_profit_percentage"] *= 0.7  # Lower take profit
             elif regime == "BULL":
-                risk_params["take_profit_distance"] *= 1.3  # Higher take profit
+                risk_params["take_profit_percentage"] *= 1.3  # Higher take profit
             elif regime == "SIDEWAYS":
-                risk_params["stop_loss_distance"] *= 0.6  # Very tight stop loss
-                risk_params["take_profit_distance"] *= 0.5  # Lower take profit
+                risk_params["stop_loss_percentage"] *= 0.6  # Very tight stop loss
+                risk_params["take_profit_percentage"] *= 0.5  # Lower take profit
 
             # Note: Volatility-based position sizing handled by tactician/position_sizer.py
             # This provides basic risk parameters for the tactician to use
 
             # Adjust based on regime confidence
             if regime_confidence < 0.5:
-                risk_params["stop_loss_distance"] *= 0.9
+                risk_params["stop_loss_percentage"] *= 0.9
 
             return risk_params
 

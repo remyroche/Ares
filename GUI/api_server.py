@@ -1368,10 +1368,36 @@ async def get_detailed_model_analysis(symbol: str, exchange: str, model_id: str)
         logger.error(f"Error getting model analysis: {e}")
         return {"error": str(e)}
 
-@app.get("/api/monitoring/drift-alerts")
+# --- DriftAlert Pydantic Model ---
+class DriftAlertModel(BaseModel):
+    model_id: str
+    model_type: str
+    drift_type: str
+    drift_score: float
+    threshold: float
+    timestamp: str
+    features_affected: list[str]
+    severity: str
+    description: str
+
+@app.get("/api/monitoring/drift-alerts", response_model=list[DriftAlertModel])
 async def get_drift_alerts():
     if ml_monitor and hasattr(ml_monitor, 'get_drift_alerts'):
-        return [alert.__dict__ for alert in ml_monitor.get_drift_alerts()]
+        alerts = ml_monitor.get_drift_alerts()
+        # Convert to DriftAlertModel, ensuring timestamp is str
+        return [
+            DriftAlertModel(
+                model_id=a.model_id,
+                model_type=a.model_type,
+                drift_type=a.drift_type.value if hasattr(a.drift_type, 'value') else str(a.drift_type),
+                drift_score=a.drift_score,
+                threshold=a.threshold,
+                timestamp=a.timestamp.isoformat() if hasattr(a.timestamp, 'isoformat') else str(a.timestamp),
+                features_affected=a.features_affected,
+                severity=a.severity,
+                description=a.description
+            ) for a in alerts
+        ]
     return []
 
 @app.get("/api/monitoring/feature-importance/{model_id}")

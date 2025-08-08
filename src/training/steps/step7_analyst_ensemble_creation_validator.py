@@ -1,14 +1,13 @@
 """
-Validator for Step 8: Tactician Labeling
+Validator for Step 7: Analyst Ensemble Creation
 """
 
-import asyncio
 import os
 import sys
+import json
 import pickle
-import pandas as pd
-import numpy as np
-from typing import Any, Dict, List
+import asyncio
+from typing import Any, Dict, List, Tuple
 from pathlib import Path
 
 # Add the project root to the Python path
@@ -19,15 +18,21 @@ from src.utils.base_validator import BaseValidator
 from src.config import CONFIG
 
 
-class Step8TacticianLabelingValidator(BaseValidator):
-    """Validator for Step 8: Tactician Labeling."""
-    
+class Step7AnalystEnsembleCreationValidator(BaseValidator):
+    """Validator for Step 7: Analyst Ensemble Creation."""
+
     def __init__(self, config: Dict[str, Any]):
-        super().__init__("step8_tactician_labeling", config)
-    
+        super().__init__("step7_analyst_ensemble_creation", config)
+        # Soft thresholds to catch obvious issues without overfitting
+        self.min_models_per_regime = 2
+        self.min_expected_ensembles = {"stacking_cv", "dynamic_weighting", "voting"}
+        self.min_cv_mean = 0.50  # minimal acceptable CV mean for stacking
+        self.min_validation_accuracy = 0.50  # minimal acceptable validation accuracy where available
+        self.weight_tolerance = 0.05  # sum of weights should be ~1 within this tolerance
+
     async def validate(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> bool:
         """
-        Validate the tactician labeling step.
+        Validate the analyst ensemble creation step.
         
         Args:
             training_input: Training input parameters
@@ -36,381 +41,242 @@ class Step8TacticianLabelingValidator(BaseValidator):
         Returns:
             bool: True if validation passed, False otherwise
         """
-        self.logger.info("🔍 Validating tactician labeling step...")
-        
+        self.logger.info("🔍 Validating analyst ensemble creation step...")
+
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         data_dir = training_input.get("data_dir", "data/training")
-        
-        # Validate step result from pipeline state
-        step_result = pipeline_state.get("tactician_labeling", {})
-        
-        # 1. Validate error absence
-        error_passed, error_metrics = self.validate_error_absence(step_result)
+
+        # Validate step result from pipeline state (fallback to reasonable keys)
+        step_result = (
+            pipeline_state.get("analyst_ensemble_creation")
+            or pipeline_state.get("analyst_ensembles")
+            or pipeline_state.get("ensemble_creation")
+            or {}
+        )
+
+        # 1) Critical: error absence
+        error_passed, error_metrics = self.validate_error_absence(step_result if isinstance(step_result, dict) else {})
         self.validation_results["error_absence"] = error_metrics
-        
         if not error_passed:
-            self.logger.error("❌ Tactician labeling step had errors")
+            self.logger.error("❌ Analyst ensemble creation step had critical errors - stopping process")
             return False
-        
-        # 2. Validate tactician labeling files existence
-        labeling_files_passed = self._validate_labeling_files_existence(symbol, exchange, data_dir)
-        if not labeling_files_passed:
-            self.logger.error("❌ Tactician labeling files validation failed")
+
+        # 2) Critical: artifacts exist (summary JSON and ensemble pkl directory)
+        files_passed = self._validate_artifacts_exist(symbol, exchange, data_dir)
+        if not files_passed:
+            self.logger.error("❌ Analyst ensemble artifacts missing - stopping process")
             return False
-        
-        # 3. Validate signal quality
-        signal_quality_passed = self._validate_signal_quality(symbol, exchange, data_dir)
-        if not signal_quality_passed:
-            self.logger.error("❌ Signal quality validation failed")
+
+        # 3) Critical: summary content integrity and basic metrics
+        summary_passed = self._validate_summary_content(symbol, exchange, data_dir)
+        if not summary_passed:
+            self.logger.error("❌ Analyst ensemble summary validation failed - stopping process")
             return False
-        
-        # 4. Validate labeling consistency
-        consistency_passed = self._validate_labeling_consistency(symbol, exchange, data_dir)
-        if not consistency_passed:
-            self.logger.error("❌ Labeling consistency validation failed")
+
+        # 4) Critical: pickled ensembles integrity and API checks
+        pickles_passed = self._validate_pickled_ensembles(symbol, exchange, data_dir)
+        if not pickles_passed:
+            self.logger.error("❌ Analyst ensemble pickle validation failed - stopping process")
             return False
-        
-        # 5. Validate signal distribution
-        distribution_passed = self._validate_signal_distribution(symbol, exchange, data_dir)
-        if not distribution_passed:
-            self.logger.error("❌ Signal distribution validation failed")
-            return False
-        
-        # 6. Validate outcome favorability
-        outcome_passed, outcome_metrics = self.validate_outcome_favorability(step_result)
+
+        # 5) Warning-level: diversity and performance sanity
+        diversity_ok = self._validate_diversity_and_weights(symbol, exchange, data_dir)
+        if not diversity_ok:
+            self.logger.warning("⚠️ Analyst ensemble diversity/weights validation had issues - continuing with caution")
+
+        # 6) Warning-level: outcome favorability from step result
+        outcome_passed, outcome_metrics = self.validate_outcome_favorability(step_result if isinstance(step_result, dict) else {})
         self.validation_results["outcome_favorability"] = outcome_metrics
-        
         if not outcome_passed:
-            self.logger.warning("⚠️ Tactician labeling outcome is not favorable")
-            return False
-        
-        self.logger.info("✅ Tactician labeling validation passed")
+            self.logger.warning("⚠️ Analyst ensemble creation outcome not clearly favorable - continuing with caution")
+
+        self.logger.info("✅ Analyst ensemble creation validation passed")
         return True
-    
-    def _validate_labeling_files_existence(self, symbol: str, exchange: str, data_dir: str) -> bool:
-        """
-        Validate that tactician labeling files exist.
-        
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-            
-        Returns:
-            bool: True if files exist
-        """
+
+    def _validate_artifacts_exist(self, symbol: str, exchange: str, data_dir: str) -> bool:
         try:
-            # Expected tactician labeling file patterns
-            expected_files = [
-                f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl",
-                f"{data_dir}/{exchange}_{symbol}_tactician_labels.pkl",
-                f"{data_dir}/{exchange}_{symbol}_tactician_labeling_metadata.json"
-            ]
-            
-            missing_files = []
-            for file_path in expected_files:
-                file_passed, file_metrics = self.validate_file_exists(file_path, "tactician_labeling_files")
-                if not file_passed:
-                    missing_files.append(file_path)
-            
-            if missing_files:
-                self.logger.error(f"❌ Missing tactician labeling files: {missing_files}")
+            summary_file = f"{data_dir}/{exchange}_{symbol}_analyst_ensemble_summary.json"
+            summary_exists, summary_metrics = self.validate_file_exists(summary_file, "analyst_ensemble_summary")
+            self.validation_results["summary_file"] = summary_metrics
+            if not summary_exists:
                 return False
-            
-            self.logger.info("✅ All tactician labeling files exist")
+
+            ensemble_models_dir = f"{data_dir}/analyst_ensembles"
+            dir_exists = os.path.isdir(ensemble_models_dir)
+            dir_metrics = {"dir_path": ensemble_models_dir, "exists": dir_exists}
+            self.validation_results["ensemble_models_dir"] = dir_metrics
+            if not dir_exists:
+                self.logger.error(f"❌ Ensemble models directory not found: {ensemble_models_dir}")
+                return False
+
+            # At least one regime ensemble should be present
+            pkl_files = [f for f in os.listdir(ensemble_models_dir) if f.endswith(".pkl")]
+            if len(pkl_files) == 0:
+                self.logger.error("❌ No pickled analyst ensembles found in directory")
+                return False
+
+            self.validation_results["ensemble_models_dir"]["pkl_files_count"] = len(pkl_files)
             return True
-            
         except Exception as e:
-            self.logger.error(f"❌ Error validating tactician labeling files: {e}")
+            self.logger.error(f"❌ Error validating artifact existence: {e}")
             return False
-    
-    def _validate_signal_quality(self, symbol: str, exchange: str, data_dir: str) -> bool:
-        """
-        Validate the quality of generated trading signals.
-        
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-            
-        Returns:
-            bool: True if signal quality is acceptable
-        """
+
+    def _validate_summary_content(self, symbol: str, exchange: str, data_dir: str) -> bool:
         try:
-            # Load tactician signals
-            signals_file = f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl"
-            
-            if os.path.exists(signals_file):
-                with open(signals_file, "rb") as f:
-                    signals_data = pickle.load(f)
-                
-                if not isinstance(signals_data, pd.DataFrame):
-                    signals_data = pd.DataFrame(signals_data)
-                
-                # Check for required signal columns
-                required_columns = ["signal", "confidence", "timestamp"]
-                missing_columns = [col for col in required_columns if col not in signals_data.columns]
-                
-                if missing_columns:
-                    self.logger.error(f"❌ Missing required signal columns: {missing_columns}")
-                    return False
-                
-                # Validate signal values
-                signals = signals_data["signal"]
-                unique_signals = signals.unique()
-                
-                # Check for reasonable signal values (typically -1, 0, 1 or similar)
-                if len(unique_signals) < 2:
-                    self.logger.error("❌ Insufficient signal diversity")
-                    return False
-                
-                if len(unique_signals) > 10:
-                    self.logger.warning(f"⚠️ Many signal types: {len(unique_signals)}")
-                
-                # Check signal consistency
-                signal_counts = signals.value_counts()
-                total_signals = len(signals)
-                
-                # Check for signal balance
-                max_signal_count = signal_counts.max()
-                min_signal_count = signal_counts.min()
-                balance_ratio = min_signal_count / max_signal_count if max_signal_count > 0 else 0
-                
-                if balance_ratio < 0.1:  # Very imbalanced signals
-                    self.logger.warning(f"⚠️ Imbalanced signal distribution: {balance_ratio:.3f}")
-                
-                # Check confidence values
-                if "confidence" in signals_data.columns:
-                    confidence = signals_data["confidence"]
-                    
-                    # Check confidence range (should be 0-1 or similar)
-                    if confidence.min() < 0 or confidence.max() > 1:
-                        self.logger.warning("⚠️ Confidence values outside expected range [0,1]")
-                    
-                    # Check for reasonable confidence distribution
-                    low_confidence = (confidence < 0.3).sum()
-                    high_confidence = (confidence > 0.7).sum()
-                    
-                    if low_confidence > total_signals * 0.8:
-                        self.logger.warning("⚠️ Too many low confidence signals")
-                    
-                    if high_confidence < total_signals * 0.1:
-                        self.logger.warning("⚠️ Too few high confidence signals")
-                
-                # Check for signal continuity
-                signal_changes = (signals != signals.shift()).sum()
-                change_ratio = signal_changes / total_signals
-                
-                if change_ratio > 0.5:
-                    self.logger.warning(f"⚠️ High signal change frequency: {change_ratio:.3f}")
-                
-                self.logger.info(f"✅ Signal quality validation passed: {total_signals} signals")
+            summary_file = f"{data_dir}/{exchange}_{symbol}_analyst_ensemble_summary.json"
+            with open(summary_file, "r") as f:
+                summary = json.load(f)
+
+            if not isinstance(summary, dict) or len(summary) == 0:
+                self.logger.error("❌ Ensemble summary is empty or invalid format")
+                return False
+
+            regimes_checked = 0
+            issues: List[str] = []
+
+            for regime_name, ensembles in summary.items():
+                regimes_checked += 1
+                # Expect a dict of ensemble types per regime
+                if not isinstance(ensembles, dict) or len(ensembles) == 0:
+                    issues.append(f"Regime {regime_name} has no ensembles in summary")
+                    continue
+
+                # Check expected ensemble types
+                present_types = set(ensembles.keys())
+                missing_types = self.min_expected_ensembles - present_types
+                if missing_types:
+                    issues.append(f"Regime {regime_name} missing ensembles: {sorted(missing_types)}")
+
+                for ens_type, ens_info in ensembles.items():
+                    # base_models present and count >= min
+                    base_models = ens_info.get("base_models", [])
+                    if not isinstance(base_models, list) or len(base_models) < self.min_models_per_regime:
+                        issues.append(f"Regime {regime_name}/{ens_type}: insufficient base models")
+
+                    # validation metrics (if present)
+                    val_metrics = ens_info.get("validation_metrics", {}) or {}
+                    if val_metrics:
+                        acc = val_metrics.get("accuracy")
+                        if isinstance(acc, (int, float)) and acc < self.min_validation_accuracy:
+                            issues.append(f"Regime {regime_name}/{ens_type}: low validation accuracy {acc:.3f}")
+
+                    # cv_scores for stacking
+                    if ens_type == "stacking_cv":
+                        cv_scores = (ens_info.get("cv_scores") or {})
+                        cv_mean = cv_scores.get("mean")
+                        if isinstance(cv_mean, (int, float)) and cv_mean < self.min_cv_mean:
+                            issues.append(f"Regime {regime_name}/stacking_cv: low CV mean {cv_mean:.3f}")
+
+                    # weights for dynamic weighting
+                    if ens_type == "dynamic_weighting":
+                        weights = (ens_info.get("weights") or {})
+                        if isinstance(weights, dict) and weights:
+                            weight_sum = sum(float(w) for w in weights.values())
+                            if abs(weight_sum - 1.0) > self.weight_tolerance:
+                                issues.append(
+                                    f"Regime {regime_name}/dynamic_weighting: weight sum {weight_sum:.3f} not ~1"
+                                )
+
+            self.validation_results["summary_content"] = {
+                "regimes_checked": regimes_checked,
+                "issues": issues,
+                "passed": len(issues) == 0,
+            }
+
+            if issues:
+                for msg in issues[:5]:
+                    self.logger.warning(f"⚠️ {msg}")
+            return True  # summary present and parsed; issues reported as warnings
+        except Exception as e:
+            self.logger.error(f"❌ Error validating summary content: {e}")
+            return False
+
+    def _validate_pickled_ensembles(self, symbol: str, exchange: str, data_dir: str) -> bool:
+        try:
+            ensemble_models_dir = f"{data_dir}/analyst_ensembles"
+            pkl_files = [f for f in os.listdir(ensemble_models_dir) if f.endswith(".pkl")]
+            if not pkl_files:
+                return False
+
+            checked = 0
+            bad_files: List[str] = []
+
+            for fname in pkl_files[:10]:  # inspect up to 10 to limit runtime
+                fpath = os.path.join(ensemble_models_dir, fname)
+                try:
+                    with open(fpath, "rb") as f:
+                        data = pickle.load(f)
+
+                    # Expect a dict of ensembles per regime: keys include stacking_cv, dynamic_weighting, voting
+                    if not isinstance(data, dict) or not data:
+                        bad_files.append(f"{fname}: invalid pickle format")
+                        continue
+
+                    # Validate that for each ensemble entry, the 'ensemble' object exposes predict
+                    for ens_key, ens_data in list(data.items())[:3]:  # check up to 3 types
+                        if isinstance(ens_data, dict):
+                            ensemble_obj = ens_data.get("ensemble")
+                            if ensemble_obj is None or not hasattr(ensemble_obj, "predict"):
+                                bad_files.append(f"{fname}/{ens_key}: missing predict method")
+                except Exception as e:
+                    bad_files.append(f"{fname}: load error {e}")
+                checked += 1
+
+            self.validation_results["pickle_checks"] = {
+                "files_checked": checked,
+                "issues": bad_files,
+                "passed": len(bad_files) == 0,
+            }
+
+            if bad_files:
+                for msg in bad_files[:5]:
+                    self.logger.warning(f"⚠️ {msg}")
+            return len(bad_files) == 0
+        except Exception as e:
+            self.logger.error(f"❌ Error validating pickled ensembles: {e}")
+            return False
+
+    def _validate_diversity_and_weights(self, symbol: str, exchange: str, data_dir: str) -> bool:
+        try:
+            summary_file = f"{data_dir}/{exchange}_{symbol}_analyst_ensemble_summary.json"
+            if not os.path.exists(summary_file):
                 return True
-            
-            self.logger.error("❌ Tactician signals file not found")
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error during signal quality validation: {e}")
-            return False
-    
-    def _validate_labeling_consistency(self, symbol: str, exchange: str, data_dir: str) -> bool:
-        """
-        Validate consistency of tactician labeling.
-        
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-            
-        Returns:
-            bool: True if labeling is consistent
-        """
-        try:
-            # Load tactician labels
-            labels_file = f"{data_dir}/{exchange}_{symbol}_tactician_labels.pkl"
-            
-            if os.path.exists(labels_file):
-                with open(labels_file, "rb") as f:
-                    labels_data = pickle.load(f)
-                
-                if not isinstance(labels_data, pd.DataFrame):
-                    labels_data = pd.DataFrame(labels_data)
-                
-                # Check for required label columns
-                if "label" not in labels_data.columns:
-                    self.logger.error("❌ No label column found in tactician labels")
-                    return False
-                
-                labels = labels_data["label"]
-                
-                # Check label values
-                unique_labels = labels.unique()
-                
-                if len(unique_labels) < 2:
-                    self.logger.error("❌ Insufficient label diversity")
-                    return False
-                
-                # Check for label consistency with signals
-                signals_file = f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl"
-                
-                if os.path.exists(signals_file):
-                    with open(signals_file, "rb") as f:
-                        signals_data = pickle.load(f)
-                    
-                    if not isinstance(signals_data, pd.DataFrame):
-                        signals_data = pd.DataFrame(signals_data)
-                    
-                    # Check if labels and signals have same length
-                    if len(labels) != len(signals_data):
-                        self.logger.error("❌ Labels and signals have different lengths")
-                        return False
-                    
-                    # Check for reasonable label-signal correlation
-                    if "signal" in signals_data.columns:
-                        signals = signals_data["signal"]
-                        
-                        # Calculate correlation between labels and signals
-                        try:
-                            correlation = np.corrcoef(labels.astype(float), signals.astype(float))[0, 1]
-                            
-                            if abs(correlation) < 0.1:
-                                self.logger.warning(f"⚠️ Low correlation between labels and signals: {correlation:.3f}")
-                            elif abs(correlation) > 0.95:
-                                self.logger.warning(f"⚠️ Very high correlation between labels and signals: {correlation:.3f}")
-                        except:
-                            self.logger.warning("⚠️ Could not calculate label-signal correlation")
-                
-                # Check for label balance
-                label_counts = labels.value_counts()
-                total_labels = len(labels)
-                
-                min_label_count = label_counts.min()
-                max_label_count = label_counts.max()
-                balance_ratio = min_label_count / max_label_count if max_label_count > 0 else 0
-                
-                if balance_ratio < 0.1:
-                    self.logger.warning(f"⚠️ Imbalanced label distribution: {balance_ratio:.3f}")
-                
-                # Check for missing labels
-                null_labels = labels.isnull().sum()
-                if null_labels > 0:
-                    self.logger.warning(f"⚠️ Found {null_labels} missing labels")
-                
-                self.logger.info(f"✅ Labeling consistency validation passed: {total_labels} labels")
-                return True
-            
-            self.logger.error("❌ Tactician labels file not found")
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error during labeling consistency validation: {e}")
-            return False
-    
-    def _validate_signal_distribution(self, symbol: str, exchange: str, data_dir: str) -> bool:
-        """
-        Validate the distribution of trading signals.
-        
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-            
-        Returns:
-            bool: True if signal distribution is acceptable
-        """
-        try:
-            # Load tactician labeling metadata
-            metadata_file = f"{data_dir}/{exchange}_{symbol}_tactician_labeling_metadata.json"
-            
-            if os.path.exists(metadata_file):
-                import json
-                with open(metadata_file, "r") as f:
-                    metadata = json.load(f)
-                
-                # Check signal distribution metrics
-                if "signal_distribution" in metadata:
-                    signal_dist = metadata["signal_distribution"]
-                    
-                    # Check for reasonable signal distribution
-                    for signal_type, count in signal_dist.items():
-                        if count < 10:
-                            self.logger.warning(f"⚠️ Very few signals of type {signal_type}: {count}")
-                
-                # Check signal frequency
-                if "signal_frequency" in metadata:
-                    signal_freq = metadata["signal_frequency"]
-                    
-                    if signal_freq < 0.01:  # Very low signal frequency
-                        self.logger.warning(f"⚠️ Very low signal frequency: {signal_freq:.3f}")
-                    elif signal_freq > 0.5:  # Very high signal frequency
-                        self.logger.warning(f"⚠️ Very high signal frequency: {signal_freq:.3f}")
-                
-                # Check signal quality metrics
-                if "signal_quality_score" in metadata:
-                    quality_score = metadata["signal_quality_score"]
-                    
-                    if quality_score < 0.6:
-                        self.logger.warning(f"⚠️ Low signal quality score: {quality_score:.3f}")
-                
-                # Check labeling accuracy
-                if "labeling_accuracy" in metadata:
-                    labeling_acc = metadata["labeling_accuracy"]
-                    
-                    if labeling_acc < 0.7:
-                        self.logger.warning(f"⚠️ Low labeling accuracy: {labeling_acc:.3f}")
-                
-                # Check signal consistency
-                if "signal_consistency" in metadata:
-                    consistency = metadata["signal_consistency"]
-                    
-                    if consistency < 0.6:
-                        self.logger.warning(f"⚠️ Low signal consistency: {consistency:.3f}")
-            
-            # Load signals for additional validation
-            signals_file = f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl"
-            
-            if os.path.exists(signals_file):
-                with open(signals_file, "rb") as f:
-                    signals_data = pickle.load(f)
-                
-                if not isinstance(signals_data, pd.DataFrame):
-                    signals_data = pd.DataFrame(signals_data)
-                
-                if "signal" in signals_data.columns:
-                    signals = signals_data["signal"]
-                    
-                    # Check for signal clustering
-                    signal_changes = (signals != signals.shift()).cumsum()
-                    unique_clusters = signal_changes.nunique()
-                    
-                    if unique_clusters < 5:
-                        self.logger.warning(f"⚠️ Few signal clusters: {unique_clusters}")
-                    elif unique_clusters > 100:
-                        self.logger.warning(f"⚠️ Many signal clusters: {unique_clusters}")
-                    
-                    # Check for signal persistence
-                    signal_persistence = signals.groupby(signals).size()
-                    avg_persistence = signal_persistence.mean()
-                    
-                    if avg_persistence < 5:
-                        self.logger.warning(f"⚠️ Low signal persistence: {avg_persistence:.1f}")
-                    elif avg_persistence > 100:
-                        self.logger.warning(f"⚠️ High signal persistence: {avg_persistence:.1f}")
-            
-            self.logger.info("✅ Signal distribution validation passed")
+            with open(summary_file, "r") as f:
+                summary = json.load(f)
+
+            diversity_issues: List[str] = []
+            for regime_name, ensembles in summary.items():
+                # model type diversity via base_models names
+                for ens_type, ens_info in ensembles.items():
+                    base_models: List[str] = ens_info.get("base_models", [])
+                    if len(set(base_models)) < self.min_models_per_regime:
+                        diversity_issues.append(f"{regime_name}/{ens_type}: low base model diversity")
+
+                    if ens_type == "dynamic_weighting":
+                        weights = (ens_info.get("weights") or {})
+                        nonzero = sum(1 for w in weights.values() if float(w) > 0.0)
+                        if nonzero == 0:
+                            diversity_issues.append(f"{regime_name}/dynamic_weighting: all weights are zero")
+
+            self.validation_results["diversity"] = {
+                "issues": diversity_issues,
+                "passed": len(diversity_issues) == 0,
+            }
+
+            if diversity_issues:
+                for msg in diversity_issues[:5]:
+                    self.logger.warning(f"⚠️ {msg}")
             return True
-            
         except Exception as e:
-            self.logger.error(f"❌ Error during signal distribution validation: {e}")
+            self.logger.error(f"❌ Error validating diversity/weights: {e}")
             return False
 
 
 async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Run the step7_analyst_ensemble_creation validator.
+    Run the Step 7 Analyst Ensemble Creation validator.
     
     Args:
         training_input: Training input parameters
@@ -419,37 +285,23 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
     Returns:
         Dictionary containing validation results
     """
-    validator = Step8TacticianLabelingValidator(CONFIG)
+    validator = Step7AnalystEnsembleCreationValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
-    
+
     return {
         "step_name": "step7_analyst_ensemble_creation",
         "validation_passed": validation_passed,
         "validation_results": validator.validation_results,
-        "duration": 0,  # Could be enhanced to track actual duration
-        "timestamp": asyncio.get_event_loop().time()
+        "duration": 0,
+        "timestamp": asyncio.get_event_loop().time(),
     }
 
 
 if __name__ == "__main__":
-    import asyncio
-    
-    # Example usage
     async def test_validator():
-        training_input = {
-            "symbol": "ETHUSDT",
-            "exchange": "BINANCE",
-            "data_dir": "data/training"
-        }
-        
-        pipeline_state = {
-            "tactician_labeling": {
-                "status": "SUCCESS",
-                "duration": 240.5
-            }
-        }
-        
+        training_input = {"symbol": "ETHUSDT", "exchange": "BINANCE", "data_dir": "data/training"}
+        pipeline_state = {"analyst_ensemble_creation": {"status": "SUCCESS", "duration": 200.0}}
         result = await run_validator(training_input, pipeline_state)
         print(f"Validation result: {result}")
-    
+
     asyncio.run(test_validator())

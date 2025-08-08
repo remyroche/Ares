@@ -25,7 +25,8 @@ try:
 except Exception:  # ImportError or others
     pq = None  # type: ignore
 
-warnings.filterwarnings("ignore")
+# Avoid blanket suppression; warn only once for known noisy categories
+warnings.filterwarnings("once", category=UserWarning)
 
 from src.utils.error_handler import (
     handle_errors,
@@ -342,6 +343,17 @@ class MemoryManager:
             'used_gb': memory_info.used / (1024**3),
             'percentage': float(memory_info.percent),
         }
+
+    def get_memory_usage(self) -> float:
+        """Return current memory usage as a fraction (0.0 - 1.0)."""
+        try:
+            return psutil.virtual_memory().percent / 100.0
+        except Exception:
+            return 0.0
+
+    def cleanup_memory(self) -> None:
+        """Public wrapper to trigger memory cleanup."""
+        self._cleanup_memory()
 
 
 class EnhancedTrainingManager:
@@ -1700,7 +1712,7 @@ class EnhancedTrainingManager:
                 param_combinations = self._generate_parameter_combinations()
                 
                 # Run parallel backtesting
-                parallel_results = await self.parallel_backtester.run_parallel_backtest(
+                parallel_results = self.parallel_backtester.evaluate_batch(
                     param_combinations, market_data
                 )
                 
@@ -1845,21 +1857,30 @@ class EnhancedTrainingManager:
                 market_data = pd.read_csv(preferred_csv)
                 self.logger.info(f"✅ Loaded market data from {preferred_csv}")
                 return market_data
-            data_file = f"{data_dir}/{exchange}_{symbol}_klines.csv"
-            
-            if os.path.exists(parquet_path):
+
+            # Fallback to raw files in data_dir
+            parquet_path = Path(data_dir) / f"{exchange}_{symbol}_klines.parquet"
+            csv_path = Path(data_dir) / f"{exchange}_{symbol}_klines.csv"
+            if parquet_path.exists():
                 self.logger.info(f"Loading data from Parquet: {parquet_path}")
                 try:
-                    data = self.data_manager.load_from_parquet(parquet_path)
+                    data = self.data_manager.load_from_parquet(str(parquet_path)) if self.data_manager else pd.read_parquet(parquet_path)
                 except Exception as e:
-                    self.logger.warning(f"Parquet load failed ({e}); falling back to CSV streaming")
+                    self.logger.warning(f"Parquet load failed ({e}); falling back to CSV if available")
                     data = pd.DataFrame()
+                return data
+            if csv_path.exists():
+                self.logger.info(f"Loading data from CSV: {csv_path}")
+                try:
+                    data = pd.read_csv(csv_path)
+                except Exception as e:
+                    self.logger.warning(f"CSV load failed ({e}); returning empty DataFrame")
+                    data = pd.DataFrame()
+                return data
 
-            else:
-                self.logger.warning(f"⚠️ Market data file not found: {data_file}")
-                print(f"⚠️ Market data file not found: {data_file}")
-                # Return empty DataFrame as fallback
-                return pd.DataFrame()
+            self.logger.warning(f"⚠️ Market data files not found in {data_dir} for {exchange} {symbol}")
+            print(f"⚠️ Market data files not found in {data_dir} for {exchange} {symbol}")
+            return pd.DataFrame()
                 
         except Exception as e:
             self.logger.error(f"❌ Failed to load market data: {e}")
@@ -2217,8 +2238,11 @@ class EnhancedTrainingManager:
             # Initialize computational optimization manager if enabled
             if self.enable_computational_optimization:
                 try:
-                    self.computational_optimization_manager = create_computational_optimization_manager(
-                        get_computational_optimization_config()
+                    # create_computational_optimization_manager is async; await it here
+                    self.computational_optimization_manager = await create_computational_optimization_manager(
+                        get_computational_optimization_config(),
+                        pd.DataFrame(),
+                        {}
                     )
                     self.logger.info("✅ Computational optimization manager initialized")
                     print("✅ Computational optimization manager initialized")

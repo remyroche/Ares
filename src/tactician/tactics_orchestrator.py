@@ -9,6 +9,8 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.config.environment import get_exchange_name
+from exchange.factory import ExchangeFactory
 
 
 class TacticsOrchestrator:
@@ -124,8 +126,6 @@ class TacticsOrchestrator:
                 await self.order_manager.initialize()
                 # Wire a real exchange client when not paper trading
                 try:
-                    from src.config.environment import get_exchange_name
-                    from exchange.factory import ExchangeFactory
                     exchange_name = get_exchange_name().lower()
                     exchange_client = ExchangeFactory.get_exchange(exchange_name)
                     await self.order_manager.attach_exchange_client(exchange_client)

@@ -417,3 +417,16 @@ class BaseExchange(IExchangeClient, ABC):
                 raise ValueError(f"Unable to parse timestamp: {timestamp}")
         else:
             raise ValueError(f"Unsupported timestamp type: {type(timestamp)}")
+
+    # --- Optional streaming hooks (to be implemented by subclasses as needed) ---
+    async def subscribe_trades(self, symbol: str, callback) -> None:
+        """Subscribe to live trades for symbol and invoke callback(trade_dict)."""
+        raise NotImplementedError
+
+    async def subscribe_ticker(self, symbol: str, callback) -> None:
+        """Subscribe to live ticker/mark price updates and invoke callback(ticker_dict)."""
+        raise NotImplementedError
+
+    async def subscribe_order_book(self, symbol: str, callback) -> None:
+        """Subscribe to live order book updates and invoke callback(book_dict)."""
+        raise NotImplementedError

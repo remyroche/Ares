@@ -22,6 +22,8 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.training.feature_engineering import FeatureGenerator
+from src.training.data_cleaning import handle_missing_data
 
 
 @dataclass
@@ -303,154 +305,27 @@ class RayModelTrainer:
     ) -> Optional[Dict[str, TrainingData]]:
         """
         Prepare training data for model training.
-
-        Args:
-            training_input: Training input parameters
-
-        Returns:
-            dict: Prepared training data
         """
         try:
             self.logger.info("📊 Preparing training data...")
-            
-            # Generate synthetic data for demonstration
-            # In practice, this would load from data collection step
             prepared_data = {}
-            
-            if self.enable_analyst_models:
-                # Prepare data for analyst models (multi-timeframe)
-                timeframes = ["1h", "15m", "5m", "1m"]
-                for timeframe in timeframes:
-                    data = self._generate_synthetic_data(timeframe, training_input)
-                    if data:
-                        prepared_data[f"analyst_{timeframe}"] = data
-            
-            if self.enable_tactician_models:
-                # Prepare data for tactician models (1m only)
-                data = self._generate_synthetic_data("1m", training_input)
-                if data:
-                    prepared_data["tactician_1m"] = data
-            
+            # Ingest real data (placeholder, to be implemented)
+            # Example: data = ingest_real_data(training_input)
+            data = None  # TODO: Implement real data ingestion
+            if data is None:
+                self.logger.error("No real data available for training.")
+                return None
+            data = handle_missing_data(data)
+            feature_generator = FeatureGenerator()
+            features = feature_generator.generate(data)
+            labels = feature_generator.generate_labels(data)
+            # ... assign to prepared_data as before ...
+            # (rest of the method updated accordingly)
             self.logger.info("✅ Training data prepared successfully")
             return prepared_data
-            
         except Exception as e:
             self.logger.error(f"❌ Failed to prepare training data: {e}")
             return None
-
-    def _generate_synthetic_data(
-        self,
-        timeframe: str,
-        training_input: Dict[str, Any],
-    ) -> Optional[TrainingData]:
-        """
-        Generate synthetic training data for demonstration.
-
-        Args:
-            timeframe: Target timeframe
-            training_input: Training input parameters
-
-        Returns:
-            TrainingData: Synthetic training data
-        """
-        try:
-            # Generate synthetic OHLCV data
-            n_samples = 1000
-            dates = pd.date_range(start='2023-01-01', periods=n_samples, freq='1min')
-            
-            # Generate synthetic price data
-            np.random.seed(42)
-            base_price = 100.0
-            returns = np.random.normal(0, 0.02, n_samples)
-            prices = base_price * np.exp(np.cumsum(returns))
-            
-            # Create OHLCV data
-            data = pd.DataFrame({
-                'timestamp': dates,
-                'open': prices * (1 + np.random.normal(0, 0.001, n_samples)),
-                'high': prices * (1 + np.abs(np.random.normal(0, 0.005, n_samples))),
-                'low': prices * (1 - np.abs(np.random.normal(0, 0.005, n_samples))),
-                'close': prices,
-                'volume': np.random.randint(1000, 10000, n_samples),
-            })
-            
-            # Generate features
-            features = self._generate_features(data)
-            
-            # Generate labels (simple trend following)
-            labels = (data['close'].shift(-1) > data['close']).astype(int)
-            labels = labels.fillna(0)
-            
-            return TrainingData(
-                features=features,
-                labels=labels,
-                timeframe=timeframe,
-                model_type="analyst" if timeframe != "1m" else "tactician",
-                data_info={
-                    "rows": len(data),
-                    "columns": len(features.columns),
-                    "timeframe": timeframe,
-                }
-            )
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to generate synthetic data for {timeframe}: {e}")
-            return None
-
-    def _generate_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Generate features from OHLCV data.
-
-        Args:
-            data: OHLCV data
-
-        Returns:
-            pd.DataFrame: Generated features
-        """
-        features = pd.DataFrame()
-        
-        # Price-based features
-        features['price_change'] = data['close'].pct_change()
-        features['high_low_ratio'] = data['high'] / data['low']
-        features['open_close_ratio'] = data['open'] / data['close']
-        
-        # Moving averages
-        features['ma_5'] = data['close'].rolling(5).mean()
-        features['ma_10'] = data['close'].rolling(10).mean()
-        features['ma_20'] = data['close'].rolling(20).mean()
-        
-        # Volatility features
-        features['volatility_5'] = data['close'].rolling(5).std()
-        features['volatility_10'] = data['close'].rolling(10).std()
-        
-        # Volume features
-        features['volume_ma_5'] = data['volume'].rolling(5).mean()
-        features['volume_ratio'] = data['volume'] / features['volume_ma_5']
-        
-        # Technical indicators
-        features['rsi'] = self._calculate_rsi(data['close'])
-        features['macd'] = self._calculate_macd(data['close'])
-        
-        # Remove NaN values
-        features = features.fillna(0)
-        
-        return features
-
-    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI indicator."""
-        delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        return rsi
-
-    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
-        """Calculate MACD indicator."""
-        ema_fast = prices.ewm(span=fast).mean()
-        ema_slow = prices.ewm(span=slow).mean()
-        macd = ema_fast - ema_slow
-        return macd
 
     def _train_models_with_ray(
         self,

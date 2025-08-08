@@ -420,8 +420,6 @@ if __name__ == "__main__":
         target_volatility=0.12,  # 12% target
         volatility_method=VolatilityMethod.EWMA,
         lookback_period=20,
-        momentum_filter=True,
-        regime_adjustment=True,
     )
 
     # Initialize strategy

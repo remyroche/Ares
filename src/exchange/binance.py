@@ -34,6 +34,9 @@ class BinanceExchange:
         self.session: aiohttp.ClientSession | None = None
         self.base_url: str = "https://api.binance.com"
         self.testnet_url: str = "https://testnet.binance.vision"
+        # Add futures endpoints
+        self.futures_base_url: str = "https://fapi.binance.com"
+        self.testnet_futures_url: str = "https://testnet.binancefuture.com"
 
         # Configuration
         self.exchange_config: dict[str, Any] = self.config.get("binance_exchange", {})
@@ -193,6 +196,10 @@ class BinanceExchange:
         """Get base URL based on testnet setting."""
         return self.testnet_url if self.use_testnet else self.base_url
 
+    def _get_futures_base_url(self) -> str:
+        """Get futures base URL based on testnet setting."""
+        return self.testnet_futures_url if self.use_testnet else self.futures_base_url
+
     def _generate_signature(self, params: dict[str, Any]) -> str:
         """
         Generate HMAC signature for authenticated requests.
@@ -295,6 +302,7 @@ class BinanceExchange:
 
             # Prepare request
             params = {"timestamp": int(time.time() * 1000)}
+            params["recvWindow"] = 5000
 
             if symbol:
                 params["symbol"] = symbol
@@ -304,7 +312,7 @@ class BinanceExchange:
             params["signature"] = signature
 
             # Make request
-            url = f"{self._get_base_url()}/fapi/v2/positionRisk"
+            url = f"{self._get_futures_base_url()}/fapi/v2/positionRisk"
             headers = {"X-MBX-APIKEY": self.api_key}
 
             async with self.session.get(
@@ -661,7 +669,7 @@ class BinanceExchange:
                 "limit": 1000,
             }
 
-            url = f"{self._get_base_url()}/fapi/v1/fundingRate"
+            url = f"{self._get_futures_base_url()}/fapi/v1/fundingRate"
 
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:

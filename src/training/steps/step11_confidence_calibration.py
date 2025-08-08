@@ -118,15 +118,24 @@ class ConfidenceCalibrationStep:
             # Load tactician ensembles
             tactician_ensembles_dir = f"{data_dir}/tactician_ensembles"
             if os.path.exists(tactician_ensembles_dir):
+                # New format: single model pickle per symbol/exchange
+                model_path = os.path.join(
+                    tactician_ensembles_dir,
+                    f"{exchange}_{symbol}_tactician_ensemble.pkl",
+                )
+                if os.path.exists(model_path):
+                    with open(model_path, "rb") as f:
+                        # Store under a default key for downstream usage
+                        tactician_ensembles["blended"] = {"ensemble": pickle.load(f)}
+                # Also support any additional ensembles present (e.g., experimental)
                 for ensemble_file in os.listdir(tactician_ensembles_dir):
-                    if ensemble_file.endswith("_ensemble.pkl"):
-                        ensemble_path = os.path.join(
-                            tactician_ensembles_dir,
-                            ensemble_file,
-                        )
-
-                        with open(ensemble_path, "rb") as f:
-                            tactician_ensembles = pickle.load(f)
+                    if ensemble_file.endswith("_tactician_ensemble.pkl") and os.path.join(tactician_ensembles_dir, ensemble_file) != model_path:
+                        ensemble_path = os.path.join(tactician_ensembles_dir, ensemble_file)
+                        try:
+                            with open(ensemble_path, "rb") as f:
+                                tactician_ensembles[ensemble_file] = {"ensemble": pickle.load(f)}
+                        except Exception as e:
+                            self.logger.warning(f"Failed to load tactician ensemble {ensemble_file}: {e}")
 
             # Load a generic validation frame for calibration fallback
             generic_val = self._load_validation_frame(data_dir, exchange, symbol)

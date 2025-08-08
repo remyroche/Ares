@@ -113,7 +113,18 @@ class WalkForwardValidationStep:
             
             if os.path.exists(data_file):
                 with open(data_file, "rb") as f:
-                    historical_data = pickle.load(f)
+                    payload = pickle.load(f)
+                if isinstance(payload, dict):
+                    historical_data = payload.get("klines") or next((v for v in payload.values() if isinstance(v, pd.DataFrame)), None)
+                    if historical_data is None:
+                        raise ValueError(f"No usable DataFrame found in {data_file}")
+                elif isinstance(payload, pd.DataFrame):
+                    historical_data = payload
+                else:
+                    raise ValueError(f"Unsupported historical data type: {type(payload)}")
+                if isinstance(historical_data.index, pd.DatetimeIndex) and 'timestamp' not in historical_data.columns:
+                    historical_data = historical_data.copy()
+                    historical_data['timestamp'] = historical_data.index
             else:
                 # Create placeholder data if file doesn't exist
                 historical_data = pd.DataFrame({

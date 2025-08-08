@@ -152,7 +152,7 @@ class Step16SavingValidator(BaseValidator):
                 f"{data_dir}/{exchange}_{symbol}_analyst_model.pkl",
                 f"{data_dir}/{exchange}_{symbol}_analyst_ensemble.pkl",
                 f"{data_dir}/{exchange}_{symbol}_tactician_model.pkl",
-                f"{data_dir}/{exchange}_{symbol}_tactician_ensemble.pkl",
+                f"{data_dir}/tactician_ensembles/{exchange}_{symbol}_tactician_ensemble.pkl",
                 f"{data_dir}/{exchange}_{symbol}_calibrated_models.pkl",
                 f"{data_dir}/{exchange}_{symbol}_optimized_parameters.json",
                 f"{data_dir}/{exchange}_{symbol}_walk_forward_results.json",

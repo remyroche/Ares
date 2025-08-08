@@ -350,11 +350,11 @@ const MonitoringDashboard = () => {
 
   // Drill-down: fetch drift alert details if needed (could be expanded for more info)
 
-  // Chart click handlers
-  const handleDriftChartClick = (data) => {
+  // Update chart click handlers to match Recharts signature
+  const handleDriftChartClick = (data, index) => {
     if (data && data.model) setSelectedModel(data.model);
   };
-  const handleFeatureImportanceChartClick = (data) => {
+  const handleFeatureImportanceChartClick = (data, index) => {
     if (data && data.model) setSelectedModel(data.model);
   };
 

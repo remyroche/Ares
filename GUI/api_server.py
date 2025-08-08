@@ -518,7 +518,7 @@ async def prometheus_metrics_endpoint():
         data = prometheus_metrics.get_metrics()
         return Response(content=data, media_type=CONTENT_TYPE_LATEST)
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=f"Error generating metrics: {e}")
 
 
 # --- Kill Switch Endpoints ---

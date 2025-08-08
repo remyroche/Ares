@@ -88,6 +88,7 @@ schedule>=1.2.0
 python-json-logger>=2.0.0
 structlog>=24.1.0
 dataclasses-json>=0.6.0
+sentry-sdk>=2.13.0
 
 # Efficiency optimization
 pyarrow>=12.0.0

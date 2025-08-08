@@ -1191,9 +1191,11 @@ async def main():
     sys.path.insert(0, str(project_root))
 
     from src.utils.logger import setup_logging, system_logger
+    from src.utils.observability import init_observability
 
     # Setup logging
     setup_logging()
+    init_observability({})
     logger = system_logger.getChild("AresPipelineMain")
 
     # Parse command line arguments

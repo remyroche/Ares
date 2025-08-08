@@ -143,11 +143,8 @@ class MarketRegimeClassificationStep:
             if isinstance(payload, dict):
                 historical_data = payload.get("klines")
                 if historical_data is None:
-                    # Fallback: prefer any DataFrame entry
-                    for _k, _v in payload.items():
-                        if isinstance(_v, pd.DataFrame) and not _v.empty:
-                            historical_data = _v
-                            break
+                    # Fallback: prefer any non-empty DataFrame in payload
+                    historical_data = next((df for df in payload.values() if isinstance(df, pd.DataFrame) and not df.empty), None)
                 if historical_data is None:
                     raise ValueError(f"No usable DataFrame found inside {data_file_path}")
             elif isinstance(payload, pd.DataFrame):

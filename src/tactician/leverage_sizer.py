@@ -180,6 +180,14 @@ class LeverageSizer:
                 market_health_leverage,
             )
 
+            # Apply hard risk guardrails based on liquidation and market stress
+            final_leverage = self._apply_leverage_guards(
+                final_leverage,
+                current_price=current_price,
+                liquidation_risk_analysis=liquidation_risk_analysis,
+                market_health_analysis=market_health_analysis,
+            )
+
             # Create leverage sizing analysis
             leverage_analysis = {
                 "timestamp": datetime.now(),
@@ -305,6 +313,51 @@ class LeverageSizer:
         except Exception as e:
             self.logger.error(f"Error extracting liquidation leverage: {e}")
             return self.min_leverage
+
+    def _apply_leverage_guards(
+        self,
+        proposed_leverage: float,
+        *,
+        current_price: float,
+        liquidation_risk_analysis: dict[str, Any] | None,
+        market_health_analysis: dict[str, Any] | None,
+    ) -> float:
+        """Apply hard guardrails to leverage based on liquidation proximity and market stress."""
+        try:
+            adjusted = proposed_leverage
+
+            # Guard 1: Liquidation proximity buffer
+            # Expect liquidation_risk_analysis to contain an estimated liquidation price per-symbol
+            # and/or a liquidation buffer ratio.
+            if liquidation_risk_analysis:
+                liq_price = liquidation_risk_analysis.get("estimated_liquidation_price")
+                min_buffer_ratio = liquidation_risk_analysis.get(
+                    "min_liquidation_buffer_ratio",
+                    0.02,
+                )  # require at least 2% distance
+                if liq_price and current_price:
+                    distance = abs(current_price - liq_price) / current_price
+                    if distance < min_buffer_ratio:
+                        # Clamp leverage proportionally to increase buffer
+                        risk_scale = max(0.1, distance / max(min_buffer_ratio, 1e-6))
+                        adjusted = max(self.min_leverage, proposed_leverage * risk_scale)
+
+            # Guard 2: Market stress clamp
+            if market_health_analysis:
+                stress = market_health_analysis.get("stress_analysis", {})
+                stress_level = float(stress.get("stress_level", 0.5))  # 0..1
+                # In high stress, reduce leverage; if stress >= 0.8, force near-min leverage
+                if stress_level >= 0.8:
+                    adjusted = max(self.min_leverage, min(adjusted, self.min_leverage * 1.5))
+                elif stress_level >= 0.6:
+                    adjusted = max(self.min_leverage, min(adjusted, self.max_leverage * 0.25))
+                elif stress_level >= 0.4:
+                    adjusted = max(self.min_leverage, min(adjusted, self.max_leverage * 0.5))
+
+            return max(self.min_leverage, min(self.max_leverage, adjusted))
+        except Exception as e:
+            self.logger.error(f"Error applying leverage guards: {e}")
+            return max(self.min_leverage, min(self.max_leverage, proposed_leverage))
 
     def _extract_market_health_leverage(
         self,

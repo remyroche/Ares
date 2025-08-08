@@ -418,6 +418,93 @@ class BinanceExchange:
             self.logger.error(f"Error creating order: {e}")
             return None
 
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid cancel parameters"),
+            AttributeError: (False, "Missing cancel components"),
+            KeyError: (False, "Missing required cancel data"),
+        },
+        default_return=False,
+        context="order cancellation",
+    )
+    async def cancel_order(self, symbol: str, order_id: str) -> bool:
+        """Cancel an existing order."""
+        try:
+            if not self.is_connected:
+                self.logger.error("Exchange not connected")
+                return False
+
+            if not self.api_key or not self.api_secret:
+                self.logger.error("API credentials required for order cancellation")
+                return False
+
+            params = {
+                "symbol": symbol,
+                "orderId": order_id,
+                "timestamp": int(time.time() * 1000),
+            }
+            signature = self._generate_signature(params)
+            params["signature"] = signature
+
+            url = f"{self._get_base_url()}/api/v3/order"
+            headers = {"X-MBX-APIKEY": self.api_key}
+
+            async with self.session.delete(url, params=params, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    self.logger.info(
+                        f"Order cancelled successfully: {data.get('orderId')}",
+                    )
+                    return True
+                error_data = await response.json()
+                self.logger.error(f"Failed to cancel order: {error_data}")
+                return False
+        except Exception as e:
+            self.logger.error(f"Error cancelling order: {e}")
+            return False
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (None, "Invalid status parameters"),
+            AttributeError: (None, "Missing status components"),
+            KeyError: (None, "Missing required status data"),
+        },
+        default_return=None,
+        context="order status",
+    )
+    async def get_order_status(self, symbol: str, order_id: str) -> dict[str, Any] | None:
+        """Get the status of an order."""
+        try:
+            if not self.is_connected:
+                self.logger.error("Exchange not connected")
+                return None
+
+            if not self.api_key or not self.api_secret:
+                self.logger.error("API credentials required for order status")
+                return None
+
+            params = {
+                "symbol": symbol,
+                "orderId": order_id,
+                "timestamp": int(time.time() * 1000),
+            }
+            signature = self._generate_signature(params)
+            params["signature"] = signature
+
+            url = f"{self._get_base_url()}/api/v3/order"
+            headers = {"X-MBX-APIKEY": self.api_key}
+
+            async with self.session.get(url, params=params, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data
+                error_data = await response.json()
+                self.logger.error(f"Failed to get order status: {error_data}")
+                return None
+        except Exception as e:
+            self.logger.error(f"Error getting order status: {e}")
+            return None
+
     @handle_network_operations(
         max_retries=3,
         default_return=None,

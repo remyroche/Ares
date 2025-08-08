@@ -15,6 +15,7 @@ from typing import Any
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.exchange.binance import BinanceExchange
 
 
 class OrderType(Enum):
@@ -150,6 +151,7 @@ class EnhancedOrderManager:
 
         # Order management configuration
         self.order_config = config.get("enhanced_order_manager", {})
+        self.paper_trading: bool = bool(config.get("paper_trading", True))
         self.max_leverage = self.order_config.get("max_leverage", 10.0)
         self.min_order_size = self.order_config.get("min_order_size", 0.001)
         self.max_order_size = self.order_config.get("max_order_size", 1000.0)
@@ -179,6 +181,7 @@ class EnhancedOrderManager:
         self.total_commission_paid = 0.0
 
         self.is_initialized = False
+        self.exchange_client: BinanceExchange | None = None
 
     @handle_errors(
         exceptions=(Exception,),
@@ -199,12 +202,64 @@ class EnhancedOrderManager:
             # Initialize strategy configurations
             self._initialize_strategy_configurations()
 
+            # Initialize exchange client in live mode
+            if not self.paper_trading:
+                self.exchange_client = BinanceExchange(self.config.get("exchange", {}))
+                connected = await self.exchange_client.connect()
+                if not connected:
+                    self.logger.error("Failed to connect exchange client; falling back to paper mode")
+                    self.exchange_client = None
+                    self.paper_trading = True
+
             self.is_initialized = True
             self.logger.info("✅ Enhanced Order Manager initialized successfully")
             return True
-
         except Exception as e:
-            self.logger.error(f"❌ Error initializing enhanced order manager: {e}")
+            self.logger.error(f"Error initializing Enhanced Order Manager: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="update trailing levels",
+    )
+    async def update_trailing_levels(
+        self,
+        *,
+        order_link_id: str,
+        symbol: str,
+        side: OrderSide | str,
+        trailing_stop_pct: float | None = None,
+        trailing_tp_pct: float | None = None,
+    ) -> bool:
+        """Update trailing stop / take-profit levels for an active position or OCO group.
+
+        In paper/sim mode, this updates internal metadata; in live mode, integrate with exchange OCO/trailing endpoints.
+        """
+        try:
+            # Update active orders with the same order_link_id
+            updated = False
+            for order in list(self.active_orders.values()):
+                if order.order_link_id == order_link_id and order.symbol == symbol:
+                    if trailing_stop_pct is not None:
+                        order.trailing_stop = trailing_stop_pct
+                    if trailing_tp_pct is not None:
+                        order.take_profit = trailing_tp_pct
+                    order.updated_time = datetime.now()
+                    updated = True
+
+            if updated:
+                self.logger.info(
+                    f"Updated trailing levels for link {order_link_id}: stop={trailing_stop_pct}, tp={trailing_tp_pct}"
+                )
+                return True
+
+            self.logger.warning(
+                f"No active orders found to update for link {order_link_id} on {symbol}"
+            )
+            return False
+        except Exception as e:
+            self.logger.error(f"Error updating trailing levels: {e}")
             return False
 
     def _validate_configuration(self) -> None:
@@ -705,25 +760,54 @@ class EnhancedOrderManager:
             # Update metrics
             self.total_orders_placed += 1
 
-            # Simple fill simulation for paper/sim contexts
-            simulated_fill_qty = order_state.original_quantity
-            simulated_price = order_request.price or 0.0
-            if simulated_fill_qty > 0 and simulated_price > 0:
-                fill = OrderFill(
-                    order_id=order_id,
+            if self.paper_trading or not self.exchange_client:
+                # Simple fill simulation for paper/sim contexts
+                simulated_fill_qty = order_state.original_quantity
+                simulated_price = order_request.price or 0.0
+                if simulated_fill_qty > 0 and simulated_price > 0:
+                    fill = OrderFill(
+                        order_id=order_id,
+                        symbol=order_request.symbol,
+                        side=order_request.side,
+                        price=simulated_price,
+                        quantity=simulated_fill_qty,
+                        commission=0.0,
+                        commission_asset="USD",
+                        trade_time=datetime.now(),
+                        is_maker=False,
+                    )
+                    order_state.add_fill(fill)
+                    # Force filled status if fully executed
+                    if order_state.remaining_quantity <= 0:
+                        order_state.status = OrderStatus.FILLED
+            else:
+                # Live execution via exchange client
+                side_map = {OrderSide.BUY: "BUY", OrderSide.SELL: "SELL"}
+                type_map = {
+                    OrderType.MARKET: "MARKET",
+                    OrderType.LIMIT: "LIMIT",
+                    OrderType.STOP_LIMIT: "LIMIT",  # map to supported types as needed
+                    OrderType.STOP_MARKET: "MARKET",
+                    OrderType.TAKE_PROFIT: "LIMIT",
+                    OrderType.TAKE_PROFIT_LIMIT: "LIMIT",
+                }
+                side = side_map.get(order_request.side, "BUY")
+                otype = type_map.get(order_request.order_type, "MARKET")
+                qty = float(max(order_request.quantity, 0.0))
+                price = float(order_request.price) if order_request.price else None
+
+                resp = await self.exchange_client.create_order(
                     symbol=order_request.symbol,
-                    side=order_request.side,
-                    price=simulated_price,
-                    quantity=simulated_fill_qty,
-                    commission=0.0,
-                    commission_asset="USD",
-                    trade_time=datetime.now(),
-                    is_maker=False,
+                    side=side,
+                    order_type=otype,
+                    quantity=qty,
+                    price=price,
                 )
-                order_state.add_fill(fill)
-                # Force filled status if fully executed
-                if order_state.remaining_quantity <= 0:
-                    order_state.status = OrderStatus.FILLED
+                if resp is None:
+                    order_state.status = OrderStatus.REJECTED
+                else:
+                    # Keep pending/open; fills will be tracked by polling get_order_status elsewhere
+                    order_state.status = OrderStatus.PENDING
 
             self.logger.info(
                 f"Order placed: {order_id} ({order_request.strategy_type})",

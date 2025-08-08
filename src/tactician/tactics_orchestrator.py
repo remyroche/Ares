@@ -116,6 +116,16 @@ class TacticsOrchestrator:
             from src.tactician.ml_tactics_manager import MLTacticsManager
             self.ml_tactics_manager = MLTacticsManager(self.config)
             await self.ml_tactics_manager.initialize()
+
+            # Attach order manager to position monitor if available for trailing updates
+            try:
+                from src.tactician.enhanced_order_manager import EnhancedOrderManager
+                self.order_manager = EnhancedOrderManager(self.config)
+                await self.order_manager.initialize()
+                if hasattr(self.position_monitor, "order_manager"):
+                    self.position_monitor.order_manager = self.order_manager
+            except Exception as e:
+                self.logger.warning(f"Order manager initialization failed or unavailable: {e}")
             
             self.logger.info("✅ All component managers initialized")
             
@@ -269,6 +279,15 @@ class TacticsOrchestrator:
                 self.logger.error("❌ Position monitoring failed")
                 return False
             
+            # Gather Analyst market health and Strategist risk parameters if present in input
+            analyst_market_health = tactics_input.get("market_health_analysis")
+            strategist_risk_parameters = tactics_input.get("strategist_risk_parameters")
+            ml_predictions = tactics_input.get("ml_predictions", {})
+            current_price = tactics_input.get("current_price", 0.0)
+            target_direction = tactics_input.get("target_direction", "long")
+            analyst_confidence = tactics_input.get("analyst_confidence", 0.5)
+            tactician_confidence = tactics_input.get("tactician_confidence", 0.5)
+
             # Step 2: SR Breakout Prediction
             self.logger.info("🔧 Step 2: SR Breakout Prediction")
             sr_results = await self.sr_breakout_predictor.predict_breakouts(tactics_input)
@@ -278,21 +297,45 @@ class TacticsOrchestrator:
             
             # Step 3: Position Sizing
             self.logger.info("🔧 Step 3: Position Sizing")
-            sizing_results = await self.position_sizer.calculate_position_sizes(tactics_input)
+            sizing_results = await self.position_sizer.calculate_position_size(
+                ml_predictions=ml_predictions,
+                current_price=current_price,
+                analyst_confidence=analyst_confidence,
+                tactician_confidence=tactician_confidence,
+                market_health_analysis=analyst_market_health,
+                strategist_risk_parameters=strategist_risk_parameters,
+            )
             if not sizing_results:
                 self.logger.error("❌ Position sizing failed")
                 return False
             
             # Step 4: Leverage Sizing
             self.logger.info("🔧 Step 4: Leverage Sizing")
-            leverage_results = await self.leverage_sizer.calculate_leverage(tactics_input)
+            leverage_results = await self.leverage_sizer.calculate_leverage(
+                ml_predictions=ml_predictions,
+                liquidation_risk_analysis=(tactics_input.get("liquidation_risk_analysis") or {}),
+                market_health_analysis=analyst_market_health,
+                current_price=current_price,
+                target_direction=target_direction,
+                analyst_confidence=analyst_confidence,
+                tactician_confidence=tactician_confidence,
+            )
             if not leverage_results:
                 self.logger.error("❌ Leverage sizing failed")
                 return False
             
             # Step 5: Position Division
             self.logger.info("🔧 Step 5: Position Division")
-            division_results = await self.position_division_strategy.divide_positions(tactics_input)
+            if hasattr(self.position_division_strategy, "analyze_and_divide"):
+                division_results = await self.position_division_strategy.analyze_and_divide(
+                    tactics_input,
+                    market_health_analysis=analyst_market_health,
+                    strategist_risk_parameters=strategist_risk_parameters,
+                    analyst_confidence=analyst_confidence,
+                    tactician_confidence=tactician_confidence,
+                )
+            else:
+                division_results = {"status": "skipped"}
             if not division_results:
                 self.logger.error("❌ Position division failed")
                 return False

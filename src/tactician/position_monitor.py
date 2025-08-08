@@ -75,6 +75,9 @@ class PositionMonitor:
         # Initialize position division strategy
         self.position_division_strategy = PositionDivisionStrategy(config)
 
+        # Optional order manager for trailing updates
+        self.order_manager = None
+
         # Risk thresholds (for additional risk assessment)
         self.risk_thresholds = {
             "high_risk": config.get("high_risk_threshold", 0.8),
@@ -145,6 +148,16 @@ class PositionMonitor:
 
     @handle_errors(
         exceptions=(Exception,),
+        default_return=True,
+        context="position monitoring (single pass)",
+    )
+    async def monitor_positions(self, _: dict[str, Any] | None = None) -> bool:
+        """Perform a single monitoring pass (public wrapper)."""
+        await self._monitor_positions()
+        return True
+
+    @handle_errors(
+        exceptions=(Exception,),
         default_return=None,
         context="position monitoring",
     )
@@ -182,6 +195,17 @@ class PositionMonitor:
                         f"📊 Position {position_id}: Confidence {assessment.current_confidence:.3f} "
                         f"({assessment.confidence_change:+.3f}) -> {assessment.recommended_action.value}",
                     )
+
+                    # Dynamically adjust trailing stops/TP based on evolving confidence
+                    try:
+                        await self._adjust_dynamic_trailing_levels(
+                            position_id,
+                            position_data,
+                            analyst_confidence,
+                            tactician_confidence,
+                        )
+                    except Exception as e:
+                        self.logger.error(f"Error adjusting dynamic trailing levels for {position_id}: {e}")
 
                     # Execute recommended action
                     await self._execute_position_action(assessment)
@@ -264,6 +288,47 @@ class PositionMonitor:
         except Exception as e:
             self.logger.error(f"Error assessing position {position_id}: {e}")
             return None
+
+    async def _adjust_dynamic_trailing_levels(
+        self,
+        position_id: str,
+        position_data: dict[str, Any],
+        analyst_confidence: float,
+        tactician_confidence: float,
+    ) -> None:
+        """Adjust trailing stop and take-profit dynamically based on evolving confidence."""
+        # Compute normalized dual confidence
+        dual_conf = analyst_confidence * (tactician_confidence ** 2)
+        normalized = max(0.0, min(1.0, (dual_conf - 0.216) / 0.784))
+
+        # Determine new trailing offsets as a function of confidence
+        # Higher confidence -> wider trailing stop, more ambitious TP; lower confidence -> tighten
+        base_trailing_stop = position_data.get("base_trailing_stop_pct", 0.005)  # 0.5%
+        base_trailing_tp = position_data.get("base_trailing_tp_pct", 0.01)       # 1%
+
+        # Scale between 0.5x..1.5x based on confidence
+        scale = 0.5 + normalized
+        new_trailing_stop = max(0.001, base_trailing_stop * scale)
+        new_trailing_tp = max(0.002, base_trailing_tp * scale)
+
+        # Apply to order manager / exchange if available
+        order_link_id = position_data.get("order_link_id")
+        symbol = position_data.get("symbol")
+        side = position_data.get("side")
+        if not symbol or not order_link_id:
+            return
+
+        if hasattr(self, "order_manager") and self.order_manager:
+            await self.order_manager.update_trailing_levels(
+                order_link_id=order_link_id,
+                symbol=symbol,
+                side=side,
+                trailing_stop_pct=new_trailing_stop,
+                trailing_tp_pct=new_trailing_tp,
+            )
+            self.logger.info(
+                f"🔧 Adjusted trailing levels for {position_id}: stop={new_trailing_stop:.4%}, tp={new_trailing_tp:.4%}"
+            )
 
     @handle_errors(
         exceptions=(Exception,),

@@ -188,7 +188,7 @@ class Step7AnalystEnsembleCreationValidator(BaseValidator):
             if issues:
                 for msg in issues[:5]:
                     self.logger.warning(f"⚠️ {msg}")
-            return True  # summary present and parsed; issues reported as warnings
+            return len(issues) == 0
         except Exception as e:
             self.logger.error(f"❌ Error validating summary content: {e}")
             return False

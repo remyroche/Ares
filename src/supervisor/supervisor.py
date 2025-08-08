@@ -395,6 +395,9 @@ class Supervisor:
         # Update online learning
         await self._update_online_learning()
 
+        # Enforce portfolio risk guardrails (kill-switch)
+        await self._enforce_portfolio_guards()
+
         # Update supervision results
         await self._update_supervision_results()
 
@@ -589,28 +592,41 @@ class Supervisor:
     )
     async def _coordinate_components(self) -> None:
         try:
-            # Enhanced coordination between components with new features
-            coordination_results = {
-                "timestamp": time.time(), # Changed from datetime.now() to time.time()
-                "components_coordinated": len(self.components),
-                "status": "coordinated",
-                "component_features": self.component_monitors.copy(),
-            }
-
-            # Coordinate Analyst with Strategist
-            if self.components.get("analyst") and self.components.get("strategist"):
-                await self._coordinate_analyst_strategist()
-
-            # Coordinate Strategist with Tactician
-            if self.components.get("strategist") and self.components.get("tactician"):
-                await self._coordinate_strategist_tactician()
-
-            # Coordinate Training Manager with other components
-            if self.components.get("enhanced_training_manager"):
-                await self._coordinate_training_manager()
-
-            self.supervision_results["coordination"] = coordination_results
-
+            # Example coordination: Strategist -> Tactician
+            strategist = self.components.get("strategist")
+            tactician = self.components.get("tactician")
+            analyst = self.components.get("analyst")
+            if strategist and tactician:
+                # Pull latest strategy and relevant info
+                strategy_data = None
+                if hasattr(strategist, "current_strategy"):
+                    strategy_data = strategist.current_strategy
+ 
+                # Gather analyst market health and liquidation risk
+                market_health = None
+                liquidation_risk = None
+                if analyst and hasattr(analyst, "get_analysis_results"):
+                    analysis = analyst.get_analysis_results()
+                    market_health = analysis.get("market_health")
+                    liquidation_risk = analysis.get("liquidation_risk")
+ 
+                tactics_input = {
+                    "symbol": strategy_data.get("symbol") if strategy_data else None,
+                    "exchange": strategy_data.get("exchange") if strategy_data else None,
+                    "timeframe": strategy_data.get("timeframe") if strategy_data else None,
+                    "current_price": strategy_data.get("current_price") if strategy_data else None,
+                    "ml_predictions": (strategy_data or {}).get("ml_predictions", {}),
+                    "market_health_analysis": market_health,
+                    "liquidation_risk_analysis": liquidation_risk,
+                    "strategist_risk_parameters": (strategy_data or {}).get("risk_parameters", {}),
+                    "analyst_confidence": (strategy_data or {}).get("confidence_score", 0.5),
+                    "tactician_confidence": (tactician.status or {}).get("tactician_confidence", 0.5),
+                    "target_direction": (strategy_data or {}).get("entry_signals", {}).get("direction", "long"),
+                }
+ 
+                # Validate minimal fields
+                if tactics_input["symbol"] and tactics_input["exchange"] and tactics_input["current_price"]:
+                    await tactician.execute_tactics(tactics_input)
         except Exception as e:
             self.logger.error(f"Error coordinating components: {e}")
 
@@ -1076,3 +1092,52 @@ async def setup_supervisor(
     except Exception as e:
         print(f"Error setting up supervisor: {e}")
         return None
+
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="portfolio guards enforcement",
+    )
+    async def _enforce_portfolio_guards(self) -> None:
+        """Pause tactician or reduce risk when daily loss / drawdown limits are breached."""
+        try:
+            perf_monitor = self.components.get("performance_monitor")
+            tactician = self.components.get("tactician")
+            if not perf_monitor or not tactician:
+                return
+
+            # Get performance metrics
+            if hasattr(perf_monitor, "get_performance_metrics"):
+                metrics = perf_monitor.get_performance_metrics()
+            else:
+                metrics = {}
+
+            max_drawdown = float(metrics.get("max_drawdown", 0.0))  # negative when losing
+            total_return = float(metrics.get("total_return", 0.0))
+
+            risk_cfg = self.supervisor_config.get("portfolio_guards", {})
+            dd_limit = float(risk_cfg.get("max_drawdown_limit", -0.15))  # -15%
+            daily_loss_limit = float(risk_cfg.get("max_daily_loss", -0.05))  # -5%
+
+            # For daily loss, if available via metrics
+            daily_return = float(metrics.get("daily_return", total_return))
+
+            breach = (max_drawdown <= dd_limit) or (daily_return <= daily_loss_limit)
+            if breach:
+                # Pause tactician run loop or set is_running flag down
+                if hasattr(tactician, "is_running"):
+                    tactician.is_running = False
+                self.logger.warning(
+                    f"⛔ Portfolio guard triggered. MDD={max_drawdown:.2%}, Daily={daily_return:.2%}. Pausing Tactician."
+                )
+                # Record in supervision results
+                self.supervision_results.setdefault("guards", {})["paused"] = True
+                self.supervision_results["guards"]["reason"] = {
+                    "max_drawdown": max_drawdown,
+                    "daily_return": daily_return,
+                    "limits": {"dd_limit": dd_limit, "daily_limit": daily_loss_limit},
+                }
+        except Exception as e:
+            self.logger.error(f"Error enforcing portfolio guards: {e}")
+            return

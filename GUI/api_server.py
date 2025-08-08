@@ -14,9 +14,11 @@ from fastapi import (
     HTTPException,
     WebSocket,
     WebSocketDisconnect,
+    Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import time
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -1413,26 +1415,43 @@ async def get_online_learning_metrics(model_id: str):
         return metrics.__dict__ if metrics else {}
     return {}
 
-@app.get("/api/monitoring/retraining-recommendations")
-async def get_retraining_recommendations():
+# --- ML Tracker Stats Cache ---
+_ml_tracker_stats_cache = {
+    'data': None,
+    'timestamp': 0
+}
+_ML_TRACKER_STATS_CACHE_TTL = 5  # seconds
+
+@app.get("/api/monitoring/ml-tracker-stats")
+async def get_ml_tracker_stats():
+    now = time.time()
+    if (
+        _ml_tracker_stats_cache['data'] is not None and
+        now - _ml_tracker_stats_cache['timestamp'] < _ML_TRACKER_STATS_CACHE_TTL
+    ):
+        return _ml_tracker_stats_cache['data']
     if enhanced_ml_tracker and hasattr(enhanced_ml_tracker, 'get_tracking_statistics'):
         stats = await enhanced_ml_tracker.get_tracking_statistics()
-        return stats.get('retraining_recommendations', [])
-    return []
+        _ml_tracker_stats_cache['data'] = stats
+        _ml_tracker_stats_cache['timestamp'] = now
+        return stats
+    return {}
+
+# Optionally, keep the old endpoints for backward compatibility, but fetch from the cache
+@app.get("/api/monitoring/retraining-recommendations")
+async def get_retraining_recommendations():
+    stats = await get_ml_tracker_stats()
+    return stats.get('retraining_recommendations', [])
 
 @app.get("/api/monitoring/model-comparison")
 async def get_model_comparison():
-    if enhanced_ml_tracker and hasattr(enhanced_ml_tracker, 'get_tracking_statistics'):
-        stats = await enhanced_ml_tracker.get_tracking_statistics()
-        return stats.get('comparison_reports', [])
-    return []
+    stats = await get_ml_tracker_stats()
+    return stats.get('comparison_reports', [])
 
 @app.get("/api/monitoring/regime-performance")
 async def get_regime_performance():
-    if enhanced_ml_tracker and hasattr(enhanced_ml_tracker, 'get_tracking_statistics'):
-        stats = await enhanced_ml_tracker.get_tracking_statistics()
-        return stats.get('regime_performance', {})
-    return {}
+    stats = await get_ml_tracker_stats()
+    return stats.get('regime_performance', {})
 
 
 if __name__ == "__main__":

@@ -24,6 +24,20 @@ from src.training.optimization.computational_optimization_manager import (
 )
 from src.config.computational_optimization import get_computational_optimization_config
 
+# Import optimized tools from enhanced_training_manager_optimized
+from src.training.enhanced_training_manager_optimized import (
+    _make_hashable,
+    CachedBacktester,
+    ProgressiveEvaluator,
+    ParallelBacktester,
+    IncrementalTrainer,
+    StreamingDataProcessor,
+    AdaptiveSampler,
+    MemoryEfficientDataManager,
+    MemoryManager,
+    EnhancedTrainingManagerOptimized,
+)
+
 from contextlib import contextmanager
 
 

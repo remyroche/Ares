@@ -9,6 +9,7 @@ and ML ensemble confidence scores.
 
 import json
 import os
+import sys
 from datetime import datetime
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
@@ -117,34 +118,20 @@ class MLConfidenceScores:
 @dataclass
 class DetailedTradeRecord:
     """Comprehensive trade record with all required information."""
-    
     # Basic trade information
     trade_id: str
     symbol: str
     exchange: str
     timestamp: datetime
-    close_timestamp: Optional[datetime] = None
-    
-    # Trade type and classification
     trade_type: TradeType
-    
-    # Position sizing
     position_sizing: PositionSizing
-    
-    # PnL analysis
     pnl_analysis: PnLAnalysis
-    
-    # Market indicators at trade time
     market_indicators: MarketIndicators
-    
-    # Market health
     market_health: MarketHealth
-    
-    # ML confidence scores
     ml_confidence_scores: MLConfidenceScores
-    
-    # Additional metadata
     trade_status: str  # "open", "closed", "cancelled"
+    # Fields with defaults must come after all non-default fields
+    close_timestamp: Optional[datetime] = None
     close_reason: Optional[str] = None
     execution_quality: float = 0.0
     risk_metrics: Dict[str, float] = None
@@ -175,7 +162,13 @@ class PaperTradingReporter:
         # Reporting configuration
         self.report_config = config.get("paper_trading_reporter", {})
         self.enable_detailed_reporting = self.report_config.get("enable_detailed_reporting", True)
-        self.report_directory = self.report_config.get("report_directory", "reports/paper_trading")
+        # Patch: Always use absolute path for report directory
+        report_dir = self.report_config.get("report_directory", "reports/paper_trading")
+        if not os.path.isabs(report_dir):
+            # Use workspace root as base
+            workspace_root = os.environ.get("WORKSPACE_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+            report_dir = os.path.abspath(os.path.join(workspace_root, report_dir))
+        self.report_directory = report_dir
         self.export_formats = self.report_config.get("export_formats", ["json", "csv", "html"])
         
         # Performance tracking
@@ -184,6 +177,13 @@ class PaperTradingReporter:
         
         # Initialize report directory
         os.makedirs(self.report_directory, exist_ok=True)
+        # Log current working directory and report directory
+        cwd = os.getcwd()
+        abs_report_dir = os.path.abspath(self.report_directory)
+        print(f"[DEBUG] CWD: {cwd}")
+        print(f"[DEBUG] Report directory (abs): {abs_report_dir}")
+        self.logger.info(f"[DEBUG] CWD: {cwd}")
+        self.logger.info(f"[DEBUG] Report directory (abs): {abs_report_dir}")
     
     @handle_specific_errors(
         error_handlers={
@@ -589,6 +589,8 @@ class PaperTradingReporter:
             Dict[str, Any]: Generated report
         """
         try:
+            print(f"[DEBUG] Generating {report_type} report with formats: {export_formats}")
+            self.logger.info(f"[DEBUG] Generating {report_type} report with formats: {export_formats}")
             if export_formats is None:
                 export_formats = self.export_formats
             
@@ -604,13 +606,16 @@ class PaperTradingReporter:
             
             # Export reports
             for format_type in export_formats:
+                print(f"[DEBUG] Exporting report as {format_type}")
+                self.logger.info(f"[DEBUG] Exporting report as {format_type}")
                 await self._export_report(report_data, format_type)
-            
             self.logger.info(f"✅ Generated {report_type} report")
+            print(f"[DEBUG] Generated {report_type} report")
             return report_data
             
         except Exception as e:
             self.logger.error(f"Error generating report: {e}")
+            print(f"[DEBUG] Error generating report: {e}")
             return {}
     
     @handle_errors(
@@ -703,41 +708,41 @@ class PaperTradingReporter:
         report_data: Dict[str, Any],
         format_type: str,
     ) -> None:
-        """Export report in specified format."""
+        """
+        Export report in specified format.
+        """
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
+            abs_report_dir = os.path.abspath(self.report_directory)
+            os.makedirs(abs_report_dir, exist_ok=True)  # Ensure directory exists before every write
             if format_type == "json":
                 filename = f"paper_trading_report_{timestamp}.json"
-                filepath = os.path.join(self.report_directory, filename)
-                
+                filepath = os.path.join(abs_report_dir, filename)
+                abs_filepath = os.path.abspath(filepath)
                 with open(filepath, "w") as f:
                     json.dump(report_data, f, indent=2, default=str)
-                
-                self.logger.info(f"✅ Exported JSON report: {filepath}")
-                
+                print(f"[DEBUG] Exported JSON report: {abs_filepath}")
+                self.logger.info(f"[DEBUG] Exported JSON report: {abs_filepath}")
             elif format_type == "csv":
                 filename = f"paper_trading_report_{timestamp}.csv"
-                filepath = os.path.join(self.report_directory, filename)
-                
-                # Convert to DataFrame and export
+                filepath = os.path.join(abs_report_dir, filename)
+                abs_filepath = os.path.abspath(filepath)
                 df = self._convert_to_dataframe(report_data)
                 df.to_csv(filepath, index=False)
-                
-                self.logger.info(f"✅ Exported CSV report: {filepath}")
-                
+                print(f"[DEBUG] Exported CSV report: {abs_filepath}")
+                self.logger.info(f"[DEBUG] Exported CSV report: {abs_filepath}")
             elif format_type == "html":
                 filename = f"paper_trading_report_{timestamp}.html"
-                filepath = os.path.join(self.report_directory, filename)
-                
+                filepath = os.path.join(abs_report_dir, filename)
+                abs_filepath = os.path.abspath(filepath)
                 html_content = self._generate_html_report(report_data)
                 with open(filepath, "w") as f:
                     f.write(html_content)
-                
-                self.logger.info(f"✅ Exported HTML report: {filepath}")
-                
+                print(f"[DEBUG] Exported HTML report: {abs_filepath}")
+                self.logger.info(f"[DEBUG] Exported HTML report: {abs_filepath}")
         except Exception as e:
             self.logger.error(f"Error exporting {format_type} report: {e}")
+            print(f"[DEBUG] Error exporting {format_type} report: {e}")
     
     def _convert_to_dataframe(self, report_data: Dict[str, Any]) -> pd.DataFrame:
         """Convert report data to DataFrame for CSV export."""
@@ -892,3 +897,44 @@ async def setup_paper_trading_reporter(
     except Exception as e:
         system_logger.error(f"Error setting up paper trading reporter: {e}")
         return None
+
+# --- TEST UTILITY ---
+def test_generate_report():
+    import asyncio
+    print("[DEBUG] Running test_generate_report()...")
+    config = {"paper_trading_reporter": {"report_directory": "reports/paper_trading", "export_formats": ["json", "csv", "html"]}}
+    reporter = PaperTradingReporter(config)
+    # Add a fake trade record for testing
+    from datetime import datetime
+    trade_data = {
+        "side": "BUY",
+        "leverage": 1.0,
+        "duration": "scalping",
+        "strategy": "test_strategy",
+        "order_type": "market",
+        "quantity": 1.0,
+        "portfolio_percentage": 0.1,
+        "risk_percentage": 0.01,
+        "max_position_size": 0.1,
+        "position_ranking": 1,
+        "absolute_pnl": 10.0,
+        "percentage_pnl": 0.01,
+        "unrealized_pnl": 0.0,
+        "realized_pnl": 10.0,
+        "total_cost": 100.0,
+        "total_proceeds": 110.0,
+        "commission": 0.1,
+        "slippage": 0.05,
+        "net_pnl": 9.85,
+        "symbol": "TEST",
+        "exchange": "TESTEX",
+        "timestamp": datetime.now().isoformat(),
+    }
+    market_indicators = {"rsi": 50, "macd": 0, "macd_signal": 0, "bollinger_upper": 0, "bollinger_lower": 0, "bollinger_middle": 0, "atr": 0, "volume_sma": 0, "price_sma_20": 0, "price_sma_50": 0, "price_sma_200": 0, "volatility": 0, "momentum": 0, "support_level": 0, "resistance_level": 0}
+    market_health = {"overall_health_score": 1.0, "volatility_regime": "normal", "liquidity_score": 1.0, "stress_score": 0.0, "market_strength": 1.0, "volume_health": "good", "price_trend": "up", "market_regime": "bull"}
+    ml_confidence = {"analyst_confidence": 0.9, "tactician_confidence": 0.8, "ensemble_confidence": 0.85, "meta_learner_confidence": 0.8, "individual_model_confidences": {}, "ensemble_agreement": 0.9, "model_diversity": 0.1, "prediction_consistency": 0.95}
+    async def run():
+        await reporter.record_trade(trade_data, market_indicators, market_health, ml_confidence)
+        await reporter.generate_detailed_report("test_report", ["json", "csv", "html"])
+    asyncio.run(run())
+    print("[DEBUG] test_generate_report() complete.")

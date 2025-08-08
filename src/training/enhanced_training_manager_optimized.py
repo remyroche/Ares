@@ -15,15 +15,33 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
+# Optional dependency: pyarrow is used for efficient parquet streaming; import lazily
+try:
+    import pyarrow as pa  # type: ignore
+    import pyarrow.parquet as pq  # type: ignore
+except Exception:
+    pa = None  # type: ignore
+    pq = None  # type: ignore
 from sklearn.base import BaseEstimator
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.validator_orchestrator import validator_orchestrator
 
-warnings.filterwarnings("ignore")
+# Note: Avoid global warning suppression; use scoped suppression with warnings.catch_warnings in specific call sites if necessary
+
+
+def _make_hashable(obj: Any) -> Any:
+    """Recursively convert potentially unhashable objects (lists, dicts, arrays) into hashable tuples.
+    This is used to generate robust cache keys.
+    """
+    if isinstance(obj, dict):
+        return tuple(sorted((k, _make_hashable(v)) for k, v in obj.items()))
+    if isinstance(obj, (list, tuple, set)):
+        return tuple(_make_hashable(v) for v in obj)
+    if isinstance(obj, np.ndarray):
+        return tuple(obj.tolist())
+    return obj
 
 
 class CachedBacktester:
@@ -37,34 +55,49 @@ class CachedBacktester:
     
     def _precompute_indicators(self) -> Dict[str, np.ndarray]:
         """Precompute all technical indicators once."""
-        indicators = {}
+        indicators: Dict[str, np.ndarray] = {}
+        
+        if 'close' not in self.market_data.columns:
+            self.logger.warning("'close' column missing; cannot compute indicators")
+            return indicators
         
         # Precompute common indicators
-        indicators['sma_20'] = self.market_data['close'].rolling(20).mean().values
-        indicators['sma_50'] = self.market_data['close'].rolling(50).mean().values
-        indicators['ema_12'] = self.market_data['close'].ewm(span=12).mean().values
-        indicators['ema_26'] = self.market_data['close'].ewm(span=26).mean().values
+        indicators['sma_20'] = (
+            self.market_data['close'].rolling(20).mean().fillna(0).values
+        )
+        indicators['sma_50'] = (
+            self.market_data['close'].rolling(50).mean().fillna(0).values
+        )
+        indicators['ema_12'] = self.market_data['close'].ewm(span=12).mean().fillna(0).values
+        indicators['ema_26'] = self.market_data['close'].ewm(span=26).mean().fillna(0).values
         
-        # RSI calculation
+        # RSI calculation with zero-loss guard
         delta = self.market_data['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        indicators['rsi'] = (100 - (100 / (1 + rs))).values
+        rs = gain / (loss.replace(0, np.nan))
+        indicators['rsi'] = (100 - (100 / (1 + rs))).fillna(50).values
         
-        # ATR calculation
-        high_low = self.market_data['high'] - self.market_data['low']
-        high_close = np.abs(self.market_data['high'] - self.market_data['close'].shift())
-        low_close = np.abs(self.market_data['low'] - self.market_data['close'].shift())
-        tr = np.maximum(high_low, np.maximum(high_close, low_close))
-        indicators['atr'] = tr.rolling(window=14).mean().values
+        # ATR calculation only if required columns exist
+        if {'high', 'low'}.issubset(self.market_data.columns):
+            high_low = self.market_data['high'] - self.market_data['low']
+            high_close = np.abs(self.market_data['high'] - self.market_data['close'].shift())
+            low_close = np.abs(self.market_data['low'] - self.market_data['close'].shift())
+            tr = np.maximum(high_low.values, np.maximum(high_close.values, low_close.values))
+            indicators['atr'] = (
+                pd.Series(tr, index=self.market_data.index).rolling(window=14).mean().fillna(0).values
+            )
+        else:
+            self.logger.warning("Missing 'high'/'low' columns; skipping ATR calculation")
         
         # Volatility
-        indicators['volatility'] = self.market_data['close'].pct_change().rolling(20).std().values
+        indicators['volatility'] = (
+            self.market_data['close'].pct_change().rolling(20).std().fillna(0).values
+        )
         
         # Volume indicators
         if 'volume' in self.market_data.columns:
-            indicators['volume_sma'] = self.market_data['volume'].rolling(20).mean().values
+            indicators['volume_sma'] = self.market_data['volume'].rolling(20).mean().fillna(0).values
         
         self.logger.info(f"Precomputed {len(indicators)} technical indicators")
         return indicators
@@ -82,8 +115,8 @@ class CachedBacktester:
         return result
     
     def _generate_cache_key(self, params: Dict[str, Any]) -> str:
-        """Generate cache key from parameters."""
-        return str(hash(frozenset(params.items())))
+        """Generate cache key from parameters, robust to unhashable values."""
+        return str(hash(_make_hashable(params)))
     
     def _run_simplified_backtest(self, params: Dict[str, Any]) -> float:
         """Run simplified backtest logic."""
@@ -205,7 +238,7 @@ class IncrementalTrainer:
             'subsample': params.get('subsample'),
             'colsample_bytree': params.get('colsample_bytree')
         }
-        return str(hash(frozenset(core_params.items())))
+        return str(hash(_make_hashable(core_params)))
     
     def _create_model(self, params: Dict[str, Any]) -> Any:
         """Create new model with given parameters."""
@@ -235,20 +268,42 @@ class StreamingDataProcessor:
     
     def _process_parquet_stream(self, file_path: str) -> pd.DataFrame:
         """Process Parquet file in chunks."""
-        chunks = []
-        parquet_file = pq.ParquetFile(file_path)
+        chunks: List[pd.DataFrame] = []
         
-        for batch in parquet_file.iter_batches(batch_size=self.chunk_size):
-            chunk = batch.to_pandas()
-            # Process chunk if needed
-            chunks.append(chunk)
+        if pq is None:
+            self.logger.warning("pyarrow not available; falling back to pandas read_parquet")
+            try:
+                return pd.read_parquet(file_path)
+            except FileNotFoundError as e:
+                self.logger.error(f"Parquet file not found: {file_path}")
+                raise
+            except Exception as e:
+                self.logger.error(f"Error reading Parquet with pandas: {e}")
+                raise
         
-        self.logger.info(f"Processed {len(chunks)} chunks from Parquet file")
-        return pd.concat(chunks, ignore_index=True)
+        try:
+            parquet_file = pq.ParquetFile(file_path)
+            for batch in parquet_file.iter_batches(batch_size=self.chunk_size):
+                chunk = batch.to_pandas()
+                # Process chunk if needed
+                chunks.append(chunk)
+            
+            self.logger.info(f"Processed {len(chunks)} chunks from Parquet file")
+            return pd.concat(chunks, ignore_index=True)
+        except FileNotFoundError:
+            self.logger.error(f"Parquet file not found: {file_path}")
+            raise
+        except Exception as e:
+            # Provide better diagnostics for common pyarrow errors when available
+            if pa is not None and isinstance(e, pa.lib.ArrowInvalid):  # type: ignore[attr-defined]
+                self.logger.error(f"Invalid Parquet file format: {e}")
+            else:
+                self.logger.error(f"Error processing Parquet stream: {e}")
+            raise
     
     def _process_csv_stream(self, file_path: str) -> pd.DataFrame:
         """Process CSV file in chunks."""
-        chunks = []
+        chunks: List[pd.DataFrame] = []
         
         for chunk in pd.read_csv(file_path, chunksize=self.chunk_size):
             # Process chunk if needed

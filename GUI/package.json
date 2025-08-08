@@ -22,7 +22,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "vite"
+    "start": "vite",
+    "dev:api": "python api_server.py",
+    "start:all": "bash start.sh"
   },
   "browserslist": {
     "production": [

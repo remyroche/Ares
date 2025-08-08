@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell } from 'recharts';
 import { Play, Settings, Download, RefreshCw, TrendingUp, TrendingDown, BarChart3, PieChart as PieChartIcon, Target, Clock, DollarSign, Percent } from 'lucide-react';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 const Backtesting = () => {
   const [activeTab, setActiveTab] = useState('new');

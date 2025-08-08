@@ -11,7 +11,7 @@ import {
   Calendar, Filter, RefreshCw, Eye, EyeOff, FileText, AlertCircle, CheckCircle
 } from 'lucide-react';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 const MonitoringDashboard = () => {
   const [monitoringData, setMonitoringData] = useState({

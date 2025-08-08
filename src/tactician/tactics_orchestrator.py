@@ -26,10 +26,8 @@ class DecisionPolicy:
         self.logger = system_logger.getChild("DecisionPolicy")
         policy_cfg = config.get("decision_policy", {})
 
-        # Thresholds
-        self.min_entry_confidence: float = policy_cfg.get("min_entry_confidence", 0.6)
-        self.min_sr_score: float = policy_cfg.get("min_sr_score", 0.5)
-        self.max_risk_score: float = policy_cfg.get("max_risk_score", 0.7)
+        # Threshold uses historical rule: tactician_confidence^2 * analyst_confidence > 0.216
+        self.min_conf_product: float = float(policy_cfg.get("min_conf_product", 0.216))
 
         # Metrics
         self.metrics = {
@@ -55,21 +53,21 @@ class DecisionPolicy:
             stop_loss = float(leverage.get("stop_loss", 0.0) or 0.0)
             take_profit = float(leverage.get("take_profit", 0.0) or 0.0)
             directional_conf = float(ml.get("directional_confidence", {}).get("long", 0.5) or 0.5)
-            sr_score = float(sr.get("breakout_strength", 0.0) or 0.0)
             target_direction = context.get("target_direction", "long")
 
-            # Risk score heuristic
+            # Confidence product gate (historical rule)
+            analyst_confidence = float(context.get("analyst_confidence", 0.0) or 0.0)
+            tactician_confidence = float(context.get("tactician_confidence", 0.0) or 0.0)
+            confidence_product = (tactician_confidence ** 2) * analyst_confidence
+
+            # Optional extra signals for auditing (not gating)
+            sr_score = float(sr.get("breakout_strength", 0.0) or 0.0)
             market_risk = float(context.get("market_health_analysis", {}).get("risk_score", 0.5) or 0.5)
             strategist_risk = float(context.get("strategist_risk_parameters", {}).get("risk_score", 0.5) or 0.5)
             risk_score = max(market_risk, strategist_risk)
 
-            # Decision gates
-            approved = (
-                directional_conf >= self.min_entry_confidence
-                and sr_score >= self.min_sr_score
-                and risk_score <= self.max_risk_score
-                and final_size > 0
-            )
+            # Decision gates (only confidence product + positive size)
+            approved = (confidence_product > self.min_conf_product) and (final_size > 0)
 
             action = (
                 "OPEN_LONG" if target_direction == "long" else "OPEN_SHORT"
@@ -77,11 +75,13 @@ class DecisionPolicy:
 
             metadata = {
                 "thresholds": {
-                    "min_entry_confidence": self.min_entry_confidence,
-                    "min_sr_score": self.min_sr_score,
-                    "max_risk_score": self.max_risk_score,
+                    "min_confidence_product": self.min_conf_product,
+                    "formula": "tactician_confidence^2 * analyst_confidence",
                 },
                 "inputs": {
+                    "tactician_confidence": tactician_confidence,
+                    "analyst_confidence": analyst_confidence,
+                    "confidence_product": confidence_product,
                     "directional_confidence": directional_conf,
                     "sr_breakout_strength": sr_score,
                     "risk_score": risk_score,
@@ -106,7 +106,7 @@ class DecisionPolicy:
                     leverage=leverage_val,
                     stop_loss=stop_loss,
                     take_profit=take_profit,
-                    confidence=directional_conf,
+                    confidence=confidence_product,
                     risk_score=risk_score,
                 )
 
@@ -117,7 +117,6 @@ class DecisionPolicy:
             else:
                 self.metrics["decisions_rejected"] += 1
             latency_ms = max((datetime.now() - start_time).total_seconds() * 1000.0, 0.0)
-            # Simple moving average
             prev_avg = self.metrics["avg_decision_latency_ms"]
             n = self.metrics["decisions_total"]
             self.metrics["avg_decision_latency_ms"] = prev_avg + (latency_ms - prev_avg) / n

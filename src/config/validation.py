@@ -96,4 +96,4 @@ def validate_complete_config(config: dict[str, Any]) -> Tuple[bool, list[str]]:
     errors.extend(tr_err)
     errors.extend(trn_err)
 
-    return (sys_ok and tr_ok and trn_ok and len(errors) == 0), errors
+    return len(errors) == 0, errors

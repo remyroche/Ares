@@ -60,7 +60,7 @@ from contextlib import contextmanager
 
 
 # === Optimization helper classes (ported from optimized manager) ===
-class CachedBacktester:
+class DeprecatedCachedBacktester:
     """Cached backtesting to avoid redundant calculations."""
 
     def __init__(self, market_data: pd.DataFrame):
@@ -105,7 +105,7 @@ class CachedBacktester:
         return random.uniform(-1.0, 1.0)
 
 
-class ProgressiveEvaluator:
+class DeprecatedProgressiveEvaluator:
     """Progressive evaluation to stop unpromising trials early."""
 
     def __init__(self, full_data: pd.DataFrame):
@@ -132,7 +132,7 @@ class ProgressiveEvaluator:
         return total_score / max(total_weight, 1e-9)
 
 
-class ParallelBacktester:
+class DeprecatedParallelBacktester:
     """Parallel backtesting for multiple parameter combinations."""
 
     def __init__(self, n_workers: int | None = None):
@@ -160,7 +160,7 @@ class ParallelBacktester:
             self.executor.shutdown(wait=True)
 
 
-class IncrementalTrainer:
+class DeprecatedIncrementalTrainer:
     """Incremental training to reuse model states."""
 
     def __init__(self, base_model_config: dict[str, Any]):
@@ -193,7 +193,7 @@ class IncrementalTrainer:
         return None
 
 
-class StreamingDataProcessor:
+class DeprecatedStreamingDataProcessor:
     """Streaming processor for large datasets."""
 
     def __init__(self, chunk_size: int = 10000):
@@ -236,7 +236,7 @@ class StreamingDataProcessor:
         return pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
 
 
-class AdaptiveSampler:
+class DeprecatedAdaptiveSampler:
     """Adaptive sampling to focus on promising regions."""
 
     def __init__(self, initial_samples: int = 100):
@@ -282,7 +282,7 @@ class AdaptiveSampler:
         return perturbed
 
 
-class MemoryEfficientDataManager:
+class DeprecatedMemoryEfficientDataManager:
     """Memory-efficient data structures for large datasets."""
 
     def __init__(self):
@@ -312,7 +312,7 @@ class MemoryEfficientDataManager:
         return df
 
 
-class MemoryManager:
+class DeprecatedMemoryManager:
     """Manage memory usage during optimization."""
 
     def __init__(self, memory_threshold: float = 0.8):
@@ -442,6 +442,7 @@ class EnhancedTrainingManager:
         self.memory_threshold: float = optimization_root.get("memory_threshold", 0.8)
 
         # Optimization components (lazy init)
+        # Using classes from enhanced_training_manager_optimized
         self.cached_backtester: CachedBacktester | None = None
         self.progressive_evaluator: ProgressiveEvaluator | None = None
         self.parallel_backtester: ParallelBacktester | None = None
@@ -473,6 +474,9 @@ class EnhancedTrainingManager:
         
         # Initialize the underlying optimized training manager for advanced operations
         self.optimized_manager = EnhancedTrainingManagerOptimized(config)
+        
+        # Logging verbosity
+        self.verbosity: str = self.enhanced_training_config.get("verbosity", "info")  # "info" or "debug"
         
     def _load_optimization_config(self):
         """Load optimization configuration from enhanced_training_manager_optimized."""
@@ -797,18 +801,18 @@ class EnhancedTrainingManager:
             elapsed_time: Time elapsed so far
         """
         progress = self._get_progress_percentage(current_step, total_steps)
-        
-        if elapsed_time > 0 and current_step > 0:
-            # Estimate remaining time based on current progress
-            estimated_total_time = (elapsed_time / current_step) * total_steps
-            remaining_time = estimated_total_time - elapsed_time
-            eta_minutes = remaining_time / 60
-            
-            self.logger.info(f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
-            self.logger.info(f"⏱️ Elapsed: {elapsed_time/60:.1f} min | ETA: {eta_minutes:.1f} min")
+        if elapsed_time > 0:
+            avg_time = elapsed_time / max(current_step, 1)
+            remaining_steps = total_steps - current_step
+            eta_minutes = (avg_time * remaining_steps) / 60
+        else:
+            eta_minutes = 0
+        if self.verbosity == "debug":
+            self.logger.debug(f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
+            self.logger.debug(f"⏱️ Elapsed: {elapsed_time/60:.1f} min | ETA: {eta_minutes:.1f} min")
         else:
             self.logger.info(f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
-        
+    
     def _log_step_completion(self, step_name: str, step_start: float, step_times: dict, success: bool = True) -> None:
         """
         Log step completion with timing and memory usage.

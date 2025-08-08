@@ -169,6 +169,18 @@ class ParallelBacktester:
         self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
         self.logger = system_logger.getChild("ParallelBacktester")
     
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            if hasattr(self, 'executor') and self.executor:
+                self.executor.shutdown(wait=True)
+        finally:
+            self.executor = None
+        # do not suppress exceptions
+        return False
+    
     def evaluate_batch(self, param_batch: List[Dict[str, Any]], 
                       market_data: pd.DataFrame) -> List[float]:
         """Evaluate multiple parameter sets in parallel."""
@@ -255,63 +267,80 @@ class StreamingDataProcessor:
         self.chunk_size = chunk_size
         self.logger = system_logger.getChild("StreamingDataProcessor")
     
-    def process_data_stream(self, data_path: str) -> pd.DataFrame:
-        """Process data in streaming fashion."""
+    def process_data_stream(self, data_path: str):
+        """Yield data chunks for streaming processing.
+        Returns an iterator of pandas DataFrame chunks.
+        """
         try:
             if data_path.endswith('.parquet'):
-                return self._process_parquet_stream(data_path)
+                yield from self._iter_parquet_chunks(data_path)
             elif data_path.endswith('.csv'):
-                return self._process_csv_stream(data_path)
+                yield from self._iter_csv_chunks(data_path)
             else:
                 raise ValueError(f"Unsupported file format: {data_path}")
         except Exception as e:
             self.logger.error(f"Error processing data stream: {e}")
             raise
     
-    def _process_parquet_stream(self, file_path: str) -> pd.DataFrame:
-        """Process Parquet file in chunks."""
+    def _iter_parquet_chunks(self, file_path: str):
+        """Iterate Parquet file in chunks."""
         try:
-            chunks: List[pd.DataFrame] = []
-            
             if pq is None:
-                self.logger.warning("pyarrow not available; falling back to pandas read_parquet")
-                return pd.read_parquet(file_path)
-            
-            # Use pyarrow for streaming
+                self.logger.warning("pyarrow not available; falling back to pandas read_parquet (single chunk)")
+                yield pd.read_parquet(file_path)
+                return
             parquet_file = pq.ParquetFile(file_path)
+            count = 0
             for batch in parquet_file.iter_batches(batch_size=self.chunk_size):
-                chunk = batch.to_pandas()
-                # Process chunk if needed
-                chunks.append(chunk)
-            
-            self.logger.info(f"Processed {len(chunks)} chunks from Parquet file")
-            return pd.concat(chunks, ignore_index=True)
-            
-        except FileNotFoundError:
-            self.logger.error(f"Parquet file not found: {file_path}")
-            raise
-        except (ValueError, OSError) as e:
-            # Handle common file format or reading issues
+                count += 1
+                yield batch.to_pandas()
+            self.logger.info(f"Streamed {count} chunks from Parquet file")
+        except Exception as e:
             self.logger.error(f"Error reading Parquet file {file_path}: {e}")
             raise
-        except Exception as e:
-            # Provide better diagnostics for pyarrow-specific errors when available
-            if pa is not None and hasattr(pa.lib, 'ArrowInvalid') and isinstance(e, pa.lib.ArrowInvalid):  # type: ignore[attr-defined]
-                self.logger.error(f"Invalid Parquet file format in {file_path}: {e}")
-            else:
-                self.logger.error(f"Unexpected error processing Parquet file {file_path}: {e}")
-            raise
     
-    def _process_csv_stream(self, file_path: str) -> pd.DataFrame:
-        """Process CSV file in chunks."""
-        chunks: List[pd.DataFrame] = []
-        
+    def _iter_csv_chunks(self, file_path: str):
+        """Iterate CSV file in chunks."""
+        count = 0
         for chunk in pd.read_csv(file_path, chunksize=self.chunk_size):
-            # Process chunk if needed
-            chunks.append(chunk)
-        
-        self.logger.info(f"Processed {len(chunks)} chunks from CSV file")
-        return pd.concat(chunks, ignore_index=True)
+            count += 1
+            yield chunk
+        self.logger.info(f"Streamed {count} chunks from CSV file")
+
+    def write_incremental_parquet(self, chunks_iter, target_path: str, compression: str = 'snappy') -> None:
+        """Write DataFrame chunks incrementally to Parquet (append mode).
+        If pyarrow is not available, fall back to concatenating in bounded windows.
+        """
+        try:
+            target = Path(target_path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if pq is None:
+                # Fallback: bounded window concat to cap memory
+                window: list[pd.DataFrame] = []
+                window_rows = 0
+                for df in chunks_iter:
+                    window.append(df)
+                    window_rows += len(df)
+                    if window_rows >= self.chunk_size * 10:
+                        pd.concat(window, ignore_index=True).to_parquet(target, compression=compression)
+                        window.clear(); window_rows = 0
+                if window:
+                    pd.concat(window, ignore_index=True).to_parquet(target, compression=compression)
+                return
+            # With pyarrow, write in append mode
+            import pyarrow as pa  # type: ignore
+            import pyarrow.parquet as pq_mod  # type: ignore
+            writer = None
+            for df in chunks_iter:
+                table = pa.Table.from_pandas(df)
+                if writer is None:
+                    writer = pq_mod.ParquetWriter(str(target), table.schema, compression=compression)
+                writer.write_table(table)
+            if writer is not None:
+                writer.close()
+        except Exception as e:
+            self.logger.error(f"Incremental Parquet write failed: {e}")
+            raise
 
 
 class AdaptiveSampler:
@@ -721,27 +750,29 @@ class EnhancedTrainingManagerOptimized:
         if not self.adaptive_sampler:
             self.adaptive_sampler = AdaptiveSampler()
         
-        # Define parameter bounds
+        # Define parameter bounds (tighter, but still covering typical high-performing ranges)
         parameter_bounds = {
-            'learning_rate': (0.01, 0.3),
-            'max_depth': (3, 10),
-            'n_estimators': (50, 500),
-            'subsample': (0.6, 1.0),
-            'colsample_bytree': (0.6, 1.0)
+            'learning_rate': (0.02, 0.2),
+            'max_depth': (3, 8),
+            'n_estimators': (100, 400),
+            'subsample': (0.7, 1.0),
+            'colsample_bytree': (0.7, 1.0)
         }
         
         best_score = -np.inf
         best_params = None
-        n_trials = self.config.get('n_trials', 100)
+        n_trials = int(self.config.get('n_trials', 100))
+        early_stop_patience = int(self.patience) if hasattr(self, 'patience') else 10
+        no_improve_counter = 0
         
         for trial in range(n_trials):
             # Suggest parameters using adaptive sampling
             params = self.adaptive_sampler.suggest_parameters(parameter_bounds)
             
-            # Progressive evaluation if enabled
+            # Progressive evaluation if enabled, else cached, else full
             if self.enable_early_stopping and self.progressive_evaluator:
                 score = self.progressive_evaluator.evaluate_progressively(
-                    params, self._evaluate_params
+                    params, lambda subset, p: self._evaluate_params(subset, p)
                 )
             elif self.enable_caching and self.cached_backtester:
                 score = self.cached_backtester.run_cached_backtest(params)
@@ -751,21 +782,32 @@ class EnhancedTrainingManagerOptimized:
             # Update adaptive sampler
             self.adaptive_sampler.update_trial_history(params, score)
             
+            # Keep best and track improvement
             if score > best_score:
                 best_score = score
                 best_params = params
+                no_improve_counter = 0
+            else:
+                no_improve_counter += 1
+            
+            # Early pruning on sustained no-improvement
+            if trial >= max(10, early_stop_patience) and no_improve_counter >= early_stop_patience:
+                self.logger.info(f"Early stop at trial {trial+1} due to no improvement for {no_improve_counter} trials")
+                break
             
             # Memory management
-            if self.enable_memory_management and trial % self.cleanup_frequency == 0:
+            if self.enable_memory_management and (trial + 1) % max(1, self.cleanup_frequency) == 0:
                 self.memory_manager.check_memory_usage()
             
-            self.logger.info(f"Trial {trial+1}/{n_trials}: Score = {score:.4f}")
+            # Reduce log volume, but keep trial-level info at debug, step-level at info
+            self.logger.debug(f"Trial {trial+1}/{n_trials}: Score = {score:.4f}, Best = {best_score:.4f}")
         
+        trials_completed = trial + 1
         return {
             'status': 'success',
             'best_score': best_score,
             'best_params': best_params,
-            'n_trials_completed': n_trials
+            'n_trials_completed': trials_completed
         }
     
     def _evaluate_params(self, market_data: pd.DataFrame, params: Dict[str, Any]) -> float:

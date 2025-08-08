@@ -115,7 +115,7 @@ class WalkForwardValidationStep:
                 with open(data_file, "rb") as f:
                     payload = pickle.load(f)
                 if isinstance(payload, dict):
-                    historical_data = payload.get("klines") or next((v for v in payload.values() if isinstance(v, pd.DataFrame)), None)
+                    historical_data = payload.get("klines") or next((v for v in payload.values() if isinstance(v, pd.DataFrame) and not v.empty), None)
                     if historical_data is None:
                         raise ValueError(f"No usable DataFrame found in {data_file}")
                 elif isinstance(payload, pd.DataFrame):

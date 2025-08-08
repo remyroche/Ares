@@ -430,3 +430,58 @@ class BaseExchange(IExchangeClient, ABC):
     async def subscribe_order_book(self, symbol: str, callback) -> None:
         """Subscribe to live order book updates and invoke callback(book_dict)."""
         raise NotImplementedError
+
+    # --- Convenience polling helpers ---
+    async def fetch_price(self, symbol: str) -> float | None:
+        """Fetch current price using ticker or order book mid as fallback."""
+        try:
+            # Prefer a direct ticker if subclass implements get_ticker
+            if hasattr(self, "get_ticker"):
+                ticker = await getattr(self, "get_ticker")(symbol)
+                if ticker:
+                    last = ticker.get("last") or ticker.get("mark") or ticker.get("close")
+                    if last is not None:
+                        return float(last)
+                    # derive mid if possible
+                    bid = ticker.get("bid")
+                    ask = ticker.get("ask")
+                    if bid is not None and ask is not None:
+                        return (float(bid) + float(ask)) / 2.0
+            # Fallback to order book mid
+            if hasattr(self, "get_order_book"):
+                book = await getattr(self, "get_order_book")(symbol, 5)
+                bids = book.get("bids") or []
+                asks = book.get("asks") or []
+                best_bid = float(bids[0][0]) if bids else None
+                best_ask = float(asks[0][0]) if asks else None
+                if best_bid is not None and best_ask is not None:
+                    return (best_bid + best_ask) / 2.0
+                if best_bid is not None:
+                    return best_bid
+                if best_ask is not None:
+                    return best_ask
+        except Exception:
+            return None
+        return None
+
+    async def get_liquidation_price(self, symbol: str) -> float | None:
+        """Best-effort liquidation price for current position on symbol."""
+        try:
+            risk = await self.get_position_risk(symbol)
+            # Try common ccxt fields
+            if isinstance(risk, list) and risk:
+                # Find matching symbol
+                for p in risk:
+                    inst = p.get("symbol") or p.get("info", {}).get("symbol")
+                    if inst and inst.replace("-", "").replace("_", "").upper().startswith(symbol.upper().replace("USDT", "")):
+                        liq = p.get("liquidationPrice") or p.get("liqPrice") or p.get("liquidation_price")
+                        if liq:
+                            return float(liq)
+                # Otherwise take first
+                p = risk[0]
+                liq = p.get("liquidationPrice") or p.get("liqPrice") or p.get("liquidation_price")
+                if liq:
+                    return float(liq)
+        except Exception:
+            return None
+        return None

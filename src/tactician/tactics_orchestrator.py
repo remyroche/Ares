@@ -11,6 +11,121 @@ from src.utils.error_handler import (
 from src.utils.logger import system_logger
 from src.config.environment import get_exchange_name
 from exchange.factory import ExchangeFactory
+from src.interfaces.base_interfaces import TradeDecision
+from src.interfaces.event_bus import EventType
+
+
+class DecisionPolicy:
+    """
+    Aggregates sizing, leverage, SR breakout, and ML signals into a unified TradeDecision.
+    Provides audit-friendly metadata and metrics.
+    """
+
+    def __init__(self, config: dict[str, Any]):
+        self.config = config
+        self.logger = system_logger.getChild("DecisionPolicy")
+        policy_cfg = config.get("decision_policy", {})
+
+        # Thresholds
+        self.min_entry_confidence: float = policy_cfg.get("min_entry_confidence", 0.6)
+        self.min_sr_score: float = policy_cfg.get("min_sr_score", 0.5)
+        self.max_risk_score: float = policy_cfg.get("max_risk_score", 0.7)
+
+        # Metrics
+        self.metrics = {
+            "decisions_total": 0,
+            "decisions_approved": 0,
+            "decisions_rejected": 0,
+            "avg_decision_latency_ms": 0.0,
+        }
+
+    async def decide(self, context: dict[str, Any]) -> tuple[TradeDecision | None, dict[str, Any]]:
+        start_time = datetime.now()
+        try:
+            sizing = context.get("sizing_results", {})
+            leverage = context.get("leverage_results", {})
+            sr = context.get("sr_results", {})
+            ml = context.get("ml_predictions", {})
+            current_price = context.get("current_price", 0.0)
+            symbol = context.get("symbol", "UNKNOWN")
+
+            # Extract inputs
+            final_size = float(sizing.get("final_position_size", 0.0) or 0.0)
+            leverage_val = float(leverage.get("recommended_leverage", 1.0) or 1.0)
+            stop_loss = float(leverage.get("stop_loss", 0.0) or 0.0)
+            take_profit = float(leverage.get("take_profit", 0.0) or 0.0)
+            directional_conf = float(ml.get("directional_confidence", {}).get("long", 0.5) or 0.5)
+            sr_score = float(sr.get("breakout_strength", 0.0) or 0.0)
+            target_direction = context.get("target_direction", "long")
+
+            # Risk score heuristic
+            market_risk = float(context.get("market_health_analysis", {}).get("risk_score", 0.5) or 0.5)
+            strategist_risk = float(context.get("strategist_risk_parameters", {}).get("risk_score", 0.5) or 0.5)
+            risk_score = max(market_risk, strategist_risk)
+
+            # Decision gates
+            approved = (
+                directional_conf >= self.min_entry_confidence
+                and sr_score >= self.min_sr_score
+                and risk_score <= self.max_risk_score
+                and final_size > 0
+            )
+
+            action = (
+                "OPEN_LONG" if target_direction == "long" else "OPEN_SHORT"
+            ) if approved else "HOLD"
+
+            metadata = {
+                "thresholds": {
+                    "min_entry_confidence": self.min_entry_confidence,
+                    "min_sr_score": self.min_sr_score,
+                    "max_risk_score": self.max_risk_score,
+                },
+                "inputs": {
+                    "directional_confidence": directional_conf,
+                    "sr_breakout_strength": sr_score,
+                    "risk_score": risk_score,
+                    "final_position_size": final_size,
+                    "recommended_leverage": leverage_val,
+                    "stop_loss": stop_loss,
+                    "take_profit": take_profit,
+                    "current_price": current_price,
+                },
+                "approved": approved,
+            }
+
+            decision: TradeDecision | None = None
+            if approved:
+                qty = max(final_size, 0.0)
+                decision = TradeDecision(
+                    timestamp=datetime.now(),
+                    symbol=symbol,
+                    action=action,
+                    quantity=qty,
+                    price=current_price,
+                    leverage=leverage_val,
+                    stop_loss=stop_loss,
+                    take_profit=take_profit,
+                    confidence=directional_conf,
+                    risk_score=risk_score,
+                )
+
+            # Metrics
+            self.metrics["decisions_total"] += 1
+            if approved:
+                self.metrics["decisions_approved"] += 1
+            else:
+                self.metrics["decisions_rejected"] += 1
+            latency_ms = max((datetime.now() - start_time).total_seconds() * 1000.0, 0.0)
+            # Simple moving average
+            prev_avg = self.metrics["avg_decision_latency_ms"]
+            n = self.metrics["decisions_total"]
+            self.metrics["avg_decision_latency_ms"] = prev_avg + (latency_ms - prev_avg) / n
+
+            return decision, metadata
+        except Exception as e:
+            self.logger.error(f"Decision error: {e}")
+            return None, {"error": str(e)}
 
 
 class TacticsOrchestrator:
@@ -46,6 +161,8 @@ class TacticsOrchestrator:
         self.leverage_sizer = None
         self.position_division_strategy = None
         self.ml_tactics_manager = None
+        self.decision_policy: DecisionPolicy | None = None
+        self.event_bus = None
 
     @handle_specific_errors(
         error_handlers={
@@ -73,6 +190,15 @@ class TacticsOrchestrator:
             if not self._validate_configuration():
                 self.logger.error("Invalid configuration for tactics orchestrator")
                 return False
+
+            # Decision policy and event bus (if provided via container elsewhere)
+            self.decision_policy = DecisionPolicy(self.config)
+            try:
+                # Optional import to avoid hard DI coupling here
+                from src.interfaces.event_bus import event_bus as global_event_bus
+                self.event_bus = global_event_bus
+            except Exception:
+                self.event_bus = None
                 
             self.logger.info("✅ Tactics Orchestrator initialized successfully")
             return True
@@ -288,7 +414,7 @@ class TacticsOrchestrator:
                 self.logger.error("❌ Position monitoring failed")
                 return False
             
-            # Gather Analyst market health and Strategist risk parameters if present in input
+            # Gather context inputs
             analyst_market_health = tactics_input.get("market_health_analysis")
             strategist_risk_parameters = tactics_input.get("strategist_risk_parameters")
             ml_predictions = tactics_input.get("ml_predictions", {})
@@ -355,7 +481,26 @@ class TacticsOrchestrator:
             if not ml_results:
                 self.logger.error("❌ ML tactics failed")
                 return False
-            
+
+            # Decision aggregation and event publishing
+            decision_context = {
+                **tactics_input,
+                "sizing_results": sizing_results,
+                "leverage_results": leverage_results,
+                "sr_results": sr_results,
+                "ml_predictions": ml_predictions,
+            }
+            decision, decision_meta = await self.decision_policy.decide(decision_context) if self.decision_policy else (None, {})
+            if self.event_bus and decision is not None:
+                await self.event_bus.publish(
+                    EventType.TRADE_DECISION_MADE,
+                    {
+                        "decision": decision.__dict__,
+                        "metadata": decision_meta,
+                        "position_results": position_results,
+                    },
+                )
+
             # Store final results
             self.tactics_results = {
                 "position_results": position_results,
@@ -364,6 +509,8 @@ class TacticsOrchestrator:
                 "leverage_results": leverage_results,
                 "division_results": division_results,
                 "ml_results": ml_results,
+                "decision": decision.__dict__ if decision else None,
+                "decision_metadata": decision_meta,
                 "tactics_input": tactics_input,
                 "execution_time": datetime.now() - self.tactics_start_time,
             }
@@ -409,6 +556,7 @@ class TacticsOrchestrator:
             "tactics_start_time": self.tactics_start_time,
             "tactics_duration": datetime.now() - self.tactics_start_time if self.tactics_start_time else None,
             "has_results": bool(self.tactics_results),
+            "decision_metrics": (self.decision_policy.metrics if self.decision_policy else {}),
         }
 
     def get_tactics_results(self) -> dict[str, Any]:

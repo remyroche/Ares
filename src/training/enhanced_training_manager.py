@@ -57,7 +57,6 @@ from src.training.enhanced_training_manager_optimized import (
 )
 
 from contextlib import contextmanager
-import numpy as np
 
 
 # === Optimization helper classes (ported from optimized manager) ===
@@ -455,8 +454,7 @@ class EnhancedTrainingManager:
         # Checkpointing configuration
         self.checkpoint_dir = Path("checkpoints")
         self.checkpoint_dir.mkdir(exist_ok=True)
-        # Note: final names are namespaced per symbol/exchange/timeframe at save-time
-        self.checkpoint_file = self.checkpoint_dir / "training_progress.json"
+        # Note: final paths are namespaced per symbol/exchange/timeframe at save-time
         self.enable_checkpointing = self.enhanced_training_config.get("enable_checkpointing", True)
         
         # Initialize optimized tools from enhanced_training_manager_optimized
@@ -771,8 +769,8 @@ class EnhancedTrainingManager:
             self.logger.info(f"🧹 Memory optimization: {after_memory:.1f} MB after cleanup (saved {memory_saved:.1f} MB)")
             
             if memory_saved > 10:  # If we saved more than 10MB
-                print(f"   🧹 Memory optimization saved {memory_saved:.1f} MB")
-                
+                self.logger.info(f"   🧹 Memory optimization saved {memory_saved:.1f} MB")
+            
         except Exception as e:
             self.logger.warning(f"Memory optimization failed: {e}")
     
@@ -908,16 +906,8 @@ class EnhancedTrainingManager:
             if self.enable_computational_optimization:
                 await self._initialize_computational_optimization()
 
-            # Initialize optimization components
-            self.data_manager = MemoryEfficientDataManager()
-            self.streaming_processor = StreamingDataProcessor(chunk_size=self.chunk_size)
-            if self.enable_memory_management:
-                self.memory_manager = MemoryManager(memory_threshold=self.memory_threshold)
-            if self.enable_parallelization:
-                self.parallel_backtester = ParallelBacktester(n_workers=self.max_workers)
-            self.adaptive_sampler = AdaptiveSampler()
-            self.incremental_trainer = IncrementalTrainer(self.config.get("model", {}))
-            
+            # Optimization components are initialized in _initialize_optimized_tools()
+            # to ensure a single, consistent initialization path.
             self.logger.info("✅ Enhanced Training Manager initialized successfully")
             return True
             
@@ -1034,11 +1024,6 @@ class EnhancedTrainingManager:
                 self.logger.info("   14. Monte Carlo Validation")
                 self.logger.info("   15. A/B Testing")
                 self.logger.info("   16. Saving Results")
-                
-                print("=" * 80)
-                print("🎉 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY")
-                print("=" * 80)
-                print("   ✅ All 16 training steps completed successfully!")
             else:
                 self.logger.error("❌ Enhanced training pipeline failed")
             
@@ -1199,22 +1184,18 @@ class EnhancedTrainingManager:
                 if market_data is not None and not market_data.empty:
                     pipeline_state["market_data"] = market_data
                     self.logger.info(f"   ✅ Data loaded: {len(market_data)} rows")
-                    print(f"   ✅ Data loaded: {len(market_data)} rows")
                     
                     # Initialize cached backtester with the data
                     if self.enable_caching:
                         self.cached_backtester = CachedBacktester(market_data)
                         self.logger.info("   ✅ Cached backtester initialized")
-                        print("   ✅ Cached backtester initialized")
                     
                     # Initialize progressive evaluator for early stopping
                     if self.enable_early_stopping:
                         self.progressive_evaluator = ProgressiveEvaluator(market_data)
                         self.logger.info("   ✅ Progressive evaluator initialized")
-                        print("   ✅ Progressive evaluator initialized")
                 else:
-                    self.logger.error("   ❌ Failed to load market data")
-                    print("   ❌ Failed to load market data")
+                                self.logger.error("   ❌ Failed to load market data")
                     return False
                 
                 # Save checkpoint after data collection
@@ -1265,8 +1246,6 @@ class EnhancedTrainingManager:
             step_start = time.time()
             self.logger.info("📊 STEP 3: Regime Data Splitting...")
             self.logger.info("   📈 Splitting data by market regimes for specialized training...")
-            print("   📊 Step 3: Regime Data Splitting...")
-            print("   📈 Splitting data by market regimes for specialized training...")
             
             from src.training.steps import step3_regime_data_splitting
             step3_success = await step3_regime_data_splitting.run_step(
@@ -1370,7 +1349,6 @@ class EnhancedTrainingManager:
             
             if not step7_success:
                 self.logger.error("❌ Step 7: Analyst Ensemble Creation failed")
-                print("❌ Step 7: Analyst Ensemble Creation failed")
                 return False
             
             self.logger.info("✅ Step 7: Analyst Ensemble Creation completed successfully")
@@ -1602,38 +1580,31 @@ class EnhancedTrainingManager:
             # Initialize the underlying optimized training manager
             await self.optimized_manager.initialize()
             self.logger.info("   ✅ Optimized training manager initialized")
-            print("   ✅ Optimized training manager initialized")
             
             # Initialize streaming processor
             if self.chunk_size:
                 self.streaming_processor = StreamingDataProcessor(chunk_size=self.chunk_size)
                 self.logger.info("   ✅ Streaming processor initialized")
-                print("   ✅ Streaming processor initialized")
             
             # Initialize parallel backtester if enabled
             if self.enable_parallelization:
                 self.parallel_backtester = ParallelBacktester(n_workers=self.max_workers)
                 self.logger.info(f"   ✅ Parallel backtester initialized with {self.max_workers} workers")
-                print(f"   ✅ Parallel backtester initialized with {self.max_workers} workers")
             
             # Initialize adaptive sampler
             self.adaptive_sampler = AdaptiveSampler()
             self.logger.info("   ✅ Adaptive sampler initialized")
-            print("   ✅ Adaptive sampler initialized")
             
             # Initialize incremental trainer
             base_model_config = self.config.get("model", {})
             self.incremental_trainer = IncrementalTrainer(base_model_config)
             self.logger.info("   ✅ Incremental trainer initialized")
-            print("   ✅ Incremental trainer initialized")
             
             self.logger.info("✅ All optimized tools initialized successfully")
-            print("✅ All optimized tools initialized successfully")
             return True
             
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize optimized tools: {e}")
-            print(f"❌ Failed to initialize optimized tools: {e}")
             return False
 
     @handle_errors(
@@ -1651,7 +1622,6 @@ class EnhancedTrainingManager:
         """Run optimized parameters optimization using computational optimization strategies."""
         try:
             self.logger.info("🚀 Running optimized parameters optimization with enhanced tools...")
-            print("   🚀 Running optimized parameters optimization with enhanced tools...")
             
             # Use optimized data loading from the optimized manager
             market_data = await self.optimized_manager._load_and_optimize_data(
@@ -1661,23 +1631,19 @@ class EnhancedTrainingManager:
             if market_data is None or market_data.empty:
 
                 self.logger.error("❌ Failed to load market data for optimization")
-                print("❌ Failed to load market data for optimization")
                 return False
             
             self.logger.info(f"✅ Loaded optimized market data: {len(market_data)} rows")
-            print(f"✅ Loaded optimized market data: {len(market_data)} rows")
             
             # Initialize cached backtester if not already done
             if self.enable_caching and self.cached_backtester is None:
                 self.cached_backtester = CachedBacktester(market_data)
                 self.logger.info("✅ Cached backtester initialized for optimization")
-                print("✅ Cached backtester initialized for optimization")
             
             # Initialize progressive evaluator if not already done
             if self.enable_early_stopping and self.progressive_evaluator is None:
                 self.progressive_evaluator = ProgressiveEvaluator(market_data)
                 self.logger.info("✅ Progressive evaluator initialized for optimization")
-                print("✅ Progressive evaluator initialized for optimization")
             
             # Define optimization objective function using cached backtester
             def optimization_objective(params):
@@ -1707,7 +1673,6 @@ class EnhancedTrainingManager:
             optimization_results = {}
             if self.enable_parallelization and self.parallel_backtester:
                 self.logger.info("🔄 Using parallel backtesting for optimization...")
-                print("🔄 Using parallel backtesting for optimization...")
                 
                 # Generate parameter combinations for parallel evaluation
                 param_combinations = self._generate_parameter_combinations()
@@ -1722,12 +1687,10 @@ class EnhancedTrainingManager:
                     best_result = max(parallel_results, key=lambda x: x.get('score', -float('inf')))
                     optimization_results = best_result
                     self.logger.info(f"✅ Parallel optimization completed. Best score: {best_result.get('score', 'N/A')}")
-                    print(f"✅ Parallel optimization completed. Best score: {best_result.get('score', 'N/A')}")
             
             # Use progressive evaluation if enabled
             elif self.enable_early_stopping and self.progressive_evaluator:
                 self.logger.info("🔄 Using progressive evaluation for optimization...")
-                print("🔄 Using progressive evaluation for optimization...")
                 
                 # Run optimization with progressive evaluation
                 best_params = None
@@ -1746,7 +1709,6 @@ class EnhancedTrainingManager:
                         best_score = score
                         best_params = params
                         self.logger.info(f"📈 New best score: {score} at trial {trial + 1}")
-                        print(f"📈 New best score: {score} at trial {trial + 1}")
                 
                 optimization_results = {
                     'best_params': best_params,
@@ -1757,7 +1719,6 @@ class EnhancedTrainingManager:
             # Fallback to computational optimization manager
             else:
                 self.logger.info("🔄 Using standard computational optimization...")
-                print("🔄 Using standard computational optimization...")
                 
                 # Update computational optimization manager with market data
                 if self.computational_optimization_manager:
@@ -1786,7 +1747,7 @@ class EnhancedTrainingManager:
                     'trials_completed': optimization_results.get('trials_completed', self.n_trials),
                     'best_score': optimization_results.get('best_score', 0.0),
                     'cache_hits': getattr(self.cached_backtester, 'cache', {}) if self.cached_backtester else {},
-                    'memory_usage': self.memory_manager.get_memory_usage() if self.memory_manager else {}
+                    'memory_profile': self.memory_manager.profile_memory_usage() if self.memory_manager else {}
                 }
             
             # Perform memory cleanup if enabled
@@ -1795,19 +1756,16 @@ class EnhancedTrainingManager:
                 if self.memory_manager.get_memory_usage() > self.memory_threshold:
                     self.memory_manager.cleanup_memory()
                     self.logger.info("🧹 Memory cleanup performed")
-                    print("🧹 Memory cleanup performed")
             
             # Save optimization results
             await self._save_optimization_results(symbol, exchange, data_dir, optimization_results)
             
             self.logger.info("✅ Enhanced optimized parameters optimization completed successfully")
-            print("✅ Enhanced optimized parameters optimization completed successfully")
 
             return True
 
         except Exception as e:
             self.logger.error(f"❌ Enhanced optimized parameters optimization failed: {e}")
-            print(f"❌ Enhanced optimized parameters optimization failed: {e}")
             return False
     
     def _generate_parameter_combinations(self) -> list[dict]:
@@ -1882,7 +1840,6 @@ class EnhancedTrainingManager:
                 
         except Exception as e:
             self.logger.error(f"❌ Failed to load market data: {e}")
-            print(f"❌ Failed to load market data: {e}")
             return None
 
     def _evaluate_params_with_cache(self, market_data: pd.DataFrame, params: dict[str, Any]) -> float:
@@ -2144,7 +2101,9 @@ class EnhancedTrainingManager:
 
             # Cleanup parallel backtester
             if self.parallel_backtester is not None:
-                self.parallel_backtester.shutdown()
+                shutdown = getattr(self.parallel_backtester, "shutdown", None)
+                if callable(shutdown):
+                    shutdown()
                 self.parallel_backtester = None
 
             # Force memory cleanup
@@ -2185,7 +2144,6 @@ class EnhancedTrainingManager:
         """Execute training using the optimized manager directly for advanced operations."""
         try:
             self.logger.info(f"🚀 Executing optimized training for {symbol} on {exchange}")
-            print(f"🚀 Executing optimized training for {symbol} on {exchange}")
             
             # Delegate to optimized manager
             result = await self.optimized_manager.execute_optimized_training(symbol, exchange, timeframe)
@@ -2198,7 +2156,6 @@ class EnhancedTrainingManager:
             
         except Exception as e:
             self.logger.error(f"❌ Optimized training execution failed: {e}")
-            print(f"❌ Optimized training execution failed: {e}")
             return {}
     
     def use_cached_backtesting(self, params: dict[str, Any]) -> float:
@@ -2225,12 +2182,10 @@ class EnhancedTrainingManager:
         """Initialize the enhanced training manager and all its components (auxiliary)."""
         try:
             self.logger.info("🚀 Initializing Enhanced Training Manager...")
-            print("🚀 Initializing Enhanced Training Manager...")
             
             # Initialize optimized tools first
             if not await self._initialize_optimized_tools():
                 self.logger.error("❌ Failed to initialize optimized tools")
-                print("❌ Failed to initialize optimized tools")
                 return False
             
             # Initialize computational optimization manager if enabled
@@ -2243,19 +2198,15 @@ class EnhancedTrainingManager:
                         {}
                     )
                     self.logger.info("✅ Computational optimization manager initialized")
-                    print("✅ Computational optimization manager initialized")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to initialize computational optimization manager: {e}")
-                    print(f"⚠️ Failed to initialize computational optimization manager: {e}")
                     self.enable_computational_optimization = False
             
             self.logger.info("✅ Enhanced Training Manager initialized successfully")
-            print("✅ Enhanced Training Manager initialized successfully")
             return True
             
         except Exception as e:
             self.logger.error(f"❌ Enhanced Training Manager initialization failed: {e}")
-            print(f"❌ Enhanced Training Manager initialization failed: {e}")
             return False
 
 

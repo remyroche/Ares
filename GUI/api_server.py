@@ -33,7 +33,10 @@ try:
     from src.database.sqlite_manager import SQLiteManager
     from src.supervisor.performance_reporter import PerformanceReporter
     from src.utils.state_manager import StateManager
-
+    from src.monitoring.metrics_dashboard import MetricsDashboard
+    from src.monitoring.performance_dashboard import PerformanceDashboard
+    from src.monitoring.enhanced_ml_tracker import EnhancedMLTracker
+    from src.monitoring.ml_monitor import MLMonitor
     print("Successfully imported Ares modules.")
 except ImportError as e:
     print(f"Error importing Ares modules: {e}")
@@ -97,6 +100,21 @@ db_manager = SQLiteManager()
 state_manager = StateManager()
 performance_reporter = PerformanceReporter()
 websocket_connections = []
+
+# --- Monitoring/Reporting Instances ---
+metrics_dashboard = None
+performance_dashboard = None
+enhanced_ml_tracker = None
+ml_monitor = None
+
+@app.on_event("startup")
+async def startup_event():
+    global metrics_dashboard, performance_dashboard, enhanced_ml_tracker, ml_monitor
+    # Setup/configure monitoring/reporting modules
+    metrics_dashboard = await MetricsDashboard(CONFIG).initialize() or None
+    performance_dashboard = await PerformanceDashboard(CONFIG).initialize() or None
+    enhanced_ml_tracker = await EnhancedMLTracker(CONFIG).initialize() or None
+    ml_monitor = await MLMonitor(CONFIG).initialize() or None
 
 # Add new global variables for token and model management
 token_configs: dict[str, Any] = {}
@@ -860,107 +878,21 @@ async def restart_system():
 
 @app.get("/api/monitoring/dashboard")
 async def get_monitoring_dashboard():
-    """Get comprehensive monitoring dashboard data."""
+    """Get comprehensive monitoring dashboard data from real monitoring/reporting modules."""
     try:
-        # Generate sample monitoring data
-        import random
-        from datetime import datetime, timedelta
-        
-        # Performance metrics over time
-        performance_data = []
-        base_time = datetime.now() - timedelta(hours=24)
-        for i in range(24):
-            timestamp = base_time + timedelta(hours=i)
-            performance_data.append({
-                'timestamp': timestamp.strftime('%Y-%m-%d %H:%M'),
-                'model_accuracy': 0.75 + random.uniform(-0.05, 0.05),
-                'trading_win_rate': 0.65 + random.uniform(-0.03, 0.03),
-                'profit_factor': 1.5 + random.uniform(-0.1, 0.1),
-                'sharpe_ratio': 1.2 + random.uniform(-0.05, 0.05),
-                'system_memory_usage': 0.6 + random.uniform(-0.1, 0.1),
-                'system_cpu_usage': 0.4 + random.uniform(-0.1, 0.1)
-            })
-        
-        # Anomaly detection data
-        anomalies_data = []
-        for i in range(7):
-            timestamp = datetime.now() - timedelta(days=i)
-            anomalies_data.append({
-                'timestamp': timestamp.strftime('%Y-%m-%d'),
-                'anomaly_count': random.randint(0, 5),
-                'severity_level': random.choice(['low', 'medium', 'high', 'critical']),
-                'detection_rate': random.uniform(0.8, 0.95)
-            })
-        
-        # Predictive analytics data
-        predictions_data = []
-        for i in range(24):
-            timestamp = base_time + timedelta(hours=i)
-            predictions_data.append({
-                'timestamp': timestamp.strftime('%Y-%m-%d %H:%M'),
-                'predicted_accuracy': 0.78 + random.uniform(-0.02, 0.02),
-                'predicted_win_rate': 0.67 + random.uniform(-0.02, 0.02),
-                'confidence_score': 0.85 + random.uniform(-0.05, 0.05)
-            })
-        
-        # Correlation analysis data
-        correlations_data = [
-            {'metric': 'Model Accuracy', 'value': 0.85},
-            {'metric': 'Win Rate', 'value': 0.72},
-            {'metric': 'Profit Factor', 'value': 0.68},
-            {'metric': 'Sharpe Ratio', 'value': 0.75},
-            {'metric': 'System Health', 'value': 0.90}
-        ]
-        
-        # Risk metrics data
-        risk_metrics_data = []
-        for i in range(24):
-            timestamp = base_time + timedelta(hours=i)
-            risk_metrics_data.append({
-                'timestamp': timestamp.strftime('%Y-%m-%d %H:%M'),
-                'portfolio_var': 0.03 + random.uniform(-0.01, 0.01),
-                'max_drawdown': -0.05 + random.uniform(-0.02, 0.02),
-                'correlation_risk': 0.12 + random.uniform(-0.02, 0.02),
-                'volume': random.randint(100, 500),
-                'value': random.uniform(0.6, 0.9)
-            })
-        
-        # System health data
-        system_health_data = []
-        for i in range(24):
-            timestamp = base_time + timedelta(hours=i)
-            system_health_data.append({
-                'timestamp': timestamp.strftime('%Y-%m-%d %H:%M'),
-                'health_score': 0.85 + random.uniform(-0.05, 0.05),
-                'memory_usage': 0.6 + random.uniform(-0.1, 0.1),
-                'cpu_usage': 0.4 + random.uniform(-0.1, 0.1),
-                'response_time': 1.5 + random.uniform(-0.3, 0.3)
-            })
-        
-        # Active alerts
-        active_alerts = [
-            {
-                'severity': 'medium',
-                'message': 'Model accuracy dropped below threshold',
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M')
-            },
-            {
-                'severity': 'low',
-                'message': 'Memory usage approaching limit',
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M')
-            }
-        ]
-        
-        dashboard_data = {
-            'performance': performance_data,
-            'anomalies': anomalies_data,
-            'predictions': predictions_data,
-            'correlations': correlations_data,
-            'riskMetrics': risk_metrics_data,
-            'systemHealth': system_health_data,
-            'alerts': active_alerts
-        }
-        
+        dashboard_data = {}
+        # Metrics Dashboard
+        if metrics_dashboard and hasattr(metrics_dashboard, 'get_dashboard_data'):
+            dashboard_data['metrics_dashboard'] = metrics_dashboard.get_dashboard_data()
+        # Performance Dashboard
+        if performance_dashboard and hasattr(performance_dashboard, 'get_dashboard_summary'):
+            dashboard_data['performance_dashboard'] = performance_dashboard.get_dashboard_summary()
+        # Enhanced ML Tracker
+        if enhanced_ml_tracker and hasattr(enhanced_ml_tracker, 'get_tracking_statistics'):
+            dashboard_data['ml_tracker'] = await enhanced_ml_tracker.get_tracking_statistics()
+        # ML Monitor
+        if ml_monitor and hasattr(ml_monitor, 'get_ml_monitoring_summary'):
+            dashboard_data['ml_monitor'] = ml_monitor.get_ml_monitoring_summary()
         return dashboard_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1435,6 +1367,46 @@ async def get_detailed_model_analysis(symbol: str, exchange: str, model_id: str)
     except Exception as e:
         logger.error(f"Error getting model analysis: {e}")
         return {"error": str(e)}
+
+@app.get("/api/monitoring/drift-alerts")
+async def get_drift_alerts():
+    if ml_monitor and hasattr(ml_monitor, 'get_drift_alerts'):
+        return [alert.__dict__ for alert in ml_monitor.get_drift_alerts()]
+    return []
+
+@app.get("/api/monitoring/feature-importance/{model_id}")
+async def get_feature_importance(model_id: str):
+    if ml_monitor and hasattr(ml_monitor, 'get_feature_importance_history'):
+        return [fi.__dict__ for fi in ml_monitor.get_feature_importance_history(model_id)]
+    return []
+
+@app.get("/api/monitoring/online-learning/{model_id}")
+async def get_online_learning_metrics(model_id: str):
+    if ml_monitor and hasattr(ml_monitor, 'get_online_learning_metrics'):
+        metrics = ml_monitor.get_online_learning_metrics(model_id)
+        return metrics.__dict__ if metrics else {}
+    return {}
+
+@app.get("/api/monitoring/retraining-recommendations")
+async def get_retraining_recommendations():
+    if enhanced_ml_tracker and hasattr(enhanced_ml_tracker, 'get_tracking_statistics'):
+        stats = await enhanced_ml_tracker.get_tracking_statistics()
+        return stats.get('retraining_recommendations', [])
+    return []
+
+@app.get("/api/monitoring/model-comparison")
+async def get_model_comparison():
+    if enhanced_ml_tracker and hasattr(enhanced_ml_tracker, 'get_tracking_statistics'):
+        stats = await enhanced_ml_tracker.get_tracking_statistics()
+        return stats.get('comparison_reports', [])
+    return []
+
+@app.get("/api/monitoring/regime-performance")
+async def get_regime_performance():
+    if enhanced_ml_tracker and hasattr(enhanced_ml_tracker, 'get_tracking_statistics'):
+        stats = await enhanced_ml_tracker.get_tracking_statistics()
+        return stats.get('regime_performance', {})
+    return {}
 
 
 if __name__ == "__main__":

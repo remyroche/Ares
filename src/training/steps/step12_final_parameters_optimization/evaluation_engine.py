@@ -464,10 +464,12 @@ class AdvancedEvaluationEngine:
             avg_win_amount = metrics.average_win if metrics.average_win > 0 else 0.01
             avg_loss_amount = abs(metrics.average_loss) if metrics.average_loss < 0 else 0.01
             win_loss_amount_ratio = avg_win_amount / avg_loss_amount
-            win_loss_frequency_ratio = (
-                metrics.winning_trades / (metrics.losing_trades + 1)
-                if metrics.losing_trades > 0 else metrics.winning_trades
-            )
+            # Revised: continuous and capped win/loss frequency ratio
+            if metrics.losing_trades <= 0:
+                win_loss_frequency_ratio = 10.0 if metrics.winning_trades > 0 else 1.0
+            else:
+                win_loss_frequency_ratio = metrics.winning_trades / metrics.losing_trades
+            win_loss_frequency_ratio = min(win_loss_frequency_ratio, 10.0)
             # Combined win/loss score (both amount and frequency)
             combined_win_loss_score = (win_loss_amount_ratio * 0.6) + (win_loss_frequency_ratio * 0.4)
             # Use configurable weights if present in config

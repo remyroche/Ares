@@ -2,6 +2,7 @@
 Validator for Step 6: Analyst Enhancement
 """
 
+import asyncio
 import os
 import sys
 import pickle

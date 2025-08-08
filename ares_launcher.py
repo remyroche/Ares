@@ -435,7 +435,7 @@ class AresLauncher:
             symbol=symbol,
             exchange=exchange,
             training_mode="blank",
-            lookback_days=30,  # 30 days for blank training (minimal dataset)
+            lookback_days=60,  # 60 days for blank training (expanded for better regime coverage)
             with_gui=with_gui,
         )
 
@@ -1126,7 +1126,7 @@ class AresLauncher:
             symbol=symbol,
             exchange=exchange,
             training_mode="blank",
-            lookback_days=30,  # 30 days for blank training (minimal dataset)
+            lookback_days=60,  # 60 days for blank training (expanded for better regime coverage)
             with_gui=with_gui,
         )
 
@@ -1534,7 +1534,7 @@ class AresLauncher:
                 historical_data = await load_klines_data(
                     symbol,
                     exchange,
-                    lookback_days=30,
+                    lookback_days=60,
                 )
 
                 if historical_data is None or historical_data.empty:

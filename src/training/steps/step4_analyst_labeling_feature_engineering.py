@@ -176,7 +176,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 from src.training.data_manager import UnifiedDataManager
                 lookback_days = training_input.get(
                     "lookback_days",
-                    30 if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else 730,
+                    60 if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else 730,
                 )
 
                 labeled_full = labeled_data.copy()

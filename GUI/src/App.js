@@ -19,7 +19,7 @@ import TokenManagement from './components/TokenManagement';
 import ModelComparison from './components/ModelComparison';
 import MonitoringDashboard from './components/MonitoringDashboard.jsx';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 // Main App Component
 export default function App() {

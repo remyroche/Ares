@@ -6,7 +6,22 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-    host: true
+    host: true,
+    proxy: {
+      '/api': {
+        target: `http://localhost:${process.env.API_PORT || '8000'}`,
+        changeOrigin: true,
+      },
+      '/metrics': {
+        target: `http://localhost:${process.env.API_PORT || '8000'}`,
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: `ws://localhost:${process.env.API_PORT || '8000'}`,
+        ws: true,
+        changeOrigin: true,
+      },
+    }
   },
   build: {
     outDir: 'dist',

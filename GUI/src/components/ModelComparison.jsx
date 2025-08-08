@@ -44,6 +44,8 @@ const ModelComparison = () => {
   const [error, setError] = useState(null);
   const [showComparison, setShowComparison] = useState(false);
 
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
   useEffect(() => {
     fetchTokens();
   }, []);
@@ -51,7 +53,7 @@ const ModelComparison = () => {
   const fetchTokens = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/tokens');
+      const response = await fetch(`${API_BASE_URL}/api/tokens`);
       const data = await response.json();
       setTokens(data.filter(token => token.enabled));
     } catch (err) {
@@ -65,7 +67,7 @@ const ModelComparison = () => {
   const fetchModelPerformances = async (symbol, exchange) => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/models/performance/${symbol}/${exchange}`);
+      const response = await fetch(`${API_BASE_URL}/api/models/performance/${symbol}/${exchange}`);
       const data = await response.json();
       setModelPerformances(data);
     } catch (err) {
@@ -106,7 +108,7 @@ const ModelComparison = () => {
       const modelB = selectedModels[1];
       
       const response = await fetch(
-        `/api/models/compare/${selectedToken.symbol}/${selectedToken.exchange}?model_a=${modelA}&model_b=${modelB}`
+        `${API_BASE_URL}/api/models/compare/${selectedToken.symbol}/${selectedToken.exchange}?model_a=${modelA}&model_b=${modelB}`
       );
       const data = await response.json();
       

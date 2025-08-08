@@ -9,6 +9,8 @@ from src.utils.error_handler import (
 )
 from src.utils.logger import system_logger
 
+DEFAULT_SUPERVISOR_CONFIG = {"supervisor": {"supervision_interval": 60, "max_history": 100}}
+
 
 class CircuitBreaker:
     """Circuit breaker pattern for external services."""
@@ -1128,15 +1130,11 @@ supervisor: Supervisor | None = None
 async def setup_supervisor(
     config: dict[str, Any] | None = None,
 ) -> Supervisor | None:
-    try:
-        global supervisor
-        if config is None:
-            config = {"supervisor": {"supervision_interval": 60, "max_history": 100}}
-        supervisor = Supervisor(config)
-        success = await supervisor.initialize()
-        if success:
-            return supervisor
-        return None
-    except Exception as e:
-        print(f"Error setting up supervisor: {e}")
-        return None
+    global supervisor
+    if config is None:
+        config = DEFAULT_SUPERVISOR_CONFIG
+    supervisor = Supervisor(config)
+    success = await supervisor.initialize()
+    if success:
+        return supervisor
+    return None

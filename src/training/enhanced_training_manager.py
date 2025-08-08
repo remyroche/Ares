@@ -442,6 +442,7 @@ class EnhancedTrainingManager:
         # Checkpointing configuration
         self.checkpoint_dir = Path("checkpoints")
         self.checkpoint_dir.mkdir(exist_ok=True)
+        # Note: final names are namespaced per symbol/exchange/timeframe at save-time
         self.checkpoint_file = self.checkpoint_dir / "training_progress.json"
         self.enable_checkpointing = self.enhanced_training_config.get("enable_checkpointing", True)
         
@@ -525,10 +526,19 @@ class EnhancedTrainingManager:
                 "n_trials": self.n_trials
             }
             
-            with open(self.checkpoint_file, 'w') as f:
+            # Namespaced checkpoint path
+            symbol = checkpoint_data.get('symbol') or 'unknown'
+            exchange = checkpoint_data.get('exchange') or 'unknown'
+            timeframe = checkpoint_data.get('timeframe') or 'unknown'
+            ns_dir = self.checkpoint_dir / exchange / symbol / timeframe
+            ns_dir.mkdir(parents=True, exist_ok=True)
+            target_file = ns_dir / "training_progress.json"
+            tmp_file = ns_dir / "training_progress.json.tmp"
+            with open(tmp_file, 'w') as f:
                 json.dump(checkpoint_data, f, indent=2)
-                
-            self.logger.info(f"💾 Checkpoint saved: {step_name}")
+            os.replace(tmp_file, target_file)
+            
+            self.logger.info(f"💾 Checkpoint saved: {step_name} -> {target_file}")
             
         except Exception as e:
             self.logger.warning(f"Failed to save checkpoint: {e}")
@@ -540,14 +550,19 @@ class EnhancedTrainingManager:
         Returns:
             dict: Checkpoint data or None if no checkpoint exists
         """
-        if not self.enable_checkpointing or not self.checkpoint_file.exists():
+        # Attempt to load namespaced checkpoint based on current params
+        if not self.enable_checkpointing:
             return None
-            
         try:
-            with open(self.checkpoint_file, 'r') as f:
+            symbol = getattr(self, 'current_symbol', 'unknown')
+            exchange = getattr(self, 'current_exchange', 'unknown')
+            timeframe = getattr(self, 'current_timeframe', 'unknown')
+            ns_file = self.checkpoint_dir / exchange / symbol / timeframe / "training_progress.json"
+            if not ns_file.exists():
+                return None
+            with open(ns_file, 'r') as f:
                 checkpoint_data = json.load(f)
-                
-            self.logger.info(f"📂 Checkpoint loaded: {checkpoint_data.get('current_step', 'unknown')}")
+            self.logger.info(f"📂 Checkpoint loaded: {checkpoint_data.get('current_step', 'unknown')} from {ns_file}")
             return checkpoint_data
             
         except Exception as e:
@@ -557,9 +572,13 @@ class EnhancedTrainingManager:
     def _clear_checkpoint(self) -> None:
         """Clear the checkpoint file."""
         try:
-            if self.checkpoint_file.exists():
-                self.checkpoint_file.unlink()
-                self.logger.info("🗑️ Checkpoint cleared")
+            symbol = getattr(self, 'current_symbol', 'unknown')
+            exchange = getattr(self, 'current_exchange', 'unknown')
+            timeframe = getattr(self, 'current_timeframe', 'unknown')
+            ns_file = self.checkpoint_dir / exchange / symbol / timeframe / "training_progress.json"
+            if ns_file.exists():
+                ns_file.unlink()
+                self.logger.info(f"🗑️ Checkpoint cleared at {ns_file}")
         except Exception as e:
             self.logger.warning(f"Failed to clear checkpoint: {e}")
         
@@ -573,7 +592,7 @@ class EnhancedTrainingManager:
         try:
             process = psutil.Process(os.getpid())
             memory_mb = process.memory_info().rss / 1024 / 1024
-            cpu_percent = process.cpu_percent()
+            cpu_percent = process.cpu_percent(interval=0.1)
             
             # Get system-wide memory info
             system_memory = psutil.virtual_memory()
@@ -776,11 +795,8 @@ class EnhancedTrainingManager:
             
             self.logger.info(f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
             self.logger.info(f"⏱️ Elapsed: {elapsed_time/60:.1f} min | ETA: {eta_minutes:.1f} min")
-            print(f"   📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
-            print(f"   ⏱️ Elapsed: {elapsed_time/60:.1f} min | ETA: {eta_minutes:.1f} min")
         else:
             self.logger.info(f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
-            print(f"   📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
         
     def _log_step_completion(self, step_name: str, step_start: float, step_times: dict, success: bool = True) -> None:
         """
@@ -805,20 +821,16 @@ class EnhancedTrainingManager:
         self.logger.info(f"💾 Process Memory: {resources['memory_mb']:.1f} MB | CPU: {resources['cpu_percent']:.1f}%")
         self.logger.info(f"🖥️ System Memory: {resources['system_memory_percent']:.1f}% | Available: {resources['available_memory_gb']:.1f} GB")
         
-        print(f"   {status_icon} {step_name}: {status_text} in {step_time:.2f}s")
-        print(f"   💾 Process Memory: {resources['memory_mb']:.1f} MB | CPU: {resources['cpu_percent']:.1f}%")
-        print(f"   🖥️ System Memory: {resources['system_memory_percent']:.1f}% | Available: {resources['available_memory_gb']:.1f} GB")
+        
         
         # Memory warning system
         if resources['system_memory_percent'] > 85:
             warning_msg = f"⚠️ HIGH MEMORY USAGE: {resources['system_memory_percent']:.1f}% - Consider closing other applications"
             self.logger.warning(warning_msg)
-            print(f"   {warning_msg}")
         
         if resources['available_memory_gb'] < 2.0:
             warning_msg = f"⚠️ LOW AVAILABLE MEMORY: {resources['available_memory_gb']:.1f} GB remaining"
             self.logger.warning(warning_msg)
-            print(f"   {warning_msg}")
         
         # Log progress after each step
         completed_steps = len(step_times)
@@ -860,31 +872,19 @@ class EnhancedTrainingManager:
                 self.logger.info(f"   🤖 Models to Train: {resource_analysis['models_to_train']}")
                 self.logger.info(f"   🔧 Optimization Trials: {resource_analysis['optimization_trials']}")
                 
-                print("📊 Resource Analysis:")
-                print(f"   💾 System Memory: {resource_analysis['system_memory_gb']:.1f} GB")
-                print(f"   🖥️ CPU Cores: {resource_analysis['cpu_count']}")
-                print(f"   📈 Estimated Memory Usage: {resource_analysis['estimated_memory_gb']:.1f} GB")
-                print(f"   ⏱️ Estimated Time: {resource_analysis['estimated_time_minutes']} minutes ({resource_analysis['estimated_time_minutes']/60:.1f} hours)")
-                print(f"   🤖 Models to Train: {resource_analysis['models_to_train']}")
-                print(f"   🔧 Optimization Trials: {resource_analysis['optimization_trials']}")
-                
                 # Show step-by-step breakdown
                 if 'step_breakdown' in resource_analysis:
                     self.logger.info("📋 Step-by-Step Time Estimates:")
-                    print("📋 Step-by-Step Time Estimates:")
                     total_estimated = sum(resource_analysis['step_breakdown'].values())
                     for step_name, minutes in resource_analysis['step_breakdown'].items():
                         percentage = (minutes / total_estimated) * 100
                         self.logger.info(f"   {step_name}: {minutes} min ({percentage:.1f}%)")
-                        print(f"   {step_name}: {minutes} min ({percentage:.1f}%)")
                 
                 # Log recommendations
                 if resource_analysis['recommendations']:
                     self.logger.info("💡 Recommendations:")
-                    print("💡 Recommendations:")
                     for rec in resource_analysis['recommendations']:
                         self.logger.info(f"   {rec}")
-                        print(f"   {rec}")
             
             # Validate configuration
             if not self._validate_configuration():
@@ -983,17 +983,7 @@ class EnhancedTrainingManager:
             self.logger.info(f"🔧 Max Trials: {self.max_trials}")
             self.logger.info(f"🔧 N Trials: {self.n_trials}")
             
-            print("=" * 80)
-            print("🚀 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE START")
-            print("=" * 80)
-            print(f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"🎯 Symbol: {enhanced_training_input.get('symbol', 'N/A')}")
-            print(f"🏢 Exchange: {enhanced_training_input.get('exchange', 'N/A')}")
-            print(f"📊 Training Mode: {enhanced_training_input.get('training_mode', 'N/A')}")
-            print(f"📈 Lookback Days: {self.lookback_days}")
-            print(f"🔧 Blank Training Mode: {self.blank_training_mode}")
-            print(f"🔧 Max Trials: {self.max_trials}")
-            print(f"🔧 N Trials: {self.n_trials}")
+
             
             self.is_training = True
             
@@ -1038,7 +1028,6 @@ class EnhancedTrainingManager:
                 print("   ✅ All 16 training steps completed successfully!")
             else:
                 self.logger.error("❌ Enhanced training pipeline failed")
-                print("❌ Enhanced training pipeline failed")
             
             self.is_training = False
             return success
@@ -1046,8 +1035,6 @@ class EnhancedTrainingManager:
         except Exception as e:
             self.logger.error(f"💥 ENHANCED TRAINING PIPELINE FAILED: {str(e)}")
             self.logger.error(f"📋 Error details: {type(e).__name__}: {str(e)}")
-            print(f"💥 ENHANCED TRAINING PIPELINE FAILED: {str(e)}")
-            print(f"📋 Error details: {type(e).__name__}: {str(e)}")
             self.is_training = False
             return False
 
@@ -1161,14 +1148,11 @@ class EnhancedTrainingManager:
             checkpoint = self._load_checkpoint()
             if checkpoint:
                 self.logger.info("🔄 Resuming from checkpoint...")
-                print("🔄 Resuming from checkpoint...")
                 pipeline_state = checkpoint.get("pipeline_state", {})
                 last_completed_step = checkpoint.get("current_step", "")
                 self.logger.info(f"📂 Last completed step: {last_completed_step}")
-                print(f"📂 Last completed step: {last_completed_step}")
             else:
                 self.logger.info("🚀 Starting fresh training...")
-                print("🚀 Starting fresh training...")
             
             # Enhanced logging setup
             self.logger.info("=" * 100)
@@ -1185,27 +1169,14 @@ class EnhancedTrainingManager:
             self.logger.info(f"🚀 Starting from step: {start_step}")
             self.logger.info("=" * 100)
             
-            print("=" * 100)
-            print("🚀 COMPREHENSIVE TRAINING PIPELINE START")
-            print("=" * 100)
-            print(f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"🎯 Symbol: {symbol}")
-            print(f"🏢 Exchange: {exchange}")
-            print(f"📊 Timeframe: {timeframe}")
-            print(f"🧠 Training Mode: {'Blank' if self.blank_training_mode else 'Full'}")
-            print(f"🔧 Max Trials: {self.max_trials}")
-            print(f"📈 Lookback Days: {self.lookback_days}")
-            print(f"💾 Memory Optimization: {'Enabled' if self.enable_computational_optimization else 'Disabled'}")
-            print(f"🚀 Starting from step: {start_step}")
-            print("=" * 100)
+
             
             # Use optimized data loading for Step 1: Data Collection
             if start_step == "step1_data_collection":
                 step_start = time.time()
-                self.logger.info("📊 STEP 1: Data Collection (Optimized)...")
-                self.logger.info("   🔍 Using optimized data loading and preprocessing...")
-                print("   📊 Step 1: Data Collection (Optimized)...")
-                print("   🔍 Using optimized data loading and preprocessing...")
+                self.logger.info("📊 STEP 1: Data Collection...")
+                self.logger.info("   🔍 Downloading and preparing market data...")
+
                 
                 # Use optimized manager for data collection
                 market_data = await self.optimized_manager._load_and_optimize_data(
@@ -1238,7 +1209,6 @@ class EnhancedTrainingManager:
                 step_times["step1_data_collection"] = time.time() - step_start
             else:
                 self.logger.info("⏭️  Skipping Step 1: Data Collection (using pre-consolidated data)")
-                print("⏭️  Skipping Step 1: Data Collection (using pre-consolidated data)")
                 # Add placeholder for data collection in pipeline state
                 pipeline_state["data_collection"] = {
                     "status": "SKIPPED",
@@ -1249,8 +1219,6 @@ class EnhancedTrainingManager:
             step_start = time.time()
             self.logger.info("🎭 STEP 2: Market Regime Classification...")
             self.logger.info("   🧠 Analyzing market regimes and volatility patterns...")
-            print("   🎭 Step 2: Market Regime Classification...")
-            print("   🧠 Analyzing market regimes and volatility patterns...")
             
             from src.training.steps import step2_market_regime_classification
             step2_success = await step2_market_regime_classification.run_step(
@@ -1318,7 +1286,6 @@ class EnhancedTrainingManager:
             # Step 4: Analyst Labeling & Feature Engineering
             with self._timed_step("Step 4: Analyst Labeling & Feature Engineering", step_times):
                 self.logger.info("🧠 STEP 4: Analyst Labeling & Feature Engineering...")
-                print("   🧠 Step 4: Analyst Labeling & Feature Engineering...")
                 
                 from src.training.steps import step4_analyst_labeling_feature_engineering
                 step4_success = await step4_analyst_labeling_feature_engineering.run_step(
@@ -1333,10 +1300,14 @@ class EnhancedTrainingManager:
                 self._save_checkpoint("step4_analyst_labeling_feature_engineering", pipeline_state)
                 self._optimize_memory_usage()
 
+                # Run validator for Step 4
+                await self._run_step_validator(
+                    "step4_analyst_labeling_feature_engineering", training_input, pipeline_state
+                )
+
             # Step 5: Analyst Specialist Training
             with self._timed_step("Step 5: Analyst Specialist Training", step_times):
                 self.logger.info("🎯 STEP 5: Analyst Specialist Training...")
-                print("   🎯 Step 5: Analyst Specialist Training...")
                 
                 from src.training.steps import step5_analyst_specialist_training
                 step5_success = await step5_analyst_specialist_training.run_step(
@@ -1348,10 +1319,14 @@ class EnhancedTrainingManager:
                 if not step5_success:
                     return False
 
+                # Run validator for Step 5
+                await self._run_step_validator(
+                    "step5_analyst_specialist_training", training_input, pipeline_state
+                )
+
             # Step 6: Analyst Enhancement
             with self._timed_step("Step 6: Analyst Enhancement", step_times):
                 self.logger.info("🔧 STEP 6: Analyst Enhancement...")
-                print("   🔧 Step 6: Analyst Enhancement...")
                 
                 from src.training.steps import step6_analyst_enhancement
                 step6_success = await step6_analyst_enhancement.run_step(
@@ -1363,26 +1338,42 @@ class EnhancedTrainingManager:
                 if not step6_success:
                     return False
 
-            # Step 7: Analyst Ensemble Creation
-            with self._timed_step("Step 7: Analyst Ensemble Creation", step_times):
-                self.logger.info("🎲 STEP 7: Analyst Ensemble Creation...")
-                print("   🎲 Step 7: Analyst Ensemble Creation...")
-                
-                from src.training.steps import step7_analyst_ensemble_creation
-                step7_success = await step7_analyst_ensemble_creation.run_step(
-                    symbol=symbol,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    exchange=exchange,
+                # Run validator for Step 6
+                await self._run_step_validator(
+                    "step6_analyst_enhancement", training_input, pipeline_state
                 )
+
+            # Step 7: Analyst Ensemble Creation
+            step_start = time.time()
+            self.logger.info("🎲 STEP 7: Analyst Ensemble Creation...")
+            
+            from src.training.steps import step7_analyst_ensemble_creation
+            step7_success = await step7_analyst_ensemble_creation.run_step(
+                symbol=symbol,
+                data_dir=data_dir,
+                timeframe=timeframe,
+                exchange=exchange,
+            )
+            
+            if not step7_success:
+                self.logger.error("❌ Step 7: Analyst Ensemble Creation failed")
+                print("❌ Step 7: Analyst Ensemble Creation failed")
+                return False
+            
+            self.logger.info("✅ Step 7: Analyst Ensemble Creation completed successfully")
+            self.logger.info("   ✅ Step 7: Analyst Ensemble Creation completed successfully")
+
+            # Run validator for Step 7
+            await self._run_step_validator(
+                "step7_analyst_ensemble_creation", training_input, pipeline_state
+            )
                 
-                if not step7_success:
-                    raise RuntimeError("Step 7: Analyst Ensemble Creation failed")
+            if not step7_success:
+               raise RuntimeError("Step 7: Analyst Ensemble Creation failed")
 
             # Step 8: Tactician Labeling
             with self._timed_step("Step 8: Tactician Labeling", step_times):
                 self.logger.info("🎯 STEP 8: Tactician Labeling...")
-                print("   🎯 Step 8: Tactician Labeling...")
                 from src.training.steps import step8_tactician_labeling
                 step8_success = await step8_tactician_labeling.run_step(
                     symbol=symbol,
@@ -1393,10 +1384,14 @@ class EnhancedTrainingManager:
                 if not step8_success:
                     return False
 
+                # Run validator for Step 8
+                await self._run_step_validator(
+                    "step8_tactician_labeling", training_input, pipeline_state
+                )
+
             # Step 9: Tactician Specialist Training
             with self._timed_step("Step 9: Tactician Specialist Training", step_times):
                 self.logger.info("🧠 STEP 9: Tactician Specialist Training...")
-                print("   🧠 Step 9: Tactician Specialist Training...")
                 from src.training.steps import step9_tactician_specialist_training
                 step9_success = await step9_tactician_specialist_training.run_step(
                     symbol=symbol,
@@ -1407,10 +1402,14 @@ class EnhancedTrainingManager:
                 if not step9_success:
                     return False
 
+                # Run validator for Step 9
+                await self._run_step_validator(
+                    "step9_tactician_specialist_training", training_input, pipeline_state
+                )
+
             # Step 10: Tactician Ensemble Creation
             with self._timed_step("Step 10: Tactician Ensemble Creation", step_times):
                 self.logger.info("🎲 STEP 10: Tactician Ensemble Creation...")
-                print("   🎲 Step 10: Tactician Ensemble Creation...")
                 from src.training.steps import step10_tactician_ensemble_creation
                 step10_success = await step10_tactician_ensemble_creation.run_step(
                     symbol=symbol,
@@ -1421,10 +1420,14 @@ class EnhancedTrainingManager:
                 if not step10_success:
                     return False
 
+                # Run validator for Step 10
+                await self._run_step_validator(
+                    "step10_tactician_ensemble_creation", training_input, pipeline_state
+                )
+
             # Step 11: Confidence Calibration
             with self._timed_step("Step 11: Confidence Calibration", step_times):
                 self.logger.info("🎯 STEP 11: Confidence Calibration...")
-                print("   🎯 Step 11: Confidence Calibration...")
                 from src.training.steps import step11_confidence_calibration
                 step11_success = await step11_confidence_calibration.run_step(
                     symbol=symbol,
@@ -1435,10 +1438,14 @@ class EnhancedTrainingManager:
                 if not step11_success:
                     return False
 
+                # Run validator for Step 11
+                await self._run_step_validator(
+                    "step11_confidence_calibration", training_input, pipeline_state
+                )
+
             # Step 12: Final Parameters Optimization (with computational optimization)
             with self._timed_step("Step 12: Final Parameters Optimization", step_times):
                 self.logger.info("🔧 STEP 12: Final Parameters Optimization with Computational Optimization...")
-                print("   🔧 Step 12: Final Parameters Optimization with Computational Optimization...")
                 if self.computational_optimization_manager:
                     step12_success = await self._run_optimized_parameters_optimization(
                         symbol=symbol,
@@ -1457,10 +1464,14 @@ class EnhancedTrainingManager:
                 if not step12_success:
                     return False
 
+                # Run validator for Step 12
+                await self._run_step_validator(
+                    "step12_final_parameters_optimization", training_input, pipeline_state
+                )
+
             # Step 13: Walk Forward Validation
             with self._timed_step("Step 13: Walk Forward Validation", step_times):
                 self.logger.info("📈 STEP 13: Walk Forward Validation...")
-                print("   📈 Step 13: Walk Forward Validation...")
                 from src.training.steps import step13_walk_forward_validation
                 step13_success = await step13_walk_forward_validation.run_step(
                     symbol=symbol,
@@ -1471,10 +1482,14 @@ class EnhancedTrainingManager:
                 if not step13_success:
                     return False
 
+                # Run validator for Step 13
+                await self._run_step_validator(
+                    "step13_walk_forward_validation", training_input, pipeline_state
+                )
+
             # Step 14: Monte Carlo Validation
             with self._timed_step("Step 14: Monte Carlo Validation", step_times):
                 self.logger.info("🎲 STEP 14: Monte Carlo Validation...")
-                print("   🎲 Step 14: Monte Carlo Validation...")
                 from src.training.steps import step14_monte_carlo_validation
                 step14_success = await step14_monte_carlo_validation.run_step(
                     symbol=symbol,
@@ -1485,10 +1500,14 @@ class EnhancedTrainingManager:
                 if not step14_success:
                     return False
 
+                # Run validator for Step 14
+                await self._run_step_validator(
+                    "step14_monte_carlo_validation", training_input, pipeline_state
+                )
+
             # Step 15: A/B Testing
             with self._timed_step("Step 15: A/B Testing", step_times):
                 self.logger.info("🧪 STEP 15: A/B Testing...")
-                print("   🧪 Step 15: A/B Testing...")
                 from src.training.steps import step15_ab_testing
                 step15_success = await step15_ab_testing.run_step(
                     symbol=symbol,
@@ -1499,10 +1518,14 @@ class EnhancedTrainingManager:
                 if not step15_success:
                     return False
 
+                # Run validator for Step 15
+                await self._run_step_validator(
+                    "step15_ab_testing", training_input, pipeline_state
+                )
+
             # Step 16: Saving Results
             with self._timed_step("Step 16: Saving Results", step_times):
                 self.logger.info("💾 STEP 16: Saving Results...")
-                print("   💾 Step 16: Saving Results...")
                 from src.training.steps import step16_saving
                 step16_success = await step16_saving.run_step(
                     symbol=symbol,
@@ -1512,6 +1535,11 @@ class EnhancedTrainingManager:
                 )
                 if not step16_success:
                     return False
+
+                # Run validator for Step 16
+                await self._run_step_validator(
+                    "step16_saving", training_input, pipeline_state
+                )
 
             # Calculate total time and summary
             total_time = time.time() - start_time
@@ -1535,21 +1563,6 @@ class EnhancedTrainingManager:
                 percentage = (step_time / total_time) * 100
                 self.logger.info(f"   {step_name}: {step_time:.2f}s ({percentage:.1f}%)")
             
-            print("=" * 100)
-            print("🎉 COMPREHENSIVE TRAINING PIPELINE COMPLETED SUCCESSFULLY")
-            print("=" * 100)
-            print(f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"⏱️ Total Time: {total_time:.2f}s ({total_time/60:.1f} minutes)")
-            print(f"💾 Final Memory Usage: {total_memory:.1f} MB")
-            print(f"🎯 Symbol: {symbol}")
-            print(f"🏢 Exchange: {exchange}")
-            print(f"📊 Timeframe: {timeframe}")
-            print(f"🧠 Training Mode: {'Blank' if self.blank_training_mode else 'Full'}")
-            print("📊 Step-by-Step Timing:")
-            for step_name, step_time in step_times.items():
-                percentage = (step_time / total_time) * 100
-                print(f"   {step_name}: {step_time:.2f}s ({percentage:.1f}%)")
-            
             # Clear checkpoint on successful completion
             self._clear_checkpoint()
             
@@ -1561,10 +1574,6 @@ class EnhancedTrainingManager:
             self.logger.error(f"📋 Error details: {type(e).__name__}: {str(e)}")
             self.logger.error(f"⏱️ Time elapsed before failure: {total_time:.2f}s")
             self.logger.info("💾 Checkpoint saved - you can resume training later")
-            print(f"💥 COMPREHENSIVE PIPELINE FAILED: {str(e)}")
-            print(f"📋 Error details: {type(e).__name__}: {str(e)}")
-            print(f"⏱️ Time elapsed before failure: {total_time:.2f}s")
-            print("💾 Checkpoint saved - you can resume training later")
             return False
 
     @handle_errors(
@@ -1822,61 +1831,30 @@ class EnhancedTrainingManager:
     ) -> pd.DataFrame | None:
         """Load market data for optimization using optimized data manager."""
         try:
-            self.logger.info("📊 Loading market data using optimized data manager...")
-            print("📊 Loading market data using optimized data manager...")
-            
-            # Try optimized data loading first
-            if self.data_manager:
-                # Check for Parquet files first (more efficient)
-                cache_key = f"{symbol}_{exchange}_1h"
-                parquet_path = f"data_cache/{cache_key}.parquet"
-                
-                if os.path.exists(parquet_path):
-                    self.logger.info(f"Loading data from Parquet: {parquet_path}")
-                    print(f"Loading data from Parquet: {parquet_path}")
-                    market_data = self.data_manager.load_from_parquet(parquet_path)
-                    if market_data is not None and not market_data.empty:
-                        # Optimize DataFrame memory usage
-                        market_data = self.data_manager.optimize_dataframe(market_data)
-                        self.logger.info(f"✅ Loaded optimized data: {len(market_data)} rows")
-                        print(f"✅ Loaded optimized data: {len(market_data)} rows")
-                        return market_data
-                
-                # Fallback to CSV loading with streaming processor
-                data_file = f"{data_dir}/{exchange}_{symbol}_klines.csv"
-                if os.path.exists(data_file):
-                    self.logger.info(f"Loading and streaming data from CSV: {data_file}")
-                    print(f"Loading and streaming data from CSV: {data_file}")
-                    
-                    if self.streaming_processor:
-                        # Use streaming processor for large files
-                        market_data = self.streaming_processor.process_data_stream(data_file)
-                    else:
-                        # Fallback to regular pandas loading
-                        market_data = pd.read_csv(data_file)
-                    
-                    if market_data is not None and not market_data.empty:
-                        # Optimize and save as Parquet for future use
-                        optimized_data = self.data_manager.optimize_dataframe(market_data)
-                        self.data_manager.save_to_parquet(optimized_data, parquet_path)
-                        
-                        self.logger.info(f"✅ Loaded and optimized data: {len(optimized_data)} rows")
-                        print(f"✅ Loaded and optimized data: {len(optimized_data)} rows")
-                        return optimized_data
-                    else:
-                        self.logger.warning(f"⚠️ Empty data loaded from {data_file}")
-                        print(f"⚠️ Empty data loaded from {data_file}")
-                else:
-                    self.logger.warning(f"⚠️ Market data file not found: {data_file}")
-                    print(f"⚠️ Market data file not found: {data_file}")
-            
-            # Fallback to original implementation
-            data_file = f"{data_dir}/{exchange}_{symbol}_klines.csv"
-            if os.path.exists(data_file):
-                market_data = pd.read_csv(data_file)
-                self.logger.info(f"✅ Loaded market data from {data_file} (fallback method)")
-                print(f"✅ Loaded market data from {data_file} (fallback method)")
+            # Load market data from the data directory
+            # This is a simplified implementation
+            import os
+            # Prefer consolidated Parquet/CSV produced by Step 1
+            preferred_parquet = Path("data_cache") / f"klines_{exchange}_{symbol}_1m_consolidated.parquet"
+            preferred_csv = Path("data_cache") / f"klines_{exchange}_{symbol}_1m_consolidated.csv"
+            if preferred_parquet.exists():
+                market_data = pd.read_parquet(preferred_parquet)
+                self.logger.info(f"✅ Loaded market data from {preferred_parquet}")
                 return market_data
+            if preferred_csv.exists():
+                market_data = pd.read_csv(preferred_csv)
+                self.logger.info(f"✅ Loaded market data from {preferred_csv}")
+                return market_data
+            data_file = f"{data_dir}/{exchange}_{symbol}_klines.csv"
+            
+            if os.path.exists(parquet_path):
+                self.logger.info(f"Loading data from Parquet: {parquet_path}")
+                try:
+                    data = self.data_manager.load_from_parquet(parquet_path)
+                except Exception as e:
+                    self.logger.warning(f"Parquet load failed ({e}); falling back to CSV streaming")
+                    data = pd.DataFrame()
+
             else:
                 self.logger.warning(f"⚠️ Market data file not found: {data_file}")
                 print(f"⚠️ Market data file not found: {data_file}")

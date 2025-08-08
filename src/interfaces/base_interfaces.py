@@ -139,11 +139,11 @@ class IEventBus(ABC):
         """Publish an event"""
 
     @abstractmethod
-    async def subscribe(self, event_type: str, callback) -> None:
+    def subscribe(self, event_type: str, callback) -> None:
         """Subscribe to an event type"""
 
     @abstractmethod
-    async def unsubscribe(self, event_type: str, callback) -> None:
+    def unsubscribe(self, event_type: str, callback) -> None:
         """Unsubscribe from an event type"""
 
 

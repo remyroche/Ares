@@ -12,119 +12,7 @@ import pandas as pd
 from src.utils.logger import system_logger
 
 
-class TacticianLabelingStep:
-    """Step 8: Tactician Model Labeling using Analyst's model."""
-
-    def __init__(self, config: dict[str, Any]):
-        self.config = config
-        self.logger = system_logger
-
-    async def initialize(self) -> None:
-        """Initialize the tactician labeling step."""
-        try:
-            self.logger.info("Initializing Tactician Labeling Step...")
-            self.logger.info("Tactician Labeling Step initialized successfully")
-
-        except Exception as e:
-            self.logger.error(f"Error initializing Tactician Labeling Step: {e}")
-            raise
-
-    async def execute(
-        self,
-        training_input: dict[str, Any],
-        pipeline_state: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Execute tactician model labeling.
-
-        Args:
-            training_input: Training input parameters
-            pipeline_state: Current pipeline state
-
-        Returns:
-            Dict containing labeling results
-        """
-        try:
-            self.logger.info("🔄 Executing Tactician Labeling...")
-
-            # Extract parameters
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange = training_input.get("exchange", "BINANCE")
-            data_dir = training_input.get("data_dir", "data/training")
-
-            # Load 1m data for tactician
-            data_file_path = f"{data_dir}/{exchange}_{symbol}_historical_data.pkl"
-
-            if not os.path.exists(data_file_path):
-                raise FileNotFoundError(f"Data file not found: {data_file_path}")
-
-            # Load data
-            with open(data_file_path, "rb") as f:
-                historical_data = pickle.load(f)
-
-            # Convert to DataFrame if needed
-            if not isinstance(historical_data, pd.DataFrame):
-                historical_data = pd.DataFrame(historical_data)
-
-            # Load analyst ensemble models
-            analyst_ensembles_dir = f"{data_dir}/analyst_ensembles"
-            analyst_ensembles = {}
-
-            if os.path.exists(analyst_ensembles_dir):
-                for ensemble_file in os.listdir(analyst_ensembles_dir):
-                    if ensemble_file.endswith("_ensemble.pkl"):
-                        regime_name = ensemble_file.replace("_ensemble.pkl", "")
-                        ensemble_path = os.path.join(
-                            analyst_ensembles_dir,
-                            ensemble_file,
-                        )
-
-                        with open(ensemble_path, "rb") as f:
-                            analyst_ensembles[regime_name] = pickle.load(f)
-
-            # Generate strategic signals using analyst models
-            strategic_signals = await self._generate_strategic_signals(
-                historical_data,
-                analyst_ensembles,
-                symbol,
-                exchange,
-            )
-
-            # Save labeled data
-            labeled_data_dir = f"{data_dir}/tactician_labeled_data"
-            os.makedirs(labeled_data_dir, exist_ok=True)
-
-            labeled_file = (
-                f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl"
-            )
-            with open(labeled_file, "wb") as f:
-                pickle.dump(labeled_data, f)
-
-            # Save strategic signals
-            signals_file = f"{data_dir}/{exchange}_{symbol}_strategic_signals.json"
-            with open(signals_file, "w") as f:
-                json.dump(strategic_signals, f, indent=2)
-
-            self.logger.info(
-                f"✅ Tactician labeling completed. Results saved to {labeled_data_dir}",
-            )
-
-            # Update pipeline state
-            pipeline_state["tactician_labeled_data"] = labeled_data
-            pipeline_state["strategic_signals"] = strategic_signals
-
-            return {
-                "tactician_labeled_data": labeled_data,
-                "strategic_signals": strategic_signals,
-                "labeled_file": labeled_file,
-                "signals_file": signals_file,
-                "duration": 0.0,  # Will be calculated in actual implementation
-                "status": "SUCCESS",
-            }
-
-        except Exception as e:
-            self.logger.error(f"❌ Error in Tactician Labeling: {e}")
-            return {"status": "FAILED", "error": str(e), "duration": 0.0}
+# Removing duplicate earlier TacticianLabelingStep definition to avoid conflicts
 
     async def _generate_strategic_signals(
         self,
@@ -531,8 +419,10 @@ class TacticianLabelingStep:
         # NOTE: Volatility is calculated here because the Analyst models need it for regime detection.
         # It is NOT used by the Tactician's labeler.
         vol_percentile = data['volatility'].rank(pct=True)
-        regimes = pd.cut(vol_percentile, bins=[0, 0.33, 0.66, 1.0], labels=['low_vol', 'mid_vol', 'high_vol'], right=False)
-        return regimes.astype(str).fillna('low_vol')
+        bins = [0, 0.33, 0.66, 1.0]
+        labels = ['SIDEWAYS', 'BULL', 'BEAR']
+        regimes = pd.cut(vol_percentile, bins=bins, labels=labels, right=False)
+        return regimes.astype(str).fillna('SIDEWAYS')
 
     def _calculate_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate all necessary features for both Analyst and Tactician."""

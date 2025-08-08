@@ -125,13 +125,17 @@ class AnalystEnsembleCreationStep:
                 regime_path = os.path.join(enhanced_models_dir, regime_dir)
                 if os.path.isdir(regime_path):
                     regime_models = {}
-                    for model_file in os.listdir(regime_path):
-                        if model_file.endswith(".pkl"):
-                            model_name = model_file.replace(".pkl", "")
-                            model_path = os.path.join(regime_path, model_file)
+                                            for model_file in os.listdir(regime_path):
+                            if model_file.endswith((".pkl", ".joblib")):
+                                model_name = model_file.replace(".pkl", "").replace(".joblib", "")
+                                model_path = os.path.join(regime_path, model_file)
 
-                            with open(model_path, "rb") as f:
-                                regime_models[model_name] = pickle.load(f)
+                                if model_file.endswith(".joblib"):
+                                    import joblib
+                                    regime_models[model_name] = joblib.load(model_path)
+                                else:
+                                    with open(model_path, "rb") as f:
+                                        regime_models[model_name] = pickle.load(f)
 
                     enhanced_models[regime_dir] = regime_models
 

@@ -117,8 +117,9 @@ class DIAnalyst(AnalystBase, IAnalyst):
         """Set up event subscriptions for market data."""
         from src.interfaces.event_bus import EventType
         
-        await self.event_bus.subscribe(
-            EventType.MARKET_DATA_RECEIVED,
+        # Subscribe uses string event types in EventBus implementation
+        self.event_bus.subscribe(
+            EventType.MARKET_DATA_RECEIVED.value,
             self.analyze_market_data
         )
         self.logger.debug("Event subscriptions set up")
@@ -145,11 +146,11 @@ class DIAnalyst(AnalystBase, IAnalyst):
             if analysis_result:
                 await self._store_analysis_result(analysis_result)
                 
-                # Publish analysis completed event
+                # Publish analysis completed event (uses string event type)
                 if self.event_bus:
                     from src.interfaces.event_bus import EventType
                     await self.event_bus.publish(
-                        EventType.ANALYSIS_COMPLETED,
+                        EventType.ANALYSIS_COMPLETED.value,
                         analysis_result
                     )
 
@@ -199,12 +200,10 @@ class DIAnalyst(AnalystBase, IAnalyst):
                 feature_result = await self.feature_engineering_orchestrator.analyze(market_data)
                 if feature_result:
                     features.update(feature_result.get("features", {}))
-                    technical_indicators.update(feature_result.get("technical_indicators", {}))
-                    support_resistance.update(feature_result.get("support_resistance", {}))
 
-            # Create analysis result
+            # Build analysis result
             analysis_result = AnalysisResult(
-                timestamp=market_data.timestamp,
+                timestamp=datetime.now(),
                 symbol=market_data.symbol,
                 confidence=confidence,
                 signal=signal,
@@ -216,40 +215,22 @@ class DIAnalyst(AnalystBase, IAnalyst):
             )
 
             return analysis_result
-
         except Exception as e:
             self.logger.error(f"Comprehensive analysis failed: {e}")
             return None
 
     async def _store_analysis_result(self, analysis_result: AnalysisResult) -> None:
-        """Store analysis result in history and state."""
+        """Store analysis result in history."""
         try:
-            # Add to history
-            result_dict = {
-                "timestamp": analysis_result.timestamp.isoformat(),
+            record = {
+                "timestamp": analysis_result.timestamp,
                 "symbol": analysis_result.symbol,
-                "signal": analysis_result.signal,
                 "confidence": analysis_result.confidence,
-                "market_regime": analysis_result.market_regime,
+                "signal": analysis_result.signal,
             }
-            
-            self.analysis_history.append(result_dict)
-            
-            # Limit history size
+            self.analysis_history.append(record)
             if len(self.analysis_history) > self.max_analysis_history:
-                self.analysis_history = self.analysis_history[-self.max_analysis_history:]
-
-            # Store in state manager
-            if self.state_manager:
-                self.state_manager.set_state(
-                    f"analysis_result_{analysis_result.symbol}",
-                    result_dict
-                )
-                self.state_manager.set_state(
-                    "last_analysis_timestamp",
-                    analysis_result.timestamp.isoformat()
-                )
-
+                self.analysis_history = self.analysis_history[-self.max_analysis_history :]
         except Exception as e:
             self.logger.error(f"Failed to store analysis result: {e}")
 

@@ -126,17 +126,8 @@ class GateioExchange(BaseExchange):
                 timeframe=interval,
                 limit=limit,
             )
-            return [
-                {
-                    "timestamp": k[0],
-                    "open": k[1],
-                    "high": k[2],
-                    "low": k[3],
-                    "close": k[4],
-                    "volume": k[5],
-                }
-                for k in ohlcv
-            ]
+            # Return raw CCXT OHLCV (list of lists) for standardized conversion
+            return ohlcv
         except Exception as e:
             logger.error(f"Error fetching klines from Gate.io for {symbol}: {e}")
             return []
@@ -558,10 +549,10 @@ class GateioExchange(BaseExchange):
         self,
         symbol: str,
         side: str,
-        order_type: str,
         quantity: float,
-        price: float = None,
-        params: dict[str, Any] = None,
+        price: float | None = None,
+        order_type: str = "MARKET",
+        params: dict[str, Any] | None = None,
     ):
         """Creates a new order."""
         try:
@@ -734,15 +725,32 @@ class GateioExchange(BaseExchange):
         start_time_ms: int,
         end_time_ms: int,
         limit: int,
-    ) -> list[dict[str, Any]]:
-        """Get raw historical kline data from exchange."""
-        return await self.get_historical_klines(
-            symbol,
-            interval,
-            start_time_ms,
-            end_time_ms,
-            limit,
-        )
+    ) -> list[list[Any]]:
+        """Get raw historical kline data from exchange using CCXT pagination (OHLCV lists)."""
+        try:
+            market_id = await self._get_market_id(symbol)
+            since = start_time_ms
+            all_ohlcv: list[list[Any]] = []
+
+            while since < end_time_ms:
+                ohlcv = await self.exchange.fetch_ohlcv(
+                    market_id,
+                    timeframe=interval,
+                    since=since,
+                    limit=limit,
+                )
+                if not ohlcv:
+                    break
+                all_ohlcv.extend(ohlcv)
+                since = ohlcv[-1][0] + 1
+                await asyncio.sleep(0.1)
+
+            return all_ohlcv
+        except Exception as e:
+            logger.error(
+                f"Error fetching historical klines from Gate.io for {symbol}: {e}",
+            )
+            return []
 
     async def _get_historical_agg_trades_raw(
         self,

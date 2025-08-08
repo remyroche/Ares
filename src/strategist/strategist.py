@@ -308,7 +308,7 @@ class Strategist:
 
             self.logger.info("✅ Strategy generated successfully")
             return strategy
-        except Exception as e:
+        except (KeyError, RuntimeError) as e:
             self.logger.error(f"Error generating strategy: {e}")
             return None
 
@@ -362,7 +362,7 @@ class Strategist:
                 f"🎯 Market regime classified as: {regime} (confidence: {confidence:.2f})",
             )
             return regime_info
-        except Exception as e:
+        except (KeyError, RuntimeError) as e:
             self.logger.error(f"Error classifying market regime: {e}")
             return None
 
@@ -695,7 +695,6 @@ class Strategist:
                 return None
 
             return strategy
-
         except Exception as e:
             self.logger.error(f"Error generating comprehensive strategy: {e}")
             return None

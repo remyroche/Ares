@@ -460,8 +460,8 @@ class AsyncOrderExecutor:
             batch_size = execution_request.batch_size
             batch_interval = execution_request.batch_interval
 
-            executed_quantity = 0
-            total_cost = 0
+            executed_quantity = 0.0
+            total_cost = 0.0
             orders_placed = []
 
             num_batches = int(total_quantity / batch_size) + (1 if total_quantity % batch_size != 0 else 0)
@@ -484,15 +484,17 @@ class AsyncOrderExecutor:
                 st = await self.order_manager._place_order(orq)
                 if st:
                     orders_placed.append(st.order_id)
+                    # Accumulate executed quantity and cost using average price
+                    executed_quantity += float(st.executed_quantity)
+                    if st.executed_quantity and st.average_price:
+                        total_cost += float(st.executed_quantity) * float(st.average_price)
 
                 # Wait for next batch
                 if i < num_batches - 1:
                     await asyncio.sleep(batch_interval)
 
             # Calculate average price
-            average_price = (
-                total_cost / executed_quantity if executed_quantity > 0 else 0
-            )
+            average_price = (total_cost / executed_quantity) if executed_quantity > 0 else 0.0
             slippage = self._calculate_slippage(execution_request.price, average_price)
 
             return ExecutionResult(
@@ -500,10 +502,10 @@ class AsyncOrderExecutor:
                 symbol=execution_request.symbol,
                 side=execution_request.side,
                 order_type=execution_request.order_type,
-                requested_quantity=execution_request.quantity,
-                executed_quantity=executed_quantity,
+                requested_quantity=float(execution_request.quantity),
+                executed_quantity=float(executed_quantity),
                 average_price=average_price,
-                total_cost=total_cost,
+                total_cost=float(total_cost),
                 slippage=slippage,
                 execution_time=0,  # Will be set by caller
                 status=ExecutionStatus.COMPLETED,

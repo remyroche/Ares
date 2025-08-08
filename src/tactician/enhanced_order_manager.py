@@ -1210,7 +1210,8 @@ class EnhancedOrderManager:
                 q = max(q, required_q)
 
             return q, p, s
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"Error normalizing order params for {symbol}: {e}")
             return max(float(quantity), 0.0), (float(price) if price is not None else None), (float(stop_price) if stop_price is not None else None)
 
     def get_order_status(self, order_id: str) -> OrderState | None:

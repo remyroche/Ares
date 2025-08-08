@@ -144,6 +144,10 @@ class MetricsDashboard:
             True,
         )
 
+        # Optional external monitors (to be injected by integrator)
+        self.performance_monitor: Any | None = None
+        self.enhanced_ml_tracker: Any | None = None
+
         # Metric storage
         self.metrics_history: dict[str, list[MetricPoint]] = {}
         self.current_metrics: dict[str, DashboardMetric] = {}
@@ -294,8 +298,29 @@ class MetricsDashboard:
     async def _update_performance_metrics(self) -> None:
         """Update performance metrics."""
         try:
-            # This would integrate with the existing performance monitor
-            # For now, create sample metrics
+            # Prefer real data from PerformanceMonitor if available
+            if self.performance_monitor and getattr(self.performance_monitor, "metrics_history", None):
+                try:
+                    latest = self.performance_monitor.metrics_history[-1]
+                    self.performance_metrics = PerformanceMetrics(
+                        total_pnl=0.0,  # Not tracked in PerformanceMonitor; keep 0.0
+                        daily_pnl=0.0,
+                        win_rate=latest.trading_win_rate or 0.0,
+                        profit_factor=latest.trading_profit_factor or 0.0,
+                        sharpe_ratio=latest.trading_sharpe_ratio or 0.0,
+                        max_drawdown=latest.trading_max_drawdown or 0.0,
+                        total_trades=0,
+                        winning_trades=0,
+                        losing_trades=0,
+                        avg_trade_duration=latest.system_response_time or 0.0,
+                        best_trade=0.0,
+                        worst_trade=0.0,
+                    )
+                    return
+                except Exception as e:
+                    self.logger.warning(f"Falling back to default performance metrics: {e}")
+
+            # Fallback: sample metrics
             self.performance_metrics = PerformanceMetrics(
                 total_pnl=0.0,
                 daily_pnl=0.0,
@@ -322,8 +347,27 @@ class MetricsDashboard:
     async def _update_model_behavior_metrics(self) -> None:
         """Update model behavior metrics."""
         try:
-            # This would integrate with the enhanced model monitor
-            # For now, create sample metrics
+            # Use EnhancedMLTracker stats if available (basic mapping for now)
+            if self.enhanced_ml_tracker:
+                try:
+                    stats = await self.enhanced_ml_tracker.get_tracking_statistics()
+                    # Populate a single aggregate model entry
+                    self.model_behavior_metrics["aggregate"] = ModelBehaviorMetrics(
+                        model_accuracy=stats.get("comparisons_generated", 0) / max(
+                            stats.get("total_predictions_tracked", 1), 1
+                        ),
+                        prediction_confidence=0.0,
+                        feature_importance_stability=0.0,
+                        concept_drift_score=0.0,
+                        data_drift_score=0.0,
+                        model_performance_trend=[0.0],
+                        last_retraining=None,
+                    )
+                    return
+                except Exception as e:
+                    self.logger.warning(f"Falling back to default model behavior metrics: {e}")
+
+            # Fallback placeholders
             for model_id in ["ensemble_1", "ensemble_2", "meta_learner"]:
                 self.model_behavior_metrics[model_id] = ModelBehaviorMetrics(
                     model_accuracy=0.0,
@@ -346,8 +390,26 @@ class MetricsDashboard:
     async def _update_system_health_metrics(self) -> None:
         """Update system health metrics."""
         try:
-            # This would integrate with system monitoring
-            # For now, create sample metrics
+            # Prefer PerformanceMonitor for system metrics
+            if self.performance_monitor and getattr(self.performance_monitor, "metrics_history", None):
+                try:
+                    latest = self.performance_monitor.metrics_history[-1]
+                    self.system_health_metrics = SystemHealthMetrics(
+                        cpu_usage=latest.system_cpu_usage or 0.0,
+                        memory_usage=latest.system_memory_usage or 0.0,
+                        disk_usage=0.0,
+                        network_latency=0.0,
+                        error_rate=0.0,
+                        uptime=(datetime.now() - self.performance_monitor.start_time).total_seconds()
+                        if getattr(self.performance_monitor, "start_time", None)
+                        else 0.0,
+                        active_connections=0,
+                    )
+                    return
+                except Exception as e:
+                    self.logger.warning(f"Falling back to default system metrics: {e}")
+
+            # Fallback sample metrics
             self.system_health_metrics = SystemHealthMetrics(
                 cpu_usage=0.0,
                 memory_usage=0.0,
@@ -369,8 +431,7 @@ class MetricsDashboard:
     async def _update_trading_analytics(self) -> None:
         """Update trading analytics."""
         try:
-            # This would integrate with portfolio management
-            # For now, create sample metrics
+            # Placeholder until trade monitor is injected
             self.trading_analytics = TradingAnalytics(
                 active_positions=0,
                 total_exposure=0.0,

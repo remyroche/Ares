@@ -137,13 +137,30 @@ class MarketRegimeClassificationStep:
             import pickle
             
             with open(data_file_path, "rb") as f:
-                historical_data = pickle.load(f)
+                payload = pickle.load(f)
             
-            self.logger.info(f"✅ Loaded historical data: {len(historical_data)} records")
+            # Expect a dict with keys like 'klines', 'agg_trades', 'futures'
+            if isinstance(payload, dict):
+                historical_data = payload.get("klines")
+                if historical_data is None:
+                    # Fallback: prefer any DataFrame entry
+                    for _k, _v in payload.items():
+                        if isinstance(_v, pd.DataFrame) and not _v.empty:
+                            historical_data = _v
+                            break
+                if historical_data is None:
+                    raise ValueError(f"No usable DataFrame found inside {data_file_path}")
+            elif isinstance(payload, pd.DataFrame):
+                historical_data = payload
+            else:
+                raise ValueError(f"Unsupported pickle payload type: {type(payload)} from {data_file_path}")
             
-            # Convert to DataFrame if needed
-            if not isinstance(historical_data, pd.DataFrame):
-                historical_data = pd.DataFrame(historical_data)
+            # Ensure 'timestamp' column exists
+            if isinstance(historical_data.index, pd.DatetimeIndex) and 'timestamp' not in historical_data.columns:
+                historical_data = historical_data.copy()
+                historical_data['timestamp'] = historical_data.index
+            
+            self.logger.info(f"✅ Loaded historical OHLCV data: {len(historical_data)} records")
 
         # Perform regime classification
         regime_results = await self._classify_market_regimes(

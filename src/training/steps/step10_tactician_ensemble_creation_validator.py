@@ -103,11 +103,10 @@ class Step10TacticianEnsembleCreationValidator(BaseValidator):
         """
         try:
             # Expected tactician ensemble file patterns
+            ensemble_dir = f"{data_dir}/tactician_ensembles"
             expected_files = [
-                f"{data_dir}/{exchange}_{symbol}_tactician_ensemble.pkl",
-                f"{data_dir}/{exchange}_{symbol}_tactician_ensemble_metadata.json",
-                f"{data_dir}/{exchange}_{symbol}_tactician_ensemble_models.pkl",
-                f"{data_dir}/{exchange}_{symbol}_tactician_ensemble_weights.json"
+                f"{ensemble_dir}/{exchange}_{symbol}_tactician_ensemble.pkl",
+                f"{ensemble_dir}/{exchange}_{symbol}_tactician_ensemble_summary.json",
             ]
             
             missing_files = []
@@ -141,7 +140,7 @@ class Step10TacticianEnsembleCreationValidator(BaseValidator):
         """
         try:
             # Load tactician ensemble metadata
-            metadata_file = f"{data_dir}/{exchange}_{symbol}_tactician_ensemble_metadata.json"
+            metadata_file = f"{data_dir}/tactician_ensembles/{exchange}_{symbol}_tactician_ensemble_summary.json"
             
             if os.path.exists(metadata_file):
                 import json
@@ -164,7 +163,7 @@ class Step10TacticianEnsembleCreationValidator(BaseValidator):
                         self.logger.warning(f"⚠️ Low tactician model type diversity: {len(unique_types)} types")
                 
                 # Check ensemble weights
-                weights_file = f"{data_dir}/{exchange}_{symbol}_tactician_ensemble_weights.json"
+                weights_file = f"{data_dir}/tactician_ensembles/{exchange}_{symbol}_tactician_ensemble_weights.json"
                 if os.path.exists(weights_file):
                     with open(weights_file, "r") as f:
                         weights_data = json.load(f)
@@ -208,7 +207,7 @@ class Step10TacticianEnsembleCreationValidator(BaseValidator):
         """
         try:
             # Load tactician ensemble metadata for performance metrics
-            metadata_file = f"{data_dir}/{exchange}_{symbol}_tactician_ensemble_metadata.json"
+            metadata_file = f"{data_dir}/tactician_ensembles/{exchange}_{symbol}_tactician_ensemble_summary.json"
             
             if os.path.exists(metadata_file):
                 import json
@@ -292,7 +291,7 @@ class Step10TacticianEnsembleCreationValidator(BaseValidator):
         """
         try:
             # Load tactician ensemble metadata
-            metadata_file = f"{data_dir}/{exchange}_{symbol}_tactician_ensemble_metadata.json"
+            metadata_file = f"{data_dir}/tactician_ensembles/{exchange}_{symbol}_tactician_ensemble_summary.json"
             
             if os.path.exists(metadata_file):
                 import json
@@ -324,7 +323,7 @@ class Step10TacticianEnsembleCreationValidator(BaseValidator):
                         self.logger.warning(f"⚠️ Low tactician ensemble robustness: {robustness_score:.3f}")
             
             # Load and validate the tactician ensemble model
-            ensemble_file = f"{data_dir}/{exchange}_{symbol}_tactician_ensemble.pkl"
+            ensemble_file = f"{data_dir}/tactician_ensembles/{exchange}_{symbol}_tactician_ensemble.pkl"
             
             if os.path.exists(ensemble_file):
                 try:

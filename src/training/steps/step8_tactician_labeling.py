@@ -324,8 +324,28 @@ class TacticianLabelingStep:
 
             # Load 1m data for tactician
             data_file_path = f"{data_dir}/{exchange}_{symbol}_historical_data.pkl"
-            with open(data_file_path, "rb") as f:
-                data_1m = pd.read_pickle(f)
+            # Historical data is a pickled dict with keys like 'klines', 'agg_trades', 'futures'
+            # Prefer 1m klines if available
+            try:
+                historical = pd.read_pickle(data_file_path)
+            except Exception:
+                import pickle as _pkl
+                with open(data_file_path, "rb") as _f:
+                    historical = _pkl.load(_f)
+            if isinstance(historical, dict):
+                data_1m = historical.get("klines")
+                if data_1m is None:
+                    # Fallback: try any DataFrame-like entry
+                    for _k, _v in historical.items():
+                        if isinstance(_v, pd.DataFrame) and not _v.empty:
+                            data_1m = _v
+                            break
+                if data_1m is None:
+                    raise ValueError(f"No DataFrame found in historical data at {data_file_path}")
+            elif isinstance(historical, pd.DataFrame):
+                data_1m = historical
+            else:
+                raise ValueError(f"Unsupported historical data type: {type(historical)} from {data_file_path}")
 
             # Load analyst ensemble models
             analyst_ensembles = self._load_analyst_ensembles(data_dir)
@@ -368,8 +388,21 @@ class TacticianLabelingStep:
                 regime_name = ensemble_file.replace("_ensemble.pkl", "")
                 ensemble_path = os.path.join(analyst_ensembles_dir, ensemble_file)
                 with open(ensemble_path, "rb") as f:
-                    # The actual model is nested inside the saved dictionary
-                    analyst_ensembles[regime_name] = pickle.load(f).get("ensemble")
+                    loaded = pickle.load(f)
+                chosen_ensemble = None
+                if isinstance(loaded, dict):
+                    # Prefer stacking_cv, then dynamic_weighting, then voting
+                    for key in ("stacking_cv", "dynamic_weighting", "voting"):
+                        if key in loaded and isinstance(loaded[key], dict):
+                            obj = loaded[key].get("ensemble")
+                            if obj is not None:
+                                chosen_ensemble = obj
+                                break
+                    if chosen_ensemble is None:
+                        # Fallback if saved dict is a single-ensemble payload
+                        chosen_ensemble = loaded.get("ensemble") if "ensemble" in loaded else None
+                # Record whatever we found (could be None; upstream handles None)
+                analyst_ensembles[regime_name] = chosen_ensemble
         return analyst_ensembles
 
     async def _generate_strategic_signals(

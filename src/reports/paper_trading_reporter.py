@@ -117,34 +117,20 @@ class MLConfidenceScores:
 @dataclass
 class DetailedTradeRecord:
     """Comprehensive trade record with all required information."""
-    
     # Basic trade information
     trade_id: str
     symbol: str
     exchange: str
     timestamp: datetime
-    close_timestamp: Optional[datetime] = None
-    
-    # Trade type and classification
     trade_type: TradeType
-    
-    # Position sizing
     position_sizing: PositionSizing
-    
-    # PnL analysis
     pnl_analysis: PnLAnalysis
-    
-    # Market indicators at trade time
     market_indicators: MarketIndicators
-    
-    # Market health
     market_health: MarketHealth
-    
-    # ML confidence scores
     ml_confidence_scores: MLConfidenceScores
-    
-    # Additional metadata
     trade_status: str  # "open", "closed", "cancelled"
+    # Fields with defaults must come after all non-default fields
+    close_timestamp: Optional[datetime] = None
     close_reason: Optional[str] = None
     execution_quality: float = 0.0
     risk_metrics: Dict[str, float] = None
@@ -175,7 +161,13 @@ class PaperTradingReporter:
         # Reporting configuration
         self.report_config = config.get("paper_trading_reporter", {})
         self.enable_detailed_reporting = self.report_config.get("enable_detailed_reporting", True)
-        self.report_directory = self.report_config.get("report_directory", "reports/paper_trading")
+        # Patch: Always use absolute path for report directory
+        report_dir = self.report_config.get("report_directory", "reports/paper_trading")
+        if not os.path.isabs(report_dir):
+            # Use workspace root as base
+            workspace_root = os.environ.get("WORKSPACE_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+            report_dir = os.path.abspath(os.path.join(workspace_root, report_dir))
+        self.report_directory = report_dir
         self.export_formats = self.report_config.get("export_formats", ["json", "csv", "html"])
         
         # Performance tracking
@@ -184,6 +176,10 @@ class PaperTradingReporter:
         
         # Initialize report directory
         os.makedirs(self.report_directory, exist_ok=True)
+        # Log current working directory and report directory
+        cwd = os.getcwd()
+        self.logger.debug(f"CWD: {cwd}")
+        self.logger.debug(f"Report directory (abs): {self.report_directory}")
     
     @handle_specific_errors(
         error_handlers={
@@ -589,6 +585,8 @@ class PaperTradingReporter:
             Dict[str, Any]: Generated report
         """
         try:
+            self.logger.debug(f"[DEBUG] Generating {report_type} report with formats: {export_formats}")
+            self.logger.info(f"[DEBUG] Generating {report_type} report with formats: {export_formats}")
             if export_formats is None:
                 export_formats = self.export_formats
             
@@ -604,13 +602,16 @@ class PaperTradingReporter:
             
             # Export reports
             for format_type in export_formats:
+                self.logger.debug(f"[DEBUG] Exporting report as {format_type}")
+                self.logger.info(f"[DEBUG] Exporting report as {format_type}")
                 await self._export_report(report_data, format_type)
-            
             self.logger.info(f"✅ Generated {report_type} report")
+            self.logger.debug(f"[DEBUG] Generated {report_type} report")
             return report_data
             
         except Exception as e:
-            self.logger.error(f"Error generating report: {e}")
+            self.logger.error(f"Error generating report: {e}", exc_info=True)
+            self.logger.debug(f"[DEBUG] Error generating report: {e}")
             return {}
     
     @handle_errors(
@@ -667,7 +668,7 @@ class PaperTradingReporter:
             }
             
         except Exception as e:
-            self.logger.error(f"Error generating analysis: {e}")
+            self.logger.error(f"Error generating analysis: {e}", exc_info=True)
             return {}
     
     def _calculate_distribution(self, values: List[float]) -> Dict[str, int]:
@@ -690,7 +691,7 @@ class PaperTradingReporter:
             return distribution
             
         except Exception as e:
-            self.logger.error(f"Error calculating distribution: {e}")
+            self.logger.error(f"Error calculating distribution: {e}", exc_info=True)
             return {}
     
     @handle_errors(
@@ -703,41 +704,32 @@ class PaperTradingReporter:
         report_data: Dict[str, Any],
         format_type: str,
     ) -> None:
-        """Export report in specified format."""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
             if format_type == "json":
                 filename = f"paper_trading_report_{timestamp}.json"
                 filepath = os.path.join(self.report_directory, filename)
-                
                 with open(filepath, "w") as f:
                     json.dump(report_data, f, indent=2, default=str)
-                
                 self.logger.info(f"✅ Exported JSON report: {filepath}")
-                
+                self.logger.debug(f"Exported JSON report: {filepath}")
             elif format_type == "csv":
                 filename = f"paper_trading_report_{timestamp}.csv"
                 filepath = os.path.join(self.report_directory, filename)
-                
-                # Convert to DataFrame and export
                 df = self._convert_to_dataframe(report_data)
                 df.to_csv(filepath, index=False)
-                
                 self.logger.info(f"✅ Exported CSV report: {filepath}")
-                
+                self.logger.debug(f"Exported CSV report: {filepath}")
             elif format_type == "html":
                 filename = f"paper_trading_report_{timestamp}.html"
                 filepath = os.path.join(self.report_directory, filename)
-                
                 html_content = self._generate_html_report(report_data)
                 with open(filepath, "w") as f:
                     f.write(html_content)
-                
                 self.logger.info(f"✅ Exported HTML report: {filepath}")
-                
+                self.logger.debug(f"Exported HTML report: {filepath}")
         except Exception as e:
-            self.logger.error(f"Error exporting {format_type} report: {e}")
+            self.logger.error(f"Error exporting {format_type} report: {e}", exc_info=True)
     
     def _convert_to_dataframe(self, report_data: Dict[str, Any]) -> pd.DataFrame:
         """Convert report data to DataFrame for CSV export."""
@@ -766,7 +758,7 @@ class PaperTradingReporter:
             return pd.DataFrame(records)
             
         except Exception as e:
-            self.logger.error(f"Error converting to DataFrame: {e}")
+            self.logger.error(f"Error converting to DataFrame: {e}", exc_info=True)
             return pd.DataFrame()
     
     def _generate_html_report(self, report_data: Dict[str, Any]) -> str:
@@ -848,7 +840,7 @@ class PaperTradingReporter:
             )
             
         except Exception as e:
-            self.logger.error(f"Error generating HTML report: {e}")
+            self.logger.error(f"Error generating HTML report: {e}", exc_info=True)
             return "<html><body><h1>Error generating report</h1></body></html>"
     
     def get_status(self) -> Dict[str, Any]:
@@ -890,5 +882,5 @@ async def setup_paper_trading_reporter(
         return reporter
         
     except Exception as e:
-        system_logger.error(f"Error setting up paper trading reporter: {e}")
+        system_logger.error(f"Error setting up paper trading reporter: {e}", exc_info=True)
         return None

@@ -345,34 +345,33 @@ class PerformanceDashboard:
                     "trading_win_rate": lambda m: m.trading_performance.get("win_rate", 0.0),
                     "system_memory_usage": lambda m: m.system_performance.get("memory_usage", 0.0),
                 }
-                values = [accessor_map[metric_name](metric) for metric in historical_metrics]
+                values = np.array([accessor_map[metric_name](metric) for metric in historical_metrics])
                 timestamps = np.arange(len(values))
                 if len(values) >= 5:
                     try:
                         # Use numpy for linear regression
                         slope, intercept = np.polyfit(timestamps, values, 1)
-                        # Predict next 5 periods
-                        future_predictions = []
-                        for i in range(1, 6):
-                            prediction = slope * (len(values) + i - 1) + intercept
-                            if metric_name in ["model_accuracy", "trading_win_rate"]:
-                                # Clamp between 0 and 1
-                                prediction = max(0, min(1, prediction))
-                            else:
-                                # Only ensure non-negative for other metrics
-                                prediction = max(0, prediction)
-                            future_predictions.append(prediction)
+                        # Predict next 5 periods using vectorized operations
+                        future_timestamps = np.arange(len(values), len(values) + 5)
+                        future_predictions_np = slope * future_timestamps + intercept
+                        if metric_name in ["model_accuracy", "trading_win_rate"]:
+                            # Clamp between 0 and 1 for percentage-based metrics
+                            future_predictions_np = np.clip(future_predictions_np, 0, 1)
+                        else:
+                            # Only ensure non-negative for other metrics
+                            future_predictions_np = np.maximum(future_predictions_np, 0)
+                        future_predictions = future_predictions_np.tolist()
                         # Calculate prediction confidence based on R-squared
                         predicted = slope * timestamps + intercept
                         ss_tot = np.sum((values - np.mean(values)) ** 2)
                         ss_res = np.sum((values - predicted) ** 2)
                         r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
                         predictions[metric_name] = {
-                            "current_value": values[-1],
+                            "current_value": float(values[-1]),
                             "predictions": future_predictions,
-                            "confidence": r_squared,
+                            "confidence": float(r_squared),
                             "trend": "increasing" if slope > 0 else "decreasing",
-                            "slope": slope
+                            "slope": float(slope)
                         }
                     except Exception as e:
                         self.logger.warning(f"Failed to calculate prediction for {metric_name}: {e}")

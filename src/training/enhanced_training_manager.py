@@ -1108,34 +1108,38 @@ class EnhancedTrainingManager:
 
                         # Config-driven HPO parameters (optional)
                         model_trainer_cfg = self.config.get("model_trainer", {})
-                        use_hpo: bool = bool(model_trainer_cfg.get("use_hpo", True))
+                        use_hpo_val = model_trainer_cfg.get("use_hpo", True)
+                        use_hpo: bool = (str(use_hpo_val).lower() in ("true", "1", "yes") if isinstance(use_hpo_val, str) else bool(use_hpo_val))
                         hpo_trials: int = int(model_trainer_cfg.get("hpo_trials", 25))
                         hpo_model_type: str = str(model_trainer_cfg.get("hpo_model_type", "random_forest"))
 
                         # Initialize trainer
-                        trainer = setup_model_trainer(self.config)
-                        if trainer is None:
-                            self.logger.error("❌ Failed to setup Ray model trainer")
-                            return False
-
-                        # Run training in a worker thread to avoid blocking the event loop
-                        training_results = await asyncio.to_thread(
-                            trainer.train_models,
-                            trainer_input,
-                            use_hpo,
-                            hpo_trials,
-                            hpo_model_type,
-                        )
-
-                        # Ensure cleanup of Ray regardless of success
+                        trainer = None
                         try:
-                            trainer.stop()
-                        except Exception as e:
-                            self.logger.warning(f"Trainer cleanup warning: {e}")
+                            trainer = setup_model_trainer(self.config)
+                            if trainer is None:
+                                self.logger.error("❌ Failed to setup Ray model trainer")
+                                return False
 
-                        if not training_results:
-                            self.logger.error("❌ Ray model training returned no results")
-                            return False
+                            # Run training in a worker thread to avoid blocking the event loop
+                            training_results = await asyncio.to_thread(
+                                trainer.train_models,
+                                trainer_input,
+                                use_hpo,
+                                hpo_trials,
+                                hpo_model_type,
+                            )
+
+                            if not training_results:
+                                self.logger.error("❌ Ray model training returned no results")
+                                return False
+                        finally:
+                            # Ensure cleanup of Ray regardless of success
+                            if trainer is not None:
+                                try:
+                                    trainer.stop()
+                                except Exception as e:
+                                    self.logger.warning(f"Trainer cleanup warning: {e}")
 
                         # Store results in pipeline state and manager results
                         pipeline_state["ray_model_training"] = {

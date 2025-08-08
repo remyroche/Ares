@@ -158,8 +158,10 @@ class AnalystEnhancementStep:
             # Use regime_data directory - fix the path construction
             regime_data_dir = os.path.join(data_dir, "regime_data")
             
+            symbol = self.config.get("symbol", "ETHUSDT")
+            exchange = self.config.get("exchange", "BINANCE")
             # Load the combined data file that Step 3 created
-            data_path = os.path.join(regime_data_dir, f"BINANCE_ETHUSDT_{regime_name}_data.pkl")
+            data_path = os.path.join(regime_data_dir, f"{exchange}_{symbol}_{regime_name}_data.pkl")
 
             if not os.path.exists(data_path):
                 raise FileNotFoundError(f"Data file for regime '{regime_name}' not found in {regime_data_dir}")
@@ -379,9 +381,11 @@ class AnalystEnhancementStep:
 
         # --- 4. Advanced Optimizations ---
         if model_name == "neural_network":
-            final_model = self._apply_quantization(final_model)
-            final_model = self._apply_wanda_pruning(final_model, X_train_optimal)
-            final_model = self._apply_knowledge_distillation(final_model, X_train_optimal, y_train)
+            # Apply advanced optimizations only for PyTorch models (skip for sklearn MLPClassifier)
+            if isinstance(final_model, torch.nn.Module):
+                final_model = self._apply_quantization(final_model)
+                final_model = self._apply_wanda_pruning(final_model, X_train_optimal)
+                final_model = self._apply_knowledge_distillation(final_model, X_train_optimal, y_train)
 
         enhancement_package = {
             "model": final_model,

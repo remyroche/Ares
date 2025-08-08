@@ -7,6 +7,11 @@ import pickle
 from datetime import datetime
 from typing import Any
 
+import numpy as np
+import pandas as pd
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.metrics import accuracy_score, f1_score
+
 from src.utils.logger import system_logger
 
 
@@ -62,13 +67,18 @@ class ConfidenceCalibrationStep:
                     if os.path.isdir(regime_path):
                         regime_models = {}
                         for model_file in os.listdir(regime_path):
-                            if model_file.endswith(".pkl"):
-                                model_name = model_file.replace(".pkl", "")
+                            if model_file.endswith((".pkl", ".joblib")):
+                                model_name = model_file.replace(".pkl", "").replace(".joblib", "")
                                 model_path = os.path.join(regime_path, model_file)
-
-                                with open(model_path, "rb") as f:
-                                    regime_models[model_name] = pickle.load(f)
-
+                                try:
+                                    if model_file.endswith(".joblib"):
+                                        import joblib
+                                        regime_models[model_name] = joblib.load(model_path)
+                                    else:
+                                        with open(model_path, "rb") as f:
+                                            regime_models[model_name] = pickle.load(f)
+                                except Exception as e:
+                                    self.logger.warning(f"Failed to load model {model_file}: {e}")
                         analyst_models[regime_dir] = regime_models
 
             # Load tactician models
@@ -113,38 +123,45 @@ class ConfidenceCalibrationStep:
                         with open(ensemble_path, "rb") as f:
                             tactician_ensembles = pickle.load(f)
 
+            # Load a generic validation frame for calibration fallback
+            generic_val = self._load_validation_frame(data_dir, exchange, symbol)
+
             # Perform calibration
             calibration_results = {}
 
             # 1. Calibrate individual analyst models
             analyst_calibration = await self._calibrate_analyst_models(
                 analyst_models,
-                symbol,
+                analyst_ensembles,
+                generic_val,
+                data_dir,
                 exchange,
+                symbol,
             )
             calibration_results["analyst_models"] = analyst_calibration
 
             # 2. Calibrate individual tactician models
             tactician_calibration = await self._calibrate_tactician_models(
                 tactician_models,
-                symbol,
-                exchange,
+                tactician_ensembles,
+                generic_val,
             )
             calibration_results["tactician_models"] = tactician_calibration
 
             # 3. Calibrate analyst ensembles
             analyst_ensemble_calibration = await self._calibrate_analyst_ensembles(
                 analyst_ensembles,
-                symbol,
+                generic_val,
+                data_dir,
                 exchange,
+                symbol,
             )
             calibration_results["analyst_ensembles"] = analyst_ensemble_calibration
 
             # 4. Calibrate tactician ensembles
             tactician_ensemble_calibration = await self._calibrate_tactician_ensembles(
                 tactician_ensembles,
-                symbol,
-                exchange,
+                generic_val,
             )
             calibration_results["tactician_ensembles"] = tactician_ensemble_calibration
 
@@ -161,7 +178,7 @@ class ConfidenceCalibrationStep:
             # Save calibration summary
             summary_file = f"{data_dir}/{exchange}_{symbol}_calibration_summary.json"
             with open(summary_file, "w") as f:
-                json.dump(calibration_results, f, indent=2)
+                json.dump(self._summarize_calibration(calibration_results), f, indent=2)
 
             self.logger.info(
                 f"✅ Confidence calibration completed. Results saved to {calibration_dir}",
@@ -181,315 +198,221 @@ class ConfidenceCalibrationStep:
             self.logger.error(f"❌ Error in Confidence Calibration: {e}")
             return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
+    def _load_validation_frame(self, data_dir: str, exchange: str, symbol: str) -> pd.DataFrame | None:
+        """Load generic validation features frame saved by step 4."""
+        try:
+            path = f"{data_dir}/{exchange}_{symbol}_features_validation.pkl"
+            if os.path.exists(path):
+                with open(path, "rb") as f:
+                    df = pickle.load(f)
+                if isinstance(df, pd.DataFrame) and "label" in df.columns:
+                    return df
+        except Exception as e:
+            self.logger.warning(f"Failed to load generic validation frame: {e}")
+        return None
+
+    def _load_regime_validation(self, data_dir: str, exchange: str, symbol: str, regime_name: str) -> pd.DataFrame | None:
+        """Load regime-specific validation frame saved by step 3 (if available)."""
+        try:
+            regime_dir = os.path.join(data_dir, "regime_data")
+            path = os.path.join(regime_dir, f"{exchange}_{symbol}_{regime_name}_data.pkl")
+            if os.path.exists(path):
+                with open(path, "rb") as f:
+                    df = pickle.load(f)
+                if isinstance(df, pd.DataFrame) and "label" in df.columns:
+                    return df
+        except Exception as e:
+            self.logger.warning(f"Failed to load regime validation for {regime_name}: {e}")
+        return None
+
+    def _extract_features(self, df: pd.DataFrame, model: Any) -> tuple[pd.DataFrame, pd.Series]:
+        """Extract feature matrix X and labels y for a given model from a dataframe."""
+        y = df["label"].astype(int)
+        if hasattr(model, "feature_names_in_"):
+            cols = [c for c in model.feature_names_in_ if c in df.columns and c != "label"]
+            X = df[cols].copy()
+        else:
+            X = df.select_dtypes(include=[np.number]).drop(columns=["label"], errors="ignore").copy()
+        X = X.fillna(0)
+        return X, y
+
     async def _calibrate_analyst_models(
         self,
-        models: dict[str, Any],
-        symbol: str,
+        models: dict[str, dict[str, Any]],
+        ensembles: dict[str, Any],
+        generic_val: pd.DataFrame | None,
+        data_dir: str,
         exchange: str,
+        symbol: str,
     ) -> dict[str, Any]:
-        """
-        Calibrate individual analyst models using walk-forward approach.
-
-        Args:
-            models: Analyst models by regime
-            symbol: Trading symbol
-            exchange: Exchange name
-
-        Returns:
-            Dict containing calibration results
-        """
-        try:
-            self.logger.info(
-                f"Calibrating analyst models for {symbol} on {exchange}...",
-            )
-
-            calibration_results = {}
-
-            for regime_name, regime_models in models.items():
-                self.logger.info(f"Calibrating models for regime: {regime_name}")
-
-                regime_calibration = {}
-
-                for model_name, model_data in regime_models.items():
-                    self.logger.info(
-                        f"Calibrating {model_name} for regime {regime_name}",
-                    )
-
-                    # Apply walk-forward calibration
-                    calibrated_model = await self._apply_walk_forward_calibration(
-                        model_data["model"],
-                        model_name,
-                        regime_name,
-                        "analyst",
-                    )
-
-                    regime_calibration[model_name] = {
-                        "original_model": model_data,
-                        "calibrated_model": calibrated_model,
-                        "calibration_method": "walk_forward",
+        results: dict[str, Any] = {}
+        for regime_name, regime_models in models.items():
+            regime_df = self._load_regime_validation(data_dir, exchange, symbol, regime_name) or generic_val
+            if regime_df is None:
+                self.logger.warning(f"No validation data available for regime {regime_name}; skipping calibration")
+                continue
+            regime_res = {}
+            for model_name, model_data in regime_models.items():
+                try:
+                    base_model = model_data if hasattr(model_data, "predict_proba") else model_data.get("model", None)
+                    if base_model is None:
+                        continue
+                    X_val, y_val = self._extract_features(regime_df, base_model)
+                    calibrator = CalibratedClassifierCV(base_estimator=base_model, cv="prefit", method="isotonic")
+                    calibrator.fit(X_val, y_val)
+                    acc = accuracy_score(y_val, calibrator.predict(X_val))
+                    f1 = f1_score(y_val, calibrator.predict(X_val), average="weighted")
+                    regime_res[model_name] = {
+                        "calibrated_model": calibrator,
+                        "metrics": {"accuracy": acc, "f1": f1},
+                        "calibration_method": "isotonic_prefit",
                         "regime": regime_name,
-                        "model_type": "analyst",
                     }
-
-                calibration_results[regime_name] = regime_calibration
-
-            return calibration_results
-
-        except Exception as e:
-            self.logger.error(f"Error calibrating analyst models: {e}")
-            raise
+                except Exception as e:
+                    self.logger.warning(f"Calibration failed for analyst model {model_name} in {regime_name}: {e}")
+            results[regime_name] = regime_res
+        return results
 
     async def _calibrate_tactician_models(
         self,
         models: dict[str, Any],
-        symbol: str,
-        exchange: str,
+        ensembles: dict[str, Any],
+        generic_val: pd.DataFrame | None,
     ) -> dict[str, Any]:
-        """
-        Calibrate individual tactician models using walk-forward approach.
-
-        Args:
-            models: Tactician models
-            symbol: Trading symbol
-            exchange: Exchange name
-
-        Returns:
-            Dict containing calibration results
-        """
-        try:
-            self.logger.info(
-                f"Calibrating tactician models for {symbol} on {exchange}...",
-            )
-
-            calibration_results = {}
-
-            for model_name, model_data in models.items():
-                self.logger.info(f"Calibrating tactician model: {model_name}")
-
-                # Apply walk-forward calibration
-                calibrated_model = await self._apply_walk_forward_calibration(
-                    model_data["model"],
-                    model_name,
-                    "tactician",
-                    "tactician",
-                )
-
-                calibration_results[model_name] = {
-                    "original_model": model_data,
-                    "calibrated_model": calibrated_model,
-                    "calibration_method": "walk_forward",
-                    "model_type": "tactician",
+        results: dict[str, Any] = {}
+        if generic_val is None:
+            return results
+        for model_name, model_data in models.items():
+            try:
+                base_model = model_data if hasattr(model_data, "predict_proba") else model_data.get("model", None)
+                if base_model is None:
+                    continue
+                X_val, y_val = self._extract_features(generic_val, base_model)
+                calibrator = CalibratedClassifierCV(base_estimator=base_model, cv="prefit", method="isotonic")
+                calibrator.fit(X_val, y_val)
+                acc = accuracy_score(y_val, calibrator.predict(X_val))
+                f1 = f1_score(y_val, calibrator.predict(X_val), average="weighted")
+                results[model_name] = {
+                    "calibrated_model": calibrator,
+                    "metrics": {"accuracy": acc, "f1": f1},
+                    "calibration_method": "isotonic_prefit",
                 }
-
-            return calibration_results
-
-        except Exception as e:
-            self.logger.error(f"Error calibrating tactician models: {e}")
-            raise
+            except Exception as e:
+                self.logger.warning(f"Calibration failed for tactician model {model_name}: {e}")
+        return results
 
     async def _calibrate_analyst_ensembles(
         self,
         ensembles: dict[str, Any],
-        symbol: str,
+        generic_val: pd.DataFrame | None,
+        data_dir: str,
         exchange: str,
+        symbol: str,
     ) -> dict[str, Any]:
-        """
-        Calibrate analyst ensembles using walk-forward approach.
-
-        Args:
-            ensembles: Analyst ensembles by regime
-            symbol: Trading symbol
-            exchange: Exchange name
-
-        Returns:
-            Dict containing calibration results
-        """
-        try:
-            self.logger.info(
-                f"Calibrating analyst ensembles for {symbol} on {exchange}...",
-            )
-
-            calibration_results = {}
-
-            for regime_name, regime_ensembles in ensembles.items():
-                self.logger.info(f"Calibrating ensembles for regime: {regime_name}")
-
-                regime_calibration = {}
-
-                for ensemble_type, ensemble_data in regime_ensembles.items():
-                    self.logger.info(
-                        f"Calibrating {ensemble_type} ensemble for regime {regime_name}",
-                    )
-
-                    # Apply ensemble calibration
-                    calibrated_ensemble = await self._apply_ensemble_calibration(
-                        ensemble_data["ensemble"],
-                        ensemble_type,
-                        regime_name,
-                        "analyst",
-                    )
-
-                    regime_calibration[ensemble_type] = {
-                        "original_ensemble": ensemble_data,
-                        "calibrated_ensemble": calibrated_ensemble,
-                        "calibration_method": "ensemble_calibration",
-                        "regime": regime_name,
-                        "ensemble_type": "analyst",
-                    }
-
-                calibration_results[regime_name] = regime_calibration
-
-            return calibration_results
-
-        except Exception as e:
-            self.logger.error(f"Error calibrating analyst ensembles: {e}")
-            raise
+        results: dict[str, Any] = {}
+        for regime_name, regime_ensembles in ensembles.items():
+            # Prefer stacking_cv ensemble if present
+            ensemble_obj = None
+            if isinstance(regime_ensembles, dict):
+                for key in ("stacking_cv", "dynamic_weighting", "voting"):
+                    if key in regime_ensembles and isinstance(regime_ensembles[key], dict):
+                        ensemble_obj = regime_ensembles[key].get("ensemble")
+                        if ensemble_obj is not None:
+                            break
+            if ensemble_obj is None:
+                continue
+            # Validation data
+            regime_df = self._load_regime_validation(data_dir, exchange, symbol, regime_name) or generic_val
+            if regime_df is None:
+                continue
+            try:
+                X_val, y_val = self._extract_features(regime_df, ensemble_obj)
+                wrapper = _PrefitWrapper(ensemble_obj)
+                calibrator = CalibratedClassifierCV(base_estimator=wrapper, cv="prefit", method="isotonic")
+                calibrator.fit(X_val, y_val)
+                acc = accuracy_score(y_val, calibrator.predict(X_val))
+                f1 = f1_score(y_val, calibrator.predict(X_val), average="weighted")
+                results[regime_name] = {
+                    "calibrated_ensemble": calibrator,
+                    "metrics": {"accuracy": acc, "f1": f1},
+                    "calibration_method": "isotonic_prefit",
+                }
+            except Exception as e:
+                self.logger.warning(f"Calibration failed for analyst ensemble in {regime_name}: {e}")
+        return results
 
     async def _calibrate_tactician_ensembles(
         self,
         ensembles: dict[str, Any],
-        symbol: str,
-        exchange: str,
+        generic_val: pd.DataFrame | None,
     ) -> dict[str, Any]:
-        """
-        Calibrate tactician ensembles using walk-forward approach.
-
-        Args:
-            ensembles: Tactician ensembles
-            symbol: Trading symbol
-            exchange: Exchange name
-
-        Returns:
-            Dict containing calibration results
-        """
-        try:
-            self.logger.info(
-                f"Calibrating tactician ensembles for {symbol} on {exchange}...",
-            )
-
-            calibration_results = {}
-
-            for ensemble_type, ensemble_data in ensembles.items():
-                self.logger.info(f"Calibrating tactician ensemble: {ensemble_type}")
-
-                # Apply ensemble calibration
-                calibrated_ensemble = await self._apply_ensemble_calibration(
-                    ensemble_data["ensemble"],
-                    ensemble_type,
-                    "tactician",
-                    "tactician",
-                )
-
-                calibration_results[ensemble_type] = {
-                    "original_ensemble": ensemble_data,
-                    "calibrated_ensemble": calibrated_ensemble,
-                    "calibration_method": "ensemble_calibration",
-                    "ensemble_type": "tactician",
+        results: dict[str, Any] = {}
+        if not ensembles or generic_val is None:
+            return results
+        # ensembles may be a dict of types -> data
+        for ensemble_type, ensemble_data in ensembles.items():
+            ensemble_obj = ensemble_data.get("ensemble") if isinstance(ensemble_data, dict) else None
+            if ensemble_obj is None:
+                continue
+            try:
+                X_val, y_val = self._extract_features(generic_val, ensemble_obj)
+                wrapper = _PrefitWrapper(ensemble_obj)
+                calibrator = CalibratedClassifierCV(base_estimator=wrapper, cv="prefit", method="isotonic")
+                calibrator.fit(X_val, y_val)
+                acc = accuracy_score(y_val, calibrator.predict(X_val))
+                f1 = f1_score(y_val, calibrator.predict(X_val), average="weighted")
+                results[ensemble_type] = {
+                    "calibrated_ensemble": calibrator,
+                    "metrics": {"accuracy": acc, "f1": f1},
+                    "calibration_method": "isotonic_prefit",
                 }
+            except Exception as e:
+                self.logger.warning(f"Calibration failed for tactician ensemble {ensemble_type}: {e}")
+        return results
 
-            return calibration_results
-
-        except Exception as e:
-            self.logger.error(f"Error calibrating tactician ensembles: {e}")
-            raise
-
-    async def _apply_walk_forward_calibration(
-        self,
-        model: Any,
-        model_name: str,
-        regime_name: str,
-        model_type: str,
-    ) -> dict[str, Any]:
-        """
-        Apply walk-forward calibration to a model.
-
-        Args:
-            model: Model to calibrate
-            model_name: Name of the model
-            regime_name: Name of the regime
-            model_type: Type of model (analyst/tactician)
-
-        Returns:
-            Dict containing calibrated model
-        """
-        try:
-            from sklearn.calibration import CalibratedClassifierCV
-
-            # Create calibrated model using walk-forward approach
-            calibrated_model = CalibratedClassifierCV(
-                base_estimator=model,
-                cv=5,  # 5-fold cross-validation for walk-forward
-                method="isotonic",  # Use isotonic regression for calibration
-            )
-
-            # Note: In a real implementation, you would fit the calibrated model with data
-            # For now, we'll create a placeholder calibrated model
-
-            calibrated_model_data = {
-                "calibrated_model": calibrated_model,
-                "calibration_method": "walk_forward",
-                "cv_folds": 5,
-                "calibration_function": "isotonic",
-                "model_name": model_name,
-                "regime_name": regime_name,
-                "model_type": model_type,
-                "calibration_date": datetime.now().isoformat(),
+    def _summarize_calibration(self, results: dict[str, Any]) -> dict[str, Any]:
+        summary = {"generated_at": datetime.now().isoformat(), "sections": {}}
+        for key, section in results.items():
+            summary["sections"][key] = {
+                "items": sum(len(v) for v in section.values()) if isinstance(section, dict) else 0
             }
+        return summary
 
-            return calibrated_model_data
 
-        except Exception as e:
-            self.logger.error(f"Error applying walk-forward calibration: {e}")
-            raise
+class _PrefitWrapper:
+    """Wrapper to adapt prefit estimators/ensembles to sklearn CalibratedClassifierCV with cv='prefit'."""
 
-    async def _apply_ensemble_calibration(
-        self,
-        ensemble: Any,
-        ensemble_type: str,
-        regime_name: str,
-        model_type: str,
-    ) -> dict[str, Any]:
-        """
-        Apply calibration to an ensemble model.
+    def __init__(self, base):
+        self.base = base
+        # feature_names_in_ passthrough for feature selection
+        if hasattr(base, "feature_names_in_"):
+            self.feature_names_in_ = base.feature_names_in_
 
-        Args:
-            ensemble: Ensemble model to calibrate
-            ensemble_type: Type of ensemble
-            regime_name: Name of the regime
-            model_type: Type of model (analyst/tactician)
+    def fit(self, X, y):  # noqa: D401
+        # No-op: base estimator is prefit
+        return self
 
-        Returns:
-            Dict containing calibrated ensemble
-        """
-        try:
-            from sklearn.calibration import CalibratedClassifierCV
+    def predict(self, X):
+        if hasattr(self.base, "predict"):
+            return self.base.predict(X)
+        proba = self.predict_proba(X)
+        return np.argmax(proba, axis=1)
 
-            # Create calibrated ensemble
-            calibrated_ensemble = CalibratedClassifierCV(
-                base_estimator=ensemble,
-                cv=5,  # 5-fold cross-validation
-                method="isotonic",  # Use isotonic regression for calibration
-            )
-
-            # Note: In a real implementation, you would fit the calibrated ensemble with data
-            # For now, we'll create a placeholder calibrated ensemble
-
-            calibrated_ensemble_data = {
-                "calibrated_ensemble": calibrated_ensemble,
-                "calibration_method": "ensemble_calibration",
-                "cv_folds": 5,
-                "calibration_function": "isotonic",
-                "ensemble_type": ensemble_type,
-                "regime_name": regime_name,
-                "model_type": model_type,
-                "calibration_date": datetime.now().isoformat(),
-            }
-
-            return calibrated_ensemble_data
-
-        except Exception as e:
-            self.logger.error(f"Error applying ensemble calibration: {e}")
-            raise
+    def predict_proba(self, X):
+        if hasattr(self.base, "predict_proba"):
+            return self.base.predict_proba(X)
+        # Fallback: construct probabilities from class predictions (uniform confidence)
+        preds = self.base.predict(X)
+        classes = np.unique(preds)
+        n_classes = int(classes.max() - classes.min() + 1) if len(classes) > 1 else 2
+        proba = np.zeros((len(preds), n_classes))
+        # Map labels to indices (assume binary 0/1 if ambiguous)
+        if set(classes) == {-1, 0, 1}:
+            idx = preds + 1
+        else:
+            idx = preds
+        proba[np.arange(len(preds)), idx] = 1.0
+        return proba
 
 
 # For backward compatibility with existing step structure

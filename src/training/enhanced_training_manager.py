@@ -795,7 +795,9 @@ class EnhancedTrainingManager:
                 # Update pipeline state
                 pipeline_state["data_collection"] = {
                     "status": "SUCCESS",
-                    "result": step1_result
+                    "artifact_paths": {
+                        "historical_data": f"{data_dir}/{exchange}_{symbol}_historical_data.pkl"
+                    }
                 }
                 
                 # Run validator for Step 1
@@ -890,6 +892,7 @@ class EnhancedTrainingManager:
             self._save_checkpoint("step3_regime_data_splitting", pipeline_state)
 
             # Step 4: Analyst Labeling & Feature Engineering
+            step_start = time.time()
             self.logger.info("🧠 STEP 4: Analyst Labeling & Feature Engineering...")
             print("   🧠 Step 4: Analyst Labeling & Feature Engineering...")
             
@@ -914,6 +917,7 @@ class EnhancedTrainingManager:
             self._optimize_memory_usage()
 
             # Step 5: Analyst Specialist Training
+            step_start = time.time()
             self.logger.info("🎯 STEP 5: Analyst Specialist Training...")
             print("   🎯 Step 5: Analyst Specialist Training...")
             
@@ -956,6 +960,7 @@ class EnhancedTrainingManager:
             print("   ✅ Step 5: Analyst Specialist Training completed successfully")
 
             # Step 6: Analyst Enhancement
+            step_start = time.time()
             self.logger.info("🔧 STEP 6: Analyst Enhancement...")
             print("   🔧 Step 6: Analyst Enhancement...")
             
@@ -976,6 +981,7 @@ class EnhancedTrainingManager:
             print("   ✅ Step 6: Analyst Enhancement completed successfully")
 
             # Step 7: Analyst Ensemble Creation
+            step_start = time.time()
             self.logger.info("🎲 STEP 7: Analyst Ensemble Creation...")
             print("   🎲 Step 7: Analyst Ensemble Creation...")
             
@@ -996,6 +1002,7 @@ class EnhancedTrainingManager:
             print("   ✅ Step 7: Analyst Ensemble Creation completed successfully")
 
             # Step 8: Tactician Labeling
+            step_start = time.time()
             self.logger.info("🎯 STEP 8: Tactician Labeling...")
             print("   🎯 Step 8: Tactician Labeling...")
             
@@ -1016,6 +1023,7 @@ class EnhancedTrainingManager:
             print("   ✅ Step 8: Tactician Labeling completed successfully")
 
             # Step 9: Tactician Specialist Training
+            step_start = time.time()
             self.logger.info("🧠 STEP 9: Tactician Specialist Training...")
             print("   🧠 Step 9: Tactician Specialist Training...")
             
@@ -1036,6 +1044,7 @@ class EnhancedTrainingManager:
             print("   ✅ Step 9: Tactician Specialist Training completed successfully")
 
             # Step 10: Tactician Ensemble Creation
+            step_start = time.time()
             self.logger.info("🎲 STEP 10: Tactician Ensemble Creation...")
             print("   🎲 Step 10: Tactician Ensemble Creation...")
             
@@ -1056,6 +1065,7 @@ class EnhancedTrainingManager:
             print("   ✅ Step 10: Tactician Ensemble Creation completed successfully")
 
             # Step 11: Confidence Calibration
+            step_start = time.time()
             self.logger.info("🎯 STEP 11: Confidence Calibration...")
             print("   🎯 Step 11: Confidence Calibration...")
             
@@ -1076,6 +1086,7 @@ class EnhancedTrainingManager:
             print("   ✅ Step 11: Confidence Calibration completed successfully")
 
             # Step 12: Final Parameters Optimization (with computational optimization)
+            step_start = time.time()
             self.logger.info("🔧 STEP 12: Final Parameters Optimization with Computational Optimization...")
             print("   🔧 Step 12: Final Parameters Optimization with Computational Optimization...")
             
@@ -1106,6 +1117,7 @@ class EnhancedTrainingManager:
             print("   ✅ Step 12: Final Parameters Optimization completed successfully")
 
             # Step 13: Walk Forward Validation
+            step_start = time.time()
             self.logger.info("📈 STEP 13: Walk Forward Validation...")
             print("   📈 Step 13: Walk Forward Validation...")
             
@@ -1126,6 +1138,7 @@ class EnhancedTrainingManager:
             print("   ✅ Step 13: Walk Forward Validation completed successfully")
 
             # Step 14: Monte Carlo Validation
+            step_start = time.time()
             self.logger.info("🎲 STEP 14: Monte Carlo Validation...")
             print("   🎲 Step 14: Monte Carlo Validation...")
             
@@ -1146,6 +1159,7 @@ class EnhancedTrainingManager:
             print("   ✅ Step 14: Monte Carlo Validation completed successfully")
 
             # Step 15: A/B Testing
+            step_start = time.time()
             self.logger.info("🧪 STEP 15: A/B Testing...")
             print("   🧪 Step 15: A/B Testing...")
             
@@ -1166,6 +1180,7 @@ class EnhancedTrainingManager:
             print("   ✅ Step 15: A/B Testing completed successfully")
 
             # Step 16: Saving Results
+            step_start = time.time()
             self.logger.info("💾 STEP 16: Saving Results...")
             print("   💾 Step 16: Saving Results...")
             

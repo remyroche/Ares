@@ -248,6 +248,64 @@ class EnhancedOrderManager:
                     order.updated_time = datetime.now()
                     updated = True
 
+            # Live mode: push updates to exchange by cancelling and recreating closing orders
+            if updated and self.exchange_client and not self.paper_trading:
+                # Normalize side and compute closing side
+                side_str = side.value if isinstance(side, OrderSide) else str(side).lower()
+                is_long = side_str in ("buy", "long")
+                closing_side = "SELL" if is_long else "BUY"
+
+                # Use any one order under the link to derive average price and quantity
+                linked_orders = [o for o in self.active_orders.values() if o.order_link_id == order_link_id and o.symbol == symbol]
+                if linked_orders:
+                    ref = linked_orders[0]
+                    avg_price = ref.average_price or (ref.price or 0.0)
+                    qty = max(0.0, ref.remaining_quantity or ref.original_quantity)
+
+                    # Best effort: cancel existing linked orders on venue (if we have order ids)
+                    for o in linked_orders:
+                        try:
+                            await self.exchange_client.cancel_order(symbol=symbol, order_id=o.order_id)
+                        except Exception:
+                            # Ignore cancellation failures and continue
+                            pass
+
+                    # Create new TP/SL closing orders based on trailing percentages
+                    # NOTE: For simplicity we submit LIMIT orders at computed prices.
+                    # Integrating native STOP_LIMIT/OCO endpoints can be added later.
+                    if avg_price > 0 and qty > 0:
+                        # Take Profit
+                        if trailing_tp_pct is not None and trailing_tp_pct > 0:
+                            tp_price = (
+                                avg_price * (1 + trailing_tp_pct) if is_long else avg_price * (1 - trailing_tp_pct)
+                            )
+                            try:
+                                await self.exchange_client.create_order(
+                                    symbol=symbol,
+                                    side=closing_side,
+                                    order_type="LIMIT",
+                                    quantity=qty,
+                                    price=tp_price,
+                                )
+                            except Exception as e:
+                                self.logger.error(f"Failed to place TP order for {order_link_id}: {e}")
+
+                        # Stop Loss (submit protective LIMIT as placeholder)
+                        if trailing_stop_pct is not None and trailing_stop_pct > 0:
+                            sl_price = (
+                                avg_price * (1 - trailing_stop_pct) if is_long else avg_price * (1 + trailing_stop_pct)
+                            )
+                            try:
+                                await self.exchange_client.create_order(
+                                    symbol=symbol,
+                                    side=closing_side,
+                                    order_type="LIMIT",
+                                    quantity=qty,
+                                    price=sl_price,
+                                )
+                            except Exception as e:
+                                self.logger.error(f"Failed to place SL order for {order_link_id}: {e}")
+
             if updated:
                 self.logger.info(
                     f"Updated trailing levels for link {order_link_id}: stop={trailing_stop_pct}, tp={trailing_tp_pct}"

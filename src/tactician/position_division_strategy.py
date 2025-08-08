@@ -70,10 +70,7 @@ class PositionDivisionStrategy:
             "position_division_parameters.high_confidence_threshold",
             0.85,
         )
-        self.division_confidence_threshold: float = get_parameter_value(
-            "position_division_parameters.division_confidence_threshold",
-            0.75,
-        )
+        # Note: division_confidence_threshold already set earlier; avoid duplicate reassignment
 
         # Take profit thresholds (confidence-based)
         self.take_profit_confidence_decrease: float = get_parameter_value(
@@ -538,6 +535,70 @@ class PositionDivisionStrategy:
                 "division_reason": "Error in position division analysis",
                 "error": str(e),
             }
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (None, "Invalid input data for position division"),
+            AttributeError: (None, "Strategy not properly initialized"),
+        },
+        default_return=None,
+        context="position division wrapper",
+    )
+    async def analyze_and_divide(
+        self,
+        tactics_input: dict[str, Any],
+        *,
+        market_health_analysis: dict[str, Any] | None = None,
+        strategist_risk_parameters: dict[str, Any] | None = None,
+        analyst_confidence: float = 0.5,
+        tactician_confidence: float = 0.5,
+    ) -> dict[str, Any] | None:
+        """Wrapper to run division analysis and adjust outputs with market health and strategist risk parameters."""
+        try:
+            ml_predictions = tactics_input.get("ml_predictions", {})
+            current_positions = tactics_input.get("current_positions", [])
+            current_price = float(tactics_input.get("current_price", 0.0))
+            short_term = tactics_input.get("short_term_analysis", {})
+
+            base = await self.analyze_position_division(
+                ml_predictions=ml_predictions,
+                current_positions=current_positions,
+                current_price=current_price,
+                short_term_analysis=short_term,
+                analyst_confidence=analyst_confidence,
+                tactician_confidence=tactician_confidence,
+            )
+            if not base:
+                return None
+
+            # Adjust recommendations with market health and strategist risk caps
+            if market_health_analysis:
+                stress = market_health_analysis.get("stress_analysis", {})
+                stress_level = float(stress.get("stress_level", 0.5))
+                if stress_level >= 0.8:
+                    # In extreme stress, avoid adding positions and favor reductions
+                    base["entry_recommendation"]["should_enter"] = False
+                    base["division_reason"] += " | Suppressed entries due to extreme stress"
+                elif stress_level >= 0.6:
+                    # In high stress, scale down take-profit adds
+                    tp = base.get("take_profit_recommendation", {})
+                    tp_size = float(tp.get("total_take_profit_size", 0.0))
+                    tp["total_take_profit_size"] = tp_size * 0.7
+                    base["take_profit_recommendation"] = tp
+
+            if strategist_risk_parameters:
+                # Cap total adds based on max positions and risk preference
+                max_positions = int(
+                    strategist_risk_parameters.get("max_positions", self.max_positions)
+                )
+                base["entry_recommendation"]["max_positions_allowed"] = max_positions
+
+            base["market_health_context"] = market_health_analysis or {}
+            base["strategist_risk_parameters"] = strategist_risk_parameters or {}
+            return base
+        except Exception as e:
+            self.logger.error(f"Error in analyze_and_divide: {e}")
+            return None
 
     def _calculate_average_confidence(
         self,

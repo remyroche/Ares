@@ -10,6 +10,7 @@ from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.confidence import normalize_dual_confidence
 
 
 class PositionSizer:
@@ -125,6 +126,8 @@ class PositionSizer:
         account_balance: float = 1000.0,
         analyst_confidence: float = 0.5,
         tactician_confidence: float = 0.5,
+        market_health_analysis: dict[str, Any] | None = None,
+        strategist_risk_parameters: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Calculate position size using ML confidence scores and Kelly criterion.
@@ -133,6 +136,8 @@ class PositionSizer:
             ml_predictions: ML confidence predictions from ml_confidence_predictor
             current_price: Current market price
             account_balance: Account balance for position sizing
+            market_health_analysis: Aggregated indicators from Analyst's MarketHealthAnalyzer
+            strategist_risk_parameters: Risk parameters produced by Strategist (fed via Analyst)
 
         Returns:
             dict[str, Any]: Position sizing analysis
@@ -170,6 +175,15 @@ class PositionSizer:
                 ml_position_size,
             )
 
+            # Apply market-health and strategist risk modifiers (volatility/liquidity/stress aware)
+            final_position_size = self._apply_position_size_modifiers(
+                final_position_size,
+                market_health_analysis=market_health_analysis,
+                strategist_risk_parameters=strategist_risk_parameters,
+                analyst_confidence=analyst_confidence,
+                tactician_confidence=tactician_confidence,
+            )
+
             # Create position sizing analysis
             sizing_analysis = {
                 "timestamp": datetime.now(),
@@ -181,6 +195,8 @@ class PositionSizer:
                 "price_target_confidences": price_target_confidences,
                 "adversarial_confidences": adversarial_confidences,
                 "directional_confidence": directional_confidence,
+                "market_health_modifiers": (market_health_analysis or {}),
+                "strategist_risk_parameters": (strategist_risk_parameters or {}),
                 "sizing_reason": self._generate_sizing_reason(
                     final_position_size,
                     kelly_position_size,
@@ -336,6 +352,75 @@ class PositionSizer:
         except Exception as e:
             self.logger.error(f"Error calculating weighted position size: {e}")
             return kelly_position_size
+
+    def _apply_position_size_modifiers(
+        self,
+        base_size: float,
+        *,
+        market_health_analysis: dict[str, Any] | None,
+        strategist_risk_parameters: dict[str, Any] | None,
+        analyst_confidence: float,
+        tactician_confidence: float,
+    ) -> float:
+        """Adjust position size based on market health (vol/liquidity/stress), strategist risk, and dynamic confidence."""
+        try:
+            adjusted = base_size
+
+            # Market health: downscale size under high volatility or stress; upscale when healthy
+            if market_health_analysis:
+                vol = market_health_analysis.get("volatility_analysis", {})
+                stress = market_health_analysis.get("stress_analysis", {})
+                liq = market_health_analysis.get("liquidity_analysis", {})
+
+                current_vol = float(vol.get("current_volatility", 0.02))
+                vol_regime = vol.get("volatility_regime", "normal")
+                stress_level = float(stress.get("stress_level", 0.5))  # 0..1
+                liquidity_score = float(liq.get("liquidity_score", 0.5))  # 0..1
+
+                # Volatility adjustment
+                if vol_regime in ("high", "extreme") or current_vol > 0.03:
+                    adjusted *= 0.6
+                elif vol_regime == "low" and current_vol < 0.015:
+                    adjusted *= 1.1
+
+                # Stress adjustment
+                if stress_level >= 0.8:
+                    adjusted *= 0.4
+                elif stress_level >= 0.6:
+                    adjusted *= 0.6
+                elif stress_level >= 0.4:
+                    adjusted *= 0.8
+
+                # Liquidity adjustment
+                if liquidity_score < 0.3:
+                    adjusted *= 0.6
+                elif liquidity_score > 0.7:
+                    adjusted *= 1.05
+
+            # Strategist risk parameters: respect max risk caps without using fixed TP/SL distances
+            if strategist_risk_parameters:
+                # Example: cap size based on max daily loss or risk per trade signals
+                max_position_risk = float(
+                    strategist_risk_parameters.get("max_position_risk", 0.01)
+                )
+                # Ensure final size does not exceed configured max_position_size
+                configured_max = float(self.max_position_size)
+                adjusted = min(adjusted, configured_max)
+                # If max_position_risk is very small, reduce size further
+                if max_position_risk <= 0.005:
+                    adjusted *= 0.8
+
+            # Dynamic confidence-based modulation (analyst and tactician)
+            # Use dual confidence similar to monitor normalization
+            _, normalized = normalize_dual_confidence(analyst_confidence, tactician_confidence)
+            # Scale position by a gentle factor around 1.0 (0.8..1.2)
+            conf_scale = 0.8 + 0.4 * normalized
+            adjusted *= conf_scale
+
+            return max(self.min_position_size, min(self.max_position_size, adjusted))
+        except Exception as e:
+            self.logger.error(f"Error applying size modifiers: {e}")
+            return max(self.min_position_size, min(self.max_position_size, base_size))
 
     def _generate_sizing_reason(
         self,

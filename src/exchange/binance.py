@@ -391,7 +391,7 @@ class BinanceExchange:
                 self.logger.error("Price required for LIMIT orders")
                 return None
 
-                        # Prepare request
+            # Prepare request
             params = {
                 "symbol": symbol,
                 "side": side,

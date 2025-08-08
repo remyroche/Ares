@@ -965,7 +965,7 @@ class EnhancedTrainingManager:
                 )
                 
                 if not step7_success:
-                    return False
+                    raise RuntimeError("Step 7: Analyst Ensemble Creation failed")
 
             # Step 8: Tactician Labeling
             with self._timed_step("Step 8: Tactician Labeling", step_times):

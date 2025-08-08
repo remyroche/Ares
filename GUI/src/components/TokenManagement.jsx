@@ -38,6 +38,8 @@ const TokenManagement = () => {
     model_version: ''
   });
 
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
   useEffect(() => {
     fetchTokens();
     fetchAvailableModels();
@@ -46,7 +48,7 @@ const TokenManagement = () => {
   const fetchTokens = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/tokens');
+      const response = await fetch(`${API_BASE_URL}/api/tokens`);
       const data = await response.json();
       setTokens(data);
     } catch (err) {
@@ -59,7 +61,7 @@ const TokenManagement = () => {
 
   const fetchAvailableModels = async () => {
     try {
-      const response = await fetch('/api/models/available');
+      const response = await fetch(`${API_BASE_URL}/api/models/available`);
       const data = await response.json();
       setAvailableModels(data);
     } catch (err) {
@@ -70,7 +72,7 @@ const TokenManagement = () => {
   const fetchModelPerformances = async (symbol, exchange) => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/models/performance/${symbol}/${exchange}`);
+      const response = await fetch(`${API_BASE_URL}/api/models/performance/${symbol}/${exchange}`);
       const data = await response.json();
       setModelPerformances(data);
     } catch (err) {
@@ -84,7 +86,7 @@ const TokenManagement = () => {
   const handleAddToken = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/tokens', {
+      const response = await fetch(`${API_BASE_URL}/api/tokens`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newToken)
@@ -106,7 +108,7 @@ const TokenManagement = () => {
   const handleRemoveToken = async (symbol, exchange) => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/tokens/${symbol}/${exchange}`, {
+      const response = await fetch(`${API_BASE_URL}/api/tokens/${symbol}/${exchange}`, {
         method: 'DELETE'
       });
       
@@ -124,7 +126,7 @@ const TokenManagement = () => {
   const handleSelectModel = async (symbol, exchange, modelVersion) => {
     try {
       setLoading(true);
-      const response = await fetch('/api/models/select', {
+      const response = await fetch(`${API_BASE_URL}/api/models/select`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol, exchange, model_version: modelVersion })
@@ -144,7 +146,7 @@ const TokenManagement = () => {
   const handleViewModelAnalysis = async (symbol, exchange, modelId) => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/models/analysis/${symbol}/${exchange}/${modelId}`);
+      const response = await fetch(`${API_BASE_URL}/api/models/analysis/${symbol}/${exchange}/${modelId}`);
       const data = await response.json();
       
       if (data.error) {

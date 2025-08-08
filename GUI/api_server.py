@@ -7,6 +7,15 @@ import sys
 from datetime import datetime, timedelta
 from typing import Any
 
+# Ensure project root and src are on path BEFORE importing project modules
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.abspath(os.path.join(_current_dir, ".."))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+_src_path = os.path.join(_project_root, "src")
+if _src_path not in sys.path:
+    sys.path.insert(0, _src_path)
+
 import psutil
 from fastapi import (
     BackgroundTasks,
@@ -34,7 +43,7 @@ sys.path.insert(0, os.path.join(project_root, "src"))
 
 # --- Import from your Ares Codebase ---
 try:
-    from src.config import CONFIG
+    from src.config import CONFIG, AresConfig
     from src.database.sqlite_manager import SQLiteManager
     from src.supervisor.performance_reporter import PerformanceReporter
     from src.utils.state_manager import StateManager
@@ -43,6 +52,7 @@ try:
     from src.monitoring.enhanced_ml_tracker import EnhancedMLTracker
     from src.monitoring.ml_monitor import MLMonitor
     from src.monitoring.performance_monitor import PerformanceMonitor
+    ares_config = AresConfig()
     print("Successfully imported Ares modules.")
 except ImportError as e:
     print(f"Error importing Ares modules: {e}")
@@ -83,6 +93,12 @@ except ImportError as e:
     class PerformanceReporter:
         def __init__(self):
             pass
+
+    class AresConfig:
+        def __init__(self):
+            self.exchange_name = "BINANCE"
+
+    ares_config = AresConfig()
 
 # --- FastAPI App Initialization ---
 app = FastAPI(
@@ -1563,4 +1579,5 @@ if __name__ == "__main__":
 
     print("Starting Ares API server v2.0...")
     print("API documentation will be available at http://localhost:8000/docs")
-    uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.getenv("API_PORT", os.getenv("PORT", "8000")))
+    uvicorn.run("api_server:app", host="0.0.0.0", port=port, reload=True)

@@ -15,7 +15,6 @@ from typing import Any
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.exchange.binance import BinanceExchange
 
 
 class OrderType(Enum):
@@ -181,7 +180,7 @@ class EnhancedOrderManager:
         self.total_commission_paid = 0.0
 
         self.is_initialized = False
-        self.exchange_client: BinanceExchange | None = None
+        self.exchange_client: Any | None = None
 
     @handle_errors(
         exceptions=(Exception,),
@@ -202,19 +201,36 @@ class EnhancedOrderManager:
             # Initialize strategy configurations
             self._initialize_strategy_configurations()
 
-            # Initialize exchange client in live mode
-            if not self.paper_trading:
-                self.exchange_client = BinanceExchange(self.config.get("exchange", {}))
-                connected = await self.exchange_client.connect()
-                if not connected:
-                    self.logger.error("Failed to connect exchange client in live mode. Aborting initialization.")
-                    return False
+            # In live mode, require an injected exchange client to be attached before use
+            if not self.paper_trading and not self.exchange_client:
+                self.logger.error("Live mode requires an injected exchange client. Call attach_exchange_client first.")
+                return False
 
             self.is_initialized = True
             self.logger.info("✅ Enhanced Order Manager initialized successfully")
             return True
         except Exception as e:
             self.logger.error(f"Error initializing Enhanced Order Manager: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="attach exchange client",
+    )
+    async def attach_exchange_client(self, client: Any) -> bool:
+        """Attach an exchange client that implements create_order/cancel_order/get_order_status as needed."""
+        try:
+            self.exchange_client = client
+            # If client has a connect method and we're live, try to connect
+            if not self.paper_trading and hasattr(client, "connect"):
+                connected = await client.connect()
+                if not connected:
+                    self.logger.error("Failed to connect injected exchange client.")
+                    return False
+            return True
+        except Exception as e:
+            self.logger.error(f"Error attaching exchange client: {e}")
             return False
 
     @handle_errors(
@@ -264,7 +280,8 @@ class EnhancedOrderManager:
                     # Best effort: cancel existing linked orders on venue (if we have order ids)
                     for o in linked_orders:
                         try:
-                            await self.exchange_client.cancel_order(symbol=symbol, order_id=o.order_id)
+                            if hasattr(self.exchange_client, "cancel_order"):
+                                await self.exchange_client.cancel_order(symbol=symbol, order_id=o.order_id)
                         except Exception:
                             # Ignore cancellation failures and continue
                             pass
@@ -279,13 +296,14 @@ class EnhancedOrderManager:
                                 avg_price * (1 + trailing_tp_pct) if is_long else avg_price * (1 - trailing_tp_pct)
                             )
                             try:
-                                await self.exchange_client.create_order(
-                                    symbol=symbol,
-                                    side=closing_side,
-                                    order_type="LIMIT",
-                                    quantity=qty,
-                                    price=tp_price,
-                                )
+                                if hasattr(self.exchange_client, "create_order"):
+                                    await self.exchange_client.create_order(
+                                        symbol=symbol,
+                                        side=closing_side,
+                                        order_type="LIMIT",
+                                        quantity=qty,
+                                        price=tp_price,
+                                    )
                             except Exception as e:
                                 self.logger.error(f"Failed to place TP order for {order_link_id}: {e}")
 
@@ -295,13 +313,14 @@ class EnhancedOrderManager:
                                 avg_price * (1 - trailing_stop_pct) if is_long else avg_price * (1 + trailing_stop_pct)
                             )
                             try:
-                                await self.exchange_client.create_order(
-                                    symbol=symbol,
-                                    side=closing_side,
-                                    order_type="LIMIT",
-                                    quantity=qty,
-                                    price=sl_price,
-                                )
+                                if hasattr(self.exchange_client, "create_order"):
+                                    await self.exchange_client.create_order(
+                                        symbol=symbol,
+                                        side=closing_side,
+                                        order_type="LIMIT",
+                                        quantity=qty,
+                                        price=sl_price,
+                                    )
                             except Exception as e:
                                 self.logger.error(f"Failed to place SL order for {order_link_id}: {e}")
 
@@ -857,13 +876,18 @@ class EnhancedOrderManager:
                 qty = float(max(order_request.quantity, 0.0))
                 price = float(order_request.price) if order_request.price else None
 
-                resp = await self.exchange_client.create_order(
-                    symbol=order_request.symbol,
-                    side=side,
-                    order_type=otype,
-                    quantity=qty,
-                    price=price,
-                )
+                # Duck-typed order creation to be exchange-agnostic
+                if hasattr(self.exchange_client, "create_order"):
+                    resp = await self.exchange_client.create_order(
+                        symbol=order_request.symbol,
+                        side=side,
+                        order_type=otype,
+                        quantity=qty,
+                        price=price,
+                    )
+                else:
+                    self.logger.error("Exchange client missing create_order method")
+                    resp = None
                 if resp is None:
                     order_state.status = OrderStatus.REJECTED
                 else:

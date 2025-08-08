@@ -191,31 +191,53 @@ class AresLauncher:
         """Launch the GUI server."""
         self.logger.info("🚀 Launching GUI server...")
 
-        # Build the command
-        cmd = [sys.executable, "GUI/api_server.py"]
+        # Prefer unified start script which runs API and frontend
+        script_path = Path("GUI/start.sh")
+        env = os.environ.copy()
+        # Allow user to override ports via env
+        env.setdefault("API_PORT", env.get("API_PORT", "8000"))
+        env.setdefault("FRONTEND_PORT", env.get("FRONTEND_PORT", "3000"))
+        # If a remote API is used, VITE_API_BASE_URL can be provided by the user
+        # Otherwise Vite proxy will forward /api to API_PORT
 
-        # Add mode-specific arguments if provided
-        if mode and symbol and exchange:
-            cmd.extend(["--mode", mode, "--symbol", symbol, "--exchange", exchange])
+        if script_path.exists():
+            cmd = ["bash", str(script_path)]
+        else:
+            # Fallback: start API only (legacy behaviour)
+            cmd = [sys.executable, "GUI/api_server.py"]
+            # Pass optional mode args if provided and using api_server directly
+            if mode and symbol and exchange:
+                cmd.extend(["--mode", mode, "--symbol", symbol, "--exchange", exchange])
 
         self.gui_process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=env,
         )
         self.processes.append(self.gui_process)
-        self.logger.info(f"✅ GUI server started with PID {self.gui_process.pid}")
+        self.logger.info(f"✅ GUI process started with PID {self.gui_process.pid}")
 
-        # Wait a moment for the server to start
-        time.sleep(2)
+        # Wait a moment for the server(s) to start
+        time.sleep(3)
 
-        # Check if the server is running
+        # Health check: if requests is available, ping frontend then API
         if self.gui_process.poll() is None:
+            if REQUESTS_AVAILABLE:
+                try:
+                    fp = int(env.get("FRONTEND_PORT", "3000"))
+                    ap = int(env.get("API_PORT", "8000"))
+                    requests.get(f"http://localhost:{fp}", timeout=2)
+                    requests.get(f"http://localhost:{ap}/docs", timeout=2)
+                    self.logger.info("✅ GUI (frontend+API) appears healthy")
+                except Exception as _hc_exc:
+                    self.logger.warning(f"GUI health check skipped/failed: {_hc_exc}")
             self.logger.info("✅ GUI server is running")
             return True
+
         stdout, stderr = self.gui_process.communicate()
-        self.logger.error(f"❌ GUI server failed to start: {stderr}")
+        self.logger.error(f"❌ GUI start failed. STDERR: {stderr}\nSTDOUT: {stdout}")
         return False
 
     @handle_errors(

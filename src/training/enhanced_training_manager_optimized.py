@@ -22,6 +22,9 @@ try:
 except ImportError:
     pa = None  # type: ignore
     pq = None  # type: ignore
+
+# Global flag to disable PyArrow usage in reads/writes to avoid segfaults
+DISABLE_PYARROW = os.environ.get("ARES_DISABLE_PYARROW", "1").lower() in ("1", "true", "yes", "on")
 from sklearn.base import BaseEstimator
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
@@ -285,9 +288,12 @@ class StreamingDataProcessor:
     def _iter_parquet_chunks(self, file_path: str):
         """Iterate Parquet file in chunks."""
         try:
-            if pq is None:
-                self.logger.warning("pyarrow not available; falling back to pandas read_parquet (single chunk)")
-                yield pd.read_parquet(file_path)
+            if pq is None or DISABLE_PYARROW:
+                self.logger.warning("pyarrow unavailable or disabled; falling back to pandas read_parquet (single chunk, engine=fastparquet if available)")
+                try:
+                    yield pd.read_parquet(file_path, engine='fastparquet')
+                except Exception:
+                    yield pd.read_parquet(file_path)
                 return
             parquet_file = pq.ParquetFile(file_path)
             count = 0
@@ -314,7 +320,7 @@ class StreamingDataProcessor:
         try:
             target = Path(target_path)
             target.parent.mkdir(parents=True, exist_ok=True)
-            if pq is None:
+            if pq is None or DISABLE_PYARROW:
                 # Fallback: bounded window concat to cap memory
                 window: list[pd.DataFrame] = []
                 window_rows = 0
@@ -322,12 +328,12 @@ class StreamingDataProcessor:
                     window.append(df)
                     window_rows += len(df)
                     if window_rows >= self.chunk_size * 10:
-                        pd.concat(window, ignore_index=True).to_parquet(target, compression=compression)
+                        pd.concat(window, ignore_index=True).to_parquet(target, compression=compression, engine='fastparquet')
                         window.clear(); window_rows = 0
                 if window:
-                    pd.concat(window, ignore_index=True).to_parquet(target, compression=compression)
+                    pd.concat(window, ignore_index=True).to_parquet(target, compression=compression, engine='fastparquet')
                 return
-            # With pyarrow, write in append mode
+            # With pyarrow, write in append mode (enabled only if not disabled)
             import pyarrow as pa  # type: ignore
             import pyarrow.parquet as pq_mod  # type: ignore
             writer = None
@@ -432,16 +438,31 @@ class MemoryEfficientDataManager:
         return df
     
     def save_to_parquet(self, df: pd.DataFrame, file_path: str, 
-                       compression: str = 'snappy') -> None:
+                       compression: str = 'snappy', index: bool = False) -> None:
         """Save DataFrame to Parquet format for efficient storage."""
-        df.to_parquet(file_path, compression=compression, index=False)
+        try:
+            # Prefer fastparquet to avoid pyarrow if disabled
+            df.to_parquet(file_path, compression=compression, index=index, engine='fastparquet')
+        except Exception:
+            # Fallback to default engine
+            df.to_parquet(file_path, compression=compression, index=index)
         self.logger.info(f"Saved DataFrame to Parquet: {file_path}")
     
     def load_from_parquet(self, file_path: str) -> pd.DataFrame:
         """Load DataFrame from Parquet format."""
-        df = pd.read_parquet(file_path)
-        self.logger.info(f"Loaded DataFrame from Parquet: {file_path}")
-        return df
+        try:
+            if DISABLE_PYARROW:
+                try:
+                    df = pd.read_parquet(file_path, engine='fastparquet')
+                except Exception:
+                    df = pd.read_parquet(file_path)
+            else:
+                df = pd.read_parquet(file_path)
+            self.logger.info(f"Loaded DataFrame from Parquet: {file_path}")
+            return df
+        except Exception as e:
+            self.logger.error(f"Error reading Parquet {file_path}: {e}")
+            raise
     
     def get_subset(self, df: pd.DataFrame, start_idx: int, end_idx: int) -> np.ndarray:
         """Get numpy array subset for efficient computation."""
@@ -661,17 +682,17 @@ class EnhancedTrainingManagerOptimized:
                     for csv_file in csv_files:
                         chunks_iter = self.streaming_processor.process_data_stream(str(csv_file))
                         self.streaming_processor.write_incremental_parquet(chunks_iter, parquet_path)
-                    data = pd.read_parquet(parquet_path)
+                    data = self.data_manager.load_from_parquet(parquet_path)
                 else:
                     # Use tmp consolidation for safer finalize
                     tmp_parquet_path = f"{parquet_path}.tmp"
                     for csv_file in csv_files:
                         chunks_iter = self.streaming_processor.process_data_stream(str(csv_file))
                         self.streaming_processor.write_incremental_parquet(chunks_iter, tmp_parquet_path)
-                    data = pd.read_parquet(tmp_parquet_path)
+                    data = self.data_manager.load_from_parquet(tmp_parquet_path)
                     # Save optimized version as Parquet for future use
                     optimized_data = self.data_manager.optimize_dataframe(data)
-                    self.data_manager.save_to_parquet(optimized_data, parquet_path)
+                    self.data_manager.save_to_parquet(optimized_data, parquet_path, index=False)
                     try:
                         Path(tmp_parquet_path).unlink(missing_ok=True)
                     except Exception:

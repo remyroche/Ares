@@ -116,7 +116,8 @@ class MarketRegimeClassificationStep:
         if os.path.exists(consolidated_file):
             self.logger.info(f"📁 Loading pre-consolidated data from: {consolidated_file}")
             try:
-                trade_data = pd.read_parquet(consolidated_file)
+                from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                trade_data = MemoryEfficientDataManager().load_from_parquet(consolidated_file)
                 self.logger.info(f"✅ Loaded consolidated trade data: {len(trade_data)} records")
                 
                 # Convert trade data to OHLCV format

@@ -169,7 +169,8 @@ class AnalystLabelingFeatureEngineeringStep:
                     (f"{data_dir}/{exchange}_{symbol}_features_test.parquet", mem_mgr.optimize_dataframe(test_data.copy())),
                 ]
                 for file_path, df in parquet_files:
-                    df.to_parquet(file_path, compression="snappy", index=False)
+                    from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                    MemoryEfficientDataManager().save_to_parquet(df, file_path, compression="snappy", index=False)
                     self.logger.info(f"✅ Saved feature data (Parquet) to {file_path}")
             except Exception as e:
                 self.logger.warning(f"Could not save Parquet features: {e}")
@@ -194,7 +195,8 @@ class AnalystLabelingFeatureEngineeringStep:
                     (f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet", mem_mgr.optimize_dataframe(test_data.copy())),
                 ]
                 for file_path, df in parquet_labeled:
-                    df.to_parquet(file_path, compression="snappy", index=False)
+                    from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                    MemoryEfficientDataManager().save_to_parquet(df, file_path, compression="snappy", index=False)
                     self.logger.info(f"✅ Saved labeled data (Parquet) to {file_path}")
             except Exception as e:
                 self.logger.warning(f"Could not save Parquet labeled data: {e}")

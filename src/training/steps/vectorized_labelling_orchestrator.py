@@ -182,43 +182,54 @@ class VectorizedLabellingOrchestrator:
                 price_data.copy()
             )
 
-            # 4. Combine features and labels
-            self.logger.info("🔗 Combining features and labels...")
+            # 4. Combine engineered features (time-aligned) with labels only
+            self.logger.info("🔗 Combining engineered features and labels...")
             combined_data = self._combine_features_and_labels_vectorized(
                 labeled_data,
                 advanced_features,
             )
 
-            # 5. Feature selection
-            if self.enable_feature_selection:
-                self.logger.info("🎯 Performing feature selection...")
-                selected_features = await self.feature_selector.select_optimal_features(
-                    combined_data,
-                    labeled_data["label"] if "label" in labeled_data.columns else None,
-                )
-                combined_data = selected_features
+            # Validate feature set before selection
+            feature_cols = [c for c in combined_data.columns if c != "label"]
+            if len(feature_cols) == 0:
+                self.logger.warning("No engineered features available after combination; skipping selection and normalization")
+            else:
+                # 5. Feature selection on engineered features only
+                if self.enable_feature_selection:
+                    self.logger.info("🎯 Performing feature selection...")
+                    features_only = combined_data.drop(columns=["label"], errors="ignore")
+                    # Exclude raw OHLCV if present as extra safety
+                    ohlcv_cols = ["open", "high", "low", "close", "volume"]
+                    features_only = features_only.drop(columns=[c for c in ohlcv_cols if c in features_only.columns], errors="ignore")
+                    selected_features = await self.feature_selector.select_optimal_features(
+                        features_only,
+                        labeled_data["label"] if "label" in labeled_data.columns else None,
+                    )
+                    # Re-attach label only
+                    combined_data = pd.concat([selected_features, combined_data[["label"]]], axis=1)
 
-            # 6. Data normalization
-            if self.enable_data_normalization:
-                self.logger.info("📏 Normalizing data...")
-                normalized_data = await self.data_normalizer.normalize_data(
-                    combined_data,
-                )
-                combined_data = normalized_data
+                # 6. Data normalization (exclude label)
+                if self.enable_data_normalization:
+                    self.logger.info("📏 Normalizing data...")
+                    normalized_data = await self.data_normalizer.normalize_data(
+                        combined_data,
+                    )
+                    combined_data = normalized_data
 
-            # 7. Autoencoder feature generation
+            # 7. Autoencoder feature generation on features only
             self.logger.info("🤖 Generating autoencoder features...")
             if self.autoencoder_generator is not None:
+                ae_input = combined_data.drop(columns=["label"], errors="ignore")
                 autoencoder_features = self.autoencoder_generator.generate_features(
-                    combined_data,
+                    ae_input,
                     "vectorized_regime",
                     labeled_data["label"].values if "label" in labeled_data.columns else np.zeros(len(combined_data)),
                 )
             else:
                 self.logger.warning("Autoencoder generator not available, skipping autoencoder feature generation")
-                autoencoder_features = combined_data
+                autoencoder_features = combined_data.drop(columns=["label"], errors="ignore")
 
-            # 8. Final data preparation
+            # 8. Final data preparation (features + label only)
             self.logger.info("🎨 Preparing final data...")
             final_data = self._prepare_final_data_vectorized(
                 autoencoder_features,
@@ -264,33 +275,76 @@ class VectorizedLabellingOrchestrator:
         labeled_data: pd.DataFrame,
         advanced_features: dict[str, Any],
     ) -> pd.DataFrame:
-        """Combine features and labels using vectorized operations."""
+        """Combine engineered features and label. Excludes raw OHLCV from features."""
         try:
-            # Remove datetime columns from labeled_data to prevent dtype conflicts
-            labeled_data = self._remove_datetime_columns(labeled_data)
-            
-            # If no advanced features, return labeled data as is
-            if not advanced_features:
-                return labeled_data
-            
-            # Convert advanced features to DataFrame
-            features_df = pd.DataFrame([advanced_features])
-            
-            # Replicate features for all rows
-            features_df = pd.concat([features_df] * len(labeled_data), ignore_index=True)
-            features_df.index = labeled_data.index
+            # Ensure label column exists
+            if "label" not in labeled_data.columns:
+                labeled_data = labeled_data.copy()
+                labeled_data["label"] = 0
 
-            # Combine with labeled data
-            combined_data = pd.concat([labeled_data, features_df], axis=1)
+            # Build a time-aligned features DataFrame from engineered features
+            features_df = self._build_features_dataframe(advanced_features, labeled_data.index)
 
-            # Remove duplicate columns
-            combined_data = combined_data.loc[:, ~combined_data.columns.duplicated()]
+            # Drop raw OHLCV from features if somehow present
+            ohlcv_cols = ["open", "high", "low", "close", "volume"]
+            features_df = features_df.drop(columns=[c for c in ohlcv_cols if c in features_df.columns], errors="ignore")
 
-            return combined_data
+            # Keep only numeric feature columns
+            features_df = features_df.select_dtypes(include=[np.number])
+
+            # Drop constant features pre-selection
+            nunique = features_df.nunique()
+            constant_cols = nunique[nunique <= 1].index.tolist()
+            if constant_cols:
+                features_df = features_df.drop(columns=constant_cols)
+
+            # Only return engineered features + label (no raw OHLCV)
+            combined = pd.concat([features_df, labeled_data[["label"]]], axis=1)
+            return combined
 
         except Exception as e:
             self.logger.error(f"Error combining features and labels: {e}")
-            return labeled_data
+            # Fallback: return label only to avoid leaking raw OHLCV
+            return labeled_data[["label"]] if "label" in labeled_data.columns else pd.DataFrame({"label": []})
+
+    def _build_features_dataframe(self, advanced_features: dict[str, Any], index: pd.Index) -> pd.DataFrame:
+        """Construct a time-aligned features DataFrame from a heterogeneous features dict.
+        - Uses only per-row series/arrays aligned to the target index length
+        - Skips scalar/global features to avoid constant columns across the dataset
+        """
+        try:
+            if not advanced_features:
+                return pd.DataFrame(index=index)
+
+            features_df = pd.DataFrame(index=index)
+            target_len = len(index)
+
+            for name, value in advanced_features.items():
+                # Pandas Series with same length
+                if isinstance(value, pd.Series):
+                    if len(value) == target_len:
+                        # Align by index if possible, otherwise reindex by position
+                        try:
+                            aligned = value.reindex(index)
+                        except Exception:
+                            aligned = pd.Series(value.values, index=index)
+                        features_df[name] = aligned
+                    else:
+                        continue
+                # Numpy array or list with same length
+                elif isinstance(value, (np.ndarray, list)):
+                    if len(value) == target_len:
+                        features_df[name] = pd.Series(value, index=index)
+                    else:
+                        continue
+                # Other types (scalar, dict, etc.) are skipped to avoid constant leakage
+                else:
+                    continue
+
+            return features_df
+        except Exception as e:
+            self.logger.error(f"Error building features DataFrame: {e}")
+            return pd.DataFrame(index=index)
 
     def _remove_datetime_columns(self, data: pd.DataFrame) -> pd.DataFrame:
         """Remove datetime columns to prevent dtype conflicts in ML training."""
@@ -323,17 +377,16 @@ class VectorizedLabellingOrchestrator:
         autoencoder_features: pd.DataFrame,
         labeled_data: pd.DataFrame,
     ) -> pd.DataFrame:
-        """Prepare final data using vectorized operations."""
+        """Prepare final data as engineered/selected/AE features + label only."""
         try:
-            # Combine autoencoder features with labeled data
-            final_data = pd.concat([autoencoder_features, labeled_data], axis=1)
+            # Ensure label column present
+            labels = labeled_data[["label"]] if "label" in labeled_data.columns else pd.DataFrame({"label": [0] * len(autoencoder_features)}, index=autoencoder_features.index)
+
+            # Combine engineered features (post-AE) with label only
+            final_data = pd.concat([autoencoder_features, labels], axis=1)
 
             # Remove duplicate columns
             final_data = final_data.loc[:, ~final_data.columns.duplicated()]
-
-            # Ensure label column is present
-            if "label" not in final_data.columns and "label" in labeled_data.columns:
-                final_data["label"] = labeled_data["label"]
 
             # Remove infinite values
             final_data = final_data.replace([np.inf, -np.inf], np.nan)
@@ -348,6 +401,7 @@ class VectorizedLabellingOrchestrator:
 
         except Exception as e:
             self.logger.error(f"Error preparing final data: {e}")
+            # Fallback to AE features only
             return autoencoder_features
 
     def _optimize_memory_usage_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -731,10 +785,21 @@ class VectorizedFeatureSelector:
             
             # Remove datetime columns first
             data = self._remove_datetime_columns(data)
+
+            # Exclude label and raw OHLCV from selection (defense in depth)
+            ohlcv_cols = ["open", "high", "low", "close", "volume"]
+            data = data.drop(columns=["label"], errors="ignore")
+            data = data.drop(columns=[c for c in ohlcv_cols if c in data.columns], errors="ignore")
+
+            # Keep numeric columns only
+            data = data.select_dtypes(include=[np.number])
             
             # Handle NaN values in feature selection
             self.logger.info("Handling NaN values in feature selection...")
             data = data.fillna(method="ffill").fillna(method="bfill").fillna(0)
+
+            # Compute dynamic minimum features to keep based on initial dimensionality
+            dynamic_min_features = max(self.min_features_to_keep, max(10, int(0.05 * max(1, initial_features))))
 
             # Remove constant features (if enabled)
             if self.enable_constant_removal:
@@ -748,13 +813,13 @@ class VectorizedFeatureSelector:
                     data = data.drop(columns=constant_features)
 
             # Safety check after constant removal
-            if self.enable_safety_checks and len(data.columns) < self.min_features_to_keep:
+            if self.enable_safety_checks and len(data.columns) < dynamic_min_features:
                 self.logger.warning(f"Too few features after constant removal ({len(data.columns)}). Skipping further selection.")
                 return data
 
             # Remove highly correlated features (only if enabled and we have enough features)
             if (self.enable_correlation_removal and 
-                len(data.columns) > self.min_features_to_keep and 
+                len(data.columns) > dynamic_min_features and 
                 len(data.columns) > 2):  # Need at least 2 features for correlation
                 
                 correlated_features = self._remove_correlated_features_vectorized(data)
@@ -762,7 +827,7 @@ class VectorizedFeatureSelector:
                     # Check removal percentage
                     removal_percentage = len(correlated_features) / len(data.columns)
                     if (removal_percentage <= self.max_removal_percentage and 
-                        len(data.columns) - len(correlated_features) >= self.min_features_to_keep):
+                        len(data.columns) - len(correlated_features) >= dynamic_min_features):
                         self.logger.info(f"Removed {len(correlated_features)} highly correlated features")
                         data = data.drop(columns=correlated_features)
                     else:
@@ -770,7 +835,7 @@ class VectorizedFeatureSelector:
 
             # Remove high VIF features (only if enabled and we have enough features)
             if (self.enable_vif_removal and 
-                len(data.columns) > self.min_features_to_keep and 
+                len(data.columns) > dynamic_min_features and 
                 len(data.columns) > 2):  # Need at least 2 features for VIF
                 
                 high_vif_features = self._remove_high_vif_features_vectorized(data)
@@ -778,7 +843,7 @@ class VectorizedFeatureSelector:
                     # Check removal percentage
                     removal_percentage = len(high_vif_features) / len(data.columns)
                     if (removal_percentage <= self.max_removal_percentage and 
-                        len(data.columns) - len(high_vif_features) >= self.min_features_to_keep):
+                        len(data.columns) - len(high_vif_features) >= dynamic_min_features):
                         self.logger.info(f"Removed {len(high_vif_features)} high VIF features")
                         data = data.drop(columns=high_vif_features)
                     else:
@@ -787,14 +852,14 @@ class VectorizedFeatureSelector:
             # Remove low mutual information features (if enabled, labels provided, and we have enough features)
             if (self.enable_mutual_info_removal and 
                 labels is not None and len(labels) > 0 and 
-                len(data.columns) > self.min_features_to_keep):
+                len(data.columns) > dynamic_min_features):
                 
                 low_mi_features = self._remove_low_mutual_info_features_vectorized(data, labels)
                 if low_mi_features:
                     # Check removal percentage
                     removal_percentage = len(low_mi_features) / len(data.columns)
                     if (removal_percentage <= self.max_removal_percentage and 
-                        len(data.columns) - len(low_mi_features) >= self.min_features_to_keep):
+                        len(data.columns) - len(low_mi_features) >= dynamic_min_features):
                         self.logger.info(f"Removed {len(low_mi_features)} low mutual information features")
                         data = data.drop(columns=low_mi_features)
                     else:
@@ -803,14 +868,14 @@ class VectorizedFeatureSelector:
             # Remove low importance features (if enabled, labels provided, and we have enough features)
             if (self.enable_importance_removal and 
                 labels is not None and len(labels) > 0 and 
-                len(data.columns) > self.min_features_to_keep):
+                len(data.columns) > dynamic_min_features):
                 
                 low_importance_features = self._remove_low_importance_features_vectorized(data, labels)
                 if low_importance_features:
                     # Check removal percentage
                     removal_percentage = len(low_importance_features) / len(data.columns)
                     if (removal_percentage <= self.max_removal_percentage and 
-                        len(data.columns) - len(low_importance_features) >= self.min_features_to_keep):
+                        len(data.columns) - len(low_importance_features) >= dynamic_min_features):
                         self.logger.info(f"Removed {len(low_importance_features)} low importance features")
                         data = data.drop(columns=low_importance_features)
                     else:
@@ -823,8 +888,11 @@ class VectorizedFeatureSelector:
             if final_features == 0:
                 self.logger.error("No features remaining after selection!")
                 if self.return_original_on_failure:
-                    self.logger.info("Returning original data as fallback.")
-                    return self._remove_datetime_columns(original_data)
+                    self.logger.info("Returning original engineered features (sans OHLCV/label) as fallback.")
+                    cleaned_original = original_data.drop(columns=["label"], errors="ignore")
+                    cleaned_original = cleaned_original.drop(columns=[c for c in ["open","high","low","close","volume"] if c in cleaned_original.columns], errors="ignore")
+                    cleaned_original = cleaned_original.select_dtypes(include=[np.number])
+                    return self._remove_datetime_columns(cleaned_original)
                 else:
                     raise ValueError("No features remaining after selection and fallback disabled")
             
@@ -833,8 +901,11 @@ class VectorizedFeatureSelector:
         except Exception as e:
             self.logger.error(f"Error in feature selection: {e}")
             if self.return_original_on_failure:
-                self.logger.info("Returning original data as fallback due to error.")
-                return self._remove_datetime_columns(original_data)
+                self.logger.info("Returning original engineered features as fallback due to error.")
+                cleaned_original = original_data.drop(columns=["label"], errors="ignore")
+                cleaned_original = cleaned_original.drop(columns=[c for c in ["open","high","low","close","volume"] if c in cleaned_original.columns], errors="ignore")
+                cleaned_original = cleaned_original.select_dtypes(include=[np.number])
+                return self._remove_datetime_columns(cleaned_original)
             else:
                 raise
 
@@ -1010,12 +1081,22 @@ class VectorizedDataNormalizer:
             
             # Remove datetime columns first
             data = self._remove_datetime_columns(data)
+
+            # Separate label to avoid scaling it
+            label_series = None
+            if "label" in data.columns:
+                label_series = data["label"].copy()
+                data = data.drop(columns=["label"])  # features only
             
             # Handle outliers
             data = self._clip_outliers_vectorized(data)
             
             # Apply robust scaling
             data = self._apply_robust_scaling_vectorized(data)
+
+            # Re-attach label if present
+            if label_series is not None:
+                data["label"] = label_series
             
             self.logger.info("✅ Data normalization completed")
             return data

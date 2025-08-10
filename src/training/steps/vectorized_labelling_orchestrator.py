@@ -134,15 +134,6 @@ class VectorizedLabellingOrchestrator:
     ) -> dict[str, Any]:
         """
         Orchestrate the complete labeling and feature engineering pipeline.
-
-        Args:
-            price_data: OHLCV price data
-            volume_data: Volume and trade flow data
-            order_flow_data: Order book and flow data (optional)
-            sr_levels: Support/resistance levels (optional)
-
-        Returns:
-            Dictionary containing processed data and metadata
         """
         try:
             if not self.is_initialized:
@@ -201,10 +192,24 @@ class VectorizedLabellingOrchestrator:
                     # Exclude raw OHLCV if present as extra safety
                     ohlcv_cols = ["open", "high", "low", "close", "volume"]
                     features_only = features_only.drop(columns=[c for c in ohlcv_cols if c in features_only.columns], errors="ignore")
-                    selected_features = await self.feature_selector.select_optimal_features(
-                        features_only,
-                        labeled_data["label"] if "label" in labeled_data.columns else None,
-                    )
+
+                    # Split pipelines: candlestick/pattern vs other indicators
+                    pattern_mask = features_only.columns.str.startswith("pattern_")
+                    pattern_features = features_only.loc[:, pattern_mask]
+                    other_features = features_only.loc[:, ~pattern_mask]
+
+                    # Select separately
+                    selected_pattern = await self.feature_selector.select_optimal_features(
+                        pattern_features, labeled_data["label"] if "label" in labeled_data.columns else None,
+                    ) if pattern_features.shape[1] > 0 else pattern_features
+
+                    selected_other = await self.feature_selector.select_optimal_features(
+                        other_features, labeled_data["label"] if "label" in labeled_data.columns else None,
+                    ) if other_features.shape[1] > 0 else other_features
+
+                    # Union
+                    selected_features = pd.concat([selected_other, selected_pattern], axis=1)
+
                     # Re-attach label only
                     combined_data = pd.concat([selected_features, combined_data[["label"]]], axis=1)
 
@@ -741,6 +746,13 @@ class VectorizedFeatureSelector:
         self.enable_vif_removal = self.feature_selection_config.get("enable_vif_removal", True)
         self.enable_mutual_info_removal = self.feature_selection_config.get("enable_mutual_info_removal", True)
         self.enable_importance_removal = self.feature_selection_config.get("enable_importance_removal", True)
+
+        # Optional advanced pruning methods
+        self.enable_random_forest_pruning = self.feature_selection_config.get("enable_random_forest_pruning", True)
+        self.enable_shap_pruning = self.feature_selection_config.get("enable_shap_pruning", False)  # Disabled by default due to cost
+        self.random_forest_n_estimators = self.feature_selection_config.get("random_forest_n_estimators", 200)
+        self.random_forest_max_features = self.feature_selection_config.get("random_forest_max_features", "sqrt")
+        self.shap_importance_quantile = self.feature_selection_config.get("shap_importance_quantile", 0.1)
         
         # Safety settings
         self.enable_safety_checks = self.feature_selection_config.get("enable_safety_checks", True)
@@ -817,69 +829,92 @@ class VectorizedFeatureSelector:
                 self.logger.warning(f"Too few features after constant removal ({len(data.columns)}). Skipping further selection.")
                 return data
 
-            # Remove highly correlated features (only if enabled and we have enough features)
+            # Remove highly correlated features
             if (self.enable_correlation_removal and 
-                len(data.columns) > dynamic_min_features and 
-                len(data.columns) > 2):  # Need at least 2 features for correlation
-                
+                len(data.columns) > dynamic_min_features and len(data.columns) > 2):
                 correlated_features = self._remove_correlated_features_vectorized(data)
                 if correlated_features:
-                    # Check removal percentage
                     removal_percentage = len(correlated_features) / len(data.columns)
                     if (removal_percentage <= self.max_removal_percentage and 
                         len(data.columns) - len(correlated_features) >= dynamic_min_features):
                         self.logger.info(f"Removed {len(correlated_features)} highly correlated features")
                         data = data.drop(columns=correlated_features)
-                    else:
-                        self.logger.info(f"Skipping correlated feature removal (removal %: {removal_percentage:.2f})")
 
-            # Remove high VIF features (only if enabled and we have enough features)
-            if (self.enable_vif_removal and 
-                len(data.columns) > dynamic_min_features and 
-                len(data.columns) > 2):  # Need at least 2 features for VIF
-                
+            # VIF pruning
+            if (self.enable_vif_removal and len(data.columns) > dynamic_min_features and len(data.columns) > 2):
                 high_vif_features = self._remove_high_vif_features_vectorized(data)
                 if high_vif_features:
-                    # Check removal percentage
                     removal_percentage = len(high_vif_features) / len(data.columns)
                     if (removal_percentage <= self.max_removal_percentage and 
                         len(data.columns) - len(high_vif_features) >= dynamic_min_features):
                         self.logger.info(f"Removed {len(high_vif_features)} high VIF features")
                         data = data.drop(columns=high_vif_features)
-                    else:
-                        self.logger.info(f"Skipping VIF feature removal (removal %: {removal_percentage:.2f})")
 
-            # Remove low mutual information features (if enabled, labels provided, and we have enough features)
-            if (self.enable_mutual_info_removal and 
-                labels is not None and len(labels) > 0 and 
-                len(data.columns) > dynamic_min_features):
-                
+            # Mutual information pruning
+            if (self.enable_mutual_info_removal and labels is not None and len(labels) > 0 and len(data.columns) > dynamic_min_features):
                 low_mi_features = self._remove_low_mutual_info_features_vectorized(data, labels)
                 if low_mi_features:
-                    # Check removal percentage
                     removal_percentage = len(low_mi_features) / len(data.columns)
                     if (removal_percentage <= self.max_removal_percentage and 
                         len(data.columns) - len(low_mi_features) >= dynamic_min_features):
                         self.logger.info(f"Removed {len(low_mi_features)} low mutual information features")
                         data = data.drop(columns=low_mi_features)
-                    else:
-                        self.logger.info(f"Skipping mutual info feature removal (removal %: {removal_percentage:.2f})")
 
-            # Remove low importance features (if enabled, labels provided, and we have enough features)
-            if (self.enable_importance_removal and 
-                labels is not None and len(labels) > 0 and 
-                len(data.columns) > dynamic_min_features):
-                
+            # LightGBM importance pruning (kept)
+            if (self.enable_importance_removal and labels is not None and len(labels) > 0 and len(data.columns) > dynamic_min_features):
                 low_importance_features = self._remove_low_importance_features_vectorized(data, labels)
                 if low_importance_features:
-                    # Check removal percentage
                     removal_percentage = len(low_importance_features) / len(data.columns)
                     if (removal_percentage <= self.max_removal_percentage and 
                         len(data.columns) - len(low_importance_features) >= dynamic_min_features):
                         self.logger.info(f"Removed {len(low_importance_features)} low importance features")
                         data = data.drop(columns=low_importance_features)
+
+            # Random Forest pruning (optional)
+            if (self.enable_random_forest_pruning and labels is not None and len(labels) > 0 and len(data.columns) > dynamic_min_features):
+                try:
+                    from sklearn.ensemble import RandomForestClassifier
+                    rf = RandomForestClassifier(
+                        n_estimators=self.random_forest_n_estimators,
+                        max_features=self.random_forest_max_features,
+                        n_jobs=-1,
+                        random_state=42,
+                    )
+                    rf.fit(data, labels)
+                    importances = pd.Series(rf.feature_importances_, index=data.columns)
+                    threshold = importances.quantile(0.1)  # bottom 10% by default
+                    to_drop = importances[importances <= threshold].index.tolist()
+                    removal_percentage = len(to_drop) / len(data.columns)
+                    if to_drop and (removal_percentage <= self.max_removal_percentage and len(data.columns) - len(to_drop) >= dynamic_min_features):
+                        self.logger.info(f"Removed {len(to_drop)} low RF-importance features")
+                        data = data.drop(columns=to_drop)
+                except Exception as e:
+                    self.logger.warning(f"RandomForest pruning skipped due to error: {e}")
+
+            # SHAP pruning (optional, costly)
+            if (self.enable_shap_pruning and labels is not None and len(labels) > 0 and len(data.columns) > dynamic_min_features):
+                try:
+                    import shap
+                    import lightgbm as lgb
+                    model = lgb.LGBMClassifier(n_estimators=200, max_depth=6, random_state=42, verbose=-1)
+                    model.fit(data, labels)
+                    explainer = shap.TreeExplainer(model)
+                    shap_values = explainer.shap_values(data)
+                    # For multiclass, average absolute SHAP across classes
+                    if isinstance(shap_values, list):
+                        abs_vals = np.mean([np.abs(sv) for sv in shap_values], axis=0)
                     else:
-                        self.logger.info(f"Skipping importance feature removal (removal %: {removal_percentage:.2f})")
+                        abs_vals = np.abs(shap_values)
+                    mean_abs_shap = abs_vals.mean(axis=0)
+                    shap_series = pd.Series(mean_abs_shap, index=data.columns)
+                    cutoff = shap_series.quantile(self.shap_importance_quantile)
+                    to_drop = shap_series[shap_series <= cutoff].index.tolist()
+                    removal_percentage = len(to_drop) / len(data.columns)
+                    if to_drop and (removal_percentage <= self.max_removal_percentage and len(data.columns) - len(to_drop) >= dynamic_min_features):
+                        self.logger.info(f"Removed {len(to_drop)} low SHAP-importance features")
+                        data = data.drop(columns=to_drop)
+                except Exception as e:
+                    self.logger.warning(f"SHAP pruning skipped due to error: {e}")
 
             final_features = len(data.columns)
             self.logger.info(f"Feature selection completed. Initial features: {initial_features}, Final features: {final_features}")

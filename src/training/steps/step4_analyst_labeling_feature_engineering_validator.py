@@ -273,6 +273,15 @@ class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
                     if not isinstance(feature_data, pd.DataFrame):
                         feature_data = pd.DataFrame(feature_data)
                     
+                    # Blocker: raw OHLCV must not be present in saved features
+                    forbidden = {"open", "high", "low", "close", "volume"}
+                    present_forbidden = [c for c in feature_data.columns if c in forbidden]
+                    if present_forbidden:
+                        self.logger.error(
+                            f"❌ Raw OHLCV columns found in features ({present_forbidden}) for {file_path} - stopping process"
+                        )
+                        return False
+                    
                     # Check feature count (more lenient)
                     feature_count = len(feature_data.columns)
                     if feature_count < self.min_feature_count:

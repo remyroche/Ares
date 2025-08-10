@@ -575,6 +575,17 @@ class VectorizedAdvancedFeatureEngineering:
 
             features = {}
 
+            # Base timeframe price return/difference features (per-row series)
+            try:
+                close = price_data["close"].astype(float)
+                features["return_1"] = close.pct_change().values
+                features["return_5"] = close.pct_change(5).values
+                features["log_return_1"] = np.log(close).diff().values
+                features["price_diff_1"] = close.diff().values
+                features["price_diff_5"] = close.diff(5).values
+            except Exception as e_ret:
+                self.logger.warning(f"Failed to compute base return/diff features: {e_ret}")
+
             # Market microstructure features
             microstructure_features = await self._engineer_microstructure_features_vectorized(
                 price_data,
@@ -613,7 +624,7 @@ class VectorizedAdvancedFeatureEngineering:
                 )
                 features.update(liquidity_features)
 
-            # Candlestick pattern features
+            # Candlestick pattern features (include per-row series)
             if self.candlestick_analyzer:
                 candlestick_features = await self.candlestick_analyzer.analyze_patterns(
                     price_data,
@@ -643,7 +654,7 @@ class VectorizedAdvancedFeatureEngineering:
             # Feature selection and dimensionality reduction
             selected_features = self._select_optimal_features_vectorized(features)
 
-            # Add multi-timeframe features if enabled
+            # Add multi-timeframe features if enabled (per-row time-aligned series)
             if self.enable_multi_timeframe:
                 multi_timeframe_features = (
                     await self._engineer_multi_timeframe_features_vectorized(
@@ -1081,22 +1092,38 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             features = {}
 
+            base_index = price_data.index if isinstance(price_data.index, pd.DatetimeIndex) else pd.date_range(
+                end=pd.Timestamp.utcnow(), periods=len(price_data), freq="T"
+            )
+
             # Multi-timeframe features for different timeframes
             for timeframe in self.timeframes:
                 # Resample data to timeframe
                 resampled_price = self._resample_data_vectorized(price_data, timeframe)
                 resampled_volume = self._resample_data_vectorized(volume_data, timeframe)
                 
-                # Calculate features for this timeframe
-                timeframe_features = await self._calculate_timeframe_features_vectorized(
-                    resampled_price,
-                    resampled_volume,
-                    timeframe,
-                )
-                
-                # Add timeframe prefix to features
-                for feature_name, feature_value in timeframe_features.items():
-                    features[f"{timeframe}_{feature_name}"] = feature_value
+                # Calculate per-timeframe series
+                try:
+                    close = resampled_price["close"].astype(float)
+                    tf_ret_1 = close.pct_change()
+                    tf_vol_20 = close.pct_change().rolling(window=20).std()
+                    vol_series = resampled_volume["volume"].astype(float)
+                    tf_vol_change = vol_series.pct_change()
+                    tf_vol_ma_ratio = vol_series / vol_series.rolling(window=20).mean()
+
+                    # Align to base index via forward-fill then back-fill
+                    aligned = {
+                        f"{timeframe}_return_1": tf_ret_1,
+                        f"{timeframe}_volatility_20": tf_vol_20,
+                        f"{timeframe}_volume_change": tf_vol_change,
+                        f"{timeframe}_volume_ma_ratio": tf_vol_ma_ratio,
+                    }
+                    for name, series in aligned.items():
+                        series = series.reindex(base_index, method="ffill").fillna(method="bfill")
+                        features[name] = series.values
+                except Exception as e_tf:
+                    self.logger.warning(f"Failed timeframe feature computation for {timeframe}: {e_tf}")
+                    continue
 
             return features
 
@@ -1579,7 +1606,6 @@ class VectorizedCandlestickPatternAnalyzer:
                 return {}
 
             if price_data.empty or len(price_data) < 3:
-                self.logger.warning("Insufficient data for pattern analysis")
                 return {}
 
             # Prepare data with calculated metrics using vectorized operations
@@ -1590,17 +1616,111 @@ class VectorizedCandlestickPatternAnalyzer:
                 "engulfing_patterns": self._detect_engulfing_patterns_vectorized(df),
                 "hammer_hanging_man": self._detect_hammer_hanging_man_vectorized(df),
                 "shooting_star_inverted_hammer": self._detect_shooting_star_inverted_hammer_vectorized(df),
+                "morning_evening_star": self._detect_morning_evening_star_vectorized(df),
+                "harami_patterns": self._detect_harami_patterns_vectorized(df),
+                "doji_patterns": self._detect_doji_patterns_vectorized(df),
                 "tweezer_patterns": self._detect_tweezer_patterns_vectorized(df),
                 "marubozu_patterns": self._detect_marubozu_patterns_vectorized(df),
-                "three_methods_patterns": self._detect_three_methods_patterns_vectorized(df),
-                "doji_patterns": self._detect_doji_patterns_vectorized(df),
                 "spinning_top_patterns": self._detect_spinning_top_patterns_vectorized(df),
             }
 
-            # Convert patterns to ML features using vectorized operations
-            features = self._convert_patterns_to_features_vectorized(patterns, df)
+            features: dict[str, Any] = {}
 
-            self.logger.info(f"✅ Analyzed {len(patterns)} pattern categories using vectorized operations")
+            # Emit per-row 0/1 presence series for each detected boolean pattern
+            for group_name, group_data in patterns.items():
+                for key, arr in group_data.items():
+                    if isinstance(arr, np.ndarray) and arr.dtype == bool and len(arr) == len(df):
+                        features[f"pattern_{key}"] = arr.astype(int)
+
+            # Existing aggregate features (counts, presence, densities)
+            pattern_types = [
+                "engulfing_patterns",
+                "hammer_hanging_man",
+                "shooting_star_inverted_hammer",
+                "morning_evening_star",
+                "harami_patterns",
+                "doji_patterns",
+                "tweezer_patterns",
+                "marubozu_patterns",
+                "spinning_top_patterns",
+            ]
+
+            for pattern_type in pattern_types:
+                if pattern_type in patterns:
+                    pattern_data = patterns[pattern_type]
+                    # Count patterns
+                    pattern_count = sum(
+                        np.sum(pattern_data.get(key, np.zeros(len(df), dtype=bool)))
+                        for key in pattern_data.keys()
+                        if isinstance(pattern_data[key], np.ndarray) and pattern_data[key].dtype == bool
+                    )
+                    features[f"{pattern_type}_count"] = pattern_count
+                    features[f"{pattern_type}_present"] = 1.0 if pattern_count > 0 else 0.0
+
+            # Specific patterns
+            specific_patterns = [
+                "bullish_engulfing",
+                "bearish_engulfing",
+                "hammer",
+                "hanging_man",
+                "inverted_hammer",
+                "shooting_star",
+                "morning_star",
+                "evening_star",
+                "bullish_harami",
+                "bearish_harami",
+                "doji",
+                "tweezer_top",
+                "tweezer_bottom",
+                "marubozu_bullish",
+                "marubozu_bearish",
+                "spinning_top_bullish",
+                "spinning_top_bearish",
+            ]
+
+            for pattern in specific_patterns:
+                pattern_count = 0
+                for pattern_data in patterns.values():
+                    if pattern in pattern_data:
+                        pattern_count += np.sum(pattern_data[pattern])
+                
+                features[f"{pattern}_count"] = pattern_count
+                features[f"{pattern}_present"] = 1.0 if pattern_count > 0 else 0.0
+
+            # Pattern density and recency
+            total_patterns = sum(
+                features.get(f"{pt}_count", 0) for pt in pattern_types
+            )
+            features["total_patterns"] = total_patterns
+            features["pattern_density"] = total_patterns / len(df) if len(df) > 0 else 0.0
+
+            # Recent window densities (per-row rolling)
+            try:
+                # Example rolling density for a couple of common patterns
+                for key_name in ["bullish_engulfing", "bearish_engulfing"]:
+                    if f"pattern_{key_name}" in features:
+                        series = pd.Series(features[f"pattern_{key_name}"], index=df.index)
+                        features[f"pattern_{key_name}_roll3"] = series.rolling(3).sum().fillna(0).values
+                        features[f"pattern_{key_name}_roll5"] = series.rolling(5).sum().fillna(0).values
+            except Exception:
+                pass
+
+            # Confidence aggregates if available
+            all_confidences = []
+            for pattern_data in patterns.values():
+                for key, confidence_array in pattern_data.items():
+                    if "confidence" in key and isinstance(confidence_array, np.ndarray):
+                        all_confidences.extend(confidence_array[confidence_array > 0])
+
+            if all_confidences:
+                features["avg_pattern_confidence"] = float(np.mean(all_confidences))
+                features["max_pattern_confidence"] = float(np.max(all_confidences))
+                features["pattern_confidence_std"] = float(np.std(all_confidences))
+            else:
+                features["avg_pattern_confidence"] = 0.0
+                features["max_pattern_confidence"] = 0.0
+                features["pattern_confidence_std"] = 0.0
+
             return features
 
         except Exception as e:

@@ -147,6 +147,23 @@ class AnalystLabelingFeatureEngineeringStep:
             validation_data = labeled_data.iloc[train_end:val_end]
             test_data = labeled_data.iloc[val_end:]
             
+            # Persist and log selected feature lists per split (traceability)
+            try:
+                selected_features = {
+                    "train": [c for c in train_data.columns if c != "label"],
+                    "validation": [c for c in validation_data.columns if c != "label"],
+                    "test": [c for c in test_data.columns if c != "label"],
+                }
+                trace_path = f"{data_dir}/{exchange}_{symbol}_selected_features.json"
+                with open(trace_path, "w") as jf:
+                    json.dump(selected_features, jf, indent=2)
+                self.logger.info(f"🔎 Saved selected feature lists to {trace_path}")
+                self.logger.info(f"Train features ({len(selected_features['train'])}): {selected_features['train'][:20]}...")
+                self.logger.info(f"Validation features ({len(selected_features['validation'])}): {selected_features['validation'][:20]}...")
+                self.logger.info(f"Test features ({len(selected_features['test'])}): {selected_features['test'][:20]}...")
+            except Exception as e:
+                self.logger.warning(f"Could not persist selected feature lists: {e}")
+            
             # Save feature files that the validator expects
             feature_files = [
                 (f"{data_dir}/{exchange}_{symbol}_features_train.pkl", train_data),

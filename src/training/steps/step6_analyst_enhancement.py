@@ -265,25 +265,30 @@ class AnalystEnhancementStep:
             bool: True if target was successfully created, False otherwise
         """
         try:
-            # Look for price-related columns that could be used to create targets
+            # Prefer returns-based target creation if available
+            returns_columns = [col for col in data.columns if 'return' in col.lower()]
+            if returns_columns:
+                ret_col = returns_columns[0]
+                returns_series = data[ret_col].fillna(0)
+                if len(returns_series) > 1:
+                    threshold = returns_series.std() * 0.1  # Small threshold around zero
+                    target = (returns_series > threshold).astype(int)
+                    if target.nunique() >= 2:
+                        data['label'] = target
+                        self.logger.info(f"Created returns-based target from {ret_col}")
+                        return True
+
+            # Fallback: look for price-related columns to derive returns
             price_columns = [col for col in data.columns if any(price_term in col.lower() 
                                                               for price_term in ['close', 'price', 'value'])]
             
             if price_columns:
-                # Use the first price column to create a target
                 price_col = price_columns[0]
                 price_values = data[price_col]
-                
-                # Create a simple momentum-based target
                 if len(price_values) > 1:
-                    # Calculate price changes
                     price_changes = price_values.pct_change().fillna(0)
-                    
-                    # Create binary target based on positive/negative momentum
-                    threshold = price_changes.std() * 0.1  # Small threshold
+                    threshold = price_changes.std() * 0.1
                     target = (price_changes > threshold).astype(int)
-                    
-                    # Ensure we have at least 2 classes
                     if target.nunique() >= 2:
                         data['label'] = target
                         self.logger.info(f"Created momentum-based target from {price_col}")

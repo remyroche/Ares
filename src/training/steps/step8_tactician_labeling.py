@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict
 
 import pandas as pd
+import numpy as np
 
 from src.utils.logger import system_logger
 
@@ -15,72 +16,17 @@ from src.utils.logger import system_logger
 # Preference order for selecting analyst ensembles
 ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
 
-# Removing duplicate earlier TacticianLabelingStep definition to avoid conflicts
 
-    async def _generate_strategic_signals(
-        self,
-        data: pd.DataFrame,
-        analyst_ensembles: dict[str, Any],
-        symbol: str,
-        exchange: str,
-    ) -> dict[str, Any]:
-        """
-        Generate strategic signals using analyst ensemble models.
+class TacticianLabelingStep:
+    """Step 8: Tactician Model Labeling using Analyst's model."""
 
-        Args:
-            data: Historical market data
-            analyst_ensembles: Analyst ensemble models
-            symbol: Trading symbol
-            exchange: Exchange name
+    def __init__(self, config: dict[str, Any]):
+        self.config = config
+        self.logger = system_logger
 
-        Returns:
-            Dict containing strategic signals
-        """
-        try:
-            self.logger.info(
-                f"Generating strategic signals for {symbol} on {exchange}...",
-            )
-
-            # Calculate features for signal generation
-            data_with_features = self._calculate_tactician_features(data)
-
-            # Generate signals for each regime
-            strategic_signals = {
-                "symbol": symbol,
-                "exchange": exchange,
-                "signal_generation_date": datetime.now().isoformat(),
-                "signals": [],
-                "regime_signals": {},
-            }
-
-            # For each regime, generate signals using analyst ensemble
-            for regime_name, ensemble_data in analyst_ensembles.items():
-                self.logger.info(f"Generating signals for regime: {regime_name}")
-
-                # Use the stacking ensemble for signal generation
-                if "stacking_cv" in ensemble_data:
-                    ensemble = ensemble_data["stacking_cv"]["ensemble"]
-
-                    # Generate signals for this regime
-                    regime_signals = await self._generate_regime_signals(
-                        data_with_features,
-                        ensemble,
-                        regime_name,
-                    )
-                    strategic_signals["regime_signals"][regime_name] = regime_signals
-
-                    # Add to overall signals
-                    strategic_signals["signals"].extend(regime_signals)
-
-            self.logger.info(
-                f"Generated {len(strategic_signals['signals'])} strategic signals",
-            )
-
-            return strategic_signals
-
-        except Exception as e:
-            self.logger.error(f"Error generating strategic signals: {e}")
-            raise
+    async def initialize(self) -> None:
+        """Initialize the tactician labeling step."""
+        self.logger.info("Initializing Tactician Labeling Step...")
 
     def _calculate_tactician_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -93,24 +39,27 @@ ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
             DataFrame with features added
         """
         try:
-            # Calculate basic features
-            data["price_change"] = data["close"].pct_change()
+            # Returns-based core features
+            data["returns"] = data["close"].pct_change()
+            data["log_returns"] = np.log(data["close"] / data["close"].shift(1))
             data["volume_change"] = data["volume"].pct_change()
             data["high_low_ratio"] = data["high"] / data["low"]
 
-            # Calculate moving averages
+            # Moving averages on price and returns
             data["sma_5"] = data["close"].rolling(window=5).mean()
             data["sma_10"] = data["close"].rolling(window=10).mean()
             data["sma_20"] = data["close"].rolling(window=20).mean()
+            data["ret_sma_5"] = data["returns"].rolling(window=5).mean()
+            data["ret_sma_20"] = data["returns"].rolling(window=20).mean()
 
-            # Calculate momentum indicators
+            # Momentum indicators based on returns
             data["momentum_5"] = data["close"] / data["close"].shift(5) - 1
             data["momentum_10"] = data["close"] / data["close"].shift(10) - 1
 
-            # Calculate volatility
-            data["volatility"] = data["price_change"].rolling(window=20).std()
+            # Volatility from returns
+            data["volatility"] = data["returns"].rolling(window=20).std()
 
-            # Calculate RSI
+            # RSI on price
             data["rsi"] = self._calculate_rsi(data["close"])
 
             # Fill NaN values
@@ -153,12 +102,15 @@ ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
 
             # Prepare feature columns
             feature_columns = [
-                "price_change",
+                "returns",
+                "log_returns",
                 "volume_change",
                 "high_low_ratio",
                 "sma_5",
                 "sma_10",
                 "sma_20",
+                "ret_sma_5",
+                "ret_sma_20",
                 "momentum_5",
                 "momentum_10",
                 "volatility",
@@ -224,93 +176,6 @@ ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
         except Exception as e:
             self.logger.error(f"Error generating regime signals for {regime_name}: {e}")
             raise
-
-class TacticianTripleBarrierLabeler:
-    """
-    Applies a triple barrier to generate labels specifically for a short-term, high-leverage Tactician model.
-    
-    This labeler uses FIXED PERCENTAGE barriers and a short time horizon to reward
-    models that can accurately predict immediate, favorable price action under strict risk parameters.
-    """
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config.get("tactician_triple_barrier", {})
-        self.logger = system_logger.getChild("TacticianTripleBarrierLabeler")
-
-    def apply_labels(self, data: pd.DataFrame, strategic_signals: pd.Series) -> pd.DataFrame:
-        """
-        Vectorized application of the triple barrier method.
-
-        Args:
-            data: The 1-minute market data (must contain OHLC columns).
-            strategic_signals: A Series with timestamps as index and signals (+1 for BUY, -1 for SELL)
-                               as values, indicating when the Analyst has identified a setup.
-
-        Returns:
-            A DataFrame with the new 'tactician_label' column.
-        """
-        self.logger.info("Applying specialized Tactician triple barrier labels using fixed percentages...")
-
-        # Get parameters from config, with defaults for a high-leverage, 1m timeframe
-        pt_pct = self.config.get("profit_take_pct", 0.005)  # Target 0.5% profit
-        sl_pct = self.config.get("stop_loss_pct", 0.0025)   # Stop out at 0.25% loss
-        time_barrier = self.config.get("time_barrier_periods", 30) # 30-minute time horizon
-
-        # Align signals with the data index
-        entry_points = strategic_signals[strategic_signals != 0].reindex(data.index).dropna()
-        if entry_points.empty:
-            self.logger.warning("No strategic signals found to label. Returning data without labels.")
-            data["tactician_label"] = 0
-            return data
-
-        entry_indices = data.index.get_indexer_for(entry_points.index)
-
-        # Calculate fixed percentage barriers for each entry point
-        entry_prices = data['open'].iloc[entry_indices + 1]
-        
-        profit_barriers = entry_prices * (1 + pt_pct * entry_points.values)
-        stop_barriers = entry_prices * (1 - sl_pct * entry_points.values)
-
-        labels = pd.Series(0, index=data.index)
-
-        # Vectorized barrier check
-        for i, entry_idx in enumerate(entry_indices):
-            if entry_idx >= len(data) - 1: continue
-            
-            signal = entry_points.iloc[i]
-            pt = profit_barriers.iloc[i]
-            sl = stop_barriers.iloc[i]
-            
-            path = data.iloc[entry_idx + 1 : entry_idx + 1 + time_barrier]
-            if path.empty: continue
-            
-            # Check for hits
-            pt_hit_mask = (path['high'] >= pt) if signal == 1 else (path['low'] <= pt)
-            sl_hit_mask = (path['low'] <= sl) if signal == 1 else (path['high'] >= sl)
-            
-            pt_hit_time = path.index[pt_hit_mask].min()
-            sl_hit_time = path.index[sl_hit_mask].min()
-            
-            # Determine label based on which barrier was hit first
-            if pd.notna(pt_hit_time) and (pd.isna(sl_hit_time) or pt_hit_time <= sl_hit_time):
-                labels.iloc[entry_idx] = 1  # Profit take
-            elif pd.notna(sl_hit_time):
-                labels.iloc[entry_idx] = -1 # Stop loss
-
-        data["tactician_label"] = labels
-        self.logger.info(f"Tactician labeling complete. Label distribution:\n{labels.value_counts()}")
-        return data
-
-
-class TacticianLabelingStep:
-    """Step 8: Tactician Model Labeling using Analyst's model."""
-
-    def __init__(self, config: dict[str, Any]):
-        self.config = config
-        self.logger = system_logger
-
-    async def initialize(self) -> None:
-        """Initialize the tactician labeling step."""
-        self.logger.info("Initializing Tactician Labeling Step...")
 
     async def execute(
         self,
@@ -415,7 +280,7 @@ class TacticianLabelingStep:
         self.logger.info("Generating strategic 'setup' signals from Analyst models...")
         
         # Step 1: Calculate all features needed for any of the analyst models
-        data_with_features = self._calculate_features(data)
+        data_with_features = self._calculate_tactician_features(data)
         
         # Step 2: Determine the market regime for each data point
         # This is a placeholder for your regime detection logic (e.g., from step 4)
@@ -459,16 +324,6 @@ class TacticianLabelingStep:
         labels = ['SIDEWAYS', 'BULL', 'BEAR']
         regimes = pd.cut(vol_percentile, bins=bins, labels=labels, right=False)
         return regimes.astype(str).fillna('SIDEWAYS')
-
-    def _calculate_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate all necessary features for both Analyst and Tactician."""
-        data["returns"] = data["close"].pct_change()
-        # Volatility is calculated here for the Analyst's regime detection, not for Tactician labeling.
-        data["volatility"] = data["returns"].rolling(window=60).std().bfill() # 1-hour volatility
-        # ... Add all other features your Analyst models were trained on ...
-        # e.g., RSI, MACD, Bollinger Bands, etc.
-        data = data.fillna(method="ffill").fillna(0)
-        return data
 
     def _save_results(self, labeled_data, signals, data_dir, exchange, symbol):
         """Saves the labeled data and signals to disk."""

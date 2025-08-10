@@ -189,36 +189,45 @@ class VectorizedLabellingOrchestrator:
                 advanced_features,
             )
 
+            # 4.1 Prevent data leakage: remove label column from features before selection/normalization/AE
+            labels_array = labeled_data["label"].values if "label" in labeled_data.columns else None
+            features_only = combined_data.drop(columns=["label"], errors="ignore")
+            if "label" in combined_data.columns:
+                self.logger.error("🚨 CRITICAL DATA LEAKAGE DETECTED in feature set! Removing 'label' column before selection and normalization.")
+                self.logger.info(f"📊 Features before leakage prevention: {combined_data.shape[1]}")
+                self.logger.info(f"📊 Features after leakage prevention: {features_only.shape[1]}")
+                self.logger.info("📊 Removed columns: ['label']")
+
             # 5. Feature selection
             if self.enable_feature_selection:
                 self.logger.info("🎯 Performing feature selection...")
                 selected_features = await self.feature_selector.select_optimal_features(
-                    combined_data,
-                    labeled_data["label"] if "label" in labeled_data.columns else None,
+                    features_only,
+                    labels_array if labels_array is not None else None,
                 )
-                combined_data = selected_features
+                features_only = selected_features
 
             # 6. Data normalization
             if self.enable_data_normalization:
                 self.logger.info("📏 Normalizing data...")
                 normalized_data = await self.data_normalizer.normalize_data(
-                    combined_data,
+                    features_only,
                 )
-                combined_data = normalized_data
+                features_only = normalized_data
 
             # 7. Autoencoder feature generation
             self.logger.info("🤖 Generating autoencoder features...")
             if self.autoencoder_generator is not None:
                 autoencoder_features = self.autoencoder_generator.generate_features(
-                    combined_data,
+                    features_only,
                     "vectorized_regime",
-                    labeled_data["label"].values if "label" in labeled_data.columns else np.zeros(len(combined_data)),
+                    labels_array if labels_array is not None else np.zeros(len(features_only)),
                 )
             else:
                 self.logger.warning("Autoencoder generator not available, skipping autoencoder feature generation")
-                autoencoder_features = combined_data
+                autoencoder_features = features_only
 
-            # 8. Final data preparation
+            # 8. Final data preparation (combine features back with labeled data which includes 'label')
             self.logger.info("🎨 Preparing final data...")
             final_data = self._prepare_final_data_vectorized(
                 autoencoder_features,

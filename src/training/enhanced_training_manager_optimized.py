@@ -431,17 +431,78 @@ class MemoryEfficientDataManager:
         self.logger.info(f"Optimized DataFrame memory usage")
         return df
     
-    def save_to_parquet(self, df: pd.DataFrame, file_path: str, 
-                       compression: str = 'snappy') -> None:
-        """Save DataFrame to Parquet format for efficient storage."""
-        df.to_parquet(file_path, compression=compression, index=False)
-        self.logger.info(f"Saved DataFrame to Parquet: {file_path}")
+    def _normalize_timestamp_column(self, df: pd.DataFrame, column: str = 'timestamp') -> pd.DataFrame:
+        """Ensure timestamp column exists and is timezone-aware datetime. Drops invalid rows."""
+        try:
+            if column not in df.columns:
+                return df
+            ts = df[column]
+            # If already datetime-like, just localize to UTC if naive
+            if pd.api.types.is_datetime64_any_dtype(ts):
+                # Ensure UTC
+                if ts.dt.tz is None:
+                    df[column] = ts.dt.tz_localize('UTC')
+                else:
+                    df[column] = ts.dt.tz_convert('UTC')
+                return df
+            # Handle numeric timestamps (assume ms if > 1e12)
+            if pd.api.types.is_integer_dtype(ts) or pd.api.types.is_float_dtype(ts):
+                unit = 'ms' if ts.dropna().astype(float).median() > 1e12 else 's'
+                df[column] = pd.to_datetime(df[column], unit=unit, errors='coerce', utc=True)
+            else:
+                # Fallback string parse
+                df[column] = pd.to_datetime(df[column], errors='coerce', utc=True)
+            # Drop invalid
+            df = df.dropna(subset=[column])
+            return df
+        except Exception as e:
+            self.logger.warning(f"Timestamp normalization failed: {e}")
+            return df
     
-    def load_from_parquet(self, file_path: str) -> pd.DataFrame:
-        """Load DataFrame from Parquet format."""
-        df = pd.read_parquet(file_path)
-        self.logger.info(f"Loaded DataFrame from Parquet: {file_path}")
-        return df
+    def save_to_parquet(self, df: pd.DataFrame, file_path: str, 
+                       compression: str = 'snappy', index: bool = False) -> None:
+        """Save DataFrame to Parquet format for efficient storage."""
+        try:
+            df_to_save = self.optimize_dataframe(df.copy())
+            if 'timestamp' in df_to_save.columns:
+                df_to_save = self._normalize_timestamp_column(df_to_save, 'timestamp')
+            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+            df_to_save.to_parquet(file_path, compression=compression, index=index)
+            self.logger.info(f"Saved DataFrame to Parquet: {file_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to save Parquet {file_path}: {e}")
+            raise
+    
+    def load_from_parquet(self, file_path: str, columns: list[str] | None = None, nrows: int | None = None) -> pd.DataFrame:
+        """Load DataFrame from Parquet with robust fallbacks and timestamp normalization."""
+        try:
+            file_path_str = str(file_path)
+            try:
+                size_kb = os.path.getsize(file_path_str) / 1024
+                self.logger.info(f"Loading Parquet: {file_path_str} ({size_kb:.2f} KB)")
+            except Exception:
+                self.logger.info(f"Loading Parquet: {file_path_str}")
+            # Strategy 1: default engine
+            try:
+                df = pd.read_parquet(file_path_str, columns=columns)
+            except Exception as e1:
+                self.logger.warning(f"Default read_parquet failed: {e1}")
+                # Strategy 2: pyarrow
+                try:
+                    df = pd.read_parquet(file_path_str, columns=columns, engine='pyarrow')
+                except Exception as e2:
+                    self.logger.warning(f"PyArrow read failed: {e2}")
+                    # Strategy 3: fastparquet
+                    df = pd.read_parquet(file_path_str, columns=columns, engine='fastparquet')
+            if nrows is not None and len(df) > nrows:
+                df = df.head(nrows)
+            if 'timestamp' in df.columns:
+                df = self._normalize_timestamp_column(df, 'timestamp')
+            self.logger.info(f"Loaded DataFrame from Parquet: {file_path_str} -> {df.shape}")
+            return df
+        except Exception as e:
+            self.logger.error(f"Failed to load Parquet {file_path}: {e}")
+            raise
     
     def get_subset(self, df: pd.DataFrame, start_idx: int, end_idx: int) -> np.ndarray:
         """Get numpy array subset for efficient computation."""
@@ -648,7 +709,7 @@ class EnhancedTrainingManagerOptimized:
         parquet_path = f"data_cache/{cache_key}.parquet"
         if os.path.exists(parquet_path):
             self.logger.info(f"Loading data from Parquet: {parquet_path}")
-            data = self.data_manager.load_from_parquet(parquet_path)
+            data = self.data_manager.load_from_parquet(parquet_path)  # uses robust multi-engine fallback and timestamp normalization
         else:
             # Fallback to CSV or other formats
             csv_path = f"data_cache/klines_{exchange}_{symbol}_{timeframe}_*.csv"
@@ -661,14 +722,14 @@ class EnhancedTrainingManagerOptimized:
                     for csv_file in csv_files:
                         chunks_iter = self.streaming_processor.process_data_stream(str(csv_file))
                         self.streaming_processor.write_incremental_parquet(chunks_iter, parquet_path)
-                    data = pd.read_parquet(parquet_path)
+                    data = self.data_manager.load_from_parquet(parquet_path)
                 else:
                     # Use tmp consolidation for safer finalize
                     tmp_parquet_path = f"{parquet_path}.tmp"
                     for csv_file in csv_files:
                         chunks_iter = self.streaming_processor.process_data_stream(str(csv_file))
                         self.streaming_processor.write_incremental_parquet(chunks_iter, tmp_parquet_path)
-                    data = pd.read_parquet(tmp_parquet_path)
+                    data = self.data_manager.load_from_parquet(tmp_parquet_path)
                     # Save optimized version as Parquet for future use
                     optimized_data = self.data_manager.optimize_dataframe(data)
                     self.data_manager.save_to_parquet(optimized_data, parquet_path)

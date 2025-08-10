@@ -116,11 +116,16 @@ class MarketRegimeClassificationStep:
         if os.path.exists(consolidated_file):
             self.logger.info(f"📁 Loading pre-consolidated data from: {consolidated_file}")
             try:
-                trade_data = pd.read_parquet(consolidated_file)
+                from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                trade_data = MemoryEfficientDataManager().load_from_parquet(consolidated_file)
                 self.logger.info(f"✅ Loaded consolidated trade data: {len(trade_data)} records")
                 
                 # Convert trade data to OHLCV format
                 self.logger.info("🔄 Converting trade data to OHLCV format...")
+                # Normalize timestamp just in case
+                if 'timestamp' in trade_data.columns:
+                    trade_data['timestamp'] = pd.to_datetime(trade_data['timestamp'], utc=True, errors='coerce')
+                    trade_data = trade_data.dropna(subset=['timestamp']).sort_values('timestamp')
                 historical_data = convert_trade_data_to_ohlcv(trade_data, timeframe="1h")
                 self.logger.info(f"✅ Converted to OHLCV: {len(historical_data)} records")
                 

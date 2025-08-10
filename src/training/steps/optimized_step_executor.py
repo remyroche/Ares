@@ -188,7 +188,8 @@ class OptimizedStepExecutor:
             parquet_path = f"data_cache/{symbol}_{exchange}_{timeframe}_optimized.parquet"
             if os.path.exists(parquet_path):
                 self.logger.info(f"Loading optimized data from {parquet_path}")
-                market_data = pd.read_parquet(parquet_path)
+                from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                market_data = MemoryEfficientDataManager().load_from_parquet(parquet_path)
             else:
                 # Run original data collection
                 result = await run_data_collection(symbol, exchange, timeframe)
@@ -197,7 +198,8 @@ class OptimizedStepExecutor:
                 # Optimize and save for future use
                 if not market_data.empty:
                     market_data = self._optimize_dataframe_memory(market_data)
-                    market_data.to_parquet(parquet_path, compression='snappy')
+                    from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                    MemoryEfficientDataManager().save_to_parquet(market_data, parquet_path, compression='snappy', index=False)
                     self.logger.info(f"Saved optimized data to {parquet_path}")
             
             return {

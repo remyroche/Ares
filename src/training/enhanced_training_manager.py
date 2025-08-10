@@ -1595,7 +1595,7 @@ class EnhancedTrainingManager:
             preferred_parquet = Path("data_cache") / f"klines_{exchange}_{symbol}_1m_consolidated.parquet"
             preferred_csv = Path("data_cache") / f"klines_{exchange}_{symbol}_1m_consolidated.csv"
             if preferred_parquet.exists():
-                market_data = pd.read_parquet(preferred_parquet)
+                market_data = self.data_manager.load_from_parquet(str(preferred_parquet))
                 self.logger.info(f"✅ Loaded market data from {preferred_parquet}")
                 return market_data
             if preferred_csv.exists():
@@ -1609,7 +1609,7 @@ class EnhancedTrainingManager:
             if parquet_path.exists():
                 self.logger.info(f"Loading data from Parquet: {parquet_path}")
                 try:
-                    data = self.data_manager.load_from_parquet(str(parquet_path)) if self.data_manager else pd.read_parquet(parquet_path)
+                    data = self.data_manager.load_from_parquet(str(parquet_path))
                     return data
                 except Exception as e:
                     self.logger.warning(f"Parquet load failed ({e}); falling back to CSV if available")

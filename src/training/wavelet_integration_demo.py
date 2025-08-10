@@ -198,8 +198,10 @@ class WaveletIntegrationDemo:
             data_dir = Path("data/wavelet_demo")
             data_dir.mkdir(parents=True, exist_ok=True)
             
-            price_data.to_parquet("data/wavelet_demo/sample_price_data.parquet")
-            volume_data.to_parquet("data/wavelet_demo/sample_volume_data.parquet")
+            from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+            MemoryEfficientDataManager().save_to_parquet(price_data, "data/wavelet_demo/sample_price_data.parquet", compression='snappy', index=False)
+            from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+            MemoryEfficientDataManager().save_to_parquet(volume_data, "data/wavelet_demo/sample_volume_data.parquet", compression='snappy', index=False)
             
             # Pre-compute features
             precompute_success = await self.wavelet_precomputer.precompute_dataset(

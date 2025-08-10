@@ -396,7 +396,8 @@ class VectorizedLabellingOrchestrator:
             filepath = os.path.join(output_dir, filename)
 
             # Save as Parquet
-            data.to_parquet(filepath, index=True, compression='snappy')
+            from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+            MemoryEfficientDataManager().save_to_parquet(data, filepath, compression='snappy', index=False)
             self.logger.info(f"💾 Data saved as Parquet: {filepath}")
 
         except Exception as e:

@@ -162,7 +162,8 @@ class EfficientFeaturesDatabase:
                 with open(db_path, 'rb') as f:
                     data = pickle.load(f)
             elif self.storage_format == "parquet":
-                data = pd.read_parquet(db_path)
+                from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                data = MemoryEfficientDataManager().load_from_parquet(db_path)
             elif self.storage_format == "hdf5":
                 data = pd.read_hdf(db_path, key='features')
             else:
@@ -279,7 +280,8 @@ class EfficientFeaturesDatabase:
                 with open(db_path, 'rb') as f:
                     data = pickle.load(f)
             elif self.storage_format == "parquet":
-                data = pd.read_parquet(db_path)
+                from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                data = MemoryEfficientDataManager().load_from_parquet(db_path)
             elif self.storage_format == "hdf5":
                 data = pd.read_hdf(db_path, key='features')
             else:

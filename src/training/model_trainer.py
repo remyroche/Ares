@@ -368,7 +368,8 @@ class RayModelTrainer:
             import pandas as pd
             import os
             if os.path.exists(labeled_path):
-                data = pd.read_parquet(labeled_path)
+                from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                data = MemoryEfficientDataManager().load_from_parquet(labeled_path)
                 self.logger.info(f"Loaded labeled data from {labeled_path}")
             else:
                 # Fallback to CSV if Parquet is not available

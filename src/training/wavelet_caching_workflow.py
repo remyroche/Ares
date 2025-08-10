@@ -88,7 +88,8 @@ async def step1_precompute_features(config: dict):
         data_dir = Path("data/price_data")
         data_dir.mkdir(parents=True, exist_ok=True)
         
-        sample_data.to_parquet("data/price_data/sample_data.parquet")
+        from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+        MemoryEfficientDataManager().save_to_parquet(sample_data, "data/price_data/sample_data.parquet", compression='snappy', index=False)
         print(f"💾 Saved sample data: {len(sample_data)} rows")
         
         # Pre-compute features
@@ -137,7 +138,8 @@ async def step2_run_backtests(config: dict):
         
         # Load sample data
         print("📊 Loading sample data for backtesting...")
-        price_data = pd.read_parquet("data/price_data/sample_data.parquet")
+        from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+        price_data = MemoryEfficientDataManager().load_from_parquet("data/price_data/sample_data.parquet")
         
         # Create multiple backtest configurations
         backtest_configs = [
@@ -206,7 +208,8 @@ async def step3_performance_comparison(config: dict):
     
     try:
         # Load sample data
-        price_data = pd.read_parquet("data/price_data/sample_data.parquet")
+        from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+        price_data = MemoryEfficientDataManager().load_from_parquet("data/price_data/sample_data.parquet")
         
         # Test 1: With caching (should be fast)
         print("🔧 Testing with cached features...")

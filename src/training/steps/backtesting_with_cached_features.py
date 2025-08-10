@@ -351,7 +351,8 @@ class BacktestingWithCachedFeatures:
 
             file_path = Path(data_path)
             if file_path.suffix.lower() == ".parquet":
-                return pd.read_parquet(data_path)
+                from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                return MemoryEfficientDataManager().load_from_parquet(data_path)
             elif file_path.suffix.lower() == ".csv":
                 return pd.read_csv(data_path, parse_dates=True)
             else:

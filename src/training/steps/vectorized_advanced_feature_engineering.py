@@ -264,10 +264,12 @@ class WaveletFeatureCache:
             
             # Save features based on format
             if self.cache_format == "parquet":
-                features_df.to_parquet(
-                    features_file,
-                    compression=self.compression,
-                    index=True
+                from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                MemoryEfficientDataManager().save_to_parquet(
+                    features_df,
+                    str(features_file),
+                    compression=self.compression or 'snappy',
+                    index=False
                 )
             elif self.cache_format == "feather":
                 features_df.to_feather(features_file)
@@ -300,13 +302,15 @@ class WaveletFeatureCache:
             
             # Load features based on format
             if self.cache_format == "parquet":
-                features_df = pd.read_parquet(features_file)
+                from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                features_df = MemoryEfficientDataManager().load_from_parquet(str(features_file))
             elif self.cache_format == "feather":
                 features_df = pd.read_feather(features_file)
             elif self.cache_format == "h5":
                 features_df = pd.read_hdf(features_file, key="wavelet_features")
             else:
-                features_df = pd.read_parquet(features_file)
+                from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                features_df = MemoryEfficientDataManager().load_from_parquet(str(features_file))
             
             # Convert DataFrame back to features dictionary
             features = self._dataframe_to_features(features_df)

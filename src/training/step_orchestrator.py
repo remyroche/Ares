@@ -167,7 +167,7 @@ class StepOrchestrator:
                 "data_dir": self.data_dir,
                 "start_step": step_name,
                 "force_rerun": force_rerun,
-                "lookback_days": 30  # Add missing lookback_days field
+                "lookback_days": 180  # Use 180 days in blank mode by default
             }
             
             # Execute the enhanced training pipeline
@@ -269,7 +269,7 @@ class StepOrchestrator:
             "data_dir": self.data_dir,
             "start_step": start_step,
             "force_rerun": force_rerun,
-            "lookback_days": 30  # Add missing lookback_days field
+            "lookback_days": 180  # Use 180 days in blank mode by default
         }
         
         # Execute the enhanced training pipeline

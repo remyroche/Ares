@@ -307,7 +307,7 @@ class OptimizedAresLauncherMixin:
             symbol=symbol,
             exchange=exchange,
             training_mode="blank",
-            lookback_days=60,
+            lookback_days=180,
             with_gui=with_gui,
         )
 

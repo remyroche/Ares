@@ -465,7 +465,7 @@ class AresLauncher:
             symbol=symbol,
             exchange=exchange,
             training_mode="blank",
-            lookback_days=60,  # 60 days for blank training (expanded for better regime coverage)
+            lookback_days=180,  # 180 days for blank training to ensure sufficient regime coverage
             with_gui=with_gui,
         )
 
@@ -1156,7 +1156,7 @@ class AresLauncher:
             symbol=symbol,
             exchange=exchange,
             training_mode="blank",
-            lookback_days=60,  # 60 days for blank training (expanded for better regime coverage)
+            lookback_days=180,  # 180 days for blank training to ensure sufficient regime coverage
             with_gui=with_gui,
         )
 
@@ -1560,11 +1560,11 @@ class AresLauncher:
                 # Load historical data
                 from src.analyst.data_utils import load_klines_data
 
-                # Load 30 days of data for quick training
+                # Load 180 days of data for blank training
                 historical_data = await load_klines_data(
                     symbol,
                     exchange,
-                    lookback_days=60,
+                    lookback_days=180,
                 )
 
                 if historical_data is None or historical_data.empty:
@@ -1828,7 +1828,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             args.exchange,
             lookback_days=730
             if not args.blank_mode
-            else 30,  # Use 730 for standard, 30 for blank
+            else 180,  # Use 730 for standard, 180 for blank
         ),
         "regime": lambda: asyncio.run(
             launcher.run_regime_operations(

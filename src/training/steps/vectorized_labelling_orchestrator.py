@@ -151,6 +151,16 @@ class VectorizedLabellingOrchestrator:
 
             self.logger.info("🎯 Starting comprehensive vectorized labeling and feature engineering orchestration...")
 
+            # Systematic leakage guard: capture baseline columns present before feature generation
+            baseline_cols: set[str] = set(price_data.columns)
+            try:
+                if volume_data is not None:
+                    baseline_cols |= set(getattr(volume_data, 'columns', []))
+                if order_flow_data is not None:
+                    baseline_cols |= set(getattr(order_flow_data, 'columns', []))
+            except Exception:
+                pass
+
             # 1. Stationary checks
             if self.enable_stationary_checks:
                 self.logger.info("📊 Performing stationary checks...")
@@ -244,6 +254,15 @@ class VectorizedLabellingOrchestrator:
             final_data = self._remove_raw_ohlcv_columns(final_data)
             # Also ensure datetime/timestamp columns are removed before returning
             final_data = self._remove_datetime_columns(final_data)
+
+            # Systematic leakage guard: drop any baseline columns observed before feature generation
+            try:
+                drop_baseline = [c for c in final_data.columns if c in baseline_cols and c != 'label']
+                if drop_baseline:
+                    self.logger.warning(f"🚨 Removing baseline/raw columns carried into features: {drop_baseline[:20]}" + (" ..." if len(drop_baseline) > 20 else ""))
+                    final_data = final_data.drop(columns=drop_baseline)
+            except Exception:
+                pass
 
             # 9. Memory optimization
             if self.enable_memory_efficient_types:
@@ -440,6 +459,13 @@ class VectorizedLabellingOrchestrator:
                     f"trimmed={len(trimmed_aligned)}, padded={len(padded_aligned)}, "
                     f"skipped_scalars={len(skipped_scalars)}"
                 )
+                total_attempted = max(1, len(advanced_features))
+                skip_ratio = len(skipped_scalars) / total_attempted
+                if skip_ratio > 0.5:
+                    self.logger.warning(
+                        f"⚠️ High scalar skip ratio ({skip_ratio:.1%}). This suggests a provider returned non-array features; "
+                        f"review feature generators. Sample skipped: {skipped_scalars[:10]}"
+                    )
             except Exception:
                 pass
 

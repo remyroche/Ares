@@ -28,6 +28,20 @@ from src.utils.error_handler import (
     handle_network_operations,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 from .base_exchange import BaseExchange
 
@@ -113,7 +127,7 @@ class BinanceRateLimiter:
             retry_after = response_data["retryAfter"]
             wait_time = (retry_after - time.time() * 1000) / 1000  # Convert to seconds
             if wait_time > 0:
-                logger.warning(f"Rate limit hit, waiting {wait_time:.1f} seconds...")
+                print(warning("Rate limit hit, waiting {wait_time:.1f} seconds..."))
                 await asyncio.sleep(wait_time)
                 return True
         return False
@@ -143,7 +157,7 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                     # Await the async function
                     return await func(*args, **kwargs)
                 except AuthenticationError as e:
-                    logger.error(
+                    logger.exception(
                         f"Authentication error in {func.__name__}. Not retrying. "
                         f"Please check your API keys. Error: {e}",
                     )
@@ -152,10 +166,10 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                 except (RateLimitExceeded, DDoSProtection) as e:
                     retries += 1
                     if retries >= max_retries:
-                        logger.error(
+                        logger.exception(
                             f"API Rate Limit Exceeded. Max retries reached for {func.__name__}. Error: {e}",
                         )
-                        raise e
+                        raise
 
                     logger.warning(
                         f"API Rate Limit Exceeded for {func.__name__}. "
@@ -167,10 +181,10 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                 except (ExchangeNotAvailable, RequestTimeout) as e:
                     retries += 1
                     if retries >= max_retries:
-                        logger.error(
+                        logger.exception(
                             f"Exchange not available or request timed out. Max retries reached for {func.__name__}. Error: {e}",
                         )
-                        raise e
+                        raise
 
                     logger.warning(
                         f"Exchange not available or request timed out for {func.__name__}. "
@@ -184,20 +198,21 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                     )
                     retries += 1
                     if retries >= max_retries:
-                        logger.error(
+                        logger.exception(
                             f"Max retries reached for {func.__name__} after multiple exchange errors. Last error: {e}",
                         )
-                        raise e
+                        raise
                     await asyncio.sleep(backoff)
                     backoff *= 2
                 except Exception as e:
-                    logger.error(
+                    logger.exception(
                         f"An unexpected error occurred in {func.__name__}: {e}",
                     )
-                    raise e
+                    raise
             # This part should not be reached if max_retries is > 0
             # but as a fallback, raise an exception if the loop finishes.
-            raise Exception(f"Exhausted retries for {func.__name__}")
+            msg = f"Exhausted retries for {func.__name__}"
+            raise Exception(msg)
 
         return wrapper
 
@@ -264,7 +279,8 @@ class BinanceExchange(BaseExchange):
     async def _generate_signature(self, data: dict[str, Any]) -> str:
         """Generates a HMAC SHA256 signature for signed requests."""
         if not self._api_secret:
-            raise ValueError("API secret is not configured for signing requests.")
+            msg = "API secret is not configured for signing requests."
+            raise ValueError(msg)
         query_string = "&".join([f"{k}={v}" for k, v in data.items() if v is not None])
         return hmac.new(
             self._api_secret,
@@ -297,7 +313,8 @@ class BinanceExchange(BaseExchange):
                 system_logger.error(
                     f"Permission Error: API key or secret missing for signed endpoint {endpoint}.",
                 )
-                raise PermissionError("Signed endpoint requires API key and secret.")
+                msg = "Signed endpoint requires API key and secret."
+                raise PermissionError(msg)
             params["timestamp"] = self._get_timestamp()
             params["signature"] = await self._generate_signature(params)
 
@@ -320,18 +337,19 @@ class BinanceExchange(BaseExchange):
 
                     # Attempt to parse JSON
                     try:
-                        json_response = await response.json()
-                        return json_response
+                        return await response.json()
                     except aiohttp.ContentTypeError:
                         system_logger.error(
                             f"Content Type Error: Expected JSON but got {response.headers.get('Content-Type')} for {endpoint}. Response: {await response.text()}",
                         )
-                        raise ValueError("Invalid content type in API response.")
+                        msg = "Invalid content type in API response."
+                        raise ValueError(msg)
                     except json.JSONDecodeError:
                         system_logger.error(
                             f"JSON Decode Error: Could not parse response as JSON for {endpoint}. Response: {await response.text()}",
                         )
-                        raise ValueError("Could not decode JSON response from API.")
+                        msg = "Could not decode JSON response from API."
+                        raise ValueError(msg)
 
             except aiohttp.ClientResponseError as e:
                 # Handle specific HTTP errors (4xx, 5xx)
@@ -464,18 +482,18 @@ class BinanceExchange(BaseExchange):
             if response and isinstance(response, list):
                 logger.info(f"✅ Successfully received {len(response)} klines")
                 return response
-            logger.error(f"💥 Invalid response format: {type(response)}")
-            logger.error(f"   Response: {response}")
+            print(invalid("💥 Invalid response format: {type(response)}"))
+            print(error("   Response: {response}"))
             return []
 
         except Exception as e:
             request_duration = time.time() - start_time
-            logger.error(
+            logger.exception(
                 f"💥 Error in get_klines after {request_duration:.2f} seconds: {e}",
             )
-            logger.error(f"   Error type: {type(e).__name__}")
-            logger.error("Full traceback:")
-            logger.error(traceback.format_exc())
+            print(error("   Error type: {type(e).__name__}"))
+            print(error("Full traceback:"))
+            logger.exception(traceback.format_exc())
             raise
 
     @retry_on_rate_limit()
@@ -526,8 +544,8 @@ class BinanceExchange(BaseExchange):
                 )
 
                 if not response or not isinstance(response, list):
-                    logger.error(f"💥 Invalid response format: {type(response)}")
-                    logger.error(f"   Response: {response}")
+                    print(invalid("💥 Invalid response format: {type(response)}"))
+                    print(error("   Response: {response}"))
                     break
 
                 if not response:  # No more data
@@ -569,12 +587,12 @@ class BinanceExchange(BaseExchange):
 
         except Exception as e:
             request_duration = time.time() - start_time
-            logger.error(
+            logger.exception(
                 f"💥 Error in get_historical_klines after {request_duration:.2f} seconds: {e}",
             )
-            logger.error(f"   Error type: {type(e).__name__}")
-            logger.error("Full traceback:")
-            logger.error(traceback.format_exc())
+            print(error("   Error type: {type(e).__name__}"))
+            print(error("Full traceback:"))
+            logger.exception(traceback.format_exc())
             raise
 
     def _get_interval_ms(self, interval: str) -> int:
@@ -670,7 +688,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("DELETE", endpoint, params, signed=True)
         except Exception as e:
-            system_logger.error(f"Failed to cancel order {order_id} on {symbol}: {e}")
+            system_print(failed("Failed to cancel order {order_id} on {symbol}: {e}"))
             return {"error": str(e)}
 
     @retry_on_rate_limit()
@@ -684,7 +702,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("GET", endpoint, signed=True)
         except Exception as e:
-            system_logger.error(f"Failed to get account info: {e}")
+            system_print(failed("Failed to get account info: {e}"))
             return {"error": str(e)}
 
     @handle_network_operations(
@@ -767,7 +785,7 @@ class BinanceExchange(BaseExchange):
                         f"No open position for {position.get('symbol', 'N/A')}.",
                     )
         except Exception as e:
-            system_logger.error(f"Error closing all positions: {e}", exc_info=True)
+            system_print(error("Error closing all positions: {e}"))
 
     @retry_on_rate_limit()
     @handle_errors(
@@ -804,7 +822,7 @@ class BinanceExchange(BaseExchange):
                         f"Cancelled order {order_id} for {order_symbol}: {cancel_response}",
                     )
         except Exception as e:
-            system_logger.error(f"Error cancelling all orders: {e}", exc_info=True)
+            system_print(error("Error cancelling all orders: {e}"))
 
     @retry_on_rate_limit()
     @handle_network_operations(
@@ -962,7 +980,7 @@ class BinanceExchange(BaseExchange):
                     f"CCXT Debug: Last trade timestamp: {trades[-1].get('T')}",
                 )
                 system_logger.info(
-                    f"CCXT Debug: Number of unique timestamps: {len(set(t.get('T') for t in trades))}",
+                    f"CCXT Debug: Number of unique timestamps: {len({t.get('T') for t in trades})}",
                 )
 
             # Convert CCXT format to our expected format
@@ -1158,7 +1176,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("GET", endpoint)
         except Exception as e:
-            system_logger.error(f"Failed to get exchange info: {e}")
+            system_print(failed("Failed to get exchange info: {e}"))
             return {}
 
     @retry_on_rate_limit()
@@ -1204,7 +1222,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("GET", endpoint, params)
         except Exception as e:
-            system_logger.error(f"Failed to get open interest for {symbol}: {e}")
+            system_print(failed("Failed to get open interest for {symbol}: {e}"))
             return {}
 
     @retry_on_rate_limit()
@@ -1232,7 +1250,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("GET", endpoint, params, signed=True)
         except Exception as e:
-            system_logger.error(f"Failed to get all orders for {symbol}: {e}")
+            system_print(failed("Failed to get all orders for {symbol}: {e}"))
             return []
 
     @retry_on_rate_limit()
@@ -1260,7 +1278,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("GET", endpoint, params, signed=True)
         except Exception as e:
-            system_logger.error(f"Failed to get trade history for {symbol}: {e}")
+            system_print(failed("Failed to get trade history for {symbol}: {e}"))
             return []
 
     @retry_on_rate_limit()
@@ -1275,7 +1293,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("POST", endpoint, params, signed=True)
         except Exception as e:
-            system_logger.error(f"Failed to create batch orders: {e}")
+            system_print(failed("Failed to create batch orders: {e}"))
             return {"error": str(e)}
 
     @retry_on_rate_limit()
@@ -1290,7 +1308,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("DELETE", endpoint, params, signed=True)
         except Exception as e:
-            system_logger.error(f"Failed to cancel batch orders: {e}")
+            system_print(failed("Failed to cancel batch orders: {e}"))
             return {"error": str(e)}
 
     @retry_on_rate_limit()
@@ -1320,7 +1338,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("GET", endpoint, params, signed=True)
         except Exception as e:
-            system_logger.error(f"Failed to get income history: {e}")
+            system_print(failed("Failed to get income history: {e}"))
             return {}
 
     @retry_on_rate_limit()
@@ -1335,7 +1353,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("GET", endpoint, params, signed=True)
         except Exception as e:
-            system_logger.error(f"Failed to get commission rate for {symbol}: {e}")
+            system_print(failed("Failed to get commission rate for {symbol}: {e}"))
             return {}
 
     @retry_on_rate_limit()
@@ -1382,7 +1400,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("GET", endpoint, params, signed=True)
         except Exception as e:
-            system_logger.error(f"Failed to get force orders: {e}")
+            system_print(failed("Failed to get force orders: {e}"))
             return {}
 
     @retry_on_rate_limit()
@@ -1396,7 +1414,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("GET", endpoint, signed=True)
         except Exception as e:
-            system_logger.error(f"Failed to get position side dual status: {e}")
+            system_print(failed("Failed to get position side dual status: {e}"))
             return {}
 
     @retry_on_rate_limit()
@@ -1411,7 +1429,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("POST", endpoint, params, signed=True)
         except Exception as e:
-            system_logger.error(f"Failed to change position side dual mode: {e}")
+            system_print(failed("Failed to change position side dual mode: {e}"))
             return {}
 
     @retry_on_rate_limit()
@@ -1425,7 +1443,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("GET", endpoint, signed=True)
         except Exception as e:
-            system_logger.error(f"Failed to get multi-assets margin status: {e}")
+            system_print(failed("Failed to get multi-assets margin status: {e}"))
             return {}
 
     @retry_on_rate_limit()
@@ -1440,7 +1458,7 @@ class BinanceExchange(BaseExchange):
         try:
             return await self._request("POST", endpoint, params, signed=True)
         except Exception as e:
-            system_logger.error(f"Failed to change multi-assets margin mode: {e}")
+            system_print(failed("Failed to change multi-assets margin mode: {e}"))
             return {}
 
     @retry_on_rate_limit()
@@ -1460,7 +1478,7 @@ class BinanceExchange(BaseExchange):
 
             return 0.0
         except Exception as e:
-            system_logger.error(f"Failed to get {asset} balance: {e}")
+            system_print(failed("Failed to get {asset} balance: {e}"))
             return 0.0
 
     @retry_on_rate_limit()
@@ -1482,7 +1500,7 @@ class BinanceExchange(BaseExchange):
 
             return 0.0
         except Exception as e:
-            system_logger.error(f"Failed to get spot {asset} balance: {e}")
+            system_print(failed("Failed to get spot {asset} balance: {e}"))
             return 0.0
 
     @retry_on_rate_limit()
@@ -1508,11 +1526,11 @@ class BinanceExchange(BaseExchange):
                     f"Successfully transferred {amount} {asset} to spot account",
                 )
                 return True
-            system_logger.error(f"Transfer failed: {response}")
+            system_print(failed("Transfer failed: {response}"))
             return False
 
         except Exception as e:
-            system_logger.error(f"Failed to transfer {amount} {asset} to spot: {e}")
+            system_print(failed("Failed to transfer {amount} {asset} to spot: {e}"))
             return False
 
     # --- WebSocket Handlers ---
@@ -1679,7 +1697,11 @@ class BinanceExchange(BaseExchange):
             try:
                 await callback(msg)
             except Exception as e:
-                logger.error(f"Error in trade subscription callback for {symbol}: {e}", exc_info=True)
+                logger.error(
+                    f"Error in trade subscription callback for {symbol}: {e}",
+                    exc_info=True,
+                )
+
         await self._websocket_handler(
             f"{self.WS_BASE_URL}/ws/{symbol.lower()}@trade",
             _cb,
@@ -1691,7 +1713,11 @@ class BinanceExchange(BaseExchange):
             try:
                 await callback(msg)
             except Exception as e:
-                logger.error(f"Error in ticker subscription callback for {symbol}: {e}", exc_info=True)
+                logger.error(
+                    f"Error in ticker subscription callback for {symbol}: {e}",
+                    exc_info=True,
+                )
+
         await self._websocket_handler(
             f"{self.WS_BASE_URL}/ws/{symbol.lower()}@markPrice",
             _cb,
@@ -1703,7 +1729,11 @@ class BinanceExchange(BaseExchange):
             try:
                 await callback(msg)
             except Exception as e:
-                logger.error(f"Error in order book subscription callback for {symbol}: {e}", exc_info=True)
+                logger.error(
+                    f"Error in order book subscription callback for {symbol}: {e}",
+                    exc_info=True,
+                )
+
         await self._websocket_handler(
             f"{self.WS_BASE_URL}/ws/{symbol.lower()}@depth",
             _cb,

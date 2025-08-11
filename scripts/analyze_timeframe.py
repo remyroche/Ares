@@ -455,9 +455,7 @@ class PriceActionAnalyzer:
         rr_bonus = risk_reward_ratio / 2.0  # Remove the cap, let it scale naturally
 
         # Combine frequency, duration, and risk-reward scores
-        score = frequency * duration_score * rr_bonus
-
-        return score
+        return frequency * duration_score * rr_bonus
 
     def run_comprehensive_analysis(
         self,
@@ -619,10 +617,9 @@ class PriceActionAnalyzer:
         # Parse the percentage values
         try:
             target_pct = float(target_str.replace("%", ""))
-            stop_pct = float(stop_str.replace("%", ""))
+            float(stop_str.replace("%", ""))
         except (ValueError, AttributeError):
             target_pct = 0.5  # Default values
-            stop_pct = 0.2
 
         risk_reward = optimal_params.get("risk_reward_ratio", 2.0)
         net_profit = optimal_params.get("net_profit_after_fees", "0.00%")
@@ -705,13 +702,11 @@ class PriceActionAnalyzer:
 
             f.write("OPTIMAL PARAMETERS:\n")
             f.write("=" * 50 + "\n")
-            for key, value in optimal_params.items():
-                f.write(f"{key}: {value}\n")
+            f.writelines(f"{key}: {value}\n" for key, value in optimal_params.items())
 
             f.write("\nRECOMMENDATIONS:\n")
             f.write("=" * 50 + "\n")
-            for key, value in recommendations.items():
-                f.write(f"{key}: {value}\n")
+            f.writelines(f"{key}: {value}\n" for key, value in recommendations.items())
 
             f.write(f"\nTotal combinations tested: {len(display_df)}\n")
             if df_resampled is not None:

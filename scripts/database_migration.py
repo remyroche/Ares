@@ -30,6 +30,20 @@ sys.path.insert(0, str(project_root))
 from src.database.migration_utils import DatabaseMigrationUtils
 from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import setup_logging, system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 async def export_database(db_path: str = "data/ares_local_db.sqlite"):
@@ -64,13 +78,13 @@ async def export_database(db_path: str = "data/ares_local_db.sqlite"):
                 f"   2. Run: python scripts/database_migration.py import {export_path}",
             )
         else:
-            print("❌ Database export failed!")
+            print(failed("Database export failed!")))
 
         await db_manager.close()
 
     except Exception as e:
-        system_logger.error(f"Export failed: {e}", exc_info=True)
-        print(f"❌ Export failed: {e}")
+        system_print(failed("Export failed: {e}")), exc_info=True)
+        print(failed("Export failed: {e}")))
 
 
 async def import_database(import_path: str, db_path: str = "data/ares_local_db.sqlite"):
@@ -86,7 +100,7 @@ async def import_database(import_path: str, db_path: str = "data/ares_local_db.s
         validation_result = await migration_utils.validate_migration_file(import_path)
 
         if not validation_result["valid"]:
-            print("❌ Import file validation failed!")
+            print(failed("Import file validation failed!")))
             print("Errors:")
             for error in validation_result["errors"]:
                 print(f"   - {error}")
@@ -103,13 +117,13 @@ async def import_database(import_path: str, db_path: str = "data/ares_local_db.s
             print(f"📊 Database size: {os.path.getsize(db_path) / 1024 / 1024:.2f} MB")
             print("\n🚀 You can now start the trading bot!")
         else:
-            print("❌ Database import failed!")
+            print(failed("Database import failed!")))
 
         await db_manager.close()
 
     except Exception as e:
-        system_logger.error(f"Import failed: {e}", exc_info=True)
-        print(f"❌ Import failed: {e}")
+        system_print(failed("Import failed: {e}")), exc_info=True)
+        print(failed("Import failed: {e}")))
 
 
 async def validate_file(file_path: str):
@@ -150,8 +164,8 @@ async def validate_file(file_path: str):
         await db_manager.close()
 
     except Exception as e:
-        system_logger.error(f"Validation failed: {e}", exc_info=True)
-        print(f"❌ Validation failed: {e}")
+        system_print(failed("Validation failed: {e}")), exc_info=True)
+        print(failed("Validation failed: {e}")))
 
 
 async def create_backup(db_path: str = "data/ares_local_db.sqlite"):
@@ -169,13 +183,13 @@ async def create_backup(db_path: str = "data/ares_local_db.sqlite"):
             print(f"📁 Backup file: {backup_path}")
             print(f"📊 File size: {os.path.getsize(backup_path) / 1024 / 1024:.2f} MB")
         else:
-            print("❌ Backup creation failed!")
+            print(failed("Backup creation failed!")))
 
         await db_manager.close()
 
     except Exception as e:
-        system_logger.error(f"Backup failed: {e}", exc_info=True)
-        print(f"❌ Backup failed: {e}")
+        system_print(failed("Backup failed: {e}")), exc_info=True)
+        print(failed("Backup failed: {e}")))
 
 
 async def list_migrations(db_path: str = "data/ares_local_db.sqlite"):
@@ -213,8 +227,8 @@ async def list_migrations(db_path: str = "data/ares_local_db.sqlite"):
         await db_manager.close()
 
     except Exception as e:
-        system_logger.error(f"Failed to list migrations: {e}", exc_info=True)
-        print(f"❌ Failed to list migrations: {e}")
+        system_print(failed("Failed to list migrations: {e}")), exc_info=True)
+        print(failed("Failed to list migrations: {e}")))
 
 
 async def cleanup_migrations(db_path: str = "data/ares_local_db.sqlite"):
@@ -233,8 +247,8 @@ async def cleanup_migrations(db_path: str = "data/ares_local_db.sqlite"):
         await db_manager.close()
 
     except Exception as e:
-        system_logger.error(f"Cleanup failed: {e}", exc_info=True)
-        print(f"❌ Cleanup failed: {e}")
+        system_print(failed("Cleanup failed: {e}")), exc_info=True)
+        print(failed("Cleanup failed: {e}")))
 
 
 def print_usage():
@@ -281,7 +295,7 @@ async def main():
 
     elif command == "import":
         if len(sys.argv) < 3:
-            print("❌ Import path required")
+            print(warning("Import path required")))
             print_usage()
             sys.exit(1)
         import_path = sys.argv[2]
@@ -290,7 +304,7 @@ async def main():
 
     elif command == "validate":
         if len(sys.argv) < 3:
-            print("❌ File path required")
+            print(warning("File path required")))
             print_usage()
             sys.exit(1)
         file_path = sys.argv[2]
@@ -309,7 +323,7 @@ async def main():
         await cleanup_migrations(db_path)
 
     else:
-        print(f"❌ Unknown command: {command}")
+        print(warning("Unknown command: {command}")))
         print_usage()
         sys.exit(1)
 

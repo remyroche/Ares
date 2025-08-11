@@ -17,6 +17,10 @@ from src.utils.error_handler import (
     handle_file_operations,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+)
 
 
 class FeatureEngineeringOrchestrator:
@@ -104,7 +108,7 @@ class FeatureEngineeringOrchestrator:
         )
 
         if klines_df.empty:
-            self.logger.warning("Empty klines data provided, returning empty DataFrame")
+            self.print(warning("Empty klines data provided, returning empty DataFrame"))
             return pd.DataFrame()
 
         try:
@@ -190,8 +194,8 @@ class FeatureEngineeringOrchestrator:
 
             return features_df
 
-        except Exception as e:
-            self.logger.error(f"❌ Error in feature generation orchestration: {e}")
+        except Exception:
+            self.print(error("❌ Error in feature generation orchestration: {e}"))
             return klines_df.copy()
 
     @handle_data_processing_errors(
@@ -234,12 +238,10 @@ class FeatureEngineeringOrchestrator:
             features_df = self._calculate_volatility_targeting_features(features_df)
 
             # ML enhanced features
-            features_df = self._calculate_ml_enhanced_features(features_df)
+            return self._calculate_ml_enhanced_features(features_df)
 
-            return features_df
-
-        except Exception as e:
-            self.logger.error(f"Error generating legacy features: {e}")
+        except Exception:
+            self.print(error("Error generating legacy features: {e}"))
             return features_df
 
     @handle_errors(
@@ -273,12 +275,10 @@ class FeatureEngineeringOrchestrator:
             )
 
             # Convert to DataFrame
-            features_df = pd.DataFrame([multi_timeframe_features])
+            return pd.DataFrame([multi_timeframe_features])
 
-            return features_df
-
-        except Exception as e:
-            self.logger.error(f"Error calculating multi-timeframe features: {e}")
+        except Exception:
+            self.print(error("Error calculating multi-timeframe features: {e}"))
             return pd.DataFrame()
 
     @handle_errors(
@@ -316,12 +316,10 @@ class FeatureEngineeringOrchestrator:
             all_labels = {**analyst_labels, **tactician_labels}
 
             # Convert to DataFrame
-            features_df = pd.DataFrame([all_labels])
+            return pd.DataFrame([all_labels])
 
-            return features_df
-
-        except Exception as e:
-            self.logger.error(f"Error calculating meta-labeling features: {e}")
+        except Exception:
+            self.print(error("Error calculating meta-labeling features: {e}"))
             return pd.DataFrame()
 
     @handle_data_processing_errors(
@@ -329,46 +327,59 @@ class FeatureEngineeringOrchestrator:
         context="standard indicators calculation",
     )
     def _calculate_standard_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Calculate standard technical indicators."""
+        """Calculate standard technical indicators using price differences."""
         try:
             import pandas_ta as ta
 
-            # Moving averages
-            df["sma_5"] = ta.sma(df["close"], length=5)
-            df["sma_10"] = ta.sma(df["close"], length=10)
-            df["sma_20"] = ta.sma(df["close"], length=20)
-            df["sma_50"] = ta.sma(df["close"], length=50)
-            df["ema_12"] = ta.ema(df["close"], length=12)
-            df["ema_26"] = ta.ema(df["close"], length=26)
+            # Convert price data to differences for technical indicators
+            close_diff = df["close"].diff().fillna(0)
+            high_diff = df["high"].diff().fillna(0)
+            low_diff = df["low"].diff().fillna(0)
 
-            # RSI
-            df["rsi"] = ta.rsi(df["close"], length=14)
+            # Create a temporary DataFrame with price differences for pandas_ta
+            temp_df = df.copy()
+            temp_df["close"] = close_diff
+            temp_df["high"] = high_diff
+            temp_df["low"] = low_diff
 
-            # MACD
-            macd = ta.macd(df["close"])
+            # Moving averages using price differences
+            df["sma_5"] = ta.sma(temp_df["close"], length=5)
+            df["sma_10"] = ta.sma(temp_df["close"], length=10)
+            df["sma_20"] = ta.sma(temp_df["close"], length=20)
+            df["sma_50"] = ta.sma(temp_df["close"], length=50)
+            df["ema_12"] = ta.ema(temp_df["close"], length=12)
+            df["ema_26"] = ta.ema(temp_df["close"], length=26)
+
+            # RSI using price differences
+            df["rsi"] = ta.rsi(temp_df["close"], length=14)
+
+            # MACD using price differences
+            macd = ta.macd(temp_df["close"])
             df["macd"] = macd["MACD_12_26_9"]
             df["macd_signal"] = macd["MACDs_12_26_9"]
             df["macd_hist"] = macd["MACDh_12_26_9"]
 
-            # Bollinger Bands
-            bb = ta.bbands(df["close"])
+            # Bollinger Bands using price differences
+            bb = ta.bbands(temp_df["close"])
             df["bb_upper"] = bb["BBU_20_2.0"]
             df["bb_middle"] = bb["BBM_20_2.0"]
             df["bb_lower"] = bb["BBL_20_2.0"]
             df["bb_width"] = (bb["BBU_20_2.0"] - bb["BBL_20_2.0"]) / bb["BBM_20_2.0"]
 
-            # Stochastic
-            stoch = ta.stoch(df["high"], df["low"], df["close"])
+            # Stochastic using price differences
+            stoch = ta.stoch(temp_df["high"], temp_df["low"], temp_df["close"])
             df["stoch_k"] = stoch["STOCHk_14_3_3"]
             df["stoch_d"] = stoch["STOCHd_14_3_3"]
 
-            # ATR
-            df["atr"] = ta.atr(df["high"], df["low"], df["close"], length=14)
+            # ATR using price differences
+            df["atr"] = ta.atr(
+                temp_df["high"], temp_df["low"], temp_df["close"], length=14
+            )
 
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error calculating standard indicators: {e}")
+        except Exception:
+            self.print(error("Error calculating standard indicators: {e}"))
             return df
 
     @handle_data_processing_errors(
@@ -402,8 +413,8 @@ class FeatureEngineeringOrchestrator:
 
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error calculating time features: {e}")
+        except Exception:
+            self.print(error("Error calculating time features: {e}"))
             return df
 
     @handle_data_processing_errors(
@@ -440,7 +451,9 @@ class FeatureEngineeringOrchestrator:
             return df
 
         except Exception as e:
-            self.logger.error(f"Error calculating volatility regime indicators: {e}")
+            self.logger.exception(
+                f"Error calculating volatility regime indicators: {e}",
+            )
             return df
 
     @handle_data_processing_errors(
@@ -478,7 +491,9 @@ class FeatureEngineeringOrchestrator:
             return df
 
         except Exception as e:
-            self.logger.error(f"Error calculating volatility targeting features: {e}")
+            self.logger.exception(
+                f"Error calculating volatility targeting features: {e}",
+            )
             return df
 
     @handle_data_processing_errors(
@@ -514,8 +529,8 @@ class FeatureEngineeringOrchestrator:
 
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error calculating ML enhanced features: {e}")
+        except Exception:
+            self.print(error("Error calculating ML enhanced features: {e}"))
             return df
 
     @handle_data_processing_errors(
@@ -541,8 +556,8 @@ class FeatureEngineeringOrchestrator:
             self.logger.info(f"Feature cleanup completed. Final shape: {df.shape}")
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error in feature cleanup: {e}")
+        except Exception:
+            self.print(error("Error in feature cleanup: {e}"))
             return df
 
     @handle_errors(
@@ -567,8 +582,8 @@ class FeatureEngineeringOrchestrator:
                 "autoencoder_generator_info": self.autoencoder_generator.get_generator_info(),
                 "config": self.orchestrator_config,
             }
-        except Exception as e:
-            self.logger.error(f"Error getting orchestrator info: {e}")
+        except Exception:
+            self.print(error("Error getting orchestrator info: {e}"))
             return {}
 
     @handle_errors(
@@ -591,8 +606,8 @@ class FeatureEngineeringOrchestrator:
                 "total_feature_types": 6,
                 "orchestrator_config": self.orchestrator_config,
             }
-        except Exception as e:
-            self.logger.error(f"Error getting feature summary: {e}")
+        except Exception:
+            self.print(error("Error getting feature summary: {e}"))
             return {}
 
 
@@ -657,10 +672,9 @@ class FeatureEngineeringEngine:
     def apply_wavelet_transforms(self, data: pd.Series, wavelet="db1", level=3):
         """Apply wavelet transforms to data."""
         try:
-            coeffs = pywt.wavedec(data, wavelet, level=level)
-            return coeffs
-        except Exception as e:
-            self.logger.error(f"Error applying wavelet transforms: {e}")
+            return pywt.wavedec(data, wavelet, level=level)
+        except Exception:
+            self.print(error("Error applying wavelet transforms: {e}"))
             return None
 
     @handle_file_operations(default_return=False, context="train_autoencoder")
@@ -671,8 +685,8 @@ class FeatureEngineeringEngine:
             return (
                 self.orchestrator.autoencoder_generator.pipeline.autoencoder is not None
             )
-        except Exception as e:
-            self.logger.error(f"Error training autoencoder: {e}")
+        except Exception:
+            self.print(error("Error training autoencoder: {e}"))
             return False
 
     @handle_data_processing_errors(
@@ -683,8 +697,8 @@ class FeatureEngineeringEngine:
         """Apply autoencoder features."""
         try:
             return self.orchestrator.autoencoder_generator.generate_features(data)
-        except Exception as e:
-            self.logger.error(f"Error applying autoencoders: {e}")
+        except Exception:
+            self.print(error("Error applying autoencoders: {e}"))
             return data
 
     @handle_file_operations(default_return=False, context="load_autoencoder")
@@ -693,6 +707,6 @@ class FeatureEngineeringEngine:
         try:
             # This is handled by the orchestrator now
             return True
-        except Exception as e:
-            self.logger.error(f"Error loading autoencoder: {e}")
+        except Exception:
+            self.print(error("Error loading autoencoder: {e}"))
             return False

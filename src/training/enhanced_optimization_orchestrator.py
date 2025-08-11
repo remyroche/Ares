@@ -11,6 +11,10 @@ from src.training.bayesian_optimizer import AdvancedBayesianOptimizer
 from src.training.multi_objective_optimizer import MultiObjectiveOptimizer
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+)
 
 
 class EnhancedOptimizationOrchestrator:
@@ -110,7 +114,8 @@ class EnhancedOptimizationOrchestrator:
             elif optimization_type == "quick":
                 results["results"] = await self._run_quick_optimization(market_data)
             else:
-                raise ValueError(f"Unknown optimization type: {optimization_type}")
+                msg = f"Unknown optimization type: {optimization_type}"
+                raise ValueError(msg)
 
             # Analyze and summarize results
             results["summary"] = self._analyze_optimization_results(results["results"])
@@ -121,7 +126,7 @@ class EnhancedOptimizationOrchestrator:
             self.logger.info(f"{optimization_type} optimization completed successfully")
 
         except Exception as e:
-            self.logger.error(f"Error in {optimization_type} optimization: {e}")
+            self.print(error("Error in {optimization_type} optimization: {e}"))
             results["error"] = str(e)
 
         return results
@@ -141,7 +146,9 @@ class EnhancedOptimizationOrchestrator:
                 mo_results = await self._run_multi_objective_optimization(market_data)
                 results["multi_objective"] = mo_results
             except Exception as e:
-                self.logger.warning(f"Multi-objective optimization failed: {e}")
+                error_msg = f"Multi-objective optimization failed: {e}"
+                self.logger.exception(error_msg)
+                self.print(failed(error_msg))
 
         # Run Bayesian optimization
         if self.bayesian_optimizer:
@@ -150,7 +157,9 @@ class EnhancedOptimizationOrchestrator:
                 bayes_results = await self._run_bayesian_optimization(market_data)
                 results["bayesian"] = bayes_results
             except Exception as e:
-                self.logger.warning(f"Bayesian optimization failed: {e}")
+                error_msg = f"Bayesian optimization failed: {e}"
+                self.logger.exception(error_msg)
+                self.print(failed(error_msg))
 
         # Run adaptive optimization
         if self.adaptive_optimizer:
@@ -159,7 +168,9 @@ class EnhancedOptimizationOrchestrator:
                 adaptive_results = await self._run_adaptive_optimization(market_data)
                 results["adaptive"] = adaptive_results
             except Exception as e:
-                self.logger.warning(f"Adaptive optimization failed: {e}")
+                error_msg = f"Adaptive optimization failed: {e}"
+                self.logger.exception(error_msg)
+                self.print(failed(error_msg))
 
         # Combine and rank results
         results["combined"] = self._combine_optimization_results(results)
@@ -173,7 +184,8 @@ class EnhancedOptimizationOrchestrator:
         """Run multi-objective optimization."""
 
         if not self.multi_objective_optimizer:
-            raise ValueError("Multi-objective optimizer not initialized")
+            msg = "Multi-objective optimizer not initialized"
+            raise ValueError(msg)
 
         # Run optimization
         results = self.multi_objective_optimizer.run_optimization(n_trials=300)
@@ -191,7 +203,8 @@ class EnhancedOptimizationOrchestrator:
         """Run Bayesian optimization."""
 
         if not self.bayesian_optimizer:
-            raise ValueError("Bayesian optimizer not initialized")
+            msg = "Bayesian optimizer not initialized"
+            raise ValueError(msg)
 
         # Run optimization
         results = self.bayesian_optimizer.run_optimization()
@@ -210,7 +223,8 @@ class EnhancedOptimizationOrchestrator:
         """Run adaptive optimization based on market regimes."""
 
         if not self.adaptive_optimizer:
-            raise ValueError("Adaptive optimizer not initialized")
+            msg = "Adaptive optimizer not initialized"
+            raise ValueError(msg)
 
         # Detect market regime
         regime = self.adaptive_optimizer.detect_market_regime(market_data)
@@ -424,18 +438,16 @@ class EnhancedOptimizationOrchestrator:
 
         # Determine optimization type based on schedule
         focus = schedule.get("focus", "comprehensive")
-        max_trials = schedule.get("max_trials", 100)
+        schedule.get("max_trials", 100)
 
         # Load market data (this would integrate with your data loading)
         market_data = self._load_market_data_for_optimization()
 
         # Run optimization
-        results = await self.run_comprehensive_optimization(
+        return await self.run_comprehensive_optimization(
             market_data=market_data,
             optimization_type=focus,
         )
-
-        return results
 
     def _load_market_data_for_optimization(self) -> pd.DataFrame:
         """Load market data for optimization (placeholder)."""
@@ -444,7 +456,7 @@ class EnhancedOptimizationOrchestrator:
         # For now, returning mock data
         dates = pd.date_range(start="2024-01-01", end="2024-12-31", freq="1H")
 
-        mock_data = pd.DataFrame(
+        return pd.DataFrame(
             {
                 "timestamp": dates,
                 "open": np.random.normal(100, 10, len(dates)),
@@ -454,5 +466,3 @@ class EnhancedOptimizationOrchestrator:
                 "volume": np.random.normal(1000, 200, len(dates)),
             },
         )
-
-        return mock_data

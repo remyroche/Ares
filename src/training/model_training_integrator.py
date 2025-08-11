@@ -23,6 +23,11 @@ from sklearn.model_selection import cross_val_score, train_test_split
 from src.utils.comprehensive_logger import get_component_logger
 from src.utils.data_optimizer import get_data_optimizer
 from src.utils.error_handler import handle_errors
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+)
 
 
 class ModelTrainingIntegrator:
@@ -120,7 +125,9 @@ class ModelTrainingIntegrator:
             self.logger.info("Directories ensured")
 
         except Exception as e:
-            self.logger.error(f"Error ensuring directories: {e}")
+            error_msg = f"Error ensuring directories for model training: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -142,7 +149,9 @@ class ModelTrainingIntegrator:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error initializing Model Training Integrator: {e}")
+            error_msg = f"Error initializing Model Training Integrator: {e}"
+            self.logger.exception(error_msg)
+            self.print(initialization_error(error_msg))
             return False
 
     async def _load_existing_models(self) -> None:
@@ -167,12 +176,18 @@ class ModelTrainingIntegrator:
                     self.logger.info(f"Loaded existing model: {model_name}")
 
                 except Exception as e:
-                    self.logger.error(f"Error loading model {model_name}: {e}")
+                    error_msg = (
+                        f"Error loading model {model_name} from {model_path}: {e}"
+                    )
+                    self.logger.exception(error_msg)
+                    self.print(error(error_msg))
 
             self.logger.info(f"Loaded {len(self.trained_models)} existing models")
 
         except Exception as e:
-            self.logger.error(f"Error loading existing models: {e}")
+            error_msg = f"Error loading existing models from {self.models_path}: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
 
     async def generate_training_data(
         self,
@@ -240,7 +255,9 @@ class ModelTrainingIntegrator:
             return X, y
 
         except Exception as e:
-            self.logger.error(f"Error generating training data: {e}")
+            error_msg = f"Error generating training data with {size} samples: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return pd.DataFrame(), pd.Series()
 
     async def train_models(self, X: pd.DataFrame, y: pd.Series) -> dict[str, Any]:
@@ -321,14 +338,16 @@ class ModelTrainingIntegrator:
                     self.logger.info(f"  - Training time: {training_time:.2f}s")
 
                 except Exception as e:
-                    self.logger.error(f"Error training {model_name}: {e}")
+                    error_msg = f"Error training model {model_name}: {e}"
+                    self.logger.exception(error_msg)
+                    self.print(error(error_msg))
 
             # Find best model
             best_model_name = max(
                 model_scores.keys(),
                 key=lambda x: model_scores[x]["f1_score"],
             )
-            best_model = trained_models[best_model_name]
+            trained_models[best_model_name]
             best_score = model_scores[best_model_name]["f1_score"]
 
             # Update training statistics
@@ -363,7 +382,9 @@ class ModelTrainingIntegrator:
             }
 
         except Exception as e:
-            self.logger.error(f"Error training models: {e}")
+            error_msg = f"Error training models with {len(X)} samples: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return {}
 
     async def _save_models(self, models: dict[str, Any]) -> None:
@@ -378,7 +399,9 @@ class ModelTrainingIntegrator:
                 self.logger.info(f"Saved model: {model_name}")
 
         except Exception as e:
-            self.logger.error(f"Error saving models: {e}")
+            error_msg = f"Error saving models to {self.models_path}: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
 
     async def train_ml_confidence_predictor(self) -> bool:
         """Train the ML Confidence Predictor with synthetic data."""
@@ -389,14 +412,14 @@ class ModelTrainingIntegrator:
             X, y = await self.generate_training_data(15000)
 
             if X.empty or y.empty:
-                self.logger.error("Failed to generate training data")
+                self.print(failed("Failed to generate training data"))
                 return False
 
             # Train models
             training_results = await self.train_models(X, y)
 
             if not training_results:
-                self.logger.error("Failed to train models")
+                self.print(failed("Failed to train models"))
                 return False
 
             # Update ML Confidence Predictor with trained models
@@ -406,7 +429,9 @@ class ModelTrainingIntegrator:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error training ML Confidence Predictor: {e}")
+            error_msg = f"Error training ML Confidence Predictor: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return False
 
     async def _update_ml_confidence_predictor(
@@ -443,7 +468,11 @@ class ModelTrainingIntegrator:
             self.logger.info(f"Updated ML Confidence Predictor with {best_model_name}")
 
         except Exception as e:
-            self.logger.error(f"Error updating ML Confidence Predictor: {e}")
+            error_msg = (
+                f"Error updating ML Confidence Predictor with training results: {e}"
+            )
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
 
     async def train_ensemble_models(self) -> dict[str, Any]:
         """Train ensemble models for different timeframes."""
@@ -473,7 +502,7 @@ class ModelTrainingIntegrator:
                             f"Failed to train ensemble model for {timeframe}",
                         )
                 else:
-                    self.logger.warning(f"Failed to generate data for {timeframe}")
+                    self.print(failed("Failed to generate data for {timeframe}"))
 
             # Save ensemble models
             await self._save_ensemble_models(ensemble_models)
@@ -484,7 +513,9 @@ class ModelTrainingIntegrator:
             return ensemble_models
 
         except Exception as e:
-            self.logger.error(f"Error training ensemble models: {e}")
+            error_msg = f"Error training ensemble models: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return {}
 
     async def _save_ensemble_models(self, ensemble_models: dict[str, Any]) -> None:
@@ -503,7 +534,9 @@ class ModelTrainingIntegrator:
                 self.logger.info(f"Saved ensemble models for {timeframe}")
 
         except Exception as e:
-            self.logger.error(f"Error saving ensemble models: {e}")
+            error_msg = f"Error saving ensemble models to {self.models_path}: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
 
     async def load_trained_models(self) -> dict[str, Any]:
         """Load all trained models from disk."""
@@ -529,7 +562,11 @@ class ModelTrainingIntegrator:
                     self.logger.info(f"Loaded model: {model_name}")
 
                 except Exception as e:
-                    self.logger.error(f"Error loading model {model_name}: {e}")
+                    error_msg = (
+                        f"Error loading model {model_name} from {model_path}: {e}"
+                    )
+                    self.logger.exception(error_msg)
+                    self.print(error(error_msg))
 
             # Load ensemble models
             ensemble_dirs = [
@@ -556,7 +593,7 @@ class ModelTrainingIntegrator:
                         ensemble_models[model_name] = model
 
                     except Exception as e:
-                        self.logger.error(
+                        self.logger.exception(
                             f"Error loading ensemble model {model_name}: {e}",
                         )
 
@@ -568,7 +605,9 @@ class ModelTrainingIntegrator:
             return loaded_models
 
         except Exception as e:
-            self.logger.error(f"Error loading trained models: {e}")
+            error_msg = f"Error loading trained models from {self.models_path}: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return {}
 
     def get_training_stats(self) -> dict[str, Any]:
@@ -587,7 +626,7 @@ class ModelTrainingIntegrator:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting training stats: {e}")
+            self.print(error("Error getting training stats: {e}"))
             return {"error": str(e)}
 
     @handle_errors(
@@ -610,7 +649,9 @@ class ModelTrainingIntegrator:
             self.logger.info("✅ Model Training Integrator stopped successfully")
 
         except Exception as e:
-            self.logger.error(f"Error stopping Model Training Integrator: {e}")
+            error_msg = f"Error stopping Model Training Integrator: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
 
 
 # Global model training integrator instance

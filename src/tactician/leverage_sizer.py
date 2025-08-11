@@ -10,6 +10,11 @@ from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    initialization_error,
+    missing,
+)
 
 
 class LeverageSizer:
@@ -21,12 +26,25 @@ class LeverageSizer:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("LeverageSizer")
+        # Backward-compatibility shim for legacy self.print calls
+        if not hasattr(self, "print"):
+
+            def _shim_print(message: str) -> None:
+                try:
+                    self.logger.error(str(message))
+                except Exception:
+                    pass
+
+            self.print = _shim_print  # type: ignore[attr-defined]
 
         # Load configuration
         from src.config_optuna import get_parameter_value
 
         self.leverage_config: dict[str, Any] = self.config.get("leverage_sizing", {})
-        self.symbol_risk_limits: dict[str, Any] = self.leverage_config.get("symbol_risk_limits", {})
+        self.symbol_risk_limits: dict[str, Any] = self.leverage_config.get(
+            "symbol_risk_limits",
+            {},
+        )
         # Example: {"BTCUSDT": {"max_leverage": 50.0, "margin_mode": "isolated"}}
         self.max_leverage: float = get_parameter_value(
             "position_sizing_parameters.max_leverage",
@@ -58,7 +76,6 @@ class LeverageSizer:
 
         self.is_initialized: bool = False
         self.leverage_sizing_history: list[dict[str, Any]] = []
-        
 
     @handle_specific_errors(
         error_handlers={
@@ -97,21 +114,21 @@ class LeverageSizer:
             required_keys = ["max_leverage", "min_leverage", "confidence_threshold"]
             for key in required_keys:
                 if key not in self.leverage_config:
-                    self.logger.error(f"Missing required configuration key: {key}")
+                    self.print(missing("Missing required configuration key: {key}"))
                     return False
 
             if self.max_leverage <= self.min_leverage:
-                self.logger.error("max_leverage must be greater than min_leverage")
+                self.print(error("max_leverage must be greater than min_leverage"))
                 return False
 
             if self.confidence_threshold <= 0 or self.confidence_threshold > 1:
-                self.logger.error("confidence_threshold must be between 0 and 1")
+                self.print(error("confidence_threshold must be between 0 and 1"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_specific_errors(
@@ -147,7 +164,7 @@ class LeverageSizer:
             dict[str, Any]: Leverage sizing analysis
         """
         if not self.is_initialized:
-            self.logger.error("Leverage sizer not initialized")
+            self.print(initialization_error("Leverage sizer not initialized"))
             return None
 
         self.logger.info(f"Calculating leverage for {target_direction} position...")
@@ -193,10 +210,15 @@ class LeverageSizer:
             )
 
             # Enforce symbol-specific leverage caps and include margin mode
-            symbol_limits = self.symbol_risk_limits.get(symbol or "", {}) if symbol else {}
+            symbol_limits = (
+                self.symbol_risk_limits.get(symbol or "", {}) if symbol else {}
+            )
             per_symbol_max = float(symbol_limits.get("max_leverage", self.max_leverage))
             final_leverage = min(final_leverage, per_symbol_max)
-            margin_mode = symbol_limits.get("margin_mode", self.leverage_config.get("default_margin_mode", "cross"))
+            margin_mode = symbol_limits.get(
+                "margin_mode",
+                self.leverage_config.get("default_margin_mode", "cross"),
+            )
 
             # Create leverage sizing analysis
             leverage_analysis = {
@@ -231,8 +253,8 @@ class LeverageSizer:
             self.logger.info(f"✅ Leverage calculated: {final_leverage:.2f}x")
             return leverage_analysis
 
-        except Exception as e:
-            self.logger.error(f"Error calculating leverage: {e}")
+        except Exception:
+            self.print(error("Error calculating leverage: {e}"))
             return None
 
     def _calculate_ml_leverage(
@@ -284,10 +306,13 @@ class LeverageSizer:
 
             # Apply risk tolerance adjustment
             risk_adjusted_leverage = ml_leverage * (1.0 - self.risk_tolerance)
-            return max(self.min_leverage, min(self.max_leverage, risk_adjusted_leverage))
+            return max(
+                self.min_leverage,
+                min(self.max_leverage, risk_adjusted_leverage),
+            )
 
-        except Exception as e:
-            self.logger.error(f"Error calculating ML leverage: {e}")
+        except Exception:
+            self.print(error("Error calculating ML leverage: {e}"))
             return self.min_leverage
 
     def _extract_liquidation_leverage(
@@ -319,8 +344,8 @@ class LeverageSizer:
                 return max(self.min_leverage, min(self.max_leverage, avg_safe_leverage))
             return self.min_leverage
 
-        except Exception as e:
-            self.logger.error(f"Error extracting liquidation leverage: {e}")
+        except Exception:
+            self.print(error("Error extracting liquidation leverage: {e}"))
             return self.min_leverage
 
     def _apply_leverage_guards(
@@ -349,7 +374,10 @@ class LeverageSizer:
                     if distance < min_buffer_ratio:
                         # Soft scale down (no more than 50% cut) to increase buffer
                         risk_scale = max(0.5, distance / max(min_buffer_ratio, 1e-6))
-                        adjusted = max(self.min_leverage, proposed_leverage * risk_scale)
+                        adjusted = max(
+                            self.min_leverage,
+                            proposed_leverage * risk_scale,
+                        )
 
             # Guard 2: Market stress clamp
             if market_health_analysis:
@@ -357,17 +385,19 @@ class LeverageSizer:
                 stress_level = float(stress.get("stress_level", 0.5))  # 0..1
                 # In high stress, reduce leverage using gentle caps
                 if stress_level >= 0.8:
-                    adjusted = min(adjusted, max(self.min_leverage, self.max_leverage * 0.2))
+                    adjusted = min(
+                        adjusted,
+                        max(self.min_leverage, self.max_leverage * 0.2),
+                    )
                 elif stress_level >= 0.6:
                     adjusted = min(adjusted, self.max_leverage * 0.35)
                 elif stress_level >= 0.4:
                     adjusted = min(adjusted, self.max_leverage * 0.6)
 
             # Clamp to global bounds and return
-            adjusted = max(self.min_leverage, min(self.max_leverage, adjusted))
-            return adjusted
-        except Exception as e:
-            self.logger.error(f"Error applying leverage guards: {e}")
+            return max(self.min_leverage, min(self.max_leverage, adjusted))
+        except Exception:
+            self.print(error("Error applying leverage guards: {e}"))
             return max(self.min_leverage, min(self.max_leverage, proposed_leverage))
 
     def _extract_market_health_leverage(
@@ -434,8 +464,8 @@ class LeverageSizer:
                 min(self.max_leverage, market_health_leverage),
             )
 
-        except Exception as e:
-            self.logger.error(f"Error extracting market health leverage: {e}")
+        except Exception:
+            self.print(error("Error extracting market health leverage: {e}"))
             return self.min_leverage
 
     def _calculate_volatility_factor(
@@ -483,8 +513,8 @@ class LeverageSizer:
 
             return max(0.1, min(1.0, base_factor))
 
-        except Exception as e:
-            self.logger.error(f"Error calculating volatility factor: {e}")
+        except Exception:
+            self.print(error("Error calculating volatility factor: {e}"))
             return 0.5
 
     def _calculate_liquidity_factor(
@@ -520,8 +550,8 @@ class LeverageSizer:
 
             return max(0.1, min(1.0, liquidity_factor))
 
-        except Exception as e:
-            self.logger.error(f"Error calculating liquidity factor: {e}")
+        except Exception:
+            self.print(error("Error calculating liquidity factor: {e}"))
             return 0.5
 
     def _calculate_stress_factor(self, stress_level: float, regime: str) -> float:
@@ -557,8 +587,8 @@ class LeverageSizer:
 
             return max(0.1, min(1.0, base_factor))
 
-        except Exception as e:
-            self.logger.error(f"Error calculating stress factor: {e}")
+        except Exception:
+            self.print(error("Error calculating stress factor: {e}"))
             return 0.5
 
     def _calculate_weighted_leverage(
@@ -582,8 +612,8 @@ class LeverageSizer:
 
             return max(self.min_leverage, min(self.max_leverage, weighted_leverage))
 
-        except Exception as e:
-            self.logger.error(f"Error calculating weighted leverage: {e}")
+        except Exception:
+            self.print(error("Error calculating weighted leverage: {e}"))
             return ml_leverage
 
     def _generate_leverage_reason(
@@ -627,8 +657,8 @@ class LeverageSizer:
                 return "Moderate leverage with balanced risk-reward profile"
             return f"Conservative leverage due to low confidence ({avg_confidence:.2f}) or high risk ({avg_risk:.2f})"
 
-        except Exception as e:
-            self.logger.error(f"Error generating leverage reason: {e}")
+        except Exception:
+            self.print(error("Error generating leverage reason: {e}"))
             return "Leverage calculated using ML intelligence and liquidation risk analysis"
 
     def get_leverage_sizing_history(
@@ -651,8 +681,8 @@ class LeverageSizer:
             self.logger.info("Stopping leverage sizer...")
             self.is_initialized = False
             self.logger.info("✅ Leverage sizer stopped successfully")
-        except Exception as e:
-            self.logger.error(f"Error stopping leverage sizer: {e}")
+        except Exception:
+            self.print(error("Error stopping leverage sizer: {e}"))
 
 
 @handle_errors(
@@ -682,6 +712,6 @@ async def setup_leverage_sizer(
             return leverage_sizer
         return None
 
-    except Exception as e:
-        system_logger.error(f"Error setting up leverage sizer: {e}")
+    except Exception:
+        system_print(error("Error setting up leverage sizer: {e}"))
         return None

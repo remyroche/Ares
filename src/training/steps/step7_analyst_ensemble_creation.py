@@ -11,11 +11,18 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import StackingClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import StratifiedKFold, cross_val_score
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-from src.utils.logger import system_logger
 from src.analyst.data_utils import load_klines_data
+from src.utils.logger import system_logger
+from src.utils.error_handler import handle_errors
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    missing,
+)
+from src.training.steps.unified_data_loader import get_unified_data_loader
 
 try:
     import joblib  # Optional; used for .joblib artifacts
@@ -25,17 +32,17 @@ except Exception:  # pragma: no cover
 
 class DynamicWeightedEnsemble:
     """Dynamic weighted ensemble using Sharpe Ratio for model weighting."""
-    
+
     def __init__(self, models, model_names, weights):
         self.models = models
         self.model_names = model_names
         self.weights = weights
-    
+
     def predict(self, X):
         """Make ensemble predictions using weighted average of model probabilities."""
         all_probabilities = []
-        
-        for name, model in zip(self.model_names, self.models):
+
+        for name, model in zip(self.model_names, self.models, strict=False):
             if self.weights.get(name, 0) > 0:
                 try:
                     probs = model.predict_proba(X)
@@ -43,20 +50,19 @@ class DynamicWeightedEnsemble:
                     all_probabilities.append(weighted_probs)
                 except Exception:
                     continue
-        
+
         if all_probabilities:
             # Average the weighted probabilities
             ensemble_probs = np.mean(all_probabilities, axis=0)
             return np.argmax(ensemble_probs, axis=1)
-        else:
-            # Fallback: return random predictions
-            return np.random.randint(0, 2, size=len(X))
-    
+        # Fallback: return random predictions
+        return np.random.randint(0, 2, size=len(X))
+
     def predict_proba(self, X):
         """Get ensemble probability predictions."""
         all_probabilities = []
-        
-        for name, model in zip(self.model_names, self.models):
+
+        for name, model in zip(self.model_names, self.models, strict=False):
             if self.weights.get(name, 0) > 0:
                 try:
                     probs = model.predict_proba(X)
@@ -64,32 +70,96 @@ class DynamicWeightedEnsemble:
                     all_probabilities.append(weighted_probs)
                 except Exception:
                     continue
-        
+
         if all_probabilities:
             # Average the weighted probabilities
             return np.mean(all_probabilities, axis=0)
-        else:
-            # Fallback: return uniform probabilities
-            return np.ones((len(X), 2)) * 0.5
+        # Fallback: return uniform probabilities
+        return np.ones((len(X), 2)) * 0.5
 
 
 class AnalystEnsembleCreationStep:
-    """Step 7: Analyst Ensemble Creation using StackingCV and Dynamic Weighting."""
+    """Step 7: Analyst Ensemble Creation using StackingCV and Dynamic Weighting with caching and streaming."""
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self.logger = system_logger
 
+        # Add ensemble caching for repeated operations
+        self._ensemble_cache = {}
+        self._model_cache = {}
+        self.max_cache_size = 50  # Maximum number of cached ensembles
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="analyst ensemble creation step initialization",
+    )
     async def initialize(self) -> None:
         """Initialize the analyst ensemble creation step."""
-        try:
-            self.logger.info("Initializing Analyst Ensemble Creation Step...")
-            self.logger.info("Analyst Ensemble Creation Step initialized successfully")
+        self.logger.info("Initializing Analyst Ensemble Creation Step...")
+        self.logger.info("Analyst Ensemble Creation Step initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing Analyst Ensemble Creation Step: {e}")
-            raise
+    def _generate_cache_key(
+        self, regime_name: str, model_names: list[str], ensemble_type: str
+    ) -> str:
+        """Generate a cache key for ensemble operations."""
+        sorted_models = sorted(model_names)
+        return f"{regime_name}_{ensemble_type}_{'_'.join(sorted_models)}"
 
+    def _get_cached_ensemble(self, cache_key: str) -> Any:
+        """Get cached ensemble if available."""
+        return self._ensemble_cache.get(cache_key)
+
+    def _cache_ensemble(self, cache_key: str, ensemble: Any) -> None:
+        """Cache ensemble with size management."""
+        if len(self._ensemble_cache) >= self.max_cache_size:
+            # Remove oldest entry
+            oldest_key = next(iter(self._ensemble_cache))
+            del self._ensemble_cache[oldest_key]
+        self._ensemble_cache[cache_key] = ensemble
+
+    def _stream_models(
+        self, regime_path: str, batch_size: int = 5
+    ) -> Iterator[tuple[str, Any]]:
+        """Stream models from directory to avoid loading all at once."""
+        model_files = [
+            f for f in os.listdir(regime_path) if f.endswith((".pkl", ".joblib"))
+        ]
+
+        for i in range(0, len(model_files), batch_size):
+            batch_files = model_files[i : i + batch_size]
+            batch_models = {}
+
+            for model_file in batch_files:
+                model_name = model_file.replace(".pkl", "").replace(".joblib", "")
+                model_path = os.path.join(regime_path, model_file)
+
+                try:
+                    if model_file.endswith(".joblib") and joblib is not None:
+                        model = joblib.load(model_path)
+                    else:
+                        with open(model_path, "rb") as f:
+                            model = pickle.load(f)
+
+                    batch_models[model_name] = model
+                    yield model_name, model
+
+                except Exception as e:
+                    self.logger.warning(f"Failed to load model {model_file}: {e}")
+                    continue
+
+            # Clear batch from memory
+            batch_models.clear()
+            import gc
+
+            gc.collect()
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"status": "FAILED", "error": "Execution failed"},
+        context="analyst ensemble creation step execution",
+    )
     async def execute(
         self,
         training_input: dict[str, Any],
@@ -115,20 +185,57 @@ class AnalystEnsembleCreationStep:
 
             # Load training and validation data
             training_data, validation_data = await self._load_training_data(
-                symbol, exchange, data_dir
+                symbol,
+                exchange,
+                data_dir,
             )
+            try:
+                self.logger.info(
+                    f"Loaded data: training={getattr(training_data, 'keys', lambda: [])() if hasattr(training_data, 'keys') else type(training_data).__name__}, validation={getattr(validation_data, 'keys', lambda: [])() if hasattr(validation_data, 'keys') else type(validation_data).__name__}",
+                )
+            except Exception:
+                pass
 
             if training_data is None or validation_data is None:
-                raise ValueError("Failed to load training and validation data")
+                msg = "Failed to load training and validation data"
+                raise ValueError(msg)
 
             # Load enhanced analyst models
             enhanced_models_dir = f"{data_dir}/enhanced_analyst_models"
-            regime_dirs = [d for d in os.listdir(enhanced_models_dir) if os.path.isdir(os.path.join(enhanced_models_dir, d))]
+            regime_dirs = [
+                d
+                for d in os.listdir(enhanced_models_dir)
+                if os.path.isdir(os.path.join(enhanced_models_dir, d))
+            ]
 
             if not regime_dirs:
+                msg = f"No enhanced analyst models found in {enhanced_models_dir}"
                 raise ValueError(
-                    f"No enhanced analyst models found in {enhanced_models_dir}",
+                    msg,
                 )
+            try:
+                self.logger.info(
+                    f"Enhanced analyst regimes found: count={len(regime_dirs)}; regimes={regime_dirs}",
+                )
+            except Exception:
+                pass
+
+            # Log performance metrics before ensemble creation
+            try:
+                data_loader = get_unified_data_loader(self.config)
+                perf_metrics = data_loader.get_performance_metrics()
+                self.logger.info(f"📊 Performance before ensemble creation:")
+                self.logger.info(
+                    f"   Memory Usage: {perf_metrics['memory_usage']['percent']:.1f}%"
+                )
+                self.logger.info(
+                    f"   Cache Size: {perf_metrics['cache_stats']['cache_size']}/{perf_metrics['cache_stats']['max_cache_size']}"
+                )
+                self.logger.info(
+                    f"   Ensemble Cache Size: {len(self._ensemble_cache)}/{self.max_cache_size}"
+                )
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not get performance metrics: {e}")
 
             # Create ensembles for each regime
             ensemble_results = {}
@@ -138,37 +245,56 @@ class AnalystEnsembleCreationStep:
 
                 # Get regime-specific data
                 regime_training_data = training_data.get(regime_name, pd.DataFrame())
-                regime_validation_data = validation_data.get(regime_name, pd.DataFrame())
+                regime_validation_data = validation_data.get(
+                    regime_name,
+                    pd.DataFrame(),
+                )
 
                 if regime_training_data.empty or regime_validation_data.empty:
-                    self.logger.warning(f"No data available for regime: {regime_name}")
+                    self.print(error("No data available for regime: {regime_name}"))
                     continue
 
-                # Lazy-load models for this regime only
+                # Stream-load models for this regime to avoid memory issues
                 regime_path = os.path.join(enhanced_models_dir, regime_name)
                 regime_models = {}
-                for model_file in os.listdir(regime_path):
-                    if model_file.endswith((".pkl", ".joblib")):
-                        model_name = model_file.replace(".pkl", "").replace(".joblib", "")
-                        model_path = os.path.join(regime_path, model_file)
 
-                        if model_file.endswith(".joblib") and joblib is not None:
-                            regime_models[model_name] = joblib.load(model_path)
-                        else:
-                            with open(model_path, "rb") as f:
-                                regime_models[model_name] = pickle.load(f)
+                # Use streaming to load models in batches
+                for model_name, model in self._stream_models(regime_path, batch_size=3):
+                    regime_models[model_name] = model
 
-                # Create ensemble for this regime
-                regime_ensemble = await self._create_regime_ensemble(
-                    regime_models,
-                    regime_name,
-                    regime_training_data,
-                    regime_validation_data,
-                )
+                    # Check cache for existing ensemble
+                    cache_key = self._generate_cache_key(
+                        regime_name, list(regime_models.keys()), "dynamic_weighting"
+                    )
+                    cached_ensemble = self._get_cached_ensemble(cache_key)
+
+                    if cached_ensemble is not None:
+                        self.logger.info(
+                            f"✅ Using cached ensemble for {regime_name} with {len(regime_models)} models"
+                        )
+                        regime_ensemble = cached_ensemble
+                        break
+
+                # Create ensemble for this regime (with caching)
+                if "regime_ensemble" not in locals():
+                    regime_ensemble = await self._create_regime_ensemble(
+                        regime_models,
+                        regime_name,
+                        regime_training_data,
+                        regime_validation_data,
+                    )
+
+                    # Cache the ensemble for future use
+                    cache_key = self._generate_cache_key(
+                        regime_name, list(regime_models.keys()), "dynamic_weighting"
+                    )
+                    self._cache_ensemble(cache_key, regime_ensemble)
+                    self.logger.info(f"✅ Cached ensemble for {regime_name}")
+
                 ensemble_results[regime_name] = regime_ensemble
                 # Free models from memory before next regime
                 regime_models.clear()
-            
+
             # Save ensemble models
             ensemble_models_dir = f"{data_dir}/analyst_ensembles"
             os.makedirs(ensemble_models_dir, exist_ok=True)
@@ -182,7 +308,7 @@ class AnalystEnsembleCreationStep:
             summary_file = (
                 f"{data_dir}/{exchange}_{symbol}_analyst_ensemble_summary.json"
             )
-            
+
             # Create JSON-serializable summary
             json_summary = {}
             for regime_name, regime_ensembles in ensemble_results.items():
@@ -200,7 +326,7 @@ class AnalystEnsembleCreationStep:
                         "sharpe_ratios": ensemble_data.get("sharpe_ratios"),
                         "features": ensemble_data.get("features"),
                     }
-            
+
             with open(summary_file, "w") as f:
                 json.dump(json_summary, f, indent=2)
 
@@ -219,14 +345,17 @@ class AnalystEnsembleCreationStep:
             }
 
         except Exception as e:
-            self.logger.error(f"❌ Error in Analyst Ensemble Creation: {e}")
+            self.print(error("❌ Error in Analyst Ensemble Creation: {e}"))
             return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
     async def _load_training_data(
-        self, symbol: str, exchange: str, data_dir: str
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> tuple[dict[str, pd.DataFrame] | None, dict[str, pd.DataFrame] | None]:
         """
-        Load training and validation data for all regimes.
+        Load training and validation data for all regimes using optimized unified data loader.
 
         Args:
             symbol: Trading symbol
@@ -237,12 +366,66 @@ class AnalystEnsembleCreationStep:
             Tuple of (training_data, validation_data) dictionaries keyed by regime
         """
         try:
-            self.logger.info("Loading training and validation data...")
+            self.logger.info(
+                "Loading training and validation data using unified data loader..."
+            )
 
-            # Load regime data files
+            # Try to load from unified data loader first (more efficient)
+            try:
+                timeframe = self.config.get("timeframe", "1m")
+                data_loader = get_unified_data_loader(self.config)
+                historical_data = await data_loader.load_unified_data(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    lookback_days=180,
+                    use_streaming=True,  # Enable streaming for large datasets
+                )
+
+                if historical_data is not None and not historical_data.empty:
+                    self.logger.info(
+                        f"✅ Loaded {len(historical_data)} rows using unified data loader"
+                    )
+
+                    # Split data by regime if available
+                    if "regime" in historical_data.columns:
+                        training_data = {}
+                        validation_data = {}
+
+                        for regime_name in historical_data["regime"].unique():
+                            regime_data = historical_data[
+                                historical_data["regime"] == regime_name
+                            ]
+
+                            # Split into train/validation (80/20)
+                            split_idx = int(len(regime_data) * 0.8)
+                            training_data[regime_name] = regime_data.iloc[:split_idx]
+                            validation_data[regime_name] = regime_data.iloc[split_idx:]
+
+                        self.logger.info(
+                            f"✅ Split data into {len(training_data)} regimes"
+                        )
+                        return training_data, validation_data
+                    else:
+                        # If no regime column, split all data
+                        split_idx = int(len(historical_data) * 0.8)
+                        training_data = {"combined": historical_data.iloc[:split_idx]}
+                        validation_data = {"combined": historical_data.iloc[split_idx:]}
+                        return training_data, validation_data
+
+            except Exception as e:
+                self.logger.warning(
+                    f"⚠️ Unified data loader failed: {e}, falling back to regime files"
+                )
+
+            # Fallback to original regime data files
             regime_data_dir = f"{data_dir}/regime_data"
             if not os.path.exists(regime_data_dir):
-                self.logger.error(f"Regime data directory not found: {regime_data_dir}")
+                self.print(
+                    missing(
+                        f"Regime data directory not found: {regime_data_dir}. Step 7 requires regime data from Step 3."
+                    )
+                )
                 return None, None
 
             training_data = {}
@@ -251,24 +434,454 @@ class AnalystEnsembleCreationStep:
             for regime_file in os.listdir(regime_data_dir):
                 if regime_file.endswith("_training.csv"):
                     regime_name = regime_file.replace("_training.csv", "")
-                    training_file = os.path.join(regime_data_dir, regime_file)
-                    validation_file = os.path.join(regime_data_dir, f"{regime_name}_validation.csv")
+                    training_csv = os.path.join(regime_data_dir, regime_file)
+                    validation_csv = os.path.join(
+                        regime_data_dir,
+                        f"{regime_name}_validation.csv",
+                    )
+                    training_parquet = os.path.join(
+                        regime_data_dir,
+                        f"{regime_name}_training.parquet",
+                    )
+                    validation_parquet = os.path.join(
+                        regime_data_dir,
+                        f"{regime_name}_validation.parquet",
+                    )
 
-                    # Load training data
-                    if os.path.exists(training_file):
-                        training_df = pd.read_csv(training_file, index_col=0, parse_dates=True)
+                    # Load training data (prefer partitioned dataset scan)
+                    try:
+                        from src.training.enhanced_training_manager_optimized import (
+                            ParquetDatasetManager,
+                        )
+
+                        pdm = ParquetDatasetManager(logger=self.logger)
+                        # If step3 wrote partitioned regime data, scan it
+                        part_base = os.path.join(data_dir, "parquet", "regime_data")
+                        if os.path.isdir(part_base):
+                            # Base filters
+                            filters = [
+                                ("exchange", "==", exchange),
+                                ("symbol", "==", symbol),
+                                ("regime", "==", regime_name),
+                            ]
+                            # Time-window filters from config
+                            t0 = self.config.get("t0_ms") or self.config.get(
+                                "start_timestamp_ms"
+                            )
+                            t1 = self.config.get("t1_ms") or self.config.get(
+                                "end_timestamp_ms"
+                            )
+                            if t0 is not None:
+                                filters.append(("timestamp", ">=", int(t0)))
+                            if t1 is not None:
+                                filters.append(("timestamp", "<", int(t1)))
+                            # Projection: use features+label if configured
+                            feat_cols = self.config.get("feature_columns")
+                            label_col = self.config.get("label_column", "label")
+                            columns = None
+                            if isinstance(feat_cols, list) and len(feat_cols) > 0:
+                                columns = list(
+                                    dict.fromkeys(["timestamp", *feat_cols, label_col])
+                                )
+                            cache_key = f"regime_{exchange}_{symbol}_{regime_name}_{self.config.get('timeframe','1m')}_train"
+
+                            def _arrow_pre(tbl):
+                                import pyarrow as _pa, pyarrow.compute as pc
+
+                                if (
+                                    "timestamp" in tbl.schema.names
+                                    and not _pa.types.is_int64(
+                                        tbl.schema.field("timestamp").type
+                                    )
+                                ):
+                                    tbl = tbl.set_column(
+                                        tbl.schema.get_field_index("timestamp"),
+                                        "timestamp",
+                                        pc.cast(tbl.column("timestamp"), _pa.int64()),
+                                    )
+                                return tbl
+
+                            # Reader shortcut: if materialized OHLCV+label projection exists, read it first
+                            try:
+                                proj_base = os.path.join(
+                                    "data_cache", "parquet", "proj_ohlcv_label"
+                                )
+                                if os.path.isdir(proj_base):
+                                    proj_filters = [
+                                        ("exchange", "==", exchange),
+                                        ("symbol", "==", symbol),
+                                        (
+                                            "timeframe",
+                                            "==",
+                                            self.config.get("timeframe", "1m"),
+                                        ),
+                                    ]
+                                    # Use regime if the dataset is partitioned by regime, else split=train
+                                    if any(
+                                        "regime=" in p for p in os.listdir(proj_base)
+                                    ):
+                                        proj_filters.append(
+                                            ("regime", "==", regime_name)
+                                        )
+                                    else:
+                                        proj_filters.append(("split", "==", "train"))
+                                    t0 = self.config.get("t0_ms") or self.config.get(
+                                        "start_timestamp_ms"
+                                    )
+                                    t1 = self.config.get("t1_ms") or self.config.get(
+                                        "end_timestamp_ms"
+                                    )
+                                    if t0 is not None:
+                                        proj_filters.append(
+                                            ("timestamp", ">=", int(t0))
+                                        )
+                                    if t1 is not None:
+                                        proj_filters.append(("timestamp", "<", int(t1)))
+                                    ohlcv_cols = [
+                                        "timestamp",
+                                        "open",
+                                        "high",
+                                        "low",
+                                        "close",
+                                        "volume",
+                                        label_col,
+                                    ]
+                                    training_df = pdm.cached_projection(
+                                        base_dir=proj_base,
+                                        filters=proj_filters,
+                                        columns=ohlcv_cols,
+                                        cache_dir="data_cache/projections",
+                                        cache_key_prefix=f"proj_ohlcv_label_{exchange}_{symbol}_{regime_name}_{self.config.get('timeframe','1m')}",
+                                        snapshot_version="v1",
+                                        ttl_seconds=3600,
+                                        batch_size=131072,
+                                        arrow_transform=_arrow_pre,
+                                    )
+                                    training_data[regime_name] = training_df
+                                    self.logger.info(
+                                        f"Loaded training data (materialized projection) for {regime_name}: {training_df.shape}",
+                                    )
+                                    continue
+                            except Exception:
+                                pass
+
+                            # Materialize OHLCV+label projection for this regime and timeframe if not present
+                            try:
+                                ohlcv_cols = [
+                                    "timestamp",
+                                    "open",
+                                    "high",
+                                    "low",
+                                    "close",
+                                    "volume",
+                                    label_col,
+                                ]
+                                proj_out = os.path.join(
+                                    "data_cache", "parquet", "proj_ohlcv_label"
+                                )
+                                pdm.materialize_projection(
+                                    base_dir=os.path.join(
+                                        data_dir, "parquet", "labeled"
+                                    ),
+                                    filters=[
+                                        ("exchange", "==", exchange),
+                                        ("symbol", "==", symbol),
+                                        (
+                                            "timeframe",
+                                            "==",
+                                            self.config.get("timeframe", "1m"),
+                                        ),
+                                        ("regime", "==", regime_name)
+                                        if any(
+                                            "regime=" in p
+                                            for p in os.listdir(part_base)
+                                        )
+                                        else ("split", "==", "train"),
+                                    ],
+                                    columns=ohlcv_cols,
+                                    output_dir=proj_out,
+                                    partition_cols=[
+                                        "exchange",
+                                        "symbol",
+                                        "timeframe",
+                                        "year",
+                                        "month",
+                                        "day",
+                                    ],
+                                    schema_name="split",
+                                    compression="snappy",
+                                    batch_size=131072,
+                                    metadata={
+                                        "schema_version": "1",
+                                        "projection": "ohlcv_label",
+                                    },
+                                )
+                            except Exception:
+                                pass
+                            training_df = pdm.cached_projection(
+                                base_dir=part_base,
+                                filters=filters,
+                                columns=columns or [],
+                                cache_dir="data_cache/projections",
+                                cache_key_prefix=cache_key,
+                                snapshot_version="v1",
+                                ttl_seconds=3600,
+                                batch_size=131072,
+                                arrow_transform=_arrow_pre,
+                            )
+                            training_data[regime_name] = training_df
+                            self.logger.info(
+                                f"Loaded training data (dataset scan) for {regime_name}: {training_df.shape}",
+                            )
+                        elif os.path.exists(training_parquet):
+                            # Use projected columns if defined
+                            try:
+                                feat_cols = self.config.get("feature_columns")
+                                label_col = self.config.get("label_column", "label")
+                                if isinstance(feat_cols, list) and len(feat_cols) > 0:
+                                    from src.utils.logger import log_io_operation
+
+                                    with log_io_operation(
+                                        self.logger,
+                                        "read_parquet",
+                                        training_parquet,
+                                        columns=True,
+                                    ):
+                                        training_df = pd.read_parquet(
+                                            training_parquet,
+                                            columns=[
+                                                "timestamp",
+                                                *feat_cols,
+                                                label_col,
+                                            ],
+                                        )
+                                else:
+                                    from src.utils.logger import log_io_operation
+
+                                    with log_io_operation(
+                                        self.logger, "read_parquet", training_parquet
+                                    ):
+                                        training_df = pd.read_parquet(training_parquet)
+                            except Exception:
+                                from src.utils.logger import log_io_operation
+
+                                with log_io_operation(
+                                    self.logger, "read_parquet", training_parquet
+                                ):
+                                    training_df = pd.read_parquet(training_parquet)
+                            training_data[regime_name] = training_df
+                            self.logger.info(
+                                f"Loaded training data (Parquet) for {regime_name}: {training_df.shape}",
+                            )
+                        elif os.path.exists(training_csv):
+                            from src.utils.logger import log_io_operation
+
+                            with log_io_operation(
+                                self.logger, "read_csv", training_csv
+                            ):
+                                training_df = pd.read_csv(
+                                    training_csv,
+                                    index_col=0,
+                                    parse_dates=True,
+                                )
                         training_data[regime_name] = training_df
-                        self.logger.info(f"Loaded training data for {regime_name}: {training_df.shape}")
+                        self.logger.info(
+                            f"Loaded training data (CSV) for {regime_name}: {training_df.shape}",
+                        )
+                    except Exception:
+                        # Fallback chain
+                        if os.path.exists(training_parquet):
+                            try:
+                                feat_cols = self.config.get("feature_columns")
+                                label_col = self.config.get("label_column", "label")
+                                if isinstance(feat_cols, list) and len(feat_cols) > 0:
+                                    from src.utils.logger import log_io_operation
 
-                    # Load validation data
-                    if os.path.exists(validation_file):
-                        validation_df = pd.read_csv(validation_file, index_col=0, parse_dates=True)
+                                    with log_io_operation(
+                                        self.logger,
+                                        "read_parquet",
+                                        training_parquet,
+                                        columns=True,
+                                    ):
+                                        training_df = pd.read_parquet(
+                                            training_parquet,
+                                            columns=[
+                                                "timestamp",
+                                                *feat_cols,
+                                                label_col,
+                                            ],
+                                        )
+                                else:
+                                    from src.utils.logger import log_io_operation
+
+                                    with log_io_operation(
+                                        self.logger, "read_parquet", training_parquet
+                                    ):
+                                        training_df = pd.read_parquet(training_parquet)
+                            except Exception:
+                                from src.utils.logger import log_io_operation
+
+                                with log_io_operation(
+                                    self.logger, "read_parquet", training_parquet
+                                ):
+                                    training_df = pd.read_parquet(training_parquet)
+                            training_data[regime_name] = training_df
+                            self.logger.info(
+                                f"Loaded training data (Parquet) for {regime_name}: {training_df.shape}",
+                            )
+                        elif os.path.exists(training_csv):
+                            from src.utils.logger import log_io_operation
+
+                            with log_io_operation(
+                                self.logger, "read_csv", training_csv
+                            ):
+                                training_df = pd.read_csv(
+                                    training_csv,
+                                    index_col=0,
+                                    parse_dates=True,
+                                )
+                            training_data[regime_name] = training_df
+                            self.logger.info(
+                                f"Loaded training data (CSV) for {regime_name}: {training_df.shape}",
+                            )
+
+                    # Load validation data (prefer partitioned dataset scan)
+                    try:
+                        from src.training.enhanced_training_manager_optimized import (
+                            ParquetDatasetManager,
+                        )
+
+                        pdm = ParquetDatasetManager(logger=self.logger)
+                        part_base = os.path.join(data_dir, "parquet", "regime_data")
+                        if os.path.isdir(part_base):
+                            filters = [
+                                ("exchange", "==", exchange),
+                                ("symbol", "==", symbol),
+                                ("regime", "==", regime_name),
+                            ]
+                            t0 = self.config.get("t0_ms") or self.config.get(
+                                "start_timestamp_ms"
+                            )
+                            t1 = self.config.get("t1_ms") or self.config.get(
+                                "end_timestamp_ms"
+                            )
+                            if t0 is not None:
+                                filters.append(("timestamp", ">=", int(t0)))
+                            if t1 is not None:
+                                filters.append(("timestamp", "<", int(t1)))
+                            feat_cols = self.config.get("feature_columns")
+                            label_col = self.config.get("label_column", "label")
+                            columns = None
+                            if isinstance(feat_cols, list) and len(feat_cols) > 0:
+                                columns = list(
+                                    dict.fromkeys(["timestamp", *feat_cols, label_col])
+                                )
+                            cache_key = f"regime_{exchange}_{symbol}_{regime_name}_{self.config.get('timeframe','1m')}_validation"
+                            validation_df = pdm.cached_projection(
+                                base_dir=part_base,
+                                filters=filters,
+                                columns=columns or [],
+                                cache_dir="data_cache/projections",
+                                cache_key_prefix=cache_key,
+                                snapshot_version="v1",
+                                ttl_seconds=3600,
+                                batch_size=131072,
+                                arrow_transform=_arrow_pre,
+                            )
+                            validation_data[regime_name] = validation_df
+                            self.logger.info(
+                                f"Loaded validation data (dataset scan) for {regime_name}: {validation_df.shape}",
+                            )
+                        elif os.path.exists(validation_parquet):
+                            try:
+                                feat_cols = self.config.get("feature_columns")
+                                label_col = self.config.get("label_column", "label")
+                                if isinstance(feat_cols, list) and len(feat_cols) > 0:
+                                    from src.utils.logger import log_io_operation
+
+                                    with log_io_operation(
+                                        self.logger,
+                                        "read_parquet",
+                                        validation_parquet,
+                                        columns=True,
+                                    ):
+                                        validation_df = pd.read_parquet(
+                                            validation_parquet,
+                                            columns=[
+                                                "timestamp",
+                                                *feat_cols,
+                                                label_col,
+                                            ],
+                                        )
+                                else:
+                                    from src.utils.logger import log_io_operation
+
+                                    with log_io_operation(
+                                        self.logger, "read_parquet", validation_parquet
+                                    ):
+                                        validation_df = pd.read_parquet(
+                                            validation_parquet
+                                        )
+                            except Exception:
+                                from src.utils.logger import log_io_operation
+
+                                with log_io_operation(
+                                    self.logger, "read_parquet", validation_parquet
+                                ):
+                                    validation_df = pd.read_parquet(validation_parquet)
+                            validation_data[regime_name] = validation_df
+                            self.logger.info(
+                                f"Loaded validation data (Parquet) for {regime_name}: {validation_df.shape}",
+                            )
+                        elif os.path.exists(validation_csv):
+                            from src.utils.logger import log_io_operation
+
+                            with log_io_operation(
+                                self.logger, "read_csv", validation_csv
+                            ):
+                                validation_df = pd.read_csv(
+                                    validation_csv,
+                                    index_col=0,
+                                    parse_dates=True,
+                                )
                         validation_data[regime_name] = validation_df
-                        self.logger.info(f"Loaded validation data for {regime_name}: {validation_df.shape}")
+                        self.logger.info(
+                            f"Loaded validation data (CSV) for {regime_name}: {validation_df.shape}",
+                        )
+                    except Exception:
+                        if os.path.exists(validation_parquet):
+                            try:
+                                feat_cols = self.config.get("feature_columns")
+                                label_col = self.config.get("label_column", "label")
+                                if isinstance(feat_cols, list) and len(feat_cols) > 0:
+                                    validation_df = pd.read_parquet(
+                                        validation_parquet,
+                                        columns=["timestamp", *feat_cols, label_col],
+                                    )
+                                else:
+                                    validation_df = pd.read_parquet(validation_parquet)
+                            except Exception:
+                                validation_df = pd.read_parquet(validation_parquet)
+                            validation_data[regime_name] = validation_df
+                            self.logger.info(
+                                f"Loaded validation data (Parquet) for {regime_name}: {validation_df.shape}",
+                            )
+                        elif os.path.exists(validation_csv):
+                            validation_df = pd.read_csv(
+                                validation_csv,
+                                index_col=0,
+                                parse_dates=True,
+                            )
+                            validation_data[regime_name] = validation_df
+                            self.logger.info(
+                                f"Loaded validation data (CSV) for {regime_name}: {validation_df.shape}",
+                            )
 
             if not training_data or not validation_data:
-                self.logger.warning("No training or validation data found, attempting to load from klines data...")
-                
+                self.logger.warning(
+                    "No training or validation data found, attempting to load from klines data...",
+                )
+
                 # Fallback: try to load from klines data and split
                 klines_file = f"{data_dir}/{exchange}_{symbol}_1h.csv"
                 if os.path.exists(klines_file):
@@ -278,12 +891,14 @@ class AnalystEnsembleCreationStep:
                         split_idx = int(len(klines_df) * 0.8)
                         training_data["all"] = klines_df.iloc[:split_idx]
                         validation_data["all"] = klines_df.iloc[split_idx:]
-                        self.logger.info(f"Split klines data: training={len(training_data['all'])}, validation={len(validation_data['all'])}")
+                        self.logger.info(
+                            f"Split klines data: training={len(training_data['all'])}, validation={len(validation_data['all'])}",
+                        )
 
             return training_data, validation_data
 
-        except Exception as e:
-            self.logger.error(f"Error loading training data: {e}")
+        except Exception:
+            self.print(error("Error loading training data: {e}"))
             return None, None
 
     async def _create_regime_ensemble(
@@ -321,27 +936,44 @@ class AnalystEnsembleCreationStep:
                 if not validation_data.empty and "label" in validation_data.columns:
                     X_val = validation_data.drop("label", axis=1)
                     y_val = validation_data["label"]
-                    
+
                     try:
                         predictions = model_data["model"].predict(X_val)
                         accuracy = accuracy_score(y_val, predictions)
-                        precision = precision_score(y_val, predictions, average='weighted', zero_division=0)
-                        recall = recall_score(y_val, predictions, average='weighted', zero_division=0)
-                        f1 = f1_score(y_val, predictions, average='weighted', zero_division=0)
-                        
+                        precision = precision_score(
+                            y_val,
+                            predictions,
+                            average="weighted",
+                            zero_division=0,
+                        )
+                        recall = recall_score(
+                            y_val,
+                            predictions,
+                            average="weighted",
+                            zero_division=0,
+                        )
+                        f1 = f1_score(
+                            y_val,
+                            predictions,
+                            average="weighted",
+                            zero_division=0,
+                        )
+
                         model_performances[model_name] = {
                             "accuracy": accuracy,
                             "precision": precision,
                             "recall": recall,
-                            "f1": f1
+                            "f1": f1,
                         }
                     except Exception as e:
-                        self.logger.warning(f"Could not evaluate model {model_name}: {e}")
+                        self.logger.warning(
+                            f"Could not evaluate model {model_name}: {e}",
+                        )
                         model_performances[model_name] = {
                             "accuracy": 0.5,
                             "precision": 0.5,
                             "recall": 0.5,
-                            "f1": 0.5
+                            "f1": 0.5,
                         }
 
             # Create different ensemble types
@@ -379,7 +1011,9 @@ class AnalystEnsembleCreationStep:
             return ensemble_results
 
         except Exception as e:
-            self.logger.error(f"Error creating ensemble for regime {regime_name}: {e}")
+            self.logger.exception(
+                f"Error creating ensemble for regime {regime_name}: {e}",
+            )
             raise
 
     async def _create_stacking_ensemble(
@@ -393,15 +1027,14 @@ class AnalystEnsembleCreationStep:
         """Create enhanced StackingCV ensemble with proper meta-learner."""
         try:
             if training_data.empty or "label" not in training_data.columns:
-                raise ValueError("Training data is empty or missing labels")
+                msg = "Training data is empty or missing labels"
+                raise ValueError(msg)
 
             X_train = training_data.drop("label", axis=1)
             y_train = training_data["label"]
 
             # Create estimators for stacking
-            estimators = [
-                (name, model) for name, model in zip(model_names, models, strict=False)
-            ]
+            estimators = list(zip(model_names, models, strict=False))
 
             # Use stratified k-fold for better validation
             cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
@@ -411,8 +1044,8 @@ class AnalystEnsembleCreationStep:
                 random_state=42,
                 max_iter=1000,
                 C=1.0,  # Regularization strength
-                penalty='l2',
-                solver='lbfgs'
+                penalty="l2",
+                solver="lbfgs",
             )
 
             # Create stacking classifier
@@ -433,24 +1066,43 @@ class AnalystEnsembleCreationStep:
             if not validation_data.empty and "label" in validation_data.columns:
                 X_val = validation_data.drop("label", axis=1)
                 y_val = validation_data["label"]
-                
+
                 val_predictions = stacking_classifier.predict(X_val)
-                val_probabilities = stacking_classifier.predict_proba(X_val)
-                
+                stacking_classifier.predict_proba(X_val)
+
                 validation_metrics = {
                     "accuracy": accuracy_score(y_val, val_predictions),
-                    "precision": precision_score(y_val, val_predictions, average='weighted', zero_division=0),
-                    "recall": recall_score(y_val, val_predictions, average='weighted', zero_division=0),
-                    "f1": f1_score(y_val, val_predictions, average='weighted', zero_division=0),
+                    "precision": precision_score(
+                        y_val,
+                        val_predictions,
+                        average="weighted",
+                        zero_division=0,
+                    ),
+                    "recall": recall_score(
+                        y_val,
+                        val_predictions,
+                        average="weighted",
+                        zero_division=0,
+                    ),
+                    "f1": f1_score(
+                        y_val,
+                        val_predictions,
+                        average="weighted",
+                        zero_division=0,
+                    ),
                 }
 
             # Cross-validation scores
             cv_scores = cross_val_score(
-                stacking_classifier, X_train, y_train, 
-                cv=cv, scoring='accuracy', n_jobs=-1
+                stacking_classifier,
+                X_train,
+                y_train,
+                cv=cv,
+                scoring="accuracy",
+                n_jobs=-1,
             )
 
-            ensemble_data = {
+            return {
                 "ensemble": stacking_classifier,
                 "ensemble_type": "StackingCV",
                 "base_models": model_names,
@@ -462,7 +1114,7 @@ class AnalystEnsembleCreationStep:
                 "cv_scores": {
                     "mean": cv_scores.mean(),
                     "std": cv_scores.std(),
-                    "scores": cv_scores.tolist()
+                    "scores": cv_scores.tolist(),
                 },
                 "features": {
                     "use_probabilities": True,
@@ -471,10 +1123,8 @@ class AnalystEnsembleCreationStep:
                 },
             }
 
-            return ensemble_data
-
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error creating stacking ensemble for {regime_name}: {e}",
             )
             raise
@@ -491,7 +1141,8 @@ class AnalystEnsembleCreationStep:
         """Create dynamic performance-weighted ensemble using Sharpe Ratio."""
         try:
             if validation_data.empty or "label" not in validation_data.columns:
-                raise ValueError("Validation data is empty or missing labels")
+                msg = "Validation data is empty or missing labels"
+                raise ValueError(msg)
 
             X_val = validation_data.drop("label", axis=1)
             y_val = validation_data["label"]
@@ -500,51 +1151,55 @@ class AnalystEnsembleCreationStep:
             model_sharpe_ratios = {}
             model_weights = {}
 
-            for i, (name, model) in enumerate(zip(model_names, models, strict=False)):
+            for _i, (name, model) in enumerate(zip(model_names, models, strict=False)):
                 try:
                     # Get predictions and probabilities
                     predictions = model.predict(X_val)
-                    probabilities = model.predict_proba(X_val)
-                    
+                    model.predict_proba(X_val)
+
                     # Calculate returns based on predictions (simplified approach)
                     # In a real implementation, you would calculate actual trading returns
-                    correct_predictions = (predictions == y_val).astype(int)
-                    
+                    (predictions == y_val).astype(int)
+
                     # Calculate "returns" based on prediction accuracy
                     # This is a simplified approach - in reality you'd calculate actual trading returns
                     returns = []
-                    for j, (pred, actual) in enumerate(zip(predictions, y_val)):
+                    for _j, (pred, actual) in enumerate(
+                        zip(predictions, y_val, strict=False),
+                    ):
                         if pred == actual:
                             # Correct prediction: positive return
                             returns.append(0.01)  # 1% return
                         else:
                             # Incorrect prediction: negative return
                             returns.append(-0.005)  # -0.5% return
-                    
+
                     returns = np.array(returns)
-                    
+
                     # Calculate Sharpe Ratio
                     if len(returns) > 0:
                         mean_return = np.mean(returns)
                         std_return = np.std(returns)
-                        
+
                         if std_return > 0:
                             sharpe_ratio = mean_return / std_return
                         else:
                             sharpe_ratio = 0.0
                     else:
                         sharpe_ratio = 0.0
-                    
+
                     model_sharpe_ratios[name] = sharpe_ratio
-                    
+
                     # Models with negative Sharpe Ratio get weight 0
                     if sharpe_ratio <= 0:
                         model_weights[name] = 0.0
                     else:
                         model_weights[name] = sharpe_ratio
-                        
+
                 except Exception as e:
-                    self.logger.warning(f"Could not calculate Sharpe Ratio for model {name}: {e}")
+                    self.logger.warning(
+                        f"Could not calculate Sharpe Ratio for model {name}: {e}",
+                    )
                     model_sharpe_ratios[name] = 0.0
                     model_weights[name] = 0.0
 
@@ -558,8 +1213,6 @@ class AnalystEnsembleCreationStep:
                 for name in model_weights:
                     model_weights[name] = 1.0 / len(model_weights)
 
-
-
             # Create ensemble object using the module-level class
             ensemble = DynamicWeightedEnsemble(models, model_names, model_weights)
 
@@ -567,12 +1220,27 @@ class AnalystEnsembleCreationStep:
             ensemble_predictions = ensemble.predict(X_val)
             ensemble_metrics = {
                 "accuracy": accuracy_score(y_val, ensemble_predictions),
-                "precision": precision_score(y_val, ensemble_predictions, average='weighted', zero_division=0),
-                "recall": recall_score(y_val, ensemble_predictions, average='weighted', zero_division=0),
-                "f1": f1_score(y_val, ensemble_predictions, average='weighted', zero_division=0),
+                "precision": precision_score(
+                    y_val,
+                    ensemble_predictions,
+                    average="weighted",
+                    zero_division=0,
+                ),
+                "recall": recall_score(
+                    y_val,
+                    ensemble_predictions,
+                    average="weighted",
+                    zero_division=0,
+                ),
+                "f1": f1_score(
+                    y_val,
+                    ensemble_predictions,
+                    average="weighted",
+                    zero_division=0,
+                ),
             }
 
-            ensemble_data = {
+            return {
                 "ensemble": ensemble,
                 "ensemble_type": "DynamicWeightedEnsemble",
                 "base_models": model_names,
@@ -588,10 +1256,8 @@ class AnalystEnsembleCreationStep:
                 },
             }
 
-            return ensemble_data
-
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error creating dynamic weighting ensemble for {regime_name}: {e}",
             )
             raise
@@ -607,12 +1273,10 @@ class AnalystEnsembleCreationStep:
             from sklearn.ensemble import VotingClassifier
 
             # Create voting classifier
-            estimators = [
-                (name, model) for name, model in zip(model_names, models, strict=False)
-            ]
+            estimators = list(zip(model_names, models, strict=False))
             voting_classifier = VotingClassifier(estimators=estimators, voting="soft")
 
-            ensemble_data = {
+            return {
                 "ensemble": voting_classifier,
                 "ensemble_type": "Voting",
                 "base_models": model_names,
@@ -621,10 +1285,10 @@ class AnalystEnsembleCreationStep:
                 "creation_date": datetime.now().isoformat(),
             }
 
-            return ensemble_data
-
         except Exception as e:
-            self.logger.error(f"Error creating voting ensemble for {regime_name}: {e}")
+            self.logger.exception(
+                f"Error creating voting ensemble for {regime_name}: {e}",
+            )
             raise
 
 
@@ -633,6 +1297,7 @@ async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
     data_dir: str = "data/training",
+    force_rerun: bool = False,
     **kwargs,
 ) -> bool:
     """
@@ -658,6 +1323,7 @@ async def run_step(
             "symbol": symbol,
             "exchange": exchange,
             "data_dir": data_dir,
+            "force_rerun": force_rerun,
             **kwargs,
         }
 
@@ -666,8 +1332,8 @@ async def run_step(
 
         return result.get("status") == "SUCCESS"
 
-    except Exception as e:
-        print(f"❌ Analyst ensemble creation failed: {e}")
+    except Exception:
+        print(failed("Analyst ensemble creation failed: {e}"))
         return False
 
 

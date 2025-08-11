@@ -43,16 +43,16 @@ class ServiceRegistry:
     def register_all_services(self, config: dict[str, Any]) -> None:
         """Register all trading system services."""
         self.logger.info("Registering all trading system services")
-        
+
         # Register core infrastructure services
         self._register_core_services(config)
-        
+
         # Register trading components
         self._register_trading_components(config)
-        
+
         # Register specialized services
         self._register_specialized_services(config)
-        
+
         self.logger.info("All services registered successfully")
 
     def _register_core_services(self, config: dict[str, Any]) -> None:
@@ -62,35 +62,35 @@ class ServiceRegistry:
             IEventBus,
             EventBus,
             lifetime=ServiceLifetime.SINGLETON,
-            config=config.get("event_bus", {})
+            config=config.get("event_bus", {}),
         )
 
     def _register_trading_components(self, config: dict[str, Any]) -> None:
         """Register trading component services."""
         # Determine which implementations to use based on config
         use_modular = config.get("use_modular_components", True)
-        
+
         if use_modular:
             # Register modular implementations
             self.container.register(
                 IAnalyst,
                 ModularAnalyst,
                 lifetime=ServiceLifetime.SINGLETON,
-                config=config.get("analyst", {})
+                config=config.get("analyst", {}),
             )
-            
+
             self.container.register(
                 IStrategist,
                 ModularStrategist,
                 lifetime=ServiceLifetime.SINGLETON,
-                config=config.get("strategist", {})
+                config=config.get("strategist", {}),
             )
-            
+
             self.container.register(
                 ITactician,
                 ModularTactician,
                 lifetime=ServiceLifetime.SINGLETON,
-                config=config.get("tactician", {})
+                config=config.get("tactician", {}),
             )
         else:
             # Register standard implementations
@@ -98,21 +98,21 @@ class ServiceRegistry:
                 IAnalyst,
                 Analyst,
                 lifetime=ServiceLifetime.SINGLETON,
-                config=config.get("analyst", {})
+                config=config.get("analyst", {}),
             )
-            
+
             self.container.register(
                 IStrategist,
                 Strategist,
                 lifetime=ServiceLifetime.SINGLETON,
-                config=config.get("strategist", {})
+                config=config.get("strategist", {}),
             )
-            
+
             self.container.register(
                 ITactician,
                 Tactician,
                 lifetime=ServiceLifetime.SINGLETON,
-                config=config.get("tactician", {})
+                config=config.get("tactician", {}),
             )
 
         # Supervisor (always use the enhanced version)
@@ -120,7 +120,7 @@ class ServiceRegistry:
             ISupervisor,
             Supervisor,
             lifetime=ServiceLifetime.SINGLETON,
-            config=config.get("supervisor", {})
+            config=config.get("supervisor", {}),
         )
 
     def _register_specialized_services(self, config: dict[str, Any]) -> None:
@@ -131,15 +131,16 @@ class ServiceRegistry:
 
     def _register_exchange_factories(self, config: dict[str, Any]) -> None:
         """Register exchange client factories."""
+
         def exchange_factory(container: DependencyContainer) -> IExchangeClient:
             """Factory for creating exchange clients based on configuration."""
-            from exchange.factory import ExchangeFactory as RootExchangeFactory
-            
+
             exchange_config = config.get("exchange", {})
             exchange_name = exchange_config.get("name", "binance")
-            
+
             # Prefer project-level factory mapping
             from exchange.factory import ExchangeFactory as SrcExchangeFactory
+
             return SrcExchangeFactory.get_exchange(exchange_name)
 
         self.container.register_factory(IExchangeClient, exchange_factory)
@@ -147,7 +148,7 @@ class ServiceRegistry:
     def _register_training_services(self, config: dict[str, Any]) -> None:
         """Register training-related services."""
         from src.training.training_manager import TrainingManager
-        
+
         def training_manager_factory(container: DependencyContainer) -> TrainingManager:
             """Factory for creating training manager."""
             return TrainingManager(config.get("training", {}))
@@ -164,26 +165,28 @@ class ServiceRegistry:
         self.container.register_instance(IExchangeClient, exchange_client)
         self.container.register_instance(IStateManager, state_manager)
         self.container.register_instance(IPerformanceReporter, performance_reporter)
-        
+
         self.logger.info("Runtime services registered")
 
     def get_registered_services(self) -> list[str]:
         """Get list of all registered service names."""
-        return [service_type.__name__ for service_type in self.container.get_all_services().keys()]
+        return [
+            service_type.__name__ for service_type in self.container.get_all_services()
+        ]
 
 
 def create_configured_container(config: dict[str, Any]) -> DependencyContainer:
     """
     Create and configure a dependency injection container with all services.
-    
+
     Args:
         config: System configuration dictionary
-        
+
     Returns:
         Configured DependencyContainer instance
     """
     container = DependencyContainer(config)
     registry = ServiceRegistry(container)
     registry.register_all_services(config)
-    
+
     return container

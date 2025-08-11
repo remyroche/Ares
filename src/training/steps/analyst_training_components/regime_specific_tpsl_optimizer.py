@@ -29,6 +29,12 @@ from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from src.config import CONFIG
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    warning,
+)
 
 
 class RegimeSpecificTPSLOptimizer:
@@ -136,7 +142,7 @@ class RegimeSpecificTPSLOptimizer:
 
             # Initialize HMM classifier
             if not await self._initialize_regime_classifier():
-                self.logger.error("Failed to initialize HMM classifier")
+                self.print(failed("Failed to initialize HMM classifier"))
                 return False
 
             # Load existing optimization results
@@ -148,7 +154,7 @@ class RegimeSpecificTPSLOptimizer:
             return True
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"❌ Failed to initialize Regime-Specific TP/SL Optimizer: {e}",
             )
             return False
@@ -181,8 +187,8 @@ class RegimeSpecificTPSLOptimizer:
             )
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error initializing HMM classifier: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing HMM classifier: {e}"))
             return False
 
     async def _load_optimization_results(self) -> None:
@@ -199,8 +205,8 @@ class RegimeSpecificTPSLOptimizer:
                 self.logger.info(
                     f"✅ Loaded {len(self.optimization_results)} regime optimization results",
                 )
-        except Exception as e:
-            self.logger.warning(f"Could not load optimization results: {e}")
+        except Exception:
+            self.print(warning("Could not load optimization results: {e}"))
 
     async def _save_optimization_results(self) -> None:
         """
@@ -213,8 +219,8 @@ class RegimeSpecificTPSLOptimizer:
             with open(results_file, "w") as f:
                 json.dump(self.optimization_results, f, indent=2, default=str)
             self.logger.info("✅ Saved optimization results")
-        except Exception as e:
-            self.logger.error(f"Failed to save optimization results: {e}")
+        except Exception:
+            self.print(failed("Failed to save optimization results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -236,7 +242,7 @@ class RegimeSpecificTPSLOptimizer:
         """
         try:
             if not self.regime_classifier.trained:
-                self.logger.warning("HMM classifier not trained, using default regime")
+                self.print(warning("HMM classifier not trained, using default regime"))
                 return "SIDEWAYS_RANGE", 0.5, {"method": "default"}
 
             regime, confidence, info = self.regime_classifier.predict_regime(
@@ -248,7 +254,7 @@ class RegimeSpecificTPSLOptimizer:
             return regime, confidence, info
 
         except Exception as e:
-            self.logger.error(f"Error identifying regime: {e}")
+            self.print(error("Error identifying regime: {e}"))
             return "SIDEWAYS_RANGE", 0.5, {"method": "fallback", "error": str(e)}
 
     @handle_errors(
@@ -320,8 +326,8 @@ class RegimeSpecificTPSLOptimizer:
             self.logger.info(f"✅ Optimized TP/SL for {regime}: {best_params}")
             return optimized_params
 
-        except Exception as e:
-            self.logger.error(f"Error optimizing TP/SL for regime {regime}: {e}")
+        except Exception:
+            self.print(error("Error optimizing TP/SL for regime {regime}: {e}"))
             return self.regime_parameters.get(
                 regime,
                 self.regime_parameters["SIDEWAYS_RANGE"],
@@ -392,8 +398,8 @@ class RegimeSpecificTPSLOptimizer:
 
             return score
 
-        except Exception as e:
-            self.logger.error(f"Error in parameter evaluation: {e}")
+        except Exception:
+            self.print(error("Error in parameter evaluation: {e}"))
             return -1.0
 
     def _simulate_trades(
@@ -515,7 +521,7 @@ class RegimeSpecificTPSLOptimizer:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting optimized TP/SL: {e}")
+            self.print(error("Error getting optimized TP/SL: {e}"))
             # Return default parameters
             return {
                 **self.regime_parameters["SIDEWAYS_RANGE"],

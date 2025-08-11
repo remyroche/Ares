@@ -10,6 +10,14 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    connection_error,
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+)
 
 
 class ModularSupervisor:
@@ -78,7 +86,7 @@ class ModularSupervisor:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for modular supervisor")
+                self.print(invalid("Invalid configuration for modular supervisor"))
                 return False
 
             # Initialize supervision modules
@@ -89,8 +97,8 @@ class ModularSupervisor:
             )
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Modular Supervisor initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Modular Supervisor initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -123,8 +131,8 @@ class ModularSupervisor:
 
             self.logger.info("Supervisor configuration loaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error loading supervisor configuration: {e}")
+        except Exception:
+            self.print(error("Error loading supervisor configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -141,12 +149,12 @@ class ModularSupervisor:
         try:
             # Validate supervision interval
             if self.supervision_interval <= 0:
-                self.logger.error("Invalid supervision interval")
+                self.print(invalid("Invalid supervision interval"))
                 return False
 
             # Validate max supervision history
             if self.max_supervision_history <= 0:
-                self.logger.error("Invalid max supervision history")
+                self.print(invalid("Invalid max supervision history"))
                 return False
 
             # Validate that at least one supervision type is enabled
@@ -158,14 +166,14 @@ class ModularSupervisor:
                     self.supervisor_config.get("enable_system_monitoring", True),
                 ],
             ):
-                self.logger.error("At least one supervision type must be enabled")
+                self.print(error("At least one supervision type must be enabled"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -194,8 +202,10 @@ class ModularSupervisor:
 
             self.logger.info("Supervision modules initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing supervision modules: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing supervision modules: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -217,8 +227,10 @@ class ModularSupervisor:
 
             self.logger.info("Performance monitoring module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing performance monitoring: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing performance monitoring: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -240,8 +252,8 @@ class ModularSupervisor:
 
             self.logger.info("Risk monitoring module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing risk monitoring: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing risk monitoring: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -261,8 +273,10 @@ class ModularSupervisor:
 
             self.logger.info("Portfolio monitoring module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing portfolio monitoring: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing portfolio monitoring: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -284,8 +298,10 @@ class ModularSupervisor:
 
             self.logger.info("System monitoring module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing system monitoring: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing system monitoring: {e}"),
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -349,8 +365,8 @@ class ModularSupervisor:
             self.logger.info("✅ Supervision monitoring completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error executing supervision: {e}")
+        except Exception:
+            self.print(error("Error executing supervision: {e}"))
             self.is_supervising = False
             return False
 
@@ -379,29 +395,29 @@ class ModularSupervisor:
             required_trading_fields = ["pnl", "trades", "positions", "timestamp"]
             for field in required_trading_fields:
                 if field not in trading_data:
-                    self.logger.error(f"Missing required trading data field: {field}")
+                    self.print(missing("Missing required trading data field: {field}"))
                     return False
 
             # Check required system data fields
             required_system_fields = ["cpu_usage", "memory_usage", "timestamp"]
             for field in required_system_fields:
                 if field not in system_data:
-                    self.logger.error(f"Missing required system data field: {field}")
+                    self.print(missing("Missing required system data field: {field}"))
                     return False
 
             # Validate data types
-            if not isinstance(trading_data["pnl"], (int, float)):
-                self.logger.error("Invalid PnL data type")
+            if not isinstance(trading_data["pnl"], int | float):
+                self.print(invalid("Invalid PnL data type"))
                 return False
 
-            if not isinstance(system_data["cpu_usage"], (int, float)):
-                self.logger.error("Invalid CPU usage data type")
+            if not isinstance(system_data["cpu_usage"], int | float):
+                self.print(invalid("Invalid CPU usage data type"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating supervision inputs: {e}")
+        except Exception:
+            self.print(error("Error validating supervision inputs: {e}"))
             return False
 
     @handle_errors(
@@ -452,8 +468,8 @@ class ModularSupervisor:
             self.logger.info("Performance monitoring completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing performance monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing performance monitoring: {e}"))
             return {}
 
     @handle_errors(
@@ -506,8 +522,8 @@ class ModularSupervisor:
             self.logger.info("Risk monitoring completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing risk monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing risk monitoring: {e}"))
             return {}
 
     @handle_errors(
@@ -552,8 +568,8 @@ class ModularSupervisor:
             self.logger.info("Portfolio monitoring completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing portfolio monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing portfolio monitoring: {e}"))
             return {}
 
     @handle_errors(
@@ -606,8 +622,8 @@ class ModularSupervisor:
             self.logger.info("System monitoring completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing system monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing system monitoring: {e}"))
             return {}
 
     # Performance monitoring calculation methods
@@ -619,15 +635,14 @@ class ModularSupervisor:
             risk_free_rate = 0.02  # 2% risk-free rate
 
             excess_returns = returns - risk_free_rate
-            sharpe_ratio = (
+            return (
                 np.mean(excess_returns) / np.std(excess_returns)
                 if np.std(excess_returns) > 0
                 else 0
             )
 
-            return sharpe_ratio
-        except Exception as e:
-            self.logger.error(f"Error calculating Sharpe Ratio: {e}")
+        except Exception:
+            self.print(error("Error calculating Sharpe Ratio: {e}"))
             return 0.0
 
     def _calculate_sortino_ratio(self, trading_data: dict[str, Any]) -> float:
@@ -643,15 +658,14 @@ class ModularSupervisor:
                 np.std(downside_returns) if len(downside_returns) > 0 else 0.01
             )
 
-            sortino_ratio = (
+            return (
                 np.mean(excess_returns) / downside_deviation
                 if downside_deviation > 0
                 else 0
             )
 
-            return sortino_ratio
-        except Exception as e:
-            self.logger.error(f"Error calculating Sortino Ratio: {e}")
+        except Exception:
+            self.print(error("Error calculating Sortino Ratio: {e}"))
             return 0.0
 
     def _calculate_calmar_ratio(self, trading_data: dict[str, Any]) -> float:
@@ -661,11 +675,10 @@ class ModularSupervisor:
             annual_return = 0.15  # 15% annual return
             max_drawdown = 0.10  # 10% max drawdown
 
-            calmar_ratio = annual_return / max_drawdown if max_drawdown > 0 else 0
+            return annual_return / max_drawdown if max_drawdown > 0 else 0
 
-            return calmar_ratio
-        except Exception as e:
-            self.logger.error(f"Error calculating Calmar Ratio: {e}")
+        except Exception:
+            self.print(error("Error calculating Calmar Ratio: {e}"))
             return 0.0
 
     def _calculate_max_drawdown(self, trading_data: dict[str, Any]) -> float:
@@ -678,8 +691,8 @@ class ModularSupervisor:
             max_drawdown = np.min(drawdown)
 
             return abs(max_drawdown)
-        except Exception as e:
-            self.logger.error(f"Error calculating Maximum Drawdown: {e}")
+        except Exception:
+            self.print(error("Error calculating Maximum Drawdown: {e}"))
             return 0.0
 
     def _calculate_win_rate(self, trading_data: dict[str, Any]) -> float:
@@ -693,11 +706,10 @@ class ModularSupervisor:
             winning_trades = len([t for t in trades if t.get("pnl", 0) > 0])
             total_trades = len(trades)
 
-            win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
+            return winning_trades / total_trades if total_trades > 0 else 0.0
 
-            return win_rate
-        except Exception as e:
-            self.logger.error(f"Error calculating Win Rate: {e}")
+        except Exception:
+            self.print(error("Error calculating Win Rate: {e}"))
             return 0.0
 
     def _calculate_profit_factor(self, trading_data: dict[str, Any]) -> float:
@@ -713,11 +725,10 @@ class ModularSupervisor:
                 sum(t.get("pnl", 0) for t in trades if t.get("pnl", 0) < 0),
             )
 
-            profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0.0
+            return gross_profit / gross_loss if gross_loss > 0 else 0.0
 
-            return profit_factor
-        except Exception as e:
-            self.logger.error(f"Error calculating Profit Factor: {e}")
+        except Exception:
+            self.print(error("Error calculating Profit Factor: {e}"))
             return 0.0
 
     # Risk monitoring calculation methods
@@ -731,8 +742,8 @@ class ModularSupervisor:
             var = np.percentile(returns, (1 - confidence_level) * 100)
 
             return abs(var)
-        except Exception as e:
-            self.logger.error(f"Error calculating VaR: {e}")
+        except Exception:
+            self.print(error("Error calculating VaR: {e}"))
             return 0.0
 
     def _calculate_cvar(self, trading_data: dict[str, Any]) -> float:
@@ -747,8 +758,8 @@ class ModularSupervisor:
             cvar = np.mean(tail_returns) if len(tail_returns) > 0 else 0
 
             return abs(cvar)
-        except Exception as e:
-            self.logger.error(f"Error calculating CVaR: {e}")
+        except Exception:
+            self.print(error("Error calculating CVaR: {e}"))
             return 0.0
 
     def _calculate_volatility(self, trading_data: dict[str, Any]) -> float:
@@ -757,11 +768,10 @@ class ModularSupervisor:
             # Simulate Volatility calculation
             returns = np.random.random(100) * 0.02 - 0.01  # Random returns
 
-            volatility = np.std(returns) * np.sqrt(252)  # Annualized volatility
+            return np.std(returns) * np.sqrt(252)  # Annualized volatility
 
-            return volatility
-        except Exception as e:
-            self.logger.error(f"Error calculating Volatility: {e}")
+        except Exception:
+            self.print(error("Error calculating Volatility: {e}"))
             return 0.0
 
     def _calculate_beta(self, trading_data: dict[str, Any]) -> float:
@@ -774,11 +784,10 @@ class ModularSupervisor:
             covariance = np.cov(portfolio_returns, market_returns)[0, 1]
             market_variance = np.var(market_returns)
 
-            beta = covariance / market_variance if market_variance > 0 else 1.0
+            return covariance / market_variance if market_variance > 0 else 1.0
 
-            return beta
-        except Exception as e:
-            self.logger.error(f"Error calculating Beta: {e}")
+        except Exception:
+            self.print(error("Error calculating Beta: {e}"))
             return 1.0
 
     def _calculate_correlation(self, trading_data: dict[str, Any]) -> float:
@@ -791,8 +800,8 @@ class ModularSupervisor:
             correlation = np.corrcoef(portfolio_returns, market_returns)[0, 1]
 
             return correlation if not np.isnan(correlation) else 0.0
-        except Exception as e:
-            self.logger.error(f"Error calculating Correlation: {e}")
+        except Exception:
+            self.print(error("Error calculating Correlation: {e}"))
             return 0.0
 
     def _calculate_liquidation_risk(self, trading_data: dict[str, Any]) -> float:
@@ -806,11 +815,10 @@ class ModularSupervisor:
             total_exposure = sum(abs(p.get("notional", 0)) for p in positions)
             max_exposure = 1000000  # $1M max exposure
 
-            liquidation_risk = min(total_exposure / max_exposure, 1.0)
+            return min(total_exposure / max_exposure, 1.0)
 
-            return liquidation_risk
-        except Exception as e:
-            self.logger.error(f"Error calculating Liquidation Risk: {e}")
+        except Exception:
+            self.print(error("Error calculating Liquidation Risk: {e}"))
             return 0.0
 
     # Portfolio monitoring calculation methods
@@ -833,8 +841,8 @@ class ModularSupervisor:
                 allocation[symbol] = notional / total_value
 
             return allocation
-        except Exception as e:
-            self.logger.error(f"Error calculating Portfolio Allocation: {e}")
+        except Exception:
+            self.print(error("Error calculating Portfolio Allocation: {e}"))
             return {}
 
     def _calculate_diversification(self, trading_data: dict[str, Any]) -> float:
@@ -851,11 +859,10 @@ class ModularSupervisor:
                 return 0.0
 
             hhi = sum((abs(p.get("notional", 0)) / total_value) ** 2 for p in positions)
-            diversification = 1 - hhi  # Inverse of concentration
+            return 1 - hhi  # Inverse of concentration
 
-            return diversification
-        except Exception as e:
-            self.logger.error(f"Error calculating Portfolio Diversification: {e}")
+        except Exception:
+            self.print(error("Error calculating Portfolio Diversification: {e}"))
             return 0.0
 
     def _calculate_rebalancing(self, trading_data: dict[str, Any]) -> bool:
@@ -873,8 +880,8 @@ class ModularSupervisor:
                     return True
 
             return False
-        except Exception as e:
-            self.logger.error(f"Error calculating Rebalancing: {e}")
+        except Exception:
+            self.print(error("Error calculating Rebalancing: {e}"))
             return False
 
     def _calculate_exposure(self, trading_data: dict[str, Any]) -> float:
@@ -883,11 +890,10 @@ class ModularSupervisor:
             # Simulate Portfolio Exposure calculation
             positions = trading_data.get("positions", [])
 
-            total_exposure = sum(abs(p.get("notional", 0)) for p in positions)
+            return sum(abs(p.get("notional", 0)) for p in positions)
 
-            return total_exposure
-        except Exception as e:
-            self.logger.error(f"Error calculating Portfolio Exposure: {e}")
+        except Exception:
+            self.print(error("Error calculating Portfolio Exposure: {e}"))
             return 0.0
 
     # System monitoring calculation methods
@@ -895,48 +901,48 @@ class ModularSupervisor:
         """Calculate CPU Usage."""
         try:
             return system_data.get("cpu_usage", 0.0)
-        except Exception as e:
-            self.logger.error(f"Error calculating CPU Usage: {e}")
+        except Exception:
+            self.print(error("Error calculating CPU Usage: {e}"))
             return 0.0
 
     def _calculate_memory_usage(self, system_data: dict[str, Any]) -> float:
         """Calculate Memory Usage."""
         try:
             return system_data.get("memory_usage", 0.0)
-        except Exception as e:
-            self.logger.error(f"Error calculating Memory Usage: {e}")
+        except Exception:
+            self.print(error("Error calculating Memory Usage: {e}"))
             return 0.0
 
     def _calculate_disk_usage(self, system_data: dict[str, Any]) -> float:
         """Calculate Disk Usage."""
         try:
             return system_data.get("disk_usage", 0.0)
-        except Exception as e:
-            self.logger.error(f"Error calculating Disk Usage: {e}")
+        except Exception:
+            self.print(error("Error calculating Disk Usage: {e}"))
             return 0.0
 
     def _calculate_network_latency(self, system_data: dict[str, Any]) -> float:
         """Calculate Network Latency."""
         try:
             return system_data.get("network_latency", 0.0)
-        except Exception as e:
-            self.logger.error(f"Error calculating Network Latency: {e}")
+        except Exception:
+            self.print(connection_error("Error calculating Network Latency: {e}"))
             return 0.0
 
     def _calculate_error_rate(self, system_data: dict[str, Any]) -> float:
         """Calculate Error Rate."""
         try:
             return system_data.get("error_rate", 0.0)
-        except Exception as e:
-            self.logger.error(f"Error calculating Error Rate: {e}")
+        except Exception:
+            self.print(error("Error calculating Error Rate: {e}"))
             return 0.0
 
     def _calculate_uptime(self, system_data: dict[str, Any]) -> float:
         """Calculate Uptime."""
         try:
             return system_data.get("uptime", 0.0)
-        except Exception as e:
-            self.logger.error(f"Error calculating Uptime: {e}")
+        except Exception:
+            self.print(error("Error calculating Uptime: {e}"))
             return 0.0
 
     @handle_errors(
@@ -959,8 +965,8 @@ class ModularSupervisor:
 
             self.logger.info("Supervision results stored successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error storing supervision results: {e}")
+        except Exception:
+            self.print(error("Error storing supervision results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -985,8 +991,8 @@ class ModularSupervisor:
                 return self.supervision_results.get(supervision_type, {})
             return self.supervision_results.copy()
 
-        except Exception as e:
-            self.logger.error(f"Error getting supervision results: {e}")
+        except Exception:
+            self.print(error("Error getting supervision results: {e}"))
             return {}
 
     @handle_errors(
@@ -1015,8 +1021,8 @@ class ModularSupervisor:
 
             return history
 
-        except Exception as e:
-            self.logger.error(f"Error getting supervision history: {e}")
+        except Exception:
+            self.print(error("Error getting supervision history: {e}"))
             return []
 
     def get_supervisor_status(self) -> dict[str, Any]:
@@ -1064,8 +1070,8 @@ class ModularSupervisor:
 
             self.logger.info("✅ Modular Supervisor stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping modular supervisor: {e}")
+        except Exception:
+            self.print(error("Error stopping modular supervisor: {e}"))
 
 
 # Global modular supervisor instance

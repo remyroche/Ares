@@ -271,7 +271,7 @@ class TwoTierIntegration:
         # For now, simulate based on strategy
 
         timing_signal = self._simulate_timing_signal(strategy, current_data)
-        threshold = self.config["timing_threshold"]
+        self.config["timing_threshold"]
 
         self.logger.debug(f"📊 Timing signal: {timing_signal:.3f}")
 

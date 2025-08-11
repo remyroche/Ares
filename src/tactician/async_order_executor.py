@@ -6,11 +6,13 @@ Integrates with Enhanced Order Manager, Performance Reporter, and Optuna for opt
 """
 
 import asyncio
+import contextlib
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 import optuna
@@ -27,8 +29,14 @@ from src.tactician.enhanced_order_manager import (
 )
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from uuid import uuid4
 from src.utils.prometheus_metrics import metrics
+from src.utils.warning_symbols import (
+    error,
+    execution_error,
+    failed,
+    initialization_error,
+    warning,
+)
 
 
 class ExecutionStrategy(Enum):
@@ -140,7 +148,7 @@ class AsyncOrderExecutor:
 
         # Optional rate limiter (token bucket) semaphore per endpoint
         self.rate_limiter: asyncio.Semaphore = asyncio.Semaphore(
-            self.execution_config.get("max_requests_per_window", 20)
+            self.execution_config.get("max_requests_per_window", 20),
         )
 
         # Background tasks
@@ -177,8 +185,10 @@ class AsyncOrderExecutor:
             self.logger.info("✅ Async Order Executor initialized successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Error initializing async order executor: {e}")
+        except Exception:
+            self.print(
+                initialization_error("❌ Error initializing async order executor: {e}"),
+            )
             return False
 
     async def _initialize_order_manager(self) -> None:
@@ -193,10 +203,10 @@ class AsyncOrderExecutor:
             if self.order_manager:
                 self.logger.info("✅ Order manager initialized successfully")
             else:
-                self.logger.warning("Failed to initialize order manager")
+                self.print(failed("Failed to initialize order manager"))
 
-        except Exception as e:
-            self.logger.error(f"Error initializing order manager: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing order manager: {e}"))
 
     async def _initialize_performance_reporter(self) -> None:
         """Initialize the performance reporter."""
@@ -212,10 +222,12 @@ class AsyncOrderExecutor:
                 self.advanced_reporter = AdvancedReportingEngine(self.config)
                 self.logger.info("✅ Advanced reporting engine initialized")
             else:
-                self.logger.warning("Failed to initialize performance reporter")
+                self.print(failed("Failed to initialize performance reporter"))
 
-        except Exception as e:
-            self.logger.error(f"Error initializing performance reporter: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing performance reporter: {e}"),
+            )
 
     async def _initialize_optuna_study(self) -> None:
         """Initialize Optuna study for parameter optimization."""
@@ -240,8 +252,8 @@ class AsyncOrderExecutor:
 
             self.logger.info(f"✅ Optuna study initialized: {study_name}")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing Optuna study: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing Optuna study: {e}"))
 
     async def _start_background_tasks(self) -> None:
         """Start background tasks for execution, optimization, and analytics."""
@@ -260,8 +272,8 @@ class AsyncOrderExecutor:
 
             self.logger.info("✅ Background tasks started successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error starting background tasks: {e}")
+        except Exception:
+            self.print(error("Error starting background tasks: {e}"))
 
     async def execute_order_async(self, execution_request: ExecutionRequest) -> str:
         """
@@ -278,19 +290,24 @@ class AsyncOrderExecutor:
             execution_id = f"exec_{uuid4().hex[:8]}_{execution_request.symbol}"
 
             # Add to execution queue
-            priority = max(0, 10 - int(execution_request.priority))  # lower is higher priority
+            priority = max(
+                0,
+                10 - int(execution_request.priority),
+            )  # lower is higher priority
             await self.execution_queue.put((priority, execution_id, execution_request))
             try:
                 # Use data_size_gauge to track queue depth under a label
-                metrics.data_size_gauge.set_function(lambda: self.execution_queue.qsize())
+                metrics.data_size_gauge.set_function(
+                    lambda: self.execution_queue.qsize(),
+                )
             except Exception:
                 pass
 
             self.logger.info(f"Order submitted for async execution: {execution_id}")
             return execution_id
 
-        except Exception as e:
-            self.logger.error(f"Error submitting order for execution: {e}")
+        except Exception:
+            self.print(execution_error("Error submitting order for execution: {e}"))
             raise
 
     async def _execution_worker(self) -> None:
@@ -299,10 +316,10 @@ class AsyncOrderExecutor:
             while True:
                 # Get execution request from queue
                 _, execution_id, execution_request = await self.execution_queue.get()
-                try:
-                    metrics.data_size_gauge.set_function(lambda: self.execution_queue.qsize())
-                except Exception:
-                    pass
+                with contextlib.suppress(Exception):
+                    metrics.data_size_gauge.set_function(
+                        lambda: self.execution_queue.qsize(),
+                    )
 
                 # Acquire semaphore for concurrent execution control
                 async with self.execution_semaphore:
@@ -322,19 +339,33 @@ class AsyncOrderExecutor:
                         # Update performance metrics
                         await self._update_performance_metrics(result)
                         try:
-                            status_label = str(result.status.value if hasattr(result.status, 'value') else result.status)
-                            metrics.step_execution_duration.labels(step_name="order_execution", status=status_label).observe(result.execution_time)
+                            status_label = str(
+                                result.status.value
+                                if hasattr(result.status, "value")
+                                else result.status,
+                            )
+                            metrics.step_execution_duration.labels(
+                                step_name="order_execution",
+                                status=status_label,
+                            ).observe(result.execution_time)
                             if status_label == "completed":
-                                metrics.step_success_counter.labels(step_name="order_execution").inc()
+                                metrics.step_success_counter.labels(
+                                    step_name="order_execution",
+                                ).inc()
                             else:
-                                metrics.step_failure_counter.labels(step_name="order_execution", error_type=status_label).inc()
+                                metrics.step_failure_counter.labels(
+                                    step_name="order_execution",
+                                    error_type=status_label,
+                                ).inc()
                         except Exception:
                             pass
 
                         self.logger.info(f"Order execution completed: {execution_id}")
 
                     except Exception as e:
-                        self.logger.error(f"Error executing order {execution_id}: {e}")
+                        self.logger.exception(
+                            f"Error executing order {execution_id}: {e}",
+                        )
 
                     finally:
                         # Mark task as done
@@ -342,8 +373,8 @@ class AsyncOrderExecutor:
 
         except asyncio.CancelledError:
             self.logger.info("Execution worker cancelled")
-        except Exception as e:
-            self.logger.error(f"Error in execution worker: {e}")
+        except Exception:
+            self.print(execution_error("Error in execution worker: {e}"))
 
     async def _execute_single_order(
         self,
@@ -376,8 +407,8 @@ class AsyncOrderExecutor:
 
             return result
 
-        except Exception as e:
-            self.logger.error(f"Error executing order {execution_id}: {e}")
+        except Exception:
+            self.print(execution_error("Error executing order {execution_id}: {e}"))
             raise
 
     async def _execute_immediate(
@@ -388,9 +419,10 @@ class AsyncOrderExecutor:
         """Execute order immediately."""
         try:
             if not self.order_manager:
-                raise ValueError("Order manager not initialized")
+                msg = "Order manager not initialized"
+                raise ValueError(msg)
 
-            start_time = time.time()
+            time.time()
 
             # Create order request
             order_request = OrderRequest(
@@ -403,7 +435,9 @@ class AsyncOrderExecutor:
                 leverage=execution_request.leverage,
                 time_in_force=self.execution_config.get("default_time_in_force", "GTC"),
                 reduce_only=bool(self.execution_config.get("reduce_only", False)),
-                close_on_trigger=bool(self.execution_config.get("close_on_trigger", False)),
+                close_on_trigger=bool(
+                    self.execution_config.get("close_on_trigger", False),
+                ),
                 order_link_id=execution_id,
                 strategy_type=execution_request.strategy_type,
             )
@@ -412,7 +446,8 @@ class AsyncOrderExecutor:
             order_state = await self.order_manager._place_order(order_request)
 
             if not order_state:
-                raise RuntimeError("Failed to place order")
+                msg = "Failed to place order"
+                raise RuntimeError(msg)
 
             # Calculate metrics
             slippage = self._calculate_slippage(
@@ -439,8 +474,8 @@ class AsyncOrderExecutor:
                 performance_metrics={},
             )
 
-        except Exception as e:
-            self.logger.error(f"Error in immediate execution: {e}")
+        except Exception:
+            self.print(execution_error("Error in immediate execution: {e}"))
             raise
 
     async def _execute_batch(
@@ -451,10 +486,12 @@ class AsyncOrderExecutor:
         """Execute order using batch strategy."""
         try:
             if not self.order_manager:
-                raise ValueError("Order manager not initialized")
+                msg = "Order manager not initialized"
+                raise ValueError(msg)
 
             if not execution_request.batch_size or not execution_request.batch_interval:
-                raise ValueError("Batch size and interval required for batch execution")
+                msg = "Batch size and interval required for batch execution"
+                raise ValueError(msg)
 
             total_quantity = execution_request.quantity
             batch_size = execution_request.batch_size
@@ -464,9 +501,15 @@ class AsyncOrderExecutor:
             total_cost = 0.0
             orders_placed = []
 
-            num_batches = int(total_quantity / batch_size) + (1 if total_quantity % batch_size != 0 else 0)
+            num_batches = int(total_quantity / batch_size) + (
+                1 if total_quantity % batch_size != 0 else 0
+            )
             for i in range(num_batches):
-                batched_qty = batch_size if i < num_batches - 1 else total_quantity - (num_batches - 1) * batch_size
+                batched_qty = (
+                    batch_size
+                    if i < num_batches - 1
+                    else total_quantity - (num_batches - 1) * batch_size
+                )
                 orq = OrderRequest(
                     symbol=execution_request.symbol,
                     side=execution_request.side,
@@ -475,9 +518,14 @@ class AsyncOrderExecutor:
                     price=execution_request.price,
                     stop_price=execution_request.stop_price,
                     leverage=execution_request.leverage,
-                    time_in_force=self.execution_config.get("default_time_in_force", "GTC"),
+                    time_in_force=self.execution_config.get(
+                        "default_time_in_force",
+                        "GTC",
+                    ),
                     reduce_only=bool(self.execution_config.get("reduce_only", False)),
-                    close_on_trigger=bool(self.execution_config.get("close_on_trigger", False)),
+                    close_on_trigger=bool(
+                        self.execution_config.get("close_on_trigger", False),
+                    ),
                     order_link_id=f"{execution_id}_b{i}",
                     strategy_type=execution_request.strategy_type,
                 )
@@ -487,14 +535,18 @@ class AsyncOrderExecutor:
                     # Accumulate executed quantity and cost using average price
                     executed_quantity += float(st.executed_quantity)
                     if st.executed_quantity and st.average_price:
-                        total_cost += float(st.executed_quantity) * float(st.average_price)
+                        total_cost += float(st.executed_quantity) * float(
+                            st.average_price,
+                        )
 
                 # Wait for next batch
                 if i < num_batches - 1:
                     await asyncio.sleep(batch_interval)
 
             # Calculate average price
-            average_price = (total_cost / executed_quantity) if executed_quantity > 0 else 0.0
+            average_price = (
+                (total_cost / executed_quantity) if executed_quantity > 0 else 0.0
+            )
             slippage = self._calculate_slippage(execution_request.price, average_price)
 
             return ExecutionResult(
@@ -513,8 +565,8 @@ class AsyncOrderExecutor:
                 performance_metrics={},
             )
 
-        except Exception as e:
-            self.logger.error(f"Error in batch execution: {e}")
+        except Exception:
+            self.print(execution_error("Error in batch execution: {e}"))
             raise
 
     async def _execute_twap(
@@ -525,7 +577,8 @@ class AsyncOrderExecutor:
         """Execute order using TWAP strategy."""
         try:
             if not self.order_manager:
-                raise ValueError("Order manager not initialized")
+                msg = "Order manager not initialized"
+                raise ValueError(msg)
 
             # TWAP divides the order into equal parts over time
             total_quantity = execution_request.quantity
@@ -588,8 +641,8 @@ class AsyncOrderExecutor:
                 performance_metrics={},
             )
 
-        except Exception as e:
-            self.logger.error(f"Error in TWAP execution: {e}")
+        except Exception:
+            self.print(execution_error("Error in TWAP execution: {e}"))
             raise
 
     async def _execute_vwap(
@@ -603,8 +656,8 @@ class AsyncOrderExecutor:
             # In a real implementation, this would use actual volume data
             return await self._execute_twap(execution_id, execution_request)
 
-        except Exception as e:
-            self.logger.error(f"Error in VWAP execution: {e}")
+        except Exception:
+            self.print(execution_error("Error in VWAP execution: {e}"))
             raise
 
     async def _execute_iceberg(
@@ -618,8 +671,8 @@ class AsyncOrderExecutor:
             # In a real implementation, this would use actual order book data
             return await self._execute_batch(execution_id, execution_request)
 
-        except Exception as e:
-            self.logger.error(f"Error in iceberg execution: {e}")
+        except Exception:
+            self.print(execution_error("Error in iceberg execution: {e}"))
             raise
 
     async def _execute_adaptive(
@@ -657,8 +710,8 @@ class AsyncOrderExecutor:
             # Execute with adaptive strategy
             return await self._execute_immediate(execution_id, execution_request)
 
-        except Exception as e:
-            self.logger.error(f"Error in adaptive execution: {e}")
+        except Exception:
+            self.print(execution_error("Error in adaptive execution: {e}"))
             raise
 
     def _calculate_slippage(
@@ -683,8 +736,8 @@ class AsyncOrderExecutor:
 
         except asyncio.CancelledError:
             self.logger.info("Optimization worker cancelled")
-        except Exception as e:
-            self.logger.error(f"Error in optimization worker: {e}")
+        except Exception:
+            self.print(error("Error in optimization worker: {e}"))
 
     async def _run_parameter_optimization(self) -> None:
         """Run parameter optimization using Optuna."""
@@ -692,11 +745,11 @@ class AsyncOrderExecutor:
 
             def objective(trial):
                 # Define hyperparameters to optimize
-                max_slippage = trial.suggest_float("max_slippage", 0.0001, 0.01)
-                timeout_seconds = trial.suggest_int("timeout_seconds", 10, 300)
-                use_batch = trial.suggest_categorical("use_batch", [True, False])
-                batch_size_ratio = trial.suggest_float("batch_size_ratio", 0.05, 0.5)
-                batch_interval = trial.suggest_int("batch_interval", 1, 30)
+                trial.suggest_float("max_slippage", 0.0001, 0.01)
+                trial.suggest_int("timeout_seconds", 10, 300)
+                trial.suggest_categorical("use_batch", [True, False])
+                trial.suggest_float("batch_size_ratio", 0.05, 0.5)
+                trial.suggest_int("batch_interval", 1, 30)
 
                 # Calculate objective value based on recent execution history
                 recent_executions = self.execution_history[-50:]  # Last 50 executions
@@ -715,9 +768,7 @@ class AsyncOrderExecutor:
                 avg_slippage = np.mean([e.slippage for e in recent_executions])
 
                 # Objective: maximize success rate while minimizing slippage
-                objective_value = success_rate - avg_slippage
-
-                return objective_value
+                return success_rate - avg_slippage
 
             # Run optimization
             self.optuna_study.optimize(objective, n_trials=10)
@@ -726,8 +777,8 @@ class AsyncOrderExecutor:
                 f"Parameter optimization completed. Best value: {self.optuna_study.best_value}",
             )
 
-        except Exception as e:
-            self.logger.error(f"Error in parameter optimization: {e}")
+        except Exception:
+            self.print(error("Error in parameter optimization: {e}"))
 
     def _get_optimal_execution_params(
         self,
@@ -740,8 +791,8 @@ class AsyncOrderExecutor:
 
             return self.optuna_study.best_params
 
-        except Exception as e:
-            self.logger.error(f"Error getting optimal parameters: {e}")
+        except Exception:
+            self.print(error("Error getting optimal parameters: {e}"))
             return {}
 
     async def _analytics_worker(self) -> None:
@@ -756,8 +807,8 @@ class AsyncOrderExecutor:
 
         except asyncio.CancelledError:
             self.logger.info("Analytics worker cancelled")
-        except Exception as e:
-            self.logger.error(f"Error in analytics worker: {e}")
+        except Exception:
+            self.print(error("Error in analytics worker: {e}"))
 
     async def _generate_execution_analytics(self) -> None:
         """Generate execution analytics and reports."""
@@ -781,8 +832,8 @@ class AsyncOrderExecutor:
                         f"Analytics Report - Success Rate: {report.get('real_time_metrics', {}).get('success_rate', 0):.2%}",
                     )
 
-        except Exception as e:
-            self.logger.error(f"Error generating execution analytics: {e}")
+        except Exception:
+            self.print(execution_error("Error generating execution analytics: {e}"))
 
     async def _update_performance_metrics(
         self,
@@ -813,8 +864,8 @@ class AsyncOrderExecutor:
                 },
             )
 
-        except Exception as e:
-            self.logger.error(f"Error updating performance metrics: {e}")
+        except Exception:
+            self.print(error("Error updating performance metrics: {e}"))
 
     def get_execution_status(self, execution_id: str) -> ExecutionResult | None:
         """Get the status of an execution."""
@@ -824,8 +875,8 @@ class AsyncOrderExecutor:
                     return result
             return None
 
-        except Exception as e:
-            self.logger.error(f"Error getting execution status: {e}")
+        except Exception:
+            self.print(execution_error("Error getting execution status: {e}"))
             return None
 
     def get_performance_metrics(self) -> dict[str, Any]:
@@ -842,8 +893,8 @@ class AsyncOrderExecutor:
                 return self.execution_history[-limit:]
             return self.execution_history.copy()
 
-        except Exception as e:
-            self.logger.error(f"Error getting execution history: {e}")
+        except Exception:
+            self.print(execution_error("Error getting execution history: {e}"))
             return []
 
     @handle_errors(
@@ -857,19 +908,25 @@ class AsyncOrderExecutor:
             self.logger.info("🛑 Stopping Async Order Executor...")
 
             # Stop background tasks
-            tasks = [t for t in [self.execution_task, self.optimization_task, self.analytics_task] if t]
+            tasks = [
+                t
+                for t in [
+                    self.execution_task,
+                    self.optimization_task,
+                    self.analytics_task,
+                ]
+                if t
+            ]
             for t in tasks:
                 t.cancel()
             for t in tasks:
-                try:
+                with contextlib.suppress(Exception):
                     await t
-                except Exception:
-                    pass
 
             self.logger.info("✅ Async Order Executor stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping async order executor: {e}")
+        except Exception:
+            self.print(error("Error stopping async order executor: {e}"))
 
 
 # Factory function for creating async order executor
@@ -901,6 +958,6 @@ async def setup_async_order_executor(
             return executor
         return None
 
-    except Exception as e:
-        print(f"❌ Error setting up async order executor: {e}")
+    except Exception:
+        print(warning("Error setting up async order executor: {e}"))
         return None

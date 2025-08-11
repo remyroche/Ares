@@ -5,6 +5,20 @@ This script renames files from the old format to the new format that includes ex
 """
 
 import glob
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 import shutil
 from pathlib import Path
 
@@ -14,7 +28,7 @@ def rename_data_files():
     data_cache_dir = Path("data_cache")
 
     if not data_cache_dir.exists():
-        print("❌ data_cache directory not found!")
+        print(missing("data_cache directory not found!")))
         return False
 
     # Define the exchange name for existing files
@@ -29,7 +43,7 @@ def rename_data_files():
 
     total_renamed = 0
 
-    for old_pattern, new_pattern in patterns:
+    for old_pattern, _new_pattern in patterns:
         # Find files matching the old pattern
         old_files = glob.glob(str(data_cache_dir / old_pattern))
 
@@ -51,7 +65,7 @@ def rename_data_files():
                         f"klines_{exchange_name}_{parts[1]}_{parts[2]}_{parts[3]}"
                     )
                 else:
-                    print(f"⚠️  Skipping {old_path.name} - unexpected format")
+                    print(warning(" Skipping {old_path.name} - unexpected format")))
                     continue
             elif "aggtrades" in old_pattern:
                 # aggtrades_ETHUSDT_2025-07-29.csv -> aggtrades_BINANCE_ETHUSDT_2025-07-29.csv
@@ -59,7 +73,7 @@ def rename_data_files():
                 if len(parts) >= 3:
                     new_name = f"aggtrades_{exchange_name}_{parts[1]}_{parts[2]}"
                 else:
-                    print(f"⚠️  Skipping {old_path.name} - unexpected format")
+                    print(warning(" Skipping {old_path.name} - unexpected format")))
                     continue
             elif "futures" in old_pattern:
                 # futures_ETHUSDT_2025-07.csv -> futures_BINANCE_ETHUSDT_2025-07.csv
@@ -67,17 +81,17 @@ def rename_data_files():
                 if len(parts) >= 3:
                     new_name = f"futures_{exchange_name}_{parts[1]}_{parts[2]}"
                 else:
-                    print(f"⚠️  Skipping {old_path.name} - unexpected format")
+                    print(warning(" Skipping {old_path.name} - unexpected format")))
                     continue
             else:
-                print(f"⚠️  Skipping {old_path.name} - unknown pattern")
+                print(warning(" Skipping {old_path.name} - unknown pattern")))
                 continue
 
             new_path = old_path.parent / new_name
 
             # Check if new file already exists
             if new_path.exists():
-                print(f"⚠️  Skipping {old_path.name} - {new_name} already exists")
+                print(warning(" Skipping {old_path.name} - {new_name} already exists")))
                 continue
 
             try:
@@ -86,7 +100,7 @@ def rename_data_files():
                 print(f"✅ Renamed: {old_path.name} -> {new_name}")
                 total_renamed += 1
             except Exception as e:
-                print(f"❌ Error renaming {old_path.name}: {e}")
+                print(warning("Error renaming {old_path.name}: {e}")))
 
     print(f"\n🎉 Renamed {total_renamed} files successfully!")
     return True
@@ -99,4 +113,4 @@ if __name__ == "__main__":
     if success:
         print("✅ File renaming completed successfully!")
     else:
-        print("❌ File renaming failed!")
+        print(failed("File renaming failed!")))

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import datetime
 from functools import wraps
@@ -6,6 +7,7 @@ from typing import Any
 
 import aiohttp
 import ccxt.async_support as ccxt
+import websockets
 from ccxt.base.errors import (
     DDoSProtection,
     ExchangeError,
@@ -17,11 +19,22 @@ from ccxt.base.errors import (
 from src.interfaces.base_interfaces import MarketData
 from src.utils.error_handler import handle_network_operations
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 from .base_exchange import BaseExchange
-
-import json
-import websockets
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +56,10 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                 except (RateLimitExceeded, DDoSProtection) as e:
                     retries += 1
                     if retries >= max_retries:
-                        logger.error(
+                        logger.exception(
                             f"API Rate Limit Exceeded. Max retries reached for {func.__name__}. Error: {e}",
                         )
-                        raise e
+                        raise
                     logger.warning(
                         f"API Rate Limit Exceeded for {func.__name__}. "
                         f"Retrying in {backoff:.2f} seconds... (Attempt {retries}/{max_retries})",
@@ -56,10 +69,10 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                 except (ExchangeNotAvailable, RequestTimeout) as e:
                     retries += 1
                     if retries >= max_retries:
-                        logger.error(
+                        logger.exception(
                             f"Exchange not available or request timed out. Max retries reached for {func.__name__}. Error: {e}",
                         )
-                        raise e
+                        raise
                     logger.warning(
                         f"Exchange not available or request timed out for {func.__name__}. "
                         f"Retrying in {backoff:.2f} seconds... (Attempt {retries}/{max_retries})",
@@ -72,18 +85,19 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                     )
                     retries += 1
                     if retries >= max_retries:
-                        logger.error(
+                        logger.exception(
                             f"Max retries reached for {func.__name__} after multiple exchange errors. Last error: {e}",
                         )
-                        raise e
+                        raise
                     await asyncio.sleep(backoff)
                     backoff *= 2
                 except Exception as e:
-                    logger.error(
+                    logger.exception(
                         f"An unexpected error occurred in {func.__name__}: {e}",
                     )
-                    raise e
-            raise Exception(f"Exhausted retries for {func.__name__}")
+                    raise
+            msg = f"Exhausted retries for {func.__name__}"
+            raise Exception(msg)
 
         return wrapper
 
@@ -124,15 +138,14 @@ class GateioExchange(BaseExchange):
         """Get kline/candlestick data for a symbol."""
         try:
             market_id = await self._get_market_id(symbol)
-            ohlcv = await self.exchange.fetch_ohlcv(
+            return await self.exchange.fetch_ohlcv(
                 market_id,
                 timeframe=interval,
                 limit=limit,
             )
             # Return raw CCXT OHLCV (list of lists) for standardized conversion
-            return ohlcv
         except Exception as e:
-            logger.error(f"Error fetching klines from Gate.io for {symbol}: {e}")
+            print(error("Error fetching klines from Gate.io for {symbol}: {e}"))
             return []
 
     async def get_klines(
@@ -175,10 +188,12 @@ class GateioExchange(BaseExchange):
             )
             return result
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"❌ GATEIO: Error fetching klines from Gate.io for {symbol}: {e}",
             )
-            logger.error(f"🔍 GATEIO: Full error details: {type(e).__name__}: {str(e)}")
+            logger.exception(
+                f"🔍 GATEIO: Full error details: {type(e).__name__}: {str(e)}",
+            )
             return []
 
     @retry_on_rate_limit()
@@ -266,10 +281,12 @@ class GateioExchange(BaseExchange):
             )
             return all_klines
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"❌ GATEIO: Error fetching historical klines from Gate.io for {symbol}: {e}",
             )
-            logger.error(f"🔍 GATEIO: Full error details: {type(e).__name__}: {str(e)}")
+            logger.exception(
+                f"🔍 GATEIO: Full error details: {type(e).__name__}: {str(e)}",
+            )
             return []
 
     @retry_on_rate_limit()
@@ -298,7 +315,7 @@ class GateioExchange(BaseExchange):
                 )
 
                 # Define base headers for Gate.io API
-                base_headers = {
+                {
                     "Accept": "application/json",
                     "Content-Type": "application/json",
                     "Timestamp": str(
@@ -319,7 +336,7 @@ class GateioExchange(BaseExchange):
                 )
 
             except Exception as http_error:
-                logger.warning(f"Direct HTTP API failed: {http_error}")
+                print(failed("Direct HTTP API failed: {http_error}"))
 
             # Fallback to CCXT fetch_trades with pagination
             logger.info("   🔄 Falling back to CCXT fetch_trades with pagination")
@@ -396,8 +413,8 @@ class GateioExchange(BaseExchange):
                     await asyncio.sleep(0.1)  # Rate limiting
 
                 except Exception as e:
-                    logger.error(f"   ❌ Error in CCXT fallback: {e}")
-                    logger.error(
+                    print(error("   ❌ Error in CCXT fallback: {e}"))
+                    logger.exception(
                         f"   🔍 Full error details: {type(e).__name__}: {str(e)}",
                     )
                     break
@@ -409,10 +426,12 @@ class GateioExchange(BaseExchange):
             return all_trades
 
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"❌ GATEIO: Error fetching historical trades from Gate.io for {symbol}: {e}",
             )
-            logger.error(f"🔍 GATEIO: Full error details: {type(e).__name__}: {str(e)}")
+            logger.exception(
+                f"🔍 GATEIO: Full error details: {type(e).__name__}: {str(e)}",
+            )
             return []
 
     @retry_on_rate_limit()
@@ -517,11 +536,11 @@ class GateioExchange(BaseExchange):
                                         )
                                         return []
                     except Exception as e:
-                        logger.warning(f"   ⚠️ {endpoint['name']} failed: {e}")
+                        print(failed("   ⚠️ {endpoint['name']} failed: {e}"))
                         continue
 
             except Exception as http_error:
-                logger.warning(f"Direct HTTP API failed: {http_error}")
+                print(failed("Direct HTTP API failed: {http_error}"))
 
             # Fallback: Try to get funding rates through CCXT
             logger.info("   🔄 Falling back to CCXT for funding rates")
@@ -532,13 +551,13 @@ class GateioExchange(BaseExchange):
                     logger.info(f"   📊 Got current funding rate: {funding_info}")
                     return [funding_info]
             except Exception as e:
-                logger.warning(f"   ⚠️ CCXT funding rate failed: {e}")
+                print(failed("   ⚠️ CCXT funding rate failed: {e}"))
 
             logger.info(f"   ℹ️ No funding rate data available for {symbol}")
             return []
 
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Error fetching historical futures data from Gate.io for {symbol}: {e}",
             )
             return []
@@ -569,7 +588,7 @@ class GateioExchange(BaseExchange):
                 params,
             )
         except Exception as e:
-            logger.error(f"Error creating order on Gate.io for {symbol}: {e}")
+            print(error("Error creating order on Gate.io for {symbol}: {e}"))
             return {"error": str(e), "status": "failed"}
 
     @retry_on_rate_limit()
@@ -583,7 +602,7 @@ class GateioExchange(BaseExchange):
             market_id = await self._get_market_id(symbol)
             return await self.exchange.fetch_order(order_id, market_id)
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to get status for order {order_id} on Gate.io {symbol}: {e}",
             )
             return {"error": str(e)}
@@ -599,7 +618,9 @@ class GateioExchange(BaseExchange):
             market_id = await self._get_market_id(symbol)
             return await self.exchange.cancel_order(order_id, market_id)
         except Exception as e:
-            logger.error(f"Failed to cancel order {order_id} on Gate.io {symbol}: {e}")
+            logger.exception(
+                f"Failed to cancel order {order_id} on Gate.io {symbol}: {e}",
+            )
             return {"error": str(e)}
 
     @retry_on_rate_limit()
@@ -612,9 +633,8 @@ class GateioExchange(BaseExchange):
         try:
             return await self.exchange.fetch_balance(params={"type": "swap"})
         except Exception as e:
-            logger.error(f"Failed to get account info from Gate.io: {e}")
+            print(failed("Failed to get account info from Gate.io: {e}"))
             return {"error": str(e)}
-
 
     @retry_on_rate_limit()
     @handle_network_operations(max_retries=3, default_return=[])
@@ -626,7 +646,7 @@ class GateioExchange(BaseExchange):
                 [market_id] if market_id else None,
             )
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to get position risk from Gate.io for {symbol or 'all symbols'}: {e}",
             )
             return []
@@ -639,7 +659,7 @@ class GateioExchange(BaseExchange):
             market_id = await self._get_market_id(symbol) if symbol else None
             return await self.exchange.fetch_open_orders(market_id)
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to get open orders from Gate.io for {symbol or 'all symbols'}: {e}",
             )
             return []
@@ -679,7 +699,7 @@ class GateioExchange(BaseExchange):
                 )
                 market_data_list.append(market_data)
             except (IndexError, ValueError, TypeError) as e:
-                logger.warning(f"Failed to convert candle data: {e}. Candle: {candle}")
+                print(failed("Failed to convert candle data: {e}. Candle: {candle}"))
                 continue
         return market_data_list
 
@@ -751,7 +771,7 @@ class GateioExchange(BaseExchange):
 
             return all_ohlcv
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Error fetching historical klines from Gate.io for {symbol}: {e}",
             )
             return []
@@ -795,13 +815,11 @@ class GateioExchange(BaseExchange):
         query_string = "&".join([f"{k}={v}" for k, v in sorted(params.items())])
 
         # Create signature using HMAC-SHA512
-        signature = hmac.new(
+        return hmac.new(
             self.api_secret.encode("utf-8"),
             query_string.encode("utf-8"),
             hashlib.sha512,
         ).hexdigest()
-
-        return signature
 
     async def get_historical_agg_trades_ccxt(
         self,
@@ -829,7 +847,7 @@ class GateioExchange(BaseExchange):
             )
             return result
         except Exception as e:
-            logger.error(f"❌ GATEIO: get_historical_agg_trades_ccxt failed: {e}")
+            print(failed("❌ GATEIO: get_historical_agg_trades_ccxt failed: {e}"))
             return []
 
     async def get_historical_klines_ccxt(
@@ -860,7 +878,7 @@ class GateioExchange(BaseExchange):
             )
             return result
         except Exception as e:
-            logger.error(f"❌ GATEIO: get_historical_klines_ccxt failed: {e}")
+            print(failed("❌ GATEIO: get_historical_klines_ccxt failed: {e}"))
             return []
 
     # --- Streaming hooks (standardized) ---
@@ -869,7 +887,12 @@ class GateioExchange(BaseExchange):
         # Gate.io futures public WS
         url = "wss://fx-ws.gateio.ws/v4/ws/usdt"
         channel = "trades"
-        payload = {"time": 0, "channel": channel, "event": "subscribe", "payload": [market_id]}
+        payload = {
+            "time": 0,
+            "channel": channel,
+            "event": "subscribe",
+            "payload": [market_id],
+        }
 
         async def _run():
             while True:
@@ -879,30 +902,45 @@ class GateioExchange(BaseExchange):
                         async for raw in ws:
                             try:
                                 msg = json.loads(raw)
-                                if msg.get("channel") == channel and msg.get("event") == "update":
+                                if (
+                                    msg.get("channel") == channel
+                                    and msg.get("event") == "update"
+                                ):
                                     for t in msg.get("result", []):
                                         # Normalize trade
                                         std = {
                                             "type": "trade",
                                             "symbol": symbol,
                                             "price": float(t.get("price")),
-                                            "qty": float(t.get("size", t.get("amount", 0.0))),
+                                            "qty": float(
+                                                t.get("size", t.get("amount", 0.0)),
+                                            ),
                                             "side": t.get("side"),
-                                            "timestamp": t.get("create_time_ms") or int(float(t.get("create_time", 0)) * 1000),
+                                            "timestamp": t.get("create_time_ms")
+                                            or int(
+                                                float(t.get("create_time", 0)) * 1000,
+                                            ),
                                         }
                                         await callback(std)
                             except Exception:
                                 continue
                 except Exception:
                     await asyncio.sleep(3)
+
         import asyncio
+
         await _run()
 
     async def subscribe_ticker(self, symbol: str, callback):
         market_id = await self._get_market_id(symbol)
         url = "wss://fx-ws.gateio.ws/v4/ws/usdt"
         channel = "ticker"
-        payload = {"time": 0, "channel": channel, "event": "subscribe", "payload": [market_id]}
+        payload = {
+            "time": 0,
+            "channel": channel,
+            "event": "subscribe",
+            "payload": [market_id],
+        }
 
         async def _run():
             while True:
@@ -912,29 +950,47 @@ class GateioExchange(BaseExchange):
                         async for raw in ws:
                             try:
                                 msg = json.loads(raw)
-                                if msg.get("channel") == channel and msg.get("event") == "update":
+                                if (
+                                    msg.get("channel") == channel
+                                    and msg.get("event") == "update"
+                                ):
                                     t = msg.get("result", {})
                                     std = {
                                         "type": "ticker",
                                         "symbol": symbol,
-                                        "last": float(t.get("last")) if t.get("last") is not None else None,
-                                        "bid": float(t.get("lowest_ask")) if t.get("lowest_ask") is not None else None,
-                                        "ask": float(t.get("highest_bid")) if t.get("highest_bid") is not None else None,
-                                        "timestamp": int(float(t.get("time", 0)) * 1000),
+                                        "last": float(t.get("last"))
+                                        if t.get("last") is not None
+                                        else None,
+                                        "bid": float(t.get("lowest_ask"))
+                                        if t.get("lowest_ask") is not None
+                                        else None,
+                                        "ask": float(t.get("highest_bid"))
+                                        if t.get("highest_bid") is not None
+                                        else None,
+                                        "timestamp": int(
+                                            float(t.get("time", 0)) * 1000,
+                                        ),
                                     }
                                     await callback(std)
                             except Exception:
                                 continue
                 except Exception:
                     await asyncio.sleep(3)
+
         import asyncio
+
         await _run()
 
     async def subscribe_order_book(self, symbol: str, callback):
         market_id = await self._get_market_id(symbol)
         url = "wss://fx-ws.gateio.ws/v4/ws/usdt"
         channel = "book_ticker"
-        payload = {"time": 0, "channel": channel, "event": "subscribe", "payload": [market_id]}
+        payload = {
+            "time": 0,
+            "channel": channel,
+            "event": "subscribe",
+            "payload": [market_id],
+        }
 
         async def _run():
             while True:
@@ -944,13 +1000,20 @@ class GateioExchange(BaseExchange):
                         async for raw in ws:
                             try:
                                 msg = json.loads(raw)
-                                if msg.get("channel") == channel and msg.get("event") == "update":
+                                if (
+                                    msg.get("channel") == channel
+                                    and msg.get("event") == "update"
+                                ):
                                     bt = msg.get("result", {})
                                     std = {
                                         "type": "order_book",
                                         "symbol": symbol,
-                                        "bid": float(bt.get("b")) if bt.get("b") is not None else None,
-                                        "ask": float(bt.get("a")) if bt.get("a") is not None else None,
+                                        "bid": float(bt.get("b"))
+                                        if bt.get("b") is not None
+                                        else None,
+                                        "ask": float(bt.get("a"))
+                                        if bt.get("a") is not None
+                                        else None,
                                         "timestamp": int(float(bt.get("t", 0)) * 1000),
                                     }
                                     await callback(std)
@@ -958,5 +1021,7 @@ class GateioExchange(BaseExchange):
                                 continue
                 except Exception:
                     await asyncio.sleep(3)
+
         import asyncio
+
         await _run()

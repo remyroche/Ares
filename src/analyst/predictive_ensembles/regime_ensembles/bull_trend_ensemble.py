@@ -17,6 +17,10 @@ from keras.regularizers import l1_l2
 from lightgbm import LGBMClassifier
 from pytorch_tabnet.tab_model import TabNetClassifier
 
+from src.utils.warning_symbols import (
+    failed,
+)
+
 from .base_ensemble import BaseEnsemble
 
 
@@ -106,8 +110,8 @@ class BullTrendEnsemble(BaseEnsemble):
                 self.models["garch"] = arch_model(returns, vol="Garch", p=1, q=1).fit(
                     disp="off",
                 )
-            except Exception as e:
-                self.logger.error(f"GARCH training failed: {e}")
+            except Exception:
+                self.print(failed("GARCH training failed: {e}"))
 
     def _get_meta_features(
         self,
@@ -287,8 +291,8 @@ class BullTrendEnsemble(BaseEnsemble):
             )
             return model
 
-        except Exception as e:
-            self.logger.error(f"DL Model training failed: {e}")
+        except Exception:
+            self.print(failed("DL Model training failed: {e}"))
             return None
 
     def _train_tabnet_model(self, X_flat, y_flat_encoded):
@@ -329,6 +333,6 @@ class BullTrendEnsemble(BaseEnsemble):
             )
             return model
 
-        except Exception as e:
-            self.logger.error(f"TabNet training failed: {e}")
+        except Exception:
+            self.print(failed("TabNet training failed: {e}"))
             return None

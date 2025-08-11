@@ -8,17 +8,24 @@ the modular pipeline framework and common components.
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
-from src.utils.logger import system_logger
-
 from src.tactician.enhanced_order_manager import (
     EnhancedOrderManager,
     OrderRequest,
     OrderSide,
     OrderType,
+)
+from src.utils.error_handler import (
+    handle_errors,
+    handle_specific_errors,
+)
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    execution_error,
+    initialization_error,
+    invalid,
+    missing,
+    warning,
 )
 
 
@@ -88,7 +95,7 @@ class LiveTradingPipeline:
 
         # Validate configuration
         if not self._validate_configuration():
-            self.logger.error("Invalid configuration for live trading pipeline")
+            self.print(invalid("Invalid configuration for live trading pipeline"))
             return False
 
         # Initialize trading modules
@@ -97,8 +104,8 @@ class LiveTradingPipeline:
         # Start unified market data streaming to feed LM/tactics if enabled
         try:
             await self._maybe_start_market_stream()
-        except Exception as e:
-            self.logger.warning(f"Market stream not started: {e}")
+        except Exception:
+            self.print(warning("Market stream not started: {e}"))
 
         self.logger.info(
             "✅ Live Trading Pipeline initialization completed successfully",
@@ -124,9 +131,7 @@ class LiveTradingPipeline:
         self.trading_interval = self.trading_config["trading_interval"]
         self.max_trading_history = self.trading_config["max_trading_history"]
         self.enable_market_data = self.trading_config["enable_market_data"]
-        self.enable_signal_generation = self.trading_config[
-            "enable_signal_generation"
-        ]
+        self.enable_signal_generation = self.trading_config["enable_signal_generation"]
 
         self.logger.info("Trading configuration loaded successfully")
 
@@ -144,12 +149,12 @@ class LiveTradingPipeline:
         """
         # Validate trading interval
         if self.trading_interval <= 0:
-            self.logger.error("Invalid trading interval")
+            self.print(invalid("Invalid trading interval"))
             return False
 
         # Validate max trading history
         if self.max_trading_history <= 0:
-            self.logger.error("Invalid max trading history")
+            self.print(invalid("Invalid max trading history"))
             return False
 
         # Validate that at least one trading type is enabled
@@ -161,7 +166,7 @@ class LiveTradingPipeline:
                 self.trading_config.get("enable_risk_management", True),
             ],
         ):
-            self.logger.error("At least one trading type must be enabled")
+            self.print(error("At least one trading type must be enabled"))
             return False
 
         self.logger.info("Configuration validation successful")
@@ -193,8 +198,8 @@ class LiveTradingPipeline:
 
             self.logger.info("Trading modules initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing trading modules: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing trading modules: {e}"))
 
     async def _maybe_start_market_stream(self) -> None:
         """Start unified market stream (ticker, trades, orderbook) feeding pipeline."""
@@ -218,6 +223,7 @@ class LiveTradingPipeline:
 
         # Run subscriptions concurrently
         import asyncio
+
         self._stream_tasks = [
             asyncio.create_task(client.subscribe_trades(symbol, on_trade)),
             asyncio.create_task(client.subscribe_ticker(symbol, on_ticker)),
@@ -242,8 +248,8 @@ class LiveTradingPipeline:
 
             self.logger.info("Market data module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing market data: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing market data: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -263,8 +269,10 @@ class LiveTradingPipeline:
 
             self.logger.info("Signal generation module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing signal generation: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing signal generation: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -291,15 +299,24 @@ class LiveTradingPipeline:
                 try:
                     # Reuse the streaming client if available; otherwise create here
                     if not self.exchange_client:
-                        from exchange.factory import ExchangeFactory as RootExchangeFactory
+                        from exchange.factory import (
+                            ExchangeFactory as RootExchangeFactory,
+                        )
                         from src.config.environment import get_exchange_name
-                        self.exchange_client = RootExchangeFactory.get_exchange(get_exchange_name().lower())
-                    await self.order_manager.attach_exchange_client(self.exchange_client)
-                except Exception as e:
-                    self.logger.warning(f"Failed to attach exchange client to order manager: {e}")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing order execution: {e}")
+                        self.exchange_client = RootExchangeFactory.get_exchange(
+                            get_exchange_name().lower(),
+                        )
+                    await self.order_manager.attach_exchange_client(
+                        self.exchange_client,
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to attach exchange client to order manager: {e}",
+                    )
+
+        except Exception:
+            self.print(initialization_error("Error initializing order execution: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -319,8 +336,8 @@ class LiveTradingPipeline:
 
             self.logger.info("Risk management module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing risk management: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing risk management: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -375,8 +392,8 @@ class LiveTradingPipeline:
             self.logger.info("✅ Live trading completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error executing trading: {e}")
+        except Exception:
+            self.print(error("Error executing trading: {e}"))
             self.is_trading = False
             return False
 
@@ -400,22 +417,22 @@ class LiveTradingPipeline:
             required_fields = ["symbol", "price", "volume", "timestamp"]
             for field in required_fields:
                 if field not in market_data:
-                    self.logger.error(f"Missing required market data field: {field}")
+                    self.print(missing("Missing required market data field: {field}"))
                     return False
 
             # Validate data types
-            if not isinstance(market_data["price"], (int, float)):
-                self.logger.error("Invalid price data type")
+            if not isinstance(market_data["price"], int | float):
+                self.print(invalid("Invalid price data type"))
                 return False
 
-            if not isinstance(market_data["volume"], (int, float)):
-                self.logger.error("Invalid volume data type")
+            if not isinstance(market_data["volume"], int | float):
+                self.print(invalid("Invalid volume data type"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating trading inputs: {e}")
+        except Exception:
+            self.print(error("Error validating trading inputs: {e}"))
             return False
 
     @handle_errors(
@@ -458,8 +475,8 @@ class LiveTradingPipeline:
             self.logger.info("Market data processing completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing market data processing: {e}")
+        except Exception:
+            self.print(error("Error performing market data processing: {e}"))
             return {}
 
     @handle_errors(
@@ -510,8 +527,8 @@ class LiveTradingPipeline:
             self.logger.info("Signal generation completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing signal generation: {e}")
+        except Exception:
+            self.print(error("Error performing signal generation: {e}"))
             return {}
 
     @handle_errors(
@@ -565,8 +582,8 @@ class LiveTradingPipeline:
             self.logger.info("Order execution completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing order execution: {e}")
+        except Exception:
+            self.print(execution_error("Error performing order execution: {e}"))
             return {}
 
     @handle_errors(
@@ -609,8 +626,8 @@ class LiveTradingPipeline:
             self.logger.info("Risk management completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing risk management: {e}")
+        except Exception:
+            self.print(error("Error performing risk management: {e}"))
             return {}
 
     # Market data processing methods
@@ -628,8 +645,8 @@ class LiveTradingPipeline:
                 "price_change_pct": 0.04,
                 "processing_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error processing price feed: {e}")
+        except Exception:
+            self.print(error("Error processing price feed: {e}"))
             return {}
 
     def _process_volume_data(self, market_data: dict[str, Any]) -> dict[str, Any]:
@@ -644,8 +661,8 @@ class LiveTradingPipeline:
                 "volume_ratio": 0.95,
                 "processing_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error processing volume data: {e}")
+        except Exception:
+            self.print(error("Error processing volume data: {e}"))
             return {}
 
     def _process_order_book(self, market_data: dict[str, Any]) -> dict[str, Any]:
@@ -660,8 +677,8 @@ class LiveTradingPipeline:
                 "ask_volume": 95.0,
                 "processing_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error processing order book: {e}")
+        except Exception:
+            self.print(error("Error processing order book: {e}"))
             return {}
 
     def _process_trade_history(self, market_data: dict[str, Any]) -> dict[str, Any]:
@@ -674,8 +691,8 @@ class LiveTradingPipeline:
                 "trade_frequency": 2.5,
                 "processing_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error processing trade history: {e}")
+        except Exception:
+            self.print(error("Error processing trade history: {e}"))
             return {}
 
     # Signal generation methods
@@ -693,8 +710,8 @@ class LiveTradingPipeline:
                 "ema_12": 49800.0,
                 "analysis_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing technical analysis: {e}")
+        except Exception:
+            self.print(error("Error performing technical analysis: {e}"))
             return {}
 
     def _perform_pattern_recognition(
@@ -710,8 +727,8 @@ class LiveTradingPipeline:
                 "pattern_strength": "Medium",
                 "recognition_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing pattern recognition: {e}")
+        except Exception:
+            self.print(error("Error performing pattern recognition: {e}"))
             return {}
 
     def _perform_momentum_indicators(
@@ -727,8 +744,8 @@ class LiveTradingPipeline:
                 "momentum_strength": "Medium",
                 "indicator_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing momentum indicators: {e}")
+        except Exception:
+            self.print(error("Error performing momentum indicators: {e}"))
             return {}
 
     def _perform_volatility_analysis(
@@ -744,8 +761,8 @@ class LiveTradingPipeline:
                 "volatility_trend": "Decreasing",
                 "analysis_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing volatility analysis: {e}")
+        except Exception:
+            self.print(error("Error performing volatility analysis: {e}"))
             return {}
 
     # Order execution methods
@@ -762,8 +779,8 @@ class LiveTradingPipeline:
                 "order_price": 50000.0,
                 "placement_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing order placement: {e}")
+        except Exception:
+            self.print(error("Error performing order placement: {e}"))
             return {}
 
     def _perform_order_modification(
@@ -780,8 +797,8 @@ class LiveTradingPipeline:
                 "new_quantity": 0.12,
                 "modification_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing order modification: {e}")
+        except Exception:
+            self.print(error("Error performing order modification: {e}"))
             return {}
 
     def _perform_order_cancellation(
@@ -797,8 +814,8 @@ class LiveTradingPipeline:
                 "cancellation_reason": "Risk Management",
                 "cancellation_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing order cancellation: {e}")
+        except Exception:
+            self.print(error("Error performing order cancellation: {e}"))
             return {}
 
     def _perform_position_management(
@@ -815,8 +832,8 @@ class LiveTradingPipeline:
                 "unrealized_pnl": 50.0,
                 "management_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing position management: {e}")
+        except Exception:
+            self.print(error("Error performing position management: {e}"))
             return {}
 
     # Risk management methods
@@ -830,8 +847,8 @@ class LiveTradingPipeline:
                 "max_position_size": 0.25,
                 "sizing_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing position sizing: {e}")
+        except Exception:
+            self.print(error("Error performing position sizing: {e}"))
             return {}
 
     def _perform_stop_loss(self, market_data: dict[str, Any]) -> dict[str, Any]:
@@ -845,8 +862,8 @@ class LiveTradingPipeline:
                 "stop_loss_pct": 0.01,
                 "stop_loss_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing stop loss: {e}")
+        except Exception:
+            self.print(error("Error performing stop loss: {e}"))
             return {}
 
     def _perform_take_profit(self, market_data: dict[str, Any]) -> dict[str, Any]:
@@ -860,8 +877,8 @@ class LiveTradingPipeline:
                 "take_profit_pct": 0.01,
                 "take_profit_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing take profit: {e}")
+        except Exception:
+            self.print(error("Error performing take profit: {e}"))
             return {}
 
     def _perform_exposure_limits(self, market_data: dict[str, Any]) -> dict[str, Any]:
@@ -875,8 +892,8 @@ class LiveTradingPipeline:
                 "exposure_warning": False,
                 "exposure_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing exposure limits: {e}")
+        except Exception:
+            self.print(error("Error performing exposure limits: {e}"))
             return {}
 
     @handle_errors(
@@ -899,8 +916,8 @@ class LiveTradingPipeline:
 
             self.logger.info("Trading results stored successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error storing trading results: {e}")
+        except Exception:
+            self.print(error("Error storing trading results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -922,8 +939,8 @@ class LiveTradingPipeline:
                 return self.trading_results.get(trading_type, {})
             return self.trading_results.copy()
 
-        except Exception as e:
-            self.logger.error(f"Error getting trading results: {e}")
+        except Exception:
+            self.print(error("Error getting trading results: {e}"))
             return {}
 
     @handle_errors(
@@ -949,8 +966,8 @@ class LiveTradingPipeline:
 
             return history
 
-        except Exception as e:
-            self.logger.error(f"Error getting trading history: {e}")
+        except Exception:
+            self.print(error("Error getting trading history: {e}"))
             return []
 
     def get_trading_status(self) -> dict[str, Any]:
@@ -998,8 +1015,8 @@ class LiveTradingPipeline:
 
             self.logger.info("✅ Live Trading Pipeline stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping live trading pipeline: {e}")
+        except Exception:
+            self.print(error("Error stopping live trading pipeline: {e}"))
 
 
 # Global live trading pipeline instance
@@ -1050,90 +1067,3 @@ async def setup_live_trading_pipeline(
     except Exception as e:
         print(f"Error setting up live trading pipeline: {e}")
         return None
-
-    async def _derive_decision(self, market_data: dict[str, Any]) -> dict[str, Any] | None:
-        """Create a normalized trading decision from latest signals/analyst outputs."""
-        try:
-            symbol = market_data.get("symbol")
-            if not symbol:
-                return None
-            # Prefer explicit analyst decision if provided in market_data
-            analyst_decision = market_data.get("analyst_decision")
-            if analyst_decision and analyst_decision.get("action"):
-                return analyst_decision | {"symbol": symbol}
-
-            # Fallback: use the pipeline's last signal_generation results
-            signals = self.trading_results.get("signal_generation", {})
-            momentum = (signals.get("momentum_indicators") or {})
-            pattern = (signals.get("pattern_recognition") or {})
-            action = None
-            confidence = float(momentum.get("confidence", pattern.get("confidence", 0.0)) or 0.0)
-
-            # Minimal heuristic: expect a 'signal' field like 'buy'/'sell'
-            sig = str(momentum.get("signal") or pattern.get("signal") or "").lower()
-            if sig == "buy":
-                action = "OPEN_LONG"
-            elif sig == "sell":
-                action = "OPEN_SHORT"
-            elif sig == "close":
-                action = "CLOSE"
-
-            if not action:
-                return None
-
-            return {
-                "symbol": symbol,
-                "action": action,
-                "confidence": confidence,
-                # Optional tactical hints
-                "take_profit": momentum.get("take_profit") or pattern.get("take_profit"),
-                "stop_loss": momentum.get("stop_loss") or pattern.get("stop_loss"),
-            }
-        except Exception as e:
-            self.logger.error(f"Error deriving decision: {e}")
-            return None
-
-    async def _execute_decision(self, decision: dict[str, Any]) -> dict[str, Any]:
-        """Execute a normalized decision via EnhancedOrderManager."""
-        try:
-            if not self.order_manager:
-                return {"status": "unavailable"}
-
-            symbol = decision["symbol"]
-            action = decision["action"].upper()
-            conf = float(decision.get("confidence", 0.0) or 0.0)
-
-            # Determine side and size
-            if action == "OPEN_LONG":
-                side = OrderSide.BUY
-                qty = float(self.trading_config.get("base_order_quantity", 0.01)) * max(0.5, min(2.0, 1.0 + (conf - 0.5)))
-            elif action == "OPEN_SHORT":
-                side = OrderSide.SELL
-                qty = float(self.trading_config.get("base_order_quantity", 0.01)) * max(0.5, min(2.0, 1.0 + (conf - 0.5)))
-            elif action == "CLOSE":
-                # Let PositionMonitor/EnhancedOrderManager compute remaining qty; place market opposite for small default
-                # For safety default to a small closing size if we can't infer
-                side = OrderSide.SELL  # will be adjusted by internal logic if needed
-                qty = float(self.trading_config.get("base_order_quantity", 0.01))
-            else:
-                return {"status": "skipped"}
-
-            orq = OrderRequest(
-                symbol=symbol,
-                side=side,
-                order_type=OrderType.MARKET,
-                quantity=max(0.0, qty),
-                take_profit=decision.get("take_profit"),
-                stop_loss=decision.get("stop_loss"),
-                strategy_type="ANALYST_SIGNAL",
-                order_link_id=f"sig_{int(self._now_ts())}_{symbol}",
-            )
-            state = await self.order_manager._place_order(orq)
-            return {"status": "submitted" if state else "failed", "order_id": getattr(state, "order_id", None)}
-        except Exception as e:
-            self.logger.error(f"Error executing decision: {e}")
-            return {"status": "error", "error": str(e)}
-
-    def _now_ts(self) -> float:
-        from time import time
-        return time()

@@ -38,7 +38,7 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                         )
                         await asyncio.sleep(wait_time)
                     else:
-                        raise e
+                        raise
             raise last_exception
 
         return wrapper
@@ -171,7 +171,7 @@ class MexcExchangeOptimized(BaseExchange):
     ) -> list[dict[str, Any]]:
         """Get raw historical aggregated trades with optimized concurrent requests."""
         try:
-            market_id = await self._get_market_id(symbol)
+            await self._get_market_id(symbol)
             since = start_time_ms
 
             print("🔍 DEBUG: Optimized MEXC _get_historical_agg_trades_raw called")
@@ -201,7 +201,7 @@ class MexcExchangeOptimized(BaseExchange):
 
         except Exception as e:
             print(f"🔍 DEBUG: Error in optimized _get_historical_agg_trades_raw: {e}")
-            logger.error(
+            logger.exception(
                 f"Error fetching historical trades from MEXC for {symbol}: {e}",
             )
             return []

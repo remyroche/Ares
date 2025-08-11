@@ -114,7 +114,7 @@ class RegularizationManager:
             self.logger.info(f"Applied regularization to {regime_name} ensemble.")
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Failed to apply regularization to {regime_name} ensemble: {e}",
             )
 

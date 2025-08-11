@@ -13,6 +13,22 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 from src.utils.logger import system_logger
+from src.utils.error_handler import handle_errors
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
+from src.training.steps.unified_data_loader import get_unified_data_loader
 
 
 class AnalystLabelingFeatureEngineeringStep:
@@ -23,17 +39,196 @@ class AnalystLabelingFeatureEngineeringStep:
         self.logger = system_logger.getChild("AnalystLabelingFeatureEngineeringStep")
         self.orchestrator = None
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="analyst labeling and feature engineering step initialization",
+    )
     async def initialize(self) -> None:
         """Initialize the analyst labeling and feature engineering step."""
-        self.logger.info("Initializing Analyst Labeling and Feature Engineering Step...")
-        
+        self.logger.info(
+            "Initializing Analyst Labeling and Feature Engineering Step...",
+        )
+
         # Initialize the vectorized labeling orchestrator
-        from src.training.steps.vectorized_labelling_orchestrator import VectorizedLabellingOrchestrator
+        from src.training.steps.vectorized_labelling_orchestrator import (
+            VectorizedLabellingOrchestrator,
+        )
+
         self.orchestrator = VectorizedLabellingOrchestrator(self.config)
         await self.orchestrator.initialize()
-        
-        self.logger.info("Analyst Labeling and Feature Engineering Step initialized successfully")
 
+        self.logger.info(
+            "Analyst Labeling and Feature Engineering Step initialized successfully",
+        )
+
+    async def _validate_and_enhance_features(self, labeled_data: pd.DataFrame) -> pd.DataFrame:
+        """Validate and enhance features for the 240+ feature set."""
+        try:
+            self.logger.info("🔍 Validating and enhancing features for 240+ feature set...")
+            
+            # Separate features from labels
+            feature_columns = [col for col in labeled_data.columns if col != 'label']
+            features_df = labeled_data[feature_columns]
+            
+            # CRITICAL: Enhanced feature validation with detailed reporting
+            constant_features = []
+            low_variance_features = []
+            valid_features = []
+            problematic_features = []
+            
+            self.logger.info(f"📊 Starting feature validation for {len(feature_columns)} features...")
+            
+            for col in feature_columns:
+                try:
+                    feature_values = features_df[col].dropna()
+                    
+                    if len(feature_values) == 0:
+                        constant_features.append(f"{col} (all NaN values)")
+                        continue
+                    
+                    # Check for constant features
+                    unique_values = feature_values.unique()
+                    if len(unique_values) <= 1:
+                        constant_value = unique_values[0] if len(unique_values) == 1 else "NaN"
+                        constant_features.append(f"{col} (constant value: {constant_value})")
+                        continue
+                    
+                    # Check for very low variance features
+                    variance = feature_values.var()
+                    if variance < 1e-8:  # Very low variance threshold
+                        low_variance_features.append(f"{col} (variance: {variance:.2e})")
+                        continue
+                    
+                    # Check for binary features with only one value
+                    if len(unique_values) == 2 and set(unique_values) == {0, 1}:
+                        # Binary feature with both 0 and 1 - this is perfect!
+                        valid_features.append(col)
+                    elif len(unique_values) == 2:
+                        # Binary feature with unexpected values
+                        problematic_features.append(f"{col} (binary feature with values: {unique_values})")
+                        continue
+                    else:
+                        # Continuous feature with sufficient variation
+                        valid_features.append(col)
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Error validating feature '{col}': {e}")
+                    problematic_features.append(f"{col} (validation error: {e})")
+                    continue
+            
+            # Log comprehensive feature quality metrics
+            self.logger.info(f"📊 Feature quality analysis:")
+            self.logger.info(f"   📊 Total features: {len(feature_columns)}")
+            self.logger.info(f"   ✅ Valid features: {len(valid_features)}")
+            self.logger.info(f"   {'✅' if len(constant_features) == 0 else '🚨'} Constant features: {len(constant_features)} (SHOULD BE 0)")
+            self.logger.info(f"   {'✅' if len(low_variance_features) == 0 else '⚠️'} Low-variance features: {len(low_variance_features)}")
+            self.logger.info(f"   {'✅' if len(problematic_features) == 0 else '⚠️'} Problematic features: {len(problematic_features)}")
+            
+            # CRITICAL: If we have constant features, this indicates a serious issue
+            if constant_features:
+                self.logger.error(f"🚨 CRITICAL ISSUE: Found {len(constant_features)} constant features!")
+                self.logger.error(f"🚨 This indicates a fundamental problem with feature engineering!")
+                self.logger.error(f"🚨 Constant features provide no predictive value and will break the model!")
+                
+                # Log all constant features for debugging
+                for i, feature in enumerate(constant_features[:20], 1):  # Show first 20
+                    self.logger.error(f"   {i:2d}. {feature}")
+                if len(constant_features) > 20:
+                    self.logger.error(f"   ... and {len(constant_features) - 20} more constant features")
+                
+                # Provide diagnostic information
+                self.logger.error(f"🚨 DIAGNOSTIC INFORMATION:")
+                self.logger.error(f"   - Check if time-series data is being processed correctly")
+                self.logger.error(f"   - Verify feature engineering is not flattening arrays")
+                self.logger.error(f"   - Ensure proper data length validation")
+                self.logger.error(f"   - Review the orchestrator feature combination logic")
+                
+                # Remove constant features to prevent model failure
+                features_to_remove = [col.split(" (constant value:")[0] for col in constant_features]
+                labeled_data = labeled_data.drop(columns=features_to_remove)
+                self.logger.warning(f"🗑️ Removed {len(features_to_remove)} constant features to prevent model failure")
+            
+            # Remove low variance features
+            if low_variance_features:
+                low_var_features_to_remove = [col.split(" (variance:")[0] for col in low_variance_features]
+                labeled_data = labeled_data.drop(columns=low_var_features_to_remove)
+                self.logger.info(f"🗑️ Removed {len(low_var_features_to_remove)} low-variance features")
+            
+            # Remove problematic features
+            if problematic_features:
+                problematic_features_to_remove = [col.split(" (")[0] for col in problematic_features]
+                labeled_data = labeled_data.drop(columns=problematic_features_to_remove)
+                self.logger.warning(f"🗑️ Removed {len(problematic_features_to_remove)} problematic features")
+            
+            # Check for NaN values and handle them
+            nan_counts = labeled_data.isnull().sum()
+            features_with_nans = nan_counts[nan_counts > 0]
+            
+            if len(features_with_nans) > 0:
+                self.logger.warning(f"⚠️ Found {len(features_with_nans)} features with NaN values")
+                # Fill NaN values with 0 for numerical features
+                numeric_columns = labeled_data.select_dtypes(include=[np.number]).columns
+                labeled_data[numeric_columns] = labeled_data[numeric_columns].fillna(0)
+                self.logger.info("✅ Filled NaN values with 0")
+            
+            # Check for infinite values
+            inf_counts = np.isinf(labeled_data.select_dtypes(include=[np.number])).sum()
+            features_with_infs = inf_counts[inf_counts > 0]
+            
+            if len(features_with_infs) > 0:
+                self.logger.warning(f"⚠️ Found {len(features_with_infs)} features with infinite values")
+                # Replace infinite values with large finite values
+                labeled_data = labeled_data.replace([np.inf, -np.inf], [1e6, -1e6])
+                self.logger.info("✅ Replaced infinite values with finite bounds")
+            
+            # Remove raw OHLCV columns to prevent data leakage
+            raw_ohlcv_columns = ["open", "high", "low", "close", "volume"]
+            ohlcv_columns_found = [col for col in raw_ohlcv_columns if col in labeled_data.columns]
+            if ohlcv_columns_found:
+                labeled_data = labeled_data.drop(columns=ohlcv_columns_found)
+                self.logger.warning(f"🚨 CRITICAL: Found raw OHLCV columns in features: {ohlcv_columns_found}")
+                self.logger.warning(f"🚨 Removed raw OHLCV columns to prevent data leakage!")
+                self.logger.warning(f"🚨 This indicates the orchestrator is including raw price data!")
+            
+            # Final validation check
+            remaining_features = [col for col in labeled_data.columns if col != 'label']
+            self.logger.info(f"✅ Final feature validation complete:")
+            self.logger.info(f"   📊 Remaining features: {len(remaining_features)}")
+            self.logger.info(f"   📊 Total samples: {len(labeled_data)}")
+            self.logger.info(f"   🗑️ Raw OHLCV columns removed: {ohlcv_columns_found if ohlcv_columns_found else 'None'}")
+            
+            if len(remaining_features) < 10:
+                self.logger.error(f"🚨 CRITICAL: Only {len(remaining_features)} features remaining!")
+                self.logger.error(f"🚨 This indicates a severe feature engineering failure!")
+                self.logger.error(f"🚨 The model will likely fail to train properly!")
+            
+            return labeled_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Feature validation failed: {e}")
+            return labeled_data
+
+    async def _log_feature_engineering_summary(self, labeled_data: pd.DataFrame) -> None:
+        """Log concise feature engineering summary."""
+        try:
+            feature_columns = [col for col in labeled_data.columns if col != 'label']
+            
+            self.logger.info(f"📊 Feature engineering completed: {len(feature_columns)} features, {len(labeled_data)} samples")
+            
+            # Log only basic label distribution if available
+            if 'label' in labeled_data.columns:
+                label_distribution = labeled_data['label'].value_counts()
+                self.logger.info(f"🎯 Label distribution: {dict(label_distribution)}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Feature engineering summary logging failed: {e}")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"status": "FAILED", "error": "Execution failed"},
+        context="analyst labeling and feature engineering step execution",
+    )
     async def execute(
         self,
         training_input: dict[str, Any],
@@ -49,65 +244,80 @@ class AnalystLabelingFeatureEngineeringStep:
         Returns:
             dict: Updated pipeline state
         """
-        self.logger.info("Executing analyst labeling and feature engineering step...")
-        
+        self.logger.info("Starting analyst labeling and feature engineering...")
+
         try:
             # Extract parameters
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             data_dir = training_input.get("data_dir", "data/training")
-            
-            # Load the historical data
-            data_file_path = f"{data_dir}/{exchange}_{symbol}_historical_data.pkl"
-            
-            if not os.path.exists(data_file_path):
-                self.logger.error(f"Data file not found: {data_file_path}")
-                return {"status": "FAILED", "error": f"Data file not found: {data_file_path}"}
-            
-            # Load data
-            with open(data_file_path, "rb") as f:
-                historical_data = pickle.load(f)
-            
-            # Handle the data structure - it's a dictionary with 'klines', 'agg_trades', etc.
-            if isinstance(historical_data, dict):
-                if 'klines' in historical_data:
-                    # Use the klines data which contains OHLCV data
-                    price_data = historical_data['klines']
-                    self.logger.info(f"✅ Extracted klines data: {price_data.shape}")
-                else:
-                    raise ValueError("No 'klines' data found in historical data dictionary")
-            else:
-                price_data = historical_data
-            
+            timeframe = training_input.get("timeframe", "1m")
+
+            # Use unified data loader to get comprehensive data for feature engineering
+            self.logger.info("🔄 Loading unified data...")
+            data_loader = get_unified_data_loader(self.config)
+
+            # Load unified data with optimizations for ML training (180 days for comprehensive feature engineering)
+            price_data = await data_loader.load_unified_data(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                lookback_days=180,
+                use_streaming=True,  # Enable streaming for large datasets
+            )
+
+            if price_data is None or price_data.empty:
+                self.logger.error(f"No unified data found for {symbol} on {exchange}")
+                return {
+                    "status": "FAILED",
+                    "error": f"No unified data found for {symbol} on {exchange}",
+                }
+
+            # Log data information
+            data_info = data_loader.get_data_info(price_data)
+            self.logger.info(f"✅ Loaded unified data: {data_info['rows']} rows")
+
             # Ensure price_data is a DataFrame
             if not isinstance(price_data, pd.DataFrame):
                 price_data = pd.DataFrame(price_data)
-            
+
             # Validate that we have proper OHLCV data for triple barrier labeling
-            required_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
-            missing_ohlcv = [col for col in required_ohlcv_columns if col not in price_data.columns]
-            
+            required_ohlcv_columns = ["open", "high", "low", "close", "volume"]
+            missing_ohlcv = [
+                col for col in required_ohlcv_columns if col not in price_data.columns
+            ]
+
             if missing_ohlcv:
                 self.logger.error(f"Missing required OHLCV columns: {missing_ohlcv}")
-                self.logger.error("Cannot perform proper triple barrier labeling without OHLCV data.")
-                self.logger.error("Available columns: " + str(list(price_data.columns)))
-                return {"status": "FAILED", "error": f"Missing OHLCV columns: {missing_ohlcv}"}
-            
-            self.logger.info(f"✅ Validated OHLCV data with columns: {list(price_data.columns)}")
-            
+                self.logger.error(
+                    "Cannot perform proper triple barrier labeling without OHLCV data."
+                )
+                self.logger.error(f"Available columns: {list(price_data.columns)}")
+                return {
+                    "status": "FAILED",
+                    "error": f"Missing OHLCV columns: {missing_ohlcv}",
+                }
+
+            self.logger.info("✅ Validated OHLCV data")
+
             # Create volume data if not available
             volume_data = None
-            if 'volume' in price_data.columns:
-                volume_data = price_data[['volume']]
+            if "volume" in price_data.columns:
+                volume_data = price_data[["volume"]]
             else:
                 # Create synthetic volume data
-                volume_data = pd.DataFrame({
-                    'volume': np.random.uniform(1000, 10000, len(price_data))
-                }, index=price_data.index)
+                volume_data = pd.DataFrame(
+                    {"volume": np.random.uniform(1000, 10000, len(price_data))},
+                    index=price_data.index,
+                )
                 self.logger.warning("Created synthetic volume data")
-            
+
             # Check if orchestrator is initialized
-            if self.orchestrator and hasattr(self.orchestrator, 'is_initialized') and self.orchestrator.is_initialized:
+            if (
+                self.orchestrator
+                and hasattr(self.orchestrator, "is_initialized")
+                and self.orchestrator.is_initialized
+            ):
                 try:
                     # Execute vectorized labeling and feature engineering
                     result = await self.orchestrator.orchestrate_labeling_and_feature_engineering(
@@ -116,180 +326,547 @@ class AnalystLabelingFeatureEngineeringStep:
                         order_flow_data=None,  # Not available in this context
                         sr_levels=None,  # Not available in this context
                     )
-                    
-                    # Ensure the result has a 'label' column
+
+                    # Enhanced feature validation and quality checks
                     if result and isinstance(result.get("data"), pd.DataFrame):
                         labeled_data = result.get("data")
-                        if 'label' not in labeled_data.columns:
-                            self.logger.warning("No 'label' column found in orchestrator result, adding default labels")
-                            labeled_data['label'] = 0
-                        result["data"] = labeled_data
-                    else:
-                        raise Exception("Orchestrator returned invalid data")
                         
+                        # Validate feature quality for 240+ feature set
+                        labeled_data = await self._validate_and_enhance_features(labeled_data)
+                        
+                        # Ensure the result has a 'label' column
+                        if "label" not in labeled_data.columns:
+                            self.logger.warning(
+                                "No 'label' column found in orchestrator result, adding default labels"
+                            )
+                            labeled_data[
+                                "label"
+                            ] = -1  # Default to sell signal for binary classification
+                        
+                        result["data"] = labeled_data
+                        
+                        # Log feature engineering summary
+                        await self._log_feature_engineering_summary(labeled_data)
+                        
+                    else:
+                        msg = "Orchestrator returned invalid data"
+                        raise Exception(msg)
+
                 except Exception as e:
-                    self.logger.warning(f"Vectorized labeling orchestrator failed during execution: {e}, using fallback")
+                    self.logger.warning(
+                        f"Vectorized labeling orchestrator failed during execution: {e}, using fallback"
+                    )
                     result = self._create_fallback_labeled_data(price_data)
             else:
                 # Fallback: create simple labeled data
-                self.logger.warning("Vectorized labeling orchestrator not initialized, using fallback labeling")
+                self.logger.warning(
+                    "Vectorized labeling orchestrator not initialized, using fallback labeling"
+                )
                 result = self._create_fallback_labeled_data(price_data)
-            
             # Get the labeled data
             labeled_data = result.get("data", price_data)
-            
+
             # Split the data into train/validation/test sets (80/10/10 split)
             total_rows = len(labeled_data)
             train_end = int(total_rows * 0.8)
             val_end = int(total_rows * 0.9)
-            
+
             train_data = labeled_data.iloc[:train_end]
             validation_data = labeled_data.iloc[train_end:val_end]
             test_data = labeled_data.iloc[val_end:]
-            
+
+            # Persist and log selected feature lists per split (traceability)
+            try:
+                selected_features = {
+                    "train": [c for c in train_data.columns if c != "label"],
+                    "validation": [c for c in validation_data.columns if c != "label"],
+                    "test": [c for c in test_data.columns if c != "label"],
+                }
+                trace_path = f"{data_dir}/{exchange}_{symbol}_selected_features.json"
+                with open(trace_path, "w") as jf:
+                    json.dump(selected_features, jf, indent=2)
+                self.logger.info(f"🔎 Saved feature lists to {trace_path}")
+            except Exception as e:
+                self.logger.warning(f"Could not persist selected feature lists: {e}")
             # Save feature files that the validator expects
             feature_files = [
                 (f"{data_dir}/{exchange}_{symbol}_features_train.pkl", train_data),
-                (f"{data_dir}/{exchange}_{symbol}_features_validation.pkl", validation_data),
-                (f"{data_dir}/{exchange}_{symbol}_features_test.pkl", test_data)
+                (
+                    f"{data_dir}/{exchange}_{symbol}_features_validation.pkl",
+                    validation_data,
+                ),
+                (f"{data_dir}/{exchange}_{symbol}_features_test.pkl", test_data),
             ]
-            
+
             for file_path, data in feature_files:
                 with open(file_path, "wb") as f:
                     pickle.dump(data, f)
-                self.logger.info(f"✅ Saved feature data to {file_path}")
-            
+            self.logger.info(f"✅ Saved feature data files")
+
             # Also save Parquet versions with downcasting for efficiency
             try:
-                from src.training.enhanced_training_manager_optimized import MemoryEfficientDataManager
+                from src.training.enhanced_training_manager_optimized import (
+                    MemoryEfficientDataManager,
+                )
+
                 mem_mgr = MemoryEfficientDataManager()
                 parquet_files = [
-                    (f"{data_dir}/{exchange}_{symbol}_features_train.parquet", mem_mgr.optimize_dataframe(train_data.copy())),
-                    (f"{data_dir}/{exchange}_{symbol}_features_validation.parquet", mem_mgr.optimize_dataframe(validation_data.copy())),
-                    (f"{data_dir}/{exchange}_{symbol}_features_test.parquet", mem_mgr.optimize_dataframe(test_data.copy())),
+                    (
+                        f"{data_dir}/{exchange}_{symbol}_features_train.parquet",
+                        mem_mgr.optimize_dataframe(train_data.copy()),
+                    ),
+                    (
+                        f"{data_dir}/{exchange}_{symbol}_features_validation.parquet",
+                        mem_mgr.optimize_dataframe(validation_data.copy()),
+                    ),
+                    (
+                        f"{data_dir}/{exchange}_{symbol}_features_test.parquet",
+                        mem_mgr.optimize_dataframe(test_data.copy()),
+                    ),
                 ]
                 for file_path, df in parquet_files:
-                    df.to_parquet(file_path, compression="snappy", index=False)
-                    self.logger.info(f"✅ Saved feature data (Parquet) to {file_path}")
+                    try:
+                        from src.training.enhanced_training_manager_optimized import (
+                            ParquetDatasetManager,
+                        )
+                        import json as _json
+
+                        feature_cols = list(df.columns)
+                        if "label" in feature_cols:
+                            feature_cols.remove("label")
+                        metadata = {
+                            "schema_version": "1",
+                            "feature_list": _json.dumps(feature_cols),
+                            "feature_hash": str(hash(tuple(sorted(feature_cols))))[:16],
+                            "training_window": f"{training_input.get('t0_ms','')}..{training_input.get('t1_ms','')}",
+                            "generator_commit": training_input.get(
+                                "generator_commit", ""
+                            ),
+                        }
+                        # Arrow-native cast on timestamp before write
+                        import pyarrow as _pa, pyarrow.compute as pc
+
+                        table = _pa.Table.from_pandas(df, preserve_index=False)
+                        if "timestamp" in table.schema.names and not _pa.types.is_int64(
+                            table.schema.field("timestamp").type
+                        ):
+                            table = table.set_column(
+                                table.schema.get_field_index("timestamp"),
+                                "timestamp",
+                                pc.cast(table.column("timestamp"), _pa.int64()),
+                            )
+                        df = table.to_pandas(types_mapper=pd.ArrowDtype)
+                        ParquetDatasetManager(self.logger).write_flat_parquet(
+                            df,
+                            file_path,
+                            schema_name="split",
+                            compression="snappy",
+                            use_dictionary=True,
+                            row_group_size=128_000,
+                            metadata=metadata,
+                        )
+                    except Exception:
+                        from src.utils.logger import (
+                            log_io_operation,
+                            log_dataframe_overview,
+                        )
+
+                        with log_io_operation(
+                            self.logger, "to_parquet", file_path, compression="snappy"
+                        ):
+                            df.to_parquet(file_path, compression="snappy", index=False)
+                        try:
+                            log_dataframe_overview(
+                                self.logger, df, name=f"features_{split_name}"
+                            )
+                        except Exception:
+                            pass
+                    pass  # Reduced logging
+                # Also write partitioned dataset for features
+                try:
+                    from src.training.enhanced_training_manager_optimized import (
+                        ParquetDatasetManager,
+                    )
+
+                    pdm = ParquetDatasetManager(logger=self.logger)
+                    base_dir = os.path.join(data_dir, "parquet", "features")
+                    for split_name, df in (
+                        ("train", mem_mgr.optimize_dataframe(train_data.copy())),
+                        (
+                            "validation",
+                            mem_mgr.optimize_dataframe(validation_data.copy()),
+                        ),
+                        ("test", mem_mgr.optimize_dataframe(test_data.copy())),
+                    ):
+                        df = df.copy()
+                        df["exchange"] = exchange
+                        df["symbol"] = symbol
+                        df["timeframe"] = training_input.get("timeframe", "1m")
+                        df["split"] = split_name
+                        import json as _json
+
+                        feat_cols = list(df.columns)
+                        if "label" in feat_cols:
+                            feat_cols.remove("label")
+                        pdm.write_partitioned_dataset(
+                            df=df,
+                            base_dir=base_dir,
+                            partition_cols=[
+                                "exchange",
+                                "symbol",
+                                "timeframe",
+                                "split",
+                                "year",
+                                "month",
+                                "day",
+                            ],
+                            schema_name="split",
+                            compression="snappy",
+                            metadata={
+                                "schema_version": "1",
+                                "feature_list": _json.dumps(feat_cols),
+                                "feature_hash": str(hash(tuple(sorted(feat_cols))))[
+                                    :16
+                                ],
+                                "training_window": f"{training_input.get('t0_ms','')}..{training_input.get('t1_ms','')}",
+                                "generator_commit": training_input.get(
+                                    "generator_commit", ""
+                                ),
+                            },
+                        )
+                except Exception as _e:
+                    self.logger.warning(f"Partitioned features write skipped: {_e}")
             except Exception as e:
-                self.logger.warning(f"Could not save Parquet features: {e}")
-            
+                self.logger.error(f"Could not save Parquet features: {e}")
+
             # Also save labeled data files for compatibility
             labeled_files = [
                 (f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl", train_data),
-                (f"{data_dir}/{exchange}_{symbol}_labeled_validation.pkl", validation_data),
-                (f"{data_dir}/{exchange}_{symbol}_labeled_test.pkl", test_data)
+                (
+                    f"{data_dir}/{exchange}_{symbol}_labeled_validation.pkl",
+                    validation_data,
+                ),
+                (f"{data_dir}/{exchange}_{symbol}_labeled_test.pkl", test_data),
             ]
-            
+
             for file_path, data in labeled_files:
                 with open(file_path, "wb") as f:
                     pickle.dump(data, f)
-                self.logger.info(f"✅ Saved labeled data to {file_path}")
-            
+            self.logger.info(f"✅ Saved labeled data files")
+
             # Parquet for labeled data too
             try:
                 parquet_labeled = [
-                    (f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet", mem_mgr.optimize_dataframe(train_data.copy())),
-                    (f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet", mem_mgr.optimize_dataframe(validation_data.copy())),
-                    (f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet", mem_mgr.optimize_dataframe(test_data.copy())),
+                    (
+                        f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet",
+                        mem_mgr.optimize_dataframe(train_data.copy()),
+                    ),
+                    (
+                        f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
+                        mem_mgr.optimize_dataframe(validation_data.copy()),
+                    ),
+                    (
+                        f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet",
+                        mem_mgr.optimize_dataframe(test_data.copy()),
+                    ),
                 ]
                 for file_path, df in parquet_labeled:
-                    df.to_parquet(file_path, compression="snappy", index=False)
-                    self.logger.info(f"✅ Saved labeled data (Parquet) to {file_path}")
+                    try:
+                        from src.training.enhanced_training_manager_optimized import (
+                            ParquetDatasetManager,
+                        )
+                        import json as _json
+
+                        metadata = {
+                            "schema_version": "1",
+                            "feature_list": _json.dumps(
+                                [c for c in df.columns if c != "label"]
+                            ),
+                            "feature_hash": str(
+                                hash(
+                                    tuple(
+                                        sorted([c for c in df.columns if c != "label"])
+                                    )
+                                )
+                            )[:16],
+                            "training_window": f"{training_input.get('t0_ms','')}..{training_input.get('t1_ms','')}",
+                            "generator_commit": training_input.get(
+                                "generator_commit", ""
+                            ),
+                        }
+                        ParquetDatasetManager(self.logger).write_flat_parquet(
+                            df,
+                            file_path,
+                            schema_name="split",
+                            compression="snappy",
+                            use_dictionary=True,
+                            row_group_size=128_000,
+                            metadata=metadata,
+                        )
+                    except Exception:
+                        from src.utils.logger import log_io_operation
+
+                        with log_io_operation(
+                            self.logger, "to_parquet", file_path, compression="snappy"
+                        ):
+                            df.to_parquet(file_path, compression="snappy", index=False)
+                    pass  # Reduced logging
+                # Also write partitioned dataset for labeled data
+                try:
+                    from src.training.enhanced_training_manager_optimized import (
+                        ParquetDatasetManager,
+                    )
+
+                    pdm = ParquetDatasetManager(logger=self.logger)
+                    base_dir = os.path.join(data_dir, "parquet", "labeled")
+                    for split_name, df in (
+                        ("train", mem_mgr.optimize_dataframe(train_data.copy())),
+                        (
+                            "validation",
+                            mem_mgr.optimize_dataframe(validation_data.copy()),
+                        ),
+                        ("test", mem_mgr.optimize_dataframe(test_data.copy())),
+                    ):
+                        df = df.copy()
+                        df["exchange"] = exchange
+                        df["symbol"] = symbol
+                        df["timeframe"] = training_input.get("timeframe", "1m")
+                        df["split"] = split_name
+                        import json as _json
+
+                        pdm.write_partitioned_dataset(
+                            df=df,
+                            base_dir=base_dir,
+                            partition_cols=[
+                                "exchange",
+                                "symbol",
+                                "timeframe",
+                                "split",
+                                "year",
+                                "month",
+                                "day",
+                            ],
+                            schema_name="split",
+                            compression="snappy",
+                            metadata={
+                                "schema_version": "1",
+                                "feature_list": _json.dumps(
+                                    [c for c in df.columns if c != "label"]
+                                ),
+                                "feature_hash": str(
+                                    hash(
+                                        tuple(
+                                            sorted(
+                                                [c for c in df.columns if c != "label"]
+                                            )
+                                        )
+                                    )
+                                )[:16],
+                                "training_window": f"{training_input.get('t0_ms','')}..{training_input.get('t1_ms','')}",
+                                "generator_commit": training_input.get(
+                                    "generator_commit", ""
+                                ),
+                            },
+                        )
+
+                    # Materialize model-specific feature projection per split for faster downstream reads
+                    try:
+                        import json as _json
+
+                        feat_cols = self.config.get(
+                            "model_feature_columns"
+                        ) or self.config.get("feature_columns")
+                        label_col = self.config.get("label_column", "label")
+                        if isinstance(feat_cols, list) and len(feat_cols) > 0:
+                            cols = ["timestamp", *feat_cols, label_col]
+                            model_name = self.config.get("model_name", "default")
+                            out_dir = os.path.join(
+                                "data_cache", "parquet", f"proj_features_{model_name}"
+                            )
+                            for split_name in ("train", "validation", "test"):
+                                filters = [
+                                    ("exchange", "==", exchange),
+                                    ("symbol", "==", symbol),
+                                    (
+                                        "timeframe",
+                                        "==",
+                                        training_input.get("timeframe", "1m"),
+                                    ),
+                                    ("split", "==", split_name),
+                                ]
+                                meta = {
+                                    "schema_version": "1",
+                                    "feature_list": _json.dumps(feat_cols),
+                                    "feature_hash": str(hash(tuple(sorted(feat_cols))))[
+                                        :16
+                                    ],
+                                    "training_window": f"{training_input.get('t0_ms','')}..{training_input.get('t1_ms','')}",
+                                    "generator_commit": training_input.get(
+                                        "generator_commit", ""
+                                    ),
+                                    "split": split_name,
+                                }
+                                pdm.materialize_projection(
+                                    base_dir=base_dir,
+                                    filters=filters,
+                                    columns=cols,
+                                    output_dir=out_dir,
+                                    partition_cols=[
+                                        "exchange",
+                                        "symbol",
+                                        "timeframe",
+                                        "split",
+                                        "year",
+                                        "month",
+                                        "day",
+                                    ],
+                                    schema_name="split",
+                                    compression="snappy",
+                                    batch_size=131072,
+                                    metadata=meta,
+                                )
+                            self.logger.info(f"✅ Materialized model projections")
+                    except Exception as _proj_err:
+                        self.logger.warning(
+                            f"Feature projection materialization skipped: {_proj_err}"
+                        )
+                except Exception as _e:
+                    self.logger.warning(f"Partitioned labeled write skipped: {_e}")
             except Exception as e:
-                self.logger.warning(f"Could not save Parquet labeled data: {e}")
-            
+                self.logger.error(f"Could not save Parquet labeled data: {e}")
+
             # Integrate UnifiedDataManager to create time-based train/validation/test splits
             try:
                 from src.training.data_manager import UnifiedDataManager
+
                 lookback_days = training_input.get(
                     "lookback_days",
-                    60 if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else 730,
+                    180 if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else 730,
                 )
 
                 labeled_full = labeled_data.copy()
                 # Ensure datetime index for time-based splits
                 if "timestamp" in labeled_full.columns:
-                    labeled_full["timestamp"] = pd.to_datetime(labeled_full["timestamp"], errors="coerce")
-                    labeled_full = labeled_full.dropna(subset=["timestamp"])  # drop rows with invalid timestamps
+                    labeled_full["timestamp"] = pd.to_datetime(
+                        labeled_full["timestamp"],
+                        errors="coerce",
+                    )
+                    labeled_full = labeled_full.dropna(
+                        subset=["timestamp"],
+                    )  # drop rows with invalid timestamps
                     labeled_full = labeled_full.set_index("timestamp").sort_index()
                 elif not pd.api.types.is_datetime64_any_dtype(labeled_full.index):
                     # Fallback: create a synthetic datetime index to preserve ordering
-                    self.logger.warning("No timestamp column found; creating synthetic datetime index for splits")
+                    self.logger.warning(
+                        "No timestamp column found; creating synthetic datetime index for splits",
+                    )
                     labeled_full = labeled_full.copy()
                     labeled_full.index = pd.date_range(
-                        end=pd.Timestamp.utcnow(), periods=len(labeled_full), freq="T"
+                        end=pd.Timestamp.utcnow(),
+                        periods=len(labeled_full),
+                        freq="T",
                     )
 
                 data_manager = UnifiedDataManager(
-                    data_dir=data_dir, symbol=symbol, exchange=exchange, lookback_days=lookback_days
+                    data_dir=data_dir,
+                    symbol=symbol,
+                    exchange=exchange,
+                    lookback_days=lookback_days,
                 )
                 db_result = data_manager.create_unified_database(labeled_full)
                 pipeline_state["unified_database"] = db_result
-                self.logger.info("✅ UnifiedDataManager created train/validation/test split files")
+                self.logger.info("✅ Created unified database splits")
             except Exception as e:
-                self.logger.error(f"❌ UnifiedDataManager failed to create splits: {e}")
+                self.logger.exception(
+                    f"❌ UnifiedDataManager failed to create splits: {e}",
+                )
 
             # Update pipeline state with results
-            pipeline_state.update({
-                "labeled_data": result.get("data", price_data),
-                "feature_engineering_metadata": result.get("metadata", {}),
-                "feature_engineering_completed": True,
-                "labeling_completed": True,
-            })
-            
-            self.logger.info("✅ Analyst labeling and feature engineering completed successfully")
+            pipeline_state.update(
+                {
+                    "labeled_data": result.get("data", price_data),
+                    "feature_engineering_metadata": result.get("metadata", {}),
+                    "feature_engineering_completed": True,
+                    "labeling_completed": True,
+                },
+            )
+
+            self.logger.info(
+                "✅ Analyst labeling and feature engineering completed successfully",
+            )
             return {"status": "SUCCESS", "data": result}
-            
+
         except Exception as e:
-            self.logger.error(f"❌ Error in analyst labeling and feature engineering: {e}")
+            self.logger.exception(
+                f"❌ Error in analyst labeling and feature engineering: {e}",
+            )
             return {"status": "FAILED", "error": str(e)}
-    
+
     def _create_fallback_labeled_data(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """Create fallback labeled data when orchestrator fails."""
         try:
             # Create simple labeled data with basic features
             labeled_data = price_data.copy()
-            
+
             # Add basic features
-            if 'close' in labeled_data.columns:
-                labeled_data['returns'] = labeled_data['close'].pct_change()
-                labeled_data['volatility'] = labeled_data['returns'].rolling(window=20).std()
-                labeled_data['sma_20'] = labeled_data['close'].rolling(window=20).mean()
-                labeled_data['sma_50'] = labeled_data['close'].rolling(window=50).mean()
-            
-            # Add simple labels (0 for no action, 1 for buy/sell signal)
-            labeled_data['label'] = 0  # Default label
-            
+            if "close" in labeled_data.columns:
+                labeled_data["returns"] = labeled_data["close"].pct_change()
+                labeled_data["volatility"] = (
+                    labeled_data["returns"].rolling(window=20).std()
+                )
+                labeled_data["sma_20"] = labeled_data["close"].rolling(window=20).mean()
+                labeled_data["sma_50"] = labeled_data["close"].rolling(window=50).mean()
+
+            # Add simple labels (binary classification: -1 for sell, 1 for buy)
+            labeled_data["label"] = -1  # Default to sell signal
+
             # Create simple buy/sell signals based on moving averages
-            if 'sma_20' in labeled_data.columns and 'sma_50' in labeled_data.columns:
-                # Use 0 for no signal, 1 for buy signal (simplified for binary classification)
-                labeled_data.loc[labeled_data['sma_20'] > labeled_data['sma_50'], 'label'] = 1  # Buy signal
-                # Keep 0 for when sma_20 <= sma_50 (no signal)
-            
+            if "sma_20" in labeled_data.columns and "sma_50" in labeled_data.columns:
+                # Use -1 for sell signal, 1 for buy signal (binary classification)
+                labeled_data.loc[
+                    labeled_data["sma_20"] > labeled_data["sma_50"],
+                    "label",
+                ] = 1  # Buy signal
+                # Keep -1 for when sma_20 <= sma_50 (sell signal)
+
+            # Remove raw OHLCV columns to prevent data leakage
+            raw_ohlcv_columns = ["open", "high", "low", "close", "volume"]
+            columns_to_remove = [col for col in raw_ohlcv_columns if col in labeled_data.columns]
+            if columns_to_remove:
+                labeled_data = labeled_data.drop(columns=columns_to_remove)
+                self.logger.info(f"🗑️ Removed raw OHLCV columns to prevent data leakage: {columns_to_remove}")
+
             # Remove NaN values
             labeled_data = labeled_data.dropna()
-            
+
             return {
                 "data": labeled_data,
                 "metadata": {
                     "labeling_method": "fallback_simple",
                     "features_added": ["returns", "volatility", "sma_20", "sma_50"],
-                    "label_distribution": labeled_data['label'].value_counts().to_dict()
-                }
+                    "raw_ohlcv_removed": columns_to_remove,
+                    "label_distribution": labeled_data["label"]
+                    .value_counts()
+                    .to_dict(),
+                },
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error creating fallback labeled data: {e}")
-            # Return original data with basic label
+            # Return original data with basic label (binary classification)
             price_data_copy = price_data.copy()
-            price_data_copy['label'] = 0
+            price_data_copy["label"] = -1  # Default to sell signal
+            
+            # Remove raw OHLCV columns even in error case
+            raw_ohlcv_columns = ["open", "high", "low", "close", "volume"]
+            columns_to_remove = [col for col in raw_ohlcv_columns if col in price_data_copy.columns]
+            if columns_to_remove:
+                price_data_copy = price_data_copy.drop(columns=columns_to_remove)
+                self.logger.info(f"🗑️ Removed raw OHLCV columns in error case: {columns_to_remove}")
+            
             return {
                 "data": price_data_copy,
-                "metadata": {
-                    "labeling_method": "fallback_basic",
-                    "error": str(e)
-                }
+                "metadata": {"labeling_method": "fallback_basic", "error": str(e), "raw_ohlcv_removed": columns_to_remove},
             }
 
 
@@ -298,12 +875,18 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
-        self.logger = system_logger.getChild("DeprecatedAnalystLabelingFeatureEngineeringStep")
+        self.logger = system_logger.getChild(
+            "DeprecatedAnalystLabelingFeatureEngineeringStep",
+        )
 
     async def initialize(self) -> None:
         """Initialize the analyst labeling and feature engineering step."""
-        self.logger.info("Initializing Deprecated Analyst Labeling and Feature Engineering Step...")
-        self.logger.info("Deprecated Analyst Labeling and Feature Engineering Step initialized successfully")
+        self.logger.info(
+            "Initializing Deprecated Analyst Labeling and Feature Engineering Step...",
+        )
+        self.logger.info(
+            "Deprecated Analyst Labeling and Feature Engineering Step initialized successfully",
+        )
 
     async def execute(
         self,
@@ -320,8 +903,10 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
         Returns:
             dict: Updated pipeline state
         """
-        self.logger.info("Executing deprecated analyst labeling and feature engineering step...")
-        
+        self.logger.info(
+            "Executing deprecated analyst labeling and feature engineering step...",
+        )
+
         # This step is deprecated - return current state
         return pipeline_state
 
@@ -348,7 +933,8 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
         required_columns = ["open", "high", "low", "close", "volume"]
         for col in required_columns:
             if col not in data.columns:
-                raise ValueError(f"Missing required column: {col}")
+                msg = f"Missing required column: {col}"
+                raise ValueError(msg)
 
         # Calculate features for labeling
         data = self._calculate_features(data)
@@ -359,8 +945,17 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
         # Define barrier parameters based on regime
         profit_take_multiplier = 0.002  # 0.2%
         stop_loss_multiplier = 0.001  # 0.1%
-        time_barrier_minutes = 30  # 30 minutes
-        
+        # Use environment-aware default consistent with vectorized orchestrator
+        try:
+            if os.environ.get("BLANK_TRAINING_MODE", "0") == "1":
+                time_barrier_minutes = 90
+            elif os.environ.get("FULL_TRAINING_MODE", "0") == "1":
+                time_barrier_minutes = 360
+            else:
+                time_barrier_minutes = 30
+        except Exception:
+            time_barrier_minutes = 30
+
         # Apply triple barrier labeling
         labels = []
         for i in range(len(data)):
@@ -377,7 +972,7 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
             time_barrier = entry_time + timedelta(minutes=time_barrier_minutes)
 
             # Check if any barrier is hit
-            label = 0  # Neutral
+            label = -1  # Default to sell signal for binary classification
 
             for j in range(
                 i + 1,
@@ -389,7 +984,7 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
 
                 # Check time barrier
                 if current_time > time_barrier:
-                    label = 0  # Time barrier hit - neutral
+                    label = -1  # Time barrier hit - default to sell signal
                     break
 
                 # Check profit take barrier
@@ -467,9 +1062,7 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
             data = data  # Keep original data for now
 
             # Fill NaN values
-            data = data.fillna(method="bfill").fillna(0)
-
-            return data
+            return data.fillna(method="bfill").fillna(0)
 
         except Exception as e:
             self.logger.error(f"Error calculating features: {e}")
@@ -481,8 +1074,7 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
         rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        return rsi
+        return 100 - (100 / (1 + rs))
 
     def _calculate_macd(
         self,
@@ -518,8 +1110,7 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
         low_close = np.abs(data["low"] - data["close"].shift())
 
         true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        atr = true_range.rolling(window=period).mean()
-        return atr
+        return true_range.rolling(window=period).mean()
 
     async def _add_candlestick_pattern_features(
         self,
@@ -571,21 +1162,55 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
 
             # Convert features to DataFrame and align with original data
             if advanced_features:
-                features_df = pd.DataFrame([advanced_features])
-                # Replicate features for all rows
-                features_df = pd.concat([features_df] * len(data), ignore_index=True)
-                features_df.index = data.index
+                # Align per-row features to data length; skip scalars
+                aligned = pd.DataFrame(index=data.index)
+                n = len(data)
+                for name, val in advanced_features.items():
+                    arr = None
+                    if isinstance(val, pd.Series):
+                        arr = val.values
+                    elif isinstance(val, np.ndarray):
+                        if val.ndim == 1:
+                            arr = val
+                        elif val.ndim == 2 and (val.shape[0] == 1 or val.shape[1] == 1):
+                            arr = val.reshape(-1)
+                    elif isinstance(val, list):
+                        tmp = np.asarray(val)
+                        if tmp.ndim == 1:
+                            arr = tmp
+                        elif tmp.ndim == 2 and (tmp.shape[0] == 1 or tmp.shape[1] == 1):
+                            arr = tmp.reshape(-1)
+                    if arr is None:
+                        continue
+                    if len(arr) > n:
+                        arr = arr[-n:]
+                    elif len(arr) < n:
+                        pad = n - len(arr)
+                        arr = np.concatenate([np.full(pad, np.nan), arr])
+                    try:
+                        aligned[name] = pd.to_numeric(arr, errors="coerce")
+                    except Exception:
+                        pass
 
-                # Add candlestick pattern features to original data
-                for col in features_df.columns:
-                    if col not in data.columns:  # Avoid overwriting existing columns
-                        data[col] = features_df[col]
+                # Drop fully-NaN and constant columns
+                if not aligned.empty:
+                    aligned = aligned.dropna(axis=1, how="all")
+                    nunique = aligned.nunique(dropna=True)
+                    const_cols = nunique[nunique <= 1].index.tolist()
+                    if const_cols:
+                        self.logger.warning(f"Dropping {len(const_cols)} constant candlestick features")
+                        aligned = aligned.drop(columns=const_cols)
+
+                # Add aligned features to original data
+                for col in aligned.columns:
+                    if col not in data.columns:
+                        data[col] = aligned[col]
 
                 self.logger.info(
-                    f"Added {len(features_df.columns)} candlestick pattern features",
+                    f"Added {len(aligned.columns)} candlestick pattern features",
                 )
             else:
-                self.logger.warning("No candlestick pattern features generated")
+                self.logger.error("No candlestick pattern features generated")
 
             return data
 
@@ -648,7 +1273,8 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
             available_features = [col for col in feature_columns if col in data.columns]
 
             if not available_features:
-                raise ValueError(f"No features available for regime {regime_name}")
+                msg = f"No features available for regime {regime_name}"
+                raise ValueError(msg)
 
             # Create feature matrix
             feature_data = data[available_features].copy()
@@ -675,7 +1301,9 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
             return feature_data_scaled
 
         except Exception as e:
-            self.logger.error(f"Error in feature engineering for {regime_name}: {e}")
+            self.logger.exception(
+                f"Error in feature engineering for {regime_name}: {e}",
+            )
             raise
 
     async def _train_regime_encoders(
@@ -703,21 +1331,41 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
 
             # Train PCA encoder for dimensionality reduction
             pca = PCA(n_components=min(10, len(feature_columns)))
-            X_pca = pca.fit_transform(X)
+            pca.fit_transform(X)
 
             # Train autoencoder for feature learning
             from sklearn.neural_network import MLPRegressor
 
-            autoencoder = MLPRegressor(
-                hidden_layer_sizes=(
-                    len(feature_columns),
-                    len(feature_columns) // 2,
-                    len(feature_columns),
-                ),
-                max_iter=1000,
-                random_state=42,
-            )
-            autoencoder.fit(X, X)
+            # Ensure we have enough data and features for autoencoder
+            if len(X) < 10 or len(feature_columns) < 2:
+                self.logger.warning(
+                    f"Insufficient data for autoencoder training: {len(X)} samples, {len(feature_columns)} features"
+                )
+                # Create a simple identity encoder as fallback
+                autoencoder = None
+            else:
+                try:
+                    # Use a simpler architecture for better convergence
+                    hidden_size = max(2, min(len(feature_columns) // 2, 10))
+                    autoencoder = MLPRegressor(
+                        hidden_layer_sizes=(hidden_size,),
+                        max_iter=500,  # Reduced for faster training
+                        random_state=42,
+                        alpha=0.01,  # L2 regularization
+                        learning_rate_init=0.001,
+                        early_stopping=True,
+                        validation_fraction=0.1,
+                        n_iter_no_change=10,
+                    )
+                    autoencoder.fit(X, X)
+                    self.logger.info(
+                        f"Autoencoder trained successfully with {hidden_size} hidden units"
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        f"Autoencoder training failed: {e}, using fallback"
+                    )
+                    autoencoder = None
 
             # Store encoders
             encoders = {
@@ -728,8 +1376,11 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
                 "n_samples": len(X),
             }
 
+            # Log encoder information
+            pca_info = f"PCA components={pca.n_components_}"
+            autoencoder_info = f"Autoencoder layers={autoencoder.n_layers_ if autoencoder else 'None (fallback)'}"
             self.logger.info(
-                f"Encoders trained for {regime_name}: PCA components={pca.n_components_}, Autoencoder layers={autoencoder.n_layers_}",
+                f"Encoders trained for {regime_name}: {pca_info}, {autoencoder_info}",
             )
 
             return encoders
@@ -746,32 +1397,35 @@ async def run_step(
     data_dir: str = "data/training",
     timeframe: str = "1m",
     exchange: str = "BINANCE",
+    force_rerun: bool = False,
 ) -> bool:
     """
     Run analyst labeling and feature engineering step using vectorized orchestrator.
-    
+
     Args:
         symbol: Trading symbol
         exchange_name: Exchange name (deprecated, use exchange)
         data_dir: Data directory path
         timeframe: Timeframe for data
         exchange: Exchange name
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
-    print("🚀 Running analyst labeling and feature engineering step with vectorized orchestrator...")
-    
+    print(
+        "🚀 Running analyst labeling and feature engineering step with vectorized orchestrator..."
+    )
+
     # Use exchange parameter if provided, otherwise use exchange_name for backward compatibility
     actual_exchange = exchange if exchange != "BINANCE" else exchange_name
-    
+
     try:
         # Create step instance
         config = {
-            "symbol": symbol, 
-            "exchange": actual_exchange, 
+            "symbol": symbol,
+            "exchange": actual_exchange,
             "data_dir": data_dir,
-            "timeframe": timeframe
+            "timeframe": timeframe,
         }
         step = AnalystLabelingFeatureEngineeringStep(config)
         await step.initialize()
@@ -782,6 +1436,7 @@ async def run_step(
             "exchange": actual_exchange,
             "data_dir": data_dir,
             "timeframe": timeframe,
+            "force_rerun": force_rerun,
         }
 
         pipeline_state = {}
@@ -790,7 +1445,7 @@ async def run_step(
         return result.get("status") == "SUCCESS" if isinstance(result, dict) else True
 
     except Exception as e:
-        print(f"❌ Analyst labeling and feature engineering failed: {e}")
+        print(f"Analyst labeling and feature engineering failed: {e}")
         return False
 
 
@@ -802,10 +1457,12 @@ async def deprecated_run_step(
 ) -> bool:
     """
     DEPRECATED: Run analyst labeling and feature engineering step.
-    
+
     This function is deprecated and should not be used in new training pipelines.
     """
-    print("⚠️  WARNING: This step is deprecated and should not be used in new training pipelines.")
+    print(
+        "⚠️  WARNING: This step is deprecated and should not be used in new training pipelines.",
+    )
     return True
 
 

@@ -46,17 +46,32 @@ if not logger.handlers:
 
 try:
     # Try importing with relative path first
-    import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-    
+    import sys
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
     from exchange.factory import ExchangeFactory
     from src.config import CONFIG
     from src.utils.error_handler import (
         handle_file_operations,
         handle_network_operations,
     )
-    from src.utils.logger import setup_logging, get_logger
+    from src.utils.logger import get_logger, setup_logging
+    from src.utils.warning_symbols import (
+        error,
+        warning,
+        critical,
+        problem,
+        failed,
+        invalid,
+        missing,
+        timeout,
+        connection_error,
+        validation_error,
+        initialization_error,
+        execution_error,
+    )
 
     # Update logger to use system logger if available
     logger = get_logger("OptimizedDataDownloader")
@@ -68,11 +83,15 @@ except ImportError as e:
         "INTERVAL": "1m",
         "LOOKBACK_YEARS": 2,
     }
+
     # Create a fallback ExchangeFactory
     class ExchangeFactory:
         @staticmethod
         def get_exchange(exchange_name: str):
-            raise NotImplementedError(f"Exchange {exchange_name} not available in fallback mode")
+            msg = f"Exchange {exchange_name} not available in fallback mode"
+            raise NotImplementedError(
+                msg,
+            )
 
 
 @dataclass
@@ -90,6 +109,9 @@ class DownloadConfig:
     retry_delay: float = 1.0
     rate_limit_delay: float = 0.1
     memory_threshold: float = 0.8
+    # Optional explicit date range for backfilling aggtrades (YYYY-MM-DD)
+    start_date_str: str | None = None
+    end_date_str: str | None = None
 
 
 class OptimizedDataDownloader:
@@ -130,16 +152,28 @@ class OptimizedDataDownloader:
             )
 
             print("   🔌 Creating exchange client...")
+            print(f"🔍 DEBUG: Exchange name: {self.config.exchange.lower()}")
+            print(f"🔍 DEBUG: ExchangeFactory available: {ExchangeFactory is not None}")
+            print(f"🔍 DEBUG: ExchangeFactory methods: {dir(ExchangeFactory)}")
             logger.info("🔌 Creating exchange client...")
-            self.exchange_client = ExchangeFactory.get_exchange(
-                self.config.exchange.lower(),
-            )
-            print(
-                f"   ✅ Exchange client created: {type(self.exchange_client).__name__}",
-            )
-            logger.info(
-                f"✅ Exchange client created: {type(self.exchange_client).__name__}",
-            )
+
+            try:
+                self.exchange_client = ExchangeFactory.get_exchange(
+                    self.config.exchange.lower(),
+                )
+                print("🔍 DEBUG: Exchange client created successfully")
+                print(f"🔍 DEBUG: Exchange client type: {type(self.exchange_client)}")
+                print(f"🔍 DEBUG: Exchange client methods: {dir(self.exchange_client)}")
+                print(
+                    f"   ✅ Exchange client created: {type(self.exchange_client).__name__}",
+                )
+                logger.info(
+                    f"✅ Exchange client created: {type(self.exchange_client).__name__}",
+                )
+            except Exception as e:
+                print(f"🔍 DEBUG: Failed to create exchange client: {e}")
+                print(f"🔍 DEBUG: Error type: {type(e)}")
+                raise
 
             print("   🌐 Setting up HTTP session...")
             logger.info("🌐 Setting up HTTP session...")
@@ -167,8 +201,8 @@ class OptimizedDataDownloader:
             )
             return True
         except Exception as e:
-            print(f"❌ STEP 1 FAILED: Failed to initialize downloader: {e}")
-            logger.error(f"❌ STEP 1 FAILED: Failed to initialize downloader: {e}")
+            print(failed("STEP 1 FAILED: Failed to initialize downloader: {e}"))
+            print(failed("❌ STEP 1 FAILED: Failed to initialize downloader: {e}"))
             return False
 
     async def cleanup(self):
@@ -178,26 +212,132 @@ class OptimizedDataDownloader:
         if self.exchange_client and hasattr(self.exchange_client, "close"):
             await self.exchange_client.close()
 
+    def _find_latest_aggtrades_timestamp(self) -> datetime | None:
+        """Find the latest timestamp using partitioned dataset manifest or dataset scan; fallback to CSV tail."""
+        try:
+            from src.training.enhanced_training_manager_optimized import (
+                ParquetDatasetManager,
+            )
+
+            pdm = ParquetDatasetManager(logger=logger)
+            # Prefer partitioned parquet manifest
+            base_dir = os.path.join(self.cache_dir, "parquet", "aggtrades")
+            if os.path.isdir(base_dir):
+                latest_ms = pdm.get_latest_timestamp_from_manifest(
+                    base_dir
+                ) or pdm.get_latest_timestamp(base_dir)
+                if latest_ms is not None:
+                    return datetime.fromtimestamp(int(latest_ms) / 1000)
+        except Exception:
+            pass
+
+        # Fallback: previous CSV tail logic
+        import glob
+        import subprocess
+
+        try:
+            pattern = f"aggtrades_{self.config.exchange}_{self.config.symbol}_*.csv"
+            files = glob.glob(os.path.join(self.cache_dir, pattern))
+            if not files:
+                print("🔍 DEBUG: No existing aggtrades files found")
+                return None
+            latest_timestamp = None
+            latest_file = None
+            for file_path in files:
+                try:
+                    result = subprocess.run(
+                        ["tail", "-100", file_path], capture_output=True, text=True
+                    )
+                    if result.returncode != 0:
+                        continue
+                    lines = result.stdout.strip().split("\n")
+                    if len(lines) < 2:
+                        continue
+                    data_lines = lines[1:]
+                    timestamps = []
+                    for line in data_lines:
+                        if "," in line:
+                            ts = line.split(",")[0]
+                            try:
+                                timestamps.append(
+                                    datetime.strptime(ts, "%Y-%m-%d %H:%M:%S.%f")
+                                )
+                            except ValueError:
+                                try:
+                                    timestamps.append(
+                                        datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                                    )
+                                except ValueError:
+                                    try:
+                                        timestamps.append(
+                                            datetime.fromtimestamp(int(ts) / 1000)
+                                        )
+                                    except Exception:
+                                        continue
+                    if timestamps:
+                        file_latest = max(timestamps)
+                        if latest_timestamp is None or file_latest > latest_timestamp:
+                            latest_timestamp = file_latest
+                            latest_file = file_path
+                except Exception:
+                    continue
+            if latest_timestamp:
+                return latest_timestamp + timedelta(seconds=1)
+            return None
+        except Exception:
+            return None
+
     def get_time_periods(self, data_type: str) -> list[tuple[datetime, datetime]]:
         """Get time periods for downloading data, excluding already downloaded periods."""
         print(f"📅 STEP 2: Calculating time periods for {data_type}...")
+        print(f"🔍 DEBUG: Force mode: {getattr(self.config, 'force', False)}")
         logger.info(f"📅 STEP 2: Calculating time periods for {data_type}...")
 
-        end_date = datetime.now()
-
-        # For GATEIO, limit aggtrades to 30 days due to historical data limitations
-        if self.config.exchange.upper() == "GATEIO" and data_type == "aggtrades":
-            max_days = 30  # GATEIO has very limited historical aggtrades data
-            print(
-                f"🔧 GATEIO detected - limiting aggtrades to {max_days} days due to historical data limitations",
-            )
-            logger.info(
-                f"🔧 GATEIO detected - limiting aggtrades to {max_days} days due to historical data limitations",
-            )
+        # For aggtrades, allow explicit backfill range; otherwise use latest-timestamp heuristic
+        if data_type == "aggtrades":
+            if self.config.start_date_str and self.config.end_date_str:
+                try:
+                    start_date = datetime.strptime(
+                        self.config.start_date_str, "%Y-%m-%d"
+                    )
+                    end_date = datetime.strptime(
+                        self.config.end_date_str, "%Y-%m-%d"
+                    ) + timedelta(days=1)
+                    print(
+                        f"🔍 DEBUG: Using explicit date range for aggtrades: {start_date} to {end_date}"
+                    )
+                except Exception as e:
+                    print(
+                        f"⚠️ Invalid explicit date range: {e}; falling back to latest-timestamp mode"
+                    )
+                    latest_timestamp = self._find_latest_aggtrades_timestamp()
+                    if latest_timestamp:
+                        print(
+                            f"🔍 DEBUG: Found latest aggtrades timestamp: {latest_timestamp}"
+                        )
+                        start_date = latest_timestamp
+                        end_date = datetime.now()
+                    else:
+                        end_date = datetime.now()
+                        max_days = 365 * self.config.lookback_years
+                        start_date = end_date - timedelta(days=max_days)
+            else:
+                latest_timestamp = self._find_latest_aggtrades_timestamp()
+                if latest_timestamp:
+                    print(
+                        f"🔍 DEBUG: Found latest aggtrades timestamp: {latest_timestamp}"
+                    )
+                    start_date = latest_timestamp
+                    end_date = datetime.now()
+                else:
+                    end_date = datetime.now()
+                    max_days = 365 * self.config.lookback_years
+                    start_date = end_date - timedelta(days=max_days)
         else:
+            # For other data types, use standard lookback
+            end_date = datetime.now()
             max_days = 365 * self.config.lookback_years
-
-        start_date = end_date - timedelta(days=max_days)
+            start_date = end_date - timedelta(days=max_days)
 
         print(
             f"   📊 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}",
@@ -232,7 +372,12 @@ class OptimizedDataDownloader:
                 filename = f"klines_{self.config.exchange}_{self.config.symbol}_{self.config.interval}_{current.strftime('%Y-%m')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
 
-                if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
+                force_mode = getattr(self.config, "force", False)
+                if (
+                    force_mode
+                    or not os.path.exists(filepath)
+                    or os.path.getsize(filepath) == 0
+                ):
                     periods.append((current, period_end))
                     month_count += 1
                     print(f"   📥 Will download: {filename}")
@@ -256,34 +401,34 @@ class OptimizedDataDownloader:
             logger.info("📊 Processing aggtrades (daily periods)...")
             # Daily periods for aggtrades
             periods = []
-            current = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
             day_count = 0
             skip_count = 0
 
-            while current < end_date:
-                period_end = min(current + timedelta(days=1), end_date)
+            # Starting point already set above; create daily periods
+            current = start_date
 
-                # Check if this day's data already exists
+            # Create daily periods from current to end_date
+            print(f"🔍 DEBUG: Starting daily period loop from {current} to {end_date}")
+            while current < end_date:
+                period_end = current + timedelta(days=1)
                 filename = f"aggtrades_{self.config.exchange}_{self.config.symbol}_{current.strftime('%Y-%m-%d')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
 
-                if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
+                print(f"🔍 DEBUG: Checking file: {filename}")
+
+                # Only download if file doesn't exist
+                if not os.path.exists(filepath):
                     periods.append((current, period_end))
                     day_count += 1
-                    if (
-                        day_count <= 5 or day_count % 50 == 0
-                    ):  # Show first 5 and every 50th
-                        print(f"   📥 Will download: {filename}")
-                        logger.info(f"📥 Will download: {filename}")
+                    print(f"   📥 Will download: {filename}")
+                    logger.info(f"📥 Will download: {filename}")
                 else:
                     skip_count += 1
-                    if (
-                        skip_count <= 5 or skip_count % 50 == 0
-                    ):  # Show first 5 and every 50th
-                        print(f"   📁 Skipping existing: {filename}")
-                        logger.info(f"📁 Skipping existing: {filename}")
+                    print(f"   📁 Skipping existing: {filename}")
+                    logger.info(f"📁 Skipping existing: {filename}")
 
                 current = period_end
+                print(f"🔍 DEBUG: Moving to next day: {current}")
 
             print(
                 f"   📊 Summary: {day_count} days to download, {skip_count} days skipped",
@@ -316,7 +461,12 @@ class OptimizedDataDownloader:
             filename = f"futures_{self.config.exchange}_{self.config.symbol}_{current.strftime('%Y-%m')}.csv"
             filepath = os.path.join(self.cache_dir, filename)
 
-            if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
+            force_mode = getattr(self.config, "force", False)
+            if (
+                force_mode
+                or not os.path.exists(filepath)
+                or os.path.getsize(filepath) == 0
+            ):
                 periods.append((current, period_end))
                 month_count += 1
                 print(f"   📥 Will download: {filename}")
@@ -339,10 +489,14 @@ class OptimizedDataDownloader:
     async def download_klines_parallel(self) -> bool:
         """Download klines data with parallel processing."""
         print("🚀 STEP 3: Starting parallel klines download...")
+        print("🔍 DEBUG: About to get time periods for klines...")
         logger.info("🚀 STEP 3: Starting parallel klines download...")
 
         periods = self.get_time_periods("klines")
         print(f"   📊 Found {len(periods)} monthly periods to download")
+        print("🔍 DEBUG: First period:", periods[0] if periods else "No periods")
+        print("🔍 DEBUG: Last period:", periods[-1] if periods else "No periods")
+        print("🔍 DEBUG: Total periods:", len(periods))
         logger.info(f"📊 Found {len(periods)} monthly periods to download")
 
         if not periods:
@@ -381,7 +535,7 @@ class OptimizedDataDownloader:
             if isinstance(result, Exception):
                 error_count += 1
                 print(f"   ❌ Task {i+1} failed: {result}")
-                logger.error(f"❌ Task {i+1} failed: {result}")
+                print(failed("❌ Task {i+1} failed: {result}"))
                 self.stats["errors"] += 1
             elif result:
                 success_count += 1
@@ -405,11 +559,22 @@ class OptimizedDataDownloader:
         end_dt: datetime,
     ) -> bool:
         """Download klines for a specific time period."""
+        print(
+            f"🔍 DEBUG: Starting klines download for {start_dt.strftime('%Y-%m')} to {end_dt.strftime('%Y-%m')}",
+        )
+        print(
+            f"🔍 DEBUG: Exchange client available: {self.exchange_client is not None}",
+        )
+        print(f"🔍 DEBUG: Exchange client type: {type(self.exchange_client)}")
+
         async with self.download_semaphore:
+            print(f"🔍 DEBUG: Acquired semaphore for {start_dt.strftime('%Y-%m')}")
             try:
                 # Generate filename for this month
                 filename = f"klines_{self.config.exchange}_{self.config.symbol}_{self.config.interval}_{start_dt.strftime('%Y-%m')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
+                print(f"🔍 DEBUG: Target filepath: {filepath}")
+                print(f"🔍 DEBUG: File already exists: {os.path.exists(filepath)}")
 
                 print(
                     f"      📥 Downloading klines for {start_dt.strftime('%Y-%m')}...",
@@ -427,64 +592,121 @@ class OptimizedDataDownloader:
 
                 # Download data with incremental approach
                 print(f"         🔌 Making API call to {self.config.exchange}...")
+                print(f"🔍 DEBUG: Exchange client methods: {dir(self.exchange_client)}")
+                print(
+                    f"🔍 DEBUG: Has get_historical_klines: {'get_historical_klines' in dir(self.exchange_client)}",
+                )
                 logger.info(f"🔌 Making API call to {self.config.exchange}")
 
-                print(f"         🔄 Starting incremental klines download for {start_dt.strftime('%Y-%m')}...")
-                logger.info(f"🔄 Starting incremental klines download for {start_dt.strftime('%Y-%m')}")
-                
+                print(
+                    f"         🔄 Starting incremental klines download for {start_dt.strftime('%Y-%m')}...",
+                )
+                logger.info(
+                    f"🔄 Starting incremental klines download for {start_dt.strftime('%Y-%m')}",
+                )
+
                 all_klines = []
                 current_start_time = start_ms
                 batch_count = 0
                 max_batches = 1000  # Safety limit to prevent infinite loops
-                
+
                 while current_start_time < end_ms and batch_count < max_batches:
                     batch_count += 1
-                    print(f"         📥 Batch {batch_count}: Downloading klines from {datetime.fromtimestamp(current_start_time/1000)}...")
-                    logger.info(f"📥 Batch {batch_count}: Downloading klines from {datetime.fromtimestamp(current_start_time/1000)}")
-                    
-                    # Download batch of klines
-                    print(f"         🔌 API CALL #{batch_count}: get_historical_klines({self.config.symbol}, {self.config.interval}, {datetime.fromtimestamp(current_start_time/1000)}, {datetime.fromtimestamp(end_ms/1000)}, limit=1000)")
-                    logger.info(f"🔌 API CALL #{batch_count}: get_historical_klines({self.config.symbol}, {self.config.interval}, {datetime.fromtimestamp(current_start_time/1000)}, {datetime.fromtimestamp(end_ms/1000)}, limit=1000)")
-                    
-                    batch_klines = await self.exchange_client.get_historical_klines(
-                        self.config.symbol,
-                        self.config.interval,
-                        current_start_time,
-                        end_ms,
-                        limit=1000,  # Standard batch size
+                    progress_percent = min(
+                        100,
+                        (current_start_time - start_ms) / (end_ms - start_ms) * 100,
                     )
-                    
+                    print(
+                        f"         📥 Batch {batch_count}: Downloading klines from {datetime.fromtimestamp(current_start_time/1000)}... ({progress_percent:.1f}% complete)",
+                    )
+                    logger.info(
+                        f"📥 Batch {batch_count}: Downloading klines from {datetime.fromtimestamp(current_start_time/1000)} ({progress_percent:.1f}% complete)",
+                    )
+
+                    # Download batch of klines
+                    print(
+                        f"         🔌 API CALL #{batch_count}: get_historical_klines({self.config.symbol}, {self.config.interval}, {datetime.fromtimestamp(current_start_time/1000)}, {datetime.fromtimestamp(end_ms/1000)}, limit=1000)",
+                    )
+                    print("🔍 DEBUG: About to call get_historical_klines...")
+                    print(
+                        f"🔍 DEBUG: Parameters: symbol={self.config.symbol}, interval={self.config.interval}, start={current_start_time}, end={end_ms}",
+                    )
+                    logger.info(
+                        f"🔌 API CALL #{batch_count}: get_historical_klines({self.config.symbol}, {self.config.interval}, {datetime.fromtimestamp(current_start_time/1000)}, {datetime.fromtimestamp(end_ms/1000)}, limit=1000)",
+                    )
+
+                    try:
+                        print("🔍 DEBUG: Making actual API call...")
+                        batch_klines = await self.exchange_client.get_historical_klines(
+                            self.config.symbol,
+                            self.config.interval,
+                            current_start_time,
+                            end_ms,
+                            limit=1000,  # Standard batch size
+                        )
+                        print("🔍 DEBUG: API call completed successfully")
+                        print(
+                            f"🔍 DEBUG: Received {len(batch_klines) if batch_klines else 0} klines",
+                        )
+                    except Exception as e:
+                        print(f"🔍 DEBUG: API call failed with error: {e}")
+                        print(f"🔍 DEBUG: Error type: {type(e)}")
+                        raise
+
                     if not batch_klines:
                         print(f"         ⚠️ No more klines found in batch {batch_count}")
                         logger.info(f"⚠️ No more klines found in batch {batch_count}")
                         break
-                    
-                    print(f"         📊 Batch {batch_count}: Received {len(batch_klines)} klines")
-                    logger.info(f"📊 Batch {batch_count}: Received {len(batch_klines)} klines")
-                    
+
+                    print(
+                        f"         📊 Batch {batch_count}: Received {len(batch_klines)} klines",
+                    )
+                    logger.info(
+                        f"📊 Batch {batch_count}: Received {len(batch_klines)} klines",
+                    )
+
                     # Add batch to all klines
                     all_klines.extend(batch_klines)
-                    
+
                     # Find the latest timestamp in this batch to continue from
                     if batch_klines:
-                        latest_kline = max(batch_klines, key=lambda x: x[0] if isinstance(x, list) and len(x) > 0 else 0)
-                        latest_time = latest_kline[0] if isinstance(latest_kline, list) and len(latest_kline) > 0 else 0
-                        
+                        latest_kline = max(
+                            batch_klines,
+                            key=lambda x: x[0]
+                            if isinstance(x, list) and len(x) > 0
+                            else 0,
+                        )
+                        latest_time = (
+                            latest_kline[0]
+                            if isinstance(latest_kline, list) and len(latest_kline) > 0
+                            else 0
+                        )
+
                         if latest_time <= current_start_time:
-                            print(f"         ⚠️ No progress in timestamp, stopping pagination")
-                            logger.warning(f"⚠️ No progress in timestamp, stopping pagination")
+                            print(
+                                "         ⚠️ No progress in timestamp, stopping pagination",
+                            )
+                            logger.warning(
+                                "⚠️ No progress in timestamp, stopping pagination",
+                            )
                             break
-                        
-                        current_start_time = latest_time + 1  # Start from next millisecond
+
+                        current_start_time = (
+                            latest_time + 1
+                        )  # Start from next millisecond
                     else:
                         break
-                    
+
                     # Rate limiting between batches
                     await asyncio.sleep(self.config.rate_limit_delay)
-                
+
                 klines = all_klines
-                print(f"         ✅ Completed incremental klines download: {len(klines)} total klines in {batch_count} batches")
-                logger.info(f"✅ Completed incremental klines download: {len(klines)} total klines in {batch_count} batches")
+                print(
+                    f"         ✅ Completed incremental klines download: {len(klines)} total klines in {batch_count} batches",
+                )
+                logger.info(
+                    f"✅ Completed incremental klines download: {len(klines)} total klines in {batch_count} batches",
+                )
 
                 print(f"         📊 Received {len(klines) if klines else 0} klines")
                 logger.info(f"📊 Received {len(klines) if klines else 0} klines")
@@ -616,6 +838,13 @@ class OptimizedDataDownloader:
                 logger.info(f"📈 Records: {len(df)} klines")
 
                 df.to_csv(filepath, index=False)
+                # Also save Parquet for efficient downstream processing
+                try:
+                    parquet_path = os.path.splitext(filepath)[0] + ".parquet"
+                    df.to_parquet(parquet_path, compression="zstd", index=False)
+                    logger.info(f"🧩 Saved Parquet sibling: {parquet_path}")
+                except Exception as _e:
+                    logger.warning(f"Could not save Parquet sibling: {_e}")
 
                 file_size = os.path.getsize(filepath)
                 print(f"         ✅ NEW CSV FILE CREATED: {filename}")
@@ -632,7 +861,7 @@ class OptimizedDataDownloader:
                 print(
                     f"         ❌ Error downloading klines for {start_dt.strftime('%Y-%m')}: {e}",
                 )
-                logger.error(
+                logger.exception(
                     f"❌ Error downloading klines for {start_dt.strftime('%Y-%m')}: {e}",
                 )
                 return False
@@ -667,6 +896,17 @@ class OptimizedDataDownloader:
             task = self._download_aggtrades_period(start_dt, end_dt)
             tasks.append(task)
 
+        print(f"   📊 Created {len(tasks)} aggtrades download tasks")
+        print(
+            f"   📅 Date range: {periods[0][0].strftime('%Y-%m-%d')} to {periods[-1][1].strftime('%Y-%m-%d')}",
+        )
+        print(f"   📈 Total days to download: {len(periods)}")
+        logger.info(f"📊 Created {len(tasks)} aggtrades download tasks")
+        logger.info(
+            f"📅 Date range: {periods[0][0].strftime('%Y-%m-%d')} to {periods[-1][1].strftime('%Y-%m-%d')}",
+        )
+        logger.info(f"📈 Total days to download: {len(periods)}")
+
         print(f"   ⏳ Executing {len(tasks)} tasks concurrently...")
         logger.info(f"⏳ Executing {len(tasks)} tasks concurrently...")
 
@@ -684,7 +924,7 @@ class OptimizedDataDownloader:
                 error_count += 1
                 if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                     print(f"   ❌ Task {i+1} failed: {result}")
-                    logger.error(f"❌ Task {i+1} failed: {result}")
+                    print(failed("❌ Task {i+1} failed: {result}"))
                 self.stats["errors"] += 1
             elif result:
                 success_count += 1
@@ -877,84 +1117,132 @@ class OptimizedDataDownloader:
                         )
                 else:
                     # For other exchanges, use the standard approach with pagination
-                    print(f"         🔄 Starting incremental download for {start_dt.strftime('%Y-%m-%d')}...")
-                    logger.info(f"🔄 Starting incremental download for {start_dt.strftime('%Y-%m-%d')}")
-                    
+                    print(
+                        f"         🔄 Starting incremental download for {start_dt.strftime('%Y-%m-%d')}...",
+                    )
+                    logger.info(
+                        f"🔄 Starting incremental download for {start_dt.strftime('%Y-%m-%d')}",
+                    )
+
                     all_trades = []
                     current_start_time = start_ms
                     batch_count = 0
                     max_batches = 1000  # Safety limit to prevent infinite loops
-                    
+
                     while current_start_time < end_ms and batch_count < max_batches:
                         batch_count += 1
-                        print(f"         📥 Batch {batch_count}: Downloading from {datetime.fromtimestamp(current_start_time/1000)}...")
-                        logger.info(f"📥 Batch {batch_count}: Downloading from {datetime.fromtimestamp(current_start_time/1000)}")
-                        
+                        print(
+                            f"         📥 Batch {batch_count}: Downloading from {datetime.fromtimestamp(current_start_time/1000)}...",
+                        )
+                        logger.info(
+                            f"📥 Batch {batch_count}: Downloading from {datetime.fromtimestamp(current_start_time/1000)}",
+                        )
+
                         # Download batch of trades
-                        print(f"         🔌 API CALL #{batch_count}: get_historical_agg_trades({self.config.symbol}, {datetime.fromtimestamp(current_start_time/1000)}, {datetime.fromtimestamp(end_ms/1000)}, limit=1000)")
-                        logger.info(f"🔌 API CALL #{batch_count}: get_historical_agg_trades({self.config.symbol}, {datetime.fromtimestamp(current_start_time/1000)}, {datetime.fromtimestamp(end_ms/1000)}, limit=1000)")
-                        
+                        print(
+                            f"         🔌 API CALL #{batch_count}: get_historical_agg_trades({self.config.symbol}, {datetime.fromtimestamp(current_start_time/1000)}, {datetime.fromtimestamp(end_ms/1000)}, limit=1000)",
+                        )
+                        logger.info(
+                            f"🔌 API CALL #{batch_count}: get_historical_agg_trades({self.config.symbol}, {datetime.fromtimestamp(current_start_time/1000)}, {datetime.fromtimestamp(end_ms/1000)}, limit=1000)",
+                        )
+
                         # Suppress verbose request logging for this call
                         import logging
+
                         original_level = logging.getLogger().level
                         logging.getLogger().setLevel(logging.WARNING)
-                        
-                        batch_trades = await self.exchange_client.get_historical_agg_trades(
-                            self.config.symbol,
-                            current_start_time,
-                            end_ms,
-                            limit=1000,  # Standard batch size
+
+                        batch_trades = (
+                            await self.exchange_client.get_historical_agg_trades(
+                                self.config.symbol,
+                                current_start_time,
+                                end_ms,
+                                limit=1000,  # Standard batch size
+                            )
                         )
-                        
+
                         # Restore logging level
                         logging.getLogger().setLevel(original_level)
-                        
+
                         if not batch_trades:
-                            print(f"         ⚠️ No more trades found in batch {batch_count}")
-                            logger.info(f"⚠️ No more trades found in batch {batch_count}")
+                            print(
+                                f"         ⚠️ No more trades found in batch {batch_count}",
+                            )
+                            logger.info(
+                                f"⚠️ No more trades found in batch {batch_count}",
+                            )
                             break
-                        
-                        print(f"         📊 Batch {batch_count}: Received {len(batch_trades)} trades")
-                        logger.info(f"📊 Batch {batch_count}: Received {len(batch_trades)} trades")
-                        
+
+                        print(
+                            f"         📊 Batch {batch_count}: Received {len(batch_trades)} trades",
+                        )
+                        logger.info(
+                            f"📊 Batch {batch_count}: Received {len(batch_trades)} trades",
+                        )
+
                         # Add batch to all trades
                         all_trades.extend(batch_trades)
-                        
+
                         # Find the latest timestamp in this batch to continue from
                         if batch_trades:
                             # Debug: print first few trades to see structure
                             if batch_count == 1:
-                                print(f"         🔍 DEBUG: First trade structure: {batch_trades[0] if batch_trades else 'No trades'}")
-                                logger.info(f"🔍 DEBUG: First trade structure: {batch_trades[0] if batch_trades else 'No trades'}")
-                            
+                                print(
+                                    f"         🔍 DEBUG: First trade structure: {batch_trades[0] if batch_trades else 'No trades'}",
+                                )
+                                logger.info(
+                                    f"🔍 DEBUG: First trade structure: {batch_trades[0] if batch_trades else 'No trades'}",
+                                )
+
                             # Find the latest timestamp - try different possible field names
                             latest_time = 0
                             for trade in batch_trades:
                                 # Try different possible timestamp field names
-                                timestamp = trade.get('T') or trade.get('timestamp') or trade.get('time') or trade.get('t')
+                                timestamp = (
+                                    trade.get("T")
+                                    or trade.get("timestamp")
+                                    or trade.get("time")
+                                    or trade.get("t")
+                                )
                                 if timestamp and timestamp > latest_time:
                                     latest_time = timestamp
-                            
-                            print(f"         🔍 DEBUG: Latest timestamp in batch: {latest_time} ({datetime.fromtimestamp(latest_time/1000) if latest_time > 0 else 'None'})")
-                            logger.info(f"🔍 DEBUG: Latest timestamp in batch: {latest_time} ({datetime.fromtimestamp(latest_time/1000) if latest_time > 0 else 'None'})")
-                            
+
+                            print(
+                                f"         🔍 DEBUG: Latest timestamp in batch: {latest_time} ({datetime.fromtimestamp(latest_time/1000) if latest_time > 0 else 'None'})",
+                            )
+                            logger.info(
+                                f"🔍 DEBUG: Latest timestamp in batch: {latest_time} ({datetime.fromtimestamp(latest_time/1000) if latest_time > 0 else 'None'})",
+                            )
+
                             if latest_time <= current_start_time:
-                                print(f"         ⚠️ No progress in timestamp, stopping pagination")
-                                logger.warning(f"⚠️ No progress in timestamp, stopping pagination")
+                                print(
+                                    "         ⚠️ No progress in timestamp, stopping pagination",
+                                )
+                                logger.warning(
+                                    "⚠️ No progress in timestamp, stopping pagination",
+                                )
                                 break
-                            
-                            current_start_time = latest_time + 1  # Start from next millisecond
-                            print(f"         🔄 Next batch will start from: {current_start_time} ({datetime.fromtimestamp(current_start_time/1000)})")
-                            logger.info(f"🔄 Next batch will start from: {current_start_time} ({datetime.fromtimestamp(current_start_time/1000)})")
+
+                            current_start_time = (
+                                latest_time + 1
+                            )  # Start from next millisecond
+                            print(
+                                f"         🔄 Next batch will start from: {current_start_time} ({datetime.fromtimestamp(current_start_time/1000)})",
+                            )
+                            logger.info(
+                                f"🔄 Next batch will start from: {current_start_time} ({datetime.fromtimestamp(current_start_time/1000)})",
+                            )
                         else:
                             break
-                        
+
                         # Rate limiting between batches
                         await asyncio.sleep(self.config.rate_limit_delay)
-                    
+
                     # Process and save data incrementally
                     if all_trades:
-                        print(f"         🔄 Processing {len(all_trades)} total trades...")
+                        print(
+                            f"         🔄 Processing {len(all_trades)} total trades...",
+                        )
                         logger.info(f"🔄 Processing {len(all_trades)} total trades...")
 
                         df = self._process_aggtrades_data(all_trades)
@@ -969,28 +1257,42 @@ class OptimizedDataDownloader:
                         logger.info(f"📈 Records: {len(df)} aggtrades")
 
                         df.to_csv(filepath, index=False)
+                        # Also save Parquet for efficient downstream processing
+                        try:
+                            parquet_path = os.path.splitext(filepath)[0] + ".parquet"
+                            df.to_parquet(parquet_path, compression="zstd", index=False)
+                            logger.info(f"🧩 Saved Parquet sibling: {parquet_path}")
+                        except Exception as _e:
+                            logger.warning(f"Could not save Parquet sibling: {_e}")
 
                         file_size = os.path.getsize(filepath)
                         print(f"         ✅ NEW CSV FILE CREATED: {filename}")
                         print(f"            📊 Size: {file_size:,} bytes")
                         print(f"            📈 Records: {len(df)} aggtrades")
-                        print(f"            📅 Period: {start_dt.strftime('%Y-%m-%d')} (daily)")
+                        print(
+                            f"            📅 Period: {start_dt.strftime('%Y-%m-%d')} (daily)",
+                        )
                         logger.info(f"✅ NEW CSV FILE CREATED: {filename}")
                         logger.info(f"📊 Size: {file_size:,} bytes")
                         logger.info(f"📈 Records: {len(df)} aggtrades")
-                        logger.info(f"📅 Period: {start_dt.strftime('%Y-%m-%d')} (daily)")
+                        logger.info(
+                            f"📅 Period: {start_dt.strftime('%Y-%m-%d')} (daily)",
+                        )
 
                         return True
-                    else:
-                        print(f"         ⚠️ No aggtrades received for {start_dt.strftime('%Y-%m-%d')}")
-                        logger.warning(f"⚠️ No aggtrades received for {start_dt.strftime('%Y-%m-%d')}")
-                        return False
+                    print(
+                        f"         ⚠️ No aggtrades received for {start_dt.strftime('%Y-%m-%d')}",
+                    )
+                    logger.warning(
+                        f"⚠️ No aggtrades received for {start_dt.strftime('%Y-%m-%d')}",
+                    )
+                    return False
 
             except Exception as e:
                 print(
                     f"         ❌ Error downloading aggtrades for {start_dt.strftime('%Y-%m-%d')}: {e}",
                 )
-                logger.error(
+                logger.exception(
                     f"❌ Error downloading aggtrades for {start_dt.strftime('%Y-%m-%d')}: {e}",
                 )
                 return False
@@ -1042,7 +1344,7 @@ class OptimizedDataDownloader:
                 error_count += 1
                 if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                     print(f"   ❌ Task {i+1} failed: {result}")
-                    logger.error(f"❌ Task {i+1} failed: {result}")
+                    print(failed("❌ Task {i+1} failed: {result}"))
                 self.stats["errors"] += 1
             elif result:
                 success_count += 1
@@ -1091,60 +1393,101 @@ class OptimizedDataDownloader:
                 print(f"         🔌 Making API call to {self.config.exchange}...")
                 logger.info(f"🔌 Making API call to {self.config.exchange}")
 
-                print(f"         🔄 Starting incremental futures download for {start_dt.strftime('%Y-%m')}...")
-                logger.info(f"🔄 Starting incremental futures download for {start_dt.strftime('%Y-%m')}")
-                
+                print(
+                    f"         🔄 Starting incremental futures download for {start_dt.strftime('%Y-%m')}...",
+                )
+                logger.info(
+                    f"🔄 Starting incremental futures download for {start_dt.strftime('%Y-%m')}",
+                )
+
                 all_futures_data = []
                 current_start_time = start_ms
                 batch_count = 0
                 max_batches = 1000  # Safety limit to prevent infinite loops
-                
+
                 while current_start_time < end_ms and batch_count < max_batches:
                     batch_count += 1
-                    print(f"         📥 Batch {batch_count}: Downloading futures from {datetime.fromtimestamp(current_start_time/1000)}...")
-                    logger.info(f"📥 Batch {batch_count}: Downloading futures from {datetime.fromtimestamp(current_start_time/1000)}")
-                    
-                    # Download batch of futures data
-                    print(f"         🔌 API CALL #{batch_count}: get_historical_futures_data({self.config.symbol}, {datetime.fromtimestamp(current_start_time/1000)}, {datetime.fromtimestamp(end_ms/1000)})")
-                    logger.info(f"🔌 API CALL #{batch_count}: get_historical_futures_data({self.config.symbol}, {datetime.fromtimestamp(current_start_time/1000)}, {datetime.fromtimestamp(end_ms/1000)})")
-                    
-                    batch_futures = await self.exchange_client.get_historical_futures_data(
-                        self.config.symbol,
-                        current_start_time,
-                        end_ms,
+                    print(
+                        f"         📥 Batch {batch_count}: Downloading futures from {datetime.fromtimestamp(current_start_time/1000)}...",
                     )
-                    
+                    logger.info(
+                        f"📥 Batch {batch_count}: Downloading futures from {datetime.fromtimestamp(current_start_time/1000)}",
+                    )
+
+                    # Download batch of futures data
+                    print(
+                        f"         🔌 API CALL #{batch_count}: get_historical_futures_data({self.config.symbol}, {datetime.fromtimestamp(current_start_time/1000)}, {datetime.fromtimestamp(end_ms/1000)})",
+                    )
+                    logger.info(
+                        f"🔌 API CALL #{batch_count}: get_historical_futures_data({self.config.symbol}, {datetime.fromtimestamp(current_start_time/1000)}, {datetime.fromtimestamp(end_ms/1000)})",
+                    )
+
+                    batch_futures = (
+                        await self.exchange_client.get_historical_futures_data(
+                            self.config.symbol,
+                            current_start_time,
+                            end_ms,
+                        )
+                    )
+
                     if not batch_futures:
-                        print(f"         ⚠️ No more futures data found in batch {batch_count}")
-                        logger.info(f"⚠️ No more futures data found in batch {batch_count}")
+                        print(
+                            f"         ⚠️ No more futures data found in batch {batch_count}",
+                        )
+                        logger.info(
+                            f"⚠️ No more futures data found in batch {batch_count}",
+                        )
                         break
-                    
-                    print(f"         📊 Batch {batch_count}: Received {len(batch_futures)} futures records")
-                    logger.info(f"📊 Batch {batch_count}: Received {len(batch_futures)} futures records")
-                    
+
+                    print(
+                        f"         📊 Batch {batch_count}: Received {len(batch_futures)} futures records",
+                    )
+                    logger.info(
+                        f"📊 Batch {batch_count}: Received {len(batch_futures)} futures records",
+                    )
+
                     # Add batch to all futures data
                     all_futures_data.extend(batch_futures)
-                    
+
                     # Find the latest timestamp in this batch to continue from
                     if batch_futures:
-                        latest_future = max(batch_futures, key=lambda x: x.get('timestamp', 0) if isinstance(x, dict) else 0)
-                        latest_time = latest_future.get('timestamp', 0) if isinstance(latest_future, dict) else 0
-                        
+                        latest_future = max(
+                            batch_futures,
+                            key=lambda x: x.get("timestamp", 0)
+                            if isinstance(x, dict)
+                            else 0,
+                        )
+                        latest_time = (
+                            latest_future.get("timestamp", 0)
+                            if isinstance(latest_future, dict)
+                            else 0
+                        )
+
                         if latest_time <= current_start_time:
-                            print(f"         ⚠️ No progress in timestamp, stopping pagination")
-                            logger.warning(f"⚠️ No progress in timestamp, stopping pagination")
+                            print(
+                                "         ⚠️ No progress in timestamp, stopping pagination",
+                            )
+                            logger.warning(
+                                "⚠️ No progress in timestamp, stopping pagination",
+                            )
                             break
-                        
-                        current_start_time = latest_time + 1  # Start from next millisecond
+
+                        current_start_time = (
+                            latest_time + 1
+                        )  # Start from next millisecond
                     else:
                         break
-                    
+
                     # Rate limiting between batches
                     await asyncio.sleep(self.config.rate_limit_delay)
-                
+
                 futures_data = all_futures_data
-                print(f"         ✅ Completed incremental futures download: {len(futures_data)} total futures records in {batch_count} batches")
-                logger.info(f"✅ Completed incremental futures download: {len(futures_data)} total futures records in {batch_count} batches")
+                print(
+                    f"         ✅ Completed incremental futures download: {len(futures_data)} total futures records in {batch_count} batches",
+                )
+                logger.info(
+                    f"✅ Completed incremental futures download: {len(futures_data)} total futures records in {batch_count} batches",
+                )
 
                 print(
                     f"         📊 Received {len(futures_data) if futures_data else 0} futures records",
@@ -1178,6 +1521,13 @@ class OptimizedDataDownloader:
                 logger.info(f"📈 Records: {len(df)} futures records")
 
                 df.to_csv(filepath, index=False)
+                # Also save Parquet for efficient downstream processing
+                try:
+                    parquet_path = os.path.splitext(filepath)[0] + ".parquet"
+                    df.to_parquet(parquet_path, compression="zstd", index=False)
+                    logger.info(f"🧩 Saved Parquet sibling: {parquet_path}")
+                except Exception as _e:
+                    logger.warning(f"Could not save Parquet sibling: {_e}")
 
                 file_size = os.path.getsize(filepath)
                 print(f"         ✅ NEW CSV FILE CREATED: {filename}")
@@ -1194,7 +1544,7 @@ class OptimizedDataDownloader:
                 print(
                     f"         ❌ Error downloading futures for {start_dt.strftime('%Y-%m')}: {e}",
                 )
-                logger.error(
+                logger.exception(
                     f"❌ Error downloading futures for {start_dt.strftime('%Y-%m')}: {e}",
                 )
                 return False
@@ -1290,6 +1640,14 @@ class OptimizedDataDownloader:
         print(f"   🔄 Max concurrent downloads: {self.config.max_concurrent_downloads}")
         print(f"   🌐 Max concurrent requests: {self.config.max_concurrent_requests}")
         print("=" * 80)
+        print("🔍 DEBUG: About to start download process...")
+        print(
+            "🔍 DEBUG: Exchange client initialized:",
+            self.exchange_client is not None,
+        )
+        print("🔍 DEBUG: Cache directory:", self.cache_dir)
+        print("🔍 DEBUG: Download semaphore limit:", self.download_semaphore._value)
+        print("=" * 80)
 
         logger.info("🚀 STARTING OPTIMIZED DATA DOWNLOAD PROCESS")
         logger.info(
@@ -1298,10 +1656,25 @@ class OptimizedDataDownloader:
 
         try:
             # Initialize
+            print("🔍 DEBUG: Starting initialization...")
+            print("🔍 DEBUG: Exchange client type:", type(self.exchange_client))
+            print("🔍 DEBUG: Config exchange:", self.config.exchange)
+            print("🔍 DEBUG: Config symbol:", self.config.symbol)
+
             if not await self.initialize():
-                print("❌ INITIALIZATION FAILED - Aborting download process")
-                logger.error("❌ INITIALIZATION FAILED - Aborting download process")
+                print(failed("INITIALIZATION FAILED - Aborting download process"))
+                print(failed("❌ INITIALIZATION FAILED - Aborting download process"))
                 return False
+
+            print("✅ INITIALIZATION COMPLETED SUCCESSFULLY")
+            print("🔍 DEBUG: Exchange client ready:", self.exchange_client is not None)
+            print("🔍 DEBUG: Cache directory exists:", os.path.exists(self.cache_dir))
+            print(
+                "🔍 DEBUG: Cache directory contents:",
+                len(os.listdir(self.cache_dir))
+                if os.path.exists(self.cache_dir)
+                else "N/A",
+            )
 
             print("🔄 STEP 4: Starting parallel downloads for all data types...")
             logger.info("🔄 STEP 4: Starting parallel downloads for all data types...")
@@ -1335,7 +1708,7 @@ class OptimizedDataDownloader:
                 if isinstance(result, Exception):
                     error_count += 1
                     print(f"   ❌ {data_types[i]} download failed: {result}")
-                    logger.error(f"❌ {data_types[i]} download failed: {result}")
+                    print(failed("❌ {data_types[i]} download failed: {result}"))
                 elif result:
                     success_count += 1
                     print(f"   ✅ {data_types[i]} download completed successfully")
@@ -1399,8 +1772,8 @@ class OptimizedDataDownloader:
             return success_count > 0
 
         except Exception as e:
-            print(f"❌ CRITICAL ERROR in optimized download: {e}")
-            logger.error(f"❌ CRITICAL ERROR in optimized download: {e}")
+            print(critical("CRITICAL ERROR in optimized download: {e}"))
+            print(critical("❌ CRITICAL ERROR in optimized download: {e}"))
             return False
         finally:
             print("🧹 Cleaning up resources...")
@@ -1440,10 +1813,27 @@ async def main():
         help="Years of data to download (default: 2)",
     )
     parser.add_argument(
+        "--start-date",
+        type=str,
+        default=None,
+        help="Explicit start date for aggtrades backfill (YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--end-date",
+        type=str,
+        default=None,
+        help="Explicit end date for aggtrades backfill (YYYY-MM-DD, inclusive)",
+    )
+    parser.add_argument(
         "--max-concurrent",
         type=int,
         default=5,
         help="Max concurrent downloads (default: 5)",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force download even if files already exist",
     )
 
     args = parser.parse_args()
@@ -1460,8 +1850,8 @@ async def main():
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             handlers=[
                 logging.StreamHandler(sys.stdout),
-                logging.FileHandler("log/ares_data_downloader.log")
-            ]
+                logging.FileHandler("log/ares_data_downloader.log"),
+            ],
         )
         logger = logging.getLogger("OptimizedDataDownloader")
         logger.info("Using fallback logging configuration")
@@ -1473,7 +1863,11 @@ async def main():
         interval=args.interval,
         lookback_years=args.lookback_years,
         max_concurrent_downloads=args.max_concurrent,
+        start_date_str=args.start_date,
+        end_date_str=args.end_date,
     )
+    # Add force flag to config
+    config.force = args.force
 
     # Create and run downloader
     downloader = OptimizedDataDownloader(config)
@@ -1483,7 +1877,7 @@ async def main():
         logger.info("✅ Optimized download completed successfully")
         sys.exit(0)
     else:
-        logger.error("❌ Optimized download failed")
+        print(failed("❌ Optimized download failed"))
         sys.exit(1)
 
 

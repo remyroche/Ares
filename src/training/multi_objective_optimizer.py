@@ -334,6 +334,7 @@ class MultiObjectiveOptimizer:
     ) -> dict[str, Any]:
         """Select the best solution from Pareto front."""
         if not pareto_front:
-            raise ValueError("No valid solutions found in Pareto front")
+            msg = "No valid solutions found in Pareto front"
+            raise ValueError(msg)
 
         return pareto_front[0]  # Already sorted by weighted score

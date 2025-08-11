@@ -7,13 +7,13 @@ that integrates paper trading, live trading, and backtesting with
 consistent detailed metrics across all trading modes.
 """
 
-from typing import Any, Dict
+from typing import Any
 
 
-def get_enhanced_reporting_config() -> Dict[str, Any]:
+def get_enhanced_reporting_config() -> dict[str, Any]:
     """
     Get comprehensive configuration for enhanced reporting system.
-    
+
     Returns:
         Dict[str, Any]: Configuration dictionary
     """
@@ -27,7 +27,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "report_interval": 3600,  # 1 hour
             "auto_generate_reports": True,
         },
-
         # Paper Trading Integration Configuration
         "paper_trading_integration": {
             "enable_detailed_reporting": True,
@@ -36,7 +35,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "auto_export_reports": True,
             "export_formats": ["json", "csv", "html"],
         },
-
         # Enhanced Paper Trader Configuration
         "paper_trader": {
             "initial_balance": 10000.0,
@@ -47,7 +45,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "max_drawdown": 0.2,
             "enable_detailed_reporting": True,
         },
-
         # Enhanced Backtester Configuration
         "enhanced_backtester": {
             "initial_balance": 10000.0,
@@ -58,7 +55,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "auto_generate_reports": True,
             "export_formats": ["json", "csv", "html"],
         },
-
         # Paper Trading Reporter Configuration
         "paper_trading_reporter": {
             "enable_detailed_reporting": True,
@@ -71,7 +67,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "track_market_health": True,
             "track_ml_confidence": True,
         },
-
         # Market Health Analyzer Configuration
         "market_health_analyzer": {
             "analysis_interval": 3600,
@@ -95,7 +90,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
                 "high": 0.8,
             },
         },
-
         # ML Confidence Predictor Configuration
         "ml_confidence_predictor": {
             "enable_confidence_tracking": True,
@@ -109,7 +103,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "track_model_diversity": True,
             "track_prediction_consistency": True,
         },
-
         # Performance Reporter Configuration
         "performance_reporter": {
             "enable_real_time_reporting": True,
@@ -121,7 +114,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "enable_attribution_analysis": True,
             "enable_forecasting": True,
         },
-
         # Trade Tracker Configuration
         "trade_tracker": {
             "enable_detailed_tracking": True,
@@ -132,7 +124,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "auto_export_trades": True,
             "export_formats": ["json", "csv"],
         },
-
         # Reporting Directories
         "reporting_directories": {
             "paper_trading": "reports/paper_trading",
@@ -141,7 +132,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "performance": "reports/performance",
             "launcher": "reports/launcher",
         },
-
         # Export Configuration
         "export_config": {
             "default_formats": ["json", "csv", "html"],
@@ -150,7 +140,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "compression": False,
             "max_file_size_mb": 100,
         },
-
         # Metrics Configuration
         "metrics_config": {
             "track_pnl_metrics": True,
@@ -160,7 +149,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "track_trade_metrics": True,
             "track_market_metrics": True,
             "track_ml_metrics": True,
-            
             # PnL Metrics
             "pnl_metrics": {
                 "absolute_pnl": True,
@@ -173,7 +161,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
                 "slippage_paid": True,
                 "net_pnl": True,
             },
-
             # Risk Metrics
             "risk_metrics": {
                 "max_drawdown": True,
@@ -185,7 +172,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
                 "downside_deviation": True,
                 "tail_risk": True,
             },
-
             # Performance Metrics
             "performance_metrics": {
                 "total_trades": True,
@@ -198,7 +184,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
                 "consecutive_wins": True,
                 "consecutive_losses": True,
             },
-
             # Portfolio Metrics
             "portfolio_metrics": {
                 "total_value": True,
@@ -209,7 +194,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
                 "sector_allocation": True,
                 "geographic_allocation": True,
             },
-
             # Trade Metrics
             "trade_metrics": {
                 "trade_type": True,
@@ -221,7 +205,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
                 "execution_quality": True,
                 "risk_metrics": True,
             },
-
             # Market Metrics
             "market_metrics": {
                 "market_indicators": True,
@@ -234,7 +217,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
                 "price_trend": True,
                 "market_regime": True,
             },
-
             # ML Metrics
             "ml_metrics": {
                 "analyst_confidence": True,
@@ -247,7 +229,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
                 "prediction_consistency": True,
             },
         },
-
         # Market Indicators Configuration
         "market_indicators": {
             "rsi": True,
@@ -260,15 +241,19 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "momentum": True,
             "support_resistance": True,
         },
-
         # Trade Type Classification
         "trade_types": {
             "sides": ["long", "short"],
             "durations": ["scalping", "day_trading", "swing", "position"],
-            "strategies": ["breakout", "mean_reversion", "momentum", "arbitrage", "hedging"],
+            "strategies": [
+                "breakout",
+                "mean_reversion",
+                "momentum",
+                "arbitrage",
+                "hedging",
+            ],
             "order_types": ["market", "limit", "stop", "stop_limit"],
         },
-
         # Position Sizing Configuration
         "position_sizing": {
             "track_absolute_size": True,
@@ -277,7 +262,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "track_max_position_size": True,
             "track_position_ranking": True,
         },
-
         # Real-time Reporting Configuration
         "real_time_reporting": {
             "enable": True,
@@ -286,7 +270,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "export_formats": ["json"],
             "max_reports_in_memory": 100,
         },
-
         # Data Retention Configuration
         "data_retention": {
             "max_trade_history_days": 365,
@@ -295,7 +278,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "auto_cleanup": True,
             "backup_before_cleanup": True,
         },
-
         # Error Handling Configuration
         "error_handling": {
             "continue_on_reporting_error": True,
@@ -304,7 +286,6 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
             "max_retry_attempts": 3,
             "retry_delay_seconds": 60,
         },
-
         # Validation Configuration
         "validation": {
             "validate_trade_data": True,
@@ -316,17 +297,17 @@ def get_enhanced_reporting_config() -> Dict[str, Any]:
     }
 
 
-def get_paper_trading_config() -> Dict[str, Any]:
+def get_paper_trading_config() -> dict[str, Any]:
     """
     Get configuration specifically for paper trading with enhanced reporting.
-    
+
     Returns:
         Dict[str, Any]: Paper trading configuration
     """
     base_config = get_enhanced_reporting_config()
-    
+
     # Override for paper trading specific settings
-    paper_config = {
+    return {
         **base_config,
         "enhanced_trading_launcher": {
             **base_config["enhanced_trading_launcher"],
@@ -340,21 +321,19 @@ def get_paper_trading_config() -> Dict[str, Any]:
             "report_interval": 1800,  # 30 minutes for paper trading
         },
     }
-    
-    return paper_config
 
 
-def get_backtesting_config() -> Dict[str, Any]:
+def get_backtesting_config() -> dict[str, Any]:
     """
     Get configuration specifically for backtesting with enhanced reporting.
-    
+
     Returns:
         Dict[str, Any]: Backtesting configuration
     """
     base_config = get_enhanced_reporting_config()
-    
+
     # Override for backtesting specific settings
-    backtest_config = {
+    return {
         **base_config,
         "enhanced_trading_launcher": {
             **base_config["enhanced_trading_launcher"],
@@ -368,21 +347,19 @@ def get_backtesting_config() -> Dict[str, Any]:
             "export_formats": ["json", "csv", "html"],
         },
     }
-    
-    return backtest_config
 
 
-def get_live_trading_config() -> Dict[str, Any]:
+def get_live_trading_config() -> dict[str, Any]:
     """
     Get configuration specifically for live trading with enhanced reporting.
-    
+
     Returns:
         Dict[str, Any]: Live trading configuration
     """
     base_config = get_enhanced_reporting_config()
-    
+
     # Override for live trading specific settings
-    live_config = {
+    return {
         **base_config,
         "enhanced_trading_launcher": {
             **base_config["enhanced_trading_launcher"],
@@ -396,17 +373,15 @@ def get_live_trading_config() -> Dict[str, Any]:
             "report_interval": 900,  # 15 minutes for live trading
         },
     }
-    
-    return live_config
 
 
-def validate_enhanced_reporting_config(config: Dict[str, Any]) -> bool:
+def validate_enhanced_reporting_config(config: dict[str, Any]) -> bool:
     """
     Validate enhanced reporting configuration.
-    
+
     Args:
         config: Configuration dictionary to validate
-        
+
     Returns:
         bool: True if valid, False otherwise
     """
@@ -419,33 +394,35 @@ def validate_enhanced_reporting_config(config: Dict[str, Any]) -> bool:
             "paper_trading_reporter",
             "metrics_config",
         ]
-        
+
         for section in required_sections:
             if section not in config:
                 print(f"Missing required configuration section: {section}")
                 return False
-        
+
         # Validate specific settings
         launcher_config = config["enhanced_trading_launcher"]
-        if not any([
-            launcher_config.get("enable_paper_trading", False),
-            launcher_config.get("enable_live_trading", False),
-            launcher_config.get("enable_backtesting", False),
-        ]):
+        if not any(
+            [
+                launcher_config.get("enable_paper_trading", False),
+                launcher_config.get("enable_live_trading", False),
+                launcher_config.get("enable_backtesting", False),
+            ],
+        ):
             print("At least one trading mode must be enabled")
             return False
-        
+
         return True
-        
+
     except Exception as e:
         print(f"Error validating configuration: {e}")
         return False
 
 
-def get_minimal_config() -> Dict[str, Any]:
+def get_minimal_config() -> dict[str, Any]:
     """
     Get minimal configuration for basic enhanced reporting.
-    
+
     Returns:
         Dict[str, Any]: Minimal configuration
     """

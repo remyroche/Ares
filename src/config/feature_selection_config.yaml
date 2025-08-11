@@ -3,7 +3,20 @@
 
 feature_selection:
   # VIF (Variance Inflation Factor) threshold - higher values are more permissive
+  # This threshold is used for remaining features after PCA combination
   vif_threshold: 10.0
+  
+  # PCA combination settings for highly collinear features
+  pca_combination:
+    # High VIF threshold for PCA combination (only features above this will be combined)
+    high_vif_threshold: 20.0
+    # Correlation threshold for clustering features (features with correlation > 0.7 will be grouped)
+    correlation_threshold: 0.7
+    # Variance explained threshold for PCA components (95% of variance)
+    variance_explained_threshold: 0.95
+    # Scaling method for PCA preprocessing (standard, robust, minmax)
+    # Standard scaling (z-score) is recommended for PCA as it ensures features have zero mean and unit variance
+    scaling_method: "standard"
   
   # Mutual information threshold - lower values are more permissive
   mutual_info_threshold: 0.001
@@ -18,7 +31,8 @@ feature_selection:
   correlation_threshold: 0.98
   
   # Maximum percentage of features to remove in a single step
-  max_removal_percentage: 0.3
+  # Increased from 0.3 to 0.7 to allow removal of problematic features
+  max_removal_percentage: 0.7
   
   # Whether to enable each selection method
   enable_constant_removal: true
@@ -29,4 +43,10 @@ feature_selection:
   
   # Safety checks
   enable_safety_checks: true
-  return_original_on_failure: true 
+  return_original_on_failure: true
+  
+  # Emergency override for perfect multicollinearity
+  # These settings will ALWAYS remove problematic features regardless of safety thresholds
+  emergency_override_perfect_correlation: true  # Always remove perfectly correlated features (r=1.000)
+  emergency_override_infinite_vif: true         # Always remove features with infinite VIF
+  emergency_override_zero_importance: true      # Always remove features with zero importance 

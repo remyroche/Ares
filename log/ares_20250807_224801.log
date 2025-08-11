@@ -1,6 +1,0 @@
-2025-08-07 22:48:01,618 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
-2025-08-07 22:48:01,631 - AresTradingSystem.System - INFO - Using device: MPS for PyTorch operations.
-2025-08-07 22:48:01,632 - AresTradingSystem.System - INFO - Initializing Analyst Enhancement Step...
-2025-08-07 22:48:01,632 - AresTradingSystem.System - INFO - Analyst Enhancement Step initialized successfully.
-2025-08-07 22:48:01,632 - AresTradingSystem.System - INFO - Loading data for regime 'BULL'...
-2025-08-07 22:48:01,633 - AresTradingSystem.System - INFO - Data loaded and split: X_train shape (800, 16), X_val shape (200, 16)

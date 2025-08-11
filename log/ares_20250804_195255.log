@@ -1,7 +1,0 @@
-2025-08-04 19:52:55,041 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
-2025-08-04 19:52:55,219 - AresTradingSystem.System.CandleAnalyzer - INFO - Initializing Candle Analyzer...
-2025-08-04 19:52:55,219 - AresTradingSystem.System.CandleAnalyzer - ERROR - Error initializing candle analyzer: Missing required configuration key: size_thresholds
-2025-08-04 19:52:55,269 - AresTradingSystem.System.CandleAnalyzer - INFO - Starting candle analysis...
-2025-08-04 19:52:55,277 - AresTradingSystem.System.CandleAnalyzer - INFO - Data preparation: 8761 → 8742 rows
-2025-08-04 19:52:56,530 - AresTradingSystem.System.CandleAnalyzer - INFO - ✅ Candle analysis completed successfully
-2025-08-04 19:52:56,530 - AresTradingSystem.System.CandleAnalyzer - INFO - 📊 Candle Analysis Results: 8742 patterns, 2664 large candles

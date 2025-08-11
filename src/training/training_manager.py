@@ -13,6 +13,14 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+    validation_error,
+)
 
 
 class TrainingManager:
@@ -78,7 +86,7 @@ class TrainingManager:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for training manager")
+                self.print(invalid("Invalid configuration for training manager"))
                 return False
 
             # Initialize training modules
@@ -89,8 +97,8 @@ class TrainingManager:
             )
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Training Manager initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Training Manager initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -120,7 +128,9 @@ class TrainingManager:
             self.logger.info("Training configuration loaded successfully")
 
         except Exception as e:
-            self.logger.error(f"Error loading training configuration: {e}")
+            error_msg = f"Error loading training configuration: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -137,12 +147,12 @@ class TrainingManager:
         try:
             # Validate training interval
             if self.training_interval <= 0:
-                self.logger.error("Invalid training interval")
+                self.print(invalid("Invalid training interval"))
                 return False
 
             # Validate max training history
             if self.max_training_history <= 0:
-                self.logger.error("Invalid max training history")
+                self.print(invalid("Invalid max training history"))
                 return False
 
             # Validate that at least one training type is enabled
@@ -154,14 +164,16 @@ class TrainingManager:
                     self.training_config.get("enable_model_persistence", True),
                 ],
             ):
-                self.logger.error("At least one training type must be enabled")
+                self.print(error("At least one training type must be enabled"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
         except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+            error_msg = f"Error validating training configuration: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return False
 
     @handle_errors(
@@ -194,7 +206,9 @@ class TrainingManager:
             self.logger.info("Training modules initialized successfully")
 
         except Exception as e:
-            self.logger.error(f"Error initializing training modules: {e}")
+            error_msg = f"Error initializing training modules: {e}"
+            self.logger.exception(error_msg)
+            self.print(initialization_error(error_msg))
 
     async def _initialize_feature_integration(self) -> None:
         """Initialize feature integration manager."""
@@ -205,7 +219,9 @@ class TrainingManager:
             await self.feature_integration_manager.initialize()
             self.logger.info("Feature integration manager initialized successfully")
         except Exception as e:
-            self.logger.error(f"Error initializing feature integration manager: {e}")
+            self.logger.exception(
+                f"Error initializing feature integration manager: {e}",
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -226,7 +242,9 @@ class TrainingManager:
             self.logger.info("Model training module initialized")
 
         except Exception as e:
-            self.logger.error(f"Error initializing model training: {e}")
+            error_msg = f"Error initializing model training: {e}"
+            self.logger.exception(error_msg)
+            self.print(initialization_error(error_msg))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -247,7 +265,9 @@ class TrainingManager:
             self.logger.info("Hyperparameter optimization module initialized")
 
         except Exception as e:
-            self.logger.error(f"Error initializing hyperparameter optimization: {e}")
+            self.logger.exception(
+                f"Error initializing hyperparameter optimization: {e}",
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -268,7 +288,9 @@ class TrainingManager:
             self.logger.info("Model evaluation module initialized")
 
         except Exception as e:
-            self.logger.error(f"Error initializing model evaluation: {e}")
+            error_msg = f"Error initializing model evaluation: {e}"
+            self.logger.exception(error_msg)
+            self.print(initialization_error(error_msg))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -288,8 +310,10 @@ class TrainingManager:
 
             self.logger.info("Model persistence module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing model persistence: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing model persistence: {e}"),
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -370,16 +394,16 @@ class TrainingManager:
         required_fields = ["training_type", "model_type", "timestamp"]
         for field in required_fields:
             if field not in training_input:
-                self.logger.error(f"Missing required training input field: {field}")
+                self.print(missing("Missing required training input field: {field}"))
                 return False
 
         # Validate data types
         if not isinstance(training_input["training_type"], str):
-            self.logger.error("Invalid training type")
+            self.print(invalid("Invalid training type"))
             return False
 
         if not isinstance(training_input["model_type"], str):
-            self.logger.error("Invalid model type")
+            self.print(invalid("Invalid model type"))
             return False
 
         return True
@@ -435,7 +459,9 @@ class TrainingManager:
             return results
 
         except Exception as e:
-            self.logger.error(f"Error performing model training: {e}")
+            error_msg = f"Error performing model training: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     @handle_errors(
@@ -499,7 +525,9 @@ class TrainingManager:
             return results
 
         except Exception as e:
-            self.logger.error(f"Error performing hyperparameter optimization: {e}")
+            error_msg = f"Error performing hyperparameter optimization: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     @handle_errors(
@@ -551,7 +579,9 @@ class TrainingManager:
             return results
 
         except Exception as e:
-            self.logger.error(f"Error performing model evaluation: {e}")
+            error_msg = f"Error performing model evaluation: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     @handle_errors(
@@ -597,7 +627,9 @@ class TrainingManager:
             return results
 
         except Exception as e:
-            self.logger.error(f"Error performing model persistence: {e}")
+            error_msg = f"Error performing model persistence: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     # Model training methods
@@ -615,7 +647,9 @@ class TrainingManager:
                 "preprocessing_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing data preprocessing: {e}")
+            error_msg = f"Error performing data preprocessing: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     async def _perform_feature_engineering(
@@ -665,7 +699,9 @@ class TrainingManager:
             }
 
         except Exception as e:
-            self.logger.error(f"Error performing feature engineering: {e}")
+            error_msg = f"Error performing feature engineering: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {
                 "engineered_features": training_input.get("historical_data"),
                 "feature_count": 0,
@@ -686,7 +722,9 @@ class TrainingManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing model training core: {e}")
+            error_msg = f"Error performing model training core: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     def _perform_model_validation(
@@ -703,7 +741,9 @@ class TrainingManager:
                 "validation_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing model validation: {e}")
+            error_msg = f"Error performing model validation: {e}"
+            self.logger.error(error_msg)
+            self.print(validation_error(error_msg))
             return {}
 
     # Hyperparameter optimization methods
@@ -720,7 +760,9 @@ class TrainingManager:
                 "search_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing parameter search: {e}")
+            error_msg = f"Error performing parameter search: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     def _perform_cross_validation(
@@ -737,7 +779,9 @@ class TrainingManager:
                 "validation_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing cross validation: {e}")
+            error_msg = f"Error performing cross validation: {e}"
+            self.logger.error(error_msg)
+            self.print(validation_error(error_msg))
             return {}
 
     def _perform_model_selection(
@@ -754,7 +798,9 @@ class TrainingManager:
                 "selection_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing model selection: {e}")
+            error_msg = f"Error performing model selection: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     def _perform_optimization_tracking(
@@ -771,7 +817,9 @@ class TrainingManager:
                 "tracking_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing optimization tracking: {e}")
+            error_msg = f"Error performing optimization tracking: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     # Model evaluation methods
@@ -790,7 +838,9 @@ class TrainingManager:
                 "metrics_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing performance metrics: {e}")
+            error_msg = f"Error performing performance metrics calculation: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     def _perform_model_comparison(
@@ -807,7 +857,9 @@ class TrainingManager:
                 "comparison_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing model comparison: {e}")
+            error_msg = f"Error performing model comparison: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     def _perform_validation_testing(
@@ -824,7 +876,9 @@ class TrainingManager:
                 "testing_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing validation testing: {e}")
+            error_msg = f"Error performing validation testing: {e}"
+            self.logger.error(error_msg)
+            self.print(validation_error(error_msg))
             return {}
 
     def _perform_evaluation_reporting(
@@ -841,7 +895,9 @@ class TrainingManager:
                 "reporting_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing evaluation reporting: {e}")
+            error_msg = f"Error performing evaluation reporting: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     # Model persistence methods
@@ -856,7 +912,9 @@ class TrainingManager:
                 "saving_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing model saving: {e}")
+            error_msg = f"Error performing model saving: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     def _perform_model_loading(self, training_input: dict[str, Any]) -> dict[str, Any]:
@@ -870,7 +928,9 @@ class TrainingManager:
                 "loading_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing model loading: {e}")
+            error_msg = f"Error performing model loading: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     def _perform_model_versioning(
@@ -886,7 +946,9 @@ class TrainingManager:
                 "versioning_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing model versioning: {e}")
+            error_msg = f"Error performing model versioning: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     def _perform_model_backup(self, training_input: dict[str, Any]) -> dict[str, Any]:
@@ -900,7 +962,9 @@ class TrainingManager:
                 "backup_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing model backup: {e}")
+            error_msg = f"Error performing model backup: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     @handle_errors(
@@ -924,7 +988,9 @@ class TrainingManager:
             self.logger.info("Training results stored successfully")
 
         except Exception as e:
-            self.logger.error(f"Error storing training results: {e}")
+            error_msg = f"Error storing training results: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -950,7 +1016,9 @@ class TrainingManager:
             return self.training_results.copy()
 
         except Exception as e:
-            self.logger.error(f"Error getting training results: {e}")
+            error_msg = f"Error getting training results for {training_type}: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     @handle_errors(
@@ -977,7 +1045,9 @@ class TrainingManager:
             return history
 
         except Exception as e:
-            self.logger.error(f"Error getting training history: {e}")
+            error_msg = f"Error getting training history with limit {limit}: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return []
 
     def get_training_status(self) -> dict[str, Any]:
@@ -1026,7 +1096,9 @@ class TrainingManager:
             self.logger.info("✅ Training Manager stopped successfully")
 
         except Exception as e:
-            self.logger.error(f"Error stopping training manager: {e}")
+            error_msg = f"Error stopping training manager: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
 
 
 # Global training manager instance

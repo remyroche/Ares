@@ -11,6 +11,13 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+)
 
 
 class ABTester:
@@ -64,7 +71,7 @@ class ABTester:
 
             # Validate challenger parameters
             if not self._validate_challenger_params(challenger_params):
-                self.logger.error("Invalid challenger parameters")
+                self.print(invalid("Invalid challenger parameters"))
                 return False
 
             # Store challenger parameters
@@ -87,8 +94,8 @@ class ABTester:
             self.logger.info("✅ AB test initialized successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ AB test initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ AB test initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -109,29 +116,29 @@ class ABTester:
         try:
             # Check if parameters are not empty
             if not challenger_params:
-                self.logger.error("Challenger parameters are empty")
+                self.print(error("Challenger parameters are empty"))
                 return False
 
             # Check required parameter keys
             required_keys = ["atr_period", "rsi_period", "macd_fast", "macd_slow"]
             for key in required_keys:
                 if key not in challenger_params:
-                    self.logger.error(f"Missing required parameter: {key}")
+                    self.print(missing("Missing required parameter: {key}"))
                     return False
 
             # Validate parameter values
             if challenger_params.get("atr_period", 0) <= 0:
-                self.logger.error("ATR period must be positive")
+                self.print(error("ATR period must be positive"))
                 return False
 
             if challenger_params.get("rsi_period", 0) <= 0:
-                self.logger.error("RSI period must be positive")
+                self.print(error("RSI period must be positive"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating challenger parameters: {e}")
+        except Exception:
+            self.print(error("Error validating challenger parameters: {e}"))
             return False
 
     @handle_specific_errors(
@@ -158,7 +165,7 @@ class ABTester:
         """
         try:
             if not self.is_ab_test_active:
-                self.logger.error("AB test not initialized")
+                self.print(initialization_error("AB test not initialized"))
                 return None
 
             self.logger.info(f"Starting AB test for {test_duration_days} days...")
@@ -190,8 +197,8 @@ class ABTester:
             self.logger.info("✅ AB test completed successfully")
             return self.ab_test_results
 
-        except Exception as e:
-            self.logger.error(f"Error executing AB test: {e}")
+        except Exception:
+            self.print(error("Error executing AB test: {e}"))
             return None
 
     @handle_errors(
@@ -211,8 +218,8 @@ class ABTester:
             await asyncio.sleep(1)  # Simulate execution time
             self.logger.info("Champion phase completed")
 
-        except Exception as e:
-            self.logger.error(f"Error executing champion phase: {e}")
+        except Exception:
+            self.print(error("Error executing champion phase: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -231,8 +238,8 @@ class ABTester:
             await asyncio.sleep(1)  # Simulate execution time
             self.logger.info("Challenger phase completed")
 
-        except Exception as e:
-            self.logger.error(f"Error executing challenger phase: {e}")
+        except Exception:
+            self.print(error("Error executing challenger phase: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -271,8 +278,8 @@ class ABTester:
             self.logger.info("AB test results analysis completed")
             return analysis_results
 
-        except Exception as e:
-            self.logger.error(f"Error analyzing AB test results: {e}")
+        except Exception:
+            self.print(error("Error analyzing AB test results: {e}"))
             return None
 
     @handle_errors(
@@ -317,8 +324,8 @@ class ABTester:
             )
             return False
 
-        except Exception as e:
-            self.logger.error(f"Error promoting challenger model: {e}")
+        except Exception:
+            self.print(error("Error promoting challenger model: {e}"))
             return False
 
     def get_ab_test_status(self) -> dict[str, Any]:
@@ -369,5 +376,5 @@ class ABTester:
 
             self.logger.info("✅ AB Tester stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping AB tester: {e}")
+        except Exception:
+            self.print(error("Error stopping AB tester: {e}"))

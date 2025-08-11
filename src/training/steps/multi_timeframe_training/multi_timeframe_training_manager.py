@@ -15,6 +15,12 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    initialization_error,
+    invalid,
+    validation_error,
+)
 
 
 class MultiTimeframeTrainingManager:
@@ -110,7 +116,7 @@ class MultiTimeframeTrainingManager:
             return True
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"❌ Multi-Timeframe Training Manager initialization failed: {e}",
             )
             return False
@@ -156,7 +162,7 @@ class MultiTimeframeTrainingManager:
             )
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error loading multi-timeframe training configuration: {e}",
             )
 
@@ -175,12 +181,12 @@ class MultiTimeframeTrainingManager:
         try:
             # Validate multi-timeframe interval
             if self.multi_timeframe_interval <= 0:
-                self.logger.error("Invalid multi-timeframe interval")
+                self.print(invalid("Invalid multi-timeframe interval"))
                 return False
 
             # Validate max multi-timeframe history
             if self.max_multi_timeframe_history <= 0:
-                self.logger.error("Invalid max multi-timeframe history")
+                self.print(invalid("Invalid max multi-timeframe history"))
                 return False
 
             # Validate that at least one multi-timeframe training type is enabled
@@ -203,8 +209,8 @@ class MultiTimeframeTrainingManager:
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -236,7 +242,7 @@ class MultiTimeframeTrainingManager:
             )
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error initializing multi-timeframe training modules: {e}",
             )
 
@@ -258,8 +264,10 @@ class MultiTimeframeTrainingManager:
 
             self.logger.info("Timeframe analysis module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing timeframe analysis: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing timeframe analysis: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -279,8 +287,12 @@ class MultiTimeframeTrainingManager:
 
             self.logger.info("Cross timeframe features module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing cross timeframe features: {e}")
+        except Exception:
+            self.print(
+                initialization_error(
+                    "Error initializing cross timeframe features: {e}"
+                ),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -300,8 +312,10 @@ class MultiTimeframeTrainingManager:
 
             self.logger.info("Timeframe ensemble module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing timeframe ensemble: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing timeframe ensemble: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -321,8 +335,10 @@ class MultiTimeframeTrainingManager:
 
             self.logger.info("Timeframe optimization module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing timeframe optimization: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing timeframe optimization: {e}"),
+            )
 
     async def _initialize_multi_timeframe_components(self) -> None:
         """Initialize multi-timeframe feature engineering and regime integration components."""
@@ -348,8 +364,12 @@ class MultiTimeframeTrainingManager:
             else:
                 self.logger.info("⚠️ Multi-Timeframe Regime Integration disabled")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing multi-timeframe components: {e}")
+        except Exception:
+            self.print(
+                initialization_error(
+                    "Error initializing multi-timeframe components: {e}",
+                ),
+            )
 
     async def generate_multi_timeframe_features_for_training(
         self,
@@ -410,8 +430,8 @@ class MultiTimeframeTrainingManager:
             )
             return features_dict
 
-        except Exception as e:
-            self.logger.error(f"Error generating multi-timeframe features: {e}")
+        except Exception:
+            self.print(error("Error generating multi-timeframe features: {e}"))
             return {}
 
     @handle_specific_errors(
@@ -492,8 +512,8 @@ class MultiTimeframeTrainingManager:
             )
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error executing multi-timeframe training: {e}")
+        except Exception:
+            self.print(error("Error executing multi-timeframe training: {e}"))
             self.is_training = False
             return False
 
@@ -534,17 +554,19 @@ class MultiTimeframeTrainingManager:
                 multi_timeframe_training_input["multi_timeframe_training_type"],
                 str,
             ):
-                self.logger.error("Invalid multi-timeframe training type")
+                self.print(invalid("Invalid multi-timeframe training type"))
                 return False
 
             if not isinstance(multi_timeframe_training_input["timeframes"], list):
-                self.logger.error("Invalid timeframes format")
+                self.print(invalid("Invalid timeframes format"))
                 return False
 
             return True
 
         except Exception as e:
-            self.logger.error(f"Error validating multi-timeframe training inputs: {e}")
+            self.logger.exception(
+                f"Error validating multi-timeframe training inputs: {e}",
+            )
             return False
 
     @handle_errors(
@@ -595,8 +617,8 @@ class MultiTimeframeTrainingManager:
             self.logger.info("Timeframe analysis completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing timeframe analysis: {e}")
+        except Exception:
+            self.print(error("Error performing timeframe analysis: {e}"))
             return {}
 
     @handle_errors(
@@ -656,8 +678,8 @@ class MultiTimeframeTrainingManager:
             self.logger.info("Cross timeframe features completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing cross timeframe features: {e}")
+        except Exception:
+            self.print(error("Error performing cross timeframe features: {e}"))
             return {}
 
     @handle_errors(
@@ -708,8 +730,8 @@ class MultiTimeframeTrainingManager:
             self.logger.info("Timeframe ensemble completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing timeframe ensemble: {e}")
+        except Exception:
+            self.print(error("Error performing timeframe ensemble: {e}"))
             return {}
 
     @handle_errors(
@@ -773,8 +795,8 @@ class MultiTimeframeTrainingManager:
             self.logger.info("Timeframe optimization completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing timeframe optimization: {e}")
+        except Exception:
+            self.print(error("Error performing timeframe optimization: {e}"))
             return {}
 
     # Timeframe analysis methods
@@ -791,8 +813,8 @@ class MultiTimeframeTrainingManager:
                 "correlation_threshold": 0.7,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing timeframe correlation: {e}")
+        except Exception:
+            self.print(error("Error performing timeframe correlation: {e}"))
             return {}
 
     def _perform_timeframe_volatility(
@@ -808,8 +830,8 @@ class MultiTimeframeTrainingManager:
                 "volatility_threshold": 0.15,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing timeframe volatility: {e}")
+        except Exception:
+            self.print(error("Error performing timeframe volatility: {e}"))
             return {}
 
     def _perform_timeframe_trend(
@@ -825,8 +847,8 @@ class MultiTimeframeTrainingManager:
                 "trend_strength": 0.8,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing timeframe trend: {e}")
+        except Exception:
+            self.print(error("Error performing timeframe trend: {e}"))
             return {}
 
     def _perform_timeframe_pattern(
@@ -842,8 +864,8 @@ class MultiTimeframeTrainingManager:
                 "pattern_confidence": 0.85,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing timeframe pattern: {e}")
+        except Exception:
+            self.print(error("Error performing timeframe pattern: {e}"))
             return {}
 
     # Cross timeframe features methods
@@ -860,8 +882,8 @@ class MultiTimeframeTrainingManager:
                 "extraction_method": "technical_indicators",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing feature extraction: {e}")
+        except Exception:
+            self.print(error("Error performing feature extraction: {e}"))
             return {}
 
     def _perform_feature_combination(
@@ -877,8 +899,8 @@ class MultiTimeframeTrainingManager:
                 "combination_method": "weighted_average",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing feature combination: {e}")
+        except Exception:
+            self.print(error("Error performing feature combination: {e}"))
             return {}
 
     def _perform_feature_selection(
@@ -894,8 +916,8 @@ class MultiTimeframeTrainingManager:
                 "selection_method": "mutual_information",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing feature selection: {e}")
+        except Exception:
+            self.print(error("Error performing feature selection: {e}"))
             return {}
 
     def _perform_feature_validation(
@@ -911,8 +933,8 @@ class MultiTimeframeTrainingManager:
                 "validation_method": "cross_validation",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing feature validation: {e}")
+        except Exception:
+            self.print(validation_error("Error performing feature validation: {e}"))
             return {}
 
     # Timeframe ensemble methods
@@ -929,8 +951,8 @@ class MultiTimeframeTrainingManager:
                 "ensemble_method": "voting",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing ensemble creation: {e}")
+        except Exception:
+            self.print(error("Error performing ensemble creation: {e}"))
             return {}
 
     def _perform_ensemble_training(
@@ -946,8 +968,8 @@ class MultiTimeframeTrainingManager:
                 "training_loss": 0.13,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing ensemble training: {e}")
+        except Exception:
+            self.print(error("Error performing ensemble training: {e}"))
             return {}
 
     def _perform_ensemble_evaluation(
@@ -963,8 +985,8 @@ class MultiTimeframeTrainingManager:
                 "evaluation_loss": 0.15,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing ensemble evaluation: {e}")
+        except Exception:
+            self.print(error("Error performing ensemble evaluation: {e}"))
             return {}
 
     def _perform_ensemble_optimization(
@@ -980,8 +1002,8 @@ class MultiTimeframeTrainingManager:
                 "optimization_method": "bayesian",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing ensemble optimization: {e}")
+        except Exception:
+            self.print(error("Error performing ensemble optimization: {e}"))
             return {}
 
     # Timeframe optimization methods
@@ -998,8 +1020,8 @@ class MultiTimeframeTrainingManager:
                 "search_method": "grid_search",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing optimization search: {e}")
+        except Exception:
+            self.print(error("Error performing optimization search: {e}"))
             return {}
 
     def _perform_optimization_evaluation(
@@ -1015,8 +1037,8 @@ class MultiTimeframeTrainingManager:
                 "evaluation_metric": "f1_score",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing optimization evaluation: {e}")
+        except Exception:
+            self.print(error("Error performing optimization evaluation: {e}"))
             return {}
 
     def _perform_optimization_selection(
@@ -1032,8 +1054,8 @@ class MultiTimeframeTrainingManager:
                 "selection_criteria": "best_score",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing optimization selection: {e}")
+        except Exception:
+            self.print(error("Error performing optimization selection: {e}"))
             return {}
 
     def _perform_optimization_validation(
@@ -1049,8 +1071,10 @@ class MultiTimeframeTrainingManager:
                 "validation_method": "holdout",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing optimization validation: {e}")
+        except Exception:
+            self.print(
+                validation_error("Error performing optimization validation: {e}"),
+            )
             return {}
 
     @handle_errors(
@@ -1081,7 +1105,9 @@ class MultiTimeframeTrainingManager:
             self.logger.info("Multi-timeframe training results stored successfully")
 
         except Exception as e:
-            self.logger.error(f"Error storing multi-timeframe training results: {e}")
+            self.logger.exception(
+                f"Error storing multi-timeframe training results: {e}",
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -1110,7 +1136,9 @@ class MultiTimeframeTrainingManager:
             return self.multi_timeframe_training_results.copy()
 
         except Exception as e:
-            self.logger.error(f"Error getting multi-timeframe training results: {e}")
+            self.logger.exception(
+                f"Error getting multi-timeframe training results: {e}",
+            )
             return {}
 
     @handle_errors(
@@ -1140,7 +1168,9 @@ class MultiTimeframeTrainingManager:
             return history
 
         except Exception as e:
-            self.logger.error(f"Error getting multi-timeframe training history: {e}")
+            self.logger.exception(
+                f"Error getting multi-timeframe training history: {e}",
+            )
             return []
 
     def get_multi_timeframe_training_status(self) -> dict[str, Any]:
@@ -1191,7 +1221,9 @@ class MultiTimeframeTrainingManager:
             self.logger.info("✅ Multi-Timeframe Training Manager stopped successfully")
 
         except Exception as e:
-            self.logger.error(f"Error stopping multi-timeframe training manager: {e}")
+            self.logger.exception(
+                f"Error stopping multi-timeframe training manager: {e}",
+            )
 
 
 # Global multi-timeframe training manager instance

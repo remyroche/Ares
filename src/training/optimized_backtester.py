@@ -13,6 +13,9 @@ import psutil
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    warning,
+)
 
 
 class OptimizedBacktester:
@@ -104,9 +107,7 @@ class OptimizedBacktester:
         tr3 = np.abs(low - np.roll(close, 1))
 
         tr = np.maximum(tr1, np.maximum(tr2, tr3))
-        atr = pd.Series(tr).rolling(14).mean().values
-
-        return atr
+        return pd.Series(tr).rolling(14).mean().values
 
     def _calculate_rsi(self) -> np.ndarray:
         """Calculate Relative Strength Index."""
@@ -120,18 +121,14 @@ class OptimizedBacktester:
         avg_loss = pd.Series(loss).rolling(14).mean().values
 
         rs = avg_gain / (avg_loss + 1e-10)
-        rsi = 100 - (100 / (1 + rs))
-
-        return rsi
+        return 100 - (100 / (1 + rs))
 
     def _calculate_macd(self) -> np.ndarray:
         """Calculate MACD."""
         close = self.market_data["close"].values
         ema12 = pd.Series(close).ewm(span=12).mean().values
         ema26 = pd.Series(close).ewm(span=26).mean().values
-        macd = ema12 - ema26
-
-        return macd
+        return ema12 - ema26
 
     def _generate_cache_key(self, params: dict[str, Any]) -> str:
         """Generate cache key for parameters."""
@@ -228,9 +225,7 @@ class OptimizedBacktester:
         )
 
         # Combined score
-        score = 0.5 * sharpe_ratio + 0.3 * win_rate + 0.2 * min(profit_factor, 5.0)
-
-        return score
+        return 0.5 * sharpe_ratio + 0.3 * win_rate + 0.2 * min(profit_factor, 5.0)
 
     def _generate_signals(self, confidence_threshold: float) -> np.ndarray:
         """Generate trading signals using precomputed indicators."""
@@ -278,8 +273,7 @@ class OptimizedBacktester:
             futures.append(future)
 
         # Collect results
-        results = [future.result() for future in futures]
-        return results
+        return [future.result() for future in futures]
 
     @staticmethod
     def _evaluate_single_params_parallel(
@@ -309,7 +303,9 @@ class OptimizedBacktester:
                 self._cleanup_memory()
 
         except Exception as e:
-            self.logger.warning(f"Could not check memory usage: {e}")
+            error_msg = f"Could not check memory usage: {e}"
+            self.logger.warning(error_msg)
+            self.print(warning(error_msg))
 
     def _cleanup_memory(self):
         """Clean up memory by forcing garbage collection."""

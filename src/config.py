@@ -9,28 +9,28 @@ from typing import Any
 
 # Import the new modular configuration
 from src.config import (
-    get_complete_config,
-    get_environment_config,
-    get_system_config_section,
-    get_trading_config_section,
-    get_training_config_section,
-    get_lookback_window,
-    AresConfig,
     CONFIG,
+    AresConfig,
+    get_complete_config,
     get_dual_model_config,
-    get_ml_confidence_predictor_config,
-    get_position_sizing_config,
+    get_enhanced_training_config,
+    get_environment_config,
     get_leverage_sizing_config,
+    get_lookback_window,
+    get_ml_confidence_predictor_config,
     get_position_closing_config,
     get_position_division_config,
     get_position_monitoring_config,
-    get_enhanced_training_config,
+    get_position_sizing_config,
+    get_system_config_section,
+    get_trading_config_section,
+    get_training_config_section,
 )
 
 # Re-export all the functions and classes for backward compatibility
 __all__ = [
     "get_complete_config",
-    "get_environment_config", 
+    "get_environment_config",
     "get_system_config_section",
     "get_trading_config_section",
     "get_training_config_section",
@@ -47,11 +47,12 @@ __all__ = [
     "get_enhanced_training_config",
 ]
 
+
 # Legacy compatibility - maintain the old CONFIG structure
 def get_config() -> dict[str, Any]:
     """
     Get the complete configuration (legacy function).
-    
+
     Returns:
         dict: Complete configuration dictionary
     """
@@ -61,11 +62,12 @@ def get_config() -> dict[str, Any]:
 def get_environment_settings():
     """
     Get environment settings (legacy function).
-    
+
     Returns:
         EnvironmentSettings: Environment settings instance
     """
     from src.config.environment import get_environment_settings as get_env_settings
+
     return get_env_settings()
 
 
@@ -76,6 +78,7 @@ from dataclasses import dataclass
 @dataclass
 class DatabaseConfig:
     """Database configuration settings."""
+
     host: str = "localhost"
     port: int = 5432
     database: str = "ares_trading"
@@ -88,6 +91,7 @@ class DatabaseConfig:
 @dataclass
 class ExchangeConfig:
     """Exchange configuration settings."""
+
     name: str = "binance"
     api_key: str = ""
     api_secret: str = ""
@@ -99,7 +103,8 @@ class ExchangeConfig:
 @dataclass
 class ModelTrainingConfig:
     """Model training configuration settings."""
-    lookback_days: int = 30
+
+    lookback_days: int = 180  # Increased for BLANK mode
     training_split: float = 0.8
     validation_split: float = 0.1
     test_split: float = 0.1
@@ -111,6 +116,7 @@ class ModelTrainingConfig:
 @dataclass
 class RiskConfig:
     """Risk management configuration settings."""
+
     max_position_size: float = 0.1
     max_drawdown: float = 0.15
     stop_loss_pct: float = 0.05
@@ -124,6 +130,11 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    failed,
+    invalid,
+    warning,
+)
 
 
 class ConfigurationManager:
@@ -141,20 +152,29 @@ class ConfigurationManager:
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("ConfigurationManager")
-        
+
         # Configuration manager state
         self.is_initialized: bool = False
         self.config_history: list[dict[str, Any]] = []
         self.config_sections: dict[str, Any] = {}
-        
+
         # Configuration
-        self.config_manager_config: dict[str, Any] = self.config.get("config_manager", {})
-        self.max_config_history: int = self.config_manager_config.get("max_config_history", 100)
+        self.config_manager_config: dict[str, Any] = self.config.get(
+            "config_manager",
+            {},
+        )
+        self.max_config_history: int = self.config_manager_config.get(
+            "max_config_history",
+            100,
+        )
 
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid configuration manager configuration"),
-            AttributeError: (False, "Missing required configuration manager parameters"),
+            AttributeError: (
+                False,
+                "Missing required configuration manager parameters",
+            ),
             KeyError: (False, "Missing configuration keys"),
         },
         default_return=False,
@@ -169,27 +189,29 @@ class ConfigurationManager:
         """
         try:
             self.logger.info("Initializing Configuration Manager...")
-            
+
             # Load configuration manager configuration
             await self._load_config_manager_configuration()
-            
+
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for configuration manager")
+                self.print(invalid("Invalid configuration for configuration manager"))
                 return False
-            
+
             # Initialize configuration sections
             await self._initialize_config_sections()
-            
+
             # Initialize configuration service
             await self._initialize_config_service()
-            
+
             self.is_initialized = True
             self.logger.info("✅ Configuration Manager initialized successfully")
             return True
-            
+
         except Exception as e:
-            self.logger.error(f"❌ Configuration Manager initialization failed: {e}")
+            self.logger.exception(
+                f"❌ Configuration Manager initialization failed: {e}",
+            )
             return False
 
     @handle_errors(
@@ -202,9 +224,11 @@ class ConfigurationManager:
         try:
             # Configuration manager specific settings are already loaded
             self.logger.info("✅ Configuration manager configuration loaded")
-            
+
         except Exception as e:
-            self.logger.error(f"❌ Failed to load configuration manager configuration: {e}")
+            self.logger.exception(
+                f"❌ Failed to load configuration manager configuration: {e}",
+            )
             raise
 
     @handle_errors(
@@ -222,13 +246,13 @@ class ConfigurationManager:
         try:
             # Validate configuration manager specific settings
             if self.max_config_history <= 0:
-                self.logger.error("Invalid max_config_history configuration")
+                self.print(invalid("Invalid max_config_history configuration"))
                 return False
-                
+
             return True
-            
-        except Exception as e:
-            self.logger.error(f"Configuration validation failed: {e}")
+
+        except Exception:
+            self.print(failed("Configuration validation failed: {e}"))
             return False
 
     @handle_errors(
@@ -246,11 +270,13 @@ class ConfigurationManager:
                 "trading": get_trading_config_section(),
                 "training": get_training_config_section(),
             }
-            
+
             self.logger.info("✅ All configuration sections initialized")
-            
+
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize configuration sections: {e}")
+            self.logger.exception(
+                f"❌ Failed to initialize configuration sections: {e}",
+            )
             raise
 
     @handle_errors(
@@ -263,9 +289,9 @@ class ConfigurationManager:
         try:
             # Configuration service is handled by the new modular structure
             self.logger.info("✅ Configuration service initialized")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize configuration service: {e}")
+
+        except Exception:
+            self.print(failed("❌ Failed to initialize configuration service: {e}"))
             raise
 
     @handle_specific_errors(
@@ -284,21 +310,21 @@ class ConfigurationManager:
         """
         try:
             self.logger.info("🚀 Starting Configuration Manager...")
-            
+
             # Update configuration
             await self._update_configuration()
-            
+
             # Validate configuration sections
             await self._validate_configuration_sections()
-            
+
             # Update configuration service
             await self._update_config_service()
-            
+
             self.logger.info("✅ Configuration Manager run completed successfully")
             return True
-            
-        except Exception as e:
-            self.logger.error(f"❌ Configuration Manager run failed: {e}")
+
+        except Exception:
+            self.print(failed("❌ Configuration Manager run failed: {e}"))
             return False
 
     @handle_errors(
@@ -314,17 +340,19 @@ class ConfigurationManager:
                 "timestamp": "2024-01-01T00:00:00",  # Placeholder timestamp
                 "config_sections": self.config_sections.copy(),
             }
-            
+
             self.config_history.append(history_entry)
-            
+
             # Limit history size
             if len(self.config_history) > self.max_config_history:
-                self.config_history = self.config_history[-self.max_config_history:]
-            
-            self.logger.info(f"📁 Updated configuration (history: {len(self.config_history)} entries)")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to update configuration: {e}")
+                self.config_history = self.config_history[-self.max_config_history :]
+
+            self.logger.info(
+                f"📁 Updated configuration (history: {len(self.config_history)} entries)",
+            )
+
+        except Exception:
+            self.print(failed("❌ Failed to update configuration: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -336,11 +364,11 @@ class ConfigurationManager:
         try:
             # Reinitialize configuration sections
             await self._initialize_config_sections()
-            
+
             self.logger.info("✅ Configuration reloaded successfully")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to reload configuration: {e}")
+
+        except Exception:
+            self.print(failed("❌ Failed to reload configuration: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -353,14 +381,16 @@ class ConfigurationManager:
             # Validate each configuration section
             for section_name, section_config in self.config_sections.items():
                 if not section_config:
-                    self.logger.warning(f"Empty configuration section: {section_name}")
+                    self.print(warning("Empty configuration section: {section_name}"))
                 else:
-                    self.logger.info(f"✅ Validated configuration section: {section_name}")
-            
+                    self.logger.info(
+                        f"✅ Validated configuration section: {section_name}",
+                    )
+
             self.logger.info("✅ All configuration sections validated")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to validate configuration sections: {e}")
+
+        except Exception:
+            self.print(failed("❌ Failed to validate configuration sections: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -372,9 +402,9 @@ class ConfigurationManager:
         try:
             # Configuration service updates are handled by the new modular structure
             self.logger.info("✅ Configuration service updated")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to update configuration service: {e}")
+
+        except Exception:
+            self.print(failed("❌ Failed to update configuration service: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -387,9 +417,9 @@ class ConfigurationManager:
             self.logger.info("🛑 Stopping Configuration Manager...")
             self.is_initialized = False
             self.logger.info("✅ Configuration Manager stopped successfully")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to stop Configuration Manager: {e}")
+
+        except Exception:
+            self.print(failed("❌ Failed to stop Configuration Manager: {e}"))
 
     def get_status(self) -> dict[str, Any]:
         """Get configuration manager status."""
@@ -413,7 +443,7 @@ class ConfigurationManager:
     def get_config_service(self):
         """Get configuration service."""
         # This would return the actual configuration service if needed
-        return None
+        return
 
     def get_dual_model_config(self) -> dict[str, Any]:
         """Get dual model configuration."""
@@ -473,11 +503,11 @@ async def setup_configuration_manager(
     try:
         if config is None:
             config = get_complete_config()
-        
+
         manager = ConfigurationManager(config)
         if await manager.initialize():
             return manager
         return None
     except Exception as e:
-        system_logger.error(f"Failed to setup configuration manager: {e}")
+        system_logger.exception(f"Failed to setup configuration manager: {e}")
         return None

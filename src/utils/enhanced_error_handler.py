@@ -17,6 +17,11 @@ from typing import Any, TypeVar, cast
 
 import numpy as np
 
+from src.utils.warning_symbols import (
+    failed,
+    warning,
+)
+
 # Type variables for generic functions
 T = TypeVar("T")
 R = TypeVar("R")
@@ -78,9 +83,9 @@ class RetryStrategy(RecoveryStrategy):
                 if asyncio.iscoroutinefunction(operation):
                     return await operation(*args, **kwargs)
                 return operation(*args, **kwargs)
-            except Exception as e:
+            except Exception:
                 if attempt == self.max_retries:
-                    raise e
+                    raise
 
                 delay = min(
                     self.base_delay * (self.backoff_factor**attempt),
@@ -115,9 +120,9 @@ class FallbackStrategy(RecoveryStrategy):
                 if asyncio.iscoroutinefunction(operation):
                     return await operation(*args, **kwargs)
                 return operation(*args, **kwargs)
-            except Exception as e:
+            except Exception:
                 if i == len(self.fallback_operations) - 1:
-                    raise e
+                    raise
                 continue
 
         return None
@@ -167,7 +172,7 @@ class CircuitBreaker:
                 self.state = CircuitState.HALF_OPEN
                 self.logger.info("Circuit breaker transitioning to HALF_OPEN")
             else:
-                self.logger.warning("Circuit breaker is OPEN, rejecting request")
+                self.print(warning("Circuit breaker is OPEN, rejecting request"))
                 return None
 
         try:
@@ -183,17 +188,17 @@ class CircuitBreaker:
 
             return result
 
-        except self.config.expected_exception as e:
+        except self.config.expected_exception:
             self.failure_count += 1
             self.last_failure_time = time.time()
 
             if self.failure_count >= self.config.failure_threshold:
                 self.state = CircuitState.OPEN
-                self.logger.error(
+                self.logger.exception(
                     f"Circuit breaker opened after {self.failure_count} failures",
                 )
 
-            raise e
+            raise
 
 
 class ErrorRecoveryManager:
@@ -262,11 +267,11 @@ class ErrorRecoveryManager:
                             f"Recovery successful with {type(strategy).__name__}",
                         )
                         return result
-                except Exception as recovery_error:
-                    self.logger.error(f"Recovery strategy failed: {recovery_error}")
+                except Exception:
+                    self.print(failed("Recovery strategy failed: {recovery_error}"))
                     continue
 
-        self.logger.error(f"All recovery strategies failed for error: {error}")
+        self.print(failed("All recovery strategies failed for error: {error}"))
         return None
 
 
@@ -294,7 +299,7 @@ class EnhancedErrorHandler:
             async def async_wrapper(*args: Any, **kwargs: Any) -> T | None:
                 try:
                     result = await func(*args, **kwargs)
-                    return cast(T | None, result)
+                    return cast("T | None", result)
                 except exceptions as e:
                     if log_errors:
                         self.logger.exception(
@@ -302,6 +307,7 @@ class EnhancedErrorHandler:
                         )
                         try:
                             from .prometheus_metrics import metrics
+
                             metrics.step_failure_counter.labels(
                                 step_name=context or func.__name__,
                                 error_type=type(e).__name__,
@@ -324,21 +330,21 @@ class EnhancedErrorHandler:
                                         },
                                     )
                                     if recovery_result is not None:
-                                        return cast(T | None, recovery_result)
+                                        return cast("T | None", recovery_result)
                                 except Exception as recovery_error:
-                                    self.logger.error(
+                                    self.logger.exception(
                                         f"Recovery failed: {recovery_error}",
                                     )
 
                     if reraise:
-                        raise e
+                        raise
                     return default_return
 
             @functools.wraps(func)
             def sync_wrapper(*args: Any, **kwargs: Any) -> T | None:
                 try:
                     result = func(*args, **kwargs)
-                    return cast(T | None, result)
+                    return cast("T | None", result)
                 except exceptions as e:
                     if log_errors:
                         self.logger.exception(
@@ -346,6 +352,7 @@ class EnhancedErrorHandler:
                         )
                         try:
                             from .prometheus_metrics import metrics
+
                             metrics.step_failure_counter.labels(
                                 step_name=context or func.__name__,
                                 error_type=type(e).__name__,
@@ -377,19 +384,19 @@ class EnhancedErrorHandler:
                                             run_recovery(),
                                         )
                                         if recovery_result is not None:
-                                            return cast(T | None, recovery_result)
+                                            return cast("T | None", recovery_result)
                                 except Exception as recovery_error:
-                                    self.logger.error(
+                                    self.logger.exception(
                                         f"Recovery failed: {recovery_error}",
                                     )
 
                     if reraise:
-                        raise e
+                        raise
                     return default_return
 
             if asyncio.iscoroutinefunction(func):
-                return cast(F, async_wrapper)
-            return cast(F, sync_wrapper)
+                return cast("F", async_wrapper)
+            return cast("F", sync_wrapper)
 
         return decorator
 
@@ -408,16 +415,16 @@ class EnhancedErrorHandler:
             async def async_wrapper(*args: Any, **kwargs: Any) -> T | None:
                 try:
                     result = await func(*args, **kwargs)
-                    return cast(T | None, result)
+                    return cast("T | None", result)
                 except Exception as e:
                     error_type = type(e)
                     if error_type in error_handlers:
                         return_value, message = error_handlers[error_type]
                         if log_errors:
-                            self.logger.error(
+                            self.logger.exception(
                                 f"{message} in {context}.{func.__name__}: {e}",
                             )
-                        return cast(T | None, return_value)
+                        return cast("T | None", return_value)
 
                     if log_errors:
                         self.logger.exception(
@@ -429,16 +436,16 @@ class EnhancedErrorHandler:
             def sync_wrapper(*args: Any, **kwargs: Any) -> T | None:
                 try:
                     result = func(*args, **kwargs)
-                    return cast(T | None, result)
+                    return cast("T | None", result)
                 except Exception as e:
                     error_type = type(e)
                     if error_type in error_handlers:
                         return_value, message = error_handlers[error_type]
                         if log_errors:
-                            self.logger.error(
+                            self.logger.exception(
                                 f"{message} in {context}.{func.__name__}: {e}",
                             )
-                        return cast(T | None, return_value)
+                        return cast("T | None", return_value)
 
                     if log_errors:
                         self.logger.exception(
@@ -447,8 +454,8 @@ class EnhancedErrorHandler:
                     return default_return
 
             if asyncio.iscoroutinefunction(func):
-                return cast(F, async_wrapper)
-            return cast(F, sync_wrapper)
+                return cast("F", async_wrapper)
+            return cast("F", sync_wrapper)
 
         return decorator
 

@@ -15,6 +15,11 @@ from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+)
 
 
 class ReportType(Enum):
@@ -121,8 +126,8 @@ class ReportScheduler:
             self.logger.info("✅ Report Scheduler initialization completed")
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Report Scheduler initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Report Scheduler initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -169,8 +174,8 @@ class ReportScheduler:
 
             self.logger.info("Report configurations initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing report configs: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing report configs: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -190,8 +195,8 @@ class ReportScheduler:
             self.logger.info("🚀 Report Scheduler started")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error starting report scheduling: {e}")
+        except Exception:
+            self.print(error("Error starting report scheduling: {e}"))
             return False
 
     @handle_errors(
@@ -207,8 +212,8 @@ class ReportScheduler:
                     # Schedule the report
                     await self._generate_scheduled_report(report_id, config)
 
-        except Exception as e:
-            self.logger.error(f"Error scheduling existing reports: {e}")
+        except Exception:
+            self.print(error("Error scheduling existing reports: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -249,8 +254,8 @@ class ReportScheduler:
 
             self.logger.info(f"Generated report: {report_id} -> {file_path}")
 
-        except Exception as e:
-            self.logger.error(f"Error generating scheduled report: {e}")
+        except Exception:
+            self.print(error("Error generating scheduled report: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -273,7 +278,7 @@ class ReportScheduler:
             return {"error": "Unknown report type"}
 
         except Exception as e:
-            self.logger.error(f"Error generating report content: {e}")
+            self.print(error("Error generating report content: {e}"))
             return {"error": str(e)}
 
     async def _generate_performance_summary(self) -> dict[str, Any]:
@@ -288,8 +293,8 @@ class ReportScheduler:
                 "timestamp": datetime.now().isoformat(),
             }
 
-        except Exception as e:
-            self.logger.error(f"Error generating performance summary: {e}")
+        except Exception:
+            self.print(error("Error generating performance summary: {e}"))
             return {}
 
     async def _generate_model_analysis(self) -> dict[str, Any]:
@@ -313,8 +318,8 @@ class ReportScheduler:
                 "timestamp": datetime.now().isoformat(),
             }
 
-        except Exception as e:
-            self.logger.error(f"Error generating model analysis: {e}")
+        except Exception:
+            self.print(error("Error generating model analysis: {e}"))
             return {}
 
     async def _generate_risk_assessment(self) -> dict[str, Any]:
@@ -328,8 +333,8 @@ class ReportScheduler:
                 "timestamp": datetime.now().isoformat(),
             }
 
-        except Exception as e:
-            self.logger.error(f"Error generating risk assessment: {e}")
+        except Exception:
+            self.print(error("Error generating risk assessment: {e}"))
             return {}
 
     async def _generate_executive_summary(self) -> dict[str, Any]:
@@ -349,8 +354,8 @@ class ReportScheduler:
                 "timestamp": datetime.now().isoformat(),
             }
 
-        except Exception as e:
-            self.logger.error(f"Error generating executive summary: {e}")
+        except Exception:
+            self.print(error("Error generating executive summary: {e}"))
             return {}
 
     async def _generate_continuous_improvement_report(self) -> dict[str, Any]:
@@ -358,83 +363,98 @@ class ReportScheduler:
         try:
             # Get monitoring data for improvement analysis
             monitoring_data = self.config.get("monitoring_data", {})
-            
+
             # Analyze improvement opportunities
             improvement_opportunities = []
-            
+
             # Performance improvement opportunities
             performance_metrics = monitoring_data.get("performance", {})
             if performance_metrics.get("model_accuracy", 0.0) < 0.8:
-                improvement_opportunities.append({
-                    "category": "model_performance",
-                    "issue": "Model accuracy below target",
-                    "current_value": performance_metrics.get("model_accuracy", 0.0),
-                    "target_value": 0.8,
-                    "priority": "high",
-                    "recommended_action": "Retrain models with additional data",
-                    "estimated_impact": "High - Improved prediction accuracy"
-                })
-            
+                improvement_opportunities.append(
+                    {
+                        "category": "model_performance",
+                        "issue": "Model accuracy below target",
+                        "current_value": performance_metrics.get("model_accuracy", 0.0),
+                        "target_value": 0.8,
+                        "priority": "high",
+                        "recommended_action": "Retrain models with additional data",
+                        "estimated_impact": "High - Improved prediction accuracy",
+                    },
+                )
+
             if performance_metrics.get("trading_win_rate", 0.0) < 0.6:
-                improvement_opportunities.append({
-                    "category": "trading_performance",
-                    "issue": "Trading win rate below target",
-                    "current_value": performance_metrics.get("trading_win_rate", 0.0),
-                    "target_value": 0.6,
-                    "priority": "high",
-                    "recommended_action": "Review and optimize trading strategies",
-                    "estimated_impact": "High - Improved profitability"
-                })
-            
+                improvement_opportunities.append(
+                    {
+                        "category": "trading_performance",
+                        "issue": "Trading win rate below target",
+                        "current_value": performance_metrics.get(
+                            "trading_win_rate",
+                            0.0,
+                        ),
+                        "target_value": 0.6,
+                        "priority": "high",
+                        "recommended_action": "Review and optimize trading strategies",
+                        "estimated_impact": "High - Improved profitability",
+                    },
+                )
+
             # System optimization opportunities
             system_metrics = monitoring_data.get("system", {})
             if system_metrics.get("memory_usage", 0.0) > 0.7:
-                improvement_opportunities.append({
-                    "category": "system_optimization",
-                    "issue": "High memory usage",
-                    "current_value": system_metrics.get("memory_usage", 0.0),
-                    "target_value": 0.5,
-                    "priority": "medium",
-                    "recommended_action": "Optimize memory usage and implement garbage collection",
-                    "estimated_impact": "Medium - Improved system stability"
-                })
-            
+                improvement_opportunities.append(
+                    {
+                        "category": "system_optimization",
+                        "issue": "High memory usage",
+                        "current_value": system_metrics.get("memory_usage", 0.0),
+                        "target_value": 0.5,
+                        "priority": "medium",
+                        "recommended_action": "Optimize memory usage and implement garbage collection",
+                        "estimated_impact": "Medium - Improved system stability",
+                    },
+                )
+
             # Risk management improvements
             risk_metrics = monitoring_data.get("risk", {})
             if risk_metrics.get("portfolio_var", 0.0) > 0.05:
-                improvement_opportunities.append({
-                    "category": "risk_management",
-                    "issue": "Portfolio VaR above acceptable level",
-                    "current_value": risk_metrics.get("portfolio_var", 0.0),
-                    "target_value": 0.03,
-                    "priority": "critical",
-                    "recommended_action": "Reduce position sizes and diversify portfolio",
-                    "estimated_impact": "Critical - Risk reduction"
-                })
-            
+                improvement_opportunities.append(
+                    {
+                        "category": "risk_management",
+                        "issue": "Portfolio VaR above acceptable level",
+                        "current_value": risk_metrics.get("portfolio_var", 0.0),
+                        "target_value": 0.03,
+                        "priority": "critical",
+                        "recommended_action": "Reduce position sizes and diversify portfolio",
+                        "estimated_impact": "Critical - Risk reduction",
+                    },
+                )
+
             # Anomaly detection insights
             anomalies = monitoring_data.get("anomalies", [])
             anomaly_insights = []
             for anomaly in anomalies:
-                anomaly_insights.append({
-                    "metric": anomaly.get("metric", "unknown"),
-                    "severity": anomaly.get("severity", "medium"),
-                    "description": anomaly.get("description", ""),
-                    "recommended_action": anomaly.get("recommended_action", "")
-                })
-            
+                anomaly_insights.append(
+                    {
+                        "metric": anomaly.get("metric", "unknown"),
+                        "severity": anomaly.get("severity", "medium"),
+                        "description": anomaly.get("description", ""),
+                        "recommended_action": anomaly.get("recommended_action", ""),
+                    },
+                )
+
             # Predictive analytics insights
             predictions = monitoring_data.get("predictions", {})
             predictive_insights = []
             for metric, prediction_data in predictions.items():
                 if prediction_data.get("trend") == "declining":
-                    predictive_insights.append({
-                        "metric": metric,
-                        "trend": "declining",
-                        "confidence": prediction_data.get("confidence", 0.0),
-                        "recommended_action": f"Monitor {metric} closely and prepare intervention if needed"
-                    })
-            
+                    predictive_insights.append(
+                        {
+                            "metric": metric,
+                            "trend": "declining",
+                            "confidence": prediction_data.get("confidence", 0.0),
+                            "recommended_action": f"Monitor {metric} closely and prepare intervention if needed",
+                        },
+                    )
+
             return {
                 "report_type": "continuous_improvement",
                 "timestamp": datetime.now().isoformat(),
@@ -442,20 +462,58 @@ class ReportScheduler:
                 "anomaly_insights": anomaly_insights,
                 "predictive_insights": predictive_insights,
                 "priority_summary": {
-                    "critical": len([opp for opp in improvement_opportunities if opp["priority"] == "critical"]),
-                    "high": len([opp for opp in improvement_opportunities if opp["priority"] == "high"]),
-                    "medium": len([opp for opp in improvement_opportunities if opp["priority"] == "medium"]),
-                    "low": len([opp for opp in improvement_opportunities if opp["priority"] == "low"])
+                    "critical": len(
+                        [
+                            opp
+                            for opp in improvement_opportunities
+                            if opp["priority"] == "critical"
+                        ],
+                    ),
+                    "high": len(
+                        [
+                            opp
+                            for opp in improvement_opportunities
+                            if opp["priority"] == "high"
+                        ],
+                    ),
+                    "medium": len(
+                        [
+                            opp
+                            for opp in improvement_opportunities
+                            if opp["priority"] == "medium"
+                        ],
+                    ),
+                    "low": len(
+                        [
+                            opp
+                            for opp in improvement_opportunities
+                            if opp["priority"] == "low"
+                        ],
+                    ),
                 },
                 "recommendations": {
-                    "immediate_actions": [opp for opp in improvement_opportunities if opp["priority"] in ["critical", "high"]],
-                    "monitoring_focus": [insight for insight in predictive_insights if insight["confidence"] > 0.7],
-                    "long_term_improvements": [opp for opp in improvement_opportunities if opp["priority"] == "medium"]
-                }
+                    "immediate_actions": [
+                        opp
+                        for opp in improvement_opportunities
+                        if opp["priority"] in ["critical", "high"]
+                    ],
+                    "monitoring_focus": [
+                        insight
+                        for insight in predictive_insights
+                        if insight["confidence"] > 0.7
+                    ],
+                    "long_term_improvements": [
+                        opp
+                        for opp in improvement_opportunities
+                        if opp["priority"] == "medium"
+                    ],
+                },
             }
-            
+
         except Exception as e:
-            self.logger.error(f"Error generating continuous improvement report: {e}")
+            self.logger.exception(
+                f"Error generating continuous improvement report: {e}",
+            )
             return {"error": f"Continuous improvement report generation failed: {e}"}
 
     @handle_errors(
@@ -504,8 +562,8 @@ class ReportScheduler:
 
             return str(file_path)
 
-        except Exception as e:
-            self.logger.error(f"Error generating report file: {e}")
+        except Exception:
+            self.print(error("Error generating report file: {e}"))
             return ""
 
     def add_report_config(self, report_id: str, config: ReportConfig) -> bool:
@@ -515,8 +573,8 @@ class ReportScheduler:
             self.logger.info(f"Added report config: {report_id}")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error adding report config: {e}")
+        except Exception:
+            self.print(error("Error adding report config: {e}"))
             return False
 
     def remove_report_config(self, report_id: str) -> bool:
@@ -528,8 +586,8 @@ class ReportScheduler:
                 return True
             return False
 
-        except Exception as e:
-            self.logger.error(f"Error removing report config: {e}")
+        except Exception:
+            self.print(error("Error removing report config: {e}"))
             return False
 
     def get_report_configs(self) -> dict[str, ReportConfig]:
@@ -556,8 +614,8 @@ class ReportScheduler:
                 "email_distribution": self.email_distribution,
             }
 
-        except Exception as e:
-            self.logger.error(f"Error getting scheduler status: {e}")
+        except Exception:
+            self.print(error("Error getting scheduler status: {e}"))
             return {}
 
     @handle_errors(
@@ -571,8 +629,8 @@ class ReportScheduler:
             self.is_scheduling = False
             self.logger.info("🛑 Report Scheduler stopped")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping scheduler: {e}")
+        except Exception:
+            self.print(error("Error stopping scheduler: {e}"))
 
 
 @handle_errors(
@@ -597,6 +655,6 @@ async def setup_report_scheduler(config: dict[str, Any]) -> ReportScheduler | No
             return scheduler
         return None
 
-    except Exception as e:
-        system_logger.error(f"Error setting up report scheduler: {e}")
+    except Exception:
+        system_print(error("Error setting up report scheduler: {e}"))
         return None

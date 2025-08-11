@@ -17,6 +17,13 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    missing,
+    warning,
+)
 
 
 class PositionDivisionStrategy:
@@ -254,7 +261,7 @@ class PositionDivisionStrategy:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("❌ Configuration validation failed")
+                self.print(failed("❌ Configuration validation failed"))
                 return False
 
             self.is_initialized = True
@@ -280,7 +287,9 @@ class PositionDivisionStrategy:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error initializing position division strategy: {e}")
+            self.logger.exception(
+                f"❌ Error initializing position division strategy: {e}",
+            )
             return False
 
     @handle_errors(
@@ -313,7 +322,7 @@ class PositionDivisionStrategy:
 
             for key in required_keys:
                 if key not in self.division_config:
-                    self.logger.error(f"❌ Missing required configuration key: {key}")
+                    self.print(missing("❌ Missing required configuration key: {key}"))
                     return False
                 self.logger.debug(
                     f"✅ Found configuration key: {key} = {self.division_config[key]}",
@@ -335,8 +344,8 @@ class PositionDivisionStrategy:
             self.logger.info("✅ Position division configuration validation passed")
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Error validating configuration: {e}")
+        except Exception:
+            self.print(error("❌ Error validating configuration: {e}"))
             return False
 
     @handle_specific_errors(
@@ -370,7 +379,9 @@ class PositionDivisionStrategy:
         """
         try:
             if not self.is_initialized:
-                self.logger.error("Position division strategy not initialized")
+                self.print(
+                    initialization_error("Position division strategy not initialized"),
+                )
                 return None
 
             self.logger.info("🔄 Starting position division strategy analysis...")
@@ -379,8 +390,14 @@ class PositionDivisionStrategy:
             )
 
             # Normalize ml_predictions keys
-            price_target_confidences = ml_predictions.get("price_target_confidences") or ml_predictions.get("movement_confidence_scores") or {}
-            adversarial_confidences = ml_predictions.get("adversarial_confidences") or {}
+            price_target_confidences = (
+                ml_predictions.get("price_target_confidences")
+                or ml_predictions.get("movement_confidence_scores")
+                or {}
+            )
+            adversarial_confidences = (
+                ml_predictions.get("adversarial_confidences") or {}
+            )
             directional_confidence = ml_predictions.get("directional_confidence") or {}
 
             # Calculate final confidence using dual model formula
@@ -504,7 +521,7 @@ class PositionDivisionStrategy:
             return division_analysis
 
         except Exception as e:
-            self.logger.error(f"❌ Error analyzing position division: {e}")
+            self.print(error("❌ Error analyzing position division: {e}"))
             # Return a safe default analysis instead of None
             return {
                 "timestamp": datetime.now(),
@@ -578,7 +595,9 @@ class PositionDivisionStrategy:
                 if stress_level >= 0.8:
                     # In extreme stress, avoid adding positions and favor reductions
                     base["entry_recommendation"]["should_enter"] = False
-                    base["division_reason"] += " | Suppressed entries due to extreme stress"
+                    base["division_reason"] += (
+                        " | Suppressed entries due to extreme stress"
+                    )
                 elif stress_level >= 0.6:
                     # In high stress, scale down take-profit adds
                     tp = base.get("take_profit_recommendation", {})
@@ -589,15 +608,15 @@ class PositionDivisionStrategy:
             if strategist_risk_parameters:
                 # Cap total adds based on max positions and risk preference
                 max_positions = int(
-                    strategist_risk_parameters.get("max_positions", self.max_positions)
+                    strategist_risk_parameters.get("max_positions", self.max_positions),
                 )
                 base["entry_recommendation"]["max_positions_allowed"] = max_positions
 
             base["market_health_context"] = market_health_analysis or {}
             base["strategist_risk_parameters"] = strategist_risk_parameters or {}
             return base
-        except Exception as e:
-            self.logger.error(f"Error in analyze_and_divide: {e}")
+        except Exception:
+            self.print(error("Error in analyze_and_divide: {e}"))
             return None
 
     def _calculate_average_confidence(
@@ -625,7 +644,7 @@ class PositionDivisionStrategy:
                     # Find closest available level
                     available_levels = [
                         float(k)
-                        for k in price_target_confidences.keys()
+                        for k in price_target_confidences
                         if k.replace(".", "").isdigit()
                     ]
                     if not available_levels:
@@ -660,8 +679,8 @@ class PositionDivisionStrategy:
 
             return avg_confidence
 
-        except Exception as e:
-            self.logger.error(f"❌ Error calculating average confidence: {e}")
+        except Exception:
+            self.print(error("❌ Error calculating average confidence: {e}"))
             return 0.5
 
     def _analyze_short_term_indicators(
@@ -698,8 +717,8 @@ class PositionDivisionStrategy:
 
             return short_term_score
 
-        except Exception as e:
-            self.logger.error(f"❌ Error analyzing short-term indicators: {e}")
+        except Exception:
+            self.print(error("❌ Error analyzing short-term indicators: {e}"))
             return 0.5
 
     def _analyze_entry_strategy(
@@ -738,7 +757,7 @@ class PositionDivisionStrategy:
                         try:
                             if isinstance(entry_timestamp, str):
                                 entry_time = datetime.fromisoformat(
-                                    entry_timestamp.replace("Z", "+00:00"),
+                                    entry_timestamp,
                                 )
                             else:
                                 entry_time = entry_timestamp
@@ -761,8 +780,8 @@ class PositionDivisionStrategy:
                                     "max_positions_reached": False,
                                     "holding_time_exceeded": True,
                                 }
-                        except (ValueError, TypeError) as e:
-                            self.logger.warning(f"⚠️ Error parsing entry timestamp: {e}")
+                        except (ValueError, TypeError):
+                            self.print(warning("⚠️ Error parsing entry timestamp: {e}"))
                             continue
 
             # Check if we should enter a new position
@@ -819,8 +838,8 @@ class PositionDivisionStrategy:
             self.logger.debug(f"📋 Entry analysis result: {result}")
             return result
 
-        except Exception as e:
-            self.logger.error(f"❌ Error analyzing entry strategy: {e}")
+        except Exception:
+            self.print(error("❌ Error analyzing entry strategy: {e}"))
             return {
                 "should_enter": False,
                 "confidence": 0.0,
@@ -847,7 +866,7 @@ class PositionDivisionStrategy:
             total_take_profit_size = 0.0
 
             for i, position in enumerate(current_positions):
-                entry_price = position.get("entry_price", current_price)
+                position.get("entry_price", current_price)
                 position_size = position.get("position_size", 0.0)
                 position_id = position.get("position_id", f"pos_{i}")
                 entry_confidence = position.get("entry_confidence", avg_confidence)
@@ -946,8 +965,8 @@ class PositionDivisionStrategy:
             )
             return result
 
-        except Exception as e:
-            self.logger.error(f"❌ Error analyzing take profit strategy: {e}")
+        except Exception:
+            self.print(error("❌ Error analyzing take profit strategy: {e}"))
             return {"take_profit_actions": [], "total_take_profit_size": 0.0}
 
     def _analyze_stop_loss_strategy(
@@ -1085,8 +1104,8 @@ class PositionDivisionStrategy:
             )
             return result
 
-        except Exception as e:
-            self.logger.error(f"❌ Error analyzing stop loss strategy: {e}")
+        except Exception:
+            self.print(error("❌ Error analyzing stop loss strategy: {e}"))
             return {"stop_loss_actions": [], "total_stop_loss_size": 0.0}
 
     def _analyze_full_close_strategy(
@@ -1206,8 +1225,8 @@ class PositionDivisionStrategy:
             )
             return result
 
-        except Exception as e:
-            self.logger.error(f"❌ Error analyzing full close strategy: {e}")
+        except Exception:
+            self.print(error("❌ Error analyzing full close strategy: {e}"))
             return {"full_close_actions": [], "total_full_close_size": 0.0}
 
     def _check_confidence_increase(
@@ -1233,8 +1252,8 @@ class PositionDivisionStrategy:
 
             return confidence_increased
 
-        except Exception as e:
-            self.logger.error(f"Error checking confidence increase: {e}")
+        except Exception:
+            self.print(error("Error checking confidence increase: {e}"))
             return False
 
     def _calculate_reversal_probability(
@@ -1335,8 +1354,8 @@ class PositionDivisionStrategy:
 
             return final_probability
 
-        except Exception as e:
-            self.logger.error(f"❌ Error calculating reversal probability: {e}")
+        except Exception:
+            self.print(error("❌ Error calculating reversal probability: {e}"))
             return 0.0
 
     def _generate_division_reason(
@@ -1385,8 +1404,8 @@ class PositionDivisionStrategy:
             self.logger.debug(f"📝 Generated reason: {reason}")
             return reason
 
-        except Exception as e:
-            self.logger.error(f"Error generating division reason: {e}")
+        except Exception:
+            self.print(error("Error generating division reason: {e}"))
             return "Position division analysis completed"
 
     def get_position_division_history(
@@ -1412,8 +1431,8 @@ class PositionDivisionStrategy:
             self.logger.info("Stopping position division strategy...")
             self.is_initialized = False
             self.logger.info("✅ Position division strategy stopped successfully")
-        except Exception as e:
-            self.logger.error(f"Error stopping position division strategy: {e}")
+        except Exception:
+            self.print(error("Error stopping position division strategy: {e}"))
 
 
 @handle_errors(
@@ -1447,6 +1466,6 @@ async def setup_position_division_strategy(
             return position_division_strategy
         return None
 
-    except Exception as e:
-        system_logger.error(f"Error setting up position division strategy: {e}")
+    except Exception:
+        system_print(error("Error setting up position division strategy: {e}"))
         return None

@@ -29,9 +29,17 @@ sys.path.insert(0, str(project_root))
 
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from src.config import CONFIG
-from src.training.steps.analyst_training_components.regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
+from src.training.steps.analyst_training_components.regime_specific_tpsl_optimizer import (
+    RegimeSpecificTPSLOptimizer,
+)
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+)
 
 
 class MultiTimeframeRegimeIntegration:
@@ -119,7 +127,7 @@ class MultiTimeframeRegimeIntegration:
 
             # Initialize HMM classifier
             if not await self._initialize_regime_classifier():
-                self.logger.error("Failed to initialize HMM classifier")
+                self.print(failed("Failed to initialize HMM classifier"))
                 return False
 
             # Initialize regime-specific TP/SL optimizer
@@ -135,7 +143,7 @@ class MultiTimeframeRegimeIntegration:
             return True
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"❌ Failed to initialize Multi-Timeframe Regime Integration: {e}",
             )
             return False
@@ -159,15 +167,15 @@ class MultiTimeframeRegimeIntegration:
                 if self.regime_classifier.load_models():
                     self.logger.info("✅ Loaded existing HMM regime classifier")
                     return True
-                self.logger.warning("Failed to load existing HMM model")
+                self.print(failed("Failed to load existing HMM model"))
 
             self.logger.info(
                 "HMM classifier not trained yet, will be trained when 1h data is available",
             )
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error initializing HMM classifier: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing HMM classifier: {e}"))
             return False
 
     @handle_errors(
@@ -223,7 +231,7 @@ class MultiTimeframeRegimeIntegration:
             return self.current_regime, self.regime_confidence, self.regime_info
 
         except Exception as e:
-            self.logger.error(f"Error in regime classification: {e}")
+            self.print(error("Error in regime classification: {e}"))
             return "SIDEWAYS_RANGE", 0.5, {"method": "fallback", "error": str(e)}
 
     def _validate_1h_data(self, data: pd.DataFrame) -> bool:
@@ -323,7 +331,9 @@ class MultiTimeframeRegimeIntegration:
             return timeframe_regime_info
 
         except Exception as e:
-            self.logger.error(f"Error getting regime for timeframe {timeframe}: {e}")
+            self.logger.exception(
+                f"Error getting regime for timeframe {timeframe}: {e}",
+            )
             return {
                 "regime": "SIDEWAYS_RANGE",
                 "confidence": 0.5,
@@ -453,7 +463,7 @@ class MultiTimeframeRegimeIntegration:
             return optimization_params
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error getting regime-specific optimization for {timeframe}: {e}",
             )
             return {
@@ -481,7 +491,7 @@ class MultiTimeframeRegimeIntegration:
             self.logger.info("🎓 Training HMM regime classifier with 1h data...")
 
             if not self._validate_1h_data(historical_data_1h):
-                self.logger.error("Invalid 1h data provided for training")
+                self.print(invalid("Invalid 1h data provided for training"))
                 return False
 
             success = await self.regime_classifier.train_complete_system(
@@ -493,11 +503,11 @@ class MultiTimeframeRegimeIntegration:
                 # Save the model
                 # Model saving is handled automatically by UnifiedRegimeClassifier
                 return True
-            self.logger.error("❌ Failed to train HMM regime classifier")
+            self.print(failed("❌ Failed to train HMM regime classifier"))
             return False
 
-        except Exception as e:
-            self.logger.error(f"Error training HMM classifier: {e}")
+        except Exception:
+            self.print(error("Error training HMM classifier: {e}"))
             return False
 
     def get_integration_statistics(self) -> dict[str, Any]:

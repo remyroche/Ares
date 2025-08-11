@@ -1,6 +1,5 @@
 # src/training/calibration_manager.py
 
-import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -9,6 +8,11 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    invalid,
+)
 
 
 class CalibrationManager:
@@ -26,16 +30,28 @@ class CalibrationManager:
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("CalibrationManager")
-        
+
         # Calibration state
         self.is_calibrating: bool = False
         self.calibration_results: dict[str, Any] = {}
-        
+
         # Configuration
-        self.calibration_config: dict[str, Any] = self.config.get("calibration_manager", {})
-        self.enable_confidence_calibration: bool = self.calibration_config.get("enable_confidence_calibration", True)
-        self.enable_temperature_scaling: bool = self.calibration_config.get("enable_temperature_scaling", True)
-        self.enable_isotonic_regression: bool = self.calibration_config.get("enable_isotonic_regression", True)
+        self.calibration_config: dict[str, Any] = self.config.get(
+            "calibration_manager",
+            {},
+        )
+        self.enable_confidence_calibration: bool = self.calibration_config.get(
+            "enable_confidence_calibration",
+            True,
+        )
+        self.enable_temperature_scaling: bool = self.calibration_config.get(
+            "enable_temperature_scaling",
+            True,
+        )
+        self.enable_isotonic_regression: bool = self.calibration_config.get(
+            "enable_isotonic_regression",
+            True,
+        )
 
     @handle_specific_errors(
         error_handlers={
@@ -55,20 +71,20 @@ class CalibrationManager:
         """
         try:
             self.logger.info("Initializing Calibration Manager...")
-            
+
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for calibration manager")
+                self.print(invalid("Invalid configuration for calibration manager"))
                 return False
-            
+
             # Initialize calibration components
             await self._initialize_calibration_components()
-            
+
             self.logger.info("✅ Calibration Manager initialized successfully")
             return True
-            
-        except Exception as e:
-            self.logger.error(f"❌ Calibration Manager initialization failed: {e}")
+
+        except Exception:
+            self.print(failed("❌ Calibration Manager initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -85,18 +101,20 @@ class CalibrationManager:
         """
         try:
             # Validate calibration manager specific settings
-            if not any([
-                self.enable_confidence_calibration,
-                self.enable_temperature_scaling,
-                self.enable_isotonic_regression
-            ]):
-                self.logger.error("At least one calibration method must be enabled")
+            if not any(
+                [
+                    self.enable_confidence_calibration,
+                    self.enable_temperature_scaling,
+                    self.enable_isotonic_regression,
+                ],
+            ):
+                self.print(error("At least one calibration method must be enabled"))
                 return False
-            
+
             return True
-            
-        except Exception as e:
-            self.logger.error(f"Configuration validation failed: {e}")
+
+        except Exception:
+            self.print(failed("Configuration validation failed: {e}"))
             return False
 
     @handle_errors(
@@ -109,20 +127,23 @@ class CalibrationManager:
         try:
             # Initialize ML confidence predictor for calibration
             from src.analyst.ml_confidence_predictor import MLConfidencePredictor
+
             self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             await self.ml_confidence_predictor.initialize()
-            
+
             # Initialize calibration methods
             if self.enable_temperature_scaling:
                 self.logger.info("✅ Temperature scaling calibration initialized")
-            
+
             if self.enable_isotonic_regression:
                 self.logger.info("✅ Isotonic regression calibration initialized")
-            
+
             self.logger.info("✅ All calibration components initialized")
-            
+
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize calibration components: {e}")
+            self.logger.exception(
+                f"❌ Failed to initialize calibration components: {e}",
+            )
             raise
 
     @handle_specific_errors(
@@ -152,25 +173,27 @@ class CalibrationManager:
         try:
             self.logger.info("🎯 Starting model calibration...")
             self.is_calibrating = True
-            
+
             # Validate inputs
             if not self._validate_calibration_inputs(ensemble_results, training_input):
                 return None
-            
+
             # Calibrate analyst models
             analyst_calibration = None
             if ensemble_results.get("analyst_ensembles"):
                 analyst_calibration = await self._calibrate_analyst_models(
-                    ensemble_results["analyst_ensembles"], training_input
+                    ensemble_results["analyst_ensembles"],
+                    training_input,
                 )
-            
+
             # Calibrate tactician models
             tactician_calibration = None
             if ensemble_results.get("tactician_ensembles"):
                 tactician_calibration = await self._calibrate_tactician_models(
-                    ensemble_results["tactician_ensembles"], training_input
+                    ensemble_results["tactician_ensembles"],
+                    training_input,
                 )
-            
+
             # Combine results
             calibration_results = {
                 "analyst_calibration": analyst_calibration,
@@ -178,16 +201,16 @@ class CalibrationManager:
                 "training_input": training_input,
                 "calibration_timestamp": datetime.now().isoformat(),
             }
-            
+
             # Store calibration results
             await self._store_calibration_results(calibration_results)
-            
+
             self.is_calibrating = False
             self.logger.info("✅ Model calibration completed successfully")
             return calibration_results
-            
-        except Exception as e:
-            self.logger.error(f"❌ Model calibration failed: {e}")
+
+        except Exception:
+            self.print(failed("❌ Model calibration failed: {e}"))
             self.is_calibrating = False
             return None
 
@@ -214,23 +237,25 @@ class CalibrationManager:
         try:
             # Validate ensemble results
             if not ensemble_results:
-                self.logger.error("Ensemble results are empty")
+                self.print(error("Ensemble results are empty"))
                 return False
-            
+
             # Validate training input
             if not training_input:
-                self.logger.error("Training input is empty")
+                self.print(error("Training input is empty"))
                 return False
-            
+
             # Check for required ensemble results
-            if not ensemble_results.get("analyst_ensembles") and not ensemble_results.get("tactician_ensembles"):
-                self.logger.error("No ensembles found in results")
+            if not ensemble_results.get(
+                "analyst_ensembles",
+            ) and not ensemble_results.get("tactician_ensembles"):
+                self.print(error("No ensembles found in results"))
                 return False
-            
+
             return True
-            
-        except Exception as e:
-            self.logger.error(f"Calibration inputs validation failed: {e}")
+
+        except Exception:
+            self.print(failed("Calibration inputs validation failed: {e}"))
             return False
 
     @handle_errors(
@@ -255,22 +280,26 @@ class CalibrationManager:
         """
         try:
             self.logger.info("🧠 Calibrating analyst models...")
-            
+
             calibration_results = {}
-            
+
             # Calibrate each analyst ensemble
             for ensemble_name, ensemble in analyst_ensembles.items():
                 calibrated_ensemble = await self._calibrate_single_ensemble(
-                    ensemble, ensemble_name, "analyst"
+                    ensemble,
+                    ensemble_name,
+                    "analyst",
                 )
                 if calibrated_ensemble:
                     calibration_results[ensemble_name] = calibrated_ensemble
-            
-            self.logger.info(f"✅ Calibrated {len(calibration_results)} analyst ensembles")
+
+            self.logger.info(
+                f"✅ Calibrated {len(calibration_results)} analyst ensembles",
+            )
             return calibration_results
-            
-        except Exception as e:
-            self.logger.error(f"❌ Analyst model calibration failed: {e}")
+
+        except Exception:
+            self.print(failed("❌ Analyst model calibration failed: {e}"))
             return None
 
     @handle_errors(
@@ -295,22 +324,26 @@ class CalibrationManager:
         """
         try:
             self.logger.info("🎯 Calibrating tactician models...")
-            
+
             calibration_results = {}
-            
+
             # Calibrate each tactician ensemble
             for ensemble_name, ensemble in tactician_ensembles.items():
                 calibrated_ensemble = await self._calibrate_single_ensemble(
-                    ensemble, ensemble_name, "tactician"
+                    ensemble,
+                    ensemble_name,
+                    "tactician",
                 )
                 if calibrated_ensemble:
                     calibration_results[ensemble_name] = calibrated_ensemble
-            
-            self.logger.info(f"✅ Calibrated {len(calibration_results)} tactician ensembles")
+
+            self.logger.info(
+                f"✅ Calibrated {len(calibration_results)} tactician ensembles",
+            )
             return calibration_results
-            
-        except Exception as e:
-            self.logger.error(f"❌ Tactician model calibration failed: {e}")
+
+        except Exception:
+            self.print(failed("❌ Tactician model calibration failed: {e}"))
             return None
 
     @handle_errors(
@@ -336,42 +369,52 @@ class CalibrationManager:
             dict: Calibrated ensemble
         """
         try:
-            self.logger.info(f"🎯 Calibrating {ensemble_type} ensemble: {ensemble_name}")
-            
+            self.logger.info(
+                f"🎯 Calibrating {ensemble_type} ensemble: {ensemble_name}",
+            )
+
             # Apply different calibration methods
             calibrated_ensemble = ensemble.copy()
-            
+
             # Temperature scaling calibration
             if self.enable_temperature_scaling:
                 temperature_scaled = await self._apply_temperature_scaling(ensemble)
                 if temperature_scaled:
                     calibrated_ensemble["temperature_scaling"] = temperature_scaled
-            
+
             # Isotonic regression calibration
             if self.enable_isotonic_regression:
                 isotonic_calibrated = await self._apply_isotonic_regression(ensemble)
                 if isotonic_calibrated:
                     calibrated_ensemble["isotonic_regression"] = isotonic_calibrated
-            
+
             # Confidence calibration
             if self.enable_confidence_calibration:
-                confidence_calibrated = await self._apply_confidence_calibration(ensemble)
+                confidence_calibrated = await self._apply_confidence_calibration(
+                    ensemble,
+                )
                 if confidence_calibrated:
-                    calibrated_ensemble["confidence_calibration"] = confidence_calibrated
-            
+                    calibrated_ensemble["confidence_calibration"] = (
+                        confidence_calibrated
+                    )
+
             # Update calibration metrics
             calibrated_ensemble["calibration_metrics"] = {
                 "calibration_error": 0.02,
                 "confidence_reliability": 0.95,
                 "calibration_time": 25.3,
             }
-            
-            calibrated_ensemble["calibrated_ensemble_path"] = f"calibrated_models/{ensemble_type}_{ensemble_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl"
-            
+
+            calibrated_ensemble["calibrated_ensemble_path"] = (
+                f"calibrated_models/{ensemble_type}_{ensemble_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl"
+            )
+
             return calibrated_ensemble
-            
+
         except Exception as e:
-            self.logger.error(f"❌ Failed to calibrate {ensemble_type} ensemble {ensemble_name}: {e}")
+            self.logger.exception(
+                f"❌ Failed to calibrate {ensemble_type} ensemble {ensemble_name}: {e}",
+            )
             return None
 
     @handle_errors(
@@ -395,16 +438,14 @@ class CalibrationManager:
         try:
             # This would implement actual temperature scaling logic
             # For now, return a placeholder result
-            temperature_scaling_result = {
+            return {
                 "temperature": 1.2,
                 "calibration_error": 0.015,
                 "confidence_reliability": 0.96,
             }
-            
-            return temperature_scaling_result
-            
-        except Exception as e:
-            self.logger.error(f"❌ Temperature scaling calibration failed: {e}")
+
+        except Exception:
+            self.print(failed("❌ Temperature scaling calibration failed: {e}"))
             return None
 
     @handle_errors(
@@ -428,16 +469,14 @@ class CalibrationManager:
         try:
             # This would implement actual isotonic regression logic
             # For now, return a placeholder result
-            isotonic_regression_result = {
+            return {
                 "calibration_error": 0.018,
                 "confidence_reliability": 0.94,
                 "calibration_points": 100,
             }
-            
-            return isotonic_regression_result
-            
-        except Exception as e:
-            self.logger.error(f"❌ Isotonic regression calibration failed: {e}")
+
+        except Exception:
+            self.print(failed("❌ Isotonic regression calibration failed: {e}"))
             return None
 
     @handle_errors(
@@ -461,16 +500,14 @@ class CalibrationManager:
         try:
             # This would implement actual confidence calibration logic
             # For now, return a placeholder result
-            confidence_calibration_result = {
+            return {
                 "confidence_threshold": 0.75,
                 "calibration_error": 0.02,
                 "confidence_reliability": 0.95,
             }
-            
-            return confidence_calibration_result
-            
-        except Exception as e:
-            self.logger.error(f"❌ Confidence calibration failed: {e}")
+
+        except Exception:
+            self.print(failed("❌ Confidence calibration failed: {e}"))
             return None
 
     @handle_errors(
@@ -478,7 +515,10 @@ class CalibrationManager:
         default_return=None,
         context="calibration results storage",
     )
-    async def _store_calibration_results(self, calibration_results: dict[str, Any]) -> None:
+    async def _store_calibration_results(
+        self,
+        calibration_results: dict[str, Any],
+    ) -> None:
         """
         Store calibration results.
 
@@ -487,15 +527,15 @@ class CalibrationManager:
         """
         try:
             self.logger.info("📁 Storing calibration results...")
-            
+
             # Store calibration results in memory for now
             # In practice, this would store to database or file system
             self.calibration_results = calibration_results.copy()
-            
+
             self.logger.info("✅ Calibration results stored successfully")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to store calibration results: {e}")
+
+        except Exception:
+            self.print(failed("❌ Failed to store calibration results: {e}"))
 
     def get_calibration_status(self) -> dict[str, Any]:
         """
@@ -532,8 +572,8 @@ class CalibrationManager:
             self.logger.info("🛑 Stopping Calibration Manager...")
             self.is_calibrating = False
             self.logger.info("✅ Calibration Manager stopped successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to stop Calibration Manager: {e}")
+        except Exception:
+            self.print(failed("❌ Failed to stop Calibration Manager: {e}"))
 
 
 @handle_errors(
@@ -559,5 +599,5 @@ async def setup_calibration_manager(
             return manager
         return None
     except Exception as e:
-        system_logger.error(f"Failed to setup calibration manager: {e}")
-        return None 
+        system_logger.exception(f"Failed to setup calibration manager: {e}")
+        return None

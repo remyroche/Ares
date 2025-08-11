@@ -11,7 +11,7 @@ import json
 import time
 import uuid
 from collections.abc import Callable
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from enum import Enum
@@ -20,6 +20,9 @@ from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+)
 
 
 class TraceLevel(Enum):
@@ -494,8 +497,8 @@ class AdvancedTracer:
                 "tracing_enabled": self.enable_tracing,
             }
 
-        except Exception as e:
-            self.logger.error(f"Error getting trace statistics: {e}")
+        except Exception:
+            self.print(error("Error getting trace statistics: {e}"))
             return {}
 
     def export_trace_data(
@@ -522,8 +525,8 @@ class AdvancedTracer:
                 return json.dumps(all_traces, indent=2, default=str)
             return str(all_traces)
 
-        except Exception as e:
-            self.logger.error(f"Error exporting trace data: {e}")
+        except Exception:
+            self.print(error("Error exporting trace data: {e}"))
             return ""
 
     @handle_specific_errors(
@@ -540,8 +543,8 @@ class AdvancedTracer:
             self.logger.info("🚀 Advanced Tracer started")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error starting tracer: {e}")
+        except Exception:
+            self.print(error("Error starting tracer: {e}"))
             return False
 
     @handle_errors(
@@ -556,15 +559,13 @@ class AdvancedTracer:
 
             if self.trace_cleanup_task:
                 self.trace_cleanup_task.cancel()
-                try:
+                with suppress(asyncio.CancelledError):
                     await self.trace_cleanup_task
-                except asyncio.CancelledError:
-                    pass
 
             self.logger.info("🛑 Advanced Tracer stopped")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping tracer: {e}")
+        except Exception:
+            self.print(error("Error stopping tracer: {e}"))
 
 
 @handle_errors(
@@ -589,6 +590,6 @@ async def setup_advanced_tracer(config: dict[str, Any]) -> AdvancedTracer | None
             return tracer
         return None
 
-    except Exception as e:
-        system_logger.error(f"Error setting up advanced tracer: {e}")
+    except Exception:
+        system_print(error("Error setting up advanced tracer: {e}"))
         return None

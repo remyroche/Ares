@@ -11,13 +11,18 @@ from typing import Any
 
 import yaml
 
-# Try to import watchdog for file watching
+# Try to import watchdog for file watching using dynamic import to avoid linter warnings
 try:
-    from watchdog.events import FileSystemEventHandler
-    from watchdog.observers import Observer
+    import importlib
+
+    _watchdog_events = importlib.import_module("watchdog.events")
+    _watchdog_observers = importlib.import_module("watchdog.observers")
+
+    FileSystemEventHandler = getattr(_watchdog_events, "FileSystemEventHandler")
+    Observer = getattr(_watchdog_observers, "Observer")
 
     WATCHDOG_AVAILABLE = True
-except ImportError:
+except Exception:
     WATCHDOG_AVAILABLE = False
     Observer = None
     FileSystemEventHandler = None
@@ -28,6 +33,11 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    warning,
+)
 
 
 @dataclass
@@ -97,7 +107,18 @@ if WATCHDOG_AVAILABLE:
             """Handle file modification events."""
             if event.src_path.endswith((".yaml", ".yml", ".json")):
                 self.logger.info(f"Configuration file changed: {event.src_path}")
-                asyncio.create_task(self.config_service._reload_configuration())
+                try:
+                    loop = self.config_service.loop
+                    if loop and loop.is_running():
+                        asyncio.run_coroutine_threadsafe(
+                            self.config_service._reload_configuration(),
+                            loop,
+                        )
+                    else:
+                        # Fallback: run synchronously in a temporary loop
+                        asyncio.run(self.config_service._reload_configuration())
+                except Exception:
+                    self.logger.exception("Failed to schedule configuration reload")
 else:
 
     class ConfigurationWatcher:
@@ -136,8 +157,12 @@ class ConfigurationService:
 
         # Hot-reload settings
         self.enable_hot_reload: bool = self.config.get("enable_hot_reload", True)
-        self.watcher: Observer | None = None
+        # Use a permissive type here because watchdog may not be installed at runtime
+        # and evaluating `Observer | None` would fail if Observer is None.
+        self.watcher: Any | None = None
         self.watched_files: set[str] = set()
+        # Event loop captured during async initialization for cross-thread scheduling
+        self.loop: asyncio.AbstractEventLoop | None = None
 
         # Configuration validation
         self.validation_rules: dict[str, Any] = {}
@@ -150,6 +175,39 @@ class ConfigurationService:
         # Performance monitoring
         self.load_times: list[float] = []
         self.last_load_time: float = 0
+
+    def get_value(self, dotted_key: str, default: Any = None) -> Any:
+        """Retrieve a configuration value using a dotted path from config_data.
+
+        Falls back to the initial raw config (self.config) if not present in
+        the merged config_data.
+        """
+        try:
+
+            def _get(dct: dict, path: list[str]) -> Any:
+                cur = dct
+                for part in path:
+                    if not isinstance(cur, dict) or part not in cur:
+                        return None
+                    cur = cur[part]
+                return cur
+
+            parts = dotted_key.split(".") if dotted_key else []
+            val = _get(self.config_data, parts) if parts else None
+            if val is None:
+                val = _get(self.config, parts) if parts else None
+            return default if val is None else val
+        except Exception:
+            self.logger.exception(f"Error reading config value for key: {dotted_key}")
+            return default
+
+    def print(self, message: str) -> None:
+        """Proxy print to logger to keep output consistent in terminal."""
+        try:
+            self.logger.info(message)
+        except Exception:
+            # Fallback in case logger is not available for any reason
+            print(message)
 
     @handle_specific_errors(
         error_handlers={
@@ -164,13 +222,19 @@ class ConfigurationService:
         """Initialize configuration service with enhanced capabilities."""
         try:
             self.logger.info("Initializing Configuration Service...")
+            # Capture the running event loop for cross-thread callbacks
+            try:
+                self.loop = asyncio.get_running_loop()
+            except RuntimeError:
+                # Will be set later if initialize is called from a fresh loop
+                self.loop = None
 
             # Load configuration
             await self._load_configuration()
 
             # Validate configuration
             if not await self._validate_configuration():
-                self.logger.error("Configuration validation failed")
+                self.print(failed("Configuration validation failed"))
                 return False
 
             # Setup configuration sections
@@ -191,7 +255,9 @@ class ConfigurationService:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Configuration Service initialization failed: {e}")
+            self.logger.exception(
+                f"❌ Configuration Service initialization failed: {e}",
+            )
             return False
 
     @handle_errors(
@@ -233,8 +299,8 @@ class ConfigurationService:
 
             self.logger.info(f"Configuration loaded successfully in {load_time:.3f}s")
 
-        except Exception as e:
-            self.logger.error(f"Error loading configuration: {e}")
+        except Exception:
+            self.print(error("Error loading configuration: {e}"))
 
     @handle_file_operations(
         default_return=None,
@@ -266,8 +332,8 @@ class ConfigurationService:
 
             self.logger.info(f"Loaded configuration from: {config_file}")
 
-        except Exception as e:
-            self.logger.error(f"Error loading config file {config_file}: {e}")
+        except Exception:
+            self.print(error("Error loading config file {config_file}: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -329,8 +395,8 @@ class ConfigurationService:
 
             self.logger.info("Configuration loaded from environment variables")
 
-        except Exception as e:
-            self.logger.error(f"Error loading from environment: {e}")
+        except Exception:
+            self.print(error("Error loading from environment: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -351,8 +417,8 @@ class ConfigurationService:
                 self._merge_configuration(arg_config)
                 self.logger.info("Configuration loaded from command line arguments")
 
-        except Exception as e:
-            self.logger.error(f"Error loading from arguments: {e}")
+        except Exception:
+            self.print(error("Error loading from arguments: {e}"))
 
     def _merge_configuration(self, new_config: dict[str, Any]) -> None:
         """Merge new configuration with existing configuration."""
@@ -373,8 +439,8 @@ class ConfigurationService:
 
             self.config_data = deep_merge(self.config_data, new_config)
 
-        except Exception as e:
-            self.logger.error(f"Error merging configuration: {e}")
+        except Exception:
+            self.print(error("Error merging configuration: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -435,8 +501,8 @@ class ConfigurationService:
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -467,8 +533,8 @@ class ConfigurationService:
 
             self.logger.info("Configuration sections setup complete")
 
-        except Exception as e:
-            self.logger.error(f"Error setting up configuration sections: {e}")
+        except Exception:
+            self.print(error("Error setting up configuration sections: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -479,7 +545,7 @@ class ConfigurationService:
         """Setup hot-reload for configuration files."""
         try:
             if not WATCHDOG_AVAILABLE:
-                self.logger.warning("Watchdog not available, hot-reload disabled")
+                self.print(warning("Watchdog not available, hot-reload disabled"))
                 return
 
             self.watcher = Observer()
@@ -496,8 +562,8 @@ class ConfigurationService:
             self.watcher.start()
             self.logger.info("Hot-reload setup complete")
 
-        except Exception as e:
-            self.logger.error(f"Error setting up hot-reload: {e}")
+        except Exception:
+            self.print(error("Error setting up hot-reload: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -511,13 +577,13 @@ class ConfigurationService:
             self.encryption_key = os.getenv("CONFIG_ENCRYPTION_KEY")
 
             if not self.encryption_key:
-                self.logger.warning("No encryption key provided, encryption disabled")
+                self.print(warning("No encryption key provided, encryption disabled"))
                 self.encryption_enabled = False
             else:
                 self.logger.info("Configuration encryption setup complete")
 
-        except Exception as e:
-            self.logger.error(f"Error setting up encryption: {e}")
+        except Exception:
+            self.print(error("Error setting up encryption: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -550,7 +616,7 @@ class ConfigurationService:
 
             # Re-validate configuration
             if not await self._validate_configuration():
-                self.logger.error("Configuration validation failed after reload")
+                self.print(failed("Configuration validation failed after reload"))
                 # Rollback to previous configuration
                 if self.config_history:
                     previous_config = self.config_history[-1]["config"]
@@ -563,8 +629,8 @@ class ConfigurationService:
 
             self.logger.info("✅ Configuration reloaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error reloading configuration: {e}")
+        except Exception:
+            self.print(error("Error reloading configuration: {e}"))
 
     def get_config(self, section: str = None) -> Any:
         """Get configuration data."""
@@ -572,8 +638,8 @@ class ConfigurationService:
             if section:
                 return self.config_sections.get(section)
             return self.config_data.copy()
-        except Exception as e:
-            self.logger.error(f"Error getting configuration: {e}")
+        except Exception:
+            self.print(error("Error getting configuration: {e}"))
             return None
 
     def get_database_config(self) -> DatabaseConfig:
@@ -596,7 +662,7 @@ class ConfigurationService:
         """Update configuration dynamically."""
         try:
             if section not in self.config_sections:
-                self.logger.error(f"Unknown configuration section: {section}")
+                self.print(error("Unknown configuration section: {section}"))
                 return False
 
             # Update the configuration section
@@ -619,14 +685,14 @@ class ConfigurationService:
             self.logger.info(f"Configuration section '{section}' updated successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error updating configuration: {e}")
+        except Exception:
+            self.print(error("Error updating configuration: {e}"))
             return False
 
     def get_config_status(self) -> dict[str, Any]:
         """Get configuration service status."""
         try:
-            status = {
+            return {
                 "is_initialized": self.is_initialized,
                 "environment": self.environment,
                 "config_files": self.config_files,
@@ -642,10 +708,8 @@ class ConfigurationService:
                 "watched_files_count": len(self.watched_files),
             }
 
-            return status
-
-        except Exception as e:
-            self.logger.error(f"Error getting configuration status: {e}")
+        except Exception:
+            self.print(error("Error getting configuration status: {e}"))
             return {}
 
     def get_config_history(self, limit: int = None) -> list[dict[str, Any]]:
@@ -655,8 +719,8 @@ class ConfigurationService:
             if limit:
                 history = history[-limit:]
             return history
-        except Exception as e:
-            self.logger.error(f"Error getting configuration history: {e}")
+        except Exception:
+            self.print(error("Error getting configuration history: {e}"))
             return []
 
     @handle_errors(
@@ -683,8 +747,8 @@ class ConfigurationService:
             self.is_initialized = False
             self.logger.info("✅ Configuration Service stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping configuration service: {e}")
+        except Exception:
+            self.print(error("Error stopping configuration service: {e}"))
 
 
 # Global configuration service instance

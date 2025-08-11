@@ -10,9 +10,11 @@ from typing import Any
 import numpy as np
 
 from src.utils.logger import system_logger
-
+from src.utils.error_handler import handle_errors
+from src.training.steps.unified_data_loader import get_unified_data_loader
 
 # NOTE: Keeping the optimized TacticianEnsembleCreationStep definition below; removing earlier duplicate to avoid conflicts
+
 
 class TacticianEnsembleCreationStep:
     """Step 10: Create an optimized Tactician Ensemble by blending two models."""
@@ -21,11 +23,21 @@ class TacticianEnsembleCreationStep:
         self.config = config
         self.logger = system_logger
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="tactician ensemble creation step initialization",
+    )
     async def initialize(self) -> None:
         """Initialize the tactician ensemble creation step."""
         self.logger.info("Initializing Tactician Ensemble Creation Step...")
         self.logger.info("Tactician Ensemble Creation Step initialized successfully.")
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"status": "FAILED", "error": "Execution failed"},
+        context="tactician ensemble creation step execution",
+    )
     async def execute(
         self,
         training_input: dict[str, Any],
@@ -58,40 +70,56 @@ class TacticianEnsembleCreationStep:
                     model_path = os.path.join(models_dir, model_file)
                     with open(model_path, "rb") as f:
                         tactician_models[model_name] = pickle.load(f)
+            try:
+                self.logger.info(
+                    f"Loaded tactician models: names={list(tactician_models.keys())}",
+                )
+            except Exception:
+                pass
 
             if len(tactician_models) != 2:
+                msg = f"Expected 2 tactician models, but found {len(tactician_models)} in {models_dir}"
                 raise ValueError(
-                    f"Expected 2 tactician models, but found {len(tactician_models)} in {models_dir}"
+                    msg,
                 )
 
             # Create an optimized blended ensemble
             ensemble_details = await self._create_tactician_ensemble(
-                tactician_models, data_dir
+                tactician_models,
+                data_dir,
             )
 
             # Separate the model object from its serializable details
             ensemble_model = ensemble_details.pop("ensemble")
-            
+            try:
+                self.logger.info(
+                    f"Ensemble details keys: {list(ensemble_details.keys())}",
+                )
+            except Exception:
+                pass
+
             # --- Save Ensemble Model and Summary ---
             ensemble_dir = os.path.join(data_dir, "tactician_ensembles")
             os.makedirs(ensemble_dir, exist_ok=True)
 
             # Save the ensemble model object to a pickle file
             ensemble_file = os.path.join(
-                ensemble_dir, f"{exchange}_{symbol}_tactician_ensemble.pkl"
+                ensemble_dir,
+                f"{exchange}_{symbol}_tactician_ensemble.pkl",
             )
             with open(ensemble_file, "wb") as f:
                 pickle.dump(ensemble_model, f)
 
             # Save the ensemble's metadata to a JSON summary file
             summary_file = os.path.join(
-                ensemble_dir, f"{exchange}_{symbol}_tactician_ensemble_summary.json"
+                ensemble_dir,
+                f"{exchange}_{symbol}_tactician_ensemble_summary.json",
             )
             with open(summary_file, "w") as f:
                 json.dump(ensemble_details, f, indent=4)
 
             self.logger.info(
-                f"✅ Tactician ensemble created. Model saved to {ensemble_file}"
+                f"✅ Tactician ensemble created. Model saved to {ensemble_file}",
             )
 
             # Update pipeline state
@@ -105,15 +133,21 @@ class TacticianEnsembleCreationStep:
             }
 
         except Exception as e:
-            self.logger.error(f"❌ Error in Tactician Ensemble Creation: {e}", exc_info=True)
+            self.logger.error(
+                f"❌ Error in Tactician Ensemble Creation: {e}",
+                exc_info=True,
+            )
             return {"status": "FAILED", "error": str(e)}
 
-    async def _load_validation_data(self, data_dir: str) -> tuple[np.ndarray, np.ndarray]:
+    async def _load_validation_data(
+        self,
+        data_dir: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Loads validation data for weight optimization.
 
-        NOTE: This is a placeholder. In a real application, this would load a
-        pre-processed validation dataset (e.g., from a .parquet or .csv file).
+        Attempts Arrow-first loading from partitioned labeled dataset; falls back
+        to a lightweight placeholder if not available.
 
         Args:
             data_dir: The directory where data is stored.
@@ -121,20 +155,84 @@ class TacticianEnsembleCreationStep:
         Returns:
             A tuple containing validation features (X_val) and labels (y_val).
         """
-        self.logger.info("Loading validation data (using placeholder)...")
-        # Placeholder: 1000 samples, 50 features, 3 classes [-1, 0, 1]
-        num_samples, num_features = 1000, 50
-        X_val = np.random.rand(num_samples, num_features)
-        y_val = np.random.randint(-1, 2, size=num_samples)
-        self.logger.info(f"Loaded placeholder data with shapes X: {X_val.shape}, y: {y_val.shape}")
-        return X_val, y_val
+        try:
+            from src.training.enhanced_training_manager_optimized import (
+                ParquetDatasetManager,
+            )
+            import pyarrow as _pa, pyarrow.compute as pc
+            import pandas as pd
+
+            pdm = ParquetDatasetManager(logger=self.logger)
+            # Build filters: validation split for current exchange/symbol/timeframe
+            exchange = self.config.get("exchange", "BINANCE")
+            symbol = self.config.get("symbol", "ETHUSDT")
+            timeframe = self.config.get("timeframe", "1m")
+            part_base = os.path.join(data_dir, "parquet", "labeled")
+            if os.path.isdir(part_base):
+                filters = [
+                    ("exchange", "==", exchange),
+                    ("symbol", "==", symbol),
+                    ("timeframe", "==", timeframe),
+                    ("split", "==", "validation"),
+                ]
+                # Feature selection
+                feat_cols = self.config.get("model_feature_columns") or self.config.get(
+                    "feature_columns"
+                )
+                label_col = self.config.get("label_column", "label")
+                columns = None
+                if isinstance(feat_cols, list) and len(feat_cols) > 0:
+                    columns = ["timestamp", *feat_cols, label_col]
+
+                def _arrow_pre(tbl: _pa.Table) -> _pa.Table:
+                    # Ensure timestamp is int64
+                    if "timestamp" in tbl.schema.names and not _pa.types.is_int64(
+                        tbl.schema.field("timestamp").type
+                    ):
+                        tbl = tbl.set_column(
+                            tbl.schema.get_field_index("timestamp"),
+                            "timestamp",
+                            pc.cast(tbl.column("timestamp"), _pa.int64()),
+                        )
+                    return tbl
+
+                df = pdm.cached_projection(
+                    base_dir=part_base,
+                    filters=filters,
+                    columns=columns or [],
+                    cache_dir="data_cache/projections",
+                    cache_key_prefix=f"labeled_{exchange}_{symbol}_{timeframe}_validation",
+                    snapshot_version="v1",
+                    ttl_seconds=3600,
+                    batch_size=131072,
+                    arrow_transform=_arrow_pre,
+                )
+                if (
+                    isinstance(feat_cols, list)
+                    and len(feat_cols) > 0
+                    and label_col in df.columns
+                ):
+                    X_val = df[feat_cols].to_numpy(dtype=float)
+                    y_val = df[label_col].to_numpy()
+                    self.logger.info(
+                        f"Loaded validation data from partitioned labeled: X={X_val.shape}, y={y_val.shape}"
+                    )
+                    return X_val, y_val
+        except Exception:
+            pass
+
+        # No fallback - step should fail if validation data is missing
+        msg = f"Validation data not found in {part_base}. Step 10 requires labeled data from Step 8."
+        raise FileNotFoundError(msg)
 
     def _get_model_predictions(self, model: Any, X: np.ndarray) -> np.ndarray:
         """Helper to get probability predictions, with a fallback for classifiers without `predict_proba`."""
         if hasattr(model, "predict_proba"):
             return model.predict_proba(X)
-        
-        self.logger.warning(f"Model {type(model).__name__} lacks `predict_proba`. Falling back to `predict`.")
+
+        self.logger.warning(
+            f"Model {type(model).__name__} lacks `predict_proba`. Falling back to `predict`.",
+        )
         preds = model.predict(X)
         # Convert [-1, 0, 1] integer labels to one-hot encoded probabilities
         pred_proba = np.zeros((len(preds), 3))
@@ -143,7 +241,10 @@ class TacticianEnsembleCreationStep:
         return pred_proba
 
     async def _find_optimal_weight(
-        self, models: list[Any], X_val: np.ndarray, y_val: np.ndarray
+        self,
+        models: list[Any],
+        X_val: np.ndarray,
+        y_val: np.ndarray,
     ) -> float:
         """
         Performs a simple search to find the optimal blending weight `w` for two models.
@@ -167,18 +268,24 @@ class TacticianEnsembleCreationStep:
         # Grid search for the best weight `w`
         for w in np.arange(0, 1.01, 0.01):
             blended_proba = w * preds_a + (1 - w) * preds_b
-            blended_labels = np.argmax(blended_proba, axis=1) - 1  # Convert back to [-1, 0, 1]
+            blended_labels = (
+                np.argmax(blended_proba, axis=1) - 1
+            )  # Convert back to [-1, 0, 1]
             accuracy = accuracy_score(y_val, blended_labels)
 
             if accuracy > best_accuracy:
                 best_accuracy = accuracy
                 optimal_weight = w
-        
-        self.logger.info(f"Optimal weight found: {optimal_weight:.2f} (for model 1) with validation accuracy: {best_accuracy:.4f}")
+
+        self.logger.info(
+            f"Optimal weight found: {optimal_weight:.2f} (for model 1) with validation accuracy: {best_accuracy:.4f}",
+        )
         return optimal_weight
 
     async def _create_tactician_ensemble(
-        self, models: dict[str, Any], data_dir: str
+        self,
+        models: dict[str, Any],
+        data_dir: str,
     ) -> dict[str, Any]:
         """
         Creates an optimized weighted-average ensemble of two tactician models.
@@ -194,7 +301,7 @@ class TacticianEnsembleCreationStep:
 
         model_items = list(models.values())
         model_names = list(models.keys())
-        
+
         base_models = [m["model"] for m in model_items]
         base_accuracies = [m.get("accuracy", 0.0) for m in model_items]
 
@@ -226,21 +333,25 @@ class TacticianEnsembleCreationStep:
         ensemble = OptimalBlendedEnsemble(base_models[0], base_models[1], optimal_w)
 
         # 4. Prepare the final dictionary with the model and its metadata
-        ensemble_data = {
+        return {
             "ensemble": ensemble,
             "ensemble_type": "OptimalBlended",
             "base_models": model_names,
             "base_model_accuracies": base_accuracies,
-            "optimal_weight": {model_names[0]: optimal_w, model_names[1]: 1.0 - optimal_w},
+            "optimal_weight": {
+                model_names[0]: optimal_w,
+                model_names[1]: 1.0 - optimal_w,
+            },
             "creation_date": datetime.now().isoformat(),
         }
-        return ensemble_data
+
 
 # For backward compatibility with existing step structure
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
     data_dir: str = "data/training",
+    force_rerun: bool = False,
     **kwargs,
 ) -> bool:
     """Runs the tactician ensemble creation step."""
@@ -253,14 +364,19 @@ async def run_step(
             "symbol": symbol,
             "exchange": exchange,
             "data_dir": data_dir,
+            "force_rerun": force_rerun,
             **kwargs,
         }
         result = await step.execute(training_input, pipeline_state={})
         return result.get("status") == "SUCCESS"
 
     except Exception as e:
-        system_logger.error(f"❌ Tactician ensemble creation failed: {e}", exc_info=True)
+        system_logger.error(
+            f"❌ Tactician ensemble creation failed: {e}",
+            exc_info=True,
+        )
         return False
+
 
 if __name__ == "__main__":
     # Example of how to run the step
@@ -268,14 +384,14 @@ if __name__ == "__main__":
         # As this test requires model files from a previous step, we'll
         # create dummy model files for demonstration purposes.
         print("--- Running Tactician Ensemble Creation Test ---")
-        
+
         # Create dummy models and data directory
         test_data_dir = "data/test_training"
         models_dir = os.path.join(test_data_dir, "tactician_models")
         os.makedirs(models_dir, exist_ok=True)
 
         from sklearn.linear_model import LogisticRegression
-        
+
         # Dummy Model A
         model_a = LogisticRegression()
         model_a.fit(np.random.rand(10, 50), np.random.randint(-1, 2, 10))
@@ -291,7 +407,7 @@ if __name__ == "__main__":
             pickle.dump(model_b_data, f)
 
         print(f"Created dummy models in {models_dir}")
-        
+
         # Run the step
         success = await run_step("ETHUSDT", "BINANCE", test_data_dir)
         print(f"\nTest Result: {'SUCCESS' if success else 'FAILED'}")
@@ -299,8 +415,14 @@ if __name__ == "__main__":
         # Verify output files
         ensemble_dir = os.path.join(test_data_dir, "tactician_ensembles")
         if success:
-            summary_path = os.path.join(ensemble_dir, "BINANCE_ETHUSDT_tactician_ensemble_summary.json")
-            model_path = os.path.join(ensemble_dir, "BINANCE_ETHUSDT_tactician_ensemble.pkl")
+            summary_path = os.path.join(
+                ensemble_dir,
+                "BINANCE_ETHUSDT_tactician_ensemble_summary.json",
+            )
+            model_path = os.path.join(
+                ensemble_dir,
+                "BINANCE_ETHUSDT_tactician_ensemble.pkl",
+            )
             print(f"Verified: Summary file exists at {summary_path}")
             print(f"Verified: Model file exists at {model_path}")
 

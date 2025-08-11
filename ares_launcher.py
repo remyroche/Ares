@@ -73,6 +73,7 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 from src.config import CONFIG
+from src.config.constants import FULL_TRAINING_LOOKBACK_DAYS
 from src.utils.comprehensive_logger import (
     setup_comprehensive_logging,
 )
@@ -102,7 +103,9 @@ class AresLauncher:
         try:
             init_observability({})
         except Exception as _obs_exc:
-            logging.getLogger(__name__).warning(f"Observability init skipped: {_obs_exc}")
+            logging.getLogger(__name__).warning(
+                f"Observability init skipped: {_obs_exc}"
+            )
 
         self.logger = self.comprehensive_logger.get_component_logger("AresLauncher")
         self.global_logger = self.comprehensive_logger.get_global_logger()
@@ -298,11 +301,13 @@ class AresLauncher:
             from src.utils.logger import system_logger
 
             logger = system_logger.getChild("EnhancedTrainingPipeline")
-            
+
             logger.info("=" * 80)
             logger.info("🚀 ENHANCED TRAINING PIPELINE START")
             logger.info("=" * 80)
-            logger.info(f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(
+                f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
             logger.info(f"🎯 Symbol: {symbol}")
             logger.info(f"🏢 Exchange: {exchange}")
             logger.info(f"📊 Training Mode: {training_mode}")
@@ -315,7 +320,7 @@ class AresLauncher:
                 # Initialize database manager
                 logger.info("📊 STEP 0: Initializing Database Manager...")
                 print("   📊 Setting up database manager...")
-                
+
                 default_config = {
                     "database": {
                         "sqlite_path": "data/ares.db",
@@ -325,7 +330,7 @@ class AresLauncher:
                         "check_same_thread": False,
                     },
                 }
-                
+
                 db_manager = SQLiteManager(default_config)
                 await db_manager.initialize()
                 logger.info("✅ Database manager initialized successfully")
@@ -334,7 +339,7 @@ class AresLauncher:
                 # Initialize enhanced training manager
                 logger.info("🤖 STEP 1: Initializing Enhanced Training Manager...")
                 print("   🤖 Initializing enhanced training manager...")
-                
+
                 # Set training parameters based on mode
                 if training_mode == "blank":
                     max_trials = 3
@@ -345,7 +350,7 @@ class AresLauncher:
                 else:
                     max_trials = 200
                     n_trials = 100
-                
+
                 training_config = {
                     "enhanced_training_manager": {
                         "enhanced_training_interval": 3600,
@@ -399,7 +404,9 @@ class AresLauncher:
                     logger.info("=" * 80)
                     logger.info("🎉 ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY")
                     logger.info("=" * 80)
-                    logger.info(f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    logger.info(
+                        f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
                     logger.info(f"🎯 Symbol: {symbol}")
                     logger.info(f"🏢 Exchange: {exchange}")
                     logger.info(f"📊 Training Mode: {training_mode}")
@@ -423,7 +430,7 @@ class AresLauncher:
             finally:
                 # Cleanup
                 try:
-                    if 'db_manager' in locals():
+                    if "db_manager" in locals():
                         await db_manager.stop()
                         logger.info("🧹 Database manager cleaned up successfully")
                 except Exception as cleanup_error:
@@ -486,7 +493,7 @@ class AresLauncher:
             symbol=symbol,
             exchange=exchange,
             training_mode="full",
-            lookback_days=730,  # 730 days for full training (2 years)
+            lookback_days=FULL_TRAINING_LOOKBACK_DAYS,  # 3 years for full training
             with_gui=with_gui,
         )
 
@@ -504,25 +511,25 @@ class AresLauncher:
         """Resume training from the last checkpoint."""
         self.logger.info(f"🔄 Resuming training for {symbol} on {exchange}")
         print(f"🔄 Resuming training for {symbol} on {exchange}")
-        
+
         # Check if checkpoint exists
         checkpoint_file = Path("checkpoints/training_progress.json")
         if not checkpoint_file.exists():
             self.logger.error("❌ No checkpoint found to resume from")
             print("❌ No checkpoint found to resume from")
             return False
-        
+
         try:
-            with open(checkpoint_file, 'r') as f:
+            with open(checkpoint_file, "r") as f:
                 checkpoint_data = json.load(f)
-            
+
             training_mode = checkpoint_data.get("training_mode", "blank")
             lookback_days = checkpoint_data.get("lookback_days", 30)
             last_step = checkpoint_data.get("current_step", "")
-            
+
             self.logger.info(f"📂 Found checkpoint: {last_step}")
             print(f"📂 Found checkpoint: {last_step}")
-            
+
             return self._run_unified_training(
                 symbol=symbol,
                 exchange=exchange,
@@ -530,7 +537,7 @@ class AresLauncher:
                 lookback_days=lookback_days,
                 with_gui=with_gui,
             )
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to resume training: {e}")
             print(f"❌ Failed to resume training: {e}")
@@ -549,28 +556,35 @@ class AresLauncher:
         try:
             # Import the precomputation system
             import asyncio
-            from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
+            from src.training.steps.precompute_wavelet_features import (
+                WaveletFeaturePrecomputer,
+            )
             from src.config import CONFIG
 
             # Initialize precomputer
             precomputer = WaveletFeaturePrecomputer(CONFIG)
             init_success = asyncio.run(precomputer.initialize())
-            
+
             if not init_success:
                 self.logger.error("❌ Failed to initialize wavelet precomputer")
                 return False
 
             # Check if cache already exists
-            cache_dir = CONFIG.get("wavelet_cache", {}).get("cache_dir", "data/wavelet_cache")
+            cache_dir = CONFIG.get("wavelet_cache", {}).get(
+                "cache_dir", "data/wavelet_cache"
+            )
             import os
+
             if os.path.exists(cache_dir) and len(os.listdir(cache_dir)) > 0:
-                self.logger.info("✅ Wavelet features already cached, skipping precomputation")
+                self.logger.info(
+                    "✅ Wavelet features already cached, skipping precomputation"
+                )
                 print("✅ Wavelet features already cached, skipping precomputation")
                 return True
 
             # Data path for precomputation
             data_path = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
-            
+
             if not os.path.exists(data_path):
                 self.logger.error(f"❌ Consolidated data file not found: {data_path}")
                 self.logger.error("Please run data loading first")
@@ -579,16 +593,17 @@ class AresLauncher:
             # Precompute features
             self.logger.info("🚀 Starting wavelet feature precomputation...")
             print("🚀 Starting wavelet feature precomputation...")
-            
-            success = asyncio.run(precomputer.precompute_dataset(
-                data_path=data_path,
-                symbol=symbol
-            ))
+
+            success = asyncio.run(
+                precomputer.precompute_dataset(data_path=data_path, symbol=symbol)
+            )
 
             if success:
-                self.logger.info("✅ Wavelet feature precomputation completed successfully")
+                self.logger.info(
+                    "✅ Wavelet feature precomputation completed successfully"
+                )
                 print("✅ Wavelet feature precomputation completed successfully")
-                
+
                 # Print statistics
                 stats = precomputer.get_precomputation_stats()
                 print(f"📊 Precomputation Statistics: {stats}")
@@ -610,8 +625,12 @@ class AresLauncher:
     )
     def run_backtesting(self, symbol: str, exchange: str, with_gui: bool = False):
         """Run enhanced backtesting using cached wavelet features by default."""
-        self.logger.info(f"📊 Running backtesting with cached wavelet features for {symbol} on {exchange}")
-        print(f"📊 Running backtesting with cached wavelet features for {symbol} on {exchange}")
+        self.logger.info(
+            f"📊 Running backtesting with cached wavelet features for {symbol} on {exchange}"
+        )
+        print(
+            f"📊 Running backtesting with cached wavelet features for {symbol} on {exchange}"
+        )
         print("=" * 80)
 
         if with_gui:
@@ -621,17 +640,23 @@ class AresLauncher:
         try:
             # First, ensure wavelet features are precomputed
             if not self.precompute_wavelet_features(symbol, exchange):
-                self.logger.warning("⚠️ Wavelet precomputation failed, continuing with direct computation")
-                print("⚠️ Wavelet precomputation failed, continuing with direct computation")
+                self.logger.warning(
+                    "⚠️ Wavelet precomputation failed, continuing with direct computation"
+                )
+                print(
+                    "⚠️ Wavelet precomputation failed, continuing with direct computation"
+                )
 
             # Import and use the cached backtesting system
             import asyncio
-            from src.training.steps.backtesting_with_cached_features import BacktestingWithCachedFeatures
+            from src.training.steps.backtesting_with_cached_features import (
+                BacktestingWithCachedFeatures,
+            )
             from src.config import CONFIG
 
             # Initialize backtesting with cached features
             backtester = BacktestingWithCachedFeatures(CONFIG)
-            
+
             # Initialize the backtesting system
             init_success = asyncio.run(backtester.initialize())
             if not init_success:
@@ -641,17 +666,24 @@ class AresLauncher:
             # Load data for backtesting
             data_path = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
             volume_path = f"data_cache/volume_{exchange}_{symbol}_consolidated.parquet"
-            
+
             # Check if consolidated data exists
             import os
+
             if not os.path.exists(data_path):
                 self.logger.error(f"❌ Consolidated data file not found: {data_path}")
-                self.logger.error("Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE")
+                self.logger.error(
+                    "Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE"
+                )
                 return False
 
             # Load data
             price_data = asyncio.run(backtester._load_backtest_data(data_path))
-            volume_data = asyncio.run(backtester._load_volume_data(volume_path)) if os.path.exists(volume_path) else None
+            volume_data = (
+                asyncio.run(backtester._load_volume_data(volume_path))
+                if os.path.exists(volume_path)
+                else None
+            )
 
             if price_data is None or price_data.empty:
                 self.logger.error("❌ Failed to load price data for backtesting")
@@ -660,23 +692,25 @@ class AresLauncher:
             # Run backtest with cached features
             self.logger.info(f"🚀 Starting backtest with {len(price_data)} data points")
             print(f"🚀 Starting backtest with {len(price_data)} data points")
-            
+
             # Strategy configuration
             strategy_config = {
                 "strategy_type": "wavelet_energy_entropy",
                 "parameters": {
                     "energy_threshold": 0.5,
                     "entropy_threshold": 0.3,
-                    "use_cached_features": True
-                }
+                    "use_cached_features": True,
+                },
             }
 
             # Run the backtest
-            results = asyncio.run(backtester.run_backtest(
-                price_data=price_data,
-                volume_data=volume_data,
-                strategy_config=strategy_config
-            ))
+            results = asyncio.run(
+                backtester.run_backtest(
+                    price_data=price_data,
+                    volume_data=volume_data,
+                    strategy_config=strategy_config,
+                )
+            )
 
             if "error" in results:
                 self.logger.error(f"❌ Backtesting failed: {results['error']}")
@@ -701,11 +735,15 @@ class AresLauncher:
             print("📈 PERFORMANCE STATISTICS")
             print(f"Cache Hit Rate: {stats.get('cache_hit_rate', 0):.2%}")
             print(f"Avg Backtest Time: {stats.get('avg_backtest_time', 0):.3f}s")
-            print(f"Avg Feature Load Time: {stats.get('avg_feature_load_time', 0):.3f}s")
+            print(
+                f"Avg Feature Load Time: {stats.get('avg_feature_load_time', 0):.3f}s"
+            )
             print(f"Iterations Completed: {stats.get('iterations_completed', 0)}")
             print("=" * 80)
 
-            self.logger.info("✅ Backtesting with cached wavelet features completed successfully")
+            self.logger.info(
+                "✅ Backtesting with cached wavelet features completed successfully"
+            )
             print("✅ Backtesting with cached wavelet features completed successfully")
             return True
 
@@ -1174,28 +1212,41 @@ class AresLauncher:
         with_gui: bool = False,
     ):
         """Run enhanced 16-step training pipeline using the step orchestrator."""
-        self.logger.info(f"🚀 Running enhanced 16-step training pipeline for {symbol} on {exchange}")
+        self.logger.info(
+            f"🚀 Running enhanced 16-step training pipeline for {symbol} on {exchange}"
+        )
         self.logger.info(f"Starting from step: {start_step}")
-        
+
         # Ensure BLANK_TRAINING_MODE is set for step-based blank training
         import os
+
         os.environ["BLANK_TRAINING_MODE"] = "1"
         os.environ["FULL_TRAINING_MODE"] = "0"
-        self.logger.info("🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training")
-        
+        self.logger.info(
+            "🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training"
+        )
+
         # Prevent blank mode from being used with step1_data_collection
         if start_step == "step1_data_collection":
             # Check if we're in blank mode (30 days lookback)
             blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
             if blank_mode:
                 self.logger.error("❌ Cannot use blank mode with step1_data_collection")
-                self.logger.error("Blank mode is designed for quick testing with limited data")
-                self.logger.error("step1_data_collection processes all available data files")
+                self.logger.error(
+                    "Blank mode is designed for quick testing with limited data"
+                )
+                self.logger.error(
+                    "step1_data_collection processes all available data files"
+                )
                 self.logger.error("Use one of the following instead:")
-                self.logger.error("  - python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE (for full data)")
-                self.logger.error("  - python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification (for blank mode)")
+                self.logger.error(
+                    "  - python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE (for full data)"
+                )
+                self.logger.error(
+                    "  - python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification (for blank mode)"
+                )
                 return False
-        
+
         if with_gui:
             if not self.launch_gui("training", symbol, exchange):
                 return False
@@ -1205,38 +1256,47 @@ class AresLauncher:
             import os
             from src.training.step_orchestrator import StepOrchestrator
             from src.config import CONFIG
-            
+
             # Check if starting from step2, use pre-consolidated data
             if start_step == "step2_market_regime_classification":
                 self.logger.info("📁 Using pre-consolidated data for step2")
-                
+
                 # Check for consolidated data file
-                consolidated_file = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+                consolidated_file = (
+                    f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+                )
                 if not os.path.exists(consolidated_file):
-                    self.logger.error(f"❌ Consolidated data file not found: {consolidated_file}")
-                    self.logger.error("Please run data loading first or ensure consolidated data exists")
+                    self.logger.error(
+                        f"❌ Consolidated data file not found: {consolidated_file}"
+                    )
+                    self.logger.error(
+                        "Please run data loading first or ensure consolidated data exists"
+                    )
                     return False
-                
+
                 self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
-            
+
             # Initialize step orchestrator
             orchestrator = StepOrchestrator(symbol, exchange)
-            
+
             # Run the step-based training using the orchestrator
             import asyncio
-            success = asyncio.run(orchestrator.execute_from_step(
-                start_step=start_step,
-                config=CONFIG,
-                force_rerun=force_rerun
-            ))
-            
+
+            success = asyncio.run(
+                orchestrator.execute_from_step(
+                    start_step=start_step, config=CONFIG, force_rerun=force_rerun
+                )
+            )
+
             if success:
-                self.logger.info("✅ Enhanced 16-step training pipeline completed successfully")
+                self.logger.info(
+                    "✅ Enhanced 16-step training pipeline completed successfully"
+                )
                 return True
             else:
                 self.logger.error("❌ Enhanced 16-step training pipeline failed")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"❌ Failed to run enhanced training pipeline: {e}")
             return False
@@ -1255,10 +1315,14 @@ class AresLauncher:
         with_gui: bool = False,
     ):
         """Run step-based full training starting from a specific step with full parameters."""
-        self.logger.info(f"🚀 Running step-based full training for {symbol} on {exchange}")
+        self.logger.info(
+            f"🚀 Running step-based full training for {symbol} on {exchange}"
+        )
         self.logger.info(f"Starting from step: {start_step}")
-        self.logger.info("📊 Using full parameters (730 days lookback, full training parameters)")
-        
+        self.logger.info(
+            "📊 Using full parameters (730 days lookback, full training parameters)"
+        )
+
         if with_gui:
             if not self.launch_gui("training", symbol, exchange):
                 return False
@@ -1268,42 +1332,49 @@ class AresLauncher:
             import os
             from src.training.step_orchestrator import StepOrchestrator
             from src.config import CONFIG
-            
+
             # Set environment variable for full training mode
             os.environ["FULL_TRAINING_MODE"] = "1"
             os.environ["BLANK_TRAINING_MODE"] = "0"  # Ensure blank mode is off
-            
+
             # Initialize step orchestrator
             orchestrator = StepOrchestrator(symbol, exchange)
-            
+
             # Check if starting from step2, use pre-consolidated data
             if start_step == "step2_market_regime_classification":
                 self.logger.info("📁 Using pre-consolidated data for step2")
-                
+
                 # Check for consolidated data file
-                consolidated_file = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+                consolidated_file = (
+                    f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+                )
                 if not os.path.exists(consolidated_file):
-                    self.logger.error(f"❌ Consolidated data file not found: {consolidated_file}")
-                    self.logger.error("Please run data loading first or ensure consolidated data exists")
+                    self.logger.error(
+                        f"❌ Consolidated data file not found: {consolidated_file}"
+                    )
+                    self.logger.error(
+                        "Please run data loading first or ensure consolidated data exists"
+                    )
                     return False
-                
+
                 self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
-            
+
             # Run the step-based training
             import asyncio
-            success = asyncio.run(orchestrator.execute_from_step(
-                start_step=start_step,
-                config=CONFIG,
-                force_rerun=force_rerun
-            ))
-            
+
+            success = asyncio.run(
+                orchestrator.execute_from_step(
+                    start_step=start_step, config=CONFIG, force_rerun=force_rerun
+                )
+            )
+
             if success:
                 self.logger.info("✅ Step-based full training completed successfully")
                 return True
             else:
                 self.logger.error("❌ Step-based full training failed")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"❌ Failed to run step-based full training: {e}")
             return False
@@ -1317,7 +1388,7 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        lookback_days: int = 730,
+        lookback_days: int = FULL_TRAINING_LOOKBACK_DAYS,
     ) -> bool:
         """Run data loading and consolidation for the specified symbol and exchange."""
         try:
@@ -1385,6 +1456,9 @@ class AresLauncher:
                 "1000",  # min_data_points
                 "data_cache",  # data_dir
                 str(lookback_days),  # Pass lookback period as positional argument
+                str(
+                    CONFIG.get("DATA_CONFIG", {}).get("exclude_recent_days", 0)
+                ),  # Exclude recent days
             ]
 
             self.logger.info(
@@ -1400,7 +1474,9 @@ class AresLauncher:
                 check=False,
                 timeout=1800,  # 30 minute timeout for large datasets
             )
-            self.logger.info(f"🔄 Consolidation subprocess completed with return code: {consolidate_result.returncode}")
+            self.logger.info(
+                f"🔄 Consolidation subprocess completed with return code: {consolidate_result.returncode}"
+            )
 
             if consolidate_result.returncode != 0:
                 self.logger.error(
@@ -1412,16 +1488,20 @@ class AresLauncher:
 
             # Step 3: Convert consolidated data to ETHUSDT_1h.csv format
             if symbol == "ETHUSDT" and exchange == "BINANCE":
-                self.logger.info("🔄 Step 3: Converting data to ETHUSDT_1h.csv format...")
+                self.logger.info(
+                    "🔄 Step 3: Converting data to ETHUSDT_1h.csv format..."
+                )
                 from src.analyst.data_utils import create_ethusdt_1h_csv
-                
+
                 conversion_success = create_ethusdt_1h_csv()
                 if conversion_success:
                     self.logger.info("✅ Data conversion completed successfully")
                 else:
                     self.logger.warning("⚠️ Data conversion failed, but continuing...")
             else:
-                self.logger.info(f"⏭️ Skipping ETHUSDT_1h.csv conversion for {symbol} on {exchange}")
+                self.logger.info(
+                    f"⏭️ Skipping ETHUSDT_1h.csv conversion for {symbol} on {exchange}"
+                )
 
             return True
 
@@ -1826,7 +1906,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
         "load": lambda: launcher.run_data_loading(
             args.symbol,
             args.exchange,
-            lookback_days=730
+            lookback_days=FULL_TRAINING_LOOKBACK_DAYS
             if not args.blank_mode
             else 30,  # Use 730 for standard, 30 for blank
         ),

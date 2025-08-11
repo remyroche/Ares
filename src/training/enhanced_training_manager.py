@@ -55,22 +55,21 @@ from src.training.enhanced_training_manager_optimized import (
     MemoryManager,
     EnhancedTrainingManagerOptimized,
 )
+
 # Add model trainer import
 from src.training.model_trainer import setup_model_trainer
 
 from contextlib import contextmanager
 
 
-
-
 class EnhancedTrainingManager:
     """
     Enhanced training manager with comprehensive 16-step pipeline.
-    
-    This is the MAIN PIPELINE that orchestrates the complete training pipeline including 
-    analyst and tactician steps. It uses optimized tools and utilities from 
+
+    This is the MAIN PIPELINE that orchestrates the complete training pipeline including
+    analyst and tactician steps. It uses optimized tools and utilities from
     enhanced_training_manager_optimized.py to improve performance and reliability.
-    
+
     Key Features:
     - Comprehensive 16-step training pipeline
     - Uses optimized tools from enhanced_training_manager_optimized:
@@ -85,7 +84,7 @@ class EnhancedTrainingManager:
     - Memory optimization and cleanup
     - Optional pyarrow support with fallback to pandas
     - Enhanced data processing with technical indicator precomputation
-    
+
     Integration:
     - Acts as the main entry point for all training operations
     - Delegates optimization tasks to EnhancedTrainingManagerOptimized
@@ -120,30 +119,51 @@ class EnhancedTrainingManager:
             "max_enhanced_training_history",
             100,
         )
-        
+
         # Training parameters
-        self.enable_model_training: bool = self.enhanced_training_config.get("enable_model_training", True)
-        self.blank_training_mode: bool = self.enhanced_training_config.get("blank_training_mode", False)
+        self.enable_model_training: bool = self.enhanced_training_config.get(
+            "enable_model_training", True
+        )
+        # Check for BLANK mode from environment variable or config
+        blank_env = os.getenv("BLANK_TRAINING_MODE", "0") == "1"
+        blank_config = self.enhanced_training_config.get("blank_training_mode", False)
+        self.blank_training_mode: bool = blank_env or blank_config
         self.max_trials: int = self.enhanced_training_config.get("max_trials", 200)
         self.n_trials: int = self.enhanced_training_config.get("n_trials", 100)
-        self.lookback_days: int = self.enhanced_training_config.get("lookback_days", 30)
-        
+        # Set lookback days based on BLANK mode
+        default_lookback = 180 if self.blank_training_mode else 30
+        self.lookback_days: int = self.enhanced_training_config.get("lookback_days", default_lookback)
+
         # Validation parameters
-        self.enable_validators: bool = self.enhanced_training_config.get("enable_validators", True)
+        self.enable_validators: bool = self.enhanced_training_config.get(
+            "enable_validators", True
+        )
         self.validation_results: dict[str, Any] = {}
-        
+
         # Computational optimization parameters
-        self.enable_computational_optimization: bool = self.enhanced_training_config.get("enable_computational_optimization", True)
-        self.computational_optimization_manager: ComputationalOptimizationManager | None = None
+        self.enable_computational_optimization: bool = (
+            self.enhanced_training_config.get("enable_computational_optimization", True)
+        )
+        self.computational_optimization_manager: (
+            ComputationalOptimizationManager | None
+        ) = None
         self.optimization_statistics: dict[str, Any] = {}
-        
+
         # Optimization component configuration (ported)
-        optimization_root = get_computational_optimization_config().get("computational_optimization", {})
+        optimization_root = get_computational_optimization_config().get(
+            "computational_optimization", {}
+        )
         self.optimization_config: dict[str, Any] = optimization_root
         self.enable_caching: bool = optimization_root.get("enable_caching", True)
-        self.enable_parallelization: bool = optimization_root.get("enable_parallelization", True)
-        self.enable_early_stopping: bool = optimization_root.get("enable_early_stopping", True)
-        self.enable_memory_management: bool = optimization_root.get("enable_memory_management", True)
+        self.enable_parallelization: bool = optimization_root.get(
+            "enable_parallelization", True
+        )
+        self.enable_early_stopping: bool = optimization_root.get(
+            "enable_early_stopping", True
+        )
+        self.enable_memory_management: bool = optimization_root.get(
+            "enable_memory_management", True
+        )
         self.max_workers: int | None = optimization_root.get("max_workers")
         self.chunk_size: int = optimization_root.get("chunk_size", 1000)
         self.cleanup_frequency: int = optimization_root.get("cleanup_frequency", 100)
@@ -159,13 +179,15 @@ class EnhancedTrainingManager:
         self.adaptive_sampler: AdaptiveSampler | None = None
         self.memory_manager: MemoryManager | None = None
         self.data_manager: MemoryEfficientDataManager | None = None
-        
+
         # Checkpointing configuration
         self.checkpoint_dir = Path("checkpoints")
         self.checkpoint_dir.mkdir(exist_ok=True)
         # Note: final paths are namespaced per symbol/exchange/timeframe at save-time
-        self.enable_checkpointing = self.enhanced_training_config.get("enable_checkpointing", True)
-        
+        self.enable_checkpointing = self.enhanced_training_config.get(
+            "enable_checkpointing", True
+        )
+
         # Initialize optimized tools from enhanced_training_manager_optimized
         self.cached_backtester: CachedBacktester | None = None
         self.progressive_evaluator: ProgressiveEvaluator | None = None
@@ -175,17 +197,19 @@ class EnhancedTrainingManager:
         self.adaptive_sampler: AdaptiveSampler | None = None
         self.memory_manager = MemoryManager()
         self.data_manager = MemoryEfficientDataManager()
-        
+
         # Optimization configuration
         self.optimization_config = self.config.get("computational_optimization", {})
         self._load_optimization_config()
-        
+
         # Initialize the underlying optimized training manager for advanced operations
         self.optimized_manager = EnhancedTrainingManagerOptimized(config)
-        
+
         # Logging verbosity
-        self.verbosity: str = self.enhanced_training_config.get("verbosity", "info")  # "info" or "debug"
-        
+        self.verbosity: str = self.enhanced_training_config.get(
+            "verbosity", "info"
+        )  # "info" or "debug"
+
     def _load_optimization_config(self):
         """Load optimization configuration from enhanced_training_manager_optimized."""
         # Caching configuration
@@ -193,27 +217,27 @@ class EnhancedTrainingManager:
         self.enable_caching = caching_config.get("enabled", True)
         self.max_cache_size = caching_config.get("max_cache_size", 1000)
         self.cache_ttl = caching_config.get("cache_ttl", 3600)
-        
+
         # Parallelization configuration
         parallel_config = self.optimization_config.get("parallelization", {})
         self.enable_parallelization = parallel_config.get("enabled", True)
         self.max_workers = parallel_config.get("max_workers", 8)
         self.chunk_size = parallel_config.get("chunk_size", 1000)
-        
+
         # Early stopping configuration
         early_stop_config = self.optimization_config.get("early_stopping", {})
         self.enable_early_stopping = early_stop_config.get("enabled", True)
         self.patience = early_stop_config.get("patience", 10)
         self.min_trials = early_stop_config.get("min_trials", 20)
-        
+
         # Memory management configuration
         memory_config = self.optimization_config.get("memory_management", {})
         self.enable_memory_management = memory_config.get("enabled", True)
         self.memory_threshold = memory_config.get("memory_threshold", 0.8)
         self.cleanup_frequency = memory_config.get("cleanup_frequency", 100)
-        
+
         self.logger.info("Loaded optimization configuration")
-    
+
     @contextmanager
     def _timed_step(self, name: str, step_times: dict):
         start = time.time()
@@ -227,49 +251,49 @@ class EnhancedTrainingManager:
     def _save_checkpoint(self, step_name: str, pipeline_state: dict[str, Any]) -> None:
         """
         Save training progress checkpoint.
-        
+
         Args:
             step_name: Current step name
             pipeline_state: Current pipeline state
         """
         if not self.enable_checkpointing:
             return
-            
+
         try:
             checkpoint_data = {
                 "timestamp": datetime.now().isoformat(),
                 "current_step": step_name,
                 "pipeline_state": pipeline_state,
                 "training_mode": "blank" if self.blank_training_mode else "full",
-                "symbol": getattr(self, 'current_symbol', ''),
-                "exchange": getattr(self, 'current_exchange', ''),
-                "timeframe": getattr(self, 'current_timeframe', '1m'),
+                "symbol": getattr(self, "current_symbol", ""),
+                "exchange": getattr(self, "current_exchange", ""),
+                "timeframe": getattr(self, "current_timeframe", "1m"),
                 "lookback_days": self.lookback_days,
                 "max_trials": self.max_trials,
-                "n_trials": self.n_trials
+                "n_trials": self.n_trials,
             }
-            
+
             # Namespaced checkpoint path
-            symbol = checkpoint_data.get('symbol') or 'unknown'
-            exchange = checkpoint_data.get('exchange') or 'unknown'
-            timeframe = checkpoint_data.get('timeframe') or 'unknown'
+            symbol = checkpoint_data.get("symbol") or "unknown"
+            exchange = checkpoint_data.get("exchange") or "unknown"
+            timeframe = checkpoint_data.get("timeframe") or "unknown"
             ns_dir = self.checkpoint_dir / exchange / symbol / timeframe
             ns_dir.mkdir(parents=True, exist_ok=True)
             target_file = ns_dir / "training_progress.json"
             tmp_file = ns_dir / "training_progress.json.tmp"
-            with open(tmp_file, 'w') as f:
+            with open(tmp_file, "w") as f:
                 json.dump(checkpoint_data, f, indent=2)
             os.replace(tmp_file, target_file)
-            
+
             self.logger.info(f"💾 Checkpoint saved: {step_name} -> {target_file}")
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to save checkpoint: {e}")
-    
+
     def _load_checkpoint(self) -> dict[str, Any] | None:
         """
         Load training progress checkpoint.
-        
+
         Returns:
             dict: Checkpoint data or None if no checkpoint exists
         """
@@ -277,38 +301,52 @@ class EnhancedTrainingManager:
         if not self.enable_checkpointing:
             return None
         try:
-            symbol = getattr(self, 'current_symbol', 'unknown')
-            exchange = getattr(self, 'current_exchange', 'unknown')
-            timeframe = getattr(self, 'current_timeframe', 'unknown')
-            ns_file = self.checkpoint_dir / exchange / symbol / timeframe / "training_progress.json"
+            symbol = getattr(self, "current_symbol", "unknown")
+            exchange = getattr(self, "current_exchange", "unknown")
+            timeframe = getattr(self, "current_timeframe", "unknown")
+            ns_file = (
+                self.checkpoint_dir
+                / exchange
+                / symbol
+                / timeframe
+                / "training_progress.json"
+            )
             if not ns_file.exists():
                 return None
-            with open(ns_file, 'r') as f:
+            with open(ns_file, "r") as f:
                 checkpoint_data = json.load(f)
-            self.logger.info(f"📂 Checkpoint loaded: {checkpoint_data.get('current_step', 'unknown')} from {ns_file}")
+            self.logger.info(
+                f"📂 Checkpoint loaded: {checkpoint_data.get('current_step', 'unknown')} from {ns_file}"
+            )
             return checkpoint_data
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to load checkpoint: {e}")
             return None
-    
+
     def _clear_checkpoint(self) -> None:
         """Clear the checkpoint file."""
         try:
-            symbol = getattr(self, 'current_symbol', 'unknown')
-            exchange = getattr(self, 'current_exchange', 'unknown')
-            timeframe = getattr(self, 'current_timeframe', 'unknown')
-            ns_file = self.checkpoint_dir / exchange / symbol / timeframe / "training_progress.json"
+            symbol = getattr(self, "current_symbol", "unknown")
+            exchange = getattr(self, "current_exchange", "unknown")
+            timeframe = getattr(self, "current_timeframe", "unknown")
+            ns_file = (
+                self.checkpoint_dir
+                / exchange
+                / symbol
+                / timeframe
+                / "training_progress.json"
+            )
             if ns_file.exists():
                 ns_file.unlink()
                 self.logger.info(f"🗑️ Checkpoint cleared at {ns_file}")
         except Exception as e:
             self.logger.warning(f"Failed to clear checkpoint: {e}")
-        
+
     def _get_system_resources(self) -> dict[str, float]:
         """
         Get current system resource usage.
-        
+
         Returns:
             dict: System resource information
         """
@@ -316,25 +354,30 @@ class EnhancedTrainingManager:
             process = psutil.Process(os.getpid())
             memory_mb = process.memory_info().rss / 1024 / 1024
             cpu_percent = process.cpu_percent(interval=0.1)
-            
+
             # Get system-wide memory info
             system_memory = psutil.virtual_memory()
             system_memory_percent = system_memory.percent
-            
+
             return {
                 "memory_mb": memory_mb,
                 "cpu_percent": cpu_percent,
                 "system_memory_percent": system_memory_percent,
-                "available_memory_gb": system_memory.available / 1024 / 1024 / 1024
+                "available_memory_gb": system_memory.available / 1024 / 1024 / 1024,
             }
         except Exception as e:
             self.logger.warning(f"Could not get system resources: {e}")
-            return {"memory_mb": 0, "cpu_percent": 0, "system_memory_percent": 0, "available_memory_gb": 0}
-    
+            return {
+                "memory_mb": 0,
+                "cpu_percent": 0,
+                "system_memory_percent": 0,
+                "available_memory_gb": 0,
+            }
+
     def _analyze_resource_requirements(self) -> dict[str, Any]:
         """
         Analyze resource requirements for the training process.
-        
+
         Returns:
             dict: Resource analysis information
         """
@@ -342,7 +385,7 @@ class EnhancedTrainingManager:
             # Get system info
             cpu_count = psutil.cpu_count()
             memory_gb = psutil.virtual_memory().total / 1024 / 1024 / 1024
-            
+
             # Realistic estimates based on actual training complexity
             if self.blank_training_mode:
                 estimated_memory_gb = 4.0  # Blank training uses less memory
@@ -356,11 +399,11 @@ class EnhancedTrainingManager:
                 memory_warning_threshold = 12.0
                 models_to_train = 12
                 optimization_trials = 200
-            
+
             # Check if system meets requirements
             memory_sufficient = memory_gb >= memory_warning_threshold
             cpu_sufficient = cpu_count >= 4
-            
+
             return {
                 "system_memory_gb": memory_gb,
                 "cpu_count": cpu_count,
@@ -371,53 +414,67 @@ class EnhancedTrainingManager:
                 "memory_sufficient": memory_sufficient,
                 "cpu_sufficient": cpu_sufficient,
                 "memory_warning_threshold": memory_warning_threshold,
-                "recommendations": self._get_resource_recommendations(memory_gb, cpu_count),
-                "step_breakdown": self._get_step_time_breakdown(self.blank_training_mode)
+                "recommendations": self._get_resource_recommendations(
+                    memory_gb, cpu_count
+                ),
+                "step_breakdown": self._get_step_time_breakdown(
+                    self.blank_training_mode
+                ),
             }
         except Exception as e:
             self.logger.warning(f"Could not analyze resource requirements: {e}")
             return {}
-    
-    def _get_resource_recommendations(self, memory_gb: float, cpu_count: int) -> list[str]:
+
+    def _get_resource_recommendations(
+        self, memory_gb: float, cpu_count: int
+    ) -> list[str]:
         """
         Get resource recommendations based on system specs.
-        
+
         Args:
             memory_gb: Available memory in GB
             cpu_count: Number of CPU cores
-            
+
         Returns:
             list: Recommendations
         """
         recommendations = []
-        
+
         if memory_gb < 8:
-            recommendations.append("⚠️ Consider upgrading to 16GB RAM for optimal performance")
+            recommendations.append(
+                "⚠️ Consider upgrading to 16GB RAM for optimal performance"
+            )
         elif memory_gb < 12:
             recommendations.append("💡 16GB RAM recommended for full training mode")
-        
+
         if cpu_count < 4:
-            recommendations.append("⚠️ Consider using a system with at least 4 CPU cores")
+            recommendations.append(
+                "⚠️ Consider using a system with at least 4 CPU cores"
+            )
         elif cpu_count < 8:
             recommendations.append("💡 8+ CPU cores recommended for faster training")
-        
+
         if self.blank_training_mode:
             recommendations.append("✅ Blank training mode is suitable for your system")
         else:
             if memory_gb < 12:
-                recommendations.append("⚠️ Full training mode may be slow on your system")
+                recommendations.append(
+                    "⚠️ Full training mode may be slow on your system"
+                )
             else:
-                recommendations.append("✅ Full training mode should work well on your system")
-        
+                recommendations.append(
+                    "✅ Full training mode should work well on your system"
+                )
+
         return recommendations
-    
+
     def _get_step_time_breakdown(self, is_blank_mode: bool) -> dict[str, int]:
         """
         Get realistic time breakdown for each step.
-        
+
         Args:
             is_blank_mode: Whether this is blank training mode
-            
+
         Returns:
             dict: Time estimates for each step in minutes
         """
@@ -438,7 +495,7 @@ class EnhancedTrainingManager:
                 "step13_walk_forward_validation": 8,
                 "step14_monte_carlo_validation": 8,
                 "step15_ab_testing": 5,
-                "step16_saving": 2
+                "step16_saving": 2,
             }
         else:
             return {
@@ -457,9 +514,9 @@ class EnhancedTrainingManager:
                 "step13_walk_forward_validation": 60,
                 "step14_monte_carlo_validation": 60,
                 "step15_ab_testing": 30,
-                "step16_saving": 5
+                "step16_saving": 5,
             }
-    
+
     def _optimize_memory_usage(self) -> None:
         """
         Perform memory optimization to reduce memory footprint.
@@ -467,42 +524,52 @@ class EnhancedTrainingManager:
         try:
             # Force garbage collection
             gc.collect()
-            
+
             # Log memory before and after optimization
             before_memory = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
-            self.logger.info(f"🧹 Memory optimization: {before_memory:.1f} MB before cleanup")
-            
+            self.logger.info(
+                f"🧹 Memory optimization: {before_memory:.1f} MB before cleanup"
+            )
+
             # Force another garbage collection
             gc.collect()
-            
+
             after_memory = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
             memory_saved = before_memory - after_memory
-            
-            self.logger.info(f"🧹 Memory optimization: {after_memory:.1f} MB after cleanup (saved {memory_saved:.1f} MB)")
-            
+
+            self.logger.info(
+                f"🧹 Memory optimization: {after_memory:.1f} MB after cleanup (saved {memory_saved:.1f} MB)"
+            )
+
             if memory_saved > 10:  # If we saved more than 10MB
-                self.logger.info(f"   🧹 Memory optimization saved {memory_saved:.1f} MB")
-            
+                self.logger.info(
+                    f"   🧹 Memory optimization saved {memory_saved:.1f} MB"
+                )
+
         except Exception as e:
             self.logger.warning(f"Memory optimization failed: {e}")
-    
-    def _get_progress_percentage(self, completed_steps: int, total_steps: int = 16) -> float:
+
+    def _get_progress_percentage(
+        self, completed_steps: int, total_steps: int = 16
+    ) -> float:
         """
         Calculate progress percentage.
-        
+
         Args:
             completed_steps: Number of completed steps
             total_steps: Total number of steps
-            
+
         Returns:
             float: Progress percentage
         """
         return (completed_steps / total_steps) * 100
-    
-    def _log_progress(self, current_step: int, total_steps: int = 16, elapsed_time: float = 0) -> None:
+
+    def _log_progress(
+        self, current_step: int, total_steps: int = 16, elapsed_time: float = 0
+    ) -> None:
         """
         Log progress with estimated completion time.
-        
+
         Args:
             current_step: Current step number
             total_steps: Total number of steps
@@ -516,15 +583,23 @@ class EnhancedTrainingManager:
         else:
             eta_minutes = 0
         if self.verbosity == "debug":
-            self.logger.debug(f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
-            self.logger.debug(f"⏱️ Elapsed: {elapsed_time/60:.1f} min | ETA: {eta_minutes:.1f} min")
+            self.logger.debug(
+                f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})"
+            )
+            self.logger.debug(
+                f"⏱️ Elapsed: {elapsed_time/60:.1f} min | ETA: {eta_minutes:.1f} min"
+            )
         else:
-            self.logger.info(f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})")
-    
-    def _log_step_completion(self, step_name: str, step_start: float, step_times: dict, success: bool = True) -> None:
+            self.logger.info(
+                f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})"
+            )
+
+    def _log_step_completion(
+        self, step_name: str, step_start: float, step_times: dict, success: bool = True
+    ) -> None:
         """
         Log step completion with timing and memory usage.
-        
+
         Args:
             step_name: Name of the completed step
             step_start: Start time of the step
@@ -533,33 +608,37 @@ class EnhancedTrainingManager:
         """
         step_time = time.time() - step_start
         step_times[step_name] = step_time
-        
+
         # Get comprehensive system resources
         resources = self._get_system_resources()
-        
+
         status_icon = "✅" if success else "❌"
         status_text = "completed successfully" if success else "failed"
-        
-        self.logger.info(f"{status_icon} {step_name}: {status_text} in {step_time:.2f}s")
-        self.logger.info(f"💾 Process Memory: {resources['memory_mb']:.1f} MB | CPU: {resources['cpu_percent']:.1f}%")
-        self.logger.info(f"🖥️ System Memory: {resources['system_memory_percent']:.1f}% | Available: {resources['available_memory_gb']:.1f} GB")
-        
-        
-        
+
+        self.logger.info(
+            f"{status_icon} {step_name}: {status_text} in {step_time:.2f}s"
+        )
+        self.logger.info(
+            f"💾 Process Memory: {resources['memory_mb']:.1f} MB | CPU: {resources['cpu_percent']:.1f}%"
+        )
+        self.logger.info(
+            f"🖥️ System Memory: {resources['system_memory_percent']:.1f}% | Available: {resources['available_memory_gb']:.1f} GB"
+        )
+
         # Memory warning system
-        if resources['system_memory_percent'] > 85:
+        if resources["system_memory_percent"] > 85:
             warning_msg = f"⚠️ HIGH MEMORY USAGE: {resources['system_memory_percent']:.1f}% - Consider closing other applications"
             self.logger.warning(warning_msg)
-        
-        if resources['available_memory_gb'] < 2.0:
+
+        if resources["available_memory_gb"] < 2.0:
             warning_msg = f"⚠️ LOW AVAILABLE MEMORY: {resources['available_memory_gb']:.1f} GB remaining"
             self.logger.warning(warning_msg)
-        
+
         # Log progress after each step
         completed_steps = len(step_times)
         elapsed_time = sum(step_times.values())
         self._log_progress(completed_steps, 16, elapsed_time)
-        
+
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid enhanced training manager configuration"),
@@ -582,38 +661,56 @@ class EnhancedTrainingManager:
             self.logger.info(f"🔧 Max trials: {self.max_trials}")
             self.logger.info(f"🔧 N trials: {self.n_trials}")
             self.logger.info(f"📈 Lookback days: {self.lookback_days}")
-            self.logger.info(f"🚀 Computational optimization: {self.enable_computational_optimization}")
-            
+            self.logger.info(
+                f"🚀 Computational optimization: {self.enable_computational_optimization}"
+            )
+
             # Analyze resource requirements
             resource_analysis = self._analyze_resource_requirements()
             if resource_analysis:
                 self.logger.info("📊 Resource Analysis:")
-                self.logger.info(f"   💾 System Memory: {resource_analysis['system_memory_gb']:.1f} GB")
+                self.logger.info(
+                    f"   💾 System Memory: {resource_analysis['system_memory_gb']:.1f} GB"
+                )
                 self.logger.info(f"   🖥️ CPU Cores: {resource_analysis['cpu_count']}")
-                self.logger.info(f"   📈 Estimated Memory Usage: {resource_analysis['estimated_memory_gb']:.1f} GB")
-                self.logger.info(f"   ⏱️ Estimated Time: {resource_analysis['estimated_time_minutes']} minutes ({resource_analysis['estimated_time_minutes']/60:.1f} hours)")
-                self.logger.info(f"   🤖 Models to Train: {resource_analysis['models_to_train']}")
-                self.logger.info(f"   🔧 Optimization Trials: {resource_analysis['optimization_trials']}")
-                
+                self.logger.info(
+                    f"   📈 Estimated Memory Usage: {resource_analysis['estimated_memory_gb']:.1f} GB"
+                )
+                self.logger.info(
+                    f"   ⏱️ Estimated Time: {resource_analysis['estimated_time_minutes']} minutes ({resource_analysis['estimated_time_minutes']/60:.1f} hours)"
+                )
+                self.logger.info(
+                    f"   🤖 Models to Train: {resource_analysis['models_to_train']}"
+                )
+                self.logger.info(
+                    f"   🔧 Optimization Trials: {resource_analysis['optimization_trials']}"
+                )
+
                 # Show step-by-step breakdown
-                if 'step_breakdown' in resource_analysis:
+                if "step_breakdown" in resource_analysis:
                     self.logger.info("📋 Step-by-Step Time Estimates:")
-                    total_estimated = sum(resource_analysis['step_breakdown'].values())
-                    for step_name, minutes in resource_analysis['step_breakdown'].items():
+                    total_estimated = sum(resource_analysis["step_breakdown"].values())
+                    for step_name, minutes in resource_analysis[
+                        "step_breakdown"
+                    ].items():
                         percentage = (minutes / total_estimated) * 100
-                        self.logger.info(f"   {step_name}: {minutes} min ({percentage:.1f}%)")
-                
+                        self.logger.info(
+                            f"   {step_name}: {minutes} min ({percentage:.1f}%)"
+                        )
+
                 # Log recommendations
-                if resource_analysis['recommendations']:
+                if resource_analysis["recommendations"]:
                     self.logger.info("💡 Recommendations:")
-                    for rec in resource_analysis['recommendations']:
+                    for rec in resource_analysis["recommendations"]:
                         self.logger.info(f"   {rec}")
-            
+
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("❌ Invalid configuration for enhanced training manager")
+                self.logger.error(
+                    "❌ Invalid configuration for enhanced training manager"
+                )
                 return False
-            
+
             # Initialize computational optimization if enabled
             if self.enable_computational_optimization:
                 await self._initialize_computational_optimization()
@@ -622,9 +719,11 @@ class EnhancedTrainingManager:
             # to ensure a single, consistent initialization path.
             self.logger.info("✅ Enhanced Training Manager initialized successfully")
             return True
-            
+
         except Exception as e:
-            self.logger.error(f"❌ Enhanced Training Manager initialization failed: {e}")
+            self.logger.error(
+                f"❌ Enhanced Training Manager initialization failed: {e}"
+            )
             return False
 
     @handle_errors(
@@ -642,23 +741,25 @@ class EnhancedTrainingManager:
         try:
             # Validate enhanced training manager specific settings
             if self.max_enhanced_training_history <= 0:
-                self.logger.error("❌ Invalid max_enhanced_training_history configuration")
+                self.logger.error(
+                    "❌ Invalid max_enhanced_training_history configuration"
+                )
                 return False
-                
+
             if self.max_trials <= 0:
                 self.logger.error("❌ Invalid max_trials configuration")
                 return False
-                
+
             if self.n_trials <= 0:
                 self.logger.error("❌ Invalid n_trials configuration")
                 return False
-                
+
             if self.lookback_days <= 0:
                 self.logger.error("❌ Invalid lookback_days configuration")
                 return False
-                
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Configuration validation failed: {e}")
             return False
@@ -687,38 +788,56 @@ class EnhancedTrainingManager:
         """
         try:
             self.logger.info("=" * 80)
-            self.logger.info("🚀 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE START")
+            self.logger.info(
+                "🚀 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE START"
+            )
             self.logger.info("=" * 80)
-            self.logger.info(f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            self.logger.info(f"🎯 Symbol: {enhanced_training_input.get('symbol', 'N/A')}")
-            self.logger.info(f"🏢 Exchange: {enhanced_training_input.get('exchange', 'N/A')}")
-            self.logger.info(f"📊 Training Mode: {enhanced_training_input.get('training_mode', 'N/A')}")
+            self.logger.info(
+                f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            self.logger.info(
+                f"🎯 Symbol: {enhanced_training_input.get('symbol', 'N/A')}"
+            )
+            self.logger.info(
+                f"🏢 Exchange: {enhanced_training_input.get('exchange', 'N/A')}"
+            )
+            self.logger.info(
+                f"📊 Training Mode: {enhanced_training_input.get('training_mode', 'N/A')}"
+            )
             self.logger.info(f"📈 Lookback Days: {self.lookback_days}")
             self.logger.info(f"🔧 Blank Training Mode: {self.blank_training_mode}")
             self.logger.info(f"🔧 Max Trials: {self.max_trials}")
             self.logger.info(f"🔧 N Trials: {self.n_trials}")
-            
 
-            
             self.is_training = True
-            
+
             # Validate training input
             if not self._validate_enhanced_training_inputs(enhanced_training_input):
                 return False
-            
+
             # Execute the comprehensive 16-step pipeline
-            success = await self._execute_comprehensive_pipeline(enhanced_training_input)
-            
+            success = await self._execute_comprehensive_pipeline(
+                enhanced_training_input
+            )
+
             if success:
                 # Store training history
                 await self._store_enhanced_training_history(enhanced_training_input)
-                
+
                 self.logger.info("=" * 80)
-                self.logger.info("🎉 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY")
+                self.logger.info(
+                    "🎉 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY"
+                )
                 self.logger.info("=" * 80)
-                self.logger.info(f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                self.logger.info(f"🎯 Symbol: {enhanced_training_input.get('symbol', 'N/A')}")
-                self.logger.info(f"🏢 Exchange: {enhanced_training_input.get('exchange', 'N/A')}")
+                self.logger.info(
+                    f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+                self.logger.info(
+                    f"🎯 Symbol: {enhanced_training_input.get('symbol', 'N/A')}"
+                )
+                self.logger.info(
+                    f"🏢 Exchange: {enhanced_training_input.get('exchange', 'N/A')}"
+                )
                 self.logger.info("📋 Completed Steps:")
                 self.logger.info("   1. Data Collection")
                 self.logger.info("   2. Market Regime Classification")
@@ -738,10 +857,10 @@ class EnhancedTrainingManager:
                 self.logger.info("   16. Saving Results")
             else:
                 self.logger.error("❌ Enhanced training pipeline failed")
-            
+
             self.is_training = False
             return success
-            
+
         except Exception as e:
             self.logger.error(f"💥 ENHANCED TRAINING PIPELINE FAILED: {str(e)}")
             self.logger.error(f"📋 Error details: {type(e).__name__}: {str(e)}")
@@ -768,19 +887,21 @@ class EnhancedTrainingManager:
         """
         try:
             required_fields = ["symbol", "exchange", "timeframe", "lookback_days"]
-            
+
             for field in required_fields:
                 if field not in enhanced_training_input:
-                    self.logger.error(f"❌ Missing required enhanced training input field: {field}")
+                    self.logger.error(
+                        f"❌ Missing required enhanced training input field: {field}"
+                    )
                     return False
-            
+
             # Validate specific field values
             if enhanced_training_input.get("lookback_days", 0) <= 0:
                 self.logger.error("❌ Invalid lookback_days value")
                 return False
-                
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Enhanced training inputs validation failed: {e}")
             return False
@@ -794,26 +915,34 @@ class EnhancedTrainingManager:
         """Initialize computational optimization components."""
         try:
             self.logger.info("🚀 Initializing computational optimization components...")
-            
+
             # Get computational optimization configuration
             optimization_config = get_computational_optimization_config()
-            
+
             # Create computational optimization manager
-            self.computational_optimization_manager = await create_computational_optimization_manager(
-                config=optimization_config,
-                market_data=pd.DataFrame(),  # Will be loaded during training
-                model_config={}  # Will be configured during training
+            self.computational_optimization_manager = (
+                await create_computational_optimization_manager(
+                    config=optimization_config,
+                    market_data=pd.DataFrame(),  # Will be loaded during training
+                    model_config={},  # Will be configured during training
+                )
             )
-            
+
             if self.computational_optimization_manager:
-                self.logger.info("✅ Computational optimization components initialized successfully")
+                self.logger.info(
+                    "✅ Computational optimization components initialized successfully"
+                )
                 return True
             else:
-                self.logger.warning("⚠️ Failed to initialize computational optimization components")
+                self.logger.warning(
+                    "⚠️ Failed to initialize computational optimization components"
+                )
                 return False
-                
+
         except Exception as e:
-            self.logger.error(f"❌ Computational optimization initialization failed: {e}")
+            self.logger.error(
+                f"❌ Computational optimization initialization failed: {e}"
+            )
             return False
 
     @handle_errors(
@@ -845,15 +974,15 @@ class EnhancedTrainingManager:
             pipeline_state = {}
             start_time = time.time()
             step_times = {}
-            
+
             # Store current training parameters for checkpointing
             self.current_symbol = symbol
             self.current_exchange = exchange
             self.current_timeframe = timeframe
-            
+
             # Initialize optimized tools before pipeline execution
             await self._initialize_optimized_tools()
-            
+
             # Check for existing checkpoint
             checkpoint = self._load_checkpoint()
             if checkpoint:
@@ -863,45 +992,48 @@ class EnhancedTrainingManager:
                 self.logger.info(f"📂 Last completed step: {last_completed_step}")
             else:
                 self.logger.info("🚀 Starting fresh training...")
-            
+
             # Enhanced logging setup
             self.logger.info("=" * 100)
             self.logger.info("🚀 COMPREHENSIVE TRAINING PIPELINE START")
             self.logger.info("=" * 100)
-            self.logger.info(f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            self.logger.info(
+                f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
             self.logger.info(f"🎯 Symbol: {symbol}")
             self.logger.info(f"🏢 Exchange: {exchange}")
             self.logger.info(f"📊 Timeframe: {timeframe}")
-            self.logger.info(f"🧠 Training Mode: {'Blank' if self.blank_training_mode else 'Full'}")
+            self.logger.info(
+                f"🧠 Training Mode: {'Blank' if self.blank_training_mode else 'Full'}"
+            )
             self.logger.info(f"🔧 Max Trials: {self.max_trials}")
             self.logger.info(f"📈 Lookback Days: {self.lookback_days}")
-            self.logger.info(f"💾 Memory Optimization: {'Enabled' if self.enable_computational_optimization else 'Disabled'}")
+            self.logger.info(
+                f"💾 Memory Optimization: {'Enabled' if self.enable_computational_optimization else 'Disabled'}"
+            )
             self.logger.info(f"🚀 Starting from step: {start_step}")
             self.logger.info("=" * 100)
-            
 
-            
             # Use optimized data loading for Step 1: Data Collection
             if start_step == "step1_data_collection":
                 step_start = time.time()
                 self.logger.info("📊 STEP 1: Data Collection...")
                 self.logger.info("   🔍 Downloading and preparing market data...")
 
-                
                 # Use optimized manager for data collection
                 market_data = await self.optimized_manager._load_and_optimize_data(
                     symbol, exchange, timeframe
                 )
-                
+
                 if market_data is not None and not market_data.empty:
                     pipeline_state["market_data"] = market_data
                     self.logger.info(f"   ✅ Data loaded: {len(market_data)} rows")
-                    
+
                     # Initialize cached backtester with the data
                     if self.enable_caching:
                         self.cached_backtester = CachedBacktester(market_data)
                         self.logger.info("   ✅ Cached backtester initialized")
-                    
+
                     # Initialize progressive evaluator for early stopping
                     if self.enable_early_stopping:
                         self.progressive_evaluator = ProgressiveEvaluator(market_data)
@@ -909,111 +1041,147 @@ class EnhancedTrainingManager:
                 else:
                     self.logger.error("   ❌ Failed to load market data")
                     return False
-                
+
                 # Save checkpoint after data collection
                 self._save_checkpoint("step1_data_collection", pipeline_state)
                 step_times["step1_data_collection"] = time.time() - step_start
             else:
-                self.logger.info("⏭️  Skipping Step 1: Data Collection (using pre-consolidated data)")
+                self.logger.info(
+                    "⏭️  Skipping Step 1: Data Collection (using pre-consolidated data)"
+                )
                 # Add placeholder for data collection in pipeline state
                 pipeline_state["data_collection"] = {
                     "status": "SKIPPED",
-                    "result": {"message": "Using pre-consolidated data"}
+                    "result": {"message": "Using pre-consolidated data"},
                 }
 
             # Step 2: Market Regime Classification
             step_start = time.time()
             self.logger.info("🎭 STEP 2: Market Regime Classification...")
-            self.logger.info("   🧠 Analyzing market regimes and volatility patterns...")
-            
+            self.logger.info(
+                "   🧠 Analyzing market regimes and volatility patterns..."
+            )
+
             from src.training.steps import step2_market_regime_classification
+
             step2_success = await step2_market_regime_classification.run_step(
                 symbol=symbol,
                 data_dir=data_dir,
                 timeframe=timeframe,
                 exchange=exchange,
             )
-            
+
             if not step2_success:
-                self._log_step_completion("Step 2: Market Regime Classification", step_start, step_times, success=False)
+                self._log_step_completion(
+                    "Step 2: Market Regime Classification",
+                    step_start,
+                    step_times,
+                    success=False,
+                )
                 return False
-            
+
             # Update pipeline state
             pipeline_state["regime_classification"] = {
                 "status": "SUCCESS",
-                "success": step2_success
+                "success": step2_success,
             }
-            
+
             # Run validator for Step 2
             validation_result = await self._run_step_validator(
                 "step2_market_regime_classification", training_input, pipeline_state
             )
-            
-            self._log_step_completion("Step 2: Market Regime Classification", step_start, step_times)
-            
+
+            self._log_step_completion(
+                "Step 2: Market Regime Classification", step_start, step_times
+            )
+
             # Save checkpoint after step 2
             self._save_checkpoint("step2_market_regime_classification", pipeline_state)
 
             # Step 3: Regime Data Splitting
             step_start = time.time()
             self.logger.info("📊 STEP 3: Regime Data Splitting...")
-            self.logger.info("   📈 Splitting data by market regimes for specialized training...")
-            
+            self.logger.info(
+                "   📈 Splitting data by market regimes for specialized training..."
+            )
+
             from src.training.steps import step3_regime_data_splitting
+
             step3_success = await step3_regime_data_splitting.run_step(
                 symbol=symbol,
                 data_dir=data_dir,
                 timeframe=timeframe,
                 exchange=exchange,
             )
-            
+
             if not step3_success:
-                self._log_step_completion("Step 3: Regime Data Splitting", step_start, step_times, success=False)
+                self._log_step_completion(
+                    "Step 3: Regime Data Splitting",
+                    step_start,
+                    step_times,
+                    success=False,
+                )
                 return False
-            
+
             # Update pipeline state
             pipeline_state["regime_data_splitting"] = {
                 "status": "SUCCESS",
-                "success": step3_success
+                "success": step3_success,
             }
-            
+
             # Run validator for Step 3
             validation_result = await self._run_step_validator(
                 "step3_regime_data_splitting", training_input, pipeline_state
             )
-            
-            self._log_step_completion("Step 3: Regime Data Splitting", step_start, step_times)
-            
+
+            self._log_step_completion(
+                "Step 3: Regime Data Splitting", step_start, step_times
+            )
+
             # Save checkpoint after step 3
             self._save_checkpoint("step3_regime_data_splitting", pipeline_state)
 
             # Step 4: Analyst Labeling & Feature Engineering
-            with self._timed_step("Step 4: Analyst Labeling & Feature Engineering", step_times):
+            with self._timed_step(
+                "Step 4: Analyst Labeling & Feature Engineering", step_times
+            ):
                 self.logger.info("🧠 STEP 4: Analyst Labeling & Feature Engineering...")
-                
-                from src.training.steps import step4_analyst_labeling_feature_engineering
-                step4_success = await step4_analyst_labeling_feature_engineering.run_step(
-                    symbol=symbol,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    exchange=exchange,
+
+                from src.training.steps import (
+                    step4_analyst_labeling_feature_engineering,
                 )
-                
+
+                step4_success = (
+                    await step4_analyst_labeling_feature_engineering.run_step(
+                        symbol=symbol,
+                        data_dir=data_dir,
+                        timeframe=timeframe,
+                        exchange=exchange,
+                    )
+                )
+
                 if not step4_success:
                     return False
-                self._save_checkpoint("step4_analyst_labeling_feature_engineering", pipeline_state)
+                self._save_checkpoint(
+                    "step4_analyst_labeling_feature_engineering", pipeline_state
+                )
                 self._optimize_memory_usage()
 
                 # Run validator for Step 4
                 await self._run_step_validator(
-                    "step4_analyst_labeling_feature_engineering", training_input, pipeline_state
+                    "step4_analyst_labeling_feature_engineering",
+                    training_input,
+                    pipeline_state,
                 )
+
+
 
             # Step 5: Analyst Specialist Training
             with self._timed_step("Step 5: Analyst Specialist Training", step_times):
                 self.logger.info("🎯 STEP 5: Analyst Specialist Training...")
-                
+
                 from src.training.steps import step5_analyst_specialist_training
+
                 step5_success = await step5_analyst_specialist_training.run_step(
                     symbol=symbol,
                     data_dir=data_dir,
@@ -1031,8 +1199,9 @@ class EnhancedTrainingManager:
             # Step 6: Analyst Enhancement
             with self._timed_step("Step 6: Analyst Enhancement", step_times):
                 self.logger.info("🔧 STEP 6: Analyst Enhancement...")
-                
+
                 from src.training.steps import step6_analyst_enhancement
+
                 step6_success = await step6_analyst_enhancement.run_step(
                     symbol=symbol,
                     data_dir=data_dir,
@@ -1050,34 +1219,40 @@ class EnhancedTrainingManager:
             # Step 7: Analyst Ensemble Creation
             step_start = time.time()
             self.logger.info("🎲 STEP 7: Analyst Ensemble Creation...")
-            
+
             from src.training.steps import step7_analyst_ensemble_creation
+
             step7_success = await step7_analyst_ensemble_creation.run_step(
                 symbol=symbol,
                 data_dir=data_dir,
                 timeframe=timeframe,
                 exchange=exchange,
             )
-            
+
             if not step7_success:
                 self.logger.error("❌ Step 7: Analyst Ensemble Creation failed")
                 return False
-            
-            self.logger.info("✅ Step 7: Analyst Ensemble Creation completed successfully")
-            self.logger.info("   ✅ Step 7: Analyst Ensemble Creation completed successfully")
+
+            self.logger.info(
+                "✅ Step 7: Analyst Ensemble Creation completed successfully"
+            )
+            self.logger.info(
+                "   ✅ Step 7: Analyst Ensemble Creation completed successfully"
+            )
 
             # Run validator for Step 7
             await self._run_step_validator(
                 "step7_analyst_ensemble_creation", training_input, pipeline_state
             )
-                
+
             if not step7_success:
-               raise RuntimeError("Step 7: Analyst Ensemble Creation failed")
+                raise RuntimeError("Step 7: Analyst Ensemble Creation failed")
 
             # Step 8: Tactician Labeling
             with self._timed_step("Step 8: Tactician Labeling", step_times):
                 self.logger.info("🎯 STEP 8: Tactician Labeling...")
                 from src.training.steps import step8_tactician_labeling
+
                 step8_success = await step8_tactician_labeling.run_step(
                     symbol=symbol,
                     data_dir=data_dir,
@@ -1096,7 +1271,9 @@ class EnhancedTrainingManager:
             if self.enable_model_training:
                 with self._timed_step("Model Training (Ray)", step_times):
                     try:
-                        self.logger.info("🧠 MODEL TRAINING (Ray) using labeled data from previous steps...")
+                        self.logger.info(
+                            "🧠 MODEL TRAINING (Ray) using labeled data from previous steps..."
+                        )
                         # Build input for trainer ensuring it has data_dir and required fields
                         trainer_input = {
                             "symbol": symbol,
@@ -1109,16 +1286,24 @@ class EnhancedTrainingManager:
                         # Config-driven HPO parameters (optional)
                         model_trainer_cfg = self.config.get("model_trainer", {})
                         use_hpo_val = model_trainer_cfg.get("use_hpo", True)
-                        use_hpo: bool = (str(use_hpo_val).lower() in ("true", "1", "yes") if isinstance(use_hpo_val, str) else bool(use_hpo_val))
+                        use_hpo: bool = (
+                            str(use_hpo_val).lower() in ("true", "1", "yes")
+                            if isinstance(use_hpo_val, str)
+                            else bool(use_hpo_val)
+                        )
                         hpo_trials: int = int(model_trainer_cfg.get("hpo_trials", 25))
-                        hpo_model_type: str = str(model_trainer_cfg.get("hpo_model_type", "random_forest"))
+                        hpo_model_type: str = str(
+                            model_trainer_cfg.get("hpo_model_type", "random_forest")
+                        )
 
                         # Initialize trainer
                         trainer = None
                         try:
                             trainer = setup_model_trainer(self.config)
                             if trainer is None:
-                                self.logger.error("❌ Failed to setup Ray model trainer")
+                                self.logger.error(
+                                    "❌ Failed to setup Ray model trainer"
+                                )
                                 return False
 
                             # Run training in a worker thread to avoid blocking the event loop
@@ -1131,7 +1316,9 @@ class EnhancedTrainingManager:
                             )
 
                             if not training_results:
-                                self.logger.error("❌ Ray model training returned no results")
+                                self.logger.error(
+                                    "❌ Ray model training returned no results"
+                                )
                                 return False
                         finally:
                             # Ensure cleanup of Ray regardless of success
@@ -1145,22 +1332,30 @@ class EnhancedTrainingManager:
                         pipeline_state["ray_model_training"] = {
                             "status": "SUCCESS",
                             "results_summary": {
-                                "tactician_models_trained": len(training_results.get("tactician_models", {})),
+                                "tactician_models_trained": len(
+                                    training_results.get("tactician_models", {})
+                                ),
                                 "timestamp": training_results.get("training_timestamp"),
                             },
                         }
                         # Merge into enhanced training results
                         self.enhanced_training_results.setdefault("model_training", {})
-                        self.enhanced_training_results["model_training"].update(training_results)
+                        self.enhanced_training_results["model_training"].update(
+                            training_results
+                        )
 
                         # Save checkpoint after model training
                         self._save_checkpoint("model_training_ray", pipeline_state)
-                        self.logger.info("✅ Model training (Ray) completed and checkpoint saved")
+                        self.logger.info(
+                            "✅ Model training (Ray) completed and checkpoint saved"
+                        )
                     except Exception as e:
                         self.logger.error(f"❌ Model training (Ray) failed: {e}")
                         return False
             else:
-                self.logger.info("⏭️  Skipping Model Training (Ray) — disabled via configuration")
+                self.logger.info(
+                    "⏭️  Skipping Model Training (Ray) — disabled via configuration"
+                )
                 pipeline_state["ray_model_training"] = {
                     "status": "SKIPPED",
                     "reason": "enable_model_training is False",
@@ -1170,6 +1365,7 @@ class EnhancedTrainingManager:
             with self._timed_step("Step 9: Tactician Specialist Training", step_times):
                 self.logger.info("🧠 STEP 9: Tactician Specialist Training...")
                 from src.training.steps import step9_tactician_specialist_training
+
                 step9_success = await step9_tactician_specialist_training.run_step(
                     symbol=symbol,
                     data_dir=data_dir,
@@ -1181,13 +1377,16 @@ class EnhancedTrainingManager:
 
                 # Run validator for Step 9
                 await self._run_step_validator(
-                    "step9_tactician_specialist_training", training_input, pipeline_state
+                    "step9_tactician_specialist_training",
+                    training_input,
+                    pipeline_state,
                 )
 
             # Step 10: Tactician Ensemble Creation
             with self._timed_step("Step 10: Tactician Ensemble Creation", step_times):
                 self.logger.info("🎲 STEP 10: Tactician Ensemble Creation...")
                 from src.training.steps import step10_tactician_ensemble_creation
+
                 step10_success = await step10_tactician_ensemble_creation.run_step(
                     symbol=symbol,
                     data_dir=data_dir,
@@ -1206,6 +1405,7 @@ class EnhancedTrainingManager:
             with self._timed_step("Step 11: Confidence Calibration", step_times):
                 self.logger.info("🎯 STEP 11: Confidence Calibration...")
                 from src.training.steps import step11_confidence_calibration
+
                 step11_success = await step11_confidence_calibration.run_step(
                     symbol=symbol,
                     data_dir=data_dir,
@@ -1222,7 +1422,9 @@ class EnhancedTrainingManager:
 
             # Step 12: Final Parameters Optimization (with computational optimization)
             with self._timed_step("Step 12: Final Parameters Optimization", step_times):
-                self.logger.info("🔧 STEP 12: Final Parameters Optimization with Computational Optimization...")
+                self.logger.info(
+                    "🔧 STEP 12: Final Parameters Optimization with Computational Optimization..."
+                )
                 if self.computational_optimization_manager:
                     step12_success = await self._run_optimized_parameters_optimization(
                         symbol=symbol,
@@ -1232,24 +1434,30 @@ class EnhancedTrainingManager:
                     )
                 else:
                     from src.training.steps import step12_final_parameters_optimization
-                    step12_success = await step12_final_parameters_optimization.run_step(
-                        symbol=symbol,
-                        data_dir=data_dir,
-                        timeframe=timeframe,
-                        exchange=exchange,
+
+                    step12_success = (
+                        await step12_final_parameters_optimization.run_step(
+                            symbol=symbol,
+                            data_dir=data_dir,
+                            timeframe=timeframe,
+                            exchange=exchange,
+                        )
                     )
                 if not step12_success:
                     return False
 
                 # Run validator for Step 12
                 await self._run_step_validator(
-                    "step12_final_parameters_optimization", training_input, pipeline_state
+                    "step12_final_parameters_optimization",
+                    training_input,
+                    pipeline_state,
                 )
 
             # Step 13: Walk Forward Validation
             with self._timed_step("Step 13: Walk Forward Validation", step_times):
                 self.logger.info("📈 STEP 13: Walk Forward Validation...")
                 from src.training.steps import step13_walk_forward_validation
+
                 step13_success = await step13_walk_forward_validation.run_step(
                     symbol=symbol,
                     data_dir=data_dir,
@@ -1268,6 +1476,7 @@ class EnhancedTrainingManager:
             with self._timed_step("Step 14: Monte Carlo Validation", step_times):
                 self.logger.info("🎲 STEP 14: Monte Carlo Validation...")
                 from src.training.steps import step14_monte_carlo_validation
+
                 step14_success = await step14_monte_carlo_validation.run_step(
                     symbol=symbol,
                     data_dir=data_dir,
@@ -1286,6 +1495,7 @@ class EnhancedTrainingManager:
             with self._timed_step("Step 15: A/B Testing", step_times):
                 self.logger.info("🧪 STEP 15: A/B Testing...")
                 from src.training.steps import step15_ab_testing
+
                 step15_success = await step15_ab_testing.run_step(
                     symbol=symbol,
                     data_dir=data_dir,
@@ -1304,6 +1514,7 @@ class EnhancedTrainingManager:
             with self._timed_step("Step 16: Saving Results", step_times):
                 self.logger.info("💾 STEP 16: Saving Results...")
                 from src.training.steps import step16_saving
+
                 step16_success = await step16_saving.run_step(
                     symbol=symbol,
                     data_dir=data_dir,
@@ -1320,33 +1531,45 @@ class EnhancedTrainingManager:
 
             # Calculate total time and summary
             total_time = time.time() - start_time
-            total_memory = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024  # MB
-            
+            total_memory = (
+                psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+            )  # MB
+
             # Log comprehensive summary
             self.logger.info("=" * 100)
-            self.logger.info("🎉 COMPREHENSIVE TRAINING PIPELINE COMPLETED SUCCESSFULLY")
+            self.logger.info(
+                "🎉 COMPREHENSIVE TRAINING PIPELINE COMPLETED SUCCESSFULLY"
+            )
             self.logger.info("=" * 100)
-            self.logger.info(f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            self.logger.info(f"⏱️ Total Time: {total_time:.2f}s ({total_time/60:.1f} minutes)")
+            self.logger.info(
+                f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            self.logger.info(
+                f"⏱️ Total Time: {total_time:.2f}s ({total_time/60:.1f} minutes)"
+            )
             self.logger.info(f"💾 Final Memory Usage: {total_memory:.1f} MB")
             self.logger.info(f"🎯 Symbol: {symbol}")
             self.logger.info(f"🏢 Exchange: {exchange}")
             self.logger.info(f"📊 Timeframe: {timeframe}")
-            self.logger.info(f"🧠 Training Mode: {'Blank' if self.blank_training_mode else 'Full'}")
-            
+            self.logger.info(
+                f"🧠 Training Mode: {'Blank' if self.blank_training_mode else 'Full'}"
+            )
+
             # Log step-by-step timing
             self.logger.info("📊 Step-by-Step Timing:")
             for step_name, step_time in step_times.items():
                 percentage = (step_time / total_time) * 100
-                self.logger.info(f"   {step_name}: {step_time:.2f}s ({percentage:.1f}%)")
-            
+                self.logger.info(
+                    f"   {step_name}: {step_time:.2f}s ({percentage:.1f}%)"
+                )
+
             # Clear checkpoint on successful completion
             self._clear_checkpoint()
-            
+
             return True
-            
+
         except Exception as e:
-            total_time = time.time() - start_time if 'start_time' in locals() else 0
+            total_time = time.time() - start_time if "start_time" in locals() else 0
             self.logger.error(f"💥 COMPREHENSIVE PIPELINE FAILED: {str(e)}")
             self.logger.error(f"📋 Error details: {type(e).__name__}: {str(e)}")
             self.logger.error(f"⏱️ Time elapsed before failure: {total_time:.2f}s")
@@ -1362,33 +1585,39 @@ class EnhancedTrainingManager:
         """Initialize optimized tools and the optimized training manager."""
         try:
             self.logger.info("🚀 Initializing optimized tools...")
-            
+
             # Initialize the underlying optimized training manager
             await self.optimized_manager.initialize()
             self.logger.info("   ✅ Optimized training manager initialized")
-            
+
             # Initialize streaming processor
             if self.chunk_size:
-                self.streaming_processor = StreamingDataProcessor(chunk_size=self.chunk_size)
+                self.streaming_processor = StreamingDataProcessor(
+                    chunk_size=self.chunk_size
+                )
                 self.logger.info("   ✅ Streaming processor initialized")
-            
+
             # Initialize parallel backtester if enabled
             if self.enable_parallelization:
-                self.parallel_backtester = ParallelBacktester(n_workers=self.max_workers)
-                self.logger.info(f"   ✅ Parallel backtester initialized with {self.max_workers} workers")
-            
+                self.parallel_backtester = ParallelBacktester(
+                    n_workers=self.max_workers
+                )
+                self.logger.info(
+                    f"   ✅ Parallel backtester initialized with {self.max_workers} workers"
+                )
+
             # Initialize adaptive sampler
             self.adaptive_sampler = AdaptiveSampler()
             self.logger.info("   ✅ Adaptive sampler initialized")
-            
+
             # Initialize incremental trainer
             base_model_config = self.config.get("model", {})
             self.incremental_trainer = IncrementalTrainer(base_model_config)
             self.logger.info("   ✅ Incremental trainer initialized")
-            
+
             self.logger.info("✅ All optimized tools initialized successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize optimized tools: {e}")
             return False
@@ -1407,30 +1636,35 @@ class EnhancedTrainingManager:
     ) -> bool:
         """Run optimized parameters optimization using computational optimization strategies."""
         try:
-            self.logger.info("🚀 Running optimized parameters optimization with enhanced tools...")
-            
+            self.logger.info(
+                "🚀 Running optimized parameters optimization with enhanced tools..."
+            )
+
             # Use optimized data loading from the optimized manager
             market_data = await self.optimized_manager._load_and_optimize_data(
                 symbol, exchange, timeframe
             )
-            
-            if market_data is None or market_data.empty:
 
+            if market_data is None or market_data.empty:
                 self.logger.error("❌ Failed to load market data for optimization")
                 return False
-            
-            self.logger.info(f"✅ Loaded optimized market data: {len(market_data)} rows")
-            
+
+            self.logger.info(
+                f"✅ Loaded optimized market data: {len(market_data)} rows"
+            )
+
             # Initialize cached backtester if not already done
             if self.enable_caching and self.cached_backtester is None:
                 self.cached_backtester = CachedBacktester(market_data)
                 self.logger.info("✅ Cached backtester initialized for optimization")
-            
+
             # Initialize progressive evaluator if not already done
             if self.enable_early_stopping and self.progressive_evaluator is None:
                 self.progressive_evaluator = ProgressiveEvaluator(market_data)
-                self.logger.info("✅ Progressive evaluator initialized for optimization")
-            
+                self.logger.info(
+                    "✅ Progressive evaluator initialized for optimization"
+                )
+
             # Define optimization objective function using cached backtester
             def optimization_objective(params):
                 """Optimization objective using cached backtesting."""
@@ -1444,7 +1678,7 @@ class EnhancedTrainingManager:
                 except Exception as e:
                     self.logger.warning(f"Optimization objective failed: {e}")
                     return -1.0  # Penalize failed evaluations
-            
+
             # Define progressive evaluation function
             def progressive_evaluator_func(data_subset, params):
                 """Progressive evaluation function for early stopping."""
@@ -1454,125 +1688,149 @@ class EnhancedTrainingManager:
                     return temp_backtester.run_cached_backtest(params)
                 except Exception:
                     return -1.0
-            
+
             # Use parallel backtester if enabled
             optimization_results = {}
             if self.enable_parallelization:
                 self.logger.info("🔄 Using parallel backtesting for optimization...")
-                
+
                 # Generate parameter combinations for parallel evaluation
                 param_combinations = self._generate_parameter_combinations()
-                
+
                 # Run parallel backtesting with context manager
                 with ParallelBacktester(n_workers=self.max_workers) as pb:
                     parallel_results = pb.evaluate_batch(
                         param_combinations, market_data
                     )
-                
+
                 # Find best parameters from parallel results
                 if parallel_results:
-                    best_result = max(parallel_results, key=lambda x: x.get('score', -float('inf')))
+                    best_result = max(
+                        parallel_results, key=lambda x: x.get("score", -float("inf"))
+                    )
                     optimization_results = best_result
-                    self.logger.info(f"✅ Parallel optimization completed. Best score: {best_result.get('score', 'N/A')}")
-            
+                    self.logger.info(
+                        f"✅ Parallel optimization completed. Best score: {best_result.get('score', 'N/A')}"
+                    )
+
             # Use progressive evaluation if enabled
             elif self.enable_early_stopping and self.progressive_evaluator:
                 self.logger.info("🔄 Using progressive evaluation for optimization...")
-                
+
                 # Run optimization with progressive evaluation
                 best_params = None
-                best_score = -float('inf')
-                
+                best_score = -float("inf")
+
                 for trial in range(self.n_trials):
                     # Generate random parameters for this trial
                     params = self._generate_random_parameters()
-                    
+
                     # Use progressive evaluator
                     score = self.progressive_evaluator.evaluate_progressively(
                         params, progressive_evaluator_func
                     )
-                    
+
                     if score > best_score:
                         best_score = score
                         best_params = params
-                        self.logger.info(f"📈 New best score: {score} at trial {trial + 1}")
-                
+                        self.logger.info(
+                            f"📈 New best score: {score} at trial {trial + 1}"
+                        )
+
                 optimization_results = {
-                    'best_params': best_params,
-                    'best_score': best_score,
-                    'trials_completed': self.n_trials
+                    "best_params": best_params,
+                    "best_score": best_score,
+                    "trials_completed": self.n_trials,
                 }
-            
+
             # Fallback to computational optimization manager
             else:
                 self.logger.info("🔄 Using standard computational optimization...")
-                
+
                 # Update computational optimization manager with market data
                 if self.computational_optimization_manager:
-                    await self.computational_optimization_manager.initialize(market_data, {})
-                    
+                    await self.computational_optimization_manager.initialize(
+                        market_data, {}
+                    )
+
                     # Run optimized parameter optimization
                     optimization_results = await self.computational_optimization_manager.optimize_parameters(
                         objective_function=optimization_objective,
                         n_trials=self.n_trials,
-                        use_surrogates=True
+                        use_surrogates=True,
                     )
                 else:
                     # Simple fallback optimization
                     optimization_results = {
-                        'best_params': self._generate_random_parameters(),
-                        'best_score': 0.5,
-                        'trials_completed': 1
+                        "best_params": self._generate_random_parameters(),
+                        "best_score": 0.5,
+                        "trials_completed": 1,
                     }
-            
+
             # Store optimization statistics
             if self.computational_optimization_manager:
                 self.optimization_statistics = self.computational_optimization_manager.get_optimization_statistics()
             else:
                 self.optimization_statistics = {
-                    'method': 'enhanced_optimized_tools',
-                    'trials_completed': optimization_results.get('trials_completed', self.n_trials),
-                    'best_score': optimization_results.get('best_score', 0.0),
-                    'cache_hits': getattr(self.cached_backtester, 'cache', {}) if self.cached_backtester else {},
-                    'memory_profile': self.memory_manager.profile_memory_usage() if self.memory_manager else {}
+                    "method": "enhanced_optimized_tools",
+                    "trials_completed": optimization_results.get(
+                        "trials_completed", self.n_trials
+                    ),
+                    "best_score": optimization_results.get("best_score", 0.0),
+                    "cache_hits": getattr(self.cached_backtester, "cache", {})
+                    if self.cached_backtester
+                    else {},
+                    "memory_profile": self.memory_manager.profile_memory_usage()
+                    if self.memory_manager
+                    else {},
                 }
-            
+
             # Perform memory cleanup if enabled
             if self.enable_memory_management:
                 # Check and cleanup if above threshold
                 self.memory_manager.check_memory_usage()
                 self.logger.info("🧹 Memory cleanup check completed")
-            
+
             # Save optimization results
-            await self._save_optimization_results(symbol, exchange, data_dir, optimization_results)
-            
-            self.logger.info("✅ Enhanced optimized parameters optimization completed successfully")
+            await self._save_optimization_results(
+                symbol, exchange, data_dir, optimization_results
+            )
+
+            self.logger.info(
+                "✅ Enhanced optimized parameters optimization completed successfully"
+            )
 
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Enhanced optimized parameters optimization failed: {e}")
+            self.logger.error(
+                f"❌ Enhanced optimized parameters optimization failed: {e}"
+            )
             return False
-    
+
     def _generate_parameter_combinations(self) -> list[dict]:
         """Generate parameter combinations for parallel backtesting."""
         # This is a simplified implementation
         # In practice, you would generate meaningful parameter combinations
         combinations = []
-        for i in range(min(self.n_trials, 20)):  # Limit combinations for parallel processing
-            combinations.append({
-                'param1': np.random.uniform(0.1, 1.0),
-                'param2': np.random.uniform(0.1, 1.0),
-                'param3': np.random.randint(1, 100)
-            })
+        for i in range(
+            min(self.n_trials, 20)
+        ):  # Limit combinations for parallel processing
+            combinations.append(
+                {
+                    "param1": np.random.uniform(0.1, 1.0),
+                    "param2": np.random.uniform(0.1, 1.0),
+                    "param3": np.random.randint(1, 100),
+                }
+            )
         return combinations
-    
+
     def _generate_random_parameters(self) -> dict:
         """Generate random parameters for optimization."""
         return {
-            'param1': np.random.uniform(0.1, 1.0),
-            'param2': np.random.uniform(0.1, 1.0),
-            'param3': np.random.randint(1, 100)
+            "param1": np.random.uniform(0.1, 1.0),
+            "param2": np.random.uniform(0.1, 1.0),
+            "param3": np.random.randint(1, 100),
         }
 
     @handle_errors(
@@ -1591,11 +1849,19 @@ class EnhancedTrainingManager:
             # Load market data from the data directory
             # This is a simplified implementation
             import os
+
             # Prefer consolidated Parquet/CSV produced by Step 1
-            preferred_parquet = Path("data_cache") / f"klines_{exchange}_{symbol}_1m_consolidated.parquet"
-            preferred_csv = Path("data_cache") / f"klines_{exchange}_{symbol}_1m_consolidated.csv"
+            preferred_parquet = (
+                Path("data_cache")
+                / f"klines_{exchange}_{symbol}_1m_consolidated.parquet"
+            )
+            preferred_csv = (
+                Path("data_cache") / f"klines_{exchange}_{symbol}_1m_consolidated.csv"
+            )
             if preferred_parquet.exists():
-                market_data = pd.read_parquet(preferred_parquet)
+                market_data = self.data_manager.load_from_parquet(
+                    str(preferred_parquet)
+                )
                 self.logger.info(f"✅ Loaded market data from {preferred_parquet}")
                 return market_data
             if preferred_csv.exists():
@@ -1609,26 +1875,34 @@ class EnhancedTrainingManager:
             if parquet_path.exists():
                 self.logger.info(f"Loading data from Parquet: {parquet_path}")
                 try:
-                    data = self.data_manager.load_from_parquet(str(parquet_path)) if self.data_manager else pd.read_parquet(parquet_path)
+                    data = self.data_manager.load_from_parquet(str(parquet_path))
                     return data
                 except Exception as e:
-                    self.logger.warning(f"Parquet load failed ({e}); falling back to CSV if available")
+                    self.logger.warning(
+                        f"Parquet load failed ({e}); falling back to CSV if available"
+                    )
             if csv_path.exists():
                 self.logger.info(f"Loading data from CSV: {csv_path}")
                 try:
                     data = pd.read_csv(csv_path)
                     return data
                 except Exception as e:
-                    self.logger.warning(f"CSV load failed ({e}); returning empty DataFrame")
+                    self.logger.warning(
+                        f"CSV load failed ({e}); returning empty DataFrame"
+                    )
 
-            self.logger.warning(f"⚠️ Market data files not found in {data_dir} for {exchange} {symbol}")
+            self.logger.warning(
+                f"⚠️ Market data files not found in {data_dir} for {exchange} {symbol}"
+            )
             return pd.DataFrame()
-                
+
         except Exception as e:
             self.logger.error(f"❌ Failed to load market data: {e}")
             return None
 
-    def _evaluate_params_with_cache(self, market_data: pd.DataFrame, params: dict[str, Any]) -> float:
+    def _evaluate_params_with_cache(
+        self, market_data: pd.DataFrame, params: dict[str, Any]
+    ) -> float:
         """Evaluate params using cached backtester if available, else simple placeholder."""
         if self.cached_backtester is None:
             self.cached_backtester = CachedBacktester(market_data)
@@ -1646,17 +1920,17 @@ class EnhancedTrainingManager:
     def get_optimization_stats(self) -> dict[str, Any]:
         """Expose optimization component status."""
         stats: dict[str, Any] = {
-            'caching_enabled': self.enable_caching,
-            'parallelization_enabled': self.enable_parallelization,
-            'early_stopping_enabled': self.enable_early_stopping,
-            'memory_management_enabled': self.enable_memory_management,
-            'max_workers': self.max_workers,
-            'memory_threshold': self.memory_threshold,
+            "caching_enabled": self.enable_caching,
+            "parallelization_enabled": self.enable_parallelization,
+            "early_stopping_enabled": self.enable_early_stopping,
+            "memory_management_enabled": self.enable_memory_management,
+            "max_workers": self.max_workers,
+            "memory_threshold": self.memory_threshold,
         }
         if self.cached_backtester is not None:
-            stats['cache_size'] = len(self.cached_backtester.cache)
+            stats["cache_size"] = len(self.cached_backtester.cache)
         if self.adaptive_sampler is not None:
-            stats['trial_history_size'] = len(self.adaptive_sampler.trial_history)
+            stats["trial_history_size"] = len(self.adaptive_sampler.trial_history)
         return stats
 
     async def _run_step_validator(
@@ -1667,12 +1941,12 @@ class EnhancedTrainingManager:
     ) -> dict[str, Any]:
         """
         Run validator for a specific step.
-        
+
         Args:
             step_name: Name of the step
             training_input: Training input parameters
             pipeline_state: Current pipeline state
-            
+
         Returns:
             Dictionary containing validation results
         """
@@ -1681,43 +1955,42 @@ class EnhancedTrainingManager:
                 "step_name": step_name,
                 "validation_passed": True,
                 "skipped": True,
-                "reason": "Validators disabled"
+                "reason": "Validators disabled",
             }
-        
+
         try:
             self.logger.info(f"🔍 Running validator for {step_name}")
             validation_result = await validator_orchestrator.run_step_validator(
                 step_name=step_name,
                 training_input=training_input,
                 pipeline_state=pipeline_state,
-                config=self.config
+                config=self.config,
             )
-            
+
             # Store validation result
             self.validation_results[step_name] = validation_result
-            
+
             if validation_result.get("validation_passed", False):
                 self.logger.info(f"✅ {step_name} validation passed")
             else:
-                self.logger.warning(f"⚠️ {step_name} validation failed: {validation_result.get('error', 'Unknown error')}")
-            
+                self.logger.warning(
+                    f"⚠️ {step_name} validation failed: {validation_result.get('error', 'Unknown error')}"
+                )
+
             return validation_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error running validator for {step_name}: {e}")
-            return {
-                "step_name": step_name,
-                "validation_passed": False,
-                "error": str(e)
-            }
+            return {"step_name": step_name, "validation_passed": False, "error": str(e)}
 
-    
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="enhanced training history storage",
     )
-    async def _store_enhanced_training_history(self, enhanced_training_input: dict[str, Any]) -> None:
+    async def _store_enhanced_training_history(
+        self, enhanced_training_input: dict[str, Any]
+    ) -> None:
         """
         Store enhanced training history.
 
@@ -1731,15 +2004,19 @@ class EnhancedTrainingManager:
                 "training_input": enhanced_training_input,
                 "results": self.enhanced_training_results,
             }
-            
+
             self.enhanced_training_history.append(history_entry)
-            
+
             # Limit history size
             if len(self.enhanced_training_history) > self.max_enhanced_training_history:
-                self.enhanced_training_history = self.enhanced_training_history[-self.max_enhanced_training_history:]
-            
-            self.logger.info(f"📁 Stored training history entry (total: {len(self.enhanced_training_history)})")
-            
+                self.enhanced_training_history = self.enhanced_training_history[
+                    -self.max_enhanced_training_history :
+                ]
+
+            self.logger.info(
+                f"📁 Stored training history entry (total: {len(self.enhanced_training_history)})"
+            )
+
         except Exception as e:
             self.logger.error(f"❌ Failed to store training history: {e}")
 
@@ -1752,13 +2029,17 @@ class EnhancedTrainingManager:
         """Store enhanced training results."""
         try:
             self.logger.info("📁 Storing enhanced training results...")
-            
+
             # Store results in a format that can be retrieved later
-            results_key = f"enhanced_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            
+            results_key = (
+                f"enhanced_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
+
             # This would typically store to database or file system
-            self.logger.info(f"📁 Storing enhanced training results with key: {results_key}")
-            
+            self.logger.info(
+                f"📁 Storing enhanced training results with key: {results_key}"
+            )
+
         except Exception as e:
             self.logger.error(f"❌ Failed to store enhanced training results: {e}")
 
@@ -1784,7 +2065,7 @@ class EnhancedTrainingManager:
             if enhanced_training_type:
                 return self.enhanced_training_results.get(enhanced_training_type, {})
             return self.enhanced_training_results.copy()
-            
+
         except Exception as e:
             self.logger.error(f"Failed to get enhanced training results: {e}")
             return {}
@@ -1812,7 +2093,7 @@ class EnhancedTrainingManager:
             if limit:
                 history = history[-limit:]
             return history
-            
+
         except Exception as e:
             self.logger.error(f"Failed to get enhanced training history: {e}")
             return []
@@ -1836,24 +2117,24 @@ class EnhancedTrainingManager:
             "enable_computational_optimization": self.enable_computational_optimization,
             "optimization_statistics": self.optimization_statistics,
         }
-    
+
     def get_validation_results(self) -> dict[str, Any]:
         """
         Get validation results for all steps.
-        
+
         Returns:
             dict: Validation results summary
         """
         return {
             "validation_results": self.validation_results,
             "validation_summary": validator_orchestrator.get_validation_summary(),
-            "failed_validations": validator_orchestrator.get_failed_validations()
+            "failed_validations": validator_orchestrator.get_failed_validations(),
         }
-    
+
     def get_computational_optimization_results(self) -> dict[str, Any]:
         """
         Get computational optimization results and statistics.
-        
+
         Returns:
             dict: Computational optimization results
         """
@@ -1861,13 +2142,13 @@ class EnhancedTrainingManager:
             return {
                 "optimization_statistics": self.computational_optimization_manager.get_optimization_statistics(),
                 "enabled_optimizations": self.optimization_statistics,
-                "manager_available": True
+                "manager_available": True,
             }
         else:
             return {
                 "optimization_statistics": {},
                 "enabled_optimizations": {},
-                "manager_available": False
+                "manager_available": False,
             }
 
     @handle_errors(
@@ -1879,7 +2160,7 @@ class EnhancedTrainingManager:
         """Stop the enhanced training manager and cleanup resources."""
         try:
             self.logger.info("🛑 Stopping Enhanced Training Manager...")
-            
+
             # Cleanup computational optimization manager
             if self.computational_optimization_manager:
                 await self.computational_optimization_manager.cleanup()
@@ -1895,55 +2176,61 @@ class EnhancedTrainingManager:
             # Force memory cleanup
             if self.enable_memory_management and self.memory_manager is not None:
                 self.memory_manager._cleanup_memory()
-            
+
             self.is_training = False
             self.logger.info("✅ Enhanced Training Manager stopped successfully")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to stop Enhanced Training Manager: {e}")
 
     def get_optimization_statistics(self) -> dict[str, Any]:
         """Get optimization statistics from the enhanced training manager."""
         return self.optimization_statistics
-    
+
     def get_cached_backtester(self) -> CachedBacktester | None:
         """Get the cached backtester instance."""
         return self.cached_backtester
-    
+
     def get_progressive_evaluator(self) -> ProgressiveEvaluator | None:
         """Get the progressive evaluator instance."""
         return self.progressive_evaluator
-    
+
     def get_memory_manager(self) -> MemoryManager:
         """Get the memory manager instance."""
         return self.memory_manager
-    
+
     def get_data_manager(self) -> MemoryEfficientDataManager:
         """Get the data manager instance."""
         return self.data_manager
-    
+
     def get_optimized_manager(self) -> EnhancedTrainingManagerOptimized:
         """Get the underlying optimized training manager."""
         return self.optimized_manager
-    
-    async def execute_optimized_training(self, symbol: str, exchange: str, timeframe: str = "1h") -> dict[str, Any]:
+
+    async def execute_optimized_training(
+        self, symbol: str, exchange: str, timeframe: str = "1h"
+    ) -> dict[str, Any]:
         """Execute training using the optimized manager directly for advanced operations."""
         try:
-            self.logger.info(f"🚀 Executing optimized training for {symbol} on {exchange}")
-            
+            self.logger.info(
+                f"🚀 Executing optimized training for {symbol} on {exchange}"
+            )
+
             # Delegate to optimized manager
-            result = await self.optimized_manager.execute_optimized_training(symbol, exchange, timeframe)
-            
+            result = await self.optimized_manager.execute_optimized_training(
+                symbol, exchange, timeframe
+            )
+
             # Store results in main manager
             if result:
                 self.enhanced_training_results.update(result)
-                
+
             return result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Optimized training execution failed: {e}")
             return {}
-    
+
     def use_cached_backtesting(self, params: dict[str, Any]) -> float:
         """Use cached backtesting for parameter evaluation."""
         if self.cached_backtester:
@@ -1951,49 +2238,391 @@ class EnhancedTrainingManager:
         else:
             self.logger.warning("Cached backtester not initialized")
             return 0.0
-    
-    def use_progressive_evaluation(self, params: dict[str, Any], evaluator_func) -> float:
+
+    def use_progressive_evaluation(
+        self, params: dict[str, Any], evaluator_func
+    ) -> float:
         """Use progressive evaluation for early stopping."""
         if self.progressive_evaluator:
-            return self.progressive_evaluator.evaluate_progressively(params, evaluator_func)
+            return self.progressive_evaluator.evaluate_progressively(
+                params, evaluator_func
+            )
         else:
             self.logger.warning("Progressive evaluator not initialized")
             return 0.0
-    
+
     def generate_cache_key(self, params: dict[str, Any]) -> str:
         """Generate a robust cache key using the _make_hashable utility."""
         return str(hash(_make_hashable(params)))
-    
+
     async def initialize_components(self) -> bool:
         """Initialize the enhanced training manager and all its components (auxiliary)."""
         try:
             self.logger.info("🚀 Initializing Enhanced Training Manager...")
-            
+
             # Initialize optimized tools first
             if not await self._initialize_optimized_tools():
                 self.logger.error("❌ Failed to initialize optimized tools")
                 return False
-            
+
             # Initialize computational optimization manager if enabled
             if self.enable_computational_optimization:
                 try:
                     # create_computational_optimization_manager is async; await it here
-                    self.computational_optimization_manager = await create_computational_optimization_manager(
-                        get_computational_optimization_config(),
-                        pd.DataFrame(),
-                        {}
+                    self.computational_optimization_manager = (
+                        await create_computational_optimization_manager(
+                            get_computational_optimization_config(), pd.DataFrame(), {}
+                        )
                     )
-                    self.logger.info("✅ Computational optimization manager initialized")
+                    self.logger.info(
+                        "✅ Computational optimization manager initialized"
+                    )
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to initialize computational optimization manager: {e}")
+                    self.logger.warning(
+                        f"⚠️ Failed to initialize computational optimization manager: {e}"
+                    )
                     self.enable_computational_optimization = False
-            
+
             self.logger.info("✅ Enhanced Training Manager initialized successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(
+                f"❌ Enhanced Training Manager initialization failed: {e}"
+            )
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="feature selection execution",
+    )
+    async def _execute_feature_selection(
+        self,
+        symbol: str,
+        data_dir: str,
+        timeframe: str,
+        exchange: str,
+    ) -> bool:
+        """
+        Execute comprehensive feature selection and pruning.
+        
+        Implements tiered feature selection strategy for 240+ features:
+        - Tier 1: Core features (80)
+        - Tier 2: Normalized features (40)
+        - Tier 3: Interaction features (60)
+        - Tier 4: Lagged features (40)
+        - Tier 5: Causality features (20)
+        
+        Args:
+            symbol: Trading symbol
+            data_dir: Data directory
+            timeframe: Timeframe
+            exchange: Exchange name
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            self.logger.info("🔍 Starting comprehensive feature selection...")
+            
+            # Load feature selection configuration
+            feature_config = self.config.get("feature_interactions", {})
+            selection_tiers = feature_config.get("feature_selection_tiers", {})
+            
+            # Get tiered selection parameters
+            tier_1_count = selection_tiers.get("tier_1_base_features", 80)
+            tier_2_count = selection_tiers.get("tier_2_normalized_features", 40)
+            tier_3_count = selection_tiers.get("tier_3_interaction_features", 60)
+            tier_4_count = selection_tiers.get("tier_4_lagged_features", 40)
+            tier_5_count = selection_tiers.get("tier_5_causality_features", 20)
+            total_max_features = selection_tiers.get("total_max_features", 240)
+            
+            self.logger.info(f"📊 Feature selection targets:")
+            self.logger.info(f"   Tier 1 (Core): {tier_1_count} features")
+            self.logger.info(f"   Tier 2 (Normalized): {tier_2_count} features")
+            self.logger.info(f"   Tier 3 (Interactions): {tier_3_count} features")
+            self.logger.info(f"   Tier 4 (Lagged): {tier_4_count} features")
+            self.logger.info(f"   Tier 5 (Causality): {tier_5_count} features")
+            self.logger.info(f"   Total Max: {total_max_features} features")
+            
+            # Load engineered features from previous step
+            features_path = f"{data_dir}/{symbol}_{exchange}_{timeframe}_engineered_features.parquet"
+            
+            if not os.path.exists(features_path):
+                self.logger.warning(f"⚠️ Engineered features not found at {features_path}")
+                self.logger.info("🔄 Proceeding with feature selection on available data...")
+                return True  # Continue with available features
+            
+            # Load features using optimized data manager
+            features_df = self.data_manager.load_from_parquet(features_path)
+            
+            if features_df.empty:
+                self.logger.warning("⚠️ No features available for selection")
+                return True
+            
+            self.logger.info(f"📈 Loaded {len(features_df.columns)} features for selection")
+            
+            # Execute tiered feature selection
+            selected_features = await self._execute_tiered_feature_selection(
+                features_df=features_df,
+                tier_1_count=tier_1_count,
+                tier_2_count=tier_2_count,
+                tier_3_count=tier_3_count,
+                tier_4_count=tier_4_count,
+                tier_5_count=tier_5_count,
+                total_max_features=total_max_features,
+            )
+            
+            # Save selected features
+            selected_features_path = f"{data_dir}/{symbol}_{exchange}_{timeframe}_selected_features.parquet"
+            self.data_manager.save_to_parquet(
+                selected_features, selected_features_path
+            )
+            
+            self.logger.info(f"✅ Feature selection completed:")
+            self.logger.info(f"   Selected: {len(selected_features.columns)} features")
+            self.logger.info(f"   Reduced from: {len(features_df.columns)} features")
+            self.logger.info(f"   Reduction: {((len(features_df.columns) - len(selected_features.columns)) / len(features_df.columns) * 100):.1f}%")
+            
+            # Save feature selection metadata
+            selection_metadata = {
+                "original_features": len(features_df.columns),
+                "selected_features": len(selected_features.columns),
+                "reduction_percentage": ((len(features_df.columns) - len(selected_features.columns)) / len(features_df.columns) * 100),
+                "selection_timestamp": datetime.now().isoformat(),
+                "selection_config": selection_tiers,
+            }
+            
+            metadata_path = f"{data_dir}/{symbol}_{exchange}_{timeframe}_feature_selection_metadata.json"
+            with open(metadata_path, 'w') as f:
+                json.dump(selection_metadata, f, indent=2)
+            
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Enhanced Training Manager initialization failed: {e}")
+            self.logger.error(f"❌ Feature selection failed: {e}")
             return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.DataFrame(),
+        context="tiered feature selection",
+    )
+    async def _execute_tiered_feature_selection(
+        self,
+        features_df: pd.DataFrame,
+        tier_1_count: int,
+        tier_2_count: int,
+        tier_3_count: int,
+        tier_4_count: int,
+        tier_5_count: int,
+        total_max_features: int,
+    ) -> pd.DataFrame:
+        """
+        Execute tiered feature selection strategy.
+        
+        Args:
+            features_df: DataFrame with all engineered features
+            tier_1_count: Number of core features to select
+            tier_2_count: Number of normalized features to select
+            tier_3_count: Number of interaction features to select
+            tier_4_count: Number of lagged features to select
+            tier_5_count: Number of causality features to select
+            total_max_features: Maximum total features
+            
+        Returns:
+            pd.DataFrame: DataFrame with selected features
+        """
+        try:
+            self.logger.info("🎯 Executing tiered feature selection...")
+            
+            # Categorize features by tier
+            feature_categories = self._categorize_features_by_tier(features_df)
+            
+            selected_features = pd.DataFrame(index=features_df.index)
+            
+            # Tier 1: Core features (technical indicators, basic liquidity)
+            tier_1_features = self._select_tier_1_features(
+                features_df, feature_categories["tier_1"], tier_1_count
+            )
+            selected_features = pd.concat([selected_features, tier_1_features], axis=1)
+            self.logger.info(f"   ✅ Tier 1: Selected {len(tier_1_features.columns)} core features")
+            
+            # Tier 2: Normalized features (z-scores, changes, accelerations)
+            tier_2_features = self._select_tier_2_features(
+                features_df, feature_categories["tier_2"], tier_2_count
+            )
+            selected_features = pd.concat([selected_features, tier_2_features], axis=1)
+            self.logger.info(f"   ✅ Tier 2: Selected {len(tier_2_features.columns)} normalized features")
+            
+            # Tier 3: Interaction features (spread*volume, etc.)
+            tier_3_features = self._select_tier_3_features(
+                features_df, feature_categories["tier_3"], tier_3_count
+            )
+            selected_features = pd.concat([selected_features, tier_3_features], axis=1)
+            self.logger.info(f"   ✅ Tier 3: Selected {len(tier_3_features.columns)} interaction features")
+            
+            # Tier 4: Lagged features (lagged interactions)
+            tier_4_features = self._select_tier_4_features(
+                features_df, feature_categories["tier_4"], tier_4_count
+            )
+            selected_features = pd.concat([selected_features, tier_4_features], axis=1)
+            self.logger.info(f"   ✅ Tier 4: Selected {len(tier_4_features.columns)} lagged features")
+            
+            # Tier 5: Causality features (market microstructure causality)
+            tier_5_features = self._select_tier_5_features(
+                features_df, feature_categories["tier_5"], tier_5_count
+            )
+            selected_features = pd.concat([selected_features, tier_5_features], axis=1)
+            self.logger.info(f"   ✅ Tier 5: Selected {len(tier_5_features.columns)} causality features")
+            
+            # Apply final pruning if we exceed total_max_features
+            if len(selected_features.columns) > total_max_features:
+                selected_features = self._apply_final_pruning(
+                    selected_features, total_max_features
+                )
+                self.logger.info(f"   🔧 Final pruning: Reduced to {len(selected_features.columns)} features")
+            
+            return selected_features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Tiered feature selection failed: {e}")
+            return pd.DataFrame()
+
+    def _categorize_features_by_tier(self, features_df: pd.DataFrame) -> dict:
+        """Categorize features into tiers based on naming patterns."""
+        categories = {
+            "tier_1": [],  # Core features
+            "tier_2": [],  # Normalized features
+            "tier_3": [],  # Interaction features
+            "tier_4": [],  # Lagged features
+            "tier_5": [],  # Causality features
+        }
+        
+        for col in features_df.columns:
+            col_lower = col.lower()
+            
+            # Tier 1: Core technical and liquidity features
+            if any(keyword in col_lower for keyword in [
+                "rsi", "macd", "bb", "atr", "adx", "sma", "ema", "cci", "mfi", "roc",
+                "volume", "spread", "liquidity", "price_impact", "kyle", "amihud"
+            ]):
+                categories["tier_1"].append(col)
+            
+            # Tier 2: Normalized features
+            elif any(keyword in col_lower for keyword in [
+                "_z_score", "_change", "_pct_change", "_acceleration", "_bounded",
+                "_log", "_normalized"
+            ]):
+                categories["tier_2"].append(col)
+            
+            # Tier 3: Interaction features
+            elif "_x_" in col_lower or "_div_" in col_lower:
+                categories["tier_3"].append(col)
+            
+            # Tier 4: Lagged features
+            elif "_lag" in col_lower:
+                categories["tier_4"].append(col)
+            
+            # Tier 5: Causality features
+            elif any(keyword in col_lower for keyword in [
+                "_predicts_", "_causality", "_divergence", "_stress", "_extreme"
+            ]):
+                categories["tier_5"].append(col)
+            
+            # Default to tier 1 for uncategorized features
+            else:
+                categories["tier_1"].append(col)
+        
+        return categories
+
+    def _select_tier_1_features(self, features_df: pd.DataFrame, tier_1_features: list, count: int) -> pd.DataFrame:
+        """Select core features based on variance and correlation."""
+        if not tier_1_features:
+            return pd.DataFrame()
+        
+        # Get available features
+        available_features = [f for f in tier_1_features if f in features_df.columns]
+        if not available_features:
+            return pd.DataFrame()
+        
+        # Calculate feature importance based on variance
+        feature_variance = features_df[available_features].var()
+        top_features = feature_variance.nlargest(count).index.tolist()
+        
+        return features_df[top_features]
+
+    def _select_tier_2_features(self, features_df: pd.DataFrame, tier_2_features: list, count: int) -> pd.DataFrame:
+        """Select normalized features based on stability."""
+        if not tier_2_features:
+            return pd.DataFrame()
+        
+        available_features = [f for f in tier_2_features if f in features_df.columns]
+        if not available_features:
+            return pd.DataFrame()
+        
+        # Select based on feature stability (lower variance for normalized features)
+        feature_variance = features_df[available_features].var()
+        stable_features = feature_variance.nsmallest(count).index.tolist()
+        
+        return features_df[stable_features]
+
+    def _select_tier_3_features(self, features_df: pd.DataFrame, tier_3_features: list, count: int) -> pd.DataFrame:
+        """Select interaction features based on significance."""
+        if not tier_3_features:
+            return pd.DataFrame()
+        
+        available_features = [f for f in tier_3_features if f in features_df.columns]
+        if not available_features:
+            return pd.DataFrame()
+        
+        # Select based on absolute mean (higher values indicate more significant interactions)
+        feature_abs_mean = features_df[available_features].abs().mean()
+        significant_features = feature_abs_mean.nlargest(count).index.tolist()
+        
+        return features_df[significant_features]
+
+    def _select_tier_4_features(self, features_df: pd.DataFrame, tier_4_features: list, count: int) -> pd.DataFrame:
+        """Select lagged features based on temporal significance."""
+        if not tier_4_features:
+            return pd.DataFrame()
+        
+        available_features = [f for f in tier_4_features if f in features_df.columns]
+        if not available_features:
+            return pd.DataFrame()
+        
+        # Select based on variance (higher variance indicates more temporal information)
+        feature_variance = features_df[available_features].var()
+        temporal_features = feature_variance.nlargest(count).index.tolist()
+        
+        return features_df[temporal_features]
+
+    def _select_tier_5_features(self, features_df: pd.DataFrame, tier_5_features: list, count: int) -> pd.DataFrame:
+        """Select causality features based on market logic significance."""
+        if not tier_5_features:
+            return pd.DataFrame()
+        
+        available_features = [f for f in tier_5_features if f in features_df.columns]
+        if not available_features:
+            return pd.DataFrame()
+        
+        # Select based on absolute mean (causality features should have meaningful values)
+        feature_abs_mean = features_df[available_features].abs().mean()
+        causality_features = feature_abs_mean.nlargest(count).index.tolist()
+        
+        return features_df[causality_features]
+
+    def _apply_final_pruning(self, selected_features: pd.DataFrame, max_features: int) -> pd.DataFrame:
+        """Apply final pruning to meet maximum feature count."""
+        if len(selected_features.columns) <= max_features:
+            return selected_features
+        
+        # Calculate overall feature importance based on variance
+        feature_variance = selected_features.var()
+        top_features = feature_variance.nlargest(max_features).index.tolist()
+        
+        return selected_features[top_features]
 
 
 @handle_errors(

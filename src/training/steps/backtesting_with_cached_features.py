@@ -7,17 +7,33 @@ without recalculating expensive wavelet transforms.
 """
 
 import asyncio
-import pandas as pd
-import numpy as np
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
-from src.utils.logger import system_logger
+import numpy as np
+import pandas as pd
+from src.utils.data_optimizer import ohlcv_columns
+
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
     WaveletFeatureCache,
+)
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
 )
 
 
@@ -32,10 +48,22 @@ class BacktestingWithCachedFeatures:
 
         # Backtesting configuration
         self.backtest_config = config.get("backtesting_with_cache", {})
-        self.enable_feature_caching = self.backtest_config.get("enable_feature_caching", True)
-        self.cache_lookup_timeout = self.backtest_config.get("cache_lookup_timeout", 5.0)
-        self.enable_performance_monitoring = self.backtest_config.get("enable_performance_monitoring", True)
-        self.max_backtest_iterations = self.backtest_config.get("max_backtest_iterations", 1000)
+        self.enable_feature_caching = self.backtest_config.get(
+            "enable_feature_caching",
+            True,
+        )
+        self.cache_lookup_timeout = self.backtest_config.get(
+            "cache_lookup_timeout",
+            5.0,
+        )
+        self.enable_performance_monitoring = self.backtest_config.get(
+            "enable_performance_monitoring",
+            True,
+        )
+        self.max_backtest_iterations = self.backtest_config.get(
+            "max_backtest_iterations",
+            1000,
+        )
 
         # Initialize components
         self.feature_engineer = None
@@ -63,7 +91,9 @@ class BacktestingWithCachedFeatures:
                 "iterations_completed": 0,
             }
 
-            self.logger.info("✅ Backtesting with cached features initialized successfully")
+            self.logger.info(
+                "✅ Backtesting with cached features initialized successfully",
+            )
             return True
 
         except Exception as e:
@@ -92,15 +122,21 @@ class BacktestingWithCachedFeatures:
             self.logger.info(f"📊 Starting backtest with {len(price_data)} data points")
 
             # Get wavelet features with caching
-            wavelet_features = await self._get_cached_wavelet_features(price_data, volume_data)
+            wavelet_features = await self._get_cached_wavelet_features(
+                price_data,
+                volume_data,
+            )
 
             if not wavelet_features:
-                self.logger.warning("No wavelet features available for backtesting")
+                self.logger.error("No wavelet features available for backtesting")
                 return {"error": "No wavelet features available"}
 
             # Run strategy backtest
             backtest_results = await self._run_strategy_backtest(
-                price_data, volume_data, wavelet_features, strategy_config
+                price_data,
+                volume_data,
+                wavelet_features,
+                strategy_config,
             )
 
             # Update performance stats
@@ -132,9 +168,12 @@ class BacktestingWithCachedFeatures:
         """
         try:
             if not self.wavelet_cache:
-                self.logger.warning("Wavelet cache not available, using direct computation")
+                self.logger.warning(
+                    "Wavelet cache not available, using direct computation",
+                )
                 return await self.feature_engineer._get_wavelet_features_with_caching(
-                    price_data, volume_data
+                    price_data,
+                    volume_data,
                 )
 
             # Generate cache key
@@ -142,39 +181,56 @@ class BacktestingWithCachedFeatures:
             cache_key = self.wavelet_cache.generate_cache_key(
                 price_data,
                 wavelet_config,
-                {"volume_data_shape": volume_data.shape if volume_data is not None else None}
+                {
+                    "volume_data_shape": volume_data.shape
+                    if volume_data is not None
+                    else None,
+                },
             )
 
             # Check cache with timeout
             cache_start_time = time.time()
             if self.wavelet_cache.cache_exists(cache_key):
                 self.logger.info(f"📦 Loading wavelet features from cache: {cache_key}")
-                cached_features, metadata = self.wavelet_cache.load_from_cache(cache_key)
-                
+                cached_features, metadata = self.wavelet_cache.load_from_cache(
+                    cache_key,
+                )
+
                 cache_load_time = time.time() - cache_start_time
                 self.performance_stats["cache_hits"] += 1
                 self.performance_stats["total_feature_load_time"] += cache_load_time
-                
+
                 self.logger.info(f"⚡ Cache load time: {cache_load_time:.3f}s")
                 return cached_features
 
             # Cache miss - compute features
             self.logger.info(f"🔧 Computing wavelet features (cache miss): {cache_key}")
-            wavelet_features = await self.feature_engineer._get_wavelet_features_with_caching(
-                price_data, volume_data
+            wavelet_features = (
+                await self.feature_engineer._get_wavelet_features_with_caching(
+                    price_data,
+                    volume_data,
+                )
             )
 
             # Save to cache
             metadata = {
                 "data_shape": price_data.shape,
-                "volume_data_shape": volume_data.shape if volume_data is not None else None,
+                "volume_data_shape": volume_data.shape
+                if volume_data is not None
+                else None,
                 "computation_time": time.time(),
                 "backtest_generated": True,
             }
-            
-            cache_success = self.wavelet_cache.save_to_cache(cache_key, wavelet_features, metadata)
+
+            cache_success = self.wavelet_cache.save_to_cache(
+                cache_key,
+                wavelet_features,
+                metadata,
+            )
             if cache_success:
-                self.logger.info(f"💾 Cached wavelet features for future backtests: {cache_key}")
+                self.logger.info(
+                    f"💾 Cached wavelet features for future backtests: {cache_key}",
+                )
 
             self.performance_stats["cache_misses"] += 1
             return wavelet_features
@@ -207,11 +263,17 @@ class BacktestingWithCachedFeatures:
             all_features = {
                 **wavelet_features,
                 "price": price_data["close"].values,
-                "volume": volume_data["volume"].values if volume_data is not None else np.ones(len(price_data)),
+                "volume": volume_data["volume"].values
+                if volume_data is not None
+                else np.ones(len(price_data)),
             }
 
             # Simple strategy example using wavelet features
-            results = await self._execute_simple_strategy(price_data, all_features, strategy_config)
+            results = await self._execute_simple_strategy(
+                price_data,
+                all_features,
+                strategy_config,
+            )
 
             return {
                 "strategy_results": results,
@@ -243,47 +305,57 @@ class BacktestingWithCachedFeatures:
         """
         try:
             # Extract key wavelet features for strategy
-            energy_features = {k: v for k, v in features.items() if "energy" in k.lower()}
-            entropy_features = {k: v for k, v in features.items() if "entropy" in k.lower()}
-            
+            energy_features = {
+                k: v for k, v in features.items() if "energy" in k.lower()
+            }
+            entropy_features = {
+                k: v for k, v in features.items() if "entropy" in k.lower()
+            }
+
             # Simple strategy: Buy when energy is high and entropy is low
             signals = []
             positions = []
             returns = []
-            
+
             for i in range(len(price_data)):
                 # Calculate signal based on wavelet features
                 signal = 0
-                
+
                 # Use energy features for trend following
                 if energy_features:
                     avg_energy = np.mean(list(energy_features.values()))
                     if avg_energy > np.median(list(energy_features.values())):
                         signal = 1  # Buy signal
-                
+
                 # Use entropy features for mean reversion
                 if entropy_features:
                     avg_entropy = np.mean(list(entropy_features.values()))
                     if avg_entropy < np.median(list(entropy_features.values())):
                         signal = -1  # Sell signal
-                
+
                 signals.append(signal)
-                
+
                 # Calculate position and returns
                 if i > 0:
-                    price_return = (price_data["close"].iloc[i] - price_data["close"].iloc[i-1]) / price_data["close"].iloc[i-1]
+                    price_return = (
+                        price_data["close"].iloc[i] - price_data["close"].iloc[i - 1]
+                    ) / price_data["close"].iloc[i - 1]
                     position_return = signal * price_return
                     returns.append(position_return)
                 else:
                     returns.append(0.0)
-                
+
                 positions.append(signal)
-            
+
             # Calculate performance metrics
             cumulative_returns = np.cumsum(returns)
-            sharpe_ratio = np.mean(returns) / (np.std(returns) + 1e-8) * np.sqrt(252)  # Annualized
-            max_drawdown = np.min(cumulative_returns - np.maximum.accumulate(cumulative_returns))
-            
+            sharpe_ratio = (
+                np.mean(returns) / (np.std(returns) + 1e-8) * np.sqrt(252)
+            )  # Annualized
+            max_drawdown = np.min(
+                cumulative_returns - np.maximum.accumulate(cumulative_returns),
+            )
+
             return {
                 "total_return": cumulative_returns[-1],
                 "sharpe_ratio": sharpe_ratio,
@@ -299,8 +371,8 @@ class BacktestingWithCachedFeatures:
 
     async def run_multiple_backtests(
         self,
-        backtest_configs: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        backtest_configs: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """
         Run multiple backtests with different configurations.
 
@@ -351,12 +423,40 @@ class BacktestingWithCachedFeatures:
 
             file_path = Path(data_path)
             if file_path.suffix.lower() == ".parquet":
-                return pd.read_parquet(data_path)
-            elif file_path.suffix.lower() == ".csv":
-                return pd.read_csv(data_path, parse_dates=True)
-            else:
-                self.logger.error(f"Unsupported file format: {file_path.suffix}")
-                return None
+                # Prefer dataset scan if a partitioned base is provided in path
+                try:
+                    from src.training.enhanced_training_manager_optimized import (
+                        ParquetDatasetManager,
+                    )
+
+                    pdm = ParquetDatasetManager(logger=self.logger)
+                    columns = ["timestamp", "open", "high", "low", "close", "volume"]
+                    # If data_path points to a directory, perform a dataset scan
+                    if Path(data_path).is_dir():
+                        return pdm.scan_dataset(
+                            base_dir=data_path, columns=columns, to_pandas=True
+                        )
+                except Exception:
+                    pass
+                try:
+                    from src.utils.logger import log_io_operation
+
+                    with log_io_operation(
+                        self.logger, "read_parquet", data_path, columns="ohlcv_columns"
+                    ):
+                        return pd.read_parquet(data_path, columns=ohlcv_columns())
+                except Exception:
+                    from src.utils.logger import log_io_operation
+
+                    with log_io_operation(self.logger, "read_parquet", data_path):
+                        return pd.read_parquet(data_path)
+            if file_path.suffix.lower() == ".csv":
+                from src.utils.logger import log_io_operation
+
+                with log_io_operation(self.logger, "read_csv", data_path):
+                    return pd.read_csv(data_path, parse_dates=True)
+            self.logger.error(f"Unsupported file format: {file_path.suffix}")
+            return None
 
         except Exception as e:
             self.logger.error(f"Error loading backtest data: {e}")
@@ -378,12 +478,22 @@ class BacktestingWithCachedFeatures:
         """Get performance statistics."""
         try:
             stats = self.performance_stats.copy()
-            
+
             if stats["iterations_completed"] > 0:
-                stats["avg_backtest_time"] = stats["total_backtest_time"] / stats["iterations_completed"]
-                stats["avg_feature_load_time"] = stats["total_feature_load_time"] / stats["cache_hits"] if stats["cache_hits"] > 0 else 0
-                stats["cache_hit_rate"] = stats["cache_hits"] / (stats["cache_hits"] + stats["cache_misses"]) if (stats["cache_hits"] + stats["cache_misses"]) > 0 else 0
-            
+                stats["avg_backtest_time"] = (
+                    stats["total_backtest_time"] / stats["iterations_completed"]
+                )
+                stats["avg_feature_load_time"] = (
+                    stats["total_feature_load_time"] / stats["cache_hits"]
+                    if stats["cache_hits"] > 0
+                    else 0
+                )
+                stats["cache_hit_rate"] = (
+                    stats["cache_hits"] / (stats["cache_hits"] + stats["cache_misses"])
+                    if (stats["cache_hits"] + stats["cache_misses"]) > 0
+                    else 0
+                )
+
             stats["timestamp"] = datetime.now().isoformat()
             return stats
 
@@ -445,16 +555,16 @@ async def main():
                 "volume_path": "data/volume_data/ETHUSDT_1m.parquet",
                 "strategy_config": {
                     "strategy_type": "wavelet_energy",
-                    "parameters": {"energy_threshold": 0.5}
-                }
+                    "parameters": {"energy_threshold": 0.5},
+                },
             },
             {
                 "data_path": "data/price_data/BTCUSDT_1m.parquet",
                 "volume_path": "data/volume_data/BTCUSDT_1m.parquet",
                 "strategy_config": {
                     "strategy_type": "wavelet_entropy",
-                    "parameters": {"entropy_threshold": 0.3}
-                }
+                    "parameters": {"entropy_threshold": 0.3},
+                },
             },
         ]
 
@@ -465,21 +575,27 @@ async def main():
         print("📊 Backtest Results:")
         for i, result in enumerate(results):
             print(f"  Backtest {i + 1}:")
-            print(f"    Total Return: {result.get('strategy_results', {}).get('total_return', 0):.4f}")
-            print(f"    Sharpe Ratio: {result.get('strategy_results', {}).get('sharpe_ratio', 0):.4f}")
-            print(f"    Max Drawdown: {result.get('strategy_results', {}).get('max_drawdown', 0):.4f}")
+            print(
+                f"    Total Return: {result.get('strategy_results', {}).get('total_return', 0):.4f}",
+            )
+            print(
+                f"    Sharpe Ratio: {result.get('strategy_results', {}).get('sharpe_ratio', 0):.4f}",
+            )
+            print(
+                f"    Max Drawdown: {result.get('strategy_results', {}).get('max_drawdown', 0):.4f}",
+            )
             print(f"    Feature Count: {result.get('feature_count', 0)}")
 
         # Print performance stats
         stats = backtester.get_performance_stats()
-        print(f"\n📈 Performance Statistics:")
+        print("\n📈 Performance Statistics:")
         print(f"  Cache Hit Rate: {stats.get('cache_hit_rate', 0):.2%}")
         print(f"  Avg Backtest Time: {stats.get('avg_backtest_time', 0):.3f}s")
         print(f"  Avg Feature Load Time: {stats.get('avg_feature_load_time', 0):.3f}s")
         print(f"  Iterations Completed: {stats.get('iterations_completed', 0)}")
 
     except Exception as e:
-        print(f"❌ Error in main: {e}")
+        print(error("Error in main: {e}"))
 
 
 if __name__ == "__main__":

@@ -21,6 +21,10 @@ import numpy as np
 import pandas as pd
 
 from src.utils.comprehensive_logger import get_logger
+from src.utils.warning_symbols import (
+    error,
+    initialization_error,
+)
 
 
 @dataclass
@@ -76,7 +80,9 @@ class PerformanceComparison:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error initializing Performance Comparison: {e}")
+            error_msg = f"Error initializing Performance Comparison: {e}"
+            self.logger.exception(error_msg)
+            self.print(initialization_error(error_msg))
             return False
 
     async def _initialize_performance_tracking(self) -> None:
@@ -153,7 +159,9 @@ class PerformanceComparison:
             return comparison_results
 
         except Exception as e:
-            self.logger.error(f"Error comparing model performances: {e}")
+            error_msg = f"Error comparing model performances: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     async def compare_ensemble_methods(
@@ -206,7 +214,9 @@ class PerformanceComparison:
             return ensemble_comparison
 
         except Exception as e:
-            self.logger.error(f"Error comparing ensemble methods: {e}")
+            error_msg = f"Error comparing ensemble methods: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     async def compare_optimization_strategies(
@@ -263,7 +273,9 @@ class PerformanceComparison:
             return optimization_comparison
 
         except Exception as e:
-            self.logger.error(f"Error comparing optimization strategies: {e}")
+            error_msg = f"Error comparing optimization strategies: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     async def measure_trading_performance_improvements(
@@ -323,7 +335,9 @@ class PerformanceComparison:
             return improvements
 
         except Exception as e:
-            self.logger.error(f"Error measuring trading performance improvements: {e}")
+            self.logger.exception(
+                f"Error measuring trading performance improvements: {e}",
+            )
             return {}
 
     async def _calculate_model_metrics(
@@ -335,7 +349,7 @@ class PerformanceComparison:
         try:
             # Simulate model predictions (in real implementation, use actual model)
             predictions = np.random.choice([0, 1], size=len(test_data), p=[0.4, 0.6])
-            probabilities = np.random.uniform(0.3, 0.9, size=len(test_data))
+            np.random.uniform(0.3, 0.9, size=len(test_data))
 
             # Calculate basic metrics
             accuracy = np.mean(
@@ -396,7 +410,9 @@ class PerformanceComparison:
             )
 
         except Exception as e:
-            self.logger.error(f"Error calculating model metrics: {e}")
+            error_msg = f"Error calculating model metrics: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return PerformanceMetrics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
     async def _calculate_improvements(
@@ -566,12 +582,14 @@ class PerformanceComparison:
             return report
 
         except Exception as e:
-            self.logger.error(f"Error generating performance report: {e}")
+            error_msg = f"Error generating performance report: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return {}
 
     async def _generate_final_recommendations(self) -> list[str]:
         """Generate final recommendations based on all comparisons."""
-        recommendations = [
+        return [
             "🎯 Performance Optimization Recommendations:",
             "",
             "1. Model Selection:",
@@ -594,8 +612,6 @@ class PerformanceComparison:
             "   - A/B testing for new strategies",
             "   - Continuous monitoring and adaptation",
         ]
-
-        return recommendations
 
     # Placeholder methods for ensemble and optimization comparisons
     async def _calculate_ensemble_metrics(

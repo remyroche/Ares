@@ -6,6 +6,12 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+)
 
 
 class DynamicWeighter:
@@ -75,7 +81,7 @@ class DynamicWeighter:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for dynamic weighter")
+                self.print(invalid("Invalid configuration for dynamic weighter"))
                 return False
 
             # Initialize dynamic weighter modules
@@ -86,8 +92,8 @@ class DynamicWeighter:
             )
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Dynamic Weighter initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Dynamic Weighter initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -120,8 +126,8 @@ class DynamicWeighter:
 
             self.logger.info("Dynamic weighter configuration loaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error loading weighter configuration: {e}")
+        except Exception:
+            self.print(error("Error loading weighter configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -138,12 +144,12 @@ class DynamicWeighter:
         try:
             # Validate weighting interval
             if self.weighting_interval <= 0:
-                self.logger.error("Invalid weighting interval")
+                self.print(invalid("Invalid weighting interval"))
                 return False
 
             # Validate max weighting history
             if self.max_weighting_history <= 0:
-                self.logger.error("Invalid max weighting history")
+                self.print(invalid("Invalid max weighting history"))
                 return False
 
             # Validate that at least one weighting type is enabled
@@ -156,14 +162,14 @@ class DynamicWeighter:
                     self.weighter_config.get("enable_volatility_weighting", True),
                 ],
             ):
-                self.logger.error("At least one weighting type must be enabled")
+                self.print(error("At least one weighting type must be enabled"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -196,8 +202,8 @@ class DynamicWeighter:
 
             self.logger.info("Dynamic weighter modules initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing weighter modules: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing weighter modules: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -217,8 +223,10 @@ class DynamicWeighter:
 
             self.logger.info("Performance weighting module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing performance weighting: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing performance weighting: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -238,8 +246,8 @@ class DynamicWeighter:
 
             self.logger.info("Risk weighting module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing risk weighting: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing risk weighting: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -259,8 +267,10 @@ class DynamicWeighter:
 
             self.logger.info("Adaptive weighting module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing adaptive weighting: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing adaptive weighting: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -280,8 +290,10 @@ class DynamicWeighter:
 
             self.logger.info("Momentum weighting module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing momentum weighting: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing momentum weighting: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -301,8 +313,10 @@ class DynamicWeighter:
 
             self.logger.info("Volatility weighting module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing volatility weighting: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing volatility weighting: {e}"),
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -370,8 +384,8 @@ class DynamicWeighter:
             self.logger.info("✅ Dynamic weighting execution completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error executing dynamic weighting: {e}")
+        except Exception:
+            self.print(error("Error executing dynamic weighting: {e}"))
             self.is_weighting = False
             return False
 
@@ -402,17 +416,17 @@ class DynamicWeighter:
 
             # Validate data types
             if not isinstance(weighting_input["weighting_type"], str):
-                self.logger.error("Invalid weighting type")
+                self.print(invalid("Invalid weighting type"))
                 return False
 
             if not isinstance(weighting_input["data_source"], str):
-                self.logger.error("Invalid data source")
+                self.print(invalid("Invalid data source"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating weighting inputs: {e}")
+        except Exception:
+            self.print(error("Error validating weighting inputs: {e}"))
             return False
 
     @handle_errors(
@@ -475,8 +489,8 @@ class DynamicWeighter:
             self.logger.info("Performance weighting completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing performance weighting: {e}")
+        except Exception:
+            self.print(error("Error performing performance weighting: {e}"))
             return {}
 
     @handle_errors(
@@ -527,8 +541,8 @@ class DynamicWeighter:
             self.logger.info("Risk weighting completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing risk weighting: {e}")
+        except Exception:
+            self.print(error("Error performing risk weighting: {e}"))
             return {}
 
     @handle_errors(
@@ -579,8 +593,8 @@ class DynamicWeighter:
             self.logger.info("Adaptive weighting completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing adaptive weighting: {e}")
+        except Exception:
+            self.print(error("Error performing adaptive weighting: {e}"))
             return {}
 
     @handle_errors(
@@ -631,8 +645,8 @@ class DynamicWeighter:
             self.logger.info("Momentum weighting completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing momentum weighting: {e}")
+        except Exception:
+            self.print(error("Error performing momentum weighting: {e}"))
             return {}
 
     @handle_errors(
@@ -686,8 +700,8 @@ class DynamicWeighter:
             self.logger.info("Volatility weighting completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing volatility weighting: {e}")
+        except Exception:
+            self.print(error("Error performing volatility weighting: {e}"))
             return {}
 
     # Performance weighting methods
@@ -705,8 +719,8 @@ class DynamicWeighter:
                 "total_weight": 1.0,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing return based weighting: {e}")
+        except Exception:
+            self.print(error("Error performing return based weighting: {e}"))
             return {}
 
     def _perform_sharpe_based_weighting(
@@ -723,8 +737,8 @@ class DynamicWeighter:
                 "total_weight": 1.0,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing Sharpe based weighting: {e}")
+        except Exception:
+            self.print(error("Error performing Sharpe based weighting: {e}"))
             return {}
 
     def _perform_sortino_based_weighting(
@@ -741,8 +755,8 @@ class DynamicWeighter:
                 "total_weight": 1.0,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing Sortino based weighting: {e}")
+        except Exception:
+            self.print(error("Error performing Sortino based weighting: {e}"))
             return {}
 
     def _perform_calmar_based_weighting(
@@ -759,8 +773,8 @@ class DynamicWeighter:
                 "total_weight": 1.0,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing Calmar based weighting: {e}")
+        except Exception:
+            self.print(error("Error performing Calmar based weighting: {e}"))
             return {}
 
     # Risk weighting methods
@@ -778,8 +792,8 @@ class DynamicWeighter:
                 "total_weight": 1.0,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing VaR based weighting: {e}")
+        except Exception:
+            self.print(error("Error performing VaR based weighting: {e}"))
             return {}
 
     def _perform_volatility_based_weighting(
@@ -796,8 +810,8 @@ class DynamicWeighter:
                 "total_weight": 1.0,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing volatility based weighting: {e}")
+        except Exception:
+            self.print(error("Error performing volatility based weighting: {e}"))
             return {}
 
     def _perform_drawdown_based_weighting(
@@ -814,8 +828,8 @@ class DynamicWeighter:
                 "total_weight": 1.0,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing drawdown based weighting: {e}")
+        except Exception:
+            self.print(error("Error performing drawdown based weighting: {e}"))
             return {}
 
     def _perform_correlation_based_weighting(
@@ -832,8 +846,8 @@ class DynamicWeighter:
                 "total_weight": 1.0,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing correlation based weighting: {e}")
+        except Exception:
+            self.print(error("Error performing correlation based weighting: {e}"))
             return {}
 
     # Adaptive weighting methods
@@ -851,8 +865,8 @@ class DynamicWeighter:
                 "regime": "bull_market",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing market regime weighting: {e}")
+        except Exception:
+            self.print(error("Error performing market regime weighting: {e}"))
             return {}
 
     def _perform_regime_detection(
@@ -869,8 +883,8 @@ class DynamicWeighter:
                 "regime_confidence": 0.85,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing regime detection: {e}")
+        except Exception:
+            self.print(error("Error performing regime detection: {e}"))
             return {}
 
     def _perform_regime_transition(
@@ -887,8 +901,8 @@ class DynamicWeighter:
                 "transition_confidence": 0.70,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing regime transition: {e}")
+        except Exception:
+            self.print(error("Error performing regime transition: {e}"))
             return {}
 
     def _perform_regime_optimization(
@@ -905,8 +919,8 @@ class DynamicWeighter:
                 "optimization_score": 0.88,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing regime optimization: {e}")
+        except Exception:
+            self.print(error("Error performing regime optimization: {e}"))
             return {}
 
     # Momentum weighting methods
@@ -924,8 +938,8 @@ class DynamicWeighter:
                 "momentum_score": 0.75,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing price momentum: {e}")
+        except Exception:
+            self.print(error("Error performing price momentum: {e}"))
             return {}
 
     def _perform_volume_momentum(
@@ -942,8 +956,8 @@ class DynamicWeighter:
                 "volume_score": 0.68,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing volume momentum: {e}")
+        except Exception:
+            self.print(error("Error performing volume momentum: {e}"))
             return {}
 
     def _perform_momentum_regime(
@@ -960,8 +974,8 @@ class DynamicWeighter:
                 "weights": [0.50, 0.25, 0.15, 0.07, 0.03],
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing momentum regime: {e}")
+        except Exception:
+            self.print(error("Error performing momentum regime: {e}"))
             return {}
 
     def _perform_momentum_optimization(
@@ -978,8 +992,8 @@ class DynamicWeighter:
                 "optimization_score": 0.82,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing momentum optimization: {e}")
+        except Exception:
+            self.print(error("Error performing momentum optimization: {e}"))
             return {}
 
     # Volatility weighting methods
@@ -998,7 +1012,9 @@ class DynamicWeighter:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing historical volatility weighting: {e}")
+            self.logger.exception(
+                f"Error performing historical volatility weighting: {e}",
+            )
             return {}
 
     def _perform_implied_volatility_weighting(
@@ -1015,8 +1031,8 @@ class DynamicWeighter:
                 "iv_score": 0.72,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing implied volatility weighting: {e}")
+        except Exception:
+            self.print(error("Error performing implied volatility weighting: {e}"))
             return {}
 
     def _perform_volatility_regime_weighting(
@@ -1033,8 +1049,8 @@ class DynamicWeighter:
                 "weights": [0.25, 0.30, 0.25, 0.15, 0.05],
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing volatility regime weighting: {e}")
+        except Exception:
+            self.print(error("Error performing volatility regime weighting: {e}"))
             return {}
 
     def _perform_volatility_optimization(
@@ -1051,8 +1067,8 @@ class DynamicWeighter:
                 "optimization_score": 0.78,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing volatility optimization: {e}")
+        except Exception:
+            self.print(error("Error performing volatility optimization: {e}"))
             return {}
 
     @handle_errors(
@@ -1075,8 +1091,8 @@ class DynamicWeighter:
 
             self.logger.info("Weighting results stored successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error storing weighting results: {e}")
+        except Exception:
+            self.print(error("Error storing weighting results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -1101,8 +1117,8 @@ class DynamicWeighter:
                 return self.weighting_results.get(weighting_type, {})
             return self.weighting_results.copy()
 
-        except Exception as e:
-            self.logger.error(f"Error getting weighting results: {e}")
+        except Exception:
+            self.print(error("Error getting weighting results: {e}"))
             return {}
 
     @handle_errors(
@@ -1128,8 +1144,8 @@ class DynamicWeighter:
 
             return history
 
-        except Exception as e:
-            self.logger.error(f"Error getting weighting history: {e}")
+        except Exception:
+            self.print(error("Error getting weighting history: {e}"))
             return []
 
     def get_weighting_status(self) -> dict[str, Any]:
@@ -1178,8 +1194,8 @@ class DynamicWeighter:
 
             self.logger.info("✅ Dynamic Weighter stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping dynamic weighter: {e}")
+        except Exception:
+            self.print(error("Error stopping dynamic weighter: {e}"))
 
 
 # Global dynamic weighter instance

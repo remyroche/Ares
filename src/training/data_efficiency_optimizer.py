@@ -8,14 +8,20 @@ from pathlib import Path
 from typing import Any, Number
 
 import pandas as pd
+import psutil
 import pyarrow as pa
 import pyarrow.parquet as pq
-import psutil
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    validation_error,
+    warning,
+)
 
 
 class DataEfficiencyOptimizer:
@@ -87,13 +93,13 @@ class DataEfficiencyOptimizer:
             # Create indexes for efficient querying
             conn.execute(
                 text("""
-                CREATE INDEX IF NOT EXISTS idx_raw_data_timestamp 
+                CREATE INDEX IF NOT EXISTS idx_raw_data_timestamp
                 ON raw_data(timestamp)
             """),
             )
             conn.execute(
                 text("""
-                CREATE INDEX IF NOT EXISTS idx_raw_data_type 
+                CREATE INDEX IF NOT EXISTS idx_raw_data_type
                 ON raw_data(data_type)
             """),
             )
@@ -129,27 +135,27 @@ class DataEfficiencyOptimizer:
             # Create indexes for feature cache
             conn.execute(
                 text("""
-                CREATE INDEX IF NOT EXISTS idx_feature_cache_timestamp 
+                CREATE INDEX IF NOT EXISTS idx_feature_cache_timestamp
                 ON feature_cache(timestamp)
             """),
             )
             conn.execute(
                 text("""
-                CREATE INDEX IF NOT EXISTS idx_feature_cache_name 
+                CREATE INDEX IF NOT EXISTS idx_feature_cache_name
                 ON feature_cache(feature_name)
             """),
             )
-            
+
             # Create indexes for wide format feature cache
             conn.execute(
                 text("""
-                CREATE INDEX IF NOT EXISTS idx_feature_cache_wide_timestamp 
+                CREATE INDEX IF NOT EXISTS idx_feature_cache_wide_timestamp
                 ON feature_cache_wide(timestamp)
             """),
             )
             conn.execute(
                 text("""
-                CREATE INDEX IF NOT EXISTS idx_feature_cache_wide_type 
+                CREATE INDEX IF NOT EXISTS idx_feature_cache_wide_type
                 ON feature_cache_wide(feature_type)
             """),
             )
@@ -219,16 +225,22 @@ class DataEfficiencyOptimizer:
                     self.logger.info(f"Loading data from Parquet cache: {cache_dir}")
                     try:
                         data = {}
-                        
+
                         # Load each data type from its Parquet file
                         for data_type in ["klines", "agg_trades", "futures"]:
                             parquet_file = cache_dir / f"{data_type}.parquet"
                             if parquet_file.exists():
                                 try:
-                                    data[data_type] = pq.read_table(parquet_file).to_pandas()
-                                    self.logger.info(f"Loaded {len(data[data_type])} {data_type} from cache")
+                                    data[data_type] = pq.read_table(
+                                        parquet_file,
+                                    ).to_pandas()
+                                    self.logger.info(
+                                        f"Loaded {len(data[data_type])} {data_type} from cache",
+                                    )
                                 except Exception as e:
-                                    self.logger.warning(f"Failed to load {data_type} from cache: {e}")
+                                    self.logger.warning(
+                                        f"Failed to load {data_type} from cache: {e}",
+                                    )
                                     data[data_type] = pd.DataFrame()
                             else:
                                 data[data_type] = pd.DataFrame()
@@ -237,16 +249,19 @@ class DataEfficiencyOptimizer:
                         if self._validate_cached_data(data, lookback_days):
                             self.logger.info("Cache validation successful")
                             return data
-                        self.logger.warning("Cache validation failed, reloading data")
-                    except Exception as e:
-                        self.logger.warning(f"Cache loading failed: {e}")
+                        self.print(failed("Cache validation failed, reloading data"))
+                    except Exception:
+                        self.print(failed("Cache loading failed: {e}"))
 
         # Load data from source with memory management
         self.logger.info(f"Loading {lookback_days} days of data from source...")
         data = await self._load_data_from_source(lookback_days)
 
         # Cache the loaded data
-        self._cache_data(data, cache_dir / "dummy.parquet")  # Pass a dummy file, actual caching uses the directory
+        self._cache_data(
+            data,
+            cache_dir / "dummy.parquet",
+        )  # Pass a dummy file, actual caching uses the directory
 
         return data
 
@@ -265,7 +280,7 @@ class DataEfficiencyOptimizer:
             # Check data completeness
             cutoff_date = datetime.now() - timedelta(days=lookback_days)
 
-            for dtype, df in data.items():
+            for df in data.values():
                 if not isinstance(df, pd.DataFrame) or df.empty:
                     return False
 
@@ -282,7 +297,9 @@ class DataEfficiencyOptimizer:
             return True
 
         except Exception as e:
-            self.logger.warning(f"Cache validation error: {e}")
+            error_msg = f"Cache validation error: {e}"
+            self.logger.error(error_msg)
+            self.print(validation_error(error_msg))
             return False
 
     async def _load_data_from_source(
@@ -307,33 +324,47 @@ class DataEfficiencyOptimizer:
             parquet_dir = Path("data/parquet")
             if parquet_dir.exists():
                 self.logger.info("Attempting to load from Parquet files...")
-                
+
                 # Try to load klines data
-                klines_file = parquet_dir / f"{self.exchange}_{self.symbol}_klines.parquet"
+                klines_file = (
+                    parquet_dir / f"{self.exchange}_{self.symbol}_klines.parquet"
+                )
                 if klines_file.exists():
                     try:
                         data["klines"] = pq.read_table(klines_file).to_pandas()
-                        self.logger.info(f"Loaded {len(data['klines'])} klines from Parquet")
-                    except Exception as e:
-                        self.logger.warning(f"Failed to load klines from Parquet: {e}")
+                        self.logger.info(
+                            f"Loaded {len(data['klines'])} klines from Parquet",
+                        )
+                    except Exception:
+                        self.print(failed("Failed to load klines from Parquet: {e}"))
 
                 # Try to load aggregated trades
-                trades_file = parquet_dir / f"{self.exchange}_{self.symbol}_agg_trades.parquet"
+                trades_file = (
+                    parquet_dir / f"{self.exchange}_{self.symbol}_agg_trades.parquet"
+                )
                 if trades_file.exists():
                     try:
                         data["agg_trades"] = pq.read_table(trades_file).to_pandas()
-                        self.logger.info(f"Loaded {len(data['agg_trades'])} aggregated trades from Parquet")
+                        self.logger.info(
+                            f"Loaded {len(data['agg_trades'])} aggregated trades from Parquet",
+                        )
                     except Exception as e:
-                        self.logger.warning(f"Failed to load aggregated trades from Parquet: {e}")
+                        self.logger.warning(
+                            f"Failed to load aggregated trades from Parquet: {e}",
+                        )
 
                 # Try to load futures data
-                futures_file = parquet_dir / f"{self.exchange}_{self.symbol}_futures.parquet"
+                futures_file = (
+                    parquet_dir / f"{self.exchange}_{self.symbol}_futures.parquet"
+                )
                 if futures_file.exists():
                     try:
                         data["futures"] = pq.read_table(futures_file).to_pandas()
-                        self.logger.info(f"Loaded {len(data['futures'])} futures records from Parquet")
-                    except Exception as e:
-                        self.logger.warning(f"Failed to load futures from Parquet: {e}")
+                        self.logger.info(
+                            f"Loaded {len(data['futures'])} futures records from Parquet",
+                        )
+                    except Exception:
+                        self.print(failed("Failed to load futures from Parquet: {e}"))
 
             # If Parquet files don't exist or are empty, try database query
             if all(df.empty for df in data.values()) and self.db_manager:
@@ -341,46 +372,53 @@ class DataEfficiencyOptimizer:
                 try:
                     # Query the database for klines data
                     klines_query = f"""
-                    SELECT * FROM klines 
-                    WHERE symbol = '{self.symbol}' 
+                    SELECT * FROM klines
+                    WHERE symbol = '{self.symbol}'
                     AND exchange = '{self.exchange}'
                     AND timestamp BETWEEN '{start_date.isoformat()}' AND '{end_date.isoformat()}'
                     ORDER BY timestamp
                     """
-                    
+
                     with self.db_manager.get_session() as session:
                         result = session.execute(text(klines_query))
                         if result:
                             data["klines"] = pd.DataFrame(result.fetchall())
                             if not data["klines"].empty:
-                                self.logger.info(f"Loaded {len(data['klines'])} klines from database")
+                                self.logger.info(
+                                    f"Loaded {len(data['klines'])} klines from database",
+                                )
 
                     # Query for aggregated trades
                     trades_query = f"""
-                    SELECT * FROM agg_trades 
-                    WHERE symbol = '{self.symbol}' 
+                    SELECT * FROM agg_trades
+                    WHERE symbol = '{self.symbol}'
                     AND exchange = '{self.exchange}'
                     AND timestamp BETWEEN '{start_date.isoformat()}' AND '{end_date.isoformat()}'
                     ORDER BY timestamp
                     """
-                    
+
                     with self.db_manager.get_session() as session:
                         result = session.execute(text(trades_query))
                         if result:
                             data["agg_trades"] = pd.DataFrame(result.fetchall())
                             if not data["agg_trades"].empty:
-                                self.logger.info(f"Loaded {len(data['agg_trades'])} aggregated trades from database")
+                                self.logger.info(
+                                    f"Loaded {len(data['agg_trades'])} aggregated trades from database",
+                                )
 
-                except Exception as e:
-                    self.logger.warning(f"Database query failed: {e}")
+                except Exception:
+                    self.print(failed("Database query failed: {e}"))
 
             # Final fallback: try legacy pickle file
             if all(df.empty for df in data.values()):
                 data_file = f"data/{self.exchange}_{self.symbol}_historical_data.pkl"
                 if os.path.exists(data_file):
-                    self.logger.info(f"Loading data from legacy pickle file: {data_file}")
+                    self.logger.info(
+                        f"Loading data from legacy pickle file: {data_file}",
+                    )
                     try:
                         import pickle
+
                         with open(data_file, "rb") as f:
                             legacy_data = pickle.load(f)
 
@@ -396,15 +434,19 @@ class DataEfficiencyOptimizer:
                                 f"Successfully loaded {len(data['klines'])} klines records from legacy file",
                             )
                         else:
-                            self.logger.warning("Legacy data file has invalid structure")
-                    except Exception as e:
-                        self.logger.warning(f"Failed to load legacy data file: {e}")
+                            self.logger.warning(
+                                "Legacy data file has invalid structure",
+                            )
+                    except Exception:
+                        self.print(failed("Failed to load legacy data file: {e}"))
 
             # Filter data by date range if we have data
             for data_type, df in data.items():
                 if not df.empty and "timestamp" in df.columns:
                     df["timestamp"] = pd.to_datetime(df["timestamp"])
-                    mask = (df["timestamp"] >= start_date) & (df["timestamp"] <= end_date)
+                    mask = (df["timestamp"] >= start_date) & (
+                        df["timestamp"] <= end_date
+                    )
                     data[data_type] = df[mask].copy()
 
             # Log summary
@@ -412,7 +454,9 @@ class DataEfficiencyOptimizer:
             self.logger.info(f"Loaded {total_records} total records from source")
 
         except Exception as e:
-            self.logger.error(f"Error loading data from source: {e}")
+            error_msg = f"Error loading data from source: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
 
         return data
 
@@ -420,14 +464,14 @@ class DataEfficiencyOptimizer:
         """Cache data to disk using Parquet format for high performance."""
         try:
             self.logger.info(f"Caching data to {cache_file}")
-            
+
             # Create cache directory if it doesn't exist
             cache_file.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Store each DataFrame as a separate Parquet file for better performance
             cache_base = cache_file.stem
             cache_dir = cache_file.parent / cache_base
-            
+
             for data_type, df in data.items():
                 if not df.empty:
                     # Create wide format: each row is a timestamp, each column is a feature
@@ -436,20 +480,22 @@ class DataEfficiencyOptimizer:
                     else:
                         # If no timestamp column, use the index
                         df_wide = df.copy()
-                    
+
                     # Save as Parquet with compression
                     parquet_file = cache_dir / f"{data_type}.parquet"
                     parquet_file.parent.mkdir(exist_ok=True)
-                    
+
                     # Convert to PyArrow table and write with compression
                     table = pa.Table.from_pandas(df_wide)
-                    pq.write_table(table, parquet_file, compression='snappy')
-                    
-                    self.logger.info(f"Cached {len(df_wide)} {data_type} records to {parquet_file}")
-            
+                    pq.write_table(table, parquet_file, compression="snappy")
+
+                    self.logger.info(
+                        f"Cached {len(df_wide)} {data_type} records to {parquet_file}",
+                    )
+
             self.logger.info("Data cached successfully in Parquet format")
-        except Exception as e:
-            self.logger.error(f"Failed to cache data: {e}")
+        except Exception:
+            self.print(failed("Failed to cache data: {e}"))
 
     def segment_data_by_time(
         self,
@@ -564,21 +610,20 @@ class DataEfficiencyOptimizer:
                 try:
                     processed_chunk["open_time"] = pd.to_datetime(processed_chunk.index)
                 except:
-                    self.logger.warning("Could not reconstruct open_time column")
+                    self.print(warning("Could not reconstruct open_time column"))
 
         # Fix close_time if it's missing
         if (
             "close_time" in processed_chunk.columns
             and processed_chunk["close_time"].isna().all()
+        ) and (
+            "open_time" in processed_chunk.columns
+            and not processed_chunk["open_time"].isna().all()
         ):
-            if (
-                "open_time" in processed_chunk.columns
-                and not processed_chunk["open_time"].isna().all()
-            ):
-                # Set close_time to open_time + 1 hour (for 1h timeframe)
-                processed_chunk["close_time"] = processed_chunk[
-                    "open_time"
-                ] + pd.Timedelta(hours=1)
+            # Set close_time to open_time + 1 hour (for 1h timeframe)
+            processed_chunk["close_time"] = processed_chunk["open_time"] + pd.Timedelta(
+                hours=1,
+            )
 
         # Fix other missing columns with reasonable defaults
         numeric_columns = [
@@ -631,13 +676,13 @@ class DataEfficiencyOptimizer:
                     if hasattr(timestamp, "isoformat")
                     else str(timestamp)
                 )
-                
+
                 # Create a record with all features for this timestamp
                 record = {
                     "timestamp": timestamp_str,
                     "feature_type": feature_type,
                 }
-                
+
                 # Add each feature as a column
                 for feature_name, value in row.items():
                     if pd.notna(value):  # Skip NaN values
@@ -648,13 +693,15 @@ class DataEfficiencyOptimizer:
                     text("""
                     INSERT INTO feature_cache_wide (timestamp, feature_type, feature_data)
                     VALUES (:timestamp, :feature_type, :feature_data)
-                    ON CONFLICT(timestamp, feature_type) 
+                    ON CONFLICT(timestamp, feature_type)
                     DO UPDATE SET feature_data = :feature_data
                 """),
                     {
                         "timestamp": timestamp_str,
                         "feature_type": feature_type,
-                        "feature_data": str(record),  # Store as JSON-like string for now
+                        "feature_data": str(
+                            record,
+                        ),  # Store as JSON-like string for now
                     },
                 )
 
@@ -699,37 +746,50 @@ class DataEfficiencyOptimizer:
                 for row in rows:
                     timestamp = pd.to_datetime(row[0])
                     feature_data_str = row[2]
-                    
+
                     # Parse the feature data (stored as string representation)
                     try:
                         # Simple parsing - in production you might want to use JSON
                         import ast
+
                         feature_dict = ast.literal_eval(feature_data_str)
-                        
+
                         # Extract features, excluding timestamp and feature_type
-                        features = {k: v for k, v in feature_dict.items() 
-                                  if k.startswith('feature_') and k not in ['timestamp', 'feature_type']}
-                        
+                        features = {
+                            k: v
+                            for k, v in feature_dict.items()
+                            if k.startswith("feature_")
+                            and k not in ["timestamp", "feature_type"]
+                        }
+
                         if features:
-                            features['timestamp'] = timestamp
+                            features["timestamp"] = timestamp
                             features_list.append(features)
-                    except Exception as e:
-                        self.logger.warning(f"Failed to parse feature data: {e}")
+                    except Exception:
+                        self.print(failed("Failed to parse feature data: {e}"))
                         continue
 
                 if features_list:
                     features_df = pd.DataFrame(features_list)
-                    features_df.set_index('timestamp', inplace=True)
-                    
+                    features_df.set_index("timestamp", inplace=True)
+
                     # Filter by requested feature names if specified
                     if feature_names:
-                        available_features = [col for col in features_df.columns 
-                                           if col.startswith('feature_')]
-                        requested_features = [f'feature_{name}' for name in feature_names 
-                                           if f'feature_{name}' in available_features]
+                        available_features = [
+                            col
+                            for col in features_df.columns
+                            if col.startswith("feature_")
+                        ]
+                        requested_features = [
+                            f"feature_{name}"
+                            for name in feature_names
+                            if f"feature_{name}" in available_features
+                        ]
                         features_df = features_df[requested_features]
-                    
-                    self.logger.info(f"Loaded {len(features_df)} feature records from wide format")
+
+                    self.logger.info(
+                        f"Loaded {len(features_df)} feature records from wide format",
+                    )
                     return features_df
 
             # Fallback to legacy format if wide format is empty
@@ -766,7 +826,9 @@ class DataEfficiencyOptimizer:
             values="feature_value",
         )
 
-        self.logger.info(f"Loaded {len(features_df)} feature records from legacy format")
+        self.logger.info(
+            f"Loaded {len(features_df)} feature records from legacy format",
+        )
         return features_df
 
     def create_processing_checkpoint(
@@ -916,29 +978,30 @@ class DataEfficiencyOptimizer:
     def migrate_pickle_to_parquet(self, pickle_file_path: str) -> bool:
         """
         Migrate existing pickle data to Parquet format.
-        
+
         Args:
             pickle_file_path: Path to the pickle file to migrate
-            
+
         Returns:
             True if migration was successful, False otherwise
         """
         try:
             self.logger.info(f"Migrating pickle file to Parquet: {pickle_file_path}")
-            
+
             # Load pickle data
             import pickle
+
             with open(pickle_file_path, "rb") as f:
                 data = pickle.load(f)
-            
+
             if not isinstance(data, dict):
-                self.logger.error("Pickle file does not contain a dictionary")
+                self.print(error("Pickle file does not contain a dictionary"))
                 return False
-            
+
             # Create Parquet directory
             parquet_dir = Path("data/parquet")
             parquet_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Convert each DataFrame to Parquet
             for data_type, df in data.items():
                 if isinstance(df, pd.DataFrame) and not df.empty:
@@ -947,19 +1010,26 @@ class DataEfficiencyOptimizer:
                         df_wide = df.set_index("timestamp")
                     else:
                         df_wide = df.copy()
-                    
+
                     # Save as Parquet
-                    parquet_file = parquet_dir / f"{self.exchange}_{self.symbol}_{data_type}.parquet"
+                    parquet_file = (
+                        parquet_dir
+                        / f"{self.exchange}_{self.symbol}_{data_type}.parquet"
+                    )
                     table = pa.Table.from_pandas(df_wide)
-                    pq.write_table(table, parquet_file, compression='snappy')
-                    
-                    self.logger.info(f"Migrated {len(df_wide)} {data_type} records to {parquet_file}")
-            
+                    pq.write_table(table, parquet_file, compression="snappy")
+
+                    self.logger.info(
+                        f"Migrated {len(df_wide)} {data_type} records to {parquet_file}",
+                    )
+
             self.logger.info("Migration completed successfully")
             return True
-            
+
         except Exception as e:
-            self.logger.error(f"Migration failed: {e}")
+            error_msg = f"Migration failed: {e}"
+            self.logger.exception(error_msg)
+            self.print(failed(error_msg))
             return False
 
     def cleanup_old_data(self, days_to_keep: int = 365):
@@ -970,7 +1040,7 @@ class DataEfficiencyOptimizer:
             # Clean up old raw data
             deleted_raw = session.execute(
                 text("""
-                DELETE FROM raw_data 
+                DELETE FROM raw_data
                 WHERE timestamp < :cutoff_date
             """),
                 {"cutoff_date": cutoff_date},
@@ -979,7 +1049,7 @@ class DataEfficiencyOptimizer:
             # Clean up old feature cache (legacy format)
             deleted_features = session.execute(
                 text("""
-                DELETE FROM feature_cache 
+                DELETE FROM feature_cache
                 WHERE timestamp < :cutoff_date
             """),
                 {"cutoff_date": cutoff_date},
@@ -988,7 +1058,7 @@ class DataEfficiencyOptimizer:
             # Clean up old feature cache (wide format)
             deleted_features_wide = session.execute(
                 text("""
-                DELETE FROM feature_cache_wide 
+                DELETE FROM feature_cache_wide
                 WHERE timestamp < :cutoff_date
             """),
                 {"cutoff_date": cutoff_date},

@@ -19,6 +19,20 @@ sys.path.insert(0, str(project_root))
 from exchange.factory import ExchangeFactory
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 logger = system_logger.getChild("MEXCAggTradesDownloader")
 
@@ -74,7 +88,7 @@ async def download_mexc_agg_trades(
         )
 
         if not trades:
-            logger.warning("⚠️ No aggregated trades received from MEXC")
+            print(warning("⚠️ No aggregated trades received from MEXC")))
             return False
 
         logger.info(f"✅ Downloaded {len(trades)} aggregated trades from MEXC")
@@ -87,7 +101,7 @@ async def download_mexc_agg_trades(
         missing_columns = [col for col in expected_columns if col not in df.columns]
 
         if missing_columns:
-            logger.warning(f"⚠️ Missing columns in MEXC data: {missing_columns}")
+            print(missing("⚠️ Missing columns in MEXC data: {missing_columns}")))
             # Add missing columns with default values
             for col in missing_columns:
                 df[col] = 0
@@ -130,30 +144,30 @@ async def download_mexc_agg_trades(
         if all(col in df.columns for col in expected_columns):
             logger.info("✅ All required columns present")
         else:
-            logger.error("❌ Missing required columns")
+            print(missing("❌ Missing required columns")))
             return False
 
         # Check data types
         if df["p"].dtype in ["float64", "float32"]:
             logger.info("✅ Price column is numeric")
         else:
-            logger.warning("⚠️ Price column is not numeric")
+            print(warning("⚠️ Price column is not numeric")))
 
         if df["q"].dtype in ["float64", "float32"]:
             logger.info("✅ Quantity column is numeric")
         else:
-            logger.warning("⚠️ Quantity column is not numeric")
+            print(warning("⚠️ Quantity column is not numeric")))
 
         if df["m"].dtype == "bool":
             logger.info("✅ Maker flag column is boolean")
         else:
-            logger.warning("⚠️ Maker flag column is not boolean")
+            print(warning("⚠️ Maker flag column is not boolean")))
 
         logger.info("🎉 MEXC aggregated trades download completed successfully!")
         return True
 
     except Exception as e:
-        logger.error(f"❌ Error downloading MEXC aggregated trades: {e}")
+        print(error("❌ Error downloading MEXC aggregated trades: {e}")))
         return False
 
 
@@ -183,7 +197,7 @@ async def main():
         logger.info("✅ MEXC aggregated trades download completed successfully!")
         sys.exit(0)
     else:
-        logger.error("❌ MEXC aggregated trades download failed!")
+        print(failed("❌ MEXC aggregated trades download failed!")))
         sys.exit(1)
 
 

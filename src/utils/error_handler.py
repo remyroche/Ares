@@ -21,7 +21,6 @@ from typing import Any, TypeVar, cast
 
 import numpy as np
 import pandas as pd
-from src.utils.structured_logging import get_correlation_id
 
 # Type variables for generic functions
 T = TypeVar("T")
@@ -33,7 +32,7 @@ F = TypeVar("F", bound=Callable[..., Any])
 def get_system_logger() -> logging.Logger:
     """Get system logger with lazy import to prevent circular dependencies."""
     try:
-        from src.utils.logger import system_logger
+        from utils.logger import system_logger
 
         return system_logger
     except ImportError:
@@ -105,9 +104,9 @@ class RetryStrategy(RecoveryStrategy):
                 if asyncio.iscoroutinefunction(operation):
                     return await operation(*args, **kwargs)
                 return operation(*args, **kwargs)
-            except Exception as e:
+            except Exception:
                 if attempt == self.max_retries:
-                    raise e
+                    raise
 
                 delay = min(
                     self.base_delay * (self.backoff_factor**attempt),
@@ -142,9 +141,9 @@ class FallbackStrategy(RecoveryStrategy):
                 if asyncio.iscoroutinefunction(operation):
                     return await operation(*args, **kwargs)
                 return operation(*args, **kwargs)
-            except Exception as e:
+            except Exception:
                 if i == len(self.fallback_operations) - 1:
-                    raise e
+                    raise
                 continue
 
         return None
@@ -210,17 +209,17 @@ class CircuitBreaker:
 
             return result
 
-        except self.config.expected_exception as e:
+        except self.config.expected_exception:
             self.failure_count += 1
             self.last_failure_time = time.time()
 
             if self.failure_count >= self.config.failure_threshold:
                 self.state = CircuitState.OPEN
-                self.logger.error(
+                self.logger.exception(
                     f"Circuit breaker opened after {self.failure_count} failures",
                 )
 
-            raise e
+            raise
 
 
 class ErrorRecoveryManager:
@@ -290,7 +289,9 @@ class ErrorRecoveryManager:
                         )
                         return result
                 except Exception as recovery_error:
-                    self.logger.error(f"Recovery strategy failed: {recovery_error}")
+                    self.logger.exception(
+                        f"Recovery strategy failed: {recovery_error}",
+                    )
                     continue
 
         self.logger.error(f"All recovery strategies failed for error: {error}")
@@ -323,7 +324,7 @@ class ErrorHandler:
             async def async_wrapper(*args: Any, **kwargs: Any) -> T | None:
                 try:
                     result = await func(*args, **kwargs)
-                    return cast(T | None, result)
+                    return cast("T | None", result)
                 except exceptions as e:
                     self._log_error(func.__name__, e)
 
@@ -340,9 +341,9 @@ class ErrorHandler:
                                         },
                                     )
                                     if recovery_result is not None:
-                                        return cast(T | None, recovery_result)
+                                        return cast("T | None", recovery_result)
                                 except Exception as recovery_error:
-                                    self.logger.error(
+                                    self.logger.exception(
                                         f"Recovery failed: {recovery_error}",
                                     )
 
@@ -352,7 +353,7 @@ class ErrorHandler:
             def sync_wrapper(*args: Any, **kwargs: Any) -> T | None:
                 try:
                     result = func(*args, **kwargs)
-                    return cast(T | None, result)
+                    return cast("T | None", result)
                 except exceptions as e:
                     self._log_error(func.__name__, e)
 
@@ -376,17 +377,17 @@ class ErrorHandler:
                                         run_recovery(),
                                     )
                                     if recovery_result is not None:
-                                        return cast(T | None, recovery_result)
+                                        return cast("T | None", recovery_result)
                                 except Exception as recovery_error:
-                                    self.logger.error(
+                                    self.logger.exception(
                                         f"Recovery failed: {recovery_error}",
                                     )
 
                     return default_return
 
             if asyncio.iscoroutinefunction(func):
-                return cast(F, async_wrapper)
-            return cast(F, sync_wrapper)
+                return cast("F", async_wrapper)
+            return cast("F", sync_wrapper)
 
         return decorator
 
@@ -404,7 +405,7 @@ class ErrorHandler:
             async def async_wrapper(*args: Any, **kwargs: Any) -> T | None:
                 try:
                     result = await func(*args, **kwargs)
-                    return cast(T | None, result)
+                    return cast("T | None", result)
                 except Exception as e:
                     error_type = type(e)
                     if error_type in error_handlers:
@@ -424,13 +425,13 @@ class ErrorHandler:
                                             },
                                         )
                                         if recovery_result is not None:
-                                            return cast(T | None, recovery_result)
+                                            return cast("T | None", recovery_result)
                                     except Exception as recovery_error:
-                                        self.logger.error(
+                                        self.logger.exception(
                                             f"Recovery failed: {recovery_error}",
                                         )
 
-                        return cast(T | None, return_value)
+                        return cast("T | None", return_value)
 
                     self._log_error(func.__name__, e)
                     return default_return
@@ -439,7 +440,7 @@ class ErrorHandler:
             def sync_wrapper(*args: Any, **kwargs: Any) -> T | None:
                 try:
                     result = func(*args, **kwargs)
-                    return cast(T | None, result)
+                    return cast("T | None", result)
                 except Exception as e:
                     error_type = type(e)
                     if error_type in error_handlers:
@@ -466,20 +467,20 @@ class ErrorHandler:
                                             run_recovery(),
                                         )
                                         if recovery_result is not None:
-                                            return cast(T | None, recovery_result)
+                                            return cast("T | None", recovery_result)
                                     except Exception as recovery_error:
-                                        self.logger.error(
+                                        self.logger.exception(
                                             f"Recovery failed: {recovery_error}",
                                         )
 
-                        return cast(T | None, return_value)
+                        return cast("T | None", return_value)
 
                     self._log_error(func.__name__, e)
                     return default_return
 
             if asyncio.iscoroutinefunction(func):
-                return cast(F, async_wrapper)
-            return cast(F, sync_wrapper)
+                return cast("F", async_wrapper)
+            return cast("F", sync_wrapper)
 
         return decorator
 
@@ -499,7 +500,8 @@ class ErrorHandler:
                 )
                 handler.setFormatter(formatter)
                 _logger.addHandler(handler)
-            _logger.exception(f"Error in {self.context}.{func_name}: {error}")
+            # Fallback print if no logger configured
+            print(f"Error in {self.context}.{func_name}: {error}")
 
     def _handle_specific_error(
         self,
@@ -1055,12 +1057,16 @@ async def safe_network_operation(
                     return None
             except Exception as e:
                 system_logger = get_system_logger()
-                system_logger.exception(f"Unexpected error in network operation: {e}")
+                system_logger.exception(
+                    f"Unexpected error in network operation: {e}",
+                )
                 return None
         return None
     except Exception as e:
         system_logger = get_system_logger()
-        system_logger.exception(f"Error in safe network operation: {e}")
+        system_logger.exception(
+            f"Error in safe network operation: {e}",
+        )
         return None
 
 
@@ -1079,8 +1085,8 @@ def safe_database_operation(operation: Callable, *args, **kwargs) -> Any:
     try:
         return operation(*args, **kwargs)
     except Exception as e:
-        system_logger = get_system_logger()
-        system_logger.exception(f"Database operation failed: {e}")
+        logger = get_system_logger()
+        logger.exception(f"Database operation failed: {e}")
         return None
 
 
@@ -1100,8 +1106,8 @@ def safe_dataframe_operation(operation: Callable, *args, **kwargs) -> Any:
         result = operation(*args, **kwargs)
         return _clean_data_result(result)
     except Exception as e:
-        system_logger = get_system_logger()
-        system_logger.exception(f"DataFrame operation failed: {e}")
+        logger = get_system_logger()
+        logger.exception(f"DataFrame operation failed: {e}")
         return None
 
 
@@ -1121,12 +1127,12 @@ def safe_numeric_operation(operation: Callable, *args, **kwargs) -> Any:
         result = operation(*args, **kwargs)
         return _clean_numeric_result(result)
     except (ZeroDivisionError, ValueError, TypeError, OverflowError) as e:
-        system_logger = get_system_logger()
-        system_logger.exception(f"Numeric operation failed: {e}")
+        logger = get_system_logger()
+        logger.exception(f"Numeric operation failed: {e}")
         return 0.0
     except Exception as e:
-        system_logger = get_system_logger()
-        system_logger.exception(f"Unexpected error in numeric operation: {e}")
+        logger = get_system_logger()
+        logger.exception(f"Unexpected error in numeric operation: {e}")
         return 0.0
 
 
@@ -1145,8 +1151,8 @@ def safe_dict_access(data: dict, key: str, default: Any = None) -> Any:
     try:
         return data.get(key, default)
     except Exception as e:
-        system_logger = get_system_logger()
-        system_logger.warning(f"Error accessing dictionary key '{key}': {e}")
+        logger = get_system_logger()
+        logger.warning(f"Error accessing dictionary key '{key}': {e}")
         return default
 
 
@@ -1167,8 +1173,8 @@ def safe_dataframe_access(df: pd.DataFrame, column: str, default: Any = None) ->
             return df[column]
         return default
     except Exception as e:
-        system_logger = get_system_logger()
-        system_logger.warning(f"Error accessing DataFrame column '{column}': {e}")
+        logger = get_system_logger()
+        logger.warning(f"Error accessing DataFrame column '{column}': {e}")
         return default
 
 
@@ -1238,10 +1244,12 @@ class ErrorRecoveryStrategies:
                 return result
             except Exception as e:
                 system_logger = get_system_logger()
-                system_logger.warning(f"Fallback operation {i + 1} failed: {e}")
+                system_logger.exception(
+                    f"Fallback operation {i + 1} failed: {e}",
+                )
                 if i == len(operations) - 1:
                     system_logger = get_system_logger()
-                    system_logger.exception("All fallback operations failed")
+                    system_logger.error("All fallback operations failed")
                     return None
 
         return None
@@ -1288,15 +1296,15 @@ class ErrorContext:
                 try:
                     self.error_handler(exc_type, exc_val, exc_tb)
                 except Exception as e:
-                    system_logger = get_system_logger()
-                    system_logger.exception(f"Error in error handler: {e}")
+                    logger = get_system_logger()
+                    logger.exception(f"Error in error handler: {e}")
 
             if self.cleanup_handler:
                 try:
                     self.cleanup_handler()
                 except Exception as e:
-                    system_logger = get_system_logger()
-                    system_logger.exception(f"Error in cleanup handler: {e}")
+                    logger = get_system_logger()
+                    logger.exception(f"Error in cleanup handler: {e}")
 
             return not self.reraise
 
@@ -1334,7 +1342,7 @@ def handle_assertion_errors(
             except AssertionError as e:
                 if log_errors:
                     system_logger = get_system_logger()
-                    system_logger.error(
+                    system_logger.exception(
                         f"Assertion error in {context}.{func.__name__}: {e}",
                     )
                 return default_return
@@ -1353,7 +1361,7 @@ def handle_assertion_errors(
             except AssertionError as e:
                 if log_errors:
                     system_logger = get_system_logger()
-                    system_logger.error(
+                    system_logger.exception(
                         f"Assertion error in {context}.{func.__name__}: {e}",
                     )
                 return default_return
@@ -1403,8 +1411,8 @@ def safe_assertion(
         error_message = f"{context}: {message}" if context else message
 
         if log_errors:
-            system_logger = get_system_logger()
-            system_logger.error(f"Assertion failed: {error_message}")
+            logger = get_system_logger()
+            logger.error(f"Assertion failed: {error_message}")
 
         raise error_type(error_message)
 
@@ -1508,11 +1516,10 @@ def handle_nan_issues(func: Callable) -> Callable:
 
             # Handle numpy arrays
             if isinstance(result, np.ndarray):
-                result = np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
-                return result
+                return np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
 
             # Handle scalar values
-            if isinstance(result, (int, float)):
+            if isinstance(result, int | float):
                 if np.isnan(result) or np.isinf(result):
                     return 0.0
                 return result
@@ -1521,7 +1528,9 @@ def handle_nan_issues(func: Callable) -> Callable:
 
         except Exception as e:
             system_logger = get_system_logger()
-            system_logger.error(f"Error in NaN handling for {func.__name__}: {e}")
+            system_logger.exception(
+                f"Error in NaN handling for {func.__name__}: {e}",
+            )
             # Return safe default based on function signature
             return None
 
@@ -1544,11 +1553,10 @@ def safe_division(numerator: float, denominator: float, default: float = 0.0) ->
         if isinstance(numerator, pd.Series) and isinstance(denominator, pd.Series):
             # Handle pandas Series
             result = numerator / denominator.replace(0, np.nan)
-            result = result.fillna(default)
-            return result
-        if isinstance(numerator, (pd.Series, np.ndarray)) and isinstance(
+            return result.fillna(default)
+        if isinstance(numerator, pd.Series | np.ndarray) and isinstance(
             denominator,
-            (int, float),
+            int | float,
         ):
             # Handle Series/array divided by scalar
             if denominator == 0:
@@ -1558,20 +1566,19 @@ def safe_division(numerator: float, denominator: float, default: float = 0.0) ->
                     else np.full_like(numerator, default)
                 )
             result = numerator / denominator
-            result = (
+            return (
                 result.fillna(default)
                 if isinstance(result, pd.Series)
                 else np.nan_to_num(result, nan=default)
             )
-            return result
         # Handle scalar division
         if denominator == 0:
             return default
         result = numerator / denominator
         return result if not (np.isnan(result) or np.isinf(result)) else default
     except Exception as e:
-        system_logger = get_system_logger()
-        system_logger.warning(f"Error in safe division: {e}")
+        logger = get_system_logger()
+        logger.warning(f"Error in safe division: {e}")
         return default
 
 

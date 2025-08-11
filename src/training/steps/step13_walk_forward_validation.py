@@ -8,6 +8,11 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    failed,
+    validation_error,
+)
+from src.training.steps.unified_data_loader import get_unified_data_loader
 
 
 class WalkForwardValidationStep:
@@ -24,7 +29,9 @@ class WalkForwardValidationStep:
             self.logger.info("Walk-Forward Validation Step initialized successfully")
 
         except Exception as e:
-            self.logger.error(f"Error initializing Walk-Forward Validation Step: {e}")
+            self.logger.exception(
+                f"Error initializing Walk-Forward Validation Step: {e}",
+            )
             raise
 
     async def execute(
@@ -51,14 +58,14 @@ class WalkForwardValidationStep:
             data_dir = training_input.get("data_dir", "data/training")
 
             # Import and use the existing walk-forward validation step
-            from src.training.steps.step6_walk_forward_validation import (
+            from src.training.steps.step13_walk_forward_validation import (
                 WalkForwardValidationStep,
             )
 
             # Execute walk-forward validation using existing step
             wfv_step = WalkForwardValidationStep(config={})
             await wfv_step.initialize()
-            
+
             wfv_result = await wfv_step.execute(
                 training_input={
                     "symbol": symbol,
@@ -69,7 +76,8 @@ class WalkForwardValidationStep:
             )
 
             if not wfv_result:
-                raise Exception("Walk-forward validation failed")
+                msg = "Walk-forward validation failed"
+                raise Exception(msg)
 
             # Load walk-forward validation results
             wfv_results_file = (
@@ -94,38 +102,58 @@ class WalkForwardValidationStep:
                         "f1_score": 0.70,
                     },
                 }
+            try:
+                self.logger.info(
+                    f"Walk-forward results prepared: overall_metrics={wfv_results.get('overall_metrics', {})}",
+                )
+            except Exception:
+                pass
 
-            # Save validation results
-            validation_dir = f"{data_dir}/validation_results"
-            os.makedirs(validation_dir, exist_ok=True)
+            # Persist WFV results as Parquet partitioned by fold/horizon for pruning
+            try:
+                from src.training.enhanced_training_manager_optimized import (
+                    ParquetDatasetManager,
+                )
 
-            validation_file = (
-                f"{validation_dir}/{exchange}_{symbol}_walk_forward_validation.pkl"
-            )
-            with open(validation_file, "wb") as f:
-                pickle.dump(wfv_results, f)
+                pdm = ParquetDatasetManager(logger=self.logger)
+                wfv_base = os.path.join(data_dir, "parquet", "wfv")
+                # Materialize summary metrics table for fast reads
+                import pandas as pd
 
-            # Save validation summary
-            summary_file = f"{data_dir}/{exchange}_{symbol}_walk_forward_summary.json"
-            with open(summary_file, "w") as f:
-                json.dump(wfv_results, f, indent=2)
-
-            self.logger.info(
-                f"✅ Walk-forward validation completed. Results saved to {validation_dir}",
-            )
+                summary_rows = []
+                for fold_idx, fold in enumerate(wfv_results.get("fold_results", [])):
+                    metrics = fold.get("metrics", {"accuracy": 0.0})
+                    for k, v in metrics.items():
+                        summary_rows.append({"fold": fold_idx, "metric": k, "value": v})
+                if summary_rows:
+                    summary_df = pd.DataFrame(summary_rows)
+                    pdm.write_partitioned_dataset(
+                        df=summary_df,
+                        base_dir=os.path.join(wfv_base, "summary"),
+                        partition_cols=["fold"],
+                        schema_name="split",
+                        compression="snappy",
+                        update_manifest=True,
+                        metadata={"schema_version": "1", "validation_method": "wfv"},
+                    )
+                self.logger.info(
+                    f"✅ Walk-forward validation metrics persisted to {wfv_base}"
+                )
+            except Exception:
+                pass
 
             # Update pipeline state
             pipeline_state["walk_forward_validation"] = wfv_results
 
             return {
                 "walk_forward_validation": wfv_results,
-                "validation_file": validation_file,
+                "validation_file": os.path.join(data_dir, "parquet", "wfv"),
                 "duration": 0.0,  # Will be calculated in actual implementation
                 "status": "SUCCESS",
             }
 
         except Exception as e:
-            self.logger.error(f"❌ Error in Walk-Forward Validation: {e}")
+            self.print(validation_error("❌ Error in Walk-Forward Validation: {e}"))
             return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
 
@@ -134,6 +162,7 @@ async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
     data_dir: str = "data/training",
+    force_rerun: bool = False,
     **kwargs,
 ) -> bool:
     """
@@ -159,6 +188,7 @@ async def run_step(
             "symbol": symbol,
             "exchange": exchange,
             "data_dir": data_dir,
+            "force_rerun": force_rerun,
             **kwargs,
         }
 
@@ -167,8 +197,8 @@ async def run_step(
 
         return result.get("status") == "SUCCESS"
 
-    except Exception as e:
-        print(f"❌ Walk-forward validation failed: {e}")
+    except Exception:
+        print(failed("Walk-forward validation failed: {e}"))
         return False
 
 

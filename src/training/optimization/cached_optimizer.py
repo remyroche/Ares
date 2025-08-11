@@ -16,6 +16,10 @@ import optuna
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+)
 
 
 @dataclass
@@ -62,8 +66,8 @@ class CachedOptimizer:
                 with open(self.cache_metadata_file) as f:
                     return json.load(f)
             return {}
-        except Exception as e:
-            self.logger.warning(f"Could not load cache metadata: {e}")
+        except Exception:
+            self.print(warning("Could not load cache metadata: {e}"))
             return {}
 
     @handle_errors(
@@ -77,8 +81,8 @@ class CachedOptimizer:
             with open(self.cache_metadata_file, "w") as f:
                 json.dump(self.cache_metadata, f, indent=2)
             return True
-        except Exception as e:
-            self.logger.error(f"Could not save cache metadata: {e}")
+        except Exception:
+            self.print(error("Could not save cache metadata: {e}"))
             return False
 
     def _generate_cache_key(self, optimization_config: dict[str, Any]) -> str:
@@ -123,8 +127,8 @@ class CachedOptimizer:
             self.logger.info(f"Retrieved cached results for key {cache_key}")
             return cached_results
 
-        except Exception as e:
-            self.logger.warning(f"Error retrieving cached results: {e}")
+        except Exception:
+            self.print(warning("Error retrieving cached results: {e}"))
             return None
 
     @handle_errors(
@@ -150,8 +154,8 @@ class CachedOptimizer:
 
             return True
 
-        except Exception as e:
-            self.logger.warning(f"Error validating cache: {e}")
+        except Exception:
+            self.print(warning("Error validating cache: {e}"))
             return False
 
     @handle_errors(
@@ -187,8 +191,8 @@ class CachedOptimizer:
 
             return None
 
-        except Exception as e:
-            self.logger.warning(f"Error getting warm start parameters: {e}")
+        except Exception:
+            self.print(warning("Error getting warm start parameters: {e}"))
             return None
 
     def _calculate_config_similarity(
@@ -218,8 +222,8 @@ class CachedOptimizer:
 
             return intersection / union if union > 0 else 0.0
 
-        except Exception as e:
-            self.logger.warning(f"Error calculating config similarity: {e}")
+        except Exception:
+            self.print(warning("Error calculating config similarity: {e}"))
             return 0.0
 
     @handle_errors(
@@ -262,8 +266,8 @@ class CachedOptimizer:
             self.logger.info(f"Cached optimization results for key {cache_key}")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error caching optimization results: {e}")
+        except Exception:
+            self.print(error("Error caching optimization results: {e}"))
             return False
 
     @handle_errors(
@@ -336,8 +340,8 @@ class CachedOptimizer:
 
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error running optimization with warm start: {e}")
+        except Exception:
+            self.print(error("Error running optimization with warm start: {e}"))
             return None
 
     @handle_errors(
@@ -369,8 +373,8 @@ class CachedOptimizer:
             self.logger.info(f"Cleaned up {cleaned_files} expired cache files")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error cleaning up cache: {e}")
+        except Exception:
+            self.print(error("Error cleaning up cache: {e}"))
             return False
 
     def get_cache_statistics(self) -> dict[str, Any]:
@@ -392,6 +396,6 @@ class CachedOptimizer:
                 "enable_warm_start": self.cache_config.enable_warm_start,
             }
 
-        except Exception as e:
-            self.logger.error(f"Error getting cache statistics: {e}")
+        except Exception:
+            self.print(error("Error getting cache statistics: {e}"))
             return {}

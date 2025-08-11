@@ -7,6 +7,7 @@ feature importance, decision path analysis, and model behavior monitoring.
 """
 
 import asyncio
+import contextlib
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -15,6 +16,11 @@ from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+)
 
 
 class TrackingType(Enum):
@@ -218,8 +224,8 @@ class TrackingSystem:
             self.logger.info("✅ Tracking System initialization completed")
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Tracking System initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Tracking System initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -239,8 +245,8 @@ class TrackingSystem:
 
             self.logger.info("Tracking storage initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing tracking storage: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing tracking storage: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -252,8 +258,10 @@ class TrackingSystem:
         try:
             self.logger.info("Ensemble tracking initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing ensemble tracking: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing ensemble tracking: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -265,8 +273,8 @@ class TrackingSystem:
         try:
             self.logger.info("Regime tracking initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing regime tracking: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing regime tracking: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -278,8 +286,8 @@ class TrackingSystem:
         try:
             self.logger.info("Feature tracking initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing feature tracking: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing feature tracking: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -291,8 +299,10 @@ class TrackingSystem:
         try:
             self.logger.info("Decision tracking initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing decision tracking: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing decision tracking: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -304,8 +314,10 @@ class TrackingSystem:
         try:
             self.logger.info("Behavior tracking initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing behavior tracking: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing behavior tracking: {e}"),
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -339,8 +351,8 @@ class TrackingSystem:
             self.logger.info("🚀 Tracking System started")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error starting tracking system: {e}")
+        except Exception:
+            self.print(error("Error starting tracking system: {e}"))
             return False
 
     @handle_errors(
@@ -355,8 +367,8 @@ class TrackingSystem:
                 await self._track_ensemble_decisions()
                 await asyncio.sleep(self.ensemble_tracking_interval)
 
-        except Exception as e:
-            self.logger.error(f"Error in ensemble tracking loop: {e}")
+        except Exception:
+            self.print(error("Error in ensemble tracking loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -370,8 +382,8 @@ class TrackingSystem:
                 await self._track_regime_analysis()
                 await asyncio.sleep(self.regime_tracking_interval)
 
-        except Exception as e:
-            self.logger.error(f"Error in regime tracking loop: {e}")
+        except Exception:
+            self.print(error("Error in regime tracking loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -385,8 +397,8 @@ class TrackingSystem:
                 await self._track_feature_importance()
                 await asyncio.sleep(self.feature_tracking_interval)
 
-        except Exception as e:
-            self.logger.error(f"Error in feature tracking loop: {e}")
+        except Exception:
+            self.print(error("Error in feature tracking loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -400,8 +412,8 @@ class TrackingSystem:
                 await self._track_model_behavior()
                 await asyncio.sleep(self.behavior_tracking_interval)
 
-        except Exception as e:
-            self.logger.error(f"Error in behavior tracking loop: {e}")
+        except Exception:
+            self.print(error("Error in behavior tracking loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -438,8 +450,8 @@ class TrackingSystem:
 
             self.logger.debug(f"Tracked ensemble decision: {decision.decision_id}")
 
-        except Exception as e:
-            self.logger.error(f"Error tracking ensemble decisions: {e}")
+        except Exception:
+            self.print(error("Error tracking ensemble decisions: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -476,8 +488,8 @@ class TrackingSystem:
 
             self.logger.debug(f"Tracked regime analysis: {analysis.analysis_id}")
 
-        except Exception as e:
-            self.logger.error(f"Error tracking regime analysis: {e}")
+        except Exception:
+            self.print(error("Error tracking regime analysis: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -529,8 +541,8 @@ class TrackingSystem:
 
             self.logger.debug("Tracked feature importance")
 
-        except Exception as e:
-            self.logger.error(f"Error tracking feature importance: {e}")
+        except Exception:
+            self.print(error("Error tracking feature importance: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -560,8 +572,8 @@ class TrackingSystem:
 
             self.logger.debug(f"Tracked decision path: {path.path_id}")
 
-        except Exception as e:
-            self.logger.error(f"Error tracking decision path: {e}")
+        except Exception:
+            self.print(error("Error tracking decision path: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -598,8 +610,8 @@ class TrackingSystem:
 
             self.logger.debug("Tracked model behavior")
 
-        except Exception as e:
-            self.logger.error(f"Error tracking model behavior: {e}")
+        except Exception:
+            self.print(error("Error tracking model behavior: {e}"))
 
     async def _analyze_correlation_patterns(self) -> None:
         """Analyze correlation patterns between different system components."""
@@ -608,111 +620,155 @@ class TrackingSystem:
             recent_ensemble_decisions = self.get_ensemble_decisions(limit=50)
             recent_regime_analyses = self.get_regime_analyses(limit=50)
             recent_feature_importance = self.get_feature_importance_history(limit=50)
-            
+
             if len(recent_ensemble_decisions) < 10:
                 return
 
             # Analyze ensemble-regime correlations
             regime_correlations = {}
-            for regime_type in ["bull_trend", "bear_trend", "sideways", "high_volatility", "low_volatility"]:
+            for regime_type in [
+                "bull_trend",
+                "bear_trend",
+                "sideways",
+                "high_volatility",
+                "low_volatility",
+            ]:
                 regime_performance = []
                 ensemble_confidence = []
-                
+
                 for decision in recent_ensemble_decisions:
                     # Find corresponding regime analysis
                     matching_regime = next(
-                        (r for r in recent_regime_analyses 
-                         if abs((r.timestamp - decision.timestamp).total_seconds()) < 60), 
-                        None
+                        (
+                            r
+                            for r in recent_regime_analyses
+                            if abs((r.timestamp - decision.timestamp).total_seconds())
+                            < 60
+                        ),
+                        None,
                     )
-                    
-                    if matching_regime and matching_regime.current_regime.value == regime_type:
+
+                    if (
+                        matching_regime
+                        and matching_regime.current_regime.value == regime_type
+                    ):
                         regime_performance.append(decision.confidence_score)
                         ensemble_confidence.append(decision.ensemble_prediction)
 
                 if len(regime_performance) >= 3:
-                    correlation = self._calculate_correlation(regime_performance, ensemble_confidence)
+                    correlation = self._calculate_correlation(
+                        regime_performance,
+                        ensemble_confidence,
+                    )
                     regime_correlations[regime_type] = correlation
 
             # Analyze feature-ensemble correlations
             feature_correlations = {}
             for feature_importance in recent_feature_importance:
-                for feature_name, importance_score in feature_importance.feature_importance.items():
+                for (
+                    feature_name,
+                    importance_score,
+                ) in feature_importance.feature_importance.items():
                     if feature_name not in feature_correlations:
                         feature_correlations[feature_name] = []
-                    
+
                     # Find corresponding ensemble decision
                     matching_decision = next(
-                        (d for d in recent_ensemble_decisions 
-                         if abs((d.timestamp - feature_importance.timestamp).total_seconds()) < 60), 
-                        None
+                        (
+                            d
+                            for d in recent_ensemble_decisions
+                            if abs(
+                                (
+                                    d.timestamp - feature_importance.timestamp
+                                ).total_seconds(),
+                            )
+                            < 60
+                        ),
+                        None,
                     )
-                    
+
                     if matching_decision:
-                        feature_correlations[feature_name].append({
-                            'importance': importance_score,
-                            'confidence': matching_decision.confidence_score
-                        })
+                        feature_correlations[feature_name].append(
+                            {
+                                "importance": importance_score,
+                                "confidence": matching_decision.confidence_score,
+                            },
+                        )
 
             # Calculate correlation coefficients
             feature_ensemble_correlations = {}
             for feature_name, data_points in feature_correlations.items():
                 if len(data_points) >= 5:
-                    importance_values = [d['importance'] for d in data_points]
-                    confidence_values = [d['confidence'] for d in data_points]
-                    correlation = self._calculate_correlation(importance_values, confidence_values)
+                    importance_values = [d["importance"] for d in data_points]
+                    confidence_values = [d["confidence"] for d in data_points]
+                    correlation = self._calculate_correlation(
+                        importance_values,
+                        confidence_values,
+                    )
                     feature_ensemble_correlations[feature_name] = correlation
 
             # Store correlation analysis results
             self.correlation_analysis = {
-                'regime_correlations': regime_correlations,
-                'feature_ensemble_correlations': feature_ensemble_correlations,
-                'analysis_timestamp': datetime.now()
+                "regime_correlations": regime_correlations,
+                "feature_ensemble_correlations": feature_ensemble_correlations,
+                "analysis_timestamp": datetime.now(),
             }
 
             # Log significant correlations
             significant_regime_correlations = {
-                regime: corr for regime, corr in regime_correlations.items() 
+                regime: corr
+                for regime, corr in regime_correlations.items()
                 if abs(corr) > 0.3
             }
-            
+
             significant_feature_correlations = {
-                feature: corr for feature, corr in feature_ensemble_correlations.items() 
+                feature: corr
+                for feature, corr in feature_ensemble_correlations.items()
                 if abs(corr) > 0.25
             }
-            
+
             if significant_regime_correlations:
-                self.logger.info(f"Significant regime correlations: {significant_regime_correlations}")
-            
+                self.logger.info(
+                    f"Significant regime correlations: {significant_regime_correlations}",
+                )
+
             if significant_feature_correlations:
-                self.logger.info(f"Significant feature correlations: {significant_feature_correlations}")
+                self.logger.info(
+                    f"Significant feature correlations: {significant_feature_correlations}",
+                )
 
-        except Exception as e:
-            self.logger.error(f"Error analyzing correlation patterns: {e}")
+        except Exception:
+            self.print(error("Error analyzing correlation patterns: {e}"))
 
-    def _calculate_correlation(self, x_values: list[float], y_values: list[float]) -> float:
+    def _calculate_correlation(
+        self,
+        x_values: list[float],
+        y_values: list[float],
+    ) -> float:
         """Calculate Pearson correlation coefficient between two lists of values."""
         try:
             if len(x_values) != len(y_values) or len(x_values) < 2:
                 return 0.0
-            
+
             n = len(x_values)
             sum_x = sum(x_values)
             sum_y = sum(y_values)
-            sum_xy = sum(x * y for x, y in zip(x_values, y_values))
+            sum_xy = sum(x * y for x, y in zip(x_values, y_values, strict=False))
             sum_x2 = sum(x * x for x in x_values)
             sum_y2 = sum(y * y for y in y_values)
-            
+
             numerator = n * sum_xy - sum_x * sum_y
-            denominator = ((n * sum_x2 - sum_x * sum_x) * (n * sum_y2 - sum_y * sum_y)) ** 0.5
-            
+            denominator = (
+                (n * sum_x2 - sum_x * sum_x) * (n * sum_y2 - sum_y * sum_y)
+            ) ** 0.5
+
             if denominator == 0:
                 return 0.0
-            
+
             return numerator / denominator
-            
-        except Exception as e:
-            self.logger.error(f"Error calculating correlation: {e}")
+
+        except Exception:
+            self.print(error("Error calculating correlation: {e}"))
             return 0.0
 
     def get_ensemble_decisions(
@@ -781,8 +837,8 @@ class TrackingSystem:
                 "behavior_tracking_enabled": self.enable_behavior_tracking,
             }
 
-        except Exception as e:
-            self.logger.error(f"Error getting tracking summary: {e}")
+        except Exception:
+            self.print(error("Error getting tracking summary: {e}"))
             return {}
 
     @handle_errors(
@@ -798,17 +854,15 @@ class TrackingSystem:
             # Cancel all tracking tasks
             for task in self.tracking_tasks:
                 task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await task
-                except asyncio.CancelledError:
-                    pass
 
             self.tracking_tasks.clear()
 
             self.logger.info("🛑 Tracking System stopped")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping tracking system: {e}")
+        except Exception:
+            self.print(error("Error stopping tracking system: {e}"))
 
 
 @handle_errors(
@@ -833,6 +887,6 @@ async def setup_tracking_system(config: dict[str, Any]) -> TrackingSystem | None
             return tracking_system
         return None
 
-    except Exception as e:
-        system_logger.error(f"Error setting up tracking system: {e}")
+    except Exception:
+        system_print(error("Error setting up tracking system: {e}"))
         return None

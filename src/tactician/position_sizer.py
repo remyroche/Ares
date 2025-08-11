@@ -8,9 +8,14 @@ Uses ML confidence scores and Kelly criterion for position sizing.
 from datetime import datetime
 from typing import Any
 
+from src.utils.confidence import normalize_dual_confidence
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.confidence import normalize_dual_confidence
+from src.utils.warning_symbols import (
+    error,
+    initialization_error,
+    missing,
+)
 
 
 class PositionSizer:
@@ -22,6 +27,16 @@ class PositionSizer:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("PositionSizer")
+        # Backward-compatibility shim for legacy self.print calls
+        if not hasattr(self, "print"):
+
+            def _shim_print(message: str) -> None:
+                try:
+                    self.logger.error(str(message))
+                except Exception:
+                    pass
+
+            self.print = _shim_print  # type: ignore[attr-defined]
 
         # Load configuration
         from src.config_optuna import get_parameter_value
@@ -92,7 +107,7 @@ class PositionSizer:
             ]
             for key in required_keys:
                 if key not in self.sizing_config:
-                    self.logger.error(f"Missing required configuration key: {key}")
+                    self.print(missing("Missing required configuration key: {key}"))
                     return False
 
             if self.max_position_size <= self.min_position_size:
@@ -102,13 +117,13 @@ class PositionSizer:
                 return False
 
             if self.kelly_multiplier <= 0 or self.kelly_multiplier > 1:
-                self.logger.error("kelly_multiplier must be between 0 and 1")
+                self.print(error("kelly_multiplier must be between 0 and 1"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_specific_errors(
@@ -143,7 +158,7 @@ class PositionSizer:
             dict[str, Any]: Position sizing analysis
         """
         if not self.is_initialized:
-            self.logger.error("Position sizer not initialized")
+            self.print(initialization_error("Position sizer not initialized"))
             return None
 
         self.logger.info("Calculating position size using ML intelligence...")
@@ -214,8 +229,8 @@ class PositionSizer:
             self.logger.info(f"✅ Position size calculated: {final_position_size:.4f}")
             return sizing_analysis
 
-        except Exception as e:
-            self.logger.error(f"Error calculating position size: {e}")
+        except Exception:
+            self.print(error("Error calculating position size: {e}"))
             return None
 
     def _calculate_kelly_position_size(
@@ -261,15 +276,13 @@ class PositionSizer:
             kelly_position_size = kelly_fraction * self.kelly_multiplier
 
             # Ensure within bounds
-            kelly_position_size = max(
+            return max(
                 self.min_position_size,
                 min(self.max_position_size, kelly_position_size),
             )
 
-            return kelly_position_size
-
-        except Exception as e:
-            self.logger.error(f"Error calculating Kelly position size: {e}")
+        except Exception:
+            self.print(error("Error calculating Kelly position size: {e}"))
             return self.min_position_size
 
     def _calculate_ml_position_size(
@@ -320,15 +333,13 @@ class PositionSizer:
             )
 
             # Ensure within bounds
-            ml_position_size = max(
+            return max(
                 self.min_position_size,
                 min(self.max_position_size, base_position_size),
             )
 
-            return ml_position_size
-
-        except Exception as e:
-            self.logger.error(f"Error calculating ML position size: {e}")
+        except Exception:
+            self.print(error("Error calculating ML position size: {e}"))
             return self.min_position_size
 
     def _calculate_weighted_position_size(
@@ -349,8 +360,8 @@ class PositionSizer:
                 min(self.max_position_size, weighted_size),
             )
 
-        except Exception as e:
-            self.logger.error(f"Error calculating weighted position size: {e}")
+        except Exception:
+            self.print(error("Error calculating weighted position size: {e}"))
             return kelly_position_size
 
     def _apply_position_size_modifiers(
@@ -401,7 +412,7 @@ class PositionSizer:
             if strategist_risk_parameters:
                 # Example: cap size based on max daily loss or risk per trade signals
                 max_position_risk = float(
-                    strategist_risk_parameters.get("max_position_risk", 0.01)
+                    strategist_risk_parameters.get("max_position_risk", 0.01),
                 )
                 # Ensure final size does not exceed configured max_position_size
                 configured_max = float(self.max_position_size)
@@ -412,14 +423,17 @@ class PositionSizer:
 
             # Dynamic confidence-based modulation (analyst and tactician)
             # Use dual confidence similar to monitor normalization
-            _, normalized = normalize_dual_confidence(analyst_confidence, tactician_confidence)
+            _, normalized = normalize_dual_confidence(
+                analyst_confidence,
+                tactician_confidence,
+            )
             # Scale position by a gentle factor around 1.0 (0.8..1.2)
             conf_scale = 0.8 + 0.4 * normalized
             adjusted *= conf_scale
 
             return max(self.min_position_size, min(self.max_position_size, adjusted))
-        except Exception as e:
-            self.logger.error(f"Error applying size modifiers: {e}")
+        except Exception:
+            self.print(error("Error applying size modifiers: {e}"))
             return max(self.min_position_size, min(self.max_position_size, base_size))
 
     def _generate_sizing_reason(
@@ -462,8 +476,8 @@ class PositionSizer:
                 return "Moderate position size with balanced risk-reward profile"
             return f"Conservative position size due to low confidence ({avg_confidence:.2f}) or high risk ({avg_risk:.2f})"
 
-        except Exception as e:
-            self.logger.error(f"Error generating sizing reason: {e}")
+        except Exception:
+            self.print(error("Error generating sizing reason: {e}"))
             return "Position size calculated using ML intelligence and Kelly criterion"
 
     def _generate_dual_confidence_sizing_reason(
@@ -479,17 +493,17 @@ class PositionSizer:
     ) -> str:
         """Generate sizing reason for dual confidence system."""
         try:
-            reason = (
+            return (
                 f"Position size: {final_position_size:.4f} "
                 f"(Final confidence: {final_confidence:.3f}, Normalized: {normalized_confidence:.3f}) "
                 f"Analyst: {analyst_confidence:.2f}, Tactician: {tactician_confidence:.2f} "
                 f"Kelly: p_avg={p_avg:.2f}, b_avg={b_avg:.2f}, frac_kelly={fractional_kelly_pct:.3f}"
             )
 
-            return reason
-
         except Exception as e:
-            self.logger.error(f"Error generating dual confidence sizing reason: {e}")
+            self.logger.exception(
+                f"Error generating dual confidence sizing reason: {e}",
+            )
             return f"Position size: {final_position_size:.4f} (Error generating reason)"
 
     def _get_historical_performance(self) -> tuple[float, float]:
@@ -524,8 +538,8 @@ class PositionSizer:
             b_avg = max(0.8, min(2.5, b_avg))
 
             return p_avg, b_avg
-        except Exception as e:
-            self.logger.error(f"Error getting historical performance: {e}")
+        except Exception:
+            self.print(error("Error getting historical performance: {e}"))
             return 0.5, 1.5  # Default fallback values
 
     def get_position_sizing_history(
@@ -548,8 +562,8 @@ class PositionSizer:
             self.logger.info("Stopping position sizer...")
             self.is_initialized = False
             self.logger.info("✅ Position sizer stopped successfully")
-        except Exception as e:
-            self.logger.error(f"Error stopping position sizer: {e}")
+        except Exception:
+            self.print(error("Error stopping position sizer: {e}"))
 
 
 @handle_errors(
@@ -579,6 +593,6 @@ async def setup_position_sizer(
             return position_sizer
         return None
 
-    except Exception as e:
-        system_logger.error(f"Error setting up position sizer: {e}")
+    except Exception:
+        system_print(error("Error setting up position sizer: {e}"))
         return None

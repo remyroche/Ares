@@ -16,6 +16,20 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 def consolidate_binance_15m_data():
@@ -38,7 +52,7 @@ def consolidate_binance_15m_data():
         logger.info(f"   ... and {len(source_files) - 5} more files")
 
     if not source_files:
-        logger.error("❌ No 15m Binance files found")
+        print(error("❌ No 15m Binance files found")))
         return False
 
     # Output file
@@ -61,15 +75,15 @@ def consolidate_binance_15m_data():
 
             # Validate data
             if len(df) == 0:
-                logger.warning(f"   ⚠️ Empty file: {os.path.basename(file)}")
+                print(warning("   ⚠️ Empty file: {os.path.basename(file)}")))
                 continue
 
             # Check columns
             expected_columns = ["timestamp", "open", "high", "low", "close", "volume"]
             if not all(col in df.columns for col in expected_columns):
-                logger.warning(f"   ⚠️ Missing columns in {os.path.basename(file)}")
-                logger.warning(f"   📋 Expected: {expected_columns}")
-                logger.warning(f"   📋 Found: {list(df.columns)}")
+                print(missing("   ⚠️ Missing columns in {os.path.basename(file)}")))
+                print(warning("   📋 Expected: {expected_columns}")))
+                print(warning("   📋 Found: {list(df.columns)}")))
                 continue
 
             # Convert timestamp
@@ -82,7 +96,7 @@ def consolidate_binance_15m_data():
 
             # Check for reasonable price data
             if df["close"].isna().all():
-                logger.warning(f"   ⚠️ Invalid price data in {os.path.basename(file)}")
+                print(invalid("   ⚠️ Invalid price data in {os.path.basename(file)}")))
                 continue
 
             # Check price range (ETH should be reasonable)
@@ -103,11 +117,11 @@ def consolidate_binance_15m_data():
             total_records += len(df)
 
         except Exception as e:
-            logger.error(f"   ❌ Error processing {os.path.basename(file)}: {e}")
+            print(error("   ❌ Error processing {os.path.basename(file)}: {e}")))
             continue
 
     if not all_data:
-        logger.error("❌ No valid data files found")
+        print(error("❌ No valid data files found")))
         return False
 
     logger.info(f"📊 Consolidating {len(all_data)} dataframes...")

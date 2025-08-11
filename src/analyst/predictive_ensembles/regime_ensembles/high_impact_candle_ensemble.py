@@ -4,6 +4,10 @@ from lightgbm import LGBMClassifier
 from pytorch_tabnet.tab_model import TabNetClassifier
 from sklearn.naive_bayes import GaussianNB
 
+from src.utils.warning_symbols import (
+    failed,
+)
+
 from .base_ensemble import BaseEnsemble
 
 
@@ -38,8 +42,8 @@ class HighImpactCandleEnsemble(BaseEnsemble):
                 batch_size=1024,
             )
             self.models["tabnet"] = tabnet
-        except Exception as e:
-            self.logger.error(f"Candle TabNet training failed: {e}")
+        except Exception:
+            self.print(failed("Candle TabNet training failed: {e}"))
 
         # General LGBM Model
         lgbm_params = self._tune_hyperparameters(

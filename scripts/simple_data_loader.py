@@ -15,6 +15,20 @@ sys.path.insert(0, str(project_root))
 
 from src.training.steps.data_downloader import download_all_data_with_consolidation
 from src.utils.logger import setup_logging, system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 async def load_data(symbol: str, exchange: str, interval: str = "1m"):
@@ -30,7 +44,7 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
         success = await download_all_data_with_consolidation(symbol, exchange, interval)
 
         if not success:
-            logger.error("❌ Data downloading failed")
+            print(failed("❌ Data downloading failed")))
             return False
 
         logger.info("✅ Data downloading completed successfully")
@@ -55,6 +69,7 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
                 min_data_points,
                 data_dir,
                 str(lookback_days),
+                str(CONFIG.get("DATA_CONFIG", {}).get("exclude_recent_days", 0)),
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -87,7 +102,7 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
         return False
 
     except Exception as e:
-        logger.error(f"❌ Error during data loading: {e}")
+        print(error("❌ Error during data loading: {e}")))
         return False
 
 
@@ -121,7 +136,7 @@ def main():
         print("✅ Data loading completed successfully")
         sys.exit(0)
     else:
-        print("❌ Data loading failed")
+        print(failed("Data loading failed")))
         sys.exit(1)
 
 

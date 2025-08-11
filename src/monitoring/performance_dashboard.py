@@ -8,14 +8,18 @@ Real-time monitoring and visualization of system performance metrics.
 import asyncio
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
 from src.monitoring.performance_monitor import PerformanceMonitor
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+)
 
 
 @dataclass
@@ -137,23 +141,24 @@ class PerformanceDashboard:
             )
             return
 
-        # Create dashboard metrics
-        dashboard_metrics = DashboardMetrics(
-            timestamp=datetime.now(),
-            model_performance={
-                "accuracy": performance_summary["current_metrics"][
-                    "model_accuracy"
-                ],
-                "precision": 0.0,  # Would get from performance monitor
-                "recall": 0.0,  # Would get from performance monitor
-                "f1_score": 0.0,  # Would get from performance monitor
-                "auc": 0.0,  # Would get from performance monitor
-            },
-            trading_performance={
-                "win_rate": performance_summary["current_metrics"][
-                    "trading_win_rate"
-                ],
-                "profit_factor": 1.5,  # Would get from performance monitor
+        try:
+            # Create dashboard metrics
+            dashboard_metrics = DashboardMetrics(
+                timestamp=datetime.now(UTC),
+                model_performance={
+                    "accuracy": performance_summary["current_metrics"][
+                        "model_accuracy"
+                    ],
+                    "precision": 0.0,  # Would get from performance monitor
+                    "recall": 0.0,  # Would get from performance monitor
+                    "f1_score": 0.0,  # Would get from performance monitor
+                    "auc": 0.0,  # Would get from performance monitor
+                },
+                trading_performance={
+                    "win_rate": performance_summary["current_metrics"][
+                        "trading_win_rate"
+                    ],
+                    "profit_factor": 1.5,  # Would get from performance monitor
                     "sharpe_ratio": 1.2,  # Would get from performance monitor
                     "max_drawdown": -0.05,  # Would get from performance monitor
                     "total_return": 0.25,  # Would get from performance monitor
@@ -197,8 +202,8 @@ class PerformanceDashboard:
                 f"Dashboard updated: {len(self.metrics_history)} metrics points",
             )
 
-        except Exception as e:
-            self.logger.error(f"Error updating dashboard metrics: {e}")
+        except Exception:
+            self.print(error("Error updating dashboard metrics"))
 
     async def _export_dashboard_data(self) -> None:
         """Export dashboard data."""
@@ -207,12 +212,12 @@ class PerformanceDashboard:
                 return
 
             # Create export filename
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
             export_file = self.export_dir / f"dashboard_export_{timestamp}.json"
 
             # Prepare export data
             export_data = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "current_metrics": {
                     "model_performance": self.current_metrics.model_performance,
                     "trading_performance": self.current_metrics.trading_performance,
@@ -220,7 +225,9 @@ class PerformanceDashboard:
                     "confidence_metrics": self.current_metrics.confidence_metrics,
                 },
                 "alerts": self.current_metrics.alerts,
-                "optimization_opportunities": self.current_metrics.optimization_opportunities,
+                "optimization_opportunities": (
+                    self.current_metrics.optimization_opportunities
+                ),
                 "metrics_history": [
                     {
                         "timestamp": m.timestamp.isoformat(),
@@ -236,13 +243,13 @@ class PerformanceDashboard:
             }
 
             # Export to file
-            with open(export_file, "w") as f:
+            with export_file.open("w") as f:
                 json.dump(export_data, f, indent=2)
 
             self.logger.info(f"📊 Dashboard data exported to: {export_file}")
 
-        except Exception as e:
-            self.logger.error(f"Error exporting dashboard data: {e}")
+        except Exception:
+            self.print(error("Error exporting dashboard data"))
 
     def get_dashboard_summary(self) -> dict[str, Any]:
         """Get dashboard summary."""
@@ -274,7 +281,7 @@ class PerformanceDashboard:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting dashboard summary: {e}")
+            self.print(error("Error getting dashboard summary"))
             return {"error": str(e)}
 
     def _calculate_trends(self) -> dict[str, Any]:
@@ -323,8 +330,8 @@ class PerformanceDashboard:
 
             return trends
 
-        except Exception as e:
-            self.logger.error(f"Error calculating trends: {e}")
+        except Exception:
+            self.print(error("Error calculating trends"))
             return {}
 
     def _calculate_predictive_analytics(self) -> dict[str, Any]:
@@ -335,17 +342,35 @@ class PerformanceDashboard:
 
             # Get historical data for prediction
             historical_metrics = self.metrics_history[-50:]  # Last 50 data points
-            
+
             predictions = {}
-            
+
             # Simple linear regression for key metrics
-            for metric_name in ["model_accuracy", "trading_win_rate", "system_memory_usage"]:
+            for metric_name in [
+                "model_accuracy",
+                "trading_win_rate",
+                "system_memory_usage",
+            ]:
                 accessor_map = {
-                    "model_accuracy": lambda m: m.model_performance.get("accuracy", 0.0),
-                    "trading_win_rate": lambda m: m.trading_performance.get("win_rate", 0.0),
-                    "system_memory_usage": lambda m: m.system_performance.get("memory_usage", 0.0),
+                    "model_accuracy": lambda m: m.model_performance.get(
+                        "accuracy",
+                        0.0,
+                    ),
+                    "trading_win_rate": lambda m: m.trading_performance.get(
+                        "win_rate",
+                        0.0,
+                    ),
+                    "system_memory_usage": lambda m: m.system_performance.get(
+                        "memory_usage",
+                        0.0,
+                    ),
                 }
-                values = np.array([accessor_map[metric_name](metric) for metric in historical_metrics])
+                values = np.array(
+                    [
+                        accessor_map[metric_name](metric)
+                        for metric in historical_metrics
+                    ],
+                )
                 timestamps = np.arange(len(values))
                 if len(values) >= 5:
                     try:
@@ -371,16 +396,18 @@ class PerformanceDashboard:
                             "predictions": future_predictions,
                             "confidence": float(r_squared),
                             "trend": "increasing" if slope > 0 else "decreasing",
-                            "slope": float(slope)
+                            "slope": float(slope),
                         }
                     except Exception as e:
-                        self.logger.warning(f"Failed to calculate prediction for {metric_name}: {e}")
+                        self.logger.warning(
+                            f"Failed to calculate prediction for {metric_name}: {e}",
+                        )
                         continue
 
             return predictions
 
         except Exception as e:
-            self.logger.error(f"Error calculating predictive analytics: {e}")
+            self.print(error("Error calculating predictive analytics"))
             return {"error": f"Predictive analytics failed: {e}"}
 
     def _calculate_health_score(self) -> dict[str, Any]:
@@ -469,8 +496,8 @@ class PerformanceDashboard:
                 "alerts_count": len(self.current_metrics.alerts),
             }
 
-        except Exception as e:
-            self.logger.error(f"Error calculating health score: {e}")
+        except Exception:
+            self.print(error("Error calculating health score"))
             return {"score": 0, "status": "error"}
 
     def get_alerts_summary(self) -> dict[str, Any]:
@@ -504,8 +531,8 @@ class PerformanceDashboard:
                 },
             }
 
-        except Exception as e:
-            self.logger.error(f"Error getting alerts summary: {e}")
+        except Exception:
+            self.print(error("Error getting alerts summary"))
             return {"alerts": [], "summary": {}}
 
     def get_optimization_summary(self) -> dict[str, Any]:
@@ -539,8 +566,8 @@ class PerformanceDashboard:
                 },
             }
 
-        except Exception as e:
-            self.logger.error(f"Error getting optimization summary: {e}")
+        except Exception:
+            self.print(error("Error getting optimization summary"))
             return {"opportunities": [], "summary": {}}
 
     def get_performance_chart_data(
@@ -561,7 +588,7 @@ class PerformanceDashboard:
             # Extract data for the specified metric
             timestamps = [m.timestamp.isoformat() for m in filtered_metrics]
             values = self._extract_metric_values(filtered_metrics, metric)
-            
+
             if values is None:
                 return {"error": f"Unknown metric: {metric}"}
 
@@ -574,14 +601,14 @@ class PerformanceDashboard:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting performance chart data: {e}")
+            self.print(error("Error getting performance chart data"))
             return {"error": str(e)}
 
     def _filter_metrics_by_time_range(self, time_range: str) -> list[DashboardMetrics]:
         """Filter metrics based on time range."""
-        now = datetime.now()
+        now = datetime.now(UTC)
         cutoff_time = self._get_cutoff_time(now, time_range)
-        
+
         return [m for m in self.metrics_history if m.timestamp >= cutoff_time]
 
     def _get_cutoff_time(self, now: datetime, time_range: str) -> datetime:
@@ -591,11 +618,15 @@ class PerformanceDashboard:
             "6h": timedelta(hours=6),
             "24h": timedelta(hours=24),
         }
-        
+
         delta = time_range_map.get(time_range, timedelta(hours=1))  # Default to 1 hour
         return now - delta
 
-    def _extract_metric_values(self, filtered_metrics: list[DashboardMetrics], metric: str) -> list[float] | None:
+    def _extract_metric_values(
+        self,
+        filtered_metrics: list[DashboardMetrics],
+        metric: str,
+    ) -> list[float] | None:
         """Extract metric values from filtered metrics."""
         metric_extractors = {
             "model_accuracy": lambda m: m.model_performance["accuracy"],
@@ -605,11 +636,11 @@ class PerformanceDashboard:
             "response_time": lambda m: m.system_performance["response_time"],
             "confidence_final": lambda m: m.confidence_metrics["final_confidence"],
         }
-        
+
         extractor = metric_extractors.get(metric)
         if extractor is None:
             return None
-            
+
         return [extractor(m) for m in filtered_metrics]
 
     @handle_errors(
@@ -635,8 +666,8 @@ class PerformanceDashboard:
 
             self.logger.info("✅ Performance Dashboard stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping performance dashboard: {e}")
+        except Exception:
+            self.print(error("Error stopping performance dashboard"))
 
 
 @handle_errors(
@@ -667,6 +698,6 @@ async def setup_performance_dashboard(
             return dashboard
         return None
 
-    except Exception as e:
-        system_logger.error(f"Error setting up Performance Dashboard: {e}")
+    except Exception:
+        system_print(error("Error setting up Performance Dashboard: {e}"))
         return None

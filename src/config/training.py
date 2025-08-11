@@ -3,17 +3,18 @@
 from typing import Any
 
 from src.config.environment import get_environment_settings
+from src.config.constants import DEFAULT_LOOKBACK_DAYS
 
 
 def get_training_config() -> dict[str, Any]:
     """
     Get the complete training configuration.
-    
+
     Returns:
         dict: Complete training configuration
     """
-    settings = get_environment_settings()
-    
+    get_environment_settings()
+
     return {
         # --- Model Training Configuration ---
         "training_pipeline": {
@@ -23,13 +24,20 @@ def get_training_config() -> dict[str, Any]:
             "min_train_size": 1000,  # Minimum training samples required
             "max_train_size": 50000,  # Maximum training samples to use
         },
-        
         # --- Model Training Parameters ---
         "MODEL_TRAINING": {
             "regularization": {
                 "lightgbm": {"l1_alpha": 0.01, "l2_alpha": 0.1, "dropout_rate": 0.1},
-                "tensorflow": {"l1_alpha": 0.001, "l2_alpha": 0.01, "dropout_rate": 0.2},
-                "sklearn": {"l1_alpha": 0.01, "l2_alpha": 0.1, "elastic_net_ratio": 0.5},
+                "tensorflow": {
+                    "l1_alpha": 0.001,
+                    "l2_alpha": 0.01,
+                    "dropout_rate": 0.2,
+                },
+                "sklearn": {
+                    "l1_alpha": 0.01,
+                    "l2_alpha": 0.1,
+                    "elastic_net_ratio": 0.5,
+                },
                 "tabnet": {
                     "lambda_sparse": 0.001,
                     "reg_lambda": 0.01,
@@ -52,12 +60,11 @@ def get_training_config() -> dict[str, Any]:
                 "enable_liquidity_analysis": True,
             },
         },
-        
         # --- Global Data Configuration ---
         "DATA_CONFIG": {
-            "default_lookback_days": 730,  # Default lookback period for all timeframes (2 years)
+            "default_lookback_days": DEFAULT_LOOKBACK_DAYS,  # Default lookback period for all timeframes (3 years)
+            "exclude_recent_days": 2,  # Exclude the most recent N days from the lookback window
         },
-        
         # --- Enhanced Training Configuration ---
         "ENHANCED_TRAINING": {
             "enable_efficiency_optimizations": True,
@@ -72,7 +79,6 @@ def get_training_config() -> dict[str, Any]:
             "enable_computational_optimization": True,  # Enable computational optimization strategies
             "enable_validators": True,  # Enable step validators
         },
-        
         # --- Multi-Timeframe Training Configuration ---
         "MULTI_TIMEFRAME_TRAINING": {
             "enable_parallel_training": True,  # Train timeframes in parallel
@@ -81,7 +87,6 @@ def get_training_config() -> dict[str, Any]:
             "ensemble_method": "meta_learner",  # Use meta-learner for optimal weights
             "validation_split": 0.2,  # Validation data split
             "max_parallel_workers": 3,  # Maximum parallel workers
-            
             # Meta-learner configuration for high leverage trading
             "meta_learner": {
                 "algorithm": "gradient_boosting",  # Meta-learner algorithm
@@ -96,7 +101,6 @@ def get_training_config() -> dict[str, Any]:
                 "optimization_trials": 100,  # Meta-learner optimization trials
                 "cross_validation_folds": 5,  # Cross-validation folds for meta-learner
             },
-            
             # High leverage trading preferences
             "high_leverage_settings": {
                 "prioritize_short_timeframes": True,  # Shorter timeframes more important
@@ -105,7 +109,6 @@ def get_training_config() -> dict[str, Any]:
                 "stop_loss_tightness": "tight",  # Tight stop losses
             },
         },
-        
         # --- Timeframe Definitions and Purposes ---
         "TIMEFRAMES": {
             # Short-term timeframes (Intraday Trading)
@@ -175,7 +178,6 @@ def get_training_config() -> dict[str, Any]:
                 "description": "For major market cycle analysis and long-term positioning",
             },
         },
-        
         # --- Predefined Timeframe Sets ---
         "TIMEFRAME_SETS": {
             "scalping": {
@@ -209,20 +211,22 @@ def get_training_config() -> dict[str, Any]:
                 "use_case": "Multi-timeframe analysis for robust trading decisions",
             },
         },
-        
         # --- Default Timeframe Configuration ---
         "DEFAULT_TIMEFRAME_SET": "intraday",  # Use intraday timeframes by default for high leverage
-        
         # --- Two-Tier Decision System Configuration ---
         "TWO_TIER_DECISION": {
-            "tier1_timeframes": ["1m", "5m", "15m", "1h"],  # All timeframes for direction
+            "tier1_timeframes": [
+                "1m",
+                "5m",
+                "15m",
+                "1h",
+            ],  # All timeframes for direction
             "tier2_timeframes": ["1m", "5m"],  # Only shortest for timing
             "direction_threshold": 0.7,  # Threshold for trade direction
             "timing_threshold": 0.8,  # Threshold for precise timing
             "high_leverage_mode": True,
             "enable_two_tier": True,  # Enable two-tier decision system
         },
-        
         # --- Enhanced Ensemble Configuration ---
         "ENHANCED_ENSEMBLE": {
             "enable_enhanced_ensembles": True,
@@ -244,7 +248,7 @@ def get_training_config() -> dict[str, Any]:
 def get_model_training_config() -> dict[str, Any]:
     """
     Get model training configuration.
-    
+
     Returns:
         dict: Model training configuration
     """
@@ -255,7 +259,7 @@ def get_model_training_config() -> dict[str, Any]:
 def get_enhanced_training_config() -> dict[str, Any]:
     """
     Get enhanced training configuration.
-    
+
     Returns:
         dict: Enhanced training configuration
     """
@@ -266,7 +270,7 @@ def get_enhanced_training_config() -> dict[str, Any]:
 def get_multi_timeframe_training_config() -> dict[str, Any]:
     """
     Get multi-timeframe training configuration.
-    
+
     Returns:
         dict: Multi-timeframe training configuration
     """
@@ -277,7 +281,7 @@ def get_multi_timeframe_training_config() -> dict[str, Any]:
 def get_timeframes_config() -> dict[str, Any]:
     """
     Get timeframes configuration.
-    
+
     Returns:
         dict: Timeframes configuration
     """
@@ -288,7 +292,7 @@ def get_timeframes_config() -> dict[str, Any]:
 def get_timeframe_sets_config() -> dict[str, Any]:
     """
     Get timeframe sets configuration.
-    
+
     Returns:
         dict: Timeframe sets configuration
     """
@@ -299,7 +303,7 @@ def get_timeframe_sets_config() -> dict[str, Any]:
 def get_two_tier_decision_config() -> dict[str, Any]:
     """
     Get two-tier decision configuration.
-    
+
     Returns:
         dict: Two-tier decision configuration
     """
@@ -310,7 +314,7 @@ def get_two_tier_decision_config() -> dict[str, Any]:
 def get_enhanced_ensemble_config() -> dict[str, Any]:
     """
     Get enhanced ensemble configuration.
-    
+
     Returns:
         dict: Enhanced ensemble configuration
     """
@@ -321,7 +325,7 @@ def get_enhanced_ensemble_config() -> dict[str, Any]:
 def get_training_pipeline_config() -> dict[str, Any]:
     """
     Get training pipeline configuration.
-    
+
     Returns:
         dict: Training pipeline configuration
     """
@@ -332,7 +336,7 @@ def get_training_pipeline_config() -> dict[str, Any]:
 def get_data_config() -> dict[str, Any]:
     """
     Get data configuration.
-    
+
     Returns:
         dict: Data configuration
     """
@@ -343,7 +347,7 @@ def get_data_config() -> dict[str, Any]:
 def get_default_timeframe_set() -> str:
     """
     Get the default timeframe set.
-    
+
     Returns:
         str: Default timeframe set name
     """
@@ -354,10 +358,10 @@ def get_default_timeframe_set() -> str:
 def get_timeframe_config(timeframe: str) -> dict[str, Any]:
     """
     Get configuration for a specific timeframe.
-    
+
     Args:
         timeframe: The timeframe to get configuration for
-        
+
     Returns:
         dict: Timeframe configuration
     """
@@ -368,12 +372,12 @@ def get_timeframe_config(timeframe: str) -> dict[str, Any]:
 def get_timeframe_set_config(set_name: str) -> dict[str, Any]:
     """
     Get configuration for a specific timeframe set.
-    
+
     Args:
         set_name: The timeframe set name
-        
+
     Returns:
         dict: Timeframe set configuration
     """
     timeframe_sets_config = get_timeframe_sets_config()
-    return timeframe_sets_config.get(set_name, {}) 
+    return timeframe_sets_config.get(set_name, {})

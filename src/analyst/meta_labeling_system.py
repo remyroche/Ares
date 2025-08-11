@@ -12,6 +12,20 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 class MetaLabelingSystem:
@@ -70,7 +84,9 @@ class MetaLabelingSystem:
             self.logger.info("✅ Meta-labeling system initialized successfully")
             return True
         except Exception as e:
-            self.logger.error(f"❌ Error initializing meta-labeling system: {e}")
+            self.print(
+                initialization_error("❌ Error initializing meta-labeling system: {e}")
+            )
             return False
 
     @handle_errors(
@@ -124,36 +140,38 @@ class MetaLabelingSystem:
             try:
                 features.update(self._calculate_technical_indicators(price_data))
             except Exception as e:
-                self.logger.error(f"Error calculating technical indicators: {e}")
+                self.print(error("Error calculating technical indicators: {e}"))
 
             # Volume analysis with error handling
             try:
                 features.update(self._calculate_volume_features(volume_data))
             except Exception as e:
-                self.logger.error(f"Error calculating volume features: {e}")
+                self.print(error("Error calculating volume features: {e}"))
 
             # Price action patterns with error handling
             try:
                 features.update(self._calculate_price_action_patterns(price_data))
             except Exception as e:
-                self.logger.error(f"Error calculating price action patterns: {e}")
+                self.print(error("Error calculating price action patterns: {e}"))
 
             # Volatility patterns with error handling
             try:
                 features.update(self._calculate_volatility_patterns(price_data))
             except Exception as e:
-                self.logger.error(f"Error calculating volatility patterns: {e}")
+                self.print(error("Error calculating volatility patterns: {e}"))
 
             # Momentum patterns with error handling
             try:
                 features.update(self._calculate_momentum_patterns(price_data))
             except Exception as e:
-                self.logger.error(f"Error calculating momentum patterns: {e}")
+                self.print(error("Error calculating momentum patterns: {e}"))
 
             return features
 
         except Exception as e:
-            self.logger.error(f"Unexpected error in pattern feature calculation: {e}")
+            self.logger.exception(
+                f"Unexpected error in pattern feature calculation: {e}",
+            )
             return {}
 
     def _calculate_technical_indicators(self, data: pd.DataFrame) -> dict[str, float]:
@@ -324,7 +342,7 @@ class MetaLabelingSystem:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error calculating price action patterns: {e}")
+            self.print(error("Error calculating price action patterns: {e}"))
             return {}
 
     def _calculate_volatility_patterns(self, data: pd.DataFrame) -> dict[str, float]:
@@ -364,7 +382,7 @@ class MetaLabelingSystem:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error calculating volatility patterns: {e}")
+            self.print(error("Error calculating volatility patterns: {e}"))
             return {}
 
     def _calculate_momentum_patterns(self, data: pd.DataFrame) -> dict[str, float]:
@@ -391,7 +409,7 @@ class MetaLabelingSystem:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error calculating momentum patterns: {e}")
+            self.print(error("Error calculating momentum patterns: {e}"))
             return {}
 
     # Analyst Label Detection Methods
@@ -423,7 +441,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error detecting strong trend continuation: {e}")
+            self.print(error("Error detecting strong trend continuation: {e}"))
             return {"STRONG_TREND_CONTINUATION": 0, "strong_trend_confidence": 0}
 
     def _detect_exhaustion_reversal(
@@ -454,7 +472,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error detecting exhaustion reversal: {e}")
+            self.print(error("Error detecting exhaustion reversal: {e}"))
             return {"EXHAUSTION_REVERSAL": 0, "exhaustion_confidence": 0}
 
     def _detect_range_mean_reversion(
@@ -467,7 +485,7 @@ class MetaLabelingSystem:
             # Range mean reversion: setup at edge of sideways range
             bb_position = features.get("bb_position", 0.5)
             volatility = features.get("volatility_20", 0)
-            price_position = features.get("price_position", 0.5)
+            features.get("price_position", 0.5)
 
             # Conditions for range mean reversion
             is_at_edge = bb_position < 0.2 or bb_position > 0.8
@@ -484,7 +502,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error detecting range mean reversion: {e}")
+            self.print(error("Error detecting range mean reversion: {e}"))
             return {"RANGE_MEAN_REVERSION": 0, "range_reversion_confidence": 0}
 
     def _detect_breakout_patterns(
@@ -522,7 +540,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error detecting breakout patterns: {e}")
+            self.print(error("Error detecting breakout patterns: {e}"))
             return {
                 "BREAKOUT_SUCCESS": 0,
                 "BREAKOUT_FAILURE": 0,
@@ -555,7 +573,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error detecting volatility patterns: {e}")
+            self.print(error("Error detecting volatility patterns: {e}"))
             return {
                 "VOLATILITY_COMPRESSION": 0,
                 "VOLATILITY_EXPANSION": 0,
@@ -590,7 +608,7 @@ class MetaLabelingSystem:
             return patterns
 
         except Exception as e:
-            self.logger.error(f"Error detecting chart patterns: {e}")
+            self.print(error("Error detecting chart patterns: {e}"))
             return {
                 "FLAG_FORMATION": 0,
                 "TRIANGLE_FORMATION": 0,
@@ -629,7 +647,7 @@ class MetaLabelingSystem:
             return patterns
 
         except Exception as e:
-            self.logger.error(f"Error detecting momentum patterns: {e}")
+            self.print(error("Error detecting momentum patterns: {e}"))
             return {"MOMENTUM_IGNITION": 0, "GRADUAL_MOMENTUM_FADE": 0}
 
     # Tactician Label Detection Methods
@@ -674,7 +692,7 @@ class MetaLabelingSystem:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error calculating entry features: {e}")
+            self.print(error("Error calculating entry features: {e}"))
             return {}
 
     def _calculate_order_imbalance(self, order_flow_data: pd.DataFrame) -> float:
@@ -690,7 +708,7 @@ class MetaLabelingSystem:
                 return (bid_vol - ask_vol) / total_vol if total_vol > 0 else 0
             return 0
         except Exception as e:
-            self.logger.error(f"Error calculating order imbalance: {e}")
+            self.print(error("Error calculating order imbalance: {e}"))
             return 0
 
     def _predict_price_extremes(
@@ -718,7 +736,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error predicting price extremes: {e}")
+            self.print(error("Error predicting price extremes: {e}"))
             return {
                 "LOWEST_PRICE_NEXT_1m": data["close"].iloc[-1],
                 "HIGHEST_PRICE_NEXT_1m": data["close"].iloc[-1],
@@ -732,7 +750,7 @@ class MetaLabelingSystem:
     ) -> dict[str, Any]:
         """Predict LIMIT_ORDER_RETURN."""
         try:
-            current_price = data["close"].iloc[-1]
+            data["close"].iloc[-1]
             volatility = features.get("volatility_20", 0.01)
             momentum = features.get("price_momentum_5", 0)
 
@@ -748,7 +766,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error predicting order returns: {e}")
+            self.print(error("Error predicting order returns: {e}"))
             return {"LIMIT_ORDER_RETURN": 0.001, "limit_order_confidence": 0}
 
     def _detect_entry_signals(
@@ -762,7 +780,7 @@ class MetaLabelingSystem:
             signals = {}
 
             # VWAP reversion entry
-            vwap = features.get("vwap", data["close"].iloc[-1])
+            features.get("vwap", data["close"].iloc[-1])
             current_price = data["close"].iloc[-1]
             price_vwap_ratio = features.get("price_vwap_ratio", 1.0)
 
@@ -797,7 +815,7 @@ class MetaLabelingSystem:
             return signals
 
         except Exception as e:
-            self.logger.error(f"Error detecting entry signals: {e}")
+            self.print(error("Error detecting entry signals: {e}"))
             return {
                 "VWAP_REVERSION_ENTRY": 0,
                 "MARKET_ORDER_NOW": 0,
@@ -831,7 +849,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error predicting adverse excursion: {e}")
+            self.print(error("Error predicting adverse excursion: {e}"))
             return {
                 "MAX_ADVERSE_EXCURSION_RETURN": 0.01,
                 "adverse_excursion_confidence": 0,
@@ -862,7 +880,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error generating abort signal: {e}")
+            self.print(error("Error generating abort signal: {e}"))
             return {"ABORT_ENTRY_SIGNAL": 0, "abort_confidence": 0}
 
     @handle_errors(
@@ -889,7 +907,7 @@ class MetaLabelingSystem:
         """
         try:
             if not self.is_initialized:
-                self.logger.warning("Meta-labeling system not initialized")
+                self.print(initialization_error("Meta-labeling system not initialized"))
                 return {}
 
             # Calculate pattern features
@@ -944,7 +962,7 @@ class MetaLabelingSystem:
                         [
                             v
                             for v in analyst_labels.values()
-                            if isinstance(v, (int, float)) and v > 0
+                            if isinstance(v, int | float) and v > 0
                         ],
                     ),
                 },
@@ -956,7 +974,7 @@ class MetaLabelingSystem:
             return analyst_labels
 
         except Exception as e:
-            self.logger.error(f"Error generating analyst labels: {e}")
+            self.print(error("Error generating analyst labels: {e}"))
             return {}
 
     @handle_errors(
@@ -985,7 +1003,7 @@ class MetaLabelingSystem:
         """
         try:
             if not self.is_initialized:
-                self.logger.warning("Meta-labeling system not initialized")
+                self.print(initialization_error("Meta-labeling system not initialized"))
                 return {}
 
             # Calculate entry features
@@ -1035,7 +1053,7 @@ class MetaLabelingSystem:
                         [
                             v
                             for v in tactician_labels.values()
-                            if isinstance(v, (int, float)) and v > 0
+                            if isinstance(v, int | float) and v > 0
                         ],
                     ),
                 },
@@ -1047,7 +1065,7 @@ class MetaLabelingSystem:
             return tactician_labels
 
         except Exception as e:
-            self.logger.error(f"Error generating tactician labels: {e}")
+            self.print(error("Error generating tactician labels: {e}"))
             return {}
 
     @handle_errors(
@@ -1109,7 +1127,7 @@ class MetaLabelingSystem:
             return combined_labels
 
         except Exception as e:
-            self.logger.error(f"Error generating combined labels: {e}")
+            self.print(error("Error generating combined labels: {e}"))
             return {}
 
     def get_system_info(self) -> dict[str, Any]:
@@ -1138,4 +1156,4 @@ class MetaLabelingSystem:
             self.is_initialized = False
             self.logger.info("✅ Meta-Labeling System stopped successfully")
         except Exception as e:
-            self.logger.error(f"Error stopping meta-labeling system: {e}")
+            self.print(error("Error stopping meta-labeling system: {e}"))

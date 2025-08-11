@@ -18,6 +18,90 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+    warning,
+)
+
+# --- Compatibility shim for NumPy RNG unpickling across versions ---
+_NUMPY_RNG_UNPICKLE_PATCHED = False
+_NP_ORIGINAL_BITGEN_CTOR = None  # type: ignore[var-annotated]
+
+
+def _normalized_numpy_bitgen_ctor(bit_generator_name, state=None, *args, **kwargs):  # type: ignore[override]
+    """Module-level normalized ctor to keep picklable; avoids closures."""
+    global _NP_ORIGINAL_BITGEN_CTOR
+    name_candidate = bit_generator_name
+    try:
+        if hasattr(name_candidate, "__name__"):
+            name_candidate = name_candidate.__name__
+        elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
+            name_candidate = name_candidate.split(".")[-1].split("'>")[0]
+    except Exception:
+        pass
+
+    effective_state = kwargs.get("state", state)
+    try:
+        return _NP_ORIGINAL_BITGEN_CTOR(name_candidate, effective_state)  # type: ignore[misc]
+    except (TypeError, ValueError):
+        try:
+            return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
+        except Exception as ctor_exc:  # noqa: BLE001
+            try:
+                import numpy as _np
+
+                bitgen_cls = getattr(_np.random, name_candidate, None)
+                if bitgen_cls is None and name_candidate == "MT19937":
+                    try:
+                        import numpy.random._mt19937 as _mt  # type: ignore[attr-defined]
+
+                        bitgen_cls = getattr(_mt, "MT19937", None)
+                    except Exception:
+                        bitgen_cls = None
+                if bitgen_cls is not None:
+                    return bitgen_cls()
+            except Exception:
+                pass
+            raise ctor_exc
+
+
+def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
+    """Enable compatibility for unpickling NumPy RNG BitGenerators (idempotent)."""
+    global _NUMPY_RNG_UNPICKLE_PATCHED, _NP_ORIGINAL_BITGEN_CTOR
+    if _NUMPY_RNG_UNPICKLE_PATCHED:
+        return
+    try:
+        import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
+
+        original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
+        if original_ctor is None:
+            _NUMPY_RNG_UNPICKLE_PATCHED = True
+            return
+
+        _NP_ORIGINAL_BITGEN_CTOR = original_ctor
+        np_random_pickle.__bit_generator_ctor = _normalized_numpy_bitgen_ctor  # type: ignore[attr-defined]
+        _NUMPY_RNG_UNPICKLE_PATCHED = True
+        if logger is not None:
+            logger.info("Applied NumPy RNG unpickle compatibility shim (ModelManager)")
+    except Exception as _shim_exc:  # noqa: BLE001
+        _NUMPY_RNG_UNPICKLE_PATCHED = True
+        if logger is not None:
+            try:
+                from src.utils.warning_symbols import warning as _warn_symbol
+
+                logger.warning(
+                    _warn_symbol(
+                        f"NumPy RNG unpickle shim not applied (ModelManager): {_shim_exc}"
+                    )
+                )
+            except Exception:
+                logger.warning(
+                    f"NumPy RNG unpickle shim not applied (ModelManager): {_shim_exc}"
+                )
 
 
 class ModelManager:
@@ -74,7 +158,7 @@ class ModelManager:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for model manager")
+                self.print(invalid("Invalid configuration for model manager"))
                 return False
 
             # Initialize directories
@@ -86,8 +170,8 @@ class ModelManager:
             self.logger.info("✅ Model Manager initialization completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Model Manager initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Model Manager initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -117,8 +201,8 @@ class ModelManager:
 
             self.logger.info("Model configuration loaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error loading model configuration: {e}")
+        except Exception:
+            self.print(error("Error loading model configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -135,24 +219,24 @@ class ModelManager:
         try:
             # Validate models directory
             if not self.models_dir:
-                self.logger.error("Invalid models directory")
+                self.print(invalid("Invalid models directory"))
                 return False
 
             # Validate metadata file
             if not self.metadata_file:
-                self.logger.error("Invalid metadata file")
+                self.print(invalid("Invalid metadata file"))
                 return False
 
             # Validate max models
             if self.max_models <= 0:
-                self.logger.error("Invalid max models")
+                self.print(invalid("Invalid max models"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_file_operations(
@@ -177,8 +261,8 @@ class ModelManager:
 
             self.logger.info("Directories initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing directories: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing directories: {e}"))
 
     @handle_file_operations(
         default_return=None,
@@ -226,8 +310,8 @@ class ModelManager:
 
             self.logger.info(f"Loaded {len(self.models)} existing models")
 
-        except Exception as e:
-            self.logger.error(f"Error loading existing models: {e}")
+        except Exception:
+            self.print(error("Error loading existing models: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -257,16 +341,16 @@ class ModelManager:
         """
         try:
             if not model_name or not model_path:
-                self.logger.error("Invalid model name or path")
+                self.print(invalid("Invalid model name or path"))
                 return False
 
             if not os.path.exists(model_path):
-                self.logger.error(f"Model file not found: {model_path}")
+                self.print(missing("Model file not found: {model_path}"))
                 return False
 
             # Check if model already exists
             if model_name in self.models:
-                self.logger.warning(f"Model {model_name} already exists, overwriting")
+                self.print(warning("Model {model_name} already exists, overwriting"))
 
             # Get file info
             stat = os.stat(model_path)
@@ -299,8 +383,8 @@ class ModelManager:
             self.logger.info(f"Model {model_name} registered successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error registering model: {e}")
+        except Exception:
+            self.print(error("Error registering model: {e}"))
             return False
 
     @handle_errors(
@@ -319,8 +403,10 @@ class ModelManager:
             Optional[Any]: Loaded model or None if failed
         """
         try:
+            # Ensure NumPy RNG pickles created under different versions can be loaded
+            _enable_numpy_rng_unpickle_compat(self.logger)
             if model_name not in self.models:
-                self.logger.error(f"Model {model_name} not found")
+                self.print(missing("Model {model_name} not found"))
                 return None
 
             model_path = self.models[model_name]["path"]
@@ -340,14 +426,14 @@ class ModelManager:
 
                 model = h5py.File(model_path, "r")
             else:
-                self.logger.error(f"Unsupported model format: {model_path}")
+                self.print(error("Unsupported model format: {model_path}"))
                 return None
 
             self.logger.info(f"Model {model_name} loaded successfully")
             return model
 
-        except Exception as e:
-            self.logger.error(f"Error loading model {model_name}: {e}")
+        except Exception:
+            self.print(error("Error loading model {model_name}: {e}"))
             return None
 
     @handle_errors(
@@ -374,7 +460,7 @@ class ModelManager:
         """
         try:
             if not model_name:
-                self.logger.error("Invalid model name")
+                self.print(invalid("Invalid model name"))
                 return False
 
             # Determine file extension
@@ -385,7 +471,7 @@ class ModelManager:
             elif format == "h5":
                 extension = ".h5"
             else:
-                self.logger.error(f"Unsupported format: {format}")
+                self.print(error("Unsupported format: {format}"))
                 return False
 
             # Create model path
@@ -414,8 +500,8 @@ class ModelManager:
             self.logger.info(f"Model {model_name} saved successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error saving model {model_name}: {e}")
+        except Exception:
+            self.print(error("Error saving model {model_name}: {e}"))
             return False
 
     @handle_errors(
@@ -435,7 +521,7 @@ class ModelManager:
         """
         try:
             if model_name not in self.models:
-                self.logger.error(f"Model {model_name} not found")
+                self.print(missing("Model {model_name} not found"))
                 return False
 
             self.active_model = model_name
@@ -448,8 +534,8 @@ class ModelManager:
             self.logger.info(f"Active model set to: {model_name}")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error setting active model: {e}")
+        except Exception:
+            self.print(error("Error setting active model: {e}"))
             return False
 
     @handle_errors(
@@ -467,8 +553,8 @@ class ModelManager:
         try:
             return self.active_model
 
-        except Exception as e:
-            self.logger.error(f"Error getting active model: {e}")
+        except Exception:
+            self.print(error("Error getting active model: {e}"))
             return None
 
     @handle_file_operations(
@@ -484,8 +570,8 @@ class ModelManager:
 
             self.logger.info(f"Model metadata saved to: {metadata_path}")
 
-        except Exception as e:
-            self.logger.error(f"Error saving model metadata: {e}")
+        except Exception:
+            self.print(error("Error saving model metadata: {e}"))
 
     @handle_file_operations(
         default_return=None,
@@ -500,12 +586,12 @@ class ModelManager:
         """
         try:
             if model_name not in self.models:
-                self.logger.error(f"Model {model_name} not found")
+                self.print(missing("Model {model_name} not found"))
                 return
 
             model_path = self.models[model_name]["path"]
             if not os.path.exists(model_path):
-                self.logger.error(f"Model file not found: {model_path}")
+                self.print(missing("Model file not found: {model_path}"))
                 return
 
             # Create backup directory
@@ -523,8 +609,8 @@ class ModelManager:
 
             self.logger.info(f"Model backup created: {backup_path}")
 
-        except Exception as e:
-            self.logger.error(f"Error creating model backup: {e}")
+        except Exception:
+            self.print(error("Error creating model backup: {e}"))
 
     def get_model_status(self) -> dict[str, Any]:
         """
@@ -558,8 +644,8 @@ class ModelManager:
 
             self.logger.info("✅ Model Manager stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping model manager: {e}")
+        except Exception:
+            self.print(error("Error stopping model manager: {e}"))
 
 
 # Global model manager instance

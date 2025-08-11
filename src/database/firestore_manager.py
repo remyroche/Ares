@@ -1,10 +1,9 @@
 import asyncio
-import logging
 import os
 import uuid
 from collections.abc import Callable
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import firebase_admin
 from firebase_admin import auth, credentials, firestore
@@ -16,6 +15,14 @@ from src.utils.error_handler import (
     handle_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    missing,
+    warning,
+)
+
+if TYPE_CHECKING:
+    import logging
 
 
 class FirestoreManager:
@@ -140,7 +147,7 @@ class FirestoreManager:
     ) -> str | None:
         """Constructs the full Firestore collection path."""
         if self._app_id is None:
-            self.logger.error("App ID not set. Cannot construct collection path.")
+            self.print(error("App ID not set. Cannot construct collection path."))
             return None
 
         base_path = f"artifacts/{self._app_id}"
@@ -161,7 +168,7 @@ class FirestoreManager:
     async def _execute_blocking(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
         """Helper to run any blocking function in a thread pool."""
         if not self._firestore_enabled or not self._initialized or not self._db:
-            self.logger.warning("Firestore not available. Cannot perform operation.")
+            self.print(warning("Firestore not available. Cannot perform operation."))
             return None
 
         loop = asyncio.get_running_loop()
@@ -196,7 +203,8 @@ class FirestoreManager:
                 doc_ref = self._db.collection(collection_path).document(str(doc_id))
                 doc_ref.set(data)
             else:
-                raise RuntimeError("Firestore client not available.")
+                msg = "Firestore client not available."
+                raise RuntimeError(msg)
 
         result = await self._execute_blocking(_blocking_op)
         if result is not None:
@@ -231,13 +239,14 @@ class FirestoreManager:
                 doc_ref = self._db.collection(collection_path).document(str(doc_id))
                 doc = doc_ref.get()
                 return doc.to_dict() if doc.exists else None
-            raise RuntimeError("Firestore client not available.")
+            msg = "Firestore client not available."
+            raise RuntimeError(msg)
 
         result = await self._execute_blocking(_blocking_op)
         if result is not None:
             self.logger.debug(f"Document {doc_id} retrieved from {collection_name}.")
         else:
-            self.logger.warning(f"Document {doc_id} not found in {collection_name}.")
+            self.print(missing("Document {doc_id} not found in {collection_name}."))
         return result
 
     @handle_errors(
@@ -266,7 +275,8 @@ class FirestoreManager:
             if self._db:
                 doc_ref = self._db.collection(collection_path).add(data)
                 return doc_ref[1].id  # Return the ID of the newly created document
-            raise RuntimeError("Firestore client not available.")
+            msg = "Firestore client not available."
+            raise RuntimeError(msg)
 
         doc_id = await self._execute_blocking(_blocking_op)
         if doc_id:
@@ -304,7 +314,8 @@ class FirestoreManager:
                 return [
                     {**doc.to_dict(), "id": doc.id} for doc in collection_ref.stream()
                 ]
-            raise RuntimeError("Firestore client not available.")
+            msg = "Firestore client not available."
+            raise RuntimeError(msg)
 
         docs = await self._execute_blocking(_blocking_op)
         if docs:
@@ -338,7 +349,8 @@ class FirestoreManager:
             if self._db:
                 self._db.collection(collection_path).document(str(doc_id)).delete()
             else:
-                raise RuntimeError("Firestore client not available.")
+                msg = "Firestore client not available."
+                raise RuntimeError(msg)
 
         result = await self._execute_blocking(_blocking_op)
         if result is not None:

@@ -7,6 +7,20 @@ in src/config.py for enhanced hyperparameter optimization and computational opti
 """
 
 import asyncio
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 import logging
 import os
 import sys
@@ -45,8 +59,9 @@ class ConfigurationUsageExample:
             ]
             for section in required_sections:
                 if section not in self.config:
+                    msg = f"Missing required configuration section: {section}"
                     raise ValueError(
-                        f"Missing required configuration section: {section}",
+                        msg,
                     )
 
             # Validate hyperparameter optimization
@@ -56,7 +71,7 @@ class ConfigurationUsageExample:
                 and not hpo_config["bayesian_optimization"]["enabled"]
                 and not hpo_config["adaptive_optimization"]["enabled"]
             ):
-                logger.warning("All optimization types are disabled")
+                print(warning("All optimization types are disabled")))
 
             # Validate computational optimization
             comp_config = self.comp_config
@@ -64,13 +79,13 @@ class ConfigurationUsageExample:
                 not comp_config["caching"]["enabled"]
                 and not comp_config["parallelization"]["enabled"]
             ):
-                logger.warning("All computational optimizations are disabled")
+                print(warning("All computational optimizations are disabled")))
 
             logger.info("Configuration validation passed")
             return True
 
         except Exception as e:
-            logger.error(f"Configuration validation failed: {e}")
+            print(failed("Configuration validation failed: {e}")))
             return False
 
     def print_configuration_summary(self):
@@ -190,7 +205,7 @@ class ConfigurationUsageExample:
             for constraint, value in risk_constraints.items():
                 print(f"  {constraint}: {value}")
         else:
-            print("❌ Multi-objective optimization is disabled")
+            print(warning("Multi-objective optimization is disabled")))
 
     def demonstrate_bayesian_config(self):
         """Demonstrate Bayesian optimization configuration usage"""
@@ -222,7 +237,7 @@ class ConfigurationUsageExample:
                     elif isinstance(param_config, dict) and "choices" in param_config:
                         print(f"    {param_name}: {param_config['choices']}")
         else:
-            print("❌ Bayesian optimization is disabled")
+            print(warning("Bayesian optimization is disabled")))
 
     def demonstrate_adaptive_config(self):
         """Demonstrate adaptive optimization configuration usage"""
@@ -250,7 +265,7 @@ class ConfigurationUsageExample:
                 for constraint_name, constraint_range in constraints.items():
                     print(f"    {constraint_name}: {constraint_range}")
         else:
-            print("❌ Adaptive optimization is disabled")
+            print(warning("Adaptive optimization is disabled")))
 
     def demonstrate_computational_config(self):
         """Demonstrate computational optimization configuration usage"""
@@ -267,7 +282,7 @@ class ConfigurationUsageExample:
             print(f"  Max cache size: {caching_config['max_cache_size']} entries")
             print(f"  Cache TTL: {caching_config['cache_ttl']} seconds")
         else:
-            print("❌ Caching is disabled")
+            print(warning("Caching is disabled")))
 
         # Parallelization
         parallel_config = comp_config["parallelization"]
@@ -314,7 +329,7 @@ class ConfigurationUsageExample:
             # This would normally use real market data
             mock_market_data = {"symbol": "ETHUSDT", "data": []}
 
-            optimizer = MultiObjectiveOptimizer(
+            MultiObjectiveOptimizer(
                 config=self.hpo_config,
                 market_data=mock_market_data,
             )
@@ -325,12 +340,12 @@ class ConfigurationUsageExample:
             print("  Weights: 50%, 30%, 20% respectively")
 
         except Exception as e:
-            print(f"❌ Error initializing multi-objective optimizer: {e}")
+            print(initialization_error("Error initializing multi-objective optimizer: {e}")))
 
         # Example 2: Bayesian optimization
         print("\n🔍 Example 2: Bayesian Optimization")
         try:
-            bayesian_optimizer = AdvancedBayesianOptimizer(
+            AdvancedBayesianOptimizer(
                 config=self.hpo_config["bayesian_optimization"],
                 search_space=self.hpo_config["search_spaces"],
             )
@@ -344,12 +359,12 @@ class ConfigurationUsageExample:
             )
 
         except Exception as e:
-            print(f"❌ Error initializing Bayesian optimizer: {e}")
+            print(initialization_error("Error initializing Bayesian optimizer: {e}")))
 
         # Example 3: Computational optimization
         print("\n⚡ Example 3: Computational Optimization")
         try:
-            backtester = OptimizedBacktester(
+            OptimizedBacktester(
                 market_data=mock_market_data,
                 config=self.comp_config,
             )
@@ -366,7 +381,7 @@ class ConfigurationUsageExample:
             )
 
         except Exception as e:
-            print(f"❌ Error initializing optimized backtester: {e}")
+            print(initialization_error("Error initializing optimized backtester: {e}")))
 
     def demonstrate_configuration_modification(self):
         """Demonstrate how to modify configuration settings"""
@@ -421,7 +436,7 @@ class ConfigurationUsageExample:
 
         # Validate configuration
         if not self.validate_configuration():
-            print("❌ Configuration validation failed. Exiting.")
+            print(failed("Configuration validation failed. Exiting.")))
             return False
 
         # Print configuration summary
@@ -464,7 +479,7 @@ def main():
             sys.exit(1)
 
     except Exception as e:
-        logger.error(f"Error running configuration usage example: {e}")
+        print(error("Error running configuration usage example: {e}")))
         sys.exit(1)
 
 

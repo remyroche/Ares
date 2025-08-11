@@ -588,6 +588,12 @@ class VectorizedAdvancedFeatureEngineering:
                 volatility_features = await self.volatility_model.model_volatility_vectorized(
                     price_data,
                 )
+                # Ensure consistent numeric typing for downstream validation
+                if "volatility_regime" in volatility_features:
+                    vr = volatility_features["volatility_regime"]
+                    if isinstance(vr, str):
+                        mapping = {"low": 0, "medium": 1, "high": 2}
+                        volatility_features["volatility_regime"] = mapping.get(vr, 1)
                 features.update(volatility_features)
 
             # Correlation analysis features
@@ -950,13 +956,35 @@ class VectorizedAdvancedFeatureEngineering:
     def _select_optimal_features_vectorized(self, features: dict[str, Any]) -> dict[str, Any]:
         """Select optimal features using vectorized operations."""
         try:
-            # Simple feature selection based on variance
-            selected_features = {}
-            
+            # Enhanced feature selection - be less restrictive to allow more engineered features
+            selected_features: dict[str, Any] = {}
             for feature_name, feature_value in features.items():
-                if isinstance(feature_value, (int, float)) and not np.isnan(feature_value):
+                # Accept all array-like features (numpy arrays, pandas series, lists)
+                if isinstance(feature_value, (np.ndarray, pd.Series, list)):
                     selected_features[feature_name] = feature_value
+                # Accept numeric scalars that are finite
+                elif isinstance(feature_value, (int, float)):
+                    if not (np.isnan(feature_value) or np.isinf(feature_value)):
+                        selected_features[feature_name] = float(feature_value)
+                # Accept string features (e.g., regime labels)
+                elif isinstance(feature_value, str):
+                    selected_features[feature_name] = feature_value
+                # Accept boolean features
+                elif isinstance(feature_value, bool):
+                    selected_features[feature_name] = feature_value
+                # For other types, try to convert to a usable format
+                else:
+                    try:
+                        # Try to convert to numpy array
+                        arr = np.asarray(feature_value)
+                        if arr.size > 0:  # Only include if it has content
+                            selected_features[feature_name] = arr
+                    except Exception:
+                        # If conversion fails, skip this feature
+                        self.logger.debug(f"Skipping feature '{feature_name}' with type {type(feature_value)}")
+                        continue
             
+            self.logger.info(f"✅ Selected {len(selected_features)} features from {len(features)} total features")
             return selected_features
 
         except Exception as e:
@@ -1224,23 +1252,62 @@ class VectorizedAdvancedFeatureEngineering:
     ) -> dict[str, Any]:
         """Generate meta labels using vectorized operations."""
         try:
-            features = {}
-
-            # Meta-labeling based on volatility regime
-            volatility = price_data["close"].pct_change().rolling(window=20).std()
-            features["volatility_regime"] = 1 if volatility.iloc[-1] > volatility.quantile(0.75) else 0
-
-            # Meta-labeling based on volume regime
-            volume_ma = volume_data["volume"].rolling(window=20).mean()
-            features["volume_regime"] = 1 if volume_data["volume"].iloc[-1] > volume_ma.iloc[-1] else 0
-
-            # Meta-labeling based on trend regime
+            n = len(price_data)
+            if n == 0:
+                return {}
+ 
+            # Volatility regime per row
+            vol = price_data["close"].pct_change().rolling(window=20).std()
+            # Create 5-bin categorical regimes using quantiles. Handle duplicates.
+            try:
+                vol_bins = pd.qcut(vol.fillna(0), q=5, labels=False, duplicates="drop")
+            except Exception:
+                vol_bins = pd.Series(np.zeros(n, dtype=int), index=vol.index)
+            vol_regime_series = vol_bins.fillna(0).astype(int)
+ 
+            # Volume regime per row
+            vol_ma = volume_data["volume"].rolling(window=20).mean()
+            volume_ratio = (volume_data["volume"] / (vol_ma.replace(0, np.nan))).fillna(0)
+            # Create 5-bin categorical regimes using quantiles. Handle duplicates.
+            try:
+                volreg_bins = pd.qcut(volume_ratio, q=5, labels=False, duplicates="drop")
+            except Exception:
+                volreg_bins = pd.Series(np.zeros(n, dtype=int), index=volume_ratio.index)
+            volume_regime_series = volreg_bins.fillna(0).astype(int)
+ 
+            # Trend regime per row
             sma_short = price_data["close"].rolling(window=10).mean()
             sma_long = price_data["close"].rolling(window=30).mean()
-            features["trend_regime"] = 1 if sma_short.iloc[-1] > sma_long.iloc[-1] else 0
-
-            return features
-
+            trend_strength = (sma_short - sma_long)
+            # Create 5-bin categorical regimes using quantiles. Handle duplicates.
+            try:
+                trend_bins = pd.qcut(trend_strength.fillna(0), q=5, labels=False, duplicates="drop")
+            except Exception:
+                trend_bins = pd.Series(np.zeros(n, dtype=int), index=trend_strength.index)
+            trend_regime_series = trend_bins.fillna(0).astype(int)
+ 
+            # Diagnostics: log variability and distributions
+            try:
+                for name, series in {
+                    "volatility_regime": vol_regime_series,
+                    "volume_regime": volume_regime_series,
+                    "trend_regime": trend_regime_series,
+                }.items():
+                    unique_vals = pd.Series(series).nunique(dropna=True)
+                    if unique_vals < 5:
+                        self.logger.warning(
+                            f"Meta label '{name}' has low variability: {unique_vals} unique bins (<5). "
+                            f"value_counts={pd.Series(series).value_counts().to_dict()}"
+                        )
+            except Exception:
+                pass
+ 
+            return {
+                "volatility_regime": vol_regime_series.values,
+                "volume_regime": volume_regime_series.values,
+                "trend_regime": trend_regime_series.values,
+            }
+ 
         except Exception as e:
             self.logger.error(f"Error generating meta labels: {e}")
             return {}
@@ -1645,8 +1712,8 @@ class VectorizedCandlestickPatternAnalyzer:
 
             # Bullish engulfing conditions
             bullish_engulfing = (
-                current_is_bullish &
-                ~previous_is_bullish &
+                current_is_bullish.astype(bool) &
+                (~previous_is_bullish.astype(bool)) &
                 (current_open < previous_close) &
                 (current_close > previous_open) &
                 (current_body_size > previous_body_size * self.engulfing_ratio)
@@ -1654,8 +1721,8 @@ class VectorizedCandlestickPatternAnalyzer:
 
             # Bearish engulfing conditions
             bearish_engulfing = (
-                ~current_is_bullish &
-                previous_is_bullish &
+                (~current_is_bullish.astype(bool)) &
+                previous_is_bullish.astype(bool) &
                 (current_open > previous_close) &
                 (current_close < previous_open) &
                 (current_body_size > previous_body_size * self.engulfing_ratio)
@@ -2168,7 +2235,7 @@ class VectorizedWaveletTransformAnalyzer:
         self.scale_resolution = self.wavelet_config.get("scale_resolution", "octave")
         
         # Feature dimensionality management
-        self.max_features_per_wavelet = self.wavelet_config.get("max_features_per_wavelet", 20)
+        self.max_features_per_wavelet = self.wavelet_config.get("max_features_per_wavelet", 40)
         self.feature_selection_method = self.wavelet_config.get("feature_selection_method", "variance")
         self.min_feature_variance = self.wavelet_config.get("min_feature_variance", 1e-6)
         

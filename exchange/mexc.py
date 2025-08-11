@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import datetime
 from functools import wraps
@@ -6,6 +7,7 @@ from typing import Any
 
 import aiohttp
 import ccxt.async_support as ccxt
+import websockets
 from ccxt.base.errors import (
     DDoSProtection,
     ExchangeError,
@@ -17,11 +19,22 @@ from ccxt.base.errors import (
 from src.interfaces.base_interfaces import MarketData
 from src.utils.error_handler import handle_network_operations
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 from .base_exchange import BaseExchange
-
-import json
-import websockets
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +56,10 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                 except (RateLimitExceeded, DDoSProtection) as e:
                     retries += 1
                     if retries >= max_retries:
-                        logger.error(
+                        logger.exception(
                             f"API Rate Limit Exceeded. Max retries reached for {func.__name__}. Error: {e}",
                         )
-                        raise e
+                        raise
                     logger.warning(
                         f"API Rate Limit Exceeded for {func.__name__}. "
                         f"Retrying in {backoff:.2f} seconds... (Attempt {retries}/{max_retries})",
@@ -56,10 +69,10 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                 except (ExchangeNotAvailable, RequestTimeout) as e:
                     retries += 1
                     if retries >= max_retries:
-                        logger.error(
+                        logger.exception(
                             f"Exchange not available or request timed out. Max retries reached for {func.__name__}. Error: {e}",
                         )
-                        raise e
+                        raise
                     logger.warning(
                         f"Exchange not available or request timed out for {func.__name__}. "
                         f"Retrying in {backoff:.2f} seconds... (Attempt {retries}/{max_retries})",
@@ -72,18 +85,19 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                     )
                     retries += 1
                     if retries >= max_retries:
-                        logger.error(
+                        logger.exception(
                             f"Max retries reached for {func.__name__} after multiple exchange errors. Last error: {e}",
                         )
-                        raise e
+                        raise
                     await asyncio.sleep(backoff)
                     backoff *= 2
                 except Exception as e:
-                    logger.error(
+                    logger.exception(
                         f"An unexpected error occurred in {func.__name__}: {e}",
                     )
-                    raise e
-            raise Exception(f"Exhausted retries for {func.__name__}")
+                    raise
+            msg = f"Exhausted retries for {func.__name__}"
+            raise Exception(msg)
 
         return wrapper
 
@@ -123,17 +137,15 @@ class MexcExchange(BaseExchange):
         """Get kline/candlestick data for a symbol."""
         try:
             market_id = await self._get_market_id(symbol)
-            ohlcv = await self.exchange.fetch_ohlcv(
+            return await self.exchange.fetch_ohlcv(
                 market_id,
                 timeframe=interval,
                 limit=limit,
             )
             # Return raw CCXT OHLCV (list of lists) for standardized conversion
-            return ohlcv
         except Exception as e:
-            logger.error(f"Error fetching klines from MEXC for {symbol}: {e}")
+            print(error("Error fetching klines from MEXC for {symbol}: {e}"))
             return []
-
 
     @retry_on_rate_limit()
     @handle_network_operations(max_retries=3, default_return=[])
@@ -187,7 +199,7 @@ class MexcExchange(BaseExchange):
 
             return all_klines
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Error fetching historical klines from MEXC for {symbol}: {e}",
             )
             return []
@@ -301,10 +313,10 @@ class MexcExchange(BaseExchange):
                         f"   ✅ Successfully collected {len(all_trades)} aggregated trades from MEXC API",
                     )
                     return all_trades
-                logger.warning("   ⚠️ No trades collected from MEXC API")
+                print(warning("   ⚠️ No trades collected from MEXC API"))
 
             except Exception as http_error:
-                logger.warning(f"Direct HTTP API failed: {http_error}")
+                print(failed("Direct HTTP API failed: {http_error}"))
 
             # Fallback to CCXT fetch_trades with pagination
             logger.info("   🔄 Falling back to CCXT fetch_trades with pagination")
@@ -359,14 +371,14 @@ class MexcExchange(BaseExchange):
                     await asyncio.sleep(0.1)  # Rate limiting
 
                 except Exception as e:
-                    logger.error(f"   ❌ Error in CCXT fallback: {e}")
+                    print(error("   ❌ Error in CCXT fallback: {e}"))
                     break
 
             logger.info(f"   📈 Total trades collected: {len(all_trades)}")
             return all_trades
 
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Error fetching historical trades from MEXC for {symbol}: {e}",
             )
             return []
@@ -418,11 +430,11 @@ class MexcExchange(BaseExchange):
 
                 print(f"✅ MEXC: Created {len(trades)} synthetic trades from klines")
                 return trades
-            print("⚠️ MEXC: No klines available for synthetic data")
+            print(warning("MEXC: No klines available for synthetic data"))
             return []
 
         except Exception as e:
-            print(f"❌ MEXC: Error in get_historical_agg_trades: {e}")
+            print(warning("MEXC: Error in get_historical_agg_trades: {e}"))
             return []
 
     @retry_on_rate_limit()
@@ -435,7 +447,7 @@ class MexcExchange(BaseExchange):
     ) -> list[dict[str, Any]]:
         """Get historical futures data (funding rates) for a symbol within a time range."""
         try:
-            market_id = await self._get_market_id(symbol)
+            await self._get_market_id(symbol)
             since = start_time_ms
 
             logger.info(
@@ -539,11 +551,11 @@ class MexcExchange(BaseExchange):
                                         f"   ⚠️ {endpoint['name']} failed with status {response.status}: {text[:200]}",
                                     )
                     except Exception as e:
-                        logger.warning(f"   ⚠️ {endpoint['name']} failed: {e}")
+                        print(failed("   ⚠️ {endpoint['name']} failed: {e}"))
                         continue
 
             except Exception as http_error:
-                logger.warning(f"Direct HTTP API failed: {http_error}")
+                print(failed("Direct HTTP API failed: {http_error}"))
 
             # Fallback: MEXC doesn't have direct funding rate endpoint
             logger.info(
@@ -552,7 +564,7 @@ class MexcExchange(BaseExchange):
             return []
 
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Error fetching historical futures data from MEXC for {symbol}: {e}",
             )
             return []
@@ -583,7 +595,7 @@ class MexcExchange(BaseExchange):
                 params,
             )
         except Exception as e:
-            logger.error(f"Error creating order on MEXC for {symbol}: {e}")
+            print(error("Error creating order on MEXC for {symbol}: {e}"))
             return {"error": str(e), "status": "failed"}
 
     @retry_on_rate_limit()
@@ -597,7 +609,7 @@ class MexcExchange(BaseExchange):
             market_id = await self._get_market_id(symbol)
             return await self.exchange.fetch_order(order_id, market_id)
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to get status for order {order_id} on MEXC {symbol}: {e}",
             )
             return {"error": str(e)}
@@ -613,7 +625,7 @@ class MexcExchange(BaseExchange):
             market_id = await self._get_market_id(symbol)
             return await self.exchange.cancel_order(order_id, market_id)
         except Exception as e:
-            logger.error(f"Failed to cancel order {order_id} on MEXC {symbol}: {e}")
+            print(failed("Failed to cancel order {order_id} on MEXC {symbol}: {e}"))
             return {"error": str(e)}
 
     @retry_on_rate_limit()
@@ -626,7 +638,7 @@ class MexcExchange(BaseExchange):
         try:
             return await self.exchange.fetch_balance(params={"type": "swap"})
         except Exception as e:
-            logger.error(f"Failed to get account info from MEXC: {e}")
+            print(failed("Failed to get account info from MEXC: {e}"))
             return {"error": str(e)}
 
     @retry_on_rate_limit()
@@ -639,7 +651,7 @@ class MexcExchange(BaseExchange):
                 [market_id] if market_id else None,
             )
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to get position risk from MEXC for {symbol or 'all symbols'}: {e}",
             )
             return []
@@ -652,7 +664,7 @@ class MexcExchange(BaseExchange):
             market_id = await self._get_market_id(symbol) if symbol else None
             return await self.exchange.fetch_open_orders(market_id)
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to get open orders from MEXC for {symbol or 'all symbols'}: {e}",
             )
             return []
@@ -692,7 +704,7 @@ class MexcExchange(BaseExchange):
                 )
                 market_data_list.append(market_data)
             except (IndexError, ValueError, TypeError) as e:
-                logger.warning(f"Failed to convert candle data: {e}. Candle: {candle}")
+                print(failed("Failed to convert candle data: {e}. Candle: {candle}"))
                 continue
         return market_data_list
 
@@ -764,7 +776,7 @@ class MexcExchange(BaseExchange):
 
             return all_ohlcv
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Error fetching historical klines from MEXC for {symbol}: {e}",
             )
             return []
@@ -1153,11 +1165,11 @@ class MexcExchange(BaseExchange):
                         f"   📊 Pagination summary: {total_calls} API calls made, {len(all_trades)} total trades collected",
                     )
                     return all_trades
-                logger.warning("   ⚠️ No trades collected from MEXC public APIs")
+                print(warning("   ⚠️ No trades collected from MEXC public APIs"))
                 print("   ⚠️ No trades collected from MEXC public APIs")
 
             except Exception as http_error:
-                logger.warning(f"Public API methods failed: {http_error}")
+                print(failed("Public API methods failed: {http_error}"))
 
             # Method 2: Enhanced CCXT fallback with better error handling
             logger.info(
@@ -1313,7 +1325,7 @@ class MexcExchange(BaseExchange):
                         await asyncio.sleep(0.3)  # Rate limiting
 
                     except Exception as e:
-                        logger.error(f"   ❌ Error in CCXT fallback iteration: {e}")
+                        print(error("   ❌ Error in CCXT fallback iteration: {e}"))
                         since += 3600000  # Advance by 1 hour on error
                         total_calls += 1
                         await asyncio.sleep(1)  # Wait before retry
@@ -1323,10 +1335,10 @@ class MexcExchange(BaseExchange):
                         f"   ✅ Successfully collected {len(all_trades)} trades from CCXT fallback",
                     )
                     return all_trades
-                logger.warning("   ⚠️ No trades collected from CCXT fallback")
+                print(warning("   ⚠️ No trades collected from CCXT fallback"))
 
             except Exception as ccxt_error:
-                logger.error(f"   ❌ CCXT fallback completely failed: {ccxt_error}")
+                print(failed("   ❌ CCXT fallback completely failed: {ccxt_error}"))
 
             logger.info(f"   📈 Total trades collected: {len(all_trades)}")
 
@@ -1354,7 +1366,7 @@ class MexcExchange(BaseExchange):
             return all_trades
 
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Error fetching historical trades from MEXC for {symbol}: {e}",
             )
             # Return a minimal dataset to prevent complete failure
@@ -1389,7 +1401,7 @@ class MexcExchange(BaseExchange):
             market_id = await self._get_market_id(symbol)
             return await self.exchange.fetch_order(order_id, market_id)
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to get status for order {order_id} on MEXC {symbol}: {e}",
             )
             return {"error": str(e)}
@@ -1409,14 +1421,19 @@ class MexcExchange(BaseExchange):
                         async for raw in ws:
                             try:
                                 msg = json.loads(raw)
-                                if msg.get("channel") == "push.deal" and msg.get("symbol") == market_id:
+                                if (
+                                    msg.get("channel") == "push.deal"
+                                    and msg.get("symbol") == market_id
+                                ):
                                     for t in msg.get("data", []):
                                         std = {
                                             "type": "trade",
                                             "symbol": symbol,
                                             "price": float(t.get("p")),
                                             "qty": float(t.get("v")),
-                                            "side": "buy" if t.get("T") == 1 else "sell",
+                                            "side": "buy"
+                                            if t.get("T") == 1
+                                            else "sell",
                                             "timestamp": int(t.get("t", 0)),
                                         }
                                         await callback(std)
@@ -1424,7 +1441,9 @@ class MexcExchange(BaseExchange):
                                 continue
                 except Exception:
                     await asyncio.sleep(3)
+
         import asyncio
+
         await _run()
 
     async def subscribe_ticker(self, symbol: str, callback):
@@ -1440,14 +1459,23 @@ class MexcExchange(BaseExchange):
                         async for raw in ws:
                             try:
                                 msg = json.loads(raw)
-                                if msg.get("channel") == "push.ticker" and msg.get("symbol") == market_id:
+                                if (
+                                    msg.get("channel") == "push.ticker"
+                                    and msg.get("symbol") == market_id
+                                ):
                                     t = msg.get("data", {})
                                     std = {
                                         "type": "ticker",
                                         "symbol": symbol,
-                                        "last": float(t.get("lastPrice")) if t.get("lastPrice") is not None else None,
-                                        "bid": float(t.get("bid1")) if t.get("bid1") is not None else None,
-                                        "ask": float(t.get("ask1")) if t.get("ask1") is not None else None,
+                                        "last": float(t.get("lastPrice"))
+                                        if t.get("lastPrice") is not None
+                                        else None,
+                                        "bid": float(t.get("bid1"))
+                                        if t.get("bid1") is not None
+                                        else None,
+                                        "ask": float(t.get("ask1"))
+                                        if t.get("ask1") is not None
+                                        else None,
                                         "timestamp": int(t.get("time", 0)),
                                     }
                                     await callback(std)
@@ -1455,7 +1483,9 @@ class MexcExchange(BaseExchange):
                                 continue
                 except Exception:
                     await asyncio.sleep(3)
+
         import asyncio
+
         await _run()
 
     async def subscribe_order_book(self, symbol: str, callback):
@@ -1471,7 +1501,10 @@ class MexcExchange(BaseExchange):
                         async for raw in ws:
                             try:
                                 msg = json.loads(raw)
-                                if msg.get("channel") == "push.depth" and msg.get("symbol") == market_id:
+                                if (
+                                    msg.get("channel") == "push.depth"
+                                    and msg.get("symbol") == market_id
+                                ):
                                     d = msg.get("data", {})
                                     bids = d.get("bids") or []
                                     asks = d.get("asks") or []
@@ -1489,7 +1522,9 @@ class MexcExchange(BaseExchange):
                                 continue
                 except Exception:
                     await asyncio.sleep(3)
+
         import asyncio
+
         await _run()
 
     async def get_historical_agg_trades_ccxt(
@@ -1517,7 +1552,7 @@ class MexcExchange(BaseExchange):
             return result
 
         except Exception as e:
-            logger.error(f"❌ MEXC: get_historical_agg_trades_ccxt failed: {e}")
+            print(failed("❌ MEXC: get_historical_agg_trades_ccxt failed: {e}"))
             return []
 
     async def get_historical_klines_ccxt(
@@ -1567,7 +1602,7 @@ class MexcExchange(BaseExchange):
             return klines
 
         except Exception as e:
-            logger.error(f"❌ MEXC: get_historical_klines_ccxt failed: {e}")
+            print(failed("❌ MEXC: get_historical_klines_ccxt failed: {e}"))
             return []
 
     def _get_interval_ms(self, interval: str) -> int:

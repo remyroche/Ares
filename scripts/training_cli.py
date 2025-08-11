@@ -55,6 +55,20 @@ from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager  # Import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.logger import setup_logging, system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 class TrainingCLI:
@@ -149,32 +163,32 @@ class TrainingCLI:
             )
 
             total_duration = time.time() - start_time
-            self.logger.error("📊 Full training summary:")
-            self.logger.error(f"   Symbol: {symbol}")
-            self.logger.error(f"   Exchange: {exchange_name}")
-            self.logger.error("   MLflow Run ID: None")
+            self.print(error("📊 Full training summary:")))
+            self.print(error("   Symbol: {symbol}")))
+            self.print(error("   Exchange: {exchange_name}")))
+            self.print(error("   MLflow Run ID: None")))
             self.logger.error(
                 f"   Training duration: {training_duration:.2f} seconds",
             )
-            self.logger.error(f"   Total duration: {total_duration:.2f} seconds")
-            self.logger.error("   Status: FAILED")
+            self.print(error("   Total duration: {total_duration:.2f} seconds")))
+            self.print(failed("   Status: FAILED")))
 
             return False
 
         except Exception as e:
             total_duration = time.time() - start_time
-            self.logger.error(f"💥 Full training failed: {e}")
-            self.logger.error(f"Error type: {type(e).__name__}")
-            self.logger.error("Full traceback:")
-            self.logger.error(traceback.format_exc())
+            self.print(failed("💥 Full training failed: {e}")))
+            self.print(error("Error type: {type(e).__name__}")))
+            self.print(error("Full traceback:")))
+            self.logger.exception(traceback.format_exc())
 
-            self.logger.error("📊 Error context:")
-            self.logger.error(f"   Symbol: {symbol}")
-            self.logger.error(f"   Exchange: {exchange_name}")
-            self.logger.error(f"   Duration: {total_duration:.2f} seconds")
-            self.logger.error(f"   Error: {str(e)}")
+            self.print(error("📊 Error context:")))
+            self.print(error("   Symbol: {symbol}")))
+            self.print(error("   Exchange: {exchange_name}")))
+            self.print(error("   Duration: {total_duration:.2f} seconds")))
+            self.print(error("   Error: {str(e)}")))
 
-            print(f"❌ Training error: {e}")
+            print(warning("Training error: {e}")))
             return False
         finally:
             self.logger.info("🔧 Closing database connection...")
@@ -200,11 +214,11 @@ class TrainingCLI:
         try:
             return await self.run_full_training(symbol, exchange_name)
         except Exception as e:
-            self.logger.error(f"💥 Model retraining failed: {e}")
-            self.logger.error(f"Error type: {type(e).__name__}")
-            self.logger.error("Full traceback:")
-            self.logger.error(traceback.format_exc())
-            print(f"❌ Retraining error: {e}")
+            self.print(failed("💥 Model retraining failed: {e}")))
+            self.print(error("Error type: {type(e).__name__}")))
+            self.print(error("Full traceback:")))
+            self.logger.exception(traceback.format_exc())
+            print(warning("Retraining error: {e}")))
             return False
 
     async def run_full_test_run(self, symbol: str, exchange_name: str = "BINANCE"):
@@ -236,7 +250,7 @@ class TrainingCLI:
         )
 
         if not training_success:
-            self.logger.error("💥 Full training failed. Aborting full test run.")
+            self.print(failed("💥 Full training failed. Aborting full test run.")))
             return
 
         self.logger.info("✅ STEP 1/2 Complete: Training Successful!")
@@ -362,15 +376,15 @@ class TrainingCLI:
 
         except Exception as e:
             backtest_duration = time.time() - backtest_start_time
-            self.logger.error(f"💥 Backtesting failed during full test run: {e}")
-            self.logger.error(f"Error type: {type(e).__name__}")
-            self.logger.error("Full traceback:")
-            self.logger.error(traceback.format_exc())
-            self.logger.error("📊 Backtest error context:")
-            self.logger.error(f"   Duration: {backtest_duration:.2f} seconds")
-            self.logger.error(f"   Error: {str(e)}")
+            self.print(failed("💥 Backtesting failed during full test run: {e}")))
+            self.print(error("Error type: {type(e).__name__}")))
+            self.print(error("Full traceback:")))
+            self.logger.exception(traceback.format_exc())
+            self.print(error("📊 Backtest error context:")))
+            self.print(error("   Duration: {backtest_duration:.2f} seconds")))
+            self.print(error("   Error: {str(e)}")))
 
-            print(f"❌ Backtesting failed: {e}")
+            print(failed("Backtesting failed: {e}")))
             return
         finally:
             backtest_duration = time.time() - backtest_start_time
@@ -571,7 +585,7 @@ def get_symbols_to_process(argv: list) -> list[tuple[str, str]]:
         for token in tokens:
             symbols_list.append((token, exchange))
     if not symbols_list:
-        system_logger.warning("No supported tokens found in configuration.")
+        system_print(warning("No supported tokens found in configuration.")))
     return symbols_list
 
 
@@ -592,7 +606,7 @@ async def main():
     logger.info(f"Working directory: {Path.cwd()}")
 
     if len(sys.argv) < 2:
-        logger.warning("❌ No command provided, showing usage")
+        print(warning("❌ No command provided, showing usage")))
         print_usage()
         sys.exit(1)
 
@@ -605,7 +619,7 @@ async def main():
         if command in ["train", "retrain", "full-test-run"]:
             symbols_to_process = get_symbols_to_process(sys.argv)
             if not symbols_to_process:
-                logger.error("No symbols to process. Exiting.")
+                print(error("No symbols to process. Exiting.")))
                 sys.exit(1)
 
             if len(sys.argv) < 3:
@@ -658,22 +672,22 @@ async def main():
         # as they are now handled by src/training/regularization.py
 
         else:
-            logger.error(f"❌ Unknown command: {command}")
-            print(f"❌ Unknown command: {command}")
+            print(error("❌ Unknown command: {command}")))
+            print(warning("Unknown command: {command}")))
             print_usage()
             sys.exit(1)
 
     except Exception as e:
         total_duration = time.time() - start_time
-        logger.critical(f"💥 CRITICAL ERROR in main execution: {e}")
-        logger.critical(f"Error type: {type(e).__name__}")
-        logger.critical("Full traceback:")
+        print(execution_error("💥 CRITICAL ERROR in main execution: {e}")))
+        print(error("Error type: {type(e).__name__}")))
+        print(error("Full traceback:")))
         logger.critical(traceback.format_exc())
-        logger.critical("📊 Error context:")
-        logger.critical(f"   Command: {command}")
-        logger.critical(f"   Arguments: {sys.argv}")
-        logger.critical(f"   Duration: {total_duration:.2f} seconds")
-        logger.critical(f"   Error: {str(e)}")
+        print(error("📊 Error context:")))
+        print(error("   Command: {command}")))
+        print(error("   Arguments: {sys.argv}")))
+        print(error("   Duration: {total_duration:.2f} seconds")))
+        print(error("   Error: {str(e)}")))
 
         print(f"\n💥 Unexpected error: {e}")
         sys.exit(1)

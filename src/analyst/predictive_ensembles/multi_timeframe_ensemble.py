@@ -22,6 +22,11 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    warning,
+)
 
 
 class MultiTimeframeEnsemble:
@@ -149,7 +154,7 @@ class MultiTimeframeEnsemble:
                         f"avg confidence: {np.mean(confidences):.3f}",
                     )
                 else:
-                    self.logger.error(f"❌ {timeframe} training failed")
+                    self.print(failed("❌ {timeframe} training failed"))
                     training_stats[timeframe] = {
                         "training_time": tf_training_time,
                         "success": False,
@@ -197,18 +202,18 @@ class MultiTimeframeEnsemble:
                                 f"avg confidence: {stats['avg_confidence']:.3f}",
                             )
                         else:
-                            self.logger.warning(f"   - {tf}: FAILED")
+                            self.print(failed("   - {tf}: FAILED"))
 
                     return True
-                self.logger.error("❌ Meta-learner training failed")
+                self.print(failed("❌ Meta-learner training failed"))
                 return False
             self.logger.error(
                 f"❌ Insufficient timeframes ({len(timeframe_predictions)}) for meta-learner training",
             )
             return False
 
-        except Exception as e:
-            self.logger.error(f"💥 Error in multi-timeframe ensemble training: {e}")
+        except Exception:
+            self.print(error("💥 Error in multi-timeframe ensemble training: {e}"))
             return False
 
     def _train_single_timeframe(
@@ -227,7 +232,7 @@ class MultiTimeframeEnsemble:
             X, y = self._prepare_features_target(data)
 
             if len(X) == 0:
-                self.logger.warning(f"⚠️ No valid data for {timeframe}")
+                self.print(warning("⚠️ No valid data for {timeframe}"))
                 return False
 
             self.logger.info(f"📊 Features shape: {X.shape}")
@@ -241,7 +246,7 @@ class MultiTimeframeEnsemble:
             elif model_type == "random_forest":
                 model = self._train_random_forest_model(X, y)
             else:
-                self.logger.error(f"❌ Unknown model type: {model_type}")
+                self.print(error("❌ Unknown model type: {model_type}"))
                 return False
 
             if model is not None:
@@ -261,8 +266,8 @@ class MultiTimeframeEnsemble:
 
             return False
 
-        except Exception as e:
-            self.logger.error(f"💥 Error training {timeframe} model: {e}")
+        except Exception:
+            self.print(error("💥 Error training {timeframe} model: {e}"))
             return False
 
     def _train_xgboost_model(self, X: pd.DataFrame, y: pd.Series) -> Any | None:
@@ -303,8 +308,8 @@ class MultiTimeframeEnsemble:
             self.logger.info("✅ XGBoost model training completed")
             return model
 
-        except Exception as e:
-            self.logger.error(f"💥 Error training XGBoost model: {e}")
+        except Exception:
+            self.print(error("💥 Error training XGBoost model: {e}"))
             return None
 
     def _train_lstm_model(self, X: pd.DataFrame, y: pd.Series) -> Any | None:
@@ -325,8 +330,8 @@ class MultiTimeframeEnsemble:
             self.logger.info("✅ LSTM model training completed")
             return model
 
-        except Exception as e:
-            self.logger.error(f"💥 Error training LSTM model: {e}")
+        except Exception:
+            self.print(error("💥 Error training LSTM model: {e}"))
             return None
 
     def _train_random_forest_model(
@@ -348,8 +353,8 @@ class MultiTimeframeEnsemble:
             self.logger.info("✅ Random Forest model training completed")
             return model
 
-        except Exception as e:
-            self.logger.error(f"💥 Error training Random Forest model: {e}")
+        except Exception:
+            self.print(error("💥 Error training Random Forest model: {e}"))
             return None
 
     def _prepare_features_target(
@@ -361,16 +366,20 @@ class MultiTimeframeEnsemble:
             self.logger.debug("🔧 Preparing features and target...")
 
             # First, explicitly drop any datetime columns
-            datetime_columns = data.select_dtypes(include=['datetime64[ns]', 'datetime64', 'datetime']).columns.tolist()
+            datetime_columns = data.select_dtypes(
+                include=["datetime64[ns]", "datetime64", "datetime"],
+            ).columns.tolist()
             if datetime_columns:
                 self.logger.info(f"Dropping datetime columns: {datetime_columns}")
                 data = data.drop(columns=datetime_columns)
-            
+
             # Also drop any object columns that might contain datetime strings
             # But preserve target column
             target_columns = ["target"]
-            object_columns = data.select_dtypes(include=['object']).columns.tolist()
-            object_columns_to_drop = [col for col in object_columns if col not in target_columns]
+            object_columns = data.select_dtypes(include=["object"]).columns.tolist()
+            object_columns_to_drop = [
+                col for col in object_columns if col not in target_columns
+            ]
             if object_columns_to_drop:
                 self.logger.info(f"Dropping object columns: {object_columns_to_drop}")
                 data = data.drop(columns=object_columns_to_drop)
@@ -385,21 +394,23 @@ class MultiTimeframeEnsemble:
             # Additional safety check - ensure all columns are numeric
             for col in X.columns:
                 if not pd.api.types.is_numeric_dtype(X[col]):
-                    self.logger.warning(f"Non-numeric column detected: {col} with dtype {X[col].dtype}")
+                    self.logger.warning(
+                        f"Non-numeric column detected: {col} with dtype {X[col].dtype}",
+                    )
                     X = X.drop(columns=[col])
                     feature_columns.remove(col)
 
             # Handle missing values
             missing_before = X.isnull().sum().sum()
             X = X.fillna(0)
-            missing_after = X.isnull().sum().sum()
+            X.isnull().sum().sum()
 
             if missing_before > 0:
                 self.logger.info(f"🔧 Filled {missing_before} missing values")
 
             # Final check - ensure X is purely numeric
-            if not X.select_dtypes(include=[np.number]).shape[1] == X.shape[1]:
-                self.logger.error("Non-numeric columns still present in feature matrix")
+            if X.select_dtypes(include=[np.number]).shape[1] != X.shape[1]:
+                self.print(error("Non-numeric columns still present in feature matrix"))
                 # Force conversion to numeric, dropping any problematic columns
                 X = X.select_dtypes(include=[np.number])
 
@@ -417,8 +428,8 @@ class MultiTimeframeEnsemble:
             self.logger.debug(f"📊 Features shape: {X.shape}, Target shape: {y.shape}")
             return X, y
 
-        except Exception as e:
-            self.logger.error(f"💥 Error preparing features/target: {e}")
+        except Exception:
+            self.print(error("💥 Error preparing features/target: {e}"))
             return pd.DataFrame(), pd.Series()
 
     def _get_timeframe_predictions(
@@ -429,7 +440,7 @@ class MultiTimeframeEnsemble:
         """Get predictions and confidences for a timeframe."""
         try:
             if timeframe not in self.timeframe_models:
-                self.logger.warning(f"⚠️ No trained model for {timeframe}")
+                self.print(warning("⚠️ No trained model for {timeframe}"))
                 return [], []
 
             model_info = self.timeframe_models[timeframe]
@@ -438,7 +449,7 @@ class MultiTimeframeEnsemble:
             X, _ = self._prepare_features_target(data)
 
             if len(X) == 0:
-                self.logger.warning(f"⚠️ No valid features for {timeframe}")
+                self.print(warning("⚠️ No valid features for {timeframe}"))
                 return [], []
 
             # Get predictions
@@ -460,8 +471,8 @@ class MultiTimeframeEnsemble:
 
             return predictions, confidences
 
-        except Exception as e:
-            self.logger.error(f"💥 Error getting predictions for {timeframe}: {e}")
+        except Exception:
+            self.print(error("💥 Error getting predictions for {timeframe}: {e}"))
             return [], []
 
     def _train_meta_learner(
@@ -484,7 +495,7 @@ class MultiTimeframeEnsemble:
             )
 
             if len(meta_data) == 0:
-                self.logger.error("❌ No valid meta-learner data")
+                self.print(error("❌ No valid meta-learner data"))
                 return False
 
             self.logger.info(f"📊 Meta-learner data shape: {meta_data.shape}")
@@ -527,8 +538,8 @@ class MultiTimeframeEnsemble:
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"💥 Error training meta-learner: {e}")
+        except Exception:
+            self.print(error("💥 Error training meta-learner: {e}"))
             return False
 
     def _prepare_meta_learner_data(
@@ -583,8 +594,8 @@ class MultiTimeframeEnsemble:
             self.logger.info(f"📊 Meta-learner data prepared: {result_df.shape}")
             return result_df
 
-        except Exception as e:
-            self.logger.error(f"💥 Error preparing meta-learner data: {e}")
+        except Exception:
+            self.print(error("💥 Error preparing meta-learner data: {e}"))
             return pd.DataFrame()
 
     def get_prediction(
@@ -604,7 +615,7 @@ class MultiTimeframeEnsemble:
         """
         try:
             if not self.trained:
-                self.logger.warning("⚠️ Multi-timeframe ensemble not trained")
+                self.print(warning("⚠️ Multi-timeframe ensemble not trained"))
                 return {"prediction": "HOLD", "confidence": 0.0}
 
             self.logger.debug(
@@ -660,8 +671,8 @@ class MultiTimeframeEnsemble:
                 "regime": self.regime,
             }
 
-        except Exception as e:
-            self.logger.error(f"💥 Error getting prediction: {e}")
+        except Exception:
+            self.print(error("💥 Error getting prediction: {e}"))
             return {"prediction": "HOLD", "confidence": 0.0}
 
     def _get_single_prediction(
@@ -672,7 +683,7 @@ class MultiTimeframeEnsemble:
         """Get prediction from single timeframe model."""
         try:
             if timeframe not in self.timeframe_models:
-                self.logger.warning(f"⚠️ No trained model for {timeframe}")
+                self.print(warning("⚠️ No trained model for {timeframe}"))
                 return "HOLD", 0.0
 
             model_info = self.timeframe_models[timeframe]
@@ -682,7 +693,7 @@ class MultiTimeframeEnsemble:
             X, _ = self._prepare_features_target(features)
 
             if len(X) == 0:
-                self.logger.warning(f"⚠️ No valid features for {timeframe}")
+                self.print(warning("⚠️ No valid features for {timeframe}"))
                 return "HOLD", 0.0
 
             # Get prediction
@@ -697,8 +708,8 @@ class MultiTimeframeEnsemble:
 
             return prediction, confidence
 
-        except Exception as e:
-            self.logger.error(f"💥 Error getting prediction for {timeframe}: {e}")
+        except Exception:
+            self.print(error("💥 Error getting prediction for {timeframe}: {e}"))
             return "HOLD", 0.0
 
     def _combine_with_meta_learner(
@@ -749,8 +760,8 @@ class MultiTimeframeEnsemble:
             )
             return prediction, confidence
 
-        except Exception as e:
-            self.logger.error(f"💥 Error combining with meta-learner: {e}")
+        except Exception:
+            self.print(error("💥 Error combining with meta-learner: {e}"))
             return "HOLD", 0.0
 
     def _simple_combine_predictions(
@@ -761,7 +772,7 @@ class MultiTimeframeEnsemble:
         """Simple combination of predictions (fallback)."""
         try:
             if not timeframe_predictions:
-                self.logger.warning("⚠️ No timeframe predictions available")
+                self.print(warning("⚠️ No timeframe predictions available"))
                 return "HOLD", 0.0
 
             # Count predictions
@@ -791,8 +802,8 @@ class MultiTimeframeEnsemble:
             )
             return final_prediction, final_confidence
 
-        except Exception as e:
-            self.logger.error(f"💥 Error in simple prediction combination: {e}")
+        except Exception:
+            self.print(error("💥 Error in simple prediction combination: {e}"))
             return "HOLD", 0.0
 
     def save_model(self, path: str) -> bool:
@@ -834,8 +845,8 @@ class MultiTimeframeEnsemble:
             self.logger.info("✅ Multi-timeframe ensemble saved successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"💥 Error saving model: {e}")
+        except Exception:
+            self.print(error("💥 Error saving model: {e}"))
             return False
 
     def load_model(self, path: str) -> bool:
@@ -868,7 +879,7 @@ class MultiTimeframeEnsemble:
                     }
                     self.logger.debug(f"📂 Loaded {timeframe} model")
                 else:
-                    self.logger.warning(f"⚠️ No model file found for {timeframe}")
+                    self.print(warning("⚠️ No model file found for {timeframe}"))
 
             # Load meta-learner
             meta_path = os.path.join(path, "meta_learner.joblib")
@@ -885,11 +896,11 @@ class MultiTimeframeEnsemble:
 
                 self.logger.debug("📂 Loaded meta-learner components")
             else:
-                self.logger.warning("⚠️ No meta-learner found")
+                self.print(warning("⚠️ No meta-learner found"))
 
             self.logger.info("✅ Multi-timeframe ensemble loaded successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"💥 Error loading model: {e}")
+        except Exception:
+            self.print(error("💥 Error loading model: {e}"))
             return False

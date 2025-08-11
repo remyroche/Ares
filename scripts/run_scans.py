@@ -8,6 +8,20 @@ static analysis, and maintainability assessments.
 """
 
 import argparse
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 import logging
 import subprocess
 import sys
@@ -135,7 +149,7 @@ class ScanManager:
         print(f"{'Feature':<25} {'Status':<12} {'Description'}")
         print("-" * 70)
 
-        for scan_type, feature in self.features.items():
+        for feature in self.features.values():
             status = "✓ Enabled" if feature.enabled else "✗ Disabled"
             print(f"{feature.name:<25} {status:<12} {feature.description}")
 
@@ -147,12 +161,12 @@ class ScanManager:
     def run_scan(self, scan_type: str, verbose: bool = False) -> bool:
         """Run a specific scan type"""
         if scan_type not in self.features:
-            logger.error(f"Unknown scan type: {scan_type}")
+            print(error("Unknown scan type: {scan_type}")))
             return False
 
         feature = self.features[scan_type]
         if not feature.enabled:
-            logger.warning(f"Feature '{feature.name}' is disabled")
+            print(warning("Feature '{feature.name}' is disabled")))
             return False
 
         logger.info(f"Running {feature.name}...")
@@ -191,10 +205,12 @@ class ScanManager:
             return False
 
         except subprocess.TimeoutExpired:
-            logger.error(f"✗ {feature.name} timed out after {feature.timeout} seconds")
+            logger.exception(
+                f"✗ {feature.name} timed out after {feature.timeout} seconds",
+            )
             return False
         except Exception as e:
-            logger.error(f"✗ {feature.name} failed with error: {e}")
+            print(failed("✗ {feature.name} failed with error: {e}")))
             return False
 
     def run_all_scans(self, verbose: bool = False) -> dict[str, bool]:
@@ -217,7 +233,7 @@ class ScanManager:
             self.features[scan_type].enabled = True
             logger.info(f"Enabled feature: {self.features[scan_type].name}")
             return True
-        logger.error(f"Unknown feature: {scan_type}")
+        print(error("Unknown feature: {scan_type}")))
         return False
 
     def disable_feature(self, scan_type: str) -> bool:
@@ -226,7 +242,7 @@ class ScanManager:
             self.features[scan_type].enabled = False
             logger.info(f"Disabled feature: {self.features[scan_type].name}")
             return True
-        logger.error(f"Unknown feature: {scan_type}")
+        print(error("Unknown feature: {scan_type}")))
         return False
 
     def get_feature_info(self, scan_type: str) -> ScanFeature | None:
@@ -323,7 +339,7 @@ Examples:
             print(f"Timeout: {feature.timeout} seconds")
             print(f"Ignore Errors: {feature.ignore_errors}")
         else:
-            logger.error(f"Unknown feature: {args.info}")
+            print(error("Unknown feature: {args.info}")))
         return
 
     # Run scans
@@ -335,7 +351,7 @@ Examples:
         if success:
             logger.info(f"Scan '{args.scan}' completed successfully")
         else:
-            logger.error(f"Scan '{args.scan}' failed")
+            print(failed("Scan '{args.scan}' failed")))
             sys.exit(1)
     else:
         # Default behavior: run all scans

@@ -21,6 +21,12 @@ from src.utils.error_handler import (
 )
 from src.utils.logger import system_logger
 from src.utils.state_manager import StateManager
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    invalid,
+    warning,
+)
 
 
 class Supervisor:
@@ -80,8 +86,9 @@ class Supervisor:
             self.logger.error(
                 f"Unknown trading environment: '{env_settings.trading_environment}'. Trading will be disabled.",
             )
+            msg = f"Invalid TRADING_ENVIRONMENT: {env_settings.trading_environment}"
             raise ValueError(
-                f"Invalid TRADING_ENVIRONMENT: {env_settings.trading_environment}",
+                msg,
             )  # Halt if invalid
 
         # Initialize ModelManager first, which will load the champion models
@@ -240,7 +247,7 @@ class Supervisor:
                     self.state_manager.set_state("global_peak_equity", current_equity)
                     self.logger.info(f"New peak equity reached: ${current_equity:,.2f}")
             else:
-                self.logger.warning("Could not retrieve a valid account balance.")
+                self.print(warning("Could not retrieve a valid account balance."))
 
             # 2. Update open positions state for crash recovery
             open_positions = await self.trader.get_open_positions()  # Use self.trader
@@ -342,12 +349,12 @@ class MainSupervisor:
             self.logger.info("Initializing Main Supervisor...")
             await self._load_supervisor_configuration()
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for main supervisor")
+                self.print(invalid("Invalid configuration for main supervisor"))
                 return False
             self.logger.info("✅ Main Supervisor initialization completed successfully")
             return True
-        except Exception as e:
-            self.logger.error(f"❌ Main Supervisor initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Main Supervisor initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -362,8 +369,8 @@ class MainSupervisor:
             self.run_interval = self.supervisor_config["run_interval"]
             self.max_history = self.supervisor_config["max_history"]
             self.logger.info("Main supervisor configuration loaded successfully")
-        except Exception as e:
-            self.logger.error(f"Error loading supervisor configuration: {e}")
+        except Exception:
+            self.print(error("Error loading supervisor configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -373,15 +380,15 @@ class MainSupervisor:
     def _validate_configuration(self) -> bool:
         try:
             if self.run_interval <= 0:
-                self.logger.error("Invalid run interval")
+                self.print(invalid("Invalid run interval"))
                 return False
             if self.max_history <= 0:
-                self.logger.error("Invalid max history")
+                self.print(invalid("Invalid max history"))
                 return False
             self.logger.info("Configuration validation successful")
             return True
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_specific_errors(
@@ -399,8 +406,8 @@ class MainSupervisor:
                 await self._supervise()
                 await asyncio.sleep(self.run_interval)
             return True
-        except Exception as e:
-            self.logger.error(f"Error in main supervisor run: {e}")
+        except Exception:
+            self.print(error("Error in main supervisor run: {e}"))
             self.is_running = False
             return False
 
@@ -417,8 +424,8 @@ class MainSupervisor:
             if len(self.history) > self.max_history:
                 self.history.pop(0)
             self.logger.info(f"Main Supervisor tick at {now}")
-        except Exception as e:
-            self.logger.error(f"Error in supervise step: {e}")
+        except Exception:
+            self.print(error("Error in supervise step: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -431,8 +438,8 @@ class MainSupervisor:
             self.is_running = False
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Main Supervisor stopped successfully")
-        except Exception as e:
-            self.logger.error(f"Error stopping main supervisor: {e}")
+        except Exception:
+            self.print(error("Error stopping main supervisor: {e}"))
 
     def get_status(self) -> dict[str, Any]:
         return self.status.copy()

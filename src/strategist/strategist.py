@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -9,7 +9,17 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
-from src.types.trading_types import RiskParameters
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+    warning,
+)
+
+if TYPE_CHECKING:
+    from src.custom_types.trading_types import RiskParameters
 
 
 class Strategist:
@@ -34,6 +44,16 @@ class Strategist:
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("Strategist")
+        # Backward-compatibility shim for legacy self.print calls
+        if not hasattr(self, "print"):
+
+            def _shim_print(message: str) -> None:
+                try:
+                    self.logger.error(str(message))
+                except Exception:
+                    pass
+
+            self.print = _shim_print  # type: ignore[attr-defined]
 
         # Strategy state
         self.current_strategy: dict[str, Any] | None = None
@@ -145,7 +165,11 @@ class Strategist:
         """Initialize ML Regime Classifier for market regime determination."""
         from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 
-        self.regime_classifier = UnifiedRegimeClassifier(self.config, "UNKNOWN", "UNKNOWN")
+        self.regime_classifier = UnifiedRegimeClassifier(
+            self.config,
+            "UNKNOWN",
+            "UNKNOWN",
+        )
         if not self.regime_classifier.load_models():
             self.logger.info(
                 "No existing regime classifier models found. Will train when needed.",
@@ -192,8 +216,8 @@ class Strategist:
 
             self.logger.info("Risk management initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing risk management: {e}")
+        except Exception:
+            self.logger.exception("Error initializing risk management")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -227,14 +251,16 @@ class Strategist:
             ]
             for key in required_risk_keys:
                 if key not in self.risk_config:
-                    self.logger.error(f"Missing required risk configuration key: {key}")
+                    self.logger.error(
+                        "Missing required risk configuration key: %s", key
+                    )
                     return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.logger.exception("Error validating configuration")
             return False
 
     @handle_specific_errors(
@@ -308,8 +334,8 @@ class Strategist:
 
             self.logger.info("✅ Strategy generated successfully")
             return strategy
-        except (KeyError, RuntimeError) as e:
-            self.logger.error(f"Error generating strategy: {e}")
+        except (KeyError, RuntimeError):
+            self.logger.exception("Error generating strategy")
             return None
 
     @handle_errors(
@@ -362,8 +388,8 @@ class Strategist:
                 f"🎯 Market regime classified as: {regime} (confidence: {confidence:.2f})",
             )
             return regime_info
-        except (KeyError, RuntimeError) as e:
-            self.logger.error(f"Error classifying market regime: {e}")
+        except (KeyError, RuntimeError):
+            self.print(error("Error classifying market regime: {e}"))
             return None
 
     @handle_errors(
@@ -389,7 +415,7 @@ class Strategist:
             Optional[Dict[str, Any]]: ML predictions
         """
         if not self.ml_confidence_predictor:
-            self.logger.error("ML confidence predictor not initialized")
+            self.print(initialization_error("ML confidence predictor not initialized"))
             return None
 
         regime = regime_info["regime"]
@@ -402,11 +428,9 @@ class Strategist:
         )
 
         # Run ML confidence prediction
-        ml_predictions = (
-            await self.ml_confidence_predictor.predict_confidence_table(
-                market_data,
-                current_price,
-            )
+        ml_predictions = await self.ml_confidence_predictor.predict_confidence_table(
+            market_data,
+            current_price,
         )
 
         if ml_predictions:
@@ -497,8 +521,8 @@ class Strategist:
 
             return base_params
 
-        except Exception as e:
-            self.logger.error(f"Error getting regime-specific parameters: {e}")
+        except Exception:
+            self.print(error("Error getting regime-specific parameters: {e}"))
             return {"confidence_threshold": 0.6, "risk_adjustment": 1.0}
 
     def _apply_regime_adjustments(
@@ -566,8 +590,8 @@ class Strategist:
 
             return adjustments
 
-        except Exception as e:
-            self.logger.error(f"Error applying regime adjustments: {e}")
+        except Exception:
+            self.print(error("Error applying regime adjustments: {e}"))
             return {}
 
     @handle_errors(
@@ -616,8 +640,8 @@ class Strategist:
             )
             return volatility_info
 
-        except Exception as e:
-            self.logger.error(f"Error collecting volatility info: {e}")
+        except Exception:
+            self.print(error("Error collecting volatility info: {e}"))
             return None
 
     @handle_errors(
@@ -691,12 +715,12 @@ class Strategist:
 
             # Validate strategy
             if not self._validate_strategy(strategy):
-                self.logger.error("Generated strategy validation failed")
+                self.print(failed("Generated strategy validation failed"))
                 return None
 
             return strategy
-        except Exception as e:
-            self.logger.error(f"Error generating comprehensive strategy: {e}")
+        except Exception:
+            self.print(error("Error generating comprehensive strategy: {e}"))
             return None
 
     @handle_errors(
@@ -726,7 +750,9 @@ class Strategist:
             base_sl = float(self.risk_config.get("stop_loss_distance", 0.01))
             base_tp = float(self.risk_config.get("take_profit_distance", 0.02))
             risk_params: RiskParameters | dict[str, Any] = {
-                "max_position_size": float(self.strategy_config.get("max_position_size", 0.1)),
+                "max_position_size": float(
+                    self.strategy_config.get("max_position_size", 0.1),
+                ),
                 "max_leverage": float(self.strategy_config.get("max_leverage", 10.0)),
                 "stop_loss_percentage": base_sl,
                 "take_profit_percentage": base_tp,
@@ -752,8 +778,8 @@ class Strategist:
 
             return risk_params
 
-        except Exception as e:
-            self.logger.error(f"Error calculating risk parameters: {e}")
+        except Exception:
+            self.print(error("Error calculating risk parameters: {e}"))
             return None
 
     # Position sizing is entirely handled by tactician/position_sizer.py
@@ -781,8 +807,8 @@ class Strategist:
             percentile = (rolling_vol < current_vol).mean()
             return float(percentile)
 
-        except Exception as e:
-            self.logger.error(f"Error calculating volatility percentile: {e}")
+        except Exception:
+            self.print(error("Error calculating volatility percentile: {e}"))
             return 0.5
 
     def _calculate_volatility_trend(self, returns: pd.Series) -> str:
@@ -812,8 +838,8 @@ class Strategist:
                 return "decreasing"
             return "stable"
 
-        except Exception as e:
-            self.logger.error(f"Error calculating volatility trend: {e}")
+        except Exception:
+            self.print(error("Error calculating volatility trend: {e}"))
             return "stable"
 
     def _get_regime_adjustment(self, regime: str) -> float:
@@ -837,8 +863,8 @@ class Strategist:
 
             return regime_adjustments.get(regime, 1.0)
 
-        except Exception as e:
-            self.logger.error(f"Error calculating regime adjustment: {e}")
+        except Exception:
+            self.print(error("Error calculating regime adjustment: {e}"))
             return 1.0
 
     @handle_errors(
@@ -907,8 +933,8 @@ class Strategist:
 
             return entry_signals
 
-        except Exception as e:
-            self.logger.error(f"Error generating entry signals: {e}")
+        except Exception:
+            self.print(error("Error generating entry signals: {e}"))
             return None
 
     @handle_errors(
@@ -972,8 +998,8 @@ class Strategist:
 
             return exit_signals
 
-        except Exception as e:
-            self.logger.error(f"Error generating exit signals: {e}")
+        except Exception:
+            self.print(error("Error generating exit signals: {e}"))
             return None
 
     @handle_errors(
@@ -1022,8 +1048,8 @@ class Strategist:
 
             return max(0.0, min(1.0, confidence))
 
-        except Exception as e:
-            self.logger.error(f"Error calculating confidence score: {e}")
+        except Exception:
+            self.print(error("Error calculating confidence score: {e}"))
             return 0.5
 
     def _generate_fallback_predictions(self, current_price: float) -> dict[str, Any]:
@@ -1052,8 +1078,8 @@ class Strategist:
                 "generation_time": datetime.now(),
             }
 
-        except Exception as e:
-            self.logger.error(f"Error generating fallback predictions: {e}")
+        except Exception:
+            self.print(error("Error generating fallback predictions: {e}"))
             return {}
 
     @handle_errors(
@@ -1083,21 +1109,21 @@ class Strategist:
             ]
             for key in required_keys:
                 if key not in strategy:
-                    self.logger.error(f"Missing required strategy key: {key}")
+                    self.print(missing("Missing required strategy key: {key}"))
                     return False
 
             # Validate confidence score
             confidence = strategy.get("confidence_score", 0)
             if confidence < self.strategy_config["min_confidence_threshold"]:
-                self.logger.warning(f"Strategy confidence too low: {confidence}")
+                self.print(warning("Strategy confidence too low: {confidence}"))
                 return False
 
             # Note: Position sizing validation handled by tactician/position_sizer.py
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating strategy: {e}")
+        except Exception:
+            self.print(error("Error validating strategy: {e}"))
             return False
 
     def get_current_strategy(self) -> dict[str, Any] | None:
@@ -1169,5 +1195,5 @@ class Strategist:
 
             self.logger.info("✅ Strategist stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping strategist: {e}")
+        except Exception:
+            self.print(error("Error stopping strategist: {e}"))

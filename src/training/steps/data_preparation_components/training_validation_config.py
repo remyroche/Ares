@@ -4,7 +4,7 @@ Defines error thresholds, validation criteria, and step progression rules.
 """
 
 import os
-from typing import Any, Number
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -282,14 +282,12 @@ class DataValidator:
         # Check for negative prices
         price_columns = ["open", "high", "low", "close"]
         for col in price_columns:
-            if col in klines.columns:
-                if (klines[col] <= 0).any():
-                    self.errors.append(f"Column {col} contains non-positive values")
+            if col in klines.columns and (klines[col] <= 0).any():
+                self.errors.append(f"Column {col} contains non-positive values")
 
         # Check for negative volume
-        if "volume" in klines.columns:
-            if (klines["volume"] < 0).any():
-                self.errors.append("Volume contains negative values")
+        if "volume" in klines.columns and (klines["volume"] < 0).any():
+            self.errors.append("Volume contains negative values")
 
         # Check for logical inconsistencies
         if all(col in klines.columns for col in ["high", "low"]):
@@ -299,9 +297,8 @@ class DataValidator:
     def _validate_agg_trades_quality(self, agg_trades: pd.DataFrame) -> None:
         """Validate aggregated trades data quality."""
         # Check for negative prices
-        if "price" in agg_trades.columns:
-            if (agg_trades["price"] <= 0).any():
-                self.errors.append("Aggregated trades contain non-positive prices")
+        if "price" in agg_trades.columns and (agg_trades["price"] <= 0).any():
+            self.errors.append("Aggregated trades contain non-positive prices")
 
         # Check for negative quantities
         if "quantity" in agg_trades.columns:
@@ -566,14 +563,13 @@ def can_proceed_to_step(
 
     # Check if current step is required for next step
     if current_step in next_rules.get("required_for", []):
-        if step_status.get(current_step, {}).get("status") == "FAILED":
-            if (
-                current_rules.get("failure_action") == "STOP_PIPELINE"
-                or current_rules.get("failure_action") == "SKIP_DEPENDENT_STEPS"
-            ):
-                return (
-                    False,
-                    f"Cannot proceed to {next_step}: {current_step} failed and is required",
-                )
+        if step_status.get(current_step, {}).get("status") == "FAILED" and (
+            current_rules.get("failure_action") == "STOP_PIPELINE"
+            or current_rules.get("failure_action") == "SKIP_DEPENDENT_STEPS"
+        ):
+            return (
+                False,
+                f"Cannot proceed to {next_step}: {current_step} failed and is required",
+            )
 
     return True, f"Proceeding to {next_step}"

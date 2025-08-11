@@ -14,6 +14,11 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    warning,
+)
 
 
 class OptimizationTier(Enum):
@@ -121,8 +126,7 @@ class ProgressiveOptimizer:
                 )
 
                 # Evaluate performance
-                performance = self._evaluate_tier1_performance(params)
-                return performance
+                return self._evaluate_tier1_performance(params)
 
             # Create study with warm start if available
             study_name = f"tier1_optimization_{int(time.time())}"
@@ -138,7 +142,7 @@ class ProgressiveOptimizer:
                 self.logger.info("Added warm start trial for Tier 1")
 
             # Run optimization with timeout
-            timeout_seconds = self.progressive_config.tier1_timeout_minutes * 60
+            self.progressive_config.tier1_timeout_minutes * 60
             study.optimize(
                 tier1_objective,
                 n_trials=self.progressive_config.tier1_trials,
@@ -160,8 +164,8 @@ class ProgressiveOptimizer:
 
             return tier1_results
 
-        except Exception as e:
-            self.logger.error(f"Error in Tier 1 optimization: {e}")
+        except Exception:
+            self.print(error("Error in Tier 1 optimization: {e}"))
             return None
 
     @handle_errors(
@@ -209,8 +213,7 @@ class ProgressiveOptimizer:
                 )
 
                 # Evaluate performance
-                performance = self._evaluate_tier2_performance(params)
-                return performance
+                return self._evaluate_tier2_performance(params)
 
             # Create study
             study_name = f"tier2_optimization_{int(time.time())}"
@@ -242,8 +245,8 @@ class ProgressiveOptimizer:
 
             return tier2_results
 
-        except Exception as e:
-            self.logger.error(f"Error in Tier 2 optimization: {e}")
+        except Exception:
+            self.print(error("Error in Tier 2 optimization: {e}"))
             return None
 
     @handle_errors(
@@ -280,8 +283,7 @@ class ProgressiveOptimizer:
                 )
 
                 # Evaluate performance
-                performance = self._evaluate_tier3_performance(params)
-                return performance
+                return self._evaluate_tier3_performance(params)
 
             # Create study
             study_name = f"tier3_optimization_{int(time.time())}"
@@ -313,8 +315,8 @@ class ProgressiveOptimizer:
 
             return tier3_results
 
-        except Exception as e:
-            self.logger.error(f"Error in Tier 3 optimization: {e}")
+        except Exception:
+            self.print(error("Error in Tier 3 optimization: {e}"))
             return None
 
     @handle_errors(
@@ -336,7 +338,7 @@ class ProgressiveOptimizer:
             tier1_results = await self.optimize_tier1_parameters(initial_params)
 
             if not tier1_results:
-                self.logger.error("Tier 1 optimization failed")
+                self.print(failed("Tier 1 optimization failed"))
                 return None
 
             # Stage 2: Medium optimization (30% of time)
@@ -344,7 +346,7 @@ class ProgressiveOptimizer:
             tier2_results = await self.optimize_tier2_parameters(tier1_results)
 
             if not tier2_results:
-                self.logger.warning("Tier 2 optimization failed, using Tier 1 results")
+                self.print(failed("Tier 2 optimization failed, using Tier 1 results"))
                 tier2_results = tier1_results
 
             # Stage 3: Fine optimization (60% of time)
@@ -352,7 +354,7 @@ class ProgressiveOptimizer:
             tier3_results = await self.optimize_tier3_parameters(tier2_results)
 
             if not tier3_results:
-                self.logger.warning("Tier 3 optimization failed, using Tier 2 results")
+                self.print(failed("Tier 3 optimization failed, using Tier 2 results"))
                 tier3_results = tier2_results
 
             # Combine all results
@@ -377,8 +379,8 @@ class ProgressiveOptimizer:
             )
             return combined_results
 
-        except Exception as e:
-            self.logger.error(f"Error in progressive optimization: {e}")
+        except Exception:
+            self.print(error("Error in progressive optimization: {e}"))
             return None
 
     def _combine_progressive_results(
@@ -422,8 +424,8 @@ class ProgressiveOptimizer:
 
             return combined_results
 
-        except Exception as e:
-            self.logger.error(f"Error combining progressive results: {e}")
+        except Exception:
+            self.print(error("Error combining progressive results: {e}"))
             return {}
 
     def _evaluate_tier1_performance(self, params: dict[str, Any]) -> float:
@@ -464,8 +466,8 @@ class ProgressiveOptimizer:
 
             return min(performance, 1.0)
 
-        except Exception as e:
-            self.logger.warning(f"Error evaluating Tier 1 performance: {e}")
+        except Exception:
+            self.print(warning("Error evaluating Tier 1 performance: {e}"))
             return 0.0
 
     def _evaluate_tier2_performance(self, params: dict[str, Any]) -> float:
@@ -506,8 +508,8 @@ class ProgressiveOptimizer:
 
             return min(performance, 1.0)
 
-        except Exception as e:
-            self.logger.warning(f"Error evaluating Tier 2 performance: {e}")
+        except Exception:
+            self.print(warning("Error evaluating Tier 2 performance: {e}"))
             return 0.0
 
     def _evaluate_tier3_performance(self, params: dict[str, Any]) -> float:
@@ -548,8 +550,8 @@ class ProgressiveOptimizer:
 
             return min(performance, 1.0)
 
-        except Exception as e:
-            self.logger.warning(f"Error evaluating Tier 3 performance: {e}")
+        except Exception:
+            self.print(warning("Error evaluating Tier 3 performance: {e}"))
             return 0.0
 
     def get_progressive_statistics(self) -> dict[str, Any]:
@@ -586,6 +588,6 @@ class ProgressiveOptimizer:
 
             return stats
 
-        except Exception as e:
-            self.logger.error(f"Error getting progressive statistics: {e}")
+        except Exception:
+            self.print(error("Error getting progressive statistics: {e}"))
             return {}

@@ -1,6 +1,7 @@
 # src/utils/async_utils.py
 
 import asyncio
+import contextlib
 import json
 import os
 from collections.abc import Coroutine
@@ -14,6 +15,13 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    invalid,
+    missing,
+    warning,
+)
 
 
 class AsyncFileManager:
@@ -66,7 +74,7 @@ class AsyncFileManager:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for async file manager")
+                self.print(invalid("Invalid configuration for async file manager"))
                 return False
 
             self.logger.info(
@@ -74,8 +82,8 @@ class AsyncFileManager:
             )
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Async File Manager initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Async File Manager initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -100,8 +108,8 @@ class AsyncFileManager:
 
             self.logger.info("File configuration loaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error loading file configuration: {e}")
+        except Exception:
+            self.print(error("Error loading file configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -118,19 +126,19 @@ class AsyncFileManager:
         try:
             # Validate cache size
             if self.max_cache_size <= 0:
-                self.logger.error("Invalid max cache size")
+                self.print(invalid("Invalid max cache size"))
                 return False
 
             # Validate encoding
             if not self.default_encoding:
-                self.logger.error("Invalid default encoding")
+                self.print(invalid("Invalid default encoding"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_file_operations(
@@ -170,8 +178,8 @@ class AsyncFileManager:
             self.logger.info(f"Read file: {file_path}")
             return content
 
-        except Exception as e:
-            self.logger.error(f"Error reading file {file_path}: {e}")
+        except Exception:
+            self.print(error("Error reading file {file_path}: {e}"))
             return None
 
     @handle_file_operations(
@@ -211,8 +219,8 @@ class AsyncFileManager:
             self.logger.info(f"Wrote file: {file_path}")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error writing file {file_path}: {e}")
+        except Exception:
+            self.print(error("Error writing file {file_path}: {e}"))
             return False
 
     @handle_file_operations(
@@ -238,8 +246,8 @@ class AsyncFileManager:
             self.logger.info(f"Read JSON file: {file_path}")
             return data
 
-        except Exception as e:
-            self.logger.error(f"Error reading JSON file {file_path}: {e}")
+        except Exception:
+            self.print(error("Error reading JSON file {file_path}: {e}"))
             return None
 
     @handle_file_operations(
@@ -272,8 +280,8 @@ class AsyncFileManager:
 
             return success
 
-        except Exception as e:
-            self.logger.error(f"Error writing JSON file {file_path}: {e}")
+        except Exception:
+            self.print(error("Error writing JSON file {file_path}: {e}"))
             return False
 
     @handle_errors(
@@ -300,8 +308,8 @@ class AsyncFileManager:
             self.file_cache[file_path] = content
             self.logger.debug(f"Added {file_path} to cache")
 
-        except Exception as e:
-            self.logger.error(f"Error adding to cache: {e}")
+        except Exception:
+            self.print(error("Error adding to cache: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -315,8 +323,8 @@ class AsyncFileManager:
             self.file_cache.clear()
             self.logger.info(f"Cleared cache ({cache_size} entries)")
 
-        except Exception as e:
-            self.logger.error(f"Error clearing cache: {e}")
+        except Exception:
+            self.print(error("Error clearing cache: {e}"))
 
     def get_cache_status(self) -> dict[str, Any]:
         """
@@ -347,8 +355,8 @@ class AsyncFileManager:
 
             self.logger.info("✅ Async File Manager stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping async file manager: {e}")
+        except Exception:
+            self.print(error("Error stopping async file manager: {e}"))
 
 
 class AsyncTaskManager:
@@ -400,7 +408,7 @@ class AsyncTaskManager:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for async task manager")
+                self.print(invalid("Invalid configuration for async task manager"))
                 return False
 
             self.logger.info(
@@ -408,8 +416,8 @@ class AsyncTaskManager:
             )
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Async Task Manager initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Async Task Manager initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -432,8 +440,8 @@ class AsyncTaskManager:
 
             self.logger.info("Task configuration loaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error loading task configuration: {e}")
+        except Exception:
+            self.print(error("Error loading task configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -450,19 +458,19 @@ class AsyncTaskManager:
         try:
             # Validate max concurrent tasks
             if self.max_concurrent_tasks <= 0:
-                self.logger.error("Invalid max concurrent tasks")
+                self.print(invalid("Invalid max concurrent tasks"))
                 return False
 
             # Validate task timeout
             if self.task_timeout <= 0:
-                self.logger.error("Invalid task timeout")
+                self.print(invalid("Invalid task timeout"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -509,19 +517,19 @@ class AsyncTaskManager:
                 self.logger.info(f"Task completed: {task_name}")
                 return result
             except TimeoutError:
-                self.logger.error(f"Task timed out: {task_name}")
+                self.print(timeout("Task timed out: {task_name}"))
                 task.cancel()
                 return None
-            except Exception as e:
-                self.logger.error(f"Task failed: {task_name} - {e}")
+            except Exception:
+                self.print(failed("Task failed: {task_name} - {e}"))
                 return None
             finally:
                 # Remove from active tasks
                 if task_name in self.active_tasks:
                     del self.active_tasks[task_name]
 
-        except Exception as e:
-            self.logger.error(f"Error executing task {task_name}: {e}")
+        except Exception:
+            self.print(error("Error executing task {task_name}: {e}"))
             return None
 
     @handle_errors(
@@ -541,23 +549,21 @@ class AsyncTaskManager:
         """
         try:
             if task_name not in self.active_tasks:
-                self.logger.warning(f"Task not found: {task_name}")
+                self.print(missing("Task not found: {task_name}"))
                 return False
 
             task = self.active_tasks[task_name]
             task.cancel()
 
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await task
-            except asyncio.CancelledError:
-                pass
 
             del self.active_tasks[task_name]
             self.logger.info(f"Cancelled task: {task_name}")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error cancelling task {task_name}: {e}")
+        except Exception:
+            self.print(error("Error cancelling task {task_name}: {e}"))
             return False
 
     @handle_errors(
@@ -574,20 +580,20 @@ class AsyncTaskManager:
 
             self.logger.info(f"Cancelling {len(self.active_tasks)} active tasks...")
 
-            for task_name, task in self.active_tasks.items():
+            for task in self.active_tasks.values():
                 try:
                     task.cancel()
                     await task
                 except asyncio.CancelledError:
                     pass
-                except Exception as e:
-                    self.logger.error(f"Error cancelling task {task_name}: {e}")
+                except Exception:
+                    self.print(error("Error cancelling task {task_name}: {e}"))
 
             self.active_tasks.clear()
             self.logger.info("All tasks cancelled")
 
-        except Exception as e:
-            self.logger.error(f"Error cancelling all tasks: {e}")
+        except Exception:
+            self.print(error("Error cancelling all tasks: {e}"))
 
     def get_task_status(self) -> dict[str, Any]:
         """
@@ -622,8 +628,8 @@ class AsyncTaskManager:
 
             self.logger.info("✅ Async Task Manager stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping async task manager: {e}")
+        except Exception:
+            self.print(error("Error stopping async task manager: {e}"))
 
 
 # Global instances
@@ -705,7 +711,7 @@ class AsyncProcessesManager:
         """Start an async process."""
         try:
             if len(self.processes) >= self.max_processes:
-                self.logger.warning(f"Maximum processes ({self.max_processes}) reached")
+                self.print(warning("Maximum processes ({self.max_processes}) reached"))
                 return None
 
             process = await asyncio.create_subprocess_exec(
@@ -719,15 +725,15 @@ class AsyncProcessesManager:
             self.logger.info(f"Started process '{name}' with PID {process.pid}")
             return process
 
-        except Exception as e:
-            self.logger.error(f"Failed to start process '{name}': {e}")
+        except Exception:
+            self.print(failed("Failed to start process '{name}': {e}"))
             return None
 
     async def stop_process(self, name: str) -> bool:
         """Stop a specific process."""
         try:
             if name not in self.processes:
-                self.logger.warning(f"Process '{name}' not found")
+                self.print(missing("Process '{name}' not found"))
                 return False
 
             process = self.processes[name]
@@ -743,8 +749,8 @@ class AsyncProcessesManager:
             self.logger.info(f"Stopped process '{name}'")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Failed to stop process '{name}': {e}")
+        except Exception:
+            self.print(failed("Failed to stop process '{name}': {e}"))
             return False
 
     async def stop_all_processes(self) -> None:

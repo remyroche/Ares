@@ -27,6 +27,20 @@ from src.config import CONFIG  # Import the global CONFIG dictionary
 from src.database.sqlite_manager import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.logger import setup_logging, system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 async def main():
@@ -127,13 +141,13 @@ async def main():
         missing_files = [f for f in required_files if not os.path.exists(f)]
 
         if missing_files:
-            logger.error(f"❌ Missing required data files: {missing_files}")
+            print(missing("❌ Missing required data files: {missing_files}")))
             logger.error(
                 "Please run data downloading first or ensure data files exist.",
             )
-            logger.error("Expected files:")
+            print(error("Expected files:")))
             for file in required_files:
-                logger.error(f"  - {file}")
+                print(error("  - {file}")))
             sys.exit(1)
 
         logger.info("✅ All required data files found, proceeding with training")
@@ -163,7 +177,8 @@ async def main():
                 "1m",
             )
             if not setup_success:
-                raise Exception("Stage 1 (Setup) failed")
+                msg = "Stage 1 (Setup) failed"
+                raise Exception(msg)
             logger.info("✅ Stage 1 completed successfully")
             print("✅ Stage 1 completed successfully")
 
@@ -199,7 +214,8 @@ async def main():
 
             # Read the CSV data (now properly formatted)
             if not os.path.exists(csv_data_file):
-                raise Exception(f"CSV data file not found: {csv_data_file}")
+                msg = f"CSV data file not found: {csv_data_file}"
+                raise Exception(msg)
 
             klines_df = pd.read_csv(csv_data_file)
             logger.info(
@@ -244,23 +260,25 @@ async def main():
                 validation_data["futures"] = futures_df
                 logger.info(f"📊 Loaded futures: {len(futures_df)} rows")
             else:
-                logger.warning("⚠️  Futures file not found, skipping validation")
+                print(missing("⚠️  Futures file not found, skipping validation")))
 
             # Validate data format
             format_valid, format_errors = validate_data_format(validation_data)
             if not format_valid:
-                logger.error(f"❌ Data format validation failed: {format_errors}")
-                print(f"❌ Data format validation failed: {format_errors}")
-                raise Exception("Data format validation failed")
+                print(failed("❌ Data format validation failed: {format_errors}")))
+                print(failed("Data format validation failed: {format_errors}")))
+                msg = "Data format validation failed"
+                raise Exception(msg)
             logger.info("✅ Data format validation passed")
             print("✅ Data format validation passed")
 
             # Validate data quality
             quality_valid, quality_errors = validate_data_quality(validation_data)
             if not quality_valid:
-                logger.error(f"❌ Data quality validation failed: {quality_errors}")
-                print(f"❌ Data quality validation failed: {quality_errors}")
-                raise Exception("Data quality validation failed")
+                print(failed("❌ Data quality validation failed: {quality_errors}")))
+                print(failed("Data quality validation failed: {quality_errors}")))
+                msg = "Data quality validation failed"
+                raise Exception(msg)
             logger.info("✅ Data quality validation passed")
             print("✅ Data quality validation passed")
 
@@ -289,7 +307,8 @@ async def main():
                 data_file,
             )
             if not training_success:
-                raise Exception("Stage 3 (Training) failed")
+                msg = "Stage 3 (Training) failed"
+                raise Exception(msg)
             logger.info("✅ Stage 3 completed successfully")
             print("✅ Stage 3 completed successfully")
 
@@ -301,7 +320,8 @@ async def main():
                 data_file,
             )
             if not validation_success:
-                raise Exception("Stage 4 (Validation) failed")
+                msg = "Stage 4 (Validation) failed"
+                raise Exception(msg)
             logger.info("✅ Stage 4 completed successfully")
             print("✅ Stage 4 completed successfully")
 
@@ -316,7 +336,8 @@ async def main():
                 run_id,
             )
             if not finalize_success:
-                raise Exception("Stage 5 (Finalization) failed")
+                msg = "Stage 5 (Finalization) failed"
+                raise Exception(msg)
             logger.info("✅ Stage 5 completed successfully")
             print("✅ Stage 5 completed successfully")
 
@@ -325,15 +346,15 @@ async def main():
             print("✅ All training stages completed successfully")
 
         except Exception as e:
-            logger.error(f"❌ Training pipeline failed with exception: {e}")
-            print(f"❌ Training pipeline failed with exception: {e}")
-            logger.error(f"Exception type: {type(e).__name__}")
+            print(failed("❌ Training pipeline failed with exception: {e}")))
+            print(failed("Training pipeline failed with exception: {e}")))
+            print(error("Exception type: {type(e).__name__}")))
             print(f"Exception type: {type(e).__name__}")
-            logger.error("Full traceback:")
+            print(error("Full traceback:")))
             print("Full traceback:")
             import traceback
 
-            logger.error(traceback.format_exc())
+            logger.exception(traceback.format_exc())
             print(traceback.format_exc())
             raise
 
@@ -350,27 +371,27 @@ async def main():
             logger.info(f"   Duration: {training_duration:.2f} seconds")
             logger.info("   Status: SUCCESS")
         else:
-            logger.error("❌ 'Blank' training pipeline failed.")
-            logger.error("📊 Training summary:")
-            logger.error(f"   Symbol: {args.symbol}")
-            logger.error(f"   Exchange: {args.exchange}")
-            logger.error(f"   Duration: {training_duration:.2f} seconds")
-            logger.error("   Status: FAILED")
+            print(failed("❌ 'Blank' training pipeline failed.")))
+            print(error("📊 Training summary:")))
+            print(error("   Symbol: {args.symbol}")))
+            print(error("   Exchange: {args.exchange}")))
+            print(error("   Duration: {training_duration:.2f} seconds")))
+            print(failed("   Status: FAILED")))
             sys.exit(1)
 
     except Exception as e:
-        logger.critical("💥 CRITICAL ERROR during blank training run")
-        logger.critical(f"Error type: {type(e).__name__}")
-        logger.critical(f"Error message: {str(e)}")
-        logger.critical("Full traceback:")
+        print(critical("💥 CRITICAL ERROR during blank training run")))
+        print(error("Error type: {type(e).__name__}")))
+        print(error("Error message: {str(e)}")))
+        print(error("Full traceback:")))
         logger.critical(traceback.format_exc())
 
         # Log additional debugging information
-        logger.critical("📊 Error context:")
-        logger.critical(f"   Symbol: {args.symbol}")
-        logger.critical(f"   Exchange: {args.exchange}")
-        logger.critical(f"   Python path: {sys.path[:3]}...")  # First 3 entries
-        logger.critical(f"   Working directory: {Path.cwd()}")
+        print(error("📊 Error context:")))
+        print(error("   Symbol: {args.symbol}")))
+        print(error("   Exchange: {args.exchange}")))
+        print(error("   Python path: {sys.path[:3]}...")))  # First 3 entries
+        print(error("   Working directory: {Path.cwd()}")))
 
         sys.exit(1)
     finally:

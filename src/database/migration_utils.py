@@ -10,6 +10,20 @@ from typing import Any
 
 from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 class DatabaseMigrationUtils:
@@ -76,7 +90,7 @@ class DatabaseMigrationUtils:
             return export_path
 
         except Exception as e:
-            self.logger.error(f"Failed to create trading export: {e}", exc_info=True)
+            self.print(failed("Failed to create trading export: {e}"))
             return ""
 
     async def _clean_for_trading(self, temp_db: SQLiteManager):
@@ -121,7 +135,7 @@ class DatabaseMigrationUtils:
         try:
             # Verify file exists
             if not os.path.exists(import_path):
-                self.logger.error(f"Import file not found: {import_path}")
+                self.print(missing("Import file not found: {import_path}"))
                 return False
 
             # Calculate checksum of import file
@@ -163,7 +177,7 @@ class DatabaseMigrationUtils:
             return False
 
         except Exception as e:
-            self.logger.error(f"Failed to import for trading: {e}", exc_info=True)
+            self.print(failed("Failed to import for trading: {e}"))
             return False
 
     async def export_backtest_results(self, export_name: str = None) -> str:

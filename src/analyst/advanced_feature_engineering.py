@@ -13,6 +13,20 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 class CandlestickPatternAnalyzer:
@@ -49,7 +63,7 @@ class CandlestickPatternAnalyzer:
             self.logger.info("✅ Candlestick pattern analyzer initialized successfully")
             return True
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"❌ Error initializing candlestick pattern analyzer: {e}",
             )
             return False
@@ -71,11 +85,13 @@ class CandlestickPatternAnalyzer:
         """
         try:
             if not self.is_initialized:
-                self.logger.error("Candlestick pattern analyzer not initialized")
+                self.print(
+                    initialization_error("Candlestick pattern analyzer not initialized")
+                )
                 return {}
 
             if price_data.empty or len(price_data) < 3:
-                self.logger.warning("Insufficient data for pattern analysis")
+                self.print(warning("Insufficient data for pattern analysis"))
                 return {}
 
             # Prepare data with calculated metrics
@@ -102,21 +118,25 @@ class CandlestickPatternAnalyzer:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error analyzing candlestick patterns: {e}")
+            self.print(error("Error analyzing candlestick patterns: {e}"))
             return {}
 
     def _prepare_candlestick_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Prepare data with candlestick metrics."""
+        """Prepare data with candlestick metrics using price differences."""
         try:
             df = df.copy()
 
-            # Calculate basic candlestick metrics
-            df["body_size"] = abs(df["close"] - df["open"])
-            df["upper_shadow"] = df["high"] - np.maximum(df["open"], df["close"])
-            df["lower_shadow"] = np.minimum(df["open"], df["close"]) - df["low"]
-            df["total_range"] = df["high"] - df["low"]
+            # Calculate basic candlestick metrics using price differences
+            df["body_size"] = abs(df["close"].diff() - df["open"].diff())
+            df["upper_shadow"] = df["high"].diff() - np.maximum(
+                df["open"].diff(), df["close"].diff()
+            )
+            df["lower_shadow"] = (
+                np.minimum(df["open"].diff(), df["close"].diff()) - df["low"].diff()
+            )
+            df["total_range"] = df["high"].diff() - df["low"].diff()
             df["body_ratio"] = df["body_size"] / df["total_range"].replace(0, 1)
-            df["is_bullish"] = df["close"] > df["open"]
+            df["is_bullish"] = df["close"].diff() > df["open"].diff()
 
             # Calculate moving averages for context
             df["avg_body_size"] = df["body_size"].rolling(window=20).mean()
@@ -125,7 +145,7 @@ class CandlestickPatternAnalyzer:
             return df.dropna()
 
         except Exception as e:
-            self.logger.error(f"Error preparing candlestick data: {e}")
+            self.print(error("Error preparing candlestick data: {e}"))
             return pd.DataFrame()
 
     def _detect_engulfing_patterns(self, df: pd.DataFrame) -> list[dict[str, Any]]:
@@ -392,14 +412,11 @@ class CandlestickPatternAnalyzer:
                 return False
 
         # Last candle should be a long bullish candle closing above the first
-        if not (
+        return (
             candles[4]["is_bullish"]
             and candles[4]["close"] > candles[0]["close"]
             and candles[4]["body_size"] > candles[4]["avg_body_size"]
-        ):
-            return False
-
-        return True
+        )
 
     def _is_falling_three_methods(self, df: pd.DataFrame, index: int) -> bool:
         """Check if the 5-candle pattern is a falling three methods."""
@@ -425,14 +442,11 @@ class CandlestickPatternAnalyzer:
                 return False
 
         # Last candle should be a long bearish candle closing below the first
-        if not (
+        return (
             not candles[4]["is_bullish"]
             and candles[4]["close"] < candles[0]["close"]
             and candles[4]["body_size"] > candles[4]["avg_body_size"]
-        ):
-            return False
-
-        return True
+        )
 
     def _detect_doji_patterns(self, df: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect doji patterns."""
@@ -480,10 +494,13 @@ class CandlestickPatternAnalyzer:
 
         return patterns
 
-    def _calculate_pattern_type_features(self, patterns: dict[str, list[dict[str, Any]]]) -> dict[str, float]:
+    def _calculate_pattern_type_features(
+        self,
+        patterns: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, float]:
         """Calculate pattern type features (count and presence)."""
         features = {}
-        
+
         # Pattern presence features (binary)
         pattern_types = [
             "engulfing_patterns",
@@ -500,14 +517,16 @@ class CandlestickPatternAnalyzer:
             pattern_list = patterns.get(pattern_type, [])
             features[f"{pattern_type}_count"] = len(pattern_list)
             features[f"{pattern_type}_present"] = 1.0 if pattern_list else 0.0
-        
+
         return features
 
-
-    def _calculate_specific_pattern_features(self, patterns: dict[str, list[dict[str, Any]]]) -> dict[str, float]:
+    def _calculate_specific_pattern_features(
+        self,
+        patterns: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, float]:
         """Calculate specific pattern features (count and presence)."""
         features = {}
-        
+
         # Specific pattern features
         specific_patterns = [
             "bullish_engulfing",
@@ -535,26 +554,31 @@ class CandlestickPatternAnalyzer:
             )
             features[f"{pattern}_count"] = count
             features[f"{pattern}_present"] = 1.0 if count > 0 else 0.0
-        
+
         return features
 
-
-    def _calculate_pattern_density_features(self, patterns: dict[str, list[dict[str, Any]]], df: pd.DataFrame) -> dict[str, float]:
+    def _calculate_pattern_density_features(
+        self,
+        patterns: dict[str, list[dict[str, Any]]],
+        df: pd.DataFrame,
+    ) -> dict[str, float]:
         """Calculate pattern density features."""
         features = {}
-        
+
         # Pattern density features
         total_patterns = sum(len(pattern_list) for pattern_list in patterns.values())
         features["total_patterns"] = total_patterns
         features["pattern_density"] = total_patterns / len(df) if len(df) > 0 else 0.0
-        
+
         return features
 
-
-    def _calculate_bullish_bearish_features(self, patterns: dict[str, list[dict[str, Any]]]) -> dict[str, float]:
+    def _calculate_bullish_bearish_features(
+        self,
+        patterns: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, float]:
         """Calculate bullish vs bearish pattern features."""
         features = {}
-        
+
         # Bullish vs bearish pattern ratio
         bullish_patterns = sum(
             1
@@ -572,19 +596,22 @@ class CandlestickPatternAnalyzer:
         features["bullish_patterns"] = bullish_patterns
         features["bearish_patterns"] = bearish_patterns
         features["bullish_bearish_ratio"] = bullish_patterns / (bearish_patterns + 1e-8)
-        
+
         return features
 
-
-    def _calculate_recent_pattern_features(self, patterns: dict[str, list[dict[str, Any]]], df: pd.DataFrame) -> dict[str, float]:
+    def _calculate_recent_pattern_features(
+        self,
+        patterns: dict[str, list[dict[str, Any]]],
+        df: pd.DataFrame,
+    ) -> dict[str, float]:
         """Calculate recent pattern features (last 5 candles)."""
         features = {}
-        
+
         # Recent pattern features (last 5 candles)
         recent_patterns = []
         for pattern_list in patterns.values():
             recent_patterns.extend(
-                [p for p in pattern_list if p.get("index", 0) >= len(df) - 5]
+                [p for p in pattern_list if p.get("index", 0) >= len(df) - 5],
             )
 
         features["recent_patterns_count"] = len(recent_patterns)
@@ -594,14 +621,16 @@ class CandlestickPatternAnalyzer:
         features["recent_bearish_patterns"] = sum(
             1 for p in recent_patterns if p.get("is_bullish") is False
         )
-        
+
         return features
 
-
-    def _calculate_pattern_confidence_features(self, patterns: dict[str, list[dict[str, Any]]]) -> dict[str, float]:
+    def _calculate_pattern_confidence_features(
+        self,
+        patterns: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, float]:
         """Calculate pattern confidence features."""
         features = {}
-        
+
         # Pattern confidence features
         if patterns:
             all_confidences = [
@@ -609,16 +638,21 @@ class CandlestickPatternAnalyzer:
                 for pattern_list in patterns.values()
                 for p in pattern_list
             ]
-            features["avg_pattern_confidence"] = np.mean(all_confidences) if all_confidences else 0.0
-            features["max_pattern_confidence"] = np.max(all_confidences) if all_confidences else 0.0
-            features["pattern_confidence_std"] = np.std(all_confidences) if all_confidences else 0.0
+            features["avg_pattern_confidence"] = (
+                np.mean(all_confidences) if all_confidences else 0.0
+            )
+            features["max_pattern_confidence"] = (
+                np.max(all_confidences) if all_confidences else 0.0
+            )
+            features["pattern_confidence_std"] = (
+                np.std(all_confidences) if all_confidences else 0.0
+            )
         else:
             features["avg_pattern_confidence"] = 0.0
             features["max_pattern_confidence"] = 0.0
             features["pattern_confidence_std"] = 0.0
-        
-        return features
 
+        return features
 
     def _convert_patterns_to_features(
         self,
@@ -640,8 +674,475 @@ class CandlestickPatternAnalyzer:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error converting patterns to features: {e}")
+            self.print(error("Error converting patterns to features: {e}"))
             return {}
+
+
+class FeatureInteractionEngine:
+    """
+    Engine for creating feature interaction terms to capture complex market dynamics.
+    Focuses on creating meaningful interactions between normalized features like
+    spread and volume metrics, with explicit support for lagged relationships.
+    """
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild("FeatureInteractionEngine")
+        
+        # Interaction configuration
+        self.interaction_config = config.get("feature_interactions", {})
+        self.enable_interactions = self.interaction_config.get("enable_interactions", True)
+        self.max_interactions = self.interaction_config.get("max_interactions", 20)
+        self.interaction_threshold = self.interaction_config.get("interaction_threshold", 0.1)
+        
+        # Lag configuration for causality-aware interactions
+        self.lag_config = self.interaction_config.get("lag_config", {})
+        self.max_lag = self.lag_config.get("max_lag", 5)  # Maximum lag to test
+        self.enable_lagged_interactions = self.lag_config.get("enable_lagged_interactions", True)
+        self.causality_test_lags = self.lag_config.get("causality_test_lags", [1, 2, 3, 5])  # Specific lags to test
+        
+        # Define feature groups for interactions
+        self.spread_features = [
+            "spread_liquidity", "spread_liquidity_bps", "spread_liquidity_z_score",
+            "spread_liquidity_change", "spread_liquidity_pct_change", "bid_ask_spread"
+        ]
+        
+        self.volume_features = [
+            "volume_roc", "volume_pct_change", "volume_z_score", "volume_liquidity",
+            "volume_ma_ratio", "volume_log_diff", "volume_liquidity_z_score"
+        ]
+        
+        self.volatility_features = [
+            "realized_volatility", "parkinson_volatility", "garman_klass_volatility",
+            "realized_volatility_z_score", "volatility_regime", "volatility_percentile"
+        ]
+        
+        self.momentum_features = [
+            "momentum_5", "momentum_10", "momentum_20", "momentum_50",
+            "momentum_z_score", "momentum_acceleration", "momentum_strength"
+        ]
+        
+        self.liquidity_features = [
+            "price_impact", "kyle_lambda", "amihud_illiquidity", "liquidity_regime",
+            "liquidity_percentile", "liquidity_stress", "liquidity_health"
+        ]
+        
+        # Causality-aware feature pairs (predictor -> target)
+        self.causality_pairs = [
+            # Spread changes predict volume changes
+            ("spread_liquidity_change", "volume_roc"),
+            ("spread_liquidity_pct_change", "volume_pct_change"),
+            ("bid_ask_spread", "volume_liquidity"),
+            
+            # Volume changes predict price impact
+            ("volume_roc", "price_impact"),
+            ("volume_pct_change", "kyle_lambda"),
+            ("volume_liquidity", "amihud_illiquidity"),
+            
+            # Volatility changes predict momentum
+            ("realized_volatility", "momentum_5"),
+            ("parkinson_volatility", "momentum_acceleration"),
+            ("volatility_regime", "momentum_strength"),
+            
+            # Momentum changes predict liquidity
+            ("momentum_5", "liquidity_stress"),
+            ("momentum_acceleration", "liquidity_health"),
+            ("momentum_strength", "liquidity_percentile"),
+        ]
+        
+        self.is_initialized = False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="feature interaction engine initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize feature interaction engine."""
+        try:
+            self.logger.info("🚀 Initializing feature interaction engine...")
+            self.is_initialized = True
+            self.logger.info("✅ Feature interaction engine initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(
+                f"❌ Error initializing feature interaction engine: {e}",
+            )
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return={},
+        context="feature interaction generation",
+    )
+    async def generate_interactions(self, features: dict[str, Any]) -> dict[str, Any]:
+        """
+        Generate feature interaction terms from normalized features.
+        
+        Args:
+            features: Dictionary of normalized features
+            
+        Returns:
+            Dictionary containing original features plus interaction terms
+        """
+        try:
+            if not self.is_initialized:
+                self.print(
+                    initialization_error("Feature interaction engine not initialized")
+                )
+                return features
+
+            if not self.enable_interactions:
+                return features
+
+            self.logger.info("🔗 Generating feature interactions...")
+            
+            # Start with original features
+            interaction_features = features.copy()
+            
+            # Generate concurrent interactions (t=0)
+            concurrent_interactions = self._generate_concurrent_interactions(features)
+            interaction_features.update(concurrent_interactions)
+            
+            # Generate lagged interactions for causality
+            if self.enable_lagged_interactions:
+                lagged_interactions = self._generate_lagged_interactions(features)
+                interaction_features.update(lagged_interactions)
+            
+            # Generate causality-aware interactions
+            causality_interactions = self._generate_causality_interactions(features)
+            interaction_features.update(causality_interactions)
+            
+            # Filter interactions based on significance
+            filtered_interactions = self._filter_significant_interactions(interaction_features)
+            
+            self.logger.info(f"✅ Generated {len(filtered_interactions) - len(features)} interaction terms")
+            return filtered_interactions
+
+        except Exception as e:
+            self.print(error("Error generating feature interactions: {e}"))
+            return features
+
+    def _generate_concurrent_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+        """Generate concurrent (t=0) feature interactions."""
+        interactions = {}
+        
+        try:
+            # Generate spread-volume interactions (primary focus)
+            spread_volume_interactions = self._generate_spread_volume_interactions(features)
+            interactions.update(spread_volume_interactions)
+            
+            # Generate volatility-momentum interactions
+            volatility_momentum_interactions = self._generate_volatility_momentum_interactions(features)
+            interactions.update(volatility_momentum_interactions)
+            
+            # Generate liquidity-pressure interactions
+            liquidity_pressure_interactions = self._generate_liquidity_pressure_interactions(features)
+            interactions.update(liquidity_pressure_interactions)
+            
+            # Generate cross-regime interactions
+            cross_regime_interactions = self._generate_cross_regime_interactions(features)
+            interactions.update(cross_regime_interactions)
+            
+            return interactions
+            
+        except Exception as e:
+            self.logger.warning(f"Error generating concurrent interactions: {e}")
+            return interactions
+
+    def _generate_lagged_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+        """Generate lagged interactions for causality testing."""
+        interactions = {}
+        
+        try:
+            # Test causality pairs with different lags
+            for predictor, target in self.causality_pairs:
+                if predictor in features and target in features:
+                    predictor_val = features.get(predictor, 0.0)
+                    target_val = features.get(target, 0.0)
+                    
+                    if isinstance(predictor_val, (int, float)) and isinstance(target_val, (int, float)):
+                        # Test different lag combinations
+                        for lag in self.causality_test_lags:
+                            # Predictor(t-lag) * Target(t) - tests if predictor leads target
+                            lagged_name = f"{predictor}_lag{lag}_x_{target}"
+                            lagged_value = predictor_val * target_val  # Simplified for now
+                            interactions[lagged_name] = lagged_value
+                            
+                            # Target(t-lag) * Predictor(t) - tests if target leads predictor
+                            reverse_lagged_name = f"{target}_lag{lag}_x_{predictor}"
+                            reverse_lagged_value = target_val * predictor_val  # Simplified for now
+                            interactions[reverse_lagged_name] = reverse_lagged_value
+                            
+                            # Conditional lagged interactions
+                            if abs(predictor_val) > self.interaction_threshold and abs(target_val) > self.interaction_threshold:
+                                conditional_name = f"{predictor}_lag{lag}_conditional_x_{target}"
+                                conditional_value = predictor_val * target_val * 1.5
+                                interactions[conditional_name] = conditional_value
+            
+            return interactions
+            
+        except Exception as e:
+            self.logger.warning(f"Error generating lagged interactions: {e}")
+            return interactions
+
+    def _generate_causality_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+        """Generate causality-aware interactions with specific market logic."""
+        interactions = {}
+        
+        try:
+            # Spread changes predicting volume changes (market microstructure causality)
+            if "spread_liquidity_change" in features and "volume_roc" in features:
+                spread_change = features.get("spread_liquidity_change", 0.0)
+                volume_roc = features.get("volume_roc", 0.0)
+                
+                # Widening spreads often predict volume increases (liquidity search)
+                spread_volume_causality = f"spread_change_predicts_volume"
+                causality_value = spread_change * volume_roc
+                interactions[spread_volume_causality] = causality_value
+                
+                # Amplify when spread is widening and volume is increasing
+                if spread_change > 0 and volume_roc > 0:
+                    amplified_name = f"spread_widening_volume_increase"
+                    amplified_value = spread_change * volume_roc * 2.0
+                    interactions[amplified_name] = amplified_value
+            
+            # Volume changes predicting price impact (market impact causality)
+            if "volume_roc" in features and "price_impact" in features:
+                volume_roc = features.get("volume_roc", 0.0)
+                price_impact = features.get("price_impact", 0.0)
+                
+                # High volume often predicts higher price impact
+                volume_impact_causality = f"volume_predicts_price_impact"
+                causality_value = volume_roc * price_impact
+                interactions[volume_impact_causality] = causality_value
+            
+            # Volatility changes predicting momentum (regime causality)
+            if "realized_volatility" in features and "momentum_5" in features:
+                volatility = features.get("realized_volatility", 0.0)
+                momentum = features.get("momentum_5", 0.0)
+                
+                # High volatility often predicts momentum breakdown
+                vol_momentum_causality = f"volatility_predicts_momentum"
+                causality_value = volatility * momentum
+                interactions[vol_momentum_causality] = causality_value
+                
+                # Volatility-momentum divergence (when they move in opposite directions)
+                if volatility * momentum < 0:
+                    divergence_name = f"volatility_momentum_divergence"
+                    divergence_value = abs(volatility) * abs(momentum) * -1
+                    interactions[divergence_name] = divergence_value
+            
+            # Momentum changes predicting liquidity stress (flow causality)
+            if "momentum_5" in features and "liquidity_stress" in features:
+                momentum = features.get("momentum_5", 0.0)
+                liquidity_stress = features.get("liquidity_stress", 0.0)
+                
+                # Strong momentum often predicts liquidity stress
+                momentum_liquidity_causality = f"momentum_predicts_liquidity_stress"
+                causality_value = momentum * liquidity_stress
+                interactions[momentum_liquidity_causality] = causality_value
+            
+            return interactions
+            
+        except Exception as e:
+            self.logger.warning(f"Error generating causality interactions: {e}")
+            return interactions
+
+    def _generate_spread_volume_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+        """Generate spread-volume interaction terms."""
+        interactions = {}
+        
+        try:
+            # Get available spread and volume features
+            available_spreads = [f for f in self.spread_features if f in features]
+            available_volumes = [f for f in self.volume_features if f in features]
+            
+            if not available_spreads or not available_volumes:
+                return interactions
+            
+            # Create spread-volume interactions
+            for spread_feature in available_spreads:
+                for volume_feature in available_volumes:
+                    spread_val = features.get(spread_feature, 0.0)
+                    volume_val = features.get(volume_feature, 0.0)
+                    
+                    if isinstance(spread_val, (int, float)) and isinstance(volume_val, (int, float)):
+                        # Main interaction: spread * volume_roc
+                        interaction_name = f"{spread_feature}_x_{volume_feature}"
+                        interaction_value = spread_val * volume_val
+                        interactions[interaction_name] = interaction_value
+                        
+                        # Additional interaction: spread * volume_roc * volatility (if available)
+                        volatility_features = [f for f in self.volatility_features if f in features]
+                        if volatility_features:
+                            vol_feature = volatility_features[0]  # Use first available
+                            vol_val = features.get(vol_feature, 0.0)
+                            if isinstance(vol_val, (int, float)):
+                                triple_interaction_name = f"{spread_feature}_x_{volume_feature}_x_{vol_feature}"
+                                triple_interaction_value = spread_val * volume_val * vol_val
+                                interactions[triple_interaction_name] = triple_interaction_value
+                        
+                        # Ratio interaction: spread / volume (when volume is significant)
+                        if abs(volume_val) > 1e-6:
+                            ratio_name = f"{spread_feature}_div_{volume_feature}"
+                            ratio_value = spread_val / (abs(volume_val) + 1e-8)
+                            interactions[ratio_name] = ratio_value
+                        
+                        # Conditional interaction: spread * volume only when both are significant
+                        if abs(spread_val) > self.interaction_threshold and abs(volume_val) > self.interaction_threshold:
+                            conditional_name = f"{spread_feature}_conditional_x_{volume_feature}"
+                            conditional_value = spread_val * volume_val * 2.0  # Amplify significant interactions
+                            interactions[conditional_name] = conditional_value
+            
+            return interactions
+            
+        except Exception as e:
+            self.logger.warning(f"Error generating spread-volume interactions: {e}")
+            return interactions
+
+    def _generate_volatility_momentum_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+        """Generate volatility-momentum interaction terms."""
+        interactions = {}
+        
+        try:
+            available_volatility = [f for f in self.volatility_features if f in features]
+            available_momentum = [f for f in self.momentum_features if f in features]
+            
+            if not available_volatility or not available_momentum:
+                return interactions
+            
+            for vol_feature in available_volatility:
+                for mom_feature in available_momentum:
+                    vol_val = features.get(vol_feature, 0.0)
+                    mom_val = features.get(mom_feature, 0.0)
+                    
+                    if isinstance(vol_val, (int, float)) and isinstance(mom_val, (int, float)):
+                        # Volatility-momentum interaction
+                        interaction_name = f"{vol_feature}_x_{mom_feature}"
+                        interaction_value = vol_val * mom_val
+                        interactions[interaction_name] = interaction_value
+                        
+                        # Volatility-momentum divergence (when they move in opposite directions)
+                        if vol_val * mom_val < 0:
+                            divergence_name = f"{vol_feature}_divergence_{mom_feature}"
+                            divergence_value = abs(vol_val) * abs(mom_val) * -1  # Negative for divergence
+                            interactions[divergence_name] = divergence_value
+            
+            return interactions
+            
+        except Exception as e:
+            self.logger.warning(f"Error generating volatility-momentum interactions: {e}")
+            return interactions
+
+    def _generate_liquidity_pressure_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+        """Generate liquidity-pressure interaction terms."""
+        interactions = {}
+        
+        try:
+            available_liquidity = [f for f in self.liquidity_features if f in features]
+            available_volumes = [f for f in self.volume_features if f in features]
+            
+            if not available_liquidity or not available_volumes:
+                return interactions
+            
+            for liq_feature in available_liquidity:
+                for vol_feature in available_volumes:
+                    liq_val = features.get(liq_feature, 0.0)
+                    vol_val = features.get(vol_feature, 0.0)
+                    
+                    if isinstance(liq_val, (int, float)) and isinstance(vol_val, (int, float)):
+                        # Liquidity-pressure interaction
+                        interaction_name = f"{liq_feature}_x_{vol_feature}"
+                        interaction_value = liq_val * vol_val
+                        interactions[interaction_name] = interaction_value
+                        
+                        # Liquidity stress amplification (when both are high)
+                        if abs(liq_val) > self.interaction_threshold and abs(vol_val) > self.interaction_threshold:
+                            stress_name = f"{liq_feature}_stress_{vol_feature}"
+                            stress_value = liq_val * vol_val * 1.5  # Amplify stress conditions
+                            interactions[stress_name] = stress_value
+            
+            return interactions
+            
+        except Exception as e:
+            self.logger.warning(f"Error generating liquidity-pressure interactions: {e}")
+            return interactions
+
+    def _generate_cross_regime_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+        """Generate cross-regime interaction terms."""
+        interactions = {}
+        
+        try:
+            # Look for regime-related features
+            regime_features = [f for f in features.keys() if 'regime' in f.lower()]
+            z_score_features = [f for f in features.keys() if 'z_score' in f.lower()]
+            
+            if not regime_features or not z_score_features:
+                return interactions
+            
+            for regime_feature in regime_features:
+                for z_score_feature in z_score_features:
+                    regime_val = features.get(regime_feature, 0.0)
+                    z_score_val = features.get(z_score_feature, 0.0)
+                    
+                    if isinstance(regime_val, (int, float)) and isinstance(z_score_val, (int, float)):
+                        # Regime-zscore interaction
+                        interaction_name = f"{regime_feature}_x_{z_score_feature}"
+                        interaction_value = regime_val * z_score_val
+                        interactions[interaction_name] = interaction_value
+                        
+                        # Extreme regime conditions
+                        if abs(z_score_val) > 2.0:  # More than 2 standard deviations
+                            extreme_name = f"{regime_feature}_extreme_{z_score_feature}"
+                            extreme_value = regime_val * z_score_val * 2.0  # Amplify extreme conditions
+                            interactions[extreme_name] = extreme_value
+            
+            return interactions
+            
+        except Exception as e:
+            self.logger.warning(f"Error generating cross-regime interactions: {e}")
+            return interactions
+
+    def _filter_significant_interactions(self, features: dict[str, Any]) -> dict[str, Any]:
+        """Filter interactions based on significance threshold."""
+        try:
+            if len(features) <= self.max_interactions:
+                return features
+            
+            # Separate original features from interactions
+            original_features = {}
+            interaction_features = {}
+            
+            for key, value in features.items():
+                if '_x_' in key or '_div_' in key or '_conditional_' in key or '_divergence_' in key or '_stress_' in key or '_extreme_' in key or '_lag' in key or '_predicts_' in key:
+                    interaction_features[key] = value
+                else:
+                    original_features[key] = value
+            
+            # Sort interactions by absolute value
+            sorted_interactions = sorted(
+                interaction_features.items(),
+                key=lambda x: abs(x[1]) if isinstance(x[1], (int, float)) else 0,
+                reverse=True
+            )
+            
+            # Keep top interactions
+            max_interaction_count = self.max_interactions - len(original_features)
+            selected_interactions = dict(sorted_interactions[:max_interaction_count])
+            
+            # Combine original features with selected interactions
+            filtered_features = {**original_features, **selected_interactions}
+            
+            return filtered_features
+            
+        except Exception as e:
+            self.logger.warning(f"Error filtering interactions: {e}")
+            return features
+
+    def print(self, message: str) -> None:
+        """Print message with proper formatting."""
+        print(message)
 
 
 class AdvancedFeatureEngineering:
@@ -732,6 +1233,7 @@ class AdvancedFeatureEngineering:
         self.momentum_analyzer = None
         self.liquidity_analyzer = None
         self.candlestick_analyzer = None
+        self.feature_interaction_engine = FeatureInteractionEngine(config)
 
         self.is_initialized = False
 
@@ -770,6 +1272,9 @@ class AdvancedFeatureEngineering:
                 self.candlestick_analyzer = CandlestickPatternAnalyzer(self.config)
                 await self.candlestick_analyzer.initialize()
 
+            # Initialize feature interaction engine
+            await self.feature_interaction_engine.initialize()
+
             # Initialize meta-labeling system
             if self.enable_meta_labeling:
                 from src.analyst.meta_labeling_system import MetaLabelingSystem
@@ -782,7 +1287,7 @@ class AdvancedFeatureEngineering:
             return True
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"❌ Error initializing advanced feature engineering: {e}",
             )
             return False
@@ -811,7 +1316,9 @@ class AdvancedFeatureEngineering:
         """
         try:
             if not self.is_initialized:
-                self.logger.error("Advanced feature engineering not initialized")
+                self.print(
+                    initialization_error("Advanced feature engineering not initialized")
+                )
                 return {}
 
             features = {}
@@ -888,13 +1395,19 @@ class AdvancedFeatureEngineering:
                 )
                 selected_features.update(meta_labels)
 
+            # Generate feature interactions
+            interaction_features = await self.feature_interaction_engine.generate_interactions(selected_features)
+            original_feature_count = len(selected_features)
+            selected_features.update(interaction_features)
+            interaction_count = len(selected_features) - original_feature_count
+
             self.logger.info(
-                f"✅ Engineered {len(selected_features)} advanced features",
+                f"✅ Engineered {len(selected_features)} advanced features (including {interaction_count} interaction terms)",
             )
             return selected_features
 
         except Exception as e:
-            self.logger.error(f"Error engineering advanced features: {e}")
+            self.print(error("Error engineering advanced features: {e}"))
             return {}
 
     async def _engineer_multi_timeframe_features(
@@ -933,7 +1446,7 @@ class AdvancedFeatureEngineering:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error engineering multi-timeframe features: {e}")
+            self.print(error("Error engineering multi-timeframe features: {e}"))
             return {}
 
     async def _calculate_timeframe_features(
@@ -975,7 +1488,7 @@ class AdvancedFeatureEngineering:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error calculating {timeframe} features: {e}")
+            self.print(error("Error calculating {timeframe} features: {e}"))
             return {}
 
     def _resample_to_timeframe(
@@ -1013,7 +1526,7 @@ class AdvancedFeatureEngineering:
             return resampled.dropna()
 
         except Exception as e:
-            self.logger.error(f"Error resampling to {timeframe}: {e}")
+            self.print(error("Error resampling to {timeframe}: {e}"))
             return data
 
     def _calculate_technical_indicators(
@@ -1085,7 +1598,7 @@ class AdvancedFeatureEngineering:
             return features
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error calculating technical indicators for {timeframe}: {e}",
             )
             return {}
@@ -1119,7 +1632,9 @@ class AdvancedFeatureEngineering:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error calculating volume analysis for {timeframe}: {e}")
+            self.logger.exception(
+                f"Error calculating volume analysis for {timeframe}: {e}",
+            )
             return {}
 
     def _calculate_volatility_analysis(
@@ -1151,7 +1666,7 @@ class AdvancedFeatureEngineering:
             return features
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error calculating volatility analysis for {timeframe}: {e}",
             )
             return {}
@@ -1182,7 +1697,7 @@ class AdvancedFeatureEngineering:
             return features
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error calculating momentum analysis for {timeframe}: {e}",
             )
             return {}
@@ -1227,7 +1742,7 @@ class AdvancedFeatureEngineering:
             return labels
 
         except Exception as e:
-            self.logger.error(f"Error generating meta-labels: {e}")
+            self.print(error("Error generating meta-labels: {e}"))
             return {}
 
     async def _generate_analyst_labels(
@@ -1300,7 +1815,7 @@ class AdvancedFeatureEngineering:
             return {"NO_SETUP": 1}
 
         except Exception as e:
-            self.logger.error(f"Error generating analyst labels: {e}")
+            self.print(error("Error generating analyst labels: {e}"))
             return {"NO_SETUP": 1}
 
     async def _generate_tactician_labels(
@@ -1369,7 +1884,7 @@ class AdvancedFeatureEngineering:
             }
 
         except Exception as e:
-            self.logger.error(f"Error generating tactician labels: {e}")
+            self.print(error("Error generating tactician labels: {e}"))
             return {
                 "LOWEST_PRICE_NEXT_1m": price_data["close"].iloc[-1],
                 "HIGHEST_PRICE_NEXT_1m": price_data["close"].iloc[-1],
@@ -1408,7 +1923,7 @@ class AdvancedFeatureEngineering:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error engineering microstructure features: {e}")
+            self.print(error("Error engineering microstructure features: {e}"))
             return {}
 
     def _calculate_price_impact(
@@ -1447,7 +1962,7 @@ class AdvancedFeatureEngineering:
             }
 
         except Exception as e:
-            self.logger.error(f"Error calculating price impact: {e}")
+            self.print(error("Error calculating price impact: {e}"))
             return {}
 
     def _calculate_order_flow_imbalance(
@@ -1479,7 +1994,7 @@ class AdvancedFeatureEngineering:
             }
 
         except Exception as e:
-            self.logger.error(f"Error calculating order flow imbalance: {e}")
+            self.print(error("Error calculating order flow imbalance: {e}"))
             return {}
 
     def _calculate_volume_profile(
@@ -1517,7 +2032,7 @@ class AdvancedFeatureEngineering:
             }
 
         except Exception as e:
-            self.logger.error(f"Error calculating volume profile: {e}")
+            self.print(error("Error calculating volume profile: {e}"))
             return {}
 
     def _engineer_adaptive_indicators(
@@ -1543,7 +2058,7 @@ class AdvancedFeatureEngineering:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error engineering adaptive indicators: {e}")
+            self.print(error("Error engineering adaptive indicators: {e}"))
             return {}
 
     def _calculate_adaptive_moving_averages(
@@ -1583,7 +2098,7 @@ class AdvancedFeatureEngineering:
             }
 
         except Exception as e:
-            self.logger.error(f"Error calculating adaptive moving averages: {e}")
+            self.print(error("Error calculating adaptive moving averages: {e}"))
             return {}
 
     def _select_optimal_features(self, features: dict[str, Any]) -> dict[str, float]:
@@ -1634,7 +2149,7 @@ class VolatilityRegimeModel:
             self.is_initialized = True
             return True
         except Exception as e:
-            self.logger.error(f"Error initializing volatility model: {e}")
+            self.print(initialization_error("Error initializing volatility model: {e}"))
             return False
 
     async def model_volatility(self, price_data: pd.DataFrame) -> dict[str, float]:
@@ -1672,7 +2187,7 @@ class VolatilityRegimeModel:
             }
 
         except Exception as e:
-            self.logger.error(f"Error modeling volatility: {e}")
+            self.print(error("Error modeling volatility: {e}"))
             return {}
 
     def _calculate_parkinson_volatility(self, price_data: pd.DataFrame) -> pd.Series:
@@ -1711,7 +2226,9 @@ class CorrelationAnalyzer:
             self.is_initialized = True
             return True
         except Exception as e:
-            self.logger.error(f"Error initializing correlation analyzer: {e}")
+            self.print(
+                initialization_error("Error initializing correlation analyzer: {e}")
+            )
             return False
 
     async def analyze_correlations(self, price_data: pd.DataFrame) -> dict[str, float]:
@@ -1740,7 +2257,7 @@ class CorrelationAnalyzer:
             }
 
         except Exception as e:
-            self.logger.error(f"Error analyzing correlations: {e}")
+            self.print(error("Error analyzing correlations: {e}"))
             return {}
 
 
@@ -1758,7 +2275,9 @@ class MomentumAnalyzer:
             self.is_initialized = True
             return True
         except Exception as e:
-            self.logger.error(f"Error initializing momentum analyzer: {e}")
+            self.print(
+                initialization_error("Error initializing momentum analyzer: {e}")
+            )
             return False
 
     async def analyze_momentum(self, price_data: pd.DataFrame) -> dict[str, float]:
@@ -1802,7 +2321,7 @@ class MomentumAnalyzer:
             }
 
         except Exception as e:
-            self.logger.error(f"Error analyzing momentum: {e}")
+            self.print(error("Error analyzing momentum: {e}"))
             return {}
 
 
@@ -1820,7 +2339,9 @@ class LiquidityAnalyzer:
             self.is_initialized = True
             return True
         except Exception as e:
-            self.logger.error(f"Error initializing liquidity analyzer: {e}")
+            self.print(
+                initialization_error("Error initializing liquidity analyzer: {e}")
+            )
             return False
 
     async def analyze_liquidity(
@@ -1868,5 +2389,5 @@ class LiquidityAnalyzer:
             }
 
         except Exception as e:
-            self.logger.error(f"Error analyzing liquidity: {e}")
+            self.print(error("Error analyzing liquidity: {e}"))
             return {}

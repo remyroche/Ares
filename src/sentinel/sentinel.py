@@ -11,6 +11,14 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+    warning,
+)
 
 
 class Sentinel:
@@ -67,7 +75,7 @@ class Sentinel:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for sentinel")
+                self.print(invalid("Invalid configuration for sentinel"))
                 return False
 
             # Initialize monitoring rules
@@ -76,8 +84,8 @@ class Sentinel:
             self.logger.info("✅ Sentinel initialization completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Sentinel initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Sentinel initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -103,8 +111,8 @@ class Sentinel:
 
             self.logger.info("Sentinel configuration loaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error loading sentinel configuration: {e}")
+        except Exception:
+            self.print(error("Error loading sentinel configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -121,24 +129,24 @@ class Sentinel:
         try:
             # Validate monitoring interval
             if self.monitoring_interval <= 0:
-                self.logger.error("Invalid monitoring interval")
+                self.print(invalid("Invalid monitoring interval"))
                 return False
 
             # Validate alert threshold
             if self.alert_threshold < 0 or self.alert_threshold > 1:
-                self.logger.error("Invalid alert threshold")
+                self.print(invalid("Invalid alert threshold"))
                 return False
 
             # Validate max alerts
             if self.max_alerts <= 0:
-                self.logger.error("Invalid max alerts")
+                self.print(invalid("Invalid max alerts"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -178,8 +186,8 @@ class Sentinel:
                 f"Initialized {len(self.monitoring_rules)} monitoring rule sets",
             )
 
-        except Exception as e:
-            self.logger.error(f"Error initializing monitoring rules: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing monitoring rules: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -199,7 +207,7 @@ class Sentinel:
         """
         try:
             if self.is_monitoring:
-                self.logger.warning("Monitoring already active")
+                self.print(warning("Monitoring already active"))
                 return True
 
             self.is_monitoring = True
@@ -211,8 +219,8 @@ class Sentinel:
             self.logger.info("✅ Sentinel monitoring started successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error starting monitoring: {e}")
+        except Exception:
+            self.print(error("Error starting monitoring: {e}"))
             return False
 
     @handle_errors(
@@ -230,8 +238,8 @@ class Sentinel:
                 # Wait for next interval
                 await asyncio.sleep(self.monitoring_interval)
 
-        except Exception as e:
-            self.logger.error(f"Error in monitoring loop: {e}")
+        except Exception:
+            self.print(error("Error in monitoring loop: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -253,8 +261,8 @@ class Sentinel:
             if "system" in self.monitoring_rules:
                 await self._check_system_metrics()
 
-        except Exception as e:
-            self.logger.error(f"Error performing monitoring checks: {e}")
+        except Exception:
+            self.print(error("Error performing monitoring checks: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -293,8 +301,8 @@ class Sentinel:
                     response_time,
                 )
 
-        except Exception as e:
-            self.logger.error(f"Error checking performance metrics: {e}")
+        except Exception:
+            self.print(error("Error checking performance metrics: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -329,8 +337,8 @@ class Sentinel:
                     critical_errors,
                 )
 
-        except Exception as e:
-            self.logger.error(f"Error checking error metrics: {e}")
+        except Exception:
+            self.print(error("Error checking error metrics: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -361,8 +369,8 @@ class Sentinel:
             if data_quality < rules["data_quality_threshold"]:
                 await self._create_alert("SYSTEM", "Low data quality", data_quality)
 
-        except Exception as e:
-            self.logger.error(f"Error checking system metrics: {e}")
+        except Exception:
+            self.print(error("Error checking system metrics: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -415,8 +423,8 @@ class Sentinel:
             # Execute alert callbacks
             await self._execute_alert_callbacks(alert)
 
-        except Exception as e:
-            self.logger.error(f"Error creating alert: {e}")
+        except Exception:
+            self.print(error("Error creating alert: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -445,11 +453,11 @@ class Sentinel:
                     else:
                         callback(alert)
                     self.logger.debug(f"Alert callback {i+1} executed successfully")
-                except Exception as e:
-                    self.logger.error(f"Alert callback {i+1} failed: {e}")
+                except Exception:
+                    self.print(failed("Alert callback {i+1} failed: {e}"))
 
-        except Exception as e:
-            self.logger.error(f"Error executing alert callbacks: {e}")
+        except Exception:
+            self.print(error("Error executing alert callbacks: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -468,10 +476,10 @@ class Sentinel:
                 self.alert_callbacks.append(callback)
                 self.logger.info("Alert callback registered")
             else:
-                self.logger.warning("Alert callback already registered")
+                self.print(warning("Alert callback already registered"))
 
-        except Exception as e:
-            self.logger.error(f"Error registering alert callback: {e}")
+        except Exception:
+            self.print(error("Error registering alert callback: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -490,10 +498,10 @@ class Sentinel:
                 self.alert_callbacks.remove(callback)
                 self.logger.info("Alert callback unregistered")
             else:
-                self.logger.warning("Alert callback not found")
+                self.print(missing("Alert callback not found"))
 
-        except Exception as e:
-            self.logger.error(f"Error unregistering alert callback: {e}")
+        except Exception:
+            self.print(error("Error unregistering alert callback: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -530,8 +538,8 @@ class Sentinel:
 
             return filtered_alerts
 
-        except Exception as e:
-            self.logger.error(f"Error getting alerts: {e}")
+        except Exception:
+            self.print(error("Error getting alerts: {e}"))
             return []
 
     @handle_errors(
@@ -546,8 +554,8 @@ class Sentinel:
             self.alerts.clear()
             self.logger.info(f"Cleared {alert_count} alerts")
 
-        except Exception as e:
-            self.logger.error(f"Error clearing alerts: {e}")
+        except Exception:
+            self.print(error("Error clearing alerts: {e}"))
 
     def get_sentinel_status(self) -> dict[str, Any]:
         """
@@ -587,8 +595,8 @@ class Sentinel:
 
             self.logger.info("✅ Sentinel stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping sentinel: {e}")
+        except Exception:
+            self.print(error("Error stopping sentinel: {e}"))
 
 
 # Global sentinel instance

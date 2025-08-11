@@ -937,7 +937,6 @@ OPTUNA_CONFIG = {
     "dual_model_system_parameters": DualModelSystemParameters(),
     "meta_labeling_parameters": MetaLabelingParameters(),
     "order_management_parameters": OrderManagementParameters(),
-    "model_training_parameters": ModelTrainingParameters(),
 }
 
 

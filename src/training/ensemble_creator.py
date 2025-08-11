@@ -23,6 +23,13 @@ from src.training.steps.step5_multi_stage_hpo import MultiStageHPO
 # Import existing components
 from src.utils.comprehensive_logger import get_component_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+)
 
 
 @dataclass
@@ -122,7 +129,7 @@ class EnsembleCreator:
 
             # Validate ensemble configuration
             if not self._validate_ensemble_config():
-                self.logger.error("Invalid ensemble configuration")
+                self.print(invalid("Invalid ensemble configuration"))
                 return False
 
             self.is_initialized = True
@@ -131,8 +138,8 @@ class EnsembleCreator:
             )
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Ensemble Creator initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Ensemble Creator initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -148,8 +155,12 @@ class EnsembleCreator:
 
             self.logger.info("Enhanced Coarse Optimizer initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing Enhanced Coarse Optimizer: {e}")
+        except Exception:
+            self.print(
+                initialization_error(
+                    "Error initializing Enhanced Coarse Optimizer: {e}",
+                ),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -165,7 +176,9 @@ class EnsembleCreator:
             self.logger.info("Multi-Stage HPO initialized successfully")
 
         except Exception as e:
-            self.logger.error(f"Error initializing Multi-Stage HPO: {e}")
+            error_msg = f"Error initializing Multi-Stage HPO: {e}"
+            self.logger.exception(error_msg)
+            self.print(initialization_error(error_msg))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -180,23 +193,25 @@ class EnsembleCreator:
 
             self.logger.info("ML Confidence Predictor initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing ML Confidence Predictor: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing ML Confidence Predictor: {e}"),
+            )
 
     def _validate_ensemble_config(self) -> bool:
         """Validate ensemble configuration."""
         try:
             # Validate thresholds
             if not (0.0 <= self.ensemble_config.ensemble_pruning_threshold <= 1.0):
-                self.logger.error("Ensemble pruning threshold must be between 0 and 1")
+                self.print(error("Ensemble pruning threshold must be between 0 and 1"))
                 return False
 
             if not (0.0 <= self.ensemble_config.regularization_strength <= 1.0):
-                self.logger.error("Regularization strength must be between 0 and 1")
+                self.print(error("Regularization strength must be between 0 and 1"))
                 return False
 
             if not (0.0 <= self.ensemble_config.l1_ratio <= 1.0):
-                self.logger.error("L1 ratio must be between 0 and 1")
+                self.print(error("L1 ratio must be between 0 and 1"))
                 return False
 
             # Validate model counts
@@ -211,14 +226,16 @@ class EnsembleCreator:
 
             # Validate timeframes
             if not self.ensemble_config.timeframes:
-                self.logger.error("Timeframes list cannot be empty")
+                self.print(error("Timeframes list cannot be empty"))
                 return False
 
             self.logger.info("Ensemble configuration validation successful")
             return True
 
         except Exception as e:
-            self.logger.error(f"Error validating ensemble configuration: {e}")
+            error_msg = f"Error validating ensemble configuration: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return False
 
     @handle_specific_errors(
@@ -250,7 +267,8 @@ class EnsembleCreator:
         """
         try:
             if not self.is_initialized:
-                raise ValueError("Ensemble Creator not initialized")
+                msg = "Ensemble Creator not initialized"
+                raise ValueError(msg)
 
             self.logger.info(f"🎯 Creating {ensemble_type} ensemble: {ensemble_name}")
 
@@ -321,7 +339,9 @@ class EnsembleCreator:
             }
 
         except Exception as e:
-            self.logger.error(f"Error creating ensemble '{ensemble_name}': {e}")
+            error_msg = f"Error creating ensemble '{ensemble_name}': {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return None
 
     async def _prepare_ensemble_data(
@@ -369,7 +389,9 @@ class EnsembleCreator:
             return ensemble_data
 
         except Exception as e:
-            self.logger.error(f"Error preparing ensemble data: {e}")
+            error_msg = f"Error preparing ensemble data: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return {}
 
     async def _apply_aggressive_pruning(
@@ -414,7 +436,7 @@ class EnsembleCreator:
 
             # Step 2: Model performance pruning
             model_performances = {}
-            for timeframe, model in ensemble_data["models"].items():
+            for timeframe in ensemble_data["models"]:
                 if timeframe in pruned_data["predictions"]:
                     # Calculate model performance
                     predictions = pruned_data["predictions"][timeframe]
@@ -461,7 +483,9 @@ class EnsembleCreator:
             return pruned_data
 
         except Exception as e:
-            self.logger.error(f"Error applying aggressive pruning: {e}")
+            error_msg = f"Error applying aggressive pruning: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return ensemble_data
 
     def _calculate_model_performance(
@@ -480,7 +504,9 @@ class EnsembleCreator:
             return roc_auc_score(targets, predictions)
 
         except Exception as e:
-            self.logger.error(f"Error calculating model performance: {e}")
+            error_msg = f"Error calculating model performance: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return 0.5
 
     def _calculate_prediction_correlations(
@@ -496,7 +522,9 @@ class EnsembleCreator:
             self.logger.info(f"Ensemble diversity metrics: {diversity_metrics}")
             return correlation_matrix
         except Exception as e:
-            self.logger.error(f"Error calculating model prediction correlations/diversity: {e}")
+            self.logger.exception(
+                f"Error calculating model prediction correlations/diversity: {e}",
+            )
             return pd.DataFrame()
 
     def _calculate_diversity_metrics(self, pred_df: pd.DataFrame) -> dict:
@@ -504,7 +532,7 @@ class EnsembleCreator:
         metrics = {"q_stat": [], "disagreement": [], "entropy": [], "double_fault": []}
         n_models = pred_df.shape[1]
         for i in range(n_models):
-            for j in range(i+1, n_models):
+            for j in range(i + 1, n_models):
                 p1 = pred_df.iloc[:, i]
                 p2 = pred_df.iloc[:, j]
                 # Binarize predictions for diversity metrics
@@ -522,10 +550,22 @@ class EnsembleCreator:
                 metrics["double_fault"].append(df)
         # Entropy for each sample
         preds_bin = (pred_df > 0.5).astype(int)
-        entropy = np.mean([np.mean(-np.bincount(row, minlength=2)/n_models * np.log2(np.bincount(row, minlength=2)/n_models + 1e-9)) for row in preds_bin.values])
+        entropy = np.mean(
+            [
+                np.mean(
+                    -np.bincount(row, minlength=2)
+                    / n_models
+                    * np.log2(np.bincount(row, minlength=2) / n_models + 1e-9),
+                )
+                for row in preds_bin.values
+            ],
+        )
         metrics["entropy"] = entropy
         # Aggregate
-        return {k: float(np.mean(v)) if isinstance(v, list) and v else v for k, v in metrics.items()}
+        return {
+            k: float(np.mean(v)) if isinstance(v, list) and v else v
+            for k, v in metrics.items()
+        }
 
     def _remove_correlated_models(
         self,
@@ -537,7 +577,7 @@ class EnsembleCreator:
             models_to_remove = set()
 
             # Find highly correlated model pairs
-            for i, model1 in enumerate(correlation_matrix.columns):
+            for i, _model1 in enumerate(correlation_matrix.columns):
                 for j, model2 in enumerate(correlation_matrix.columns):
                     if i < j:  # Avoid duplicate pairs
                         correlation = abs(correlation_matrix.iloc[i, j])
@@ -564,7 +604,9 @@ class EnsembleCreator:
             return ensemble_data
 
         except Exception as e:
-            self.logger.error(f"Error removing correlated models: {e}")
+            error_msg = f"Error removing correlated models: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return ensemble_data
 
     async def _apply_regularization(
@@ -607,7 +649,9 @@ class EnsembleCreator:
             return regularized_data
 
         except Exception as e:
-            self.logger.error(f"Error applying regularization: {e}")
+            error_msg = f"Error applying regularization: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return ensemble_data
 
     async def _create_optimized_ensemble(
@@ -623,7 +667,8 @@ class EnsembleCreator:
             )
 
             if not self.enhanced_coarse_optimizer:
-                raise ValueError("Enhanced Coarse Optimizer not available")
+                msg = "Enhanced Coarse Optimizer not available"
+                raise ValueError(msg)
 
             # Prepare ensemble creation data
             ensemble_creation_data = {
@@ -656,10 +701,13 @@ class EnsembleCreator:
                     f"✅ Optimized ensemble created with {len(ensemble_data['models'])} models",
                 )
                 return ensemble_result
-            raise ValueError("Failed to create optimized ensemble")
+            msg = "Failed to create optimized ensemble"
+            raise ValueError(msg)
 
         except Exception as e:
-            self.logger.error(f"Error creating optimized ensemble: {e}")
+            error_msg = f"Error creating optimized ensemble: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return {}
 
     async def _apply_multi_stage_hpo(
@@ -708,7 +756,9 @@ class EnsembleCreator:
             return ensemble_result
 
         except Exception as e:
-            self.logger.error(f"Error applying multi-stage HPO: {e}")
+            error_msg = f"Error applying multi-stage HPO: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return ensemble_result
 
     async def _evaluate_ensemble(
@@ -739,7 +789,9 @@ class EnsembleCreator:
             return evaluation_metrics
 
         except Exception as e:
-            self.logger.error(f"Error evaluating ensemble: {e}")
+            error_msg = f"Error evaluating ensemble: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return {
                 "ensemble_score": 0.0,
                 "diversity_score": 0.0,
@@ -757,24 +809,19 @@ class EnsembleCreator:
             self.logger.info(f"🏗️ Creating hierarchical ensemble '{ensemble_name}'")
 
             # Combine base ensembles
-            hierarchical_data = {
-                "base_ensembles": base_ensembles,
-                "ensemble_type": "hierarchical_ensemble",
-                "ensemble_config": self.ensemble_config,
-            }
 
             # Create hierarchical ensemble
-            hierarchical_result = await self.create_ensemble(
+            return await self.create_ensemble(
                 training_data={},  # Not needed for hierarchical ensemble
                 models=base_ensembles,
                 ensemble_name=ensemble_name,
                 ensemble_type="hierarchical_ensemble",
             )
 
-            return hierarchical_result
-
         except Exception as e:
-            self.logger.error(f"Error creating hierarchical ensemble: {e}")
+            error_msg = f"Error creating hierarchical ensemble: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return None
 
     def get_ensemble_info(self, ensemble_name: str) -> dict[str, Any]:
@@ -803,7 +850,7 @@ class EnsembleCreator:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting ensemble info: {e}")
+            self.print(error("Error getting ensemble info: {e}"))
             return {"error": str(e)}
 
     def get_all_ensembles_info(self) -> dict[str, Any]:
@@ -812,20 +859,20 @@ class EnsembleCreator:
             return {
                 "total_ensembles": len(self.ensembles),
                 "ensembles": {
-                    name: self.get_ensemble_info(name) for name in self.ensembles.keys()
+                    name: self.get_ensemble_info(name) for name in self.ensembles
                 },
                 "creation_history": self.creation_history,
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting all ensembles info: {e}")
+            self.print(error("Error getting all ensembles info: {e}"))
             return {"error": str(e)}
 
     async def save_ensemble(self, ensemble_name: str, file_path: str) -> bool:
         """Save ensemble to file."""
         try:
             if ensemble_name not in self.ensembles:
-                self.logger.error(f"Ensemble '{ensemble_name}' not found")
+                self.print(missing("Ensemble '{ensemble_name}' not found"))
                 return False
 
             # Create directory if it doesn't exist
@@ -839,14 +886,16 @@ class EnsembleCreator:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error saving ensemble: {e}")
+            error_msg = f"Error saving ensemble '{ensemble_name}' to {file_path}: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return False
 
     async def load_ensemble(self, ensemble_name: str, file_path: str) -> bool:
         """Load ensemble from file."""
         try:
             if not os.path.exists(file_path):
-                self.logger.error(f"Ensemble file not found: {file_path}")
+                self.print(missing("Ensemble file not found: {file_path}"))
                 return False
 
             # Load ensemble
@@ -858,7 +907,11 @@ class EnsembleCreator:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error loading ensemble: {e}")
+            error_msg = (
+                f"Error loading ensemble '{ensemble_name}' from {file_path}: {e}"
+            )
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return False
 
     @handle_errors(
@@ -892,7 +945,9 @@ class EnsembleCreator:
             self.logger.info("✅ Ensemble Creator stopped successfully")
 
         except Exception as e:
-            self.logger.error(f"Error stopping ensemble creator: {e}")
+            error_msg = f"Error stopping ensemble creator: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
 
 
 # Global ensemble creator instance

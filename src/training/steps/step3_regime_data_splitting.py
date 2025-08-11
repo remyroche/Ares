@@ -1,16 +1,25 @@
 # src/training/steps/step3_regime_data_splitting.py
 
 import asyncio
+import gc
 import json
 import os
+from src.utils.data_optimizer import regime_columns
 import pickle
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    execution_error,
+    failed,
+    initialization_error,
+    warning,
+)
+from src.training.steps.unified_data_loader import get_unified_data_loader
 
 
 class RegimeDataSplittingStep:
@@ -27,241 +36,320 @@ class RegimeDataSplittingStep:
             self.logger.info("Regime Data Splitting Step initialized successfully")
 
         except Exception as e:
-            self.logger.error(f"Error initializing Regime Data Splitting Step: {e}")
+            self.logger.exception(
+                initialization_error(
+                    f"Error initializing Regime Data Splitting Step: {e}",
+                ),
+            )
             raise
 
-    async def execute(
-        self,
-        training_input: dict[str, Any],
-        pipeline_state: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Execute regime data splitting.
-
-        Args:
-            training_input: Training input parameters
-            pipeline_state: Current pipeline state
-
-        Returns:
-            Dict containing regime data splitting results
-        """
+    async def execute(self) -> dict[str, Any]:
+        """Execute the regime data splitting step."""
         try:
-            self.logger.info("🔄 Executing Regime Data Splitting...")
+            self.logger.info("🔄 Loading unified data for regime data splitting...")
 
-            # Extract parameters
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange = training_input.get("exchange", "BINANCE")
-            data_dir = training_input.get("data_dir", "data/training")
+            # Load unified data
+            data_loader = get_unified_data_loader(self.config)
+            unified_data = await data_loader.load_unified_data(
+                symbol=self.config.get("symbol", "ETHUSDT"),
+                exchange=self.config.get("exchange", "BINANCE"),
+                timeframe=self.config.get("timeframe", "1m"),
+                lookback_days=self.config.get("lookback_days", 180),
+            )
 
-            # Try to load prepared data first (contains features and labels)
-            prepared_data_path = f"{data_dir}/{symbol}_prepared_data.pkl"
-            historical_data_path = f"{data_dir}/{exchange}_{symbol}_historical_data.pkl"
-            
-            if os.path.exists(prepared_data_path):
-                # Load prepared data which contains features and labels
-                self.logger.info(f"Loading prepared data from: {prepared_data_path}")
-                with open(prepared_data_path, "rb") as f:
-                    historical_data = pickle.load(f)
-                self.logger.info(f"✅ Loaded prepared data: {historical_data.shape if hasattr(historical_data, 'shape') else 'dict'}")
-            elif os.path.exists(historical_data_path):
-                # Fallback to historical data if prepared data doesn't exist
-                self.logger.warning(f"Prepared data not found, using historical data: {historical_data_path}")
-                with open(historical_data_path, "rb") as f:
-                    historical_data = pickle.load(f)
-                
-                # Handle the data structure - it's a dictionary with 'klines', 'agg_trades', etc.
-                if isinstance(historical_data, dict):
-                    if 'klines' in historical_data:
-                        # Use the klines data which contains OHLCV data
-                        historical_data = historical_data['klines']
-                        self.logger.info(f"✅ Extracted klines data: {historical_data.shape}")
-                    else:
-                        raise ValueError("No 'klines' data found in historical data dictionary")
-                elif isinstance(historical_data, np.ndarray):
-                    # Handle numpy array input
-                    self.logger.info(f"Converting numpy array with shape {historical_data.shape} to DataFrame")
-                    if len(historical_data.shape) == 2:
-                        # Multi-dimensional array, convert to DataFrame
-                        if historical_data.shape[1] == 5:  # Likely OHLCV data
-                            columns = ['open', 'high', 'low', 'close', 'volume']
-                            historical_data = pd.DataFrame(historical_data, columns=columns)
-                        else:
-                            # Use first column as the series
-                            historical_data = pd.DataFrame(historical_data)
-                    else:
-                        # 1D array
-                        historical_data = pd.DataFrame(historical_data)
-                elif not isinstance(historical_data, pd.DataFrame):
-                    # Convert to DataFrame if it's not already
-                    historical_data = pd.DataFrame(historical_data)
-
-                # Convert to DataFrame if needed
-                if not isinstance(historical_data, pd.DataFrame):
-                    historical_data = pd.DataFrame(historical_data)
-            else:
-                raise FileNotFoundError(f"Neither prepared data ({prepared_data_path}) nor historical data ({historical_data_path}) found")
+            self.logger.info(f"✅ Loaded unified data: {len(unified_data)} rows")
+            self.logger.info(
+                f"   Date range: {unified_data.index.min()} to {unified_data.index.max()}"
+            )
+            self.logger.info(
+                f"   Has aggtrades data: {hasattr(unified_data, 'aggtrades') and unified_data.aggtrades is not None}"
+            )
+            self.logger.info(
+                f"   Has futures data: {hasattr(unified_data, 'futures') and unified_data.futures is not None}"
+            )
 
             # Load regime classification results
-            regime_file_path = (
-                f"{data_dir}/{exchange}_{symbol}_regime_classification.json"
+            regime_file = f"data/training/{self.config['exchange']}_{self.config['symbol']}_regime_classification.parquet"
+            self.logger.info(
+                f"📁 Loading regime classification results from: {regime_file}"
             )
 
-            if not os.path.exists(regime_file_path):
-                raise FileNotFoundError(
-                    f"Regime classification file not found: {regime_file_path}",
+            # Use a more robust approach to load the parquet file
+            regime_data = self._load_regime_data_safely(regime_file)
+
+            if regime_data is None:
+                self.logger.error(
+                    f"❌ Failed to load regime classification data from {regime_file}"
                 )
-
-            with open(regime_file_path) as f:
-                regime_results = json.load(f)
-
-            # Split data by regimes (vectorized)
-            regime_data = await self._split_data_by_regimes(
-                historical_data,
-                regime_results,
-                symbol,
-                exchange,
-            )
-
-            # Check for analyst models and create regime data for missing regimes
-            analyst_models_dir = os.path.join(data_dir, "analyst_models")
-            if os.path.exists(analyst_models_dir):
-                existing_regimes = [d for d in os.listdir(analyst_models_dir) 
-                                  if os.path.isdir(os.path.join(analyst_models_dir, d))]
-                
-                # Create regime data for regimes that have models but no data
-                for regime in existing_regimes:
-                    if regime not in regime_data:
-                        self.logger.info(f"Creating regime data for {regime} (has models but no classification)")
-                        # Use a subset of data for this regime
-                        subset_size = min(1000, len(historical_data) // max(1, len(existing_regimes)))
-                        subset_data = historical_data.iloc[:subset_size].copy()
-                        subset_data['regime'] = regime
-                        regime_data[regime] = subset_data
-
-            # Save regime-specific data
-            regime_data_dir = f"{data_dir}/regime_data"
-            os.makedirs(regime_data_dir, exist_ok=True)
-
-            regime_data_paths = {}
-            for regime, data in regime_data.items():
-                regime_file = f"{regime_data_dir}/{exchange}_{symbol}_{regime}_data.pkl"
-                with open(regime_file, "wb") as f:
-                    pickle.dump(data, f)
-                regime_data_paths[regime] = regime_file
-
-            # Save regime splitting summary
-            splitting_summary = {
-                "symbol": symbol,
-                "exchange": exchange,
-                "splitting_date": datetime.now().isoformat(),
-                "total_records": len(historical_data),
-                "regime_data_paths": regime_data_paths,
-                "regime_statistics": {},
-                "data_splitting_config": {
-                    "split_ratio": {"model_generation": 0.85, "validation": 0.15},
-                    "time_series_split": True,
-                    "maintain_chronological_order": True,
-                },
-            }
-
-            # Calculate statistics for each regime
-            for regime, data in regime_data.items():
-                # Handle date range calculation properly
-                date_range = {"start": None, "end": None}
-                
-                if hasattr(data.index, "min") and hasattr(data.index, "max"):
-                    try:
-                        # Check if index is datetime-like
-                        if hasattr(data.index.min(), "isoformat"):
-                            date_range["start"] = data.index.min().isoformat()
-                            date_range["end"] = data.index.max().isoformat()
-                        else:
-                            # Handle integer or other index types
-                            date_range["start"] = str(data.index.min())
-                            date_range["end"] = str(data.index.max())
-                    except Exception as e:
-                        self.logger.warning(f"Could not calculate date range for regime {regime}: {e}")
-                        date_range = {"start": None, "end": None}
-                
-                splitting_summary["regime_statistics"][regime] = {
-                    "record_count": len(data),
-                    "percentage": len(data) / max(1, len(historical_data)) * 100,
-                    "date_range": date_range,
+                return {
+                    "success": False,
+                    "error": "Failed to load regime classification data",
                 }
 
-            # Save splitting summary
-            summary_file = (
-                f"{data_dir}/{exchange}_{symbol}_regime_splitting_summary.json"
-            )
-            with open(summary_file, "w") as f:
-                json.dump(splitting_summary, f, indent=2)
-
             self.logger.info(
-                f"✅ Regime data splitting completed. Results saved to {regime_data_dir}",
+                f"✅ Loaded regime classification data: {len(regime_data)} rows"
+            )
+            self.logger.info(
+                f"   Regimes found: {regime_data['regime'].unique().tolist()}"
             )
 
-            # Update pipeline state
-            pipeline_state["regime_data"] = regime_data
-            pipeline_state["regime_data_paths"] = regime_data_paths
-            pipeline_state["splitting_summary"] = splitting_summary
+            # Split data by regimes
+            regime_splits = self._split_data_by_regimes(unified_data, regime_data)
 
-            return {
-                "regime_data": regime_data,
-                "regime_data_paths": regime_data_paths,
-                "splitting_summary": splitting_summary,
-                "duration": 0.0,  # Will be calculated in actual implementation
-                "status": "SUCCESS",
-            }
+            # Save regime splits
+            self._save_regime_splits(regime_splits)
+
+            # Create summary
+            summary = self._create_regime_splitting_summary(regime_splits)
+
+            self.logger.info("✅ Regime data splitting completed successfully")
+            return {"success": True, "regime_splits": summary}
 
         except Exception as e:
-            self.logger.error(f"❌ Error in Regime Data Splitting: {e}")
-            return {"status": "FAILED", "error": str(e), "duration": 0.0}
+            self.logger.error(f"❌ Regime data splitting failed: {e}")
+            return {"success": False, "error": str(e)}
 
-    async def _split_data_by_regimes(
-        self,
-        data: pd.DataFrame,
-        regime_results: dict[str, Any],
-        symbol: str,
-        exchange: str,
-    ) -> dict[str, pd.DataFrame]:
-        """
-        Split data by market regimes (vectorized).
-        """
+    def _load_regime_data_safely(self, regime_file: str) -> Optional[pd.DataFrame]:
+        """Load regime data with multiple fallback strategies to avoid segmentation faults."""
         try:
-            self.logger.info(f"Splitting data by regimes for {symbol} on {exchange}...")
+            # Strategy 1: Direct pandas read with error handling
+            try:
+                self.logger.info("   Trying direct pandas read...")
+                # Use a simple approach without the problematic parquet utilities
+                regime_data = pd.read_parquet(regime_file)
+                # Select only the columns we need
+                regime_data = regime_data[["timestamp", "regime", "confidence"]]
+                self.logger.info(
+                    f"   ✅ Successfully loaded with direct pandas read: {regime_data.shape}"
+                )
+                return regime_data
+            except Exception as e:
+                self.logger.warning(f"   Direct pandas read failed: {e}")
 
-            regime_sequence = regime_results.get("regime_sequence", [])
-            if not regime_sequence:
-                self.logger.warning("No regime sequence found, creating default BULL sequence")
-                regime_sequence = ["BULL"] * len(data)
+            # Strategy 2: Try with pyarrow engine
+            try:
+                self.logger.info("   Trying pyarrow engine...")
+                regime_data = pd.read_parquet(regime_file, engine="pyarrow")
+                regime_data = regime_data[["timestamp", "regime", "confidence"]]
+                self.logger.info(
+                    f"   ✅ Successfully loaded with pyarrow engine: {regime_data.shape}"
+                )
+                return regime_data
+            except Exception as e:
+                self.logger.warning(f"   Pyarrow engine failed: {e}")
 
-            # Align lengths: interpolate/truncate as needed
-            if len(regime_sequence) < len(data):
-                # Vectorized nearest mapping from regime_sequence to data length
-                src_idx = np.linspace(0, len(data) - 1, len(regime_sequence))
-                dst_idx = np.arange(len(data))
-                # For each dst index, find nearest src index via interpolation rounding
-                nearest_src = np.rint(np.interp(dst_idx, src_idx, np.arange(len(regime_sequence)))).astype(int)
-                nearest_src = np.clip(nearest_src, 0, len(regime_sequence) - 1)
-                regime_sequence = [regime_sequence[j] for j in nearest_src]
-            elif len(regime_sequence) > len(data):
-                regime_sequence = regime_sequence[: len(data)]
+            # Strategy 3: Try with fastparquet engine
+            try:
+                self.logger.info("   Trying fastparquet engine...")
+                regime_data = pd.read_parquet(regime_file, engine="fastparquet")
+                regime_data = regime_data[["timestamp", "regime", "confidence"]]
+                self.logger.info(
+                    f"   ✅ Successfully loaded with fastparquet engine: {regime_data.shape}"
+                )
+                return regime_data
+            except Exception as e:
+                self.logger.warning(f"   Fastparquet engine failed: {e}")
 
-            # Vectorized assignment
-            df = data.iloc[: len(regime_sequence)].copy()
-            df["regime"] = regime_sequence
+            # Strategy 4: Try reading without column specification
+            try:
+                self.logger.info("   Trying without column specification...")
+                regime_data = pd.read_parquet(regime_file)
+                # Select only the columns we need
+                regime_data = regime_data[["timestamp", "regime", "confidence"]]
+                self.logger.info(
+                    f"   ✅ Successfully loaded without column specification: {regime_data.shape}"
+                )
+                return regime_data
+            except Exception as e:
+                self.logger.warning(
+                    f"   Reading without column specification failed: {e}"
+                )
 
-            # Groupby regimes
-            regime_data: dict[str, pd.DataFrame] = {k: v.copy() for k, v in df.groupby("regime")}
+            # Strategy 5: Try with memory mapping
+            try:
+                self.logger.info("   Trying with memory mapping...")
+                regime_data = pd.read_parquet(regime_file, memory_map=True)
+                regime_data = regime_data[["timestamp", "regime", "confidence"]]
+                self.logger.info(
+                    f"   ✅ Successfully loaded with memory mapping: {regime_data.shape}"
+                )
+                return regime_data
+            except Exception as e:
+                self.logger.warning(f"   Memory mapping failed: {e}")
 
-            self.logger.info(
-                f"Regime split complete: {', '.join([f'{k}:{len(v)}' for k,v in regime_data.items()])}"
-            )
-            return regime_data
+            self.logger.error("   ❌ All loading strategies failed")
+            return None
 
         except Exception as e:
-            self.logger.error(f"Error in regime data splitting: {e}")
+            self.logger.error(f"   ❌ Unexpected error in regime data loading: {e}")
+            return None
+
+    def _split_data_by_regimes(
+        self, unified_data: pd.DataFrame, regime_data: pd.DataFrame
+    ) -> dict[str, pd.DataFrame]:
+        """Split unified data by market regimes."""
+        try:
+            # Ensure timestamp formats match
+            if pd.api.types.is_datetime64_any_dtype(regime_data["timestamp"]):
+                regime_data["timestamp"] = regime_data["timestamp"].dt.floor("1min")
+            else:
+                regime_data["timestamp"] = pd.to_datetime(
+                    regime_data["timestamp"]
+                ).dt.floor("1min")
+
+            if pd.api.types.is_datetime64_any_dtype(unified_data["timestamp"]):
+                unified_data["timestamp"] = unified_data["timestamp"].dt.floor("1min")
+            else:
+                unified_data["timestamp"] = pd.to_datetime(
+                    unified_data["timestamp"]
+                ).dt.floor("1min")
+
+            # Merge regime data with unified data
+            merged_data = unified_data.merge(
+                regime_data[["timestamp", "regime", "confidence"]],
+                on="timestamp",
+                how="left",
+            )
+
+            # Fill missing regimes with a default
+            if merged_data["regime"].isna().any():
+                missing_count = merged_data["regime"].isna().sum()
+                self.logger.warning(
+                    f"   {missing_count} rows have missing regime labels, filling with 'SIDEWAYS'"
+                )
+                merged_data["regime"] = merged_data["regime"].fillna("SIDEWAYS")
+                merged_data["confidence"] = merged_data["confidence"].fillna(0.5)
+
+            # Split by regimes
+            regime_splits = {}
+            for regime in merged_data["regime"].unique():
+                regime_df = merged_data[merged_data["regime"] == regime].copy()
+                regime_splits[regime] = regime_df
+
+            self.logger.info(
+                f"✅ Successfully split data by regimes: {len(regime_splits)} regimes"
+            )
+            return regime_splits
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to split data by regimes: {e}")
             raise
+
+    def _save_regime_splits(self, regime_splits: dict[str, pd.DataFrame]):
+        """Save regime splits to parquet files."""
+        data_dir = self.config.get("data_dir", "data/training")
+        os.makedirs(data_dir, exist_ok=True)
+        regime_data_dir = os.path.join(data_dir, "regime_data")
+        os.makedirs(regime_data_dir, exist_ok=True)
+
+        # Save regime-specific files
+        for regime, regime_df in regime_splits.items():
+            if not regime_df.empty:
+                regime_file = os.path.join(regime_data_dir, f"{regime}.parquet")
+                try:
+                    regime_df.to_parquet(regime_file, index=False)
+                    self.logger.info(
+                        f"✅ Saved {regime} regime data: {len(regime_df)} rows -> {regime_file}"
+                    )
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to save {regime} regime data: {e}")
+            else:
+                self.logger.warning(f"⚠️ No data for {regime} regime")
+
+        # Also create train/validation/test splits for validator compatibility
+        self._create_train_validation_test_splits(regime_splits, data_dir)
+
+    def _create_train_validation_test_splits(
+        self, regime_splits: dict[str, pd.DataFrame], data_dir: str
+    ):
+        """Create train/validation/test splits for validator compatibility."""
+        try:
+            # Combine all regime data
+            all_data = []
+            for regime_df in regime_splits.values():
+                if not regime_df.empty:
+                    all_data.append(regime_df)
+
+            if not all_data:
+                self.logger.warning(
+                    "⚠️ No data available for train/validation/test splits"
+                )
+                return
+
+            combined_data = pd.concat(all_data, ignore_index=True)
+            combined_data = combined_data.sort_values("timestamp").reset_index(
+                drop=True
+            )
+
+            # Create time-based splits (70% train, 15% validation, 15% test)
+            total_rows = len(combined_data)
+            train_end = int(total_rows * 0.7)
+            val_end = int(total_rows * 0.85)
+
+            train_data = combined_data.iloc[:train_end]
+            validation_data = combined_data.iloc[train_end:val_end]
+            test_data = combined_data.iloc[val_end:]
+
+            # Save the splits
+            exchange = self.config.get("exchange", "BINANCE")
+            symbol = self.config.get("symbol", "ETHUSDT")
+
+            train_file = os.path.join(
+                data_dir, f"{exchange}_{symbol}_train_data.parquet"
+            )
+            validation_file = os.path.join(
+                data_dir, f"{exchange}_{symbol}_validation_data.parquet"
+            )
+            test_file = os.path.join(data_dir, f"{exchange}_{symbol}_test_data.parquet")
+
+            train_data.to_parquet(train_file, index=False)
+            validation_data.to_parquet(validation_file, index=False)
+            test_data.to_parquet(test_file, index=False)
+
+            self.logger.info(f"✅ Created train/validation/test splits:")
+            self.logger.info(f"   Train: {len(train_data)} rows -> {train_file}")
+            self.logger.info(
+                f"   Validation: {len(validation_data)} rows -> {validation_file}"
+            )
+            self.logger.info(f"   Test: {len(test_data)} rows -> {test_file}")
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to create train/validation/test splits: {e}")
+
+    def _create_regime_splitting_summary(
+        self, regime_splits: dict[str, pd.DataFrame]
+    ) -> dict[str, Any]:
+        """Create a summary of the regime splitting results."""
+        total_rows = sum(len(df) for df in regime_splits.values())
+        regime_stats = {}
+        for regime, regime_df in regime_splits.items():
+            if not regime_df.empty:
+                regime_stats[regime] = {
+                    "rows": len(regime_df),
+                    "date_range": {
+                        "start": regime_df["timestamp"].min().isoformat(),
+                        "end": regime_df["timestamp"].max().isoformat(),
+                    },
+                    "percentage": len(regime_df) / total_rows * 100,
+                }
+            else:
+                regime_stats[regime] = {
+                    "rows": 0,
+                    "date_range": None,
+                    "percentage": 0.0,
+                }
+
+        # Log regime statistics
+        self.logger.info("📊 Regime Data Splitting Results:")
+        for regime, stats in regime_stats.items():
+            if stats["rows"] > 0:
+                self.logger.info(
+                    f"   {regime}: {stats['rows']} rows ({stats['percentage']:.1f}%)"
+                )
+            else:
+                self.logger.info(f"   {regime}: {stats['rows']} rows (0.0%)")
+
+        return regime_stats
 
 
 # For backward compatibility with existing step structure
@@ -269,6 +357,7 @@ async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
     data_dir: str = "data/training",
+    force_rerun: bool = False,
     **kwargs,
 ) -> bool:
     """
@@ -294,16 +383,17 @@ async def run_step(
             "symbol": symbol,
             "exchange": exchange,
             "data_dir": data_dir,
+            "force_rerun": force_rerun,
             **kwargs,
         }
 
         pipeline_state = {}
-        result = await step.execute(training_input, pipeline_state)
+        result = await step.execute()
 
-        return result.get("status") == "SUCCESS"
+        return result.get("success")
 
     except Exception as e:
-        print(f"❌ Regime data splitting failed: {e}")
+        print(failed(f"Regime data splitting failed: {e}"))
         return False
 
 

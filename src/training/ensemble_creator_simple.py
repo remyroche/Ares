@@ -12,6 +12,11 @@ from typing import Any
 
 import pandas as pd
 
+from src.utils.warning_symbols import (
+    error,
+    invalid,
+)
+
 
 @dataclass
 class EnsembleConfig:
@@ -96,7 +101,7 @@ class SimpleEnsembleCreator:
 
             # Validate ensemble configuration
             if not self._validate_ensemble_config():
-                self.logger.error("Invalid ensemble configuration")
+                self.print(invalid("Invalid ensemble configuration"))
                 return False
 
             self.is_initialized = True
@@ -106,7 +111,9 @@ class SimpleEnsembleCreator:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Simple Ensemble Creator initialization failed: {e}")
+            self.logger.exception(
+                f"❌ Simple Ensemble Creator initialization failed: {e}",
+            )
             return False
 
     def _validate_ensemble_config(self) -> bool:
@@ -114,15 +121,15 @@ class SimpleEnsembleCreator:
         try:
             # Validate thresholds
             if not (0.0 <= self.ensemble_config.ensemble_pruning_threshold <= 1.0):
-                self.logger.error("Ensemble pruning threshold must be between 0 and 1")
+                self.print(error("Ensemble pruning threshold must be between 0 and 1"))
                 return False
 
             if not (0.0 <= self.ensemble_config.regularization_strength <= 1.0):
-                self.logger.error("Regularization strength must be between 0 and 1")
+                self.print(error("Regularization strength must be between 0 and 1"))
                 return False
 
             if not (0.0 <= self.ensemble_config.l1_ratio <= 1.0):
-                self.logger.error("L1 ratio must be between 0 and 1")
+                self.print(error("L1 ratio must be between 0 and 1"))
                 return False
 
             # Validate model counts
@@ -137,14 +144,16 @@ class SimpleEnsembleCreator:
 
             # Validate timeframes
             if not self.ensemble_config.timeframes:
-                self.logger.error("Timeframes list cannot be empty")
+                self.print(error("Timeframes list cannot be empty"))
                 return False
 
             self.logger.info("Ensemble configuration validation successful")
             return True
 
         except Exception as e:
-            self.logger.error(f"Error validating ensemble configuration: {e}")
+            error_msg = f"Error validating ensemble configuration: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return False
 
     async def create_ensemble(
@@ -168,7 +177,8 @@ class SimpleEnsembleCreator:
         """
         try:
             if not self.is_initialized:
-                raise ValueError("Simple Ensemble Creator not initialized")
+                msg = "Simple Ensemble Creator not initialized"
+                raise ValueError(msg)
 
             self.logger.info(f"🎯 Creating {ensemble_type} ensemble: {ensemble_name}")
 
@@ -233,7 +243,9 @@ class SimpleEnsembleCreator:
             }
 
         except Exception as e:
-            self.logger.error(f"Error creating ensemble '{ensemble_name}': {e}")
+            error_msg = f"Error creating ensemble '{ensemble_name}': {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return None
 
     async def _prepare_ensemble_data(
@@ -281,7 +293,9 @@ class SimpleEnsembleCreator:
             return ensemble_data
 
         except Exception as e:
-            self.logger.error(f"Error preparing ensemble data: {e}")
+            error_msg = f"Error preparing ensemble data: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return {}
 
     async def _apply_aggressive_pruning(
@@ -313,7 +327,7 @@ class SimpleEnsembleCreator:
                 )
 
             # Step 2: Model performance pruning (simplified)
-            for timeframe, model in ensemble_data["models"].items():
+            for timeframe in ensemble_data["models"]:
                 if timeframe in pruned_data["predictions"]:
                     # Simple performance check - keep all models for now
                     self.logger.info(f"Keeping model for {timeframe}")
@@ -327,7 +341,9 @@ class SimpleEnsembleCreator:
             return pruned_data
 
         except Exception as e:
-            self.logger.error(f"Error applying aggressive pruning: {e}")
+            error_msg = f"Error applying aggressive pruning: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return ensemble_data
 
     async def _apply_regularization(
@@ -345,7 +361,7 @@ class SimpleEnsembleCreator:
             regularization_params = {}
 
             # Apply regularization to each model (simplified)
-            for timeframe, model in ensemble_data["models"].items():
+            for timeframe in ensemble_data["models"]:
                 regularization_params[timeframe] = {
                     "alpha": self.ensemble_config.regularization_strength,
                     "l1_ratio": self.ensemble_config.l1_ratio,
@@ -362,7 +378,9 @@ class SimpleEnsembleCreator:
             return regularized_data
 
         except Exception as e:
-            self.logger.error(f"Error applying regularization: {e}")
+            error_msg = f"Error applying regularization: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return ensemble_data
 
     async def _create_optimized_ensemble(
@@ -389,7 +407,9 @@ class SimpleEnsembleCreator:
             return ensemble_result
 
         except Exception as e:
-            self.logger.error(f"Error creating optimized ensemble: {e}")
+            error_msg = f"Error creating optimized ensemble: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return {}
 
     async def _evaluate_ensemble(
@@ -413,7 +433,9 @@ class SimpleEnsembleCreator:
             return evaluation_metrics
 
         except Exception as e:
-            self.logger.error(f"Error evaluating ensemble: {e}")
+            error_msg = f"Error evaluating ensemble: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return {
                 "ensemble_score": 0.0,
                 "diversity_score": 0.0,
@@ -431,17 +453,17 @@ class SimpleEnsembleCreator:
             self.logger.info(f"🏗️ Creating hierarchical ensemble '{ensemble_name}'")
 
             # Create hierarchical ensemble
-            hierarchical_result = await self.create_ensemble(
+            return await self.create_ensemble(
                 training_data={},  # Not needed for hierarchical ensemble
                 models=base_ensembles,
                 ensemble_name=ensemble_name,
                 ensemble_type="hierarchical_ensemble",
             )
 
-            return hierarchical_result
-
         except Exception as e:
-            self.logger.error(f"Error creating hierarchical ensemble: {e}")
+            error_msg = f"Error creating hierarchical ensemble: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
             return None
 
     def get_ensemble_info(self, ensemble_name: str) -> dict[str, Any]:
@@ -470,7 +492,7 @@ class SimpleEnsembleCreator:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting ensemble info: {e}")
+            self.print(error("Error getting ensemble info: {e}"))
             return {"error": str(e)}
 
     def get_all_ensembles_info(self) -> dict[str, Any]:
@@ -479,13 +501,13 @@ class SimpleEnsembleCreator:
             return {
                 "total_ensembles": len(self.ensembles),
                 "ensembles": {
-                    name: self.get_ensemble_info(name) for name in self.ensembles.keys()
+                    name: self.get_ensemble_info(name) for name in self.ensembles
                 },
                 "creation_history": self.creation_history,
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting all ensembles info: {e}")
+            self.print(error("Error getting all ensembles info: {e}"))
             return {"error": str(e)}
 
     async def stop(self) -> None:
@@ -504,7 +526,9 @@ class SimpleEnsembleCreator:
             self.logger.info("✅ Simple Ensemble Creator stopped successfully")
 
         except Exception as e:
-            self.logger.error(f"Error stopping ensemble creator: {e}")
+            error_msg = f"Error stopping ensemble creator: {e}"
+            self.logger.exception(error_msg)
+            self.print(error(error_msg))
 
 
 # Global ensemble creator instance

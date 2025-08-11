@@ -116,10 +116,8 @@ class MarketRegimeClassificationStep:
         self.logger.info("🔄 Loading data using unified data loader...")
         data_loader = get_unified_data_loader(self.config)
 
-        # Determine lookback period
-        lookback_days = 180  # Default to 180 days for regime classification
-        if os.environ.get("BLANK_TRAINING_MODE") == "1":
-            lookback_days = 30  # Shorter period for blank mode
+        # Determine lookback period from configuration (default 180 days)
+        lookback_days = self.config.get("lookback_days", 180)
 
         # Load unified data with optimizations for ML training
         historical_data = await data_loader.load_unified_data(

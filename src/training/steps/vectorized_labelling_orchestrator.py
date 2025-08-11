@@ -273,6 +273,11 @@ class VectorizedLabellingOrchestrator:
                         preview_df[k] = v
                 self._log_feature_sample("EngineerFeatures", preview_df, "04_02")
                 self._log_feature_errors("EngineerFeatures", preview_df)
+                # Also write a summary of all engineered features (including scalars)
+                try:
+                    self._log_feature_dict_summary("EngineerFeatures", advanced_features, "04_02")
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -290,6 +295,10 @@ class VectorizedLabellingOrchestrator:
             )
             self._log_feature_sample("Combine", combined_data, "04_03")
             self._log_feature_errors("Combine", combined_data)
+            try:
+                self._log_dataframe_columns("Combine", combined_data, "04_03")
+            except Exception:
+                pass
 
             # Drop stationarity helper columns prior to selection/normalization
             combined_data = self._remove_stationarity_transform_columns(combined_data)
@@ -310,6 +319,10 @@ class VectorizedLabellingOrchestrator:
                 combined_data = self._remove_raw_ohlcv_columns(combined_data)
                 self._log_feature_sample("FeatureSelection", combined_data, "04_04")
                 self._log_feature_errors("FeatureSelection", combined_data)
+                try:
+                    self._log_dataframe_columns("FeatureSelection", combined_data, "04_04")
+                except Exception:
+                    pass
 
             # 6. Data normalization
             if self.enable_data_normalization:
@@ -324,6 +337,10 @@ class VectorizedLabellingOrchestrator:
                 combined_data = self._remove_stationarity_transform_columns(combined_data)
                 self._log_feature_sample("Normalization", combined_data, "04_05")
                 self._log_feature_errors("Normalization", combined_data)
+                try:
+                    self._log_dataframe_columns("Normalization", combined_data, "04_05")
+                except Exception:
+                    pass
 
             # 7. Autoencoder feature generation
             self.logger.info("🤖 Generating autoencoder features...")
@@ -346,6 +363,10 @@ class VectorizedLabellingOrchestrator:
                 ae_df = autoencoder_features if isinstance(autoencoder_features, pd.DataFrame) else combined_data
                 self._log_feature_sample("Autoencoder", ae_df, "04_06")
                 self._log_feature_errors("Autoencoder", ae_df)
+                try:
+                    self._log_dataframe_columns("Autoencoder", ae_df, "04_06")
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -363,6 +384,10 @@ class VectorizedLabellingOrchestrator:
             final_data = self._remove_datetime_columns(final_data)
             self._log_feature_sample("FinalData", final_data, "04_07")
             self._log_feature_errors("FinalData", final_data)
+            try:
+                self._log_dataframe_columns("FinalData", final_data, "04_07")
+            except Exception:
+                pass
 
             # Systematic leakage guard: drop any baseline columns observed before feature generation
             try:
@@ -797,6 +822,71 @@ class VectorizedLabellingOrchestrator:
 
         except Exception as e:
             self.logger.error(f"Error saving data as Parquet: {e}")
+
+    def _log_feature_dict_summary(self, stage: str, features: dict[str, Any], step_no: str) -> None:
+        try:
+            os.makedirs("log/features_samples", exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_stage = stage.replace(" ", "_")
+            fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_Features.txt"
+            # Build summary
+            total = len(features)
+            type_counts: dict[str, int] = {}
+            lines: list[str] = []
+            for k, v in features.items():
+                t = type(v).__name__
+                type_counts[t] = type_counts.get(t, 0) + 1
+                # Summarize value
+                summary = ""
+                try:
+                    if isinstance(v, (int, float, np.integer, np.floating)):
+                        summary = f"value={float(v):.6g}"
+                    elif isinstance(v, pd.Series):
+                        summary = f"series(len={len(v)}, nan={int(v.isna().sum())})"
+                    elif isinstance(v, np.ndarray):
+                        summary = f"ndarray(shape={v.shape})"
+                    elif isinstance(v, (list, tuple)):
+                        summary = f"{type(v).__name__}(len={len(v)})"
+                    else:
+                        # Fallback to string repr trimmed
+                        s = str(v)
+                        summary = (s[:80] + "...") if len(s) > 80 else s
+                except Exception:
+                    summary = "<unavailable>"
+                lines.append(f"{k}: type={t} {summary}")
+            with open(fname, "w") as f:
+                f.write(f"Stage: {stage} | Step: {step_no} | Total features: {total}\n")
+                if type_counts:
+                    f.write("Type counts: " + ", ".join([f"{k}={v}" for k, v in sorted(type_counts.items())]) + "\n")
+                # Cap lines to avoid huge files
+                cap = 1000
+                for line in lines[:cap]:
+                    f.write(line + "\n")
+                if len(lines) > cap:
+                    f.write(f"... ({len(lines) - cap} more)\n")
+            self.logger.info(f"Feature list written: {fname}")
+        except Exception as e:
+            self.logger.warning(f"Failed to write feature list for {stage}: {e}")
+
+    def _log_dataframe_columns(self, stage: str, df: pd.DataFrame, step_no: str) -> None:
+        try:
+            os.makedirs("log/features_samples", exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_stage = stage.replace(" ", "_")
+            fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_Columns.txt"
+            cols = df.columns.tolist()
+            dtypes = df.dtypes.astype(str).to_dict()
+            numeric = df.select_dtypes(include=[np.number])
+            nan_total = int(numeric.isna().sum().sum()) if not numeric.empty else 0
+            inf_total = int(np.isinf(numeric).sum().sum()) if not numeric.empty else 0
+            with open(fname, "w") as f:
+                f.write(f"Stage: {stage} | Step: {step_no} | Columns: {len(cols)}\n")
+                f.write(f"NaN_total={nan_total} | Inf_total={inf_total}\n")
+                for c in cols:
+                    f.write(f"{c}: {dtypes.get(c, 'unknown')}\n")
+            self.logger.info(f"Column inventory written: {fname}")
+        except Exception as e:
+            self.logger.warning(f"Failed to write column inventory for {stage}: {e}")
 
 
 class VectorizedStationarityChecker:

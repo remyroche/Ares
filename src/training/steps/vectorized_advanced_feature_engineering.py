@@ -1158,6 +1158,14 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             features = {}
             base_index = price_data.index
+            if not isinstance(base_index, pd.DatetimeIndex):
+                if "timestamp" in price_data.columns:
+                    try:
+                        base_index = pd.to_datetime(price_data["timestamp"], errors="coerce")
+                    except Exception:
+                        base_index = pd.date_range(start="1970-01-01", periods=len(price_data), freq="1min")
+                else:
+                    base_index = pd.date_range(start="1970-01-01", periods=len(price_data), freq="1min")
 
             # Multi-timeframe features for different timeframes
             for timeframe in self.timeframes:

@@ -1236,21 +1236,53 @@ class VectorizedAdvancedFeatureEngineering:
             n = len(price_data)
             if n == 0:
                 return {}
-
+ 
             # Volatility regime per row
             vol = price_data["close"].pct_change().rolling(window=20).std()
-            vol_thresh = vol.quantile(0.75) if vol.notna().any() else 0.0
-            vol_regime_series = (vol > vol_thresh).astype(int).fillna(0)
-
+            # Create 5-bin categorical regimes using quantiles. Handle duplicates.
+            try:
+                vol_bins = pd.qcut(vol.fillna(0), q=5, labels=False, duplicates="drop")
+            except Exception:
+                vol_bins = pd.Series(np.zeros(n, dtype=int), index=vol.index)
+            vol_regime_series = vol_bins.fillna(0).astype(int)
+ 
             # Volume regime per row
             vol_ma = volume_data["volume"].rolling(window=20).mean()
-            volume_regime_series = (volume_data["volume"] > vol_ma).astype(int).fillna(0)
-
+            volume_ratio = (volume_data["volume"] / (vol_ma.replace(0, np.nan))).fillna(0)
+            # Create 5-bin categorical regimes using quantiles. Handle duplicates.
+            try:
+                volreg_bins = pd.qcut(volume_ratio, q=5, labels=False, duplicates="drop")
+            except Exception:
+                volreg_bins = pd.Series(np.zeros(n, dtype=int), index=volume_ratio.index)
+            volume_regime_series = volreg_bins.fillna(0).astype(int)
+ 
             # Trend regime per row
             sma_short = price_data["close"].rolling(window=10).mean()
             sma_long = price_data["close"].rolling(window=30).mean()
-            trend_regime_series = (sma_short > sma_long).astype(int).fillna(0)
-
+            trend_strength = (sma_short - sma_long)
+            # Create 5-bin categorical regimes using quantiles. Handle duplicates.
+            try:
+                trend_bins = pd.qcut(trend_strength.fillna(0), q=5, labels=False, duplicates="drop")
+            except Exception:
+                trend_bins = pd.Series(np.zeros(n, dtype=int), index=trend_strength.index)
+            trend_regime_series = trend_bins.fillna(0).astype(int)
+ 
+            # Diagnostics: log variability and distributions
+            try:
+                for name, series in {
+                    "volatility_regime": vol_regime_series,
+                    "volume_regime": volume_regime_series,
+                    "trend_regime": trend_regime_series,
+                }.items():
+                    unique_vals = pd.Series(series).nunique(dropna=True)
+                    if unique_vals < 5:
+                        self.logger.warning(
+                            f"Meta label '{name}' has low variability: {unique_vals} unique bins (<5). "
+                            f"value_counts={pd.Series(series).value_counts().to_dict()}"
+                        )
+            except Exception:
+                pass
+ 
             return {
                 "volatility_regime": vol_regime_series.values,
                 "volume_regime": volume_regime_series.values,

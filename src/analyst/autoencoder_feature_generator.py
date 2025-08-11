@@ -245,23 +245,9 @@ class PriceReturnConverter:
                     continue
 
                 # Categorize features
-                if any(
-                    price_pattern == col_lower
-                    for price_pattern in [
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "avg_price",
-                        "min_price",
-                        "max_price",
-                    ]
-                ):
+                if col_lower in self._RAW_PRICE_COLS:
                     available_price_features.append(col)
-                elif any(
-                    volume_pattern == col_lower
-                    for volume_pattern in ["volume", "trade_volume"]
-                ):
+                elif col_lower in self._RAW_VOLUME_COLS:
                     available_volume_features.append(col)
 
             # Log only true raw candidates (not engineered proxies)
@@ -331,16 +317,13 @@ class PriceReturnConverter:
                         features_to_remove.append(col)
 
                 # Remove redundant volume features (keep only selected one)
-                elif any(
-                    volume_pattern == col_lower
-                    for volume_pattern in ["volume", "trade_volume"]
-                ):
+                elif col_lower in self._RAW_VOLUME_COLS:
                     if selected_volume_feature and col != selected_volume_feature:
                         features_to_remove.append(col)
 
             if features_to_remove:
                 # Only remove exact raw columns, do not remove engineered proxies
-                raw_only = [c for c in features_to_remove if c in {"open","high","low","close","avg_price","min_price","max_price","volume","trade_volume"}]
+                raw_only = [c for c in features_to_remove if c in (self._RAW_PRICE_COLS | self._RAW_VOLUME_COLS)]
                 if raw_only:
                     self.logger.info(
                         f"🗑️ Removing {len(raw_only)} redundant raw features: {raw_only}"
@@ -350,9 +333,9 @@ class PriceReturnConverter:
             # Convert selected features to returns
             features_to_convert = []
             # Only convert if the selected features are truly raw OHLCV, not engineered proxies
-            if selected_price_feature in {"open","high","low","close","avg_price","min_price","max_price"}:
+            if selected_price_feature in self._RAW_PRICE_COLS:
                 features_to_convert.append(selected_price_feature)
-            if selected_volume_feature in {"volume","trade_volume"}:
+            if selected_volume_feature in self._RAW_VOLUME_COLS:
                 features_to_convert.append(selected_volume_feature)
 
             self.logger.info(
@@ -586,14 +569,12 @@ class FeatureFilter:
             "exchange", "symbol", "timeframe", "split"
         }
         # Define all raw/non-feature columns to be excluded
-        self.raw_columns = {
-            "open","high","low","close","volume",
-            "trade_volume","trade_count","avg_price","min_price","max_price",
-            # Treat these as raw context inputs, not engineered features
-            "funding_rate","volume_ratio",
-            # Project-specific: treat this as non-feature for autoencoder filtering per user guidance
-            "volume_price_impact",
-        }
+        # Canonical raw/non-engineered column names
+        self._RAW_PRICE_COLS = {"open","high","low","close","avg_price","min_price","max_price"}
+        self._RAW_VOLUME_COLS = {"volume","trade_volume"}
+        self._RAW_META_COLS = {"trade_count","funding_rate","volume_ratio"}
+        self._PROJECT_EXCLUDE = {"volume_price_impact"}  # engineered proxy to exclude from AE filtering
+        self.raw_columns = self._RAW_PRICE_COLS | self._RAW_VOLUME_COLS | self._RAW_META_COLS | self._PROJECT_EXCLUDE
 
     def _exclude_raw_and_meta(self, df: pd.DataFrame) -> pd.DataFrame:
         cols_to_drop = [c for c in df.columns if c in self.non_feature_columns or c in self.raw_columns]

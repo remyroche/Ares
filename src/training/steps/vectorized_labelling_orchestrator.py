@@ -271,7 +271,8 @@ class VectorizedLabellingOrchestrator:
                         preview_df[k] = v
                     elif isinstance(v, np.ndarray) and v.ndim==1 and len(v)==len(preview_df.index):
                         preview_df[k] = v
-                            self._log_feature_sample("EngineerFeatures", preview_df, "04_02")
+                # Log once after building preview_df
+                self._log_feature_sample("EngineerFeatures", preview_df, "04_02")
             self._log_feature_errors("EngineerFeatures", preview_df)
             # Categorize and log feature creation summary using only array-like (Series/ndarray) features
             try:
@@ -406,7 +407,8 @@ class VectorizedLabellingOrchestrator:
                 if to_drop:
                     self.logger.warning(f"🚨 Removing baseline/raw columns at final stage: {to_drop[:20]}" + (" ..." if len(to_drop)>20 else ""))
                     final_data = final_data.drop(columns=to_drop)
-            except Exception:
+            except KeyError:
+                # Columns already absent; safe to continue
                 pass
             self._log_feature_sample("FinalData", final_data, "04_07")
             self._log_feature_errors("FinalData", final_data)
@@ -615,12 +617,13 @@ class VectorizedLabellingOrchestrator:
             combined_data = self._remove_raw_ohlcv_columns(combined_data)
             # Ensure we also drop any exact baseline raw columns captured at pipeline start
             try:
-                baseline_cols: set[str] = set(["open","high","low","close","volume","trade_volume","trade_count","avg_price","min_price","max_price","funding_rate","volume_ratio"]) 
+                baseline_cols: set[str] = {"open","high","low","close","volume","trade_volume","trade_count","avg_price","min_price","max_price","funding_rate","volume_ratio"}
                 drop_baseline = [c for c in combined_data.columns if c in baseline_cols and c != 'label']
                 if drop_baseline:
                     self.logger.warning(f"🚨 Removing baseline/raw columns carried into features: {drop_baseline[:20]}" + (" ..." if len(drop_baseline) > 20 else ""))
                     combined_data = combined_data.drop(columns=drop_baseline)
-            except Exception:
+            except KeyError:
+                # Columns already removed; nothing to do
                 pass
 
             # Log a brief summary for diagnostics (without spam)

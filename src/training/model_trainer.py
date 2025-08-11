@@ -824,6 +824,7 @@ if __name__ == "__main__":
             "timeframe": "1m",
             "lookback_days": 30,
             "data_dir": "data/training",  # Added data_dir for the new _prepare_training_data
+            "exclude_recent_days": 2,  # Always exclude the last 2 days for both blank and full mode
         }
 
         # Train models

@@ -393,6 +393,7 @@ class AresLauncher:
                     "timeframe": "1m",
                     "lookback_days": lookback_days,
                     "training_mode": training_mode,
+                    "exclude_recent_days": 2,  # Always exclude the last 2 days for both blank and full mode
                 }
 
                 # Execute the enhanced training

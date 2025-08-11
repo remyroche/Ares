@@ -186,6 +186,7 @@ class StepOrchestrator:
                 "lookback_days": 180
                 if os.getenv("BLANK_TRAINING_MODE", "0") == "1"
                 else 730,
+                "exclude_recent_days": 2,  # Always exclude the last 2 days for both blank and full mode
             }
 
             # Execute the enhanced training pipeline
@@ -294,6 +295,7 @@ class StepOrchestrator:
             "start_step": start_step,
             "force_rerun": force_rerun,
             "lookback_days": 30,  # Add missing lookback_days field
+            "exclude_recent_days": 2,  # Always exclude the last 2 days for both blank and full mode
         }
 
         # Execute the enhanced training pipeline

@@ -1230,13 +1230,17 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             features = {}
 
-            # Basic price features
-            features["price_change"] = price_data["close"].pct_change().iloc[-1]
-            features["price_volatility"] = price_data["close"].pct_change().rolling(window=20).std().iloc[-1]
+            # Basic price features as full series aligned to index
+            price_change_series = price_data["close"].pct_change()
+            price_vol_series = price_data["close"].pct_change().rolling(window=20).std()
+            features["price_change"] = price_change_series.values
+            features["price_volatility"] = price_vol_series.values
             
-            # Volume features
-            features["volume_change"] = volume_data["volume"].pct_change().iloc[-1]
-            features["volume_ma_ratio"] = volume_data["volume"].iloc[-1] / volume_data["volume"].rolling(window=20).mean().iloc[-1]
+            # Volume features as full series
+            volume_change_series = volume_data["volume"].pct_change()
+            volume_ma_ratio_series = volume_data["volume"] / volume_data["volume"].rolling(window=20).mean()
+            features["volume_change"] = volume_change_series.values
+            features["volume_ma_ratio"] = volume_ma_ratio_series.values
 
             return features
 
@@ -1413,29 +1417,29 @@ class VectorizedCorrelationAnalyzer:
         """Analyze correlations using price differences."""
         try:
             # Use price differences for correlation analysis
-            price_diff = price_data["close"].diff().dropna()
+            price_diff = price_data["close"].diff()
             
-            # Calculate autocorrelations at different lags
-            autocorr_1 = price_diff.autocorr(lag=1) if len(price_diff) > 1 else 0.0
-            autocorr_5 = price_diff.autocorr(lag=5) if len(price_diff) > 5 else 0.0
-            autocorr_10 = price_diff.autocorr(lag=10) if len(price_diff) > 10 else 0.0
+            # Rolling correlations as series
+            rolling_corr_5_series = price_diff.rolling(5).corr(price_diff.shift(1))
+            rolling_corr_10_series = price_diff.rolling(10).corr(price_diff.shift(1))
             
-            # Calculate rolling correlations
-            rolling_corr_5 = price_diff.rolling(5).corr(price_diff.shift(1)).iloc[-1] if len(price_diff) > 5 else 0.0
-            rolling_corr_10 = price_diff.rolling(10).corr(price_diff.shift(1)).iloc[-1] if len(price_diff) > 10 else 0.0
+            # Autocorrelations approximated as rolling mean of lagged product correlation
+            autocorr_1_series = price_diff.rolling(50).apply(lambda s: s.autocorr(lag=1) if len(s.dropna()) > 1 else 0.0, raw=False)
+            autocorr_5_series = price_diff.rolling(50).apply(lambda s: s.autocorr(lag=5) if len(s.dropna()) > 5 else 0.0, raw=False)
+            autocorr_10_series = price_diff.rolling(50).apply(lambda s: s.autocorr(lag=10) if len(s.dropna()) > 10 else 0.0, raw=False)
             
             return {
-                "autocorr_1": autocorr_1,
-                "autocorr_5": autocorr_5,
-                "autocorr_10": autocorr_10,
-                "rolling_corr_5": rolling_corr_5,
-                "rolling_corr_10": rolling_corr_10,
-                "correlation_strength": abs(autocorr_1),
+                "autocorr_1": autocorr_1_series.values,
+                "autocorr_5": autocorr_5_series.values,
+                "autocorr_10": autocorr_10_series.values,
+                "rolling_corr_5": rolling_corr_5_series.values,
+                "rolling_corr_10": rolling_corr_10_series.values,
+                "correlation_strength": np.abs(autocorr_1_series.fillna(0)).values,
             }
 
         except Exception as e:
             self.logger.error(f"Error analyzing correlations: {e}")
-            return {"correlation_strength": 0.3}
+            return {"correlation_strength": np.zeros(len(price_data))}
 
 
 class VectorizedMomentumAnalyzer:
@@ -1459,32 +1463,34 @@ class VectorizedMomentumAnalyzer:
         """Analyze momentum using price differences."""
         try:
             # Use price differences for momentum analysis
-            price_diff = price_data["close"].diff().dropna()
+            price_diff = price_data["close"].diff()
             
-            # Calculate momentum indicators using price differences
-            momentum_5 = price_diff.rolling(5).sum().iloc[-1] if len(price_diff) >= 5 else 0.0
-            momentum_10 = price_diff.rolling(10).sum().iloc[-1] if len(price_diff) >= 10 else 0.0
-            momentum_20 = price_diff.rolling(20).sum().iloc[-1] if len(price_diff) >= 20 else 0.0
+            # Calculate momentum indicators using price differences (as series)
+            momentum_5_series = price_diff.rolling(5).sum()
+            momentum_10_series = price_diff.rolling(10).sum()
+            momentum_20_series = price_diff.rolling(20).sum()
             
-            # Rate of change
-            roc_5 = ((price_data["close"].iloc[-1] - price_data["close"].iloc[-5]) / price_data["close"].iloc[-5]) if len(price_data) >= 5 else 0.0
-            roc_10 = ((price_data["close"].iloc[-1] - price_data["close"].iloc[-10]) / price_data["close"].iloc[-10]) if len(price_data) >= 10 else 0.0
+            # Rate of change as series
+            roc_5_series = price_data["close"].pct_change(5)
+            roc_10_series = price_data["close"].pct_change(10)
             
-            # Momentum strength
-            momentum_strength = abs(momentum_10) / price_data["close"].iloc[-1] if price_data["close"].iloc[-1] != 0 else 0.0
+            # Momentum strength as series
+            with np.errstate(divide='ignore', invalid='ignore'):
+                momentum_strength_series = np.abs(momentum_10_series) / price_data["close"]
+            momentum_strength_series = momentum_strength_series.replace([np.inf, -np.inf], np.nan)
             
             return {
-                "momentum_5": momentum_5,
-                "momentum_10": momentum_10,
-                "momentum_20": momentum_20,
-                "roc_5": roc_5,
-                "roc_10": roc_10,
-                "momentum_strength": momentum_strength,
+                "momentum_5": momentum_5_series.values,
+                "momentum_10": momentum_10_series.values,
+                "momentum_20": momentum_20_series.values,
+                "roc_5": roc_5_series.values,
+                "roc_10": roc_10_series.values,
+                "momentum_strength": momentum_strength_series.fillna(0).values,
             }
 
         except Exception as e:
             self.logger.error(f"Error analyzing momentum: {e}")
-            return {"momentum_strength": 0.4}
+            return {"momentum_strength": np.zeros(len(price_data))}
 
 
 class VectorizedLiquidityAnalyzer:
@@ -1513,28 +1519,26 @@ class VectorizedLiquidityAnalyzer:
         """Analyze liquidity using price differences."""
         try:
             # Use price differences for liquidity analysis
-            price_diff = price_data["close"].diff().dropna()
+            price_diff = price_data["close"].diff()
             
-            # Calculate liquidity metrics
-            avg_volume = volume_data["volume"].rolling(20).mean().iloc[-1] if not volume_data.empty else 0.0
-            volume_volatility = volume_data["volume"].rolling(20).std().iloc[-1] if not volume_data.empty else 0.0
-            
-            # Price impact (how much price moves per unit volume)
-            price_impact = abs(price_diff.iloc[-1]) / avg_volume if avg_volume > 0 else 0.0
-            
-            # Liquidity score (inverse of price impact)
-            liquidity_score = 1.0 / (1.0 + price_impact) if price_impact > 0 else 1.0
+            # Liquidity metrics as series
+            avg_volume_series = volume_data["volume"].rolling(20).mean()
+            volume_volatility_series = volume_data["volume"].rolling(20).std()
+            with np.errstate(divide='ignore', invalid='ignore'):
+                price_impact_series = np.abs(price_diff) / avg_volume_series
+            price_impact_series = price_impact_series.replace([np.inf, -np.inf], np.nan)
+            liquidity_score_series = 1.0 / (1.0 + price_impact_series)
             
             return {
-                "avg_volume": avg_volume,
-                "volume_volatility": volume_volatility,
-                "price_impact": price_impact,
-                "liquidity_score": liquidity_score,
+                "avg_volume": avg_volume_series.fillna(method="ffill").fillna(0).values,
+                "volume_volatility": volume_volatility_series.fillna(0).values,
+                "price_impact": price_impact_series.fillna(0).values,
+                "liquidity_score": liquidity_score_series.fillna(1.0).values,
             }
 
         except Exception as e:
             self.logger.error(f"Error analyzing liquidity: {e}")
-            return {"liquidity_score": 0.6}
+            return {"liquidity_score": np.ones(len(price_data))}
 
 
 class VectorizedSRDistanceCalculator:

@@ -343,10 +343,16 @@ class VectorizedLabellingOrchestrator:
                         return None
                     except Exception:
                         return None
-                # Enhanced scalar detection - only skip if it's truly a scalar (single value)
-                # For engineered features, even if they appear scalar, they might be valid
-                if isinstance(value, (int, float, str, bool)):
-                    # Only skip if it's a single scalar value, not a feature array
+                # Enhanced scalar handling: broadcast numeric scalars across all rows
+                if isinstance(value, (int, float)):
+                    try:
+                        if np.isnan(value) or np.isinf(value):
+                            return None
+                    except Exception:
+                        pass
+                    return np.full(num_rows, float(value), dtype=float)
+                # Skip non-numeric scalars (strings, bools) to avoid creating categorical leakage
+                if isinstance(value, (str, bool)):
                     return None
                 # For other types, try to convert to array
                 try:
@@ -467,7 +473,7 @@ class VectorizedLabellingOrchestrator:
 
     def _remove_metadata_columns(self, data: pd.DataFrame) -> pd.DataFrame:
         """Remove metadata columns that are not actual features."""
-        metadata_columns = ['year', 'exchange', 'symbol', 'timeframe']
+        metadata_columns = ['year', 'exchange', 'symbol', 'timeframe', 'month', 'day', 'day_of_month', 'quarter']
         columns_to_remove = [col for col in metadata_columns if col in data.columns]
         
         if columns_to_remove:

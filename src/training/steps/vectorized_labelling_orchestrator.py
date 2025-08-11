@@ -37,6 +37,7 @@ class VectorizedLabellingOrchestrator:
         self.enable_feature_selection = self.orchestrator_config.get("enable_feature_selection", True)
         self.enable_memory_efficient_types = self.orchestrator_config.get("enable_memory_efficient_types", True)
         self.enable_parquet_saving = self.orchestrator_config.get("enable_parquet_saving", True)
+        self.price_link_corr_threshold = self.orchestrator_config.get("price_link_corr_threshold", 0.98)
 
         # Feature selection configuration
         self.feature_selection_config = self.orchestrator_config.get("feature_selection", {})
@@ -199,7 +200,7 @@ class VectorizedLabellingOrchestrator:
                     pattern_features = features_only.loc[:, pattern_mask]
                     other_features = features_only.loc[:, ~pattern_mask]
 
-                    # Select separately
+                    # Select separately with profiles
                     selected_pattern = await self.feature_selector.select_optimal_features(
                         pattern_features,
                         labeled_data["label"] if "label" in labeled_data.columns else None,
@@ -212,8 +213,19 @@ class VectorizedLabellingOrchestrator:
                         selection_profile="default",
                     ) if other_features.shape[1] > 0 else other_features
 
+                    # Optional per-family top-k cap by variance
+                    pattern_cap = self.feature_selection_config.get("profiles", {}).get("pattern", {}).get("top_k_by_variance")
+                    default_cap = self.feature_selection_config.get("profiles", {}).get("default", {}).get("top_k_by_variance")
+                    selected_pattern = self._cap_features_by_variance(selected_pattern, pattern_cap) if selected_pattern.shape[1] > 0 else selected_pattern
+                    selected_other = self._cap_features_by_variance(selected_other, default_cap) if selected_other.shape[1] > 0 else selected_other
+
                     # Union
                     selected_features = pd.concat([selected_other, selected_pattern], axis=1)
+
+                    # Log selection metadata
+                    self.logger.info(
+                        f"Selection summary -> pattern: {selected_pattern.shape[1]}, other: {selected_other.shape[1]}, total: {selected_features.shape[1]}"
+                    )
 
                     # Re-attach label only
                     combined_data = pd.concat([selected_features, combined_data[["label"]]], axis=1)
@@ -295,6 +307,13 @@ class VectorizedLabellingOrchestrator:
             # Build a time-aligned features DataFrame from engineered features
             features_df = self._build_features_dataframe(advanced_features, labeled_data.index)
 
+            # Enforce price-derived constraint: convert highly price-correlated features to first differences
+            try:
+                if "close" in labeled_data.columns and not features_df.empty:
+                    features_df = self._enforce_price_derived_constraint(features_df, labeled_data["close"])
+            except Exception as e:
+                self.logger.warning(f"Price-derived constraint enforcement skipped: {e}")
+
             # Drop raw OHLCV from features if somehow present
             ohlcv_cols = ["open", "high", "low", "close", "volume"]
             features_df = features_df.drop(columns=[c for c in ohlcv_cols if c in features_df.columns], errors="ignore")
@@ -316,6 +335,35 @@ class VectorizedLabellingOrchestrator:
             self.logger.error(f"Error combining features and labels: {e}")
             # Fallback: return label only to avoid leaking raw OHLCV
             return labeled_data[["label"]] if "label" in labeled_data.columns else pd.DataFrame({"label": []})
+
+    def _enforce_price_derived_constraint(self, features_df: pd.DataFrame, close_series: pd.Series) -> pd.DataFrame:
+        """For any feature highly correlated with raw close price, replace with its first difference.
+        This enforces that price-related content beyond OHLCV is returns/differences.
+        """
+        aligned_close = close_series.astype(float)
+        aligned_close = aligned_close.reindex(features_df.index).fillna(method="ffill").fillna(method="bfill")
+        processed = features_df.copy()
+        for col in processed.columns:
+            try:
+                series = processed[col].astype(float)
+                corr = np.corrcoef(series.fillna(0.0), aligned_close.fillna(0.0))[0, 1]
+                if np.isfinite(corr) and abs(corr) >= self.price_link_corr_threshold:
+                    diffed = series.diff().fillna(0.0)
+                    processed[col] = diffed
+            except Exception:
+                continue
+        return processed
+
+    def _cap_features_by_variance(self, df: pd.DataFrame, max_features: int) -> pd.DataFrame:
+        """Keep top-k columns by variance for stability and speed; returns original if under cap."""
+        if max_features is None or max_features <= 0 or df.shape[1] <= max_features:
+            return df
+        try:
+            variances = df.var(axis=0).sort_values(ascending=False)
+            keep_cols = variances.index[:max_features].tolist()
+            return df.loc[:, keep_cols]
+        except Exception:
+            return df
 
     def _build_features_dataframe(self, advanced_features: dict[str, Any], index: pd.Index) -> pd.DataFrame:
         """Construct a time-aligned features DataFrame from a heterogeneous features dict.

@@ -7,6 +7,8 @@ and autoencoder_feature_generator.py with advanced preprocessing and feature sel
 """
 
 import numpy as np
+import logging
+from datetime import datetime
 import os
 import pandas as pd
 import pywt
@@ -28,6 +30,17 @@ class VectorizedLabellingOrchestrator:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedLabellingOrchestrator")
+        self.feature_error_logger = logging.getLogger("Ares.FeatureError")
+        if not self.feature_error_logger.handlers:
+            try:
+                fh = logging.FileHandler("log/feature_errors.log")
+                fh.setLevel(logging.INFO)
+                fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+                fh.setFormatter(fmt)
+                self.feature_error_logger.addHandler(fh)
+                self.feature_error_logger.propagate = False
+            except Exception:
+                pass
 
         # Configuration
         self.orchestrator_config = config.get("vectorized_labelling_orchestrator", {})
@@ -61,6 +74,53 @@ class VectorizedLabellingOrchestrator:
         self.data_normalizer = None
 
         self.is_initialized = False
+
+        # Debug snapshots for logging
+        self._debug_raw_ohlcv: pd.DataFrame | None = None
+        self._debug_price_returns: pd.DataFrame | None = None
+
+    def _log_feature_sample(self, stage: str, df: pd.DataFrame, step_no: str) -> None:
+        try:
+            import os
+            os.makedirs("log/features_samples", exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_stage = stage.replace(" ", "_")
+            fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}.log"
+            # Merge raw/returns for visibility when available
+            sample = df.copy()
+            if self._debug_raw_ohlcv is not None:
+                for c in ["open","high","low","close","volume"]:
+                    if c in self._debug_raw_ohlcv.columns and c not in sample.columns:
+                        sample[c] = self._debug_raw_ohlcv[c]
+            if self._debug_price_returns is not None:
+                for c in self._debug_price_returns.columns:
+                    if c not in sample.columns:
+                        sample[c] = self._debug_price_returns[c]
+            # Reorder: raw, returns, then features
+            cols_raw = [c for c in ["open","high","low","close","volume"] if c in sample.columns]
+            cols_ret = [c for c in sample.columns if c.endswith("_returns")]
+            other = [c for c in sample.columns if c not in cols_raw + cols_ret]
+            sample = sample[cols_raw + cols_ret + other]
+            with open(fname, "w") as f:
+                f.write(f"Stage: {stage} | Step: {step_no} | Shape: {sample.shape}\n")
+                f.write(sample.head(50).to_string())
+            self.logger.info(f"Feature sample written: {fname}")
+        except Exception as e:
+            self.logger.warning(f"Failed to write feature sample for {stage}: {e}")
+
+    def _log_feature_errors(self, stage: str, df: pd.DataFrame) -> None:
+        try:
+            numeric = df.select_dtypes(include=[np.number])
+            nan_counts = numeric.isna().sum()
+            inf_counts = np.isinf(numeric).sum()
+            any_nan = int(nan_counts.sum())
+            any_inf = int(inf_counts.sum())
+            if any_nan or any_inf:
+                self.feature_error_logger.info(
+                    f"Stage={stage} | NaN_total={any_nan} | Inf_total={any_inf} | NaN_cols={nan_counts[nan_counts>0].to_dict()} | Inf_cols={inf_counts[inf_counts>0].to_dict()}"
+                )
+        except Exception:
+            pass
 
     @handle_errors(
         exceptions=(Exception,),
@@ -178,6 +238,18 @@ class VectorizedLabellingOrchestrator:
                 price_data = stationary_data.get("price_data", price_data)
                 volume_data = stationary_data.get("volume_data", volume_data)
                 order_flow_data = stationary_data.get("order_flow_data", order_flow_data)
+                # Capture raw and returns for logging
+                try:
+                    self._debug_raw_ohlcv = price_data[["open","high","low","close","volume"]].copy()
+                except Exception:
+                    self._debug_raw_ohlcv = None
+                try:
+                    ret_cols = [c for c in price_data.columns if c.endswith("_returns")]
+                    self._debug_price_returns = price_data[ret_cols].copy() if ret_cols else None
+                except Exception:
+                    self._debug_price_returns = None
+                self._log_feature_sample("Stationarity", price_data, "04_01")
+                self._log_feature_errors("Stationarity", price_data)
 
             # 2. Advanced feature engineering
             self.logger.info("🔧 Generating advanced features...")
@@ -191,6 +263,18 @@ class VectorizedLabellingOrchestrator:
             else:
                 self.logger.warning("Advanced feature engineer not available, using basic features")
                 advanced_features = {}
+            # Preview engineered features as DataFrame for logging
+            try:
+                preview_df = pd.DataFrame(index=price_data.index)
+                for k,v in list(advanced_features.items())[:200]:
+                    if isinstance(v, pd.Series):
+                        preview_df[k] = v
+                    elif isinstance(v, np.ndarray) and v.ndim==1 and len(v)==len(preview_df.index):
+                        preview_df[k] = v
+                self._log_feature_sample("EngineerFeatures", preview_df, "04_02")
+                self._log_feature_errors("EngineerFeatures", preview_df)
+            except Exception:
+                pass
 
             # 3. Triple barrier labeling
             self.logger.info("🏷️ Applying triple barrier labeling...")
@@ -204,6 +288,11 @@ class VectorizedLabellingOrchestrator:
                 labeled_data,
                 advanced_features,
             )
+            self._log_feature_sample("Combine", combined_data, "04_03")
+            self._log_feature_errors("Combine", combined_data)
+
+            # Drop stationarity helper columns prior to selection/normalization
+            combined_data = self._remove_stationarity_transform_columns(combined_data)
 
             # 5. Feature selection
             if self.enable_feature_selection:
@@ -219,6 +308,8 @@ class VectorizedLabellingOrchestrator:
                 
                 # Remove raw OHLCV columns after feature selection
                 combined_data = self._remove_raw_ohlcv_columns(combined_data)
+                self._log_feature_sample("FeatureSelection", combined_data, "04_04")
+                self._log_feature_errors("FeatureSelection", combined_data)
 
             # 6. Data normalization
             if self.enable_data_normalization:
@@ -230,6 +321,9 @@ class VectorizedLabellingOrchestrator:
                 
                 # Remove raw OHLCV columns after normalization
                 combined_data = self._remove_raw_ohlcv_columns(combined_data)
+                combined_data = self._remove_stationarity_transform_columns(combined_data)
+                self._log_feature_sample("Normalization", combined_data, "04_05")
+                self._log_feature_errors("Normalization", combined_data)
 
             # 7. Autoencoder feature generation
             self.logger.info("🤖 Generating autoencoder features...")
@@ -248,6 +342,12 @@ class VectorizedLabellingOrchestrator:
             else:
                 self.logger.warning("Autoencoder generator not available, skipping autoencoder feature generation")
                 autoencoder_features = combined_data
+            try:
+                ae_df = autoencoder_features if isinstance(autoencoder_features, pd.DataFrame) else combined_data
+                self._log_feature_sample("Autoencoder", ae_df, "04_06")
+                self._log_feature_errors("Autoencoder", ae_df)
+            except Exception:
+                pass
 
             # 8. Final data preparation
             self.logger.info("🎨 Preparing final data...")
@@ -258,8 +358,11 @@ class VectorizedLabellingOrchestrator:
             
             # Remove raw OHLCV columns to prevent data leakage
             final_data = self._remove_raw_ohlcv_columns(final_data)
+            final_data = self._remove_stationarity_transform_columns(final_data)
             # Also ensure datetime/timestamp columns are removed before returning
             final_data = self._remove_datetime_columns(final_data)
+            self._log_feature_sample("FinalData", final_data, "04_07")
+            self._log_feature_errors("FinalData", final_data)
 
             # Systematic leakage guard: drop any baseline columns observed before feature generation
             try:
@@ -590,6 +693,21 @@ class VectorizedLabellingOrchestrator:
             self.logger.error(f"Error removing raw OHLCV columns: {e}")
             return data
 
+    def _remove_stationarity_transform_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Remove intermediate stationarity helper columns that are not final engineered features."""
+        try:
+            to_drop = [
+                c for c in data.columns
+                if c.endswith("_log") or c.endswith("_returns") or c.endswith("_log_returns") or c.endswith("_diff") or c.endswith("_detrended")
+            ]
+            if to_drop:
+                self.logger.info(f"Removing stationarity helper columns: {to_drop[:20]}" + (" ..." if len(to_drop) > 20 else ""))
+                data = data.drop(columns=to_drop)
+            return data
+        except Exception as e:
+            self.logger.error(f"Error removing stationarity helper columns: {e}")
+            return data
+
     def _prepare_final_data_vectorized(
         self,
         autoencoder_features: pd.DataFrame,
@@ -615,6 +733,12 @@ class VectorizedLabellingOrchestrator:
 
             # Remove columns with all NaN values
             final_data = final_data.dropna(axis=1, how="all")
+
+            # Drop stationarity helper columns (keep engineered features only)
+            label_only = final_data[["label"]] if "label" in final_data.columns else None
+            features_only = final_data.drop(columns=["label"]) if "label" in final_data.columns else final_data
+            features_only = self._remove_stationarity_transform_columns(features_only)
+            final_data = pd.concat([features_only, label_only], axis=1) if label_only is not None else features_only
 
             return final_data
 

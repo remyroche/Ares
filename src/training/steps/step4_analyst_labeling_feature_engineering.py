@@ -363,13 +363,18 @@ class AnalystLabelingFeatureEngineeringStep:
                             self.logger.info(f"Removing metadata columns from features: {meta_cols}")
                             labeled_data = labeled_data.drop(columns=meta_cols)
 
-                        # Remove any raw OHLCV/trade activity columns if present
-                        raw_cols = [c for c in [
-                            'open','high','low','close','volume','trade_volume','trade_count','avg_price','min_price','max_price'
-                        ] if c in labeled_data.columns]
-                        if raw_cols:
-                            self.logger.warning(f"🚨 Removing raw columns from features: {raw_cols}")
-                            labeled_data = labeled_data.drop(columns=raw_cols)
+                        # Note: Keep OHLCV in labeled_data for labeling diagnostics; we'll drop OHLCV only for feature files
+
+                        # Ensure labeled_data contains OHLCV columns by merging from original price_data
+                        try:
+                            required_ohlcv = ['open','high','low','close','volume']
+                            missing_ohlcv = [c for c in required_ohlcv if c not in labeled_data.columns]
+                            if missing_ohlcv:
+                                self.logger.info(f"Re-adding missing OHLCV columns to labeled data: {missing_ohlcv}")
+                                ohlcv_source = price_data[[c for c in required_ohlcv if c in price_data.columns]].copy()
+                                labeled_data = labeled_data.join(ohlcv_source, how='left')
+                        except Exception as _e:
+                            self.logger.warning(f"Failed to re-add OHLCV columns to labeled data: {_e}")
 
                         # Do NOT re-add raw OHLCV to labeled features to prevent leakage; only keep engineered features
                         # Validator will operate on separate datasets where OHLCV is expected if needed
@@ -446,9 +451,14 @@ class AnalystLabelingFeatureEngineeringStep:
                 (f"{data_dir}/{exchange}_{symbol}_features_test.pkl", test_data),
             ]
 
+            # For features files, drop raw OHLCV/trade columns to avoid leakage
+            raw_cols = [
+                'open','high','low','close','volume','trade_volume','trade_count','avg_price','min_price','max_price'
+            ]
             for file_path, data in feature_files:
+                features_df = data.drop(columns=[c for c in raw_cols if c in data.columns], errors="ignore")
                 with open(file_path, "wb") as f:
-                    pickle.dump(data, f)
+                    pickle.dump(features_df, f)
             self.logger.info(f"✅ Saved feature data files")
 
             # Also save Parquet versions with downcasting for efficiency
@@ -504,6 +514,10 @@ class AnalystLabelingFeatureEngineeringStep:
                                 pc.cast(table.column("timestamp"), _pa.int64()),
                             )
                         df = table.to_pandas(types_mapper=pd.ArrowDtype)
+                        # Drop raw OHLCV for feature parquet
+                        drop_cols = [c for c in ['open','high','low','close','volume','trade_volume','trade_count','avg_price','min_price','max_price'] if c in df.columns]
+                        if drop_cols:
+                            df = df.drop(columns=drop_cols)
                         ParquetDatasetManager(self.logger).write_flat_parquet(
                             df,
                             file_path,
@@ -552,6 +566,10 @@ class AnalystLabelingFeatureEngineeringStep:
                         feat_cols = list(df.columns)
                         if "label" in feat_cols:
                             feat_cols.remove("label")
+                        # Drop raw OHLCV for feature parquet (partitioned)
+                        drop_cols = [c for c in ['open','high','low','close','volume','trade_volume','trade_count','avg_price','min_price','max_price'] if c in df.columns]
+                        if drop_cols:
+                            df = df.drop(columns=drop_cols)
                         pdm.write_partitioned_dataset(
                             df=df,
                             base_dir=base_dir,
@@ -564,6 +582,7 @@ class AnalystLabelingFeatureEngineeringStep:
                                 "month",
                                 "day",
                             ],
+                            schema_name="features",
                             compression="snappy",
                             metadata={
                                 "schema_version": "1",
@@ -685,6 +704,7 @@ class AnalystLabelingFeatureEngineeringStep:
                                 "month",
                                 "day",
                             ],
+                            schema_name="labeled",
                             compression="snappy",
                             metadata={
                                 "schema_version": "1",

@@ -1,7 +1,0 @@
-2025-08-07 20:28:22,073 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
-2025-08-07 20:28:22,131 - AresTradingSystem.System - INFO - Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE
-2025-08-07 20:28:22,133 - AresTradingSystem.System.ComputationalOptimizationManager - INFO - Computational Optimization Manager initialized
-2025-08-07 20:28:22,133 - AresTradingSystem.System.ComputationalOptimizationManager - INFO - Initializing computational optimization components...
-2025-08-07 20:28:22,133 - AresTradingSystem.System.MemoryEfficientData - INFO - Optimized DataFrame memory usage
-2025-08-07 20:28:22,133 - AresTradingSystem.System.PrecomputedFeatureEngine - INFO - Precomputing all features...
-2025-08-07 20:28:22,133 - AresTradingSystem.System.ComputationalOptimizationManager - ERROR - Failed to initialize computational optimization manager: 'close'

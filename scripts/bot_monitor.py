@@ -16,6 +16,20 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 class BotMonitor:
@@ -33,7 +47,7 @@ class BotMonitor:
                 with open(self.status_file) as f:
                     return json.load(f)
             except Exception as e:
-                self.logger.error(f"Error loading status file: {e}")
+                self.print(error("Error loading status file: {e}")))
         return {"running": False, "last_check": None, "issues": []}
 
     def _save_status(self, status):
@@ -42,7 +56,7 @@ class BotMonitor:
             with open(self.status_file, "w") as f:
                 json.dump(status, f, indent=2, default=str)
         except Exception as e:
-            self.logger.error(f"Error saving status file: {e}")
+            self.print(error("Error saving status file: {e}")))
 
     def _check_python_processes(self):
         """Check if any ARES-related Python processes are running"""
@@ -106,7 +120,7 @@ class BotMonitor:
                                     },
                                 )
             except Exception as e:
-                self.logger.error(f"Error reading log file {log_file}: {e}")
+                self.print(error("Error reading log file {log_file}: {e}")))
 
         return issues
 
@@ -140,7 +154,7 @@ class BotMonitor:
             )
 
         except Exception as e:
-            self.logger.error(f"Error saving notification: {e}")
+            self.print(error("Error saving notification: {e}")))
 
     def monitor(self):
         """Main monitoring loop"""
@@ -193,7 +207,7 @@ class BotMonitor:
                         f"✅ Bot is running ({len(ares_processes)} processes)",
                     )
                 else:
-                    self.logger.warning("❌ Bot is not running")
+                    self.print(warning("❌ Bot is not running")))
 
                 if recent_issues:
                     self.logger.warning(
@@ -207,7 +221,7 @@ class BotMonitor:
                 self.logger.info("🛑 Bot monitor stopped by user")
                 break
             except Exception as e:
-                self.logger.error(f"Error in monitoring loop: {e}")
+                self.print(error("Error in monitoring loop: {e}")))
                 time.sleep(self.monitor_interval)
 
 

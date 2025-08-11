@@ -7,6 +7,12 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    invalid,
+    validation_error,
+)
 
 
 class MLTargetValidator:
@@ -46,15 +52,15 @@ class MLTargetValidator:
             self.logger.info("Initializing ML Target Validator...")
             await self._load_validator_configuration()
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for ML target validator")
+                self.print(invalid("Invalid configuration for ML target validator"))
                 return False
             await self._initialize_validation_rules()
             self.logger.info(
                 "✅ ML Target Validator initialization completed successfully",
             )
             return True
-        except Exception as e:
-            self.logger.error(f"❌ ML Target Validator initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ ML Target Validator initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -69,8 +75,8 @@ class MLTargetValidator:
             self.validation_interval = self.validator_config["validation_interval"]
             self.max_history = self.validator_config["max_history"]
             self.logger.info("ML target validator configuration loaded successfully")
-        except Exception as e:
-            self.logger.error(f"Error loading validator configuration: {e}")
+        except Exception:
+            self.print(error("Error loading validator configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -80,15 +86,15 @@ class MLTargetValidator:
     def _validate_configuration(self) -> bool:
         try:
             if self.validation_interval <= 0:
-                self.logger.error("Invalid validation interval")
+                self.print(invalid("Invalid validation interval"))
                 return False
             if self.max_history <= 0:
-                self.logger.error("Invalid max history")
+                self.print(invalid("Invalid max history"))
                 return False
             self.logger.info("Configuration validation successful")
             return True
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -106,8 +112,8 @@ class MLTargetValidator:
                 "max_position_size": 0.1,
             }
             self.logger.info("Validation rules initialized successfully")
-        except Exception as e:
-            self.logger.error(f"Error initializing validation rules: {e}")
+        except Exception:
+            self.print(validation_error("Error initializing validation rules: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -124,8 +130,8 @@ class MLTargetValidator:
                 await self._perform_validation()
                 await asyncio.sleep(self.validation_interval)
             return True
-        except Exception as e:
-            self.logger.error(f"Error in ML target validator run: {e}")
+        except Exception:
+            self.print(error("Error in ML target validator run: {e}"))
             self.is_running = False
             return False
 
@@ -146,8 +152,8 @@ class MLTargetValidator:
             await self._validate_position_sizing()
             await self._update_validation_results()
             self.logger.info(f"ML target validation tick at {now}")
-        except Exception as e:
-            self.logger.error(f"Error in validation execution: {e}")
+        except Exception:
+            self.print(validation_error("Error in validation execution: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -165,8 +171,8 @@ class MLTargetValidator:
             }
             self.validation_results["prediction_validation"] = prediction_validation
             self.logger.info("Prediction validation completed")
-        except Exception as e:
-            self.logger.error(f"Error validating predictions: {e}")
+        except Exception:
+            self.print(error("Error validating predictions: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -184,8 +190,8 @@ class MLTargetValidator:
             }
             self.validation_results["risk_validation"] = risk_validation
             self.logger.info("Risk parameter validation completed")
-        except Exception as e:
-            self.logger.error(f"Error validating risk parameters: {e}")
+        except Exception:
+            self.print(error("Error validating risk parameters: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -203,8 +209,8 @@ class MLTargetValidator:
             }
             self.validation_results["position_validation"] = position_validation
             self.logger.info("Position sizing validation completed")
-        except Exception as e:
-            self.logger.error(f"Error validating position sizing: {e}")
+        except Exception:
+            self.print(error("Error validating position sizing: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -217,8 +223,8 @@ class MLTargetValidator:
             self.validation_results["last_update"] = datetime.now().isoformat()
             self.validation_results["overall_score"] = 0.82
             self.logger.info("Validation results updated successfully")
-        except Exception as e:
-            self.logger.error(f"Error updating validation results: {e}")
+        except Exception:
+            self.print(validation_error("Error updating validation results: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -231,8 +237,8 @@ class MLTargetValidator:
             self.is_running = False
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ ML Target Validator stopped successfully")
-        except Exception as e:
-            self.logger.error(f"Error stopping ML target validator: {e}")
+        except Exception:
+            self.print(error("Error stopping ML target validator: {e}"))
 
     def get_status(self) -> dict[str, Any]:
         return self.status.copy()

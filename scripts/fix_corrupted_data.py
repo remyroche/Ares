@@ -20,6 +20,20 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 from src.utils.logger import setup_logging, system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 def detect_price_corruption(df: pd.DataFrame) -> bool:
@@ -45,10 +59,7 @@ def detect_price_corruption(df: pd.DataFrame) -> bool:
 
     # For ETH, reasonable price range is $100-$10,000
     # If median is outside this range, data is corrupted
-    if median_price < 100 or median_price > 10000:
-        return True
-
-    return False
+    return bool(median_price < 100 or median_price > 10000)
 
 
 def fix_corrupted_prices(
@@ -157,7 +168,7 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
 def main():
     """Main function to fix corrupted data files."""
     setup_logging()
-    logger = system_logger.getChild("FixCorruptedData")
+    system_logger.getChild("FixCorruptedData")
 
     print("🔧 Fixing Corrupted Price Data")
     print("=" * 50)
@@ -165,7 +176,7 @@ def main():
     # Check for CSV files in data_cache
     data_cache_dir = "data_cache"
     if not os.path.exists(data_cache_dir):
-        print(f"❌ Data cache directory not found: {data_cache_dir}")
+        print(missing("Data cache directory not found: {data_cache_dir}")))
         return False
 
     # Find CSV files
@@ -174,7 +185,7 @@ def main():
         csv_files.extend(Path(data_cache_dir).glob(pattern))
 
     if not csv_files:
-        print(f"❌ No CSV files found in {data_cache_dir}")
+        print(warning("No CSV files found in {data_cache_dir}")))
         return False
 
     print(f"📁 Found {len(csv_files)} CSV files to process")
@@ -191,7 +202,7 @@ def main():
     pkl_files = list(Path(data_cache_dir).glob("*_cached_data.pkl"))
     if pkl_files:
         print(f"\n🔍 Found {len(pkl_files)} existing pickle files")
-        print("⚠️  Consider regenerating these files with corrected data")
+        print(warning(" Consider regenerating these files with corrected data")))
 
         for pkl_file in pkl_files:
             try:

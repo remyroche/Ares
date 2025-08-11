@@ -7,11 +7,15 @@ This module provides an Analyst implementation that properly supports
 dependency injection patterns and modern architectural practices.
 """
 
-from typing import Any
 from datetime import datetime
+from typing import Any
 
 import pandas as pd
 
+from src.analyst.dual_model_system import DualModelSystem
+from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
+from src.analyst.liquidation_risk_model import LiquidationRiskModel
+from src.analyst.market_health_analyzer import MarketHealthAnalyzer
 from src.core.injectable_base import AnalystBase
 from src.interfaces.base_interfaces import (
     AnalysisResult,
@@ -21,17 +25,17 @@ from src.interfaces.base_interfaces import (
     IStateManager,
     MarketData,
 )
-from src.analyst.dual_model_system import DualModelSystem
-from src.analyst.market_health_analyzer import MarketHealthAnalyzer
-from src.analyst.liquidation_risk_model import LiquidationRiskModel
-from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
 from src.utils.error_handler import handle_errors
+from src.utils.warning_symbols import (
+    failed,
+    initialization_error,
+)
 
 
 class DIAnalyst(AnalystBase, IAnalyst):
     """
     Dependency injection-aware Analyst implementation.
-    
+
     This analyst implementation properly supports dependency injection,
     configuration management, and modern architectural patterns.
     """
@@ -44,23 +48,28 @@ class DIAnalyst(AnalystBase, IAnalyst):
         event_bus: IEventBus | None = None,
     ):
         super().__init__(config, exchange_client, state_manager, event_bus)
-        
+
         # Analyst state
         self.is_analyzing = False
         self.analysis_results: dict[str, Any] = {}
         self.analysis_history: list[dict[str, Any]] = []
-        
+
         # Configuration
         self.analyst_config = self.config.get("analyst", {})
         self.analysis_interval = self.analyst_config.get("analysis_interval", 3600)
         self.max_analysis_history = self.analyst_config.get("max_analysis_history", 100)
-        self.enable_technical_analysis = self.analyst_config.get("enable_technical_analysis", True)
-        
+        self.enable_technical_analysis = self.analyst_config.get(
+            "enable_technical_analysis",
+            True,
+        )
+
         # Analysis components (will be initialized later)
         self.dual_model_system: DualModelSystem | None = None
         self.market_health_analyzer: MarketHealthAnalyzer | None = None
         self.liquidation_risk_model: LiquidationRiskModel | None = None
-        self.feature_engineering_orchestrator: FeatureEngineeringOrchestrator | None = None
+        self.feature_engineering_orchestrator: FeatureEngineeringOrchestrator | None = (
+            None
+        )
 
     async def initialize(self) -> bool:
         """Initialize the analyst with all dependencies."""
@@ -70,15 +79,15 @@ class DIAnalyst(AnalystBase, IAnalyst):
         try:
             # Initialize analysis components
             await self._initialize_analysis_components()
-            
+
             # Set up event subscriptions if event bus is available
             if self.event_bus:
                 await self._setup_event_subscriptions()
-            
+
             return True
-            
-        except Exception as e:
-            self.logger.error(f"Failed to initialize analyst: {e}")
+
+        except Exception:
+            self.print(failed("Failed to initialize analyst: {e}"))
             return False
 
     async def _initialize_analysis_components(self) -> None:
@@ -86,28 +95,28 @@ class DIAnalyst(AnalystBase, IAnalyst):
         # Dual Model System
         if self.analyst_config.get("enable_dual_model_system", True):
             self.dual_model_system = DualModelSystem(
-                self.analyst_config.get("dual_model_system", {})
+                self.analyst_config.get("dual_model_system", {}),
             )
             await self.dual_model_system.initialize()
 
         # Market Health Analyzer
         if self.analyst_config.get("enable_market_health_analysis", True):
             self.market_health_analyzer = MarketHealthAnalyzer(
-                self.analyst_config.get("market_health_analyzer", {})
+                self.analyst_config.get("market_health_analyzer", {}),
             )
             await self.market_health_analyzer.initialize()
 
         # Liquidation Risk Model
         if self.analyst_config.get("enable_liquidation_risk_analysis", True):
             self.liquidation_risk_model = LiquidationRiskModel(
-                self.analyst_config.get("liquidation_risk_model", {})
+                self.analyst_config.get("liquidation_risk_model", {}),
             )
             await self.liquidation_risk_model.initialize()
 
         # Feature Engineering Orchestrator
         if self.analyst_config.get("enable_feature_engineering", True):
             self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator(
-                self.analyst_config.get("feature_engineering_orchestrator", {})
+                self.analyst_config.get("feature_engineering_orchestrator", {}),
             )
             await self.feature_engineering_orchestrator.initialize()
 
@@ -116,23 +125,26 @@ class DIAnalyst(AnalystBase, IAnalyst):
     async def _setup_event_subscriptions(self) -> None:
         """Set up event subscriptions for market data."""
         from src.interfaces.event_bus import EventType
-        
+
         # Subscribe uses string event types in EventBus implementation
         self.event_bus.subscribe(
             EventType.MARKET_DATA_RECEIVED.value,
-            self.analyze_market_data
+            self.analyze_market_data,
         )
         self.logger.debug("Event subscriptions set up")
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
-        context="market data analysis"
+        context="market data analysis",
     )
-    async def analyze_market_data(self, market_data: MarketData) -> AnalysisResult | None:
+    async def analyze_market_data(
+        self,
+        market_data: MarketData,
+    ) -> AnalysisResult | None:
         """Analyze market data and return analysis result."""
         if not self.is_initialized or not self._validate_dependencies():
-            self.logger.error("Analyst not properly initialized")
+            self.print(initialization_error("Analyst not properly initialized"))
             return None
 
         try:
@@ -141,28 +153,32 @@ class DIAnalyst(AnalystBase, IAnalyst):
 
             # Perform comprehensive analysis
             analysis_result = await self._perform_comprehensive_analysis(market_data)
-            
+
             # Store analysis result
             if analysis_result:
                 await self._store_analysis_result(analysis_result)
-                
+
                 # Publish analysis completed event (uses string event type)
                 if self.event_bus:
                     from src.interfaces.event_bus import EventType
+
                     await self.event_bus.publish(
                         EventType.ANALYSIS_COMPLETED.value,
-                        analysis_result
+                        analysis_result,
                     )
 
             return analysis_result
 
-        except Exception as e:
-            self.logger.error(f"Analysis failed: {e}")
+        except Exception:
+            self.print(failed("Analysis failed: {e}"))
             return None
         finally:
             self.is_analyzing = False
 
-    async def _perform_comprehensive_analysis(self, market_data: MarketData) -> AnalysisResult | None:
+    async def _perform_comprehensive_analysis(
+        self,
+        market_data: MarketData,
+    ) -> AnalysisResult | None:
         """Perform comprehensive market analysis using all available components."""
         try:
             # Initialize analysis components
@@ -191,20 +207,28 @@ class DIAnalyst(AnalystBase, IAnalyst):
 
             # Liquidation risk analysis
             if self.liquidation_risk_model:
-                liquidation_result = await self.liquidation_risk_model.analyze(market_data)
+                liquidation_result = await self.liquidation_risk_model.analyze(
+                    market_data,
+                )
                 if liquidation_result:
                     risk_metrics.update(liquidation_result.get("risk_metrics", {}))
 
             # Feature engineering
             if self.feature_engineering_orchestrator:
-                feature_result = await self.feature_engineering_orchestrator.analyze(market_data)
+                feature_result = await self.feature_engineering_orchestrator.analyze(
+                    market_data,
+                )
                 if feature_result:
                     features.update(feature_result.get("features", {}))
-                    technical_indicators.update(feature_result.get("technical_indicators", {}))
-                    support_resistance.update(feature_result.get("support_resistance", {}))
+                    technical_indicators.update(
+                        feature_result.get("technical_indicators", {}),
+                    )
+                    support_resistance.update(
+                        feature_result.get("support_resistance", {}),
+                    )
 
             # Build analysis result
-            analysis_result = AnalysisResult(
+            return AnalysisResult(
                 timestamp=market_data.timestamp,
                 symbol=market_data.symbol,
                 confidence=confidence,
@@ -216,9 +240,8 @@ class DIAnalyst(AnalystBase, IAnalyst):
                 risk_metrics=risk_metrics,
             )
 
-            return analysis_result
-        except Exception as e:
-            self.logger.error(f"Comprehensive analysis failed: {e}")
+        except Exception:
+            self.print(failed("Comprehensive analysis failed: {e}"))
             return None
 
     async def _store_analysis_result(self, analysis_result: AnalysisResult) -> None:
@@ -233,9 +256,11 @@ class DIAnalyst(AnalystBase, IAnalyst):
             }
             self.analysis_history.append(record)
             if len(self.analysis_history) > self.max_analysis_history:
-                self.analysis_history = self.analysis_history[-self.max_analysis_history :]
-        except Exception as e:
-            self.logger.error(f"Failed to store analysis result: {e}")
+                self.analysis_history = self.analysis_history[
+                    -self.max_analysis_history :
+                ]
+        except Exception:
+            self.print(failed("Failed to store analysis result: {e}"))
 
     async def get_historical_analysis(
         self,
@@ -247,12 +272,13 @@ class DIAnalyst(AnalystBase, IAnalyst):
         try:
             # Filter history by symbol and date range
             filtered_results = []
-            
+
             for result in self.analysis_history:
                 result_time = datetime.fromisoformat(result["timestamp"])
-                if (result.get("symbol") == symbol and 
-                    start_date <= result_time <= end_date):
-                    
+                if (
+                    result.get("symbol") == symbol
+                    and start_date <= result_time <= end_date
+                ):
                     # Convert back to AnalysisResult object
                     analysis_result = AnalysisResult(
                         timestamp=result_time,
@@ -269,17 +295,17 @@ class DIAnalyst(AnalystBase, IAnalyst):
 
             return filtered_results
 
-        except Exception as e:
-            self.logger.error(f"Failed to get historical analysis: {e}")
+        except Exception:
+            self.print(failed("Failed to get historical analysis: {e}"))
             return []
 
     async def train_models(self, training_data: pd.DataFrame) -> bool:
         """Train analysis models."""
         try:
             self.logger.info("Training analysis models")
-            
+
             success = True
-            
+
             # Train dual model system
             if self.dual_model_system:
                 if not await self.dual_model_system.train(training_data):
@@ -293,17 +319,17 @@ class DIAnalyst(AnalystBase, IAnalyst):
             self.logger.info(f"Model training {'completed' if success else 'failed'}")
             return success
 
-        except Exception as e:
-            self.logger.error(f"Model training failed: {e}")
+        except Exception:
+            self.print(failed("Model training failed: {e}"))
             return False
 
     async def load_models(self, model_path: str) -> bool:
         """Load trained models."""
         try:
             self.logger.info(f"Loading models from {model_path}")
-            
+
             success = True
-            
+
             # Load dual model system
             if self.dual_model_system:
                 if not await self.dual_model_system.load_models(model_path):
@@ -317,8 +343,8 @@ class DIAnalyst(AnalystBase, IAnalyst):
             self.logger.info(f"Model loading {'completed' if success else 'failed'}")
             return success
 
-        except Exception as e:
-            self.logger.error(f"Model loading failed: {e}")
+        except Exception:
+            self.print(failed("Model loading failed: {e}"))
             return False
 
     async def _start_component(self) -> None:

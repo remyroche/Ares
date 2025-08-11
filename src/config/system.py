@@ -9,12 +9,12 @@ from src.config.environment import get_environment_settings
 def get_system_config() -> dict[str, Any]:
     """
     Get the complete system configuration.
-    
+
     Returns:
         dict: Complete system configuration
     """
     settings = get_environment_settings()
-    
+
     return {
         # --- Logging Configuration ---
         "logging": {
@@ -33,7 +33,6 @@ def get_system_config() -> dict[str, Any]:
             "enable_trade_logging": True,
             "enable_system_logging": True,
         },
-        
         # --- Database Configuration ---
         "database": {
             "type": "sqlite",  # 'sqlite' only - Firebase removed
@@ -41,7 +40,6 @@ def get_system_config() -> dict[str, Any]:
             "backup_interval_hours": 24,  # Automatic backup interval
             "backup_retention_days": 30,  # How long to keep backups
             "db_type": os.getenv("DB_TYPE", "influxdb"),  # Moved inside CONFIG
-            
             # InfluxDB Configuration
             "influxdb": {
                 "url": settings.influxdb_url,
@@ -49,14 +47,12 @@ def get_system_config() -> dict[str, Any]:
                 "org": settings.influxdb_org,
                 "bucket": settings.influxdb_bucket,
             },
-            
             # Firestore Configuration
             "firestore": {
                 "credentials": settings.google_application_credentials,
                 "project_id": settings.firestore_project_id,
             },
         },
-        
         # --- File Paths and Data Configuration ---
         "data": {
             # Data Caching Configuration (filenames are set dynamically below)
@@ -64,7 +60,6 @@ def get_system_config() -> dict[str, Any]:
             "agg_trades_filename": "",
             "futures_filename": "",
             "prepared_data_filename": "",
-            
             # Script Names
             "downloader_script_name": "backtesting/ares_data_downloader.py",
             "preparer_script_name": "backtesting/ares_data_preparer.py",
@@ -72,7 +67,6 @@ def get_system_config() -> dict[str, Any]:
             "pipeline_pid_file": "ares_pipeline.pid",
             "restart_flag_file": "restart_pipeline.flag",
         },
-        
         # --- Checkpointing Configuration ---
         "checkpointing": {
             "checkpoint_dir": "checkpoints",
@@ -83,7 +77,6 @@ def get_system_config() -> dict[str, Any]:
             "regime_classifier_model_prefix": "regime_classifier_fold_",  # Prefix for fold-specific models
             "ensemble_model_prefix": "ensemble_fold_",  # Prefix for fold-specific ensemble models
         },
-        
         # --- Reporting Configuration ---
         "reporting": {
             "detailed_trade_log_file": "reports/detailed_trade_log.csv",
@@ -91,13 +84,11 @@ def get_system_config() -> dict[str, Any]:
             "strategy_performance_log_filename_format": "reports/strategy_performance_log_%Y-%m.csv",  # Monthly filenames for strategy reports
             "error_log_file": "ares_errors.jsonl",  # Dedicated error log file
         },
-        
         # --- MLflow Configuration ---
         "mlflow": {
             "tracking_uri": settings.mlflow_tracking_uri,
             "experiment_name": settings.mlflow_experiment_name,
         },
-        
         # --- Version Information ---
         "version": {
             "ares_version": "2.0.0",
@@ -109,7 +100,7 @@ def get_system_config() -> dict[str, Any]:
 def get_logging_config() -> dict[str, Any]:
     """
     Get logging configuration.
-    
+
     Returns:
         dict: Logging configuration
     """
@@ -120,7 +111,7 @@ def get_logging_config() -> dict[str, Any]:
 def get_database_config() -> dict[str, Any]:
     """
     Get database configuration.
-    
+
     Returns:
         dict: Database configuration
     """
@@ -131,7 +122,7 @@ def get_database_config() -> dict[str, Any]:
 def get_data_config() -> dict[str, Any]:
     """
     Get data configuration.
-    
+
     Returns:
         dict: Data configuration
     """
@@ -142,7 +133,7 @@ def get_data_config() -> dict[str, Any]:
 def get_checkpointing_config() -> dict[str, Any]:
     """
     Get checkpointing configuration.
-    
+
     Returns:
         dict: Checkpointing configuration
     """
@@ -153,7 +144,7 @@ def get_checkpointing_config() -> dict[str, Any]:
 def get_reporting_config() -> dict[str, Any]:
     """
     Get reporting configuration.
-    
+
     Returns:
         dict: Reporting configuration
     """
@@ -164,7 +155,7 @@ def get_reporting_config() -> dict[str, Any]:
 def get_mlflow_config() -> dict[str, Any]:
     """
     Get MLflow configuration.
-    
+
     Returns:
         dict: MLflow configuration
     """
@@ -175,7 +166,7 @@ def get_mlflow_config() -> dict[str, Any]:
 def get_version_info() -> dict[str, Any]:
     """
     Get version information.
-    
+
     Returns:
         dict: Version information
     """
@@ -186,7 +177,7 @@ def get_version_info() -> dict[str, Any]:
 def get_log_level() -> str:
     """
     Get the current log level.
-    
+
     Returns:
         str: The log level
     """
@@ -197,7 +188,7 @@ def get_log_level() -> str:
 def get_log_directory() -> str:
     """
     Get the log directory.
-    
+
     Returns:
         str: The log directory
     """
@@ -208,7 +199,7 @@ def get_log_directory() -> str:
 def get_database_type() -> str:
     """
     Get the database type.
-    
+
     Returns:
         str: The database type
     """
@@ -219,7 +210,7 @@ def get_database_type() -> str:
 def get_sqlite_db_path() -> str:
     """
     Get the SQLite database path.
-    
+
     Returns:
         str: The SQLite database path
     """
@@ -230,7 +221,7 @@ def get_sqlite_db_path() -> str:
 def get_checkpoint_dir() -> str:
     """
     Get the checkpoint directory.
-    
+
     Returns:
         str: The checkpoint directory
     """
@@ -241,9 +232,9 @@ def get_checkpoint_dir() -> str:
 def get_ares_version() -> str:
     """
     Get the Ares version.
-    
+
     Returns:
         str: The Ares version
     """
     version_info = get_version_info()
-    return version_info.get("ares_version", "2.0.0") 
+    return version_info.get("ares_version", "2.0.0")

@@ -4,6 +4,20 @@ Launch ARES Bot with monitoring enabled
 """
 
 import signal
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 import subprocess
 import sys
 import time
@@ -64,11 +78,11 @@ def launch_bot_with_monitoring():
 
             # Check if processes are still running
             if bot_process.poll() is not None:
-                print("❌ Bot process has stopped!")
+                print(warning("Bot process has stopped!")))
                 break
 
             if monitor_process.poll() is not None:
-                print("❌ Monitor process has stopped!")
+                print(warning("Monitor process has stopped!")))
                 break
 
     except KeyboardInterrupt:

@@ -15,6 +15,20 @@ from sklearn.preprocessing import StandardScaler
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 class FeatureIntegrationManager:
@@ -75,7 +89,9 @@ class FeatureIntegrationManager:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error initializing feature integration manager: {e}")
+            self.logger.exception(
+                f"❌ Error initializing feature integration manager: {e}",
+            )
             return False
 
     @handle_errors(
@@ -102,7 +118,9 @@ class FeatureIntegrationManager:
         """
         try:
             if not self.is_initialized:
-                self.logger.error("Feature integration manager not initialized")
+                self.print(
+                    initialization_error("Feature integration manager not initialized")
+                )
                 return historical_data
 
             # Start with original data
@@ -139,7 +157,7 @@ class FeatureIntegrationManager:
             return selected_features
 
         except Exception as e:
-            self.logger.error(f"Error integrating features: {e}")
+            self.print(error("Error integrating features: {e}"))
             return historical_data
 
     async def _add_advanced_features(
@@ -176,7 +194,7 @@ class FeatureIntegrationManager:
             return features_df
 
         except Exception as e:
-            self.logger.error(f"Error adding advanced features: {e}")
+            self.print(error("Error adding advanced features: {e}"))
             return pd.DataFrame()
 
     async def _add_liquidity_features(
@@ -232,12 +250,10 @@ class FeatureIntegrationManager:
             )
 
             # Convert to DataFrame
-            features_df = pd.DataFrame(liquidity_features)
-
-            return features_df
+            return pd.DataFrame(liquidity_features)
 
         except Exception as e:
-            self.logger.error(f"Error adding liquidity features: {e}")
+            self.print(error("Error adding liquidity features: {e}"))
             return pd.DataFrame()
 
     def _calculate_liquidity_stress(
@@ -288,7 +304,7 @@ class FeatureIntegrationManager:
             )
 
         except Exception as e:
-            self.logger.error(f"Error calculating liquidity stress: {e}")
+            self.print(error("Error calculating liquidity stress: {e}"))
             return pd.Series(0.0)
 
     def _select_optimal_features(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -342,7 +358,7 @@ class FeatureIntegrationManager:
                     return pca_df
 
                 except Exception as e:
-                    self.logger.warning(f"PCA failed, using original features: {e}")
+                    self.logger.error(f"PCA failed, using original features: {e}")
                     return data_clean
 
             return data_clean
@@ -423,5 +439,5 @@ class FeatureIntegrationManager:
             return summary
 
         except Exception as e:
-            self.logger.error(f"Error getting liquidity feature summary: {e}")
+            self.print(error("Error getting liquidity feature summary: {e}"))
             return {}

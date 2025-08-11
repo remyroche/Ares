@@ -9,6 +9,7 @@ and comprehensive error tracking.
 import logging
 import logging.handlers
 import sys
+import errno
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,8 @@ class ComprehensiveLogger:
 
     def _setup_loggers(self):
         """Setup all loggers with file handlers."""
+        # Prevent logging from raising exceptions on broken pipes
+        logging.raiseExceptions = False
         # Create timestamp for log files
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -111,7 +114,7 @@ class ComprehensiveLogger:
 
         # Add console handler if enabled
         if self.log_config.get("console_output", True):
-            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler = _SafeStreamHandler(sys.stdout)
             console_handler.setFormatter(formatter)
             logger.addHandler(console_handler)
 
@@ -186,10 +189,17 @@ class ComprehensiveLogger:
 
     def log_system_info(self, message: str):
         """Log system information."""
-        if self.system_logger:
-            self.system_logger.info(message)
-        if self.global_logger:
-            self.global_logger.info(f"[SYSTEM] {message}")
+        try:
+            if self.system_logger:
+                self.system_logger.info(message)
+            if self.global_logger:
+                self.global_logger.info(f"[SYSTEM] {message}")
+        except (BrokenPipeError, OSError) as e:
+            # Safely ignore broken pipe during shutdown/piped output
+            if not (
+                isinstance(e, OSError) and getattr(e, "errno", None) == errno.EPIPE
+            ):
+                raise
 
     def log_error(self, message: str, exc_info: bool = False):
         """Log error messages."""
@@ -198,7 +208,7 @@ class ComprehensiveLogger:
         if self.system_logger:
             self.system_logger.error(message, exc_info=exc_info)
         if self.global_logger:
-            self.global_logger.error(f"[ERROR] {message}", exc_info=exc_info)
+            self.global_logger.error(message, exc_info=exc_info)
 
     def log_trade(self, message: str):
         """Log trade information."""
@@ -218,6 +228,21 @@ class ComprehensiveLogger:
         if self.global_logger:
             self.global_logger.info(f"[PERFORMANCE] {message}")
 
+    def log_session_summary(self) -> None:
+        """Log a session summary to the global logger."""
+        if not self.global_logger:
+            return
+        try:
+            self.global_logger.info("=" * 80)
+            self.global_logger.info("📊 SESSION SUMMARY")
+            self.global_logger.info(
+                f"Session started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            )
+            self.global_logger.info("This file contains ALL logs for this session")
+            self.global_logger.info("=" * 80)
+        except Exception:
+            pass
+
     def log_launcher_start(self, mode: str, symbol: str = None, exchange: str = None):
         """Log launcher startup information."""
         start_info = f"🚀 ARES LAUNCHER STARTED - Mode: {mode}"
@@ -234,26 +259,42 @@ class ComprehensiveLogger:
 
     def log_launcher_end(self, exit_code: int = 0):
         """Log launcher shutdown information."""
-        self.log_system_info("=" * 80)
-        self.log_system_info(f"🛑 ARES LAUNCHER ENDED - Exit code: {exit_code}")
-        self.log_system_info(
-            f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        )
-        self.log_system_info("=" * 80)
+        try:
+            self.log_system_info("=" * 80)
+            self.log_system_info(f"🛑 ARES LAUNCHER ENDED - Exit code: {exit_code}")
+            self.log_system_info(
+                f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            )
+            self.log_system_info("=" * 80)
+        except (BrokenPipeError, OSError) as e:
+            if not (
+                isinstance(e, OSError) and getattr(e, "errno", None) == errno.EPIPE
+            ):
+                raise
 
-    def log_session_summary(self):
-        """Log a session summary to the global logger."""
-        if self.global_logger:
-            self.global_logger.info("=" * 80)
-            self.global_logger.info("📊 SESSION SUMMARY")
-            self.global_logger.info(
-                f"Session started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            )
-            self.global_logger.info(
-                f"Global log file: ares_global_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
-            )
-            self.global_logger.info("This file contains ALL logs for this session")
-            self.global_logger.info("=" * 80)
+
+class _SafeStreamHandler(logging.StreamHandler):
+    """StreamHandler that suppresses BrokenPipeError during emit/flush."""
+
+    def emit(self, record):
+        try:
+            super().emit(record)
+        except (BrokenPipeError, OSError) as e:
+            if not (
+                isinstance(e, OSError) and getattr(e, "errno", None) == errno.EPIPE
+            ):
+                raise
+
+    def flush(self):
+        try:
+            super().flush()
+        except (BrokenPipeError, OSError) as e:
+            if not (
+                isinstance(e, OSError) and getattr(e, "errno", None) == errno.EPIPE
+            ):
+                raise
+
+    # moved to ComprehensiveLogger
 
 
 # Global comprehensive logger instance

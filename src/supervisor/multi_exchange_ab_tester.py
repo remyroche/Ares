@@ -10,17 +10,26 @@ import asyncio
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
 
-from src.supervisor.exchange_volume_adapter import ExchangeVolumeAdapter
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    warning,
+)
+
+if TYPE_CHECKING:
+    from src.supervisor.exchange_volume_adapter import ExchangeVolumeAdapter
 
 
 @dataclass
@@ -132,7 +141,9 @@ class MultiExchangeABTester:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for multi-exchange A/B tester")
+                self.print(
+                    invalid("Invalid configuration for multi-exchange A/B tester"),
+                )
                 return False
 
             # Initialize volume adapter
@@ -147,7 +158,7 @@ class MultiExchangeABTester:
             return True
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"❌ Multi-Exchange A/B Tester initialization failed: {e}",
             )
             return False
@@ -169,8 +180,8 @@ class MultiExchangeABTester:
 
             self.logger.info("A/B test configuration loaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error loading A/B test configuration: {e}")
+        except Exception:
+            self.print(error("Error loading A/B test configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -181,18 +192,18 @@ class MultiExchangeABTester:
         """Validate A/B test configuration."""
         try:
             if self.max_concurrent_tests <= 0:
-                self.logger.error("Invalid max concurrent tests")
+                self.print(invalid("Invalid max concurrent tests"))
                 return False
 
             if not self.result_storage_path:
-                self.logger.error("No result storage path specified")
+                self.print(error("No result storage path specified"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -215,8 +226,8 @@ class MultiExchangeABTester:
                     "Volume adapter initialization failed, continuing without volume adaptation",
                 )
 
-        except Exception as e:
-            self.logger.error(f"Error initializing volume adapter: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing volume adapter: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -234,8 +245,8 @@ class MultiExchangeABTester:
                 f"Result storage initialized at {self.result_storage_path}",
             )
 
-        except Exception as e:
-            self.logger.error(f"Error initializing result storage: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing result storage: {e}"))
 
     async def start_ab_test(self, test_config: ABTestConfig) -> bool:
         """
@@ -249,7 +260,7 @@ class MultiExchangeABTester:
         """
         try:
             if self.is_running:
-                self.logger.error("A/B test already running")
+                self.print(error("A/B test already running"))
                 return False
 
             # Validate test configuration
@@ -292,33 +303,33 @@ class MultiExchangeABTester:
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error starting A/B test: {e}")
+        except Exception:
+            self.print(error("Error starting A/B test: {e}"))
             return False
 
     def _validate_test_config(self, test_config: ABTestConfig) -> bool:
         """Validate A/B test configuration."""
         try:
             if not test_config.exchanges or len(test_config.exchanges) < 2:
-                self.logger.error("A/B test requires at least 2 exchanges")
+                self.print(error("A/B test requires at least 2 exchanges"))
                 return False
 
             if test_config.test_duration_hours <= 0:
-                self.logger.error("Invalid test duration")
+                self.print(invalid("Invalid test duration"))
                 return False
 
             if test_config.sample_interval_seconds <= 0:
-                self.logger.error("Invalid sample interval")
+                self.print(invalid("Invalid sample interval"))
                 return False
 
             if not (0 <= test_config.min_confidence_threshold <= 1):
-                self.logger.error("Invalid confidence threshold")
+                self.print(invalid("Invalid confidence threshold"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating test config: {e}")
+        except Exception:
+            self.print(error("Error validating test config: {e}"))
             return False
 
     async def process_model_prediction(
@@ -344,10 +355,12 @@ class MultiExchangeABTester:
         """
         try:
             if not self.is_running or self.current_test is None:
-                raise ValueError("No A/B test currently running")
+                msg = "No A/B test currently running"
+                raise ValueError(msg)
 
             if exchange not in self.current_test.exchanges:
-                raise ValueError(f"Exchange {exchange} not in current test")
+                msg = f"Exchange {exchange} not in current test"
+                raise ValueError(msg)
 
             # Get base position size from model
             base_position_size = self.current_test.max_position_size
@@ -453,7 +466,9 @@ class MultiExchangeABTester:
             return result
 
         except Exception as e:
-            self.logger.error(f"Error processing model prediction for {exchange}: {e}")
+            self.logger.exception(
+                f"Error processing model prediction for {exchange}: {e}",
+            )
             return ExchangeTestResult(
                 exchange=exchange,
                 timestamp=datetime.now(),
@@ -486,8 +501,8 @@ class MultiExchangeABTester:
             multiplier = exchange_multipliers.get(exchange.upper(), 2.0)
             return base_slippage * multiplier
 
-        except Exception as e:
-            self.logger.error(f"Error simulating slippage: {e}")
+        except Exception:
+            self.print(error("Error simulating slippage: {e}"))
             return 0.002  # Conservative fallback
 
     def _simulate_spread_cost(
@@ -511,8 +526,8 @@ class MultiExchangeABTester:
             multiplier = exchange_multipliers.get(exchange.upper(), 2.0)
             return base_spread * multiplier
 
-        except Exception as e:
-            self.logger.error(f"Error simulating spread cost: {e}")
+        except Exception:
+            self.print(error("Error simulating spread cost: {e}"))
             return 0.001  # Conservative fallback
 
     def _simulate_market_impact(
@@ -532,8 +547,8 @@ class MultiExchangeABTester:
             multiplier = impact_multipliers.get(exchange.upper(), 3.0)
             return impact_ratio * multiplier
 
-        except Exception as e:
-            self.logger.error(f"Error simulating market impact: {e}")
+        except Exception:
+            self.print(error("Error simulating market impact: {e}"))
             return 0.001  # Conservative fallback
 
     def _calculate_volume_utilization(
@@ -546,8 +561,8 @@ class MultiExchangeABTester:
             volume = market_data.get("volume", 1000000)
             return position_size / volume if volume > 0 else 0.0
 
-        except Exception as e:
-            self.logger.error(f"Error calculating volume utilization: {e}")
+        except Exception:
+            self.print(error("Error calculating volume utilization: {e}"))
             return 0.0
 
     def _simulate_profit_loss(
@@ -564,8 +579,8 @@ class MultiExchangeABTester:
                 return position_size * prediction * 0.1  # 10% of prediction
             return position_size * prediction * 0.1  # Loss
 
-        except Exception as e:
-            self.logger.error(f"Error simulating profit/loss: {e}")
+        except Exception:
+            self.print(error("Error simulating profit/loss: {e}"))
             return 0.0
 
     async def _update_performance_metrics(
@@ -621,8 +636,8 @@ class MultiExchangeABTester:
                         metrics["accuracy"] * (metrics["total_executions"] - 1) + 0
                     ) / metrics["total_executions"]
 
-        except Exception as e:
-            self.logger.error(f"Error updating performance metrics: {e}")
+        except Exception:
+            self.print(error("Error updating performance metrics: {e}"))
 
     async def _monitor_test_progress(self) -> None:
         """Monitor A/B test progress in real-time."""
@@ -639,8 +654,8 @@ class MultiExchangeABTester:
                 # Wait for next check
                 await asyncio.sleep(60)  # Check every minute
 
-        except Exception as e:
-            self.logger.error(f"Error monitoring test progress: {e}")
+        except Exception:
+            self.print(error("Error monitoring test progress: {e}"))
 
     async def _log_test_progress(self) -> None:
         """Log current test progress."""
@@ -666,14 +681,14 @@ class MultiExchangeABTester:
                         f"Accuracy={metrics['accuracy']:.3f}",
                     )
 
-        except Exception as e:
-            self.logger.error(f"Error logging test progress: {e}")
+        except Exception:
+            self.print(error("Error logging test progress: {e}"))
 
     async def stop_ab_test(self) -> bool:
         """Stop the current A/B test and generate results."""
         try:
             if not self.is_running:
-                self.logger.warning("No A/B test currently running")
+                self.print(warning("No A/B test currently running"))
                 return False
 
             self.is_running = False
@@ -693,8 +708,8 @@ class MultiExchangeABTester:
             self.logger.info("✅ A/B test completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error stopping A/B test: {e}")
+        except Exception:
+            self.print(error("Error stopping A/B test: {e}"))
             return False
 
     async def _generate_final_results(self) -> None:
@@ -726,8 +741,8 @@ class MultiExchangeABTester:
             # Generate comparison summary
             await self._generate_comparison_summary()
 
-        except Exception as e:
-            self.logger.error(f"Error generating final results: {e}")
+        except Exception:
+            self.print(error("Error generating final results: {e}"))
 
     def _calculate_sharpe_ratio(self, returns: list[float]) -> float:
         """Calculate Sharpe ratio from returns."""
@@ -744,8 +759,8 @@ class MultiExchangeABTester:
 
             return mean_return / std_return
 
-        except Exception as e:
-            self.logger.error(f"Error calculating Sharpe ratio: {e}")
+        except Exception:
+            self.print(error("Error calculating Sharpe ratio: {e}"))
             return 0.0
 
     def _calculate_max_drawdown(self, returns: list[float]) -> float:
@@ -760,8 +775,8 @@ class MultiExchangeABTester:
 
             return abs(np.min(drawdown)) if len(drawdown) > 0 else 0.0
 
-        except Exception as e:
-            self.logger.error(f"Error calculating max drawdown: {e}")
+        except Exception:
+            self.print(error("Error calculating max drawdown: {e}"))
             return 0.0
 
     async def _generate_comparison_summary(self) -> None:
@@ -823,8 +838,8 @@ class MultiExchangeABTester:
                     f"🎯 Best Accuracy: {best_accuracy['exchange']} ({best_accuracy['accuracy']:.3f})",
                 )
 
-        except Exception as e:
-            self.logger.error(f"Error generating comparison summary: {e}")
+        except Exception:
+            self.print(error("Error generating comparison summary: {e}"))
 
     async def _perform_statistical_analysis(self) -> None:
         """Perform statistical analysis on test results."""
@@ -848,8 +863,8 @@ class MultiExchangeABTester:
                             exchange2,
                         )
 
-        except Exception as e:
-            self.logger.error(f"Error performing statistical analysis: {e}")
+        except Exception:
+            self.print(error("Error performing statistical analysis: {e}"))
 
     async def _compare_exchanges_statistically(
         self,
@@ -879,8 +894,8 @@ class MultiExchangeABTester:
             else:
                 self.logger.info(f"  🤝 {exchange1} and {exchange2} have equal P&L")
 
-        except Exception as e:
-            self.logger.error(f"Error comparing exchanges: {e}")
+        except Exception:
+            self.print(error("Error comparing exchanges: {e}"))
 
     async def _save_test_results(self) -> None:
         """Save test results to file."""
@@ -913,13 +928,13 @@ class MultiExchangeABTester:
 
             self.logger.info(f"💾 Test results saved to {filename}")
 
-        except Exception as e:
-            self.logger.error(f"Error saving test results: {e}")
+        except Exception:
+            self.print(error("Error saving test results: {e}"))
 
     def get_test_status(self) -> dict[str, Any]:
         """Get current test status."""
         try:
-            status = {
+            return {
                 "is_running": self.is_running,
                 "current_test": asdict(self.current_test)
                 if self.current_test
@@ -936,10 +951,9 @@ class MultiExchangeABTester:
                     for exchange, results in self.test_results.items()
                 },
             }
-            return status
 
         except Exception as e:
-            self.logger.error(f"Error getting test status: {e}")
+            self.print(error("Error getting test status: {e}"))
             return {"error": str(e)}
 
     async def cleanup(self) -> None:
@@ -961,8 +975,8 @@ class MultiExchangeABTester:
 
             self.logger.info("✅ Multi-Exchange A/B Tester cleanup completed")
 
-        except Exception as e:
-            self.logger.error(f"Error during cleanup: {e}")
+        except Exception:
+            self.print(error("Error during cleanup: {e}"))
 
 
 @handle_errors(
@@ -983,6 +997,6 @@ async def setup_multi_exchange_ab_tester(
             return tester
         return None
 
-    except Exception as e:
-        system_logger.error(f"Failed to setup multi-exchange A/B tester: {e}")
+    except Exception:
+        system_print(failed("Failed to setup multi-exchange A/B tester: {e}"))
         return None

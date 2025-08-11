@@ -10,4 +10,4 @@ This package contains all training-related components including:
 - Example implementations
 """
 
-__version__ = "1.0.0" 
+__version__ = "1.0.0"

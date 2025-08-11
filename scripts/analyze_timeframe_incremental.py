@@ -285,9 +285,7 @@ class PriceActionAnalyzer:
         resampled = resampled.reset_index()
 
         # Remove rows with NaN values (incomplete candles)
-        resampled = resampled.dropna()
-
-        return resampled
+        return resampled.dropna()
 
     def analyze_price_movement(
         self,
@@ -588,7 +586,7 @@ class PriceActionAnalyzer:
         best_idx = score_df["total_score"].idxmax()
         best_row = score_df.loc[best_idx]
 
-        optimal_params = {
+        return {
             "optimal_target": best_row["target_pct"],
             "optimal_stop": best_row["stop_pct"],
             "optimal_risk_reward": best_row["risk_reward_ratio"],
@@ -598,8 +596,6 @@ class PriceActionAnalyzer:
             "optimal_net_profit": best_row["net_profit_pct"],
             "optimal_total_score": best_row["total_score"],
         }
-
-        return optimal_params
 
     def generate_recommendations(
         self,
@@ -624,7 +620,7 @@ class PriceActionAnalyzer:
         success_rate = optimal_params["optimal_success_rate"]
         frequency = optimal_params["optimal_frequency_score"]
 
-        recommendations = {
+        return {
             "primary_strategy": {
                 "target_pct": target,
                 "stop_pct": stop,
@@ -648,8 +644,6 @@ class PriceActionAnalyzer:
                 "trend_following": "Strong directional moves preferred",
             },
         }
-
-        return recommendations
 
     def save_results(
         self,
@@ -707,15 +701,13 @@ class PriceActionAnalyzer:
 
             f.write("OPTIMAL PARAMETERS:\n")
             f.write("-" * 20 + "\n")
-            for key, value in optimal_params.items():
-                f.write(f"{key}: {value}\n")
+            f.writelines(f"{key}: {value}\n" for key, value in optimal_params.items())
 
             f.write("\nRECOMMENDATIONS:\n")
             f.write("-" * 15 + "\n")
             for category, items in recommendations.items():
                 f.write(f"\n{category.upper()}:\n")
-                for key, value in items.items():
-                    f.write(f"  {key}: {value}\n")
+                f.writelines(f"  {key}: {value}\n" for key, value in items.items())
 
         terminal_log(f"💾 Summary report saved to: {summary_filename}", "INFO")
 

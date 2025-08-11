@@ -14,6 +14,12 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    execution_error,
+    initialization_error,
+    invalid,
+    validation_error,
+)
 
 
 class PaperTrader:
@@ -70,7 +76,7 @@ class PaperTrader:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for paper trader")
+                self.logger.error(invalid("Invalid configuration for paper trader"))
                 return False
 
             # Initialize trading state
@@ -80,7 +86,9 @@ class PaperTrader:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Paper Trader initialization failed: {e}")
+            self.logger.exception(
+                initialization_error(f"Paper Trader initialization failed: {e}"),
+            )
             return False
 
     @handle_errors(
@@ -108,7 +116,9 @@ class PaperTrader:
             self.logger.info("Trader configuration loaded successfully")
 
         except Exception as e:
-            self.logger.error(f"Error loading trader configuration: {e}")
+            self.logger.exception(
+                initialization_error(f"Error loading trader configuration: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -125,29 +135,31 @@ class PaperTrader:
         try:
             # Validate initial balance
             if self.initial_balance <= 0:
-                self.logger.error("Invalid initial balance")
+                self.print(invalid("Invalid initial balance"))
                 return False
 
             # Validate position size
             if self.max_position_size <= 0 or self.max_position_size > 1:
-                self.logger.error("Invalid max position size")
+                self.print(invalid("Invalid max position size"))
                 return False
 
             # Validate commission rate
             if self.commission_rate < 0 or self.commission_rate > 0.1:
-                self.logger.error("Invalid commission rate")
+                self.print(invalid("Invalid commission rate"))
                 return False
 
             # Validate slippage rate
             if self.slippage_rate < 0 or self.slippage_rate > 0.01:
-                self.logger.error("Invalid slippage rate")
+                self.print(invalid("Invalid slippage rate"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
         except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+            self.logger.exception(
+                validation_error(f"Error validating configuration: {e}"),
+            )
             return False
 
     @handle_errors(
@@ -172,7 +184,9 @@ class PaperTrader:
             )
 
         except Exception as e:
-            self.logger.error(f"Error initializing trading state: {e}")
+            self.logger.exception(
+                initialization_error(f"Error initializing trading state: {e}"),
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -263,7 +277,7 @@ class PaperTrader:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error executing buy order: {e}")
+            self.logger.exception(execution_error(f"Error executing buy order: {e}"))
             return False
 
     @handle_specific_errors(
@@ -363,7 +377,7 @@ class PaperTrader:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error executing sell order: {e}")
+            self.logger.exception(execution_error(f"Error executing sell order: {e}"))
             return False
 
     @handle_errors(
@@ -386,17 +400,17 @@ class PaperTrader:
         try:
             # Validate symbol
             if not symbol or len(symbol) == 0:
-                self.logger.error("Invalid symbol")
+                self.print(invalid("Invalid symbol"))
                 return False
 
             # Validate quantity
             if quantity <= 0:
-                self.logger.error("Invalid quantity")
+                self.print(invalid("Invalid quantity"))
                 return False
 
             # Validate price
             if price <= 0:
-                self.logger.error("Invalid price")
+                self.print(invalid("Invalid price"))
                 return False
 
             # Check position size limits
@@ -412,7 +426,7 @@ class PaperTrader:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error validating order: {e}")
+            self.logger.exception(validation_error(f"Error validating order: {e}"))
             return False
 
     @handle_errors(
@@ -434,7 +448,9 @@ class PaperTrader:
             return self.positions.get(symbol, None)
 
         except Exception as e:
-            self.logger.error(f"Error getting position for {symbol}: {e}")
+            self.logger.exception(
+                execution_error(f"Error getting position for {symbol}: {e}"),
+            )
             return None
 
     def mark_price(self, symbol: str, price: float) -> None:
@@ -445,7 +461,9 @@ class PaperTrader:
             self.prices[symbol] = price
             self._update_equity()
         except Exception as e:
-            self.logger.error(f"Error marking price for {symbol}: {e}")
+            self.logger.exception(
+                execution_error(f"Error marking price for {symbol}: {e}"),
+            )
 
     def _update_equity(self) -> None:
         """Recompute total equity using current prices and unrealized PnL."""
@@ -459,7 +477,7 @@ class PaperTrader:
                     equity += qty * (mark - avg)
             self.equity_history.append(equity)
         except Exception as e:
-            self.logger.error(f"Error updating equity: {e}")
+            self.logger.exception(execution_error(f"Error updating equity: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -477,7 +495,7 @@ class PaperTrader:
             return self.positions.copy()
 
         except Exception as e:
-            self.logger.error(f"Error getting all positions: {e}")
+            self.logger.exception(execution_error(f"Error getting all positions: {e}"))
             return {}
 
     @handle_errors(
@@ -496,7 +514,7 @@ class PaperTrader:
             return self.balance
 
         except Exception as e:
-            self.logger.error(f"Error getting balance: {e}")
+            self.logger.exception(execution_error(f"Error getting balance: {e}"))
             return 0.0
 
     @handle_errors(
@@ -522,7 +540,7 @@ class PaperTrader:
             return self.trade_history.copy()
 
         except Exception as e:
-            self.logger.error(f"Error getting trade history: {e}")
+            self.logger.exception(execution_error(f"Error getting trade history: {e}"))
             return []
 
     @handle_errors(
@@ -558,7 +576,9 @@ class PaperTrader:
             total_pnl = total_sell_proceeds - total_buy_cost
 
             # Calculate win rate
-            profitable_trades = len([t for t in sell_trades if t.get("net_proceeds", 0.0) > 0])
+            profitable_trades = len(
+                [t for t in sell_trades if t.get("net_proceeds", 0.0) > 0],
+            )
             win_rate = profitable_trades / len(sell_trades) if sell_trades else 0.0
 
             # Calculate max drawdown using equity history
@@ -592,14 +612,21 @@ class PaperTrader:
                 "win_rate": win_rate,
                 "total_pnl": total_pnl,
                 "current_balance": self.balance,
-                "current_equity": self.equity_history[-1] if self.equity_history else self.balance,
+                "current_equity": self.equity_history[-1]
+                if self.equity_history
+                else self.balance,
                 "max_drawdown": max_drawdown,
                 "sharpe_ratio": sharpe_ratio,
-                "total_return": (self.equity_history[-1] - self.initial_balance) / self.initial_balance if self.equity_history else 0.0,
+                "total_return": (self.equity_history[-1] - self.initial_balance)
+                / self.initial_balance
+                if self.equity_history
+                else 0.0,
             }
 
         except Exception as e:
-            self.logger.error(f"Error calculating performance: {e}")
+            self.logger.exception(
+                execution_error(f"Error calculating performance: {e}"),
+            )
             return {}
 
     def get_trader_status(self) -> dict[str, Any]:
@@ -640,7 +667,7 @@ class PaperTrader:
             self.logger.info("✅ Paper Trader stopped successfully")
 
         except Exception as e:
-            self.logger.error(f"Error stopping paper trader: {e}")
+            self.logger.exception(execution_error(f"Error stopping paper trader: {e}"))
 
 
 # Global paper trader instance

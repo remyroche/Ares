@@ -1,0 +1,84 @@
+# Advanced Wavelet Feature Selection Configuration
+# This file demonstrates the new multi-criteria feature selection options
+
+wavelet_transforms:
+  # Feature Selection Method Options:
+  # - "variance": Simple variance-based selection (original method)
+  # - "energy": Energy-based selection for wavelet features
+  # - "entropy": Entropy-based selection for information content
+  # - "advanced": Multi-criteria selection with configurable weights
+  # - "wavelet_optimized": Category-balanced selection (recommended)
+  # - "random": Random selection for baseline comparison
+  feature_selection_method: "wavelet_optimized"
+  
+  # Maximum number of features to select
+  max_features_per_wavelet: 50
+  
+  # Minimum variance threshold for feature filtering
+  min_feature_variance: 1e-6
+  
+  # Advanced Selection Configuration
+  category_balance: true  # Ensure balanced representation across categories
+  stability_threshold: 0.1  # Minimum stability score for features
+  
+  # Multi-criteria selection weights (for "advanced" method)
+  info_weight: 0.3        # Information content weight
+  domain_weight: 0.4      # Domain-specific wavelet importance
+  efficiency_weight: 0.2  # Computational efficiency weight
+  stability_weight: 0.1   # Feature stability weight
+  
+  # Wavelet Configuration
+  wavelet_type: "db4"
+  decomposition_level: 4
+  padding_mode: "symmetric"
+  boundary_handling: "truncate"
+  edge_effect_threshold: 0.1
+  
+  # CWT Configuration
+  cwt_scale_method: "logarithmic"
+  min_scale: 1
+  max_scale: 32
+  num_scales: 16
+  scale_resolution: "octave"
+  
+  # Stationarity Configuration
+  enable_stationary_series: true
+  stationary_transforms:
+    - "returns"
+    - "log_returns"
+  
+  # Computational Configuration
+  max_wavelet_types: 3
+  enable_parallel_processing: false
+  computation_timeout: 30
+  
+  # Enable/Disable Specific Transforms
+  enable_continuous_wavelet: true
+  enable_discrete_wavelet: true
+  enable_wavelet_packet: false  # Disabled due to Node object issues
+  enable_denoising: false       # Disabled due to wdenoise issues
+
+# Example configurations for different use cases:
+
+# High-performance configuration (faster, fewer features)
+performance_config:
+  feature_selection_method: "advanced"
+  max_features_per_wavelet: 30
+  efficiency_weight: 0.4
+  domain_weight: 0.3
+  info_weight: 0.2
+  stability_weight: 0.1
+
+# High-accuracy configuration (more features, better quality)
+accuracy_config:
+  feature_selection_method: "wavelet_optimized"
+  max_features_per_wavelet: 75
+  category_balance: true
+  stability_threshold: 0.05
+
+# Balanced configuration (recommended for most use cases)
+balanced_config:
+  feature_selection_method: "wavelet_optimized"
+  max_features_per_wavelet: 50
+  category_balance: true
+  stability_threshold: 0.1

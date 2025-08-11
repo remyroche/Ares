@@ -1,4 +1,0 @@
-2025-08-07 20:27:58,787 - AresTradingSystem - INFO - ✅ Enhanced Logger initialization completed successfully
-2025-08-07 20:27:58,823 - AresTradingSystem.System.ValidatorOrchestrator - INFO - 🔍 Running validator for step2_market_regime_classification
-2025-08-07 20:27:59,255 - AresTradingSystem.System - INFO - Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE
-2025-08-07 20:27:59,256 - AresTradingSystem.System.ValidatorOrchestrator - INFO - ✅ Validator for step2_market_regime_classification completed: False

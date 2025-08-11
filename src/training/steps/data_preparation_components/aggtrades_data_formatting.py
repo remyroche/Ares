@@ -102,15 +102,17 @@ class DataFileReformatter:
             return False
 
         try:
-            with open(self.input_path, encoding="utf-8") as infile:
-                with open(
+            with (
+                open(self.input_path, encoding="utf-8") as infile,
+                open(
                     self.output_path,
                     "w",
                     newline="",
                     encoding="utf-8",
-                ) as outfile:
-                    writer = csv.writer(outfile)
-                    return processor(infile, writer)
+                ) as outfile,
+            ):
+                writer = csv.writer(outfile)
+                return processor(infile, writer)
         except Exception as e:
             print(f"Error reformatting file {self.input_path}: {e}")
             return False

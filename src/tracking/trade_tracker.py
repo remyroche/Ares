@@ -19,6 +19,10 @@ from dataclasses_json import dataclass_json
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    failed,
+    missing,
+)
 
 
 class TradeStatus(Enum):
@@ -293,8 +297,8 @@ class TradeTracker:
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Failed to record trade: {e}")
+        except Exception:
+            self.print(failed("❌ Failed to record trade: {e}"))
             return False
 
     @handle_errors(
@@ -370,7 +374,7 @@ class TradeTracker:
         """
         try:
             if trade_id not in self.trades:
-                self.logger.error(f"Trade {trade_id} not found")
+                self.print(missing("Trade {trade_id} not found"))
                 return False
 
             trade_record = self.trades[trade_id]
@@ -387,8 +391,8 @@ class TradeTracker:
             self.logger.info(f"📝 Trade {trade_id} updated")
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Failed to update trade {trade_id}: {e}")
+        except Exception:
+            self.print(failed("❌ Failed to update trade {trade_id}: {e}"))
             return False
 
     def get_trade(self, trade_id: str) -> TradeRecord | None:

@@ -14,6 +14,14 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    execution_error,
+    failed,
+    initialization_error,
+    invalid,
+    validation_error,
+)
 
 
 class CheckpointManager:
@@ -82,7 +90,7 @@ class CheckpointManager:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for checkpoint manager")
+                self.print(invalid("Invalid configuration for checkpoint manager"))
                 return False
 
             # Initialize checkpoint modules
@@ -93,8 +101,8 @@ class CheckpointManager:
             )
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Checkpoint Manager initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Checkpoint Manager initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -127,8 +135,8 @@ class CheckpointManager:
 
             self.logger.info("Checkpoint configuration loaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error loading checkpoint configuration: {e}")
+        except Exception:
+            self.print(error("Error loading checkpoint configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -145,12 +153,12 @@ class CheckpointManager:
         try:
             # Validate checkpoint interval
             if self.checkpoint_interval <= 0:
-                self.logger.error("Invalid checkpoint interval")
+                self.print(invalid("Invalid checkpoint interval"))
                 return False
 
             # Validate max checkpoint history
             if self.max_checkpoint_history <= 0:
-                self.logger.error("Invalid max checkpoint history")
+                self.print(invalid("Invalid max checkpoint history"))
                 return False
 
             # Validate that at least one checkpoint type is enabled
@@ -162,14 +170,14 @@ class CheckpointManager:
                     self.checkpoint_config.get("enable_checkpoint_cleanup", True),
                 ],
             ):
-                self.logger.error("At least one checkpoint type must be enabled")
+                self.print(error("At least one checkpoint type must be enabled"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -198,8 +206,10 @@ class CheckpointManager:
 
             self.logger.info("Checkpoint modules initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing checkpoint modules: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing checkpoint modules: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -219,8 +229,10 @@ class CheckpointManager:
 
             self.logger.info("Checkpoint saving module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing checkpoint saving: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing checkpoint saving: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -240,8 +252,10 @@ class CheckpointManager:
 
             self.logger.info("Checkpoint loading module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing checkpoint loading: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing checkpoint loading: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -261,8 +275,10 @@ class CheckpointManager:
 
             self.logger.info("Checkpoint validation module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing checkpoint validation: {e}")
+        except Exception:
+            self.print(
+                validation_error("Error initializing checkpoint validation: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -282,8 +298,10 @@ class CheckpointManager:
 
             self.logger.info("Checkpoint cleanup module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing checkpoint cleanup: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing checkpoint cleanup: {e}"),
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -344,8 +362,8 @@ class CheckpointManager:
             self.logger.info("✅ Checkpoint execution completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error executing checkpoint: {e}")
+        except Exception:
+            self.print(error("Error executing checkpoint: {e}"))
             self.is_managing = False
             return False
 
@@ -376,17 +394,17 @@ class CheckpointManager:
 
             # Validate data types
             if not isinstance(checkpoint_input["checkpoint_type"], str):
-                self.logger.error("Invalid checkpoint type")
+                self.print(invalid("Invalid checkpoint type"))
                 return False
 
             if not isinstance(checkpoint_input["checkpoint_name"], str):
-                self.logger.error("Invalid checkpoint name")
+                self.print(invalid("Invalid checkpoint name"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating checkpoint inputs: {e}")
+        except Exception:
+            self.print(error("Error validating checkpoint inputs: {e}"))
             return False
 
     @handle_errors(
@@ -437,8 +455,8 @@ class CheckpointManager:
             self.logger.info("Checkpoint saving completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing checkpoint saving: {e}")
+        except Exception:
+            self.print(error("Error performing checkpoint saving: {e}"))
             return {}
 
     @handle_errors(
@@ -492,8 +510,8 @@ class CheckpointManager:
             self.logger.info("Checkpoint loading completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing checkpoint loading: {e}")
+        except Exception:
+            self.print(error("Error performing checkpoint loading: {e}"))
             return {}
 
     @handle_errors(
@@ -547,8 +565,8 @@ class CheckpointManager:
             self.logger.info("Checkpoint validation completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing checkpoint validation: {e}")
+        except Exception:
+            self.print(validation_error("Error performing checkpoint validation: {e}"))
             return {}
 
     @handle_errors(
@@ -599,8 +617,8 @@ class CheckpointManager:
             self.logger.info("Checkpoint cleanup completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing checkpoint cleanup: {e}")
+        except Exception:
+            self.print(error("Error performing checkpoint cleanup: {e}"))
             return {}
 
     # Checkpoint saving methods
@@ -617,8 +635,8 @@ class CheckpointManager:
                 "creation_method": "incremental",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing checkpoint creation: {e}")
+        except Exception:
+            self.print(error("Error performing checkpoint creation: {e}"))
             return {}
 
     def _perform_checkpoint_serialization(
@@ -634,8 +652,8 @@ class CheckpointManager:
                 "serialization_size": "15.2MB",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing checkpoint serialization: {e}")
+        except Exception:
+            self.print(error("Error performing checkpoint serialization: {e}"))
             return {}
 
     def _perform_checkpoint_storage(
@@ -651,8 +669,8 @@ class CheckpointManager:
                 "storage_method": "compressed",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing checkpoint storage: {e}")
+        except Exception:
+            self.print(error("Error performing checkpoint storage: {e}"))
             return {}
 
     def _perform_checkpoint_metadata(
@@ -668,8 +686,8 @@ class CheckpointManager:
                 "metadata_format": "json",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing checkpoint metadata: {e}")
+        except Exception:
+            self.print(error("Error performing checkpoint metadata: {e}"))
             return {}
 
     # Checkpoint loading methods
@@ -686,8 +704,8 @@ class CheckpointManager:
                 "discovery_method": "pattern_matching",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing checkpoint discovery: {e}")
+        except Exception:
+            self.print(error("Error performing checkpoint discovery: {e}"))
             return {}
 
     def _perform_checkpoint_deserialization(
@@ -703,8 +721,8 @@ class CheckpointManager:
                 "deserialization_time": 0.5,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing checkpoint deserialization: {e}")
+        except Exception:
+            self.print(error("Error performing checkpoint deserialization: {e}"))
             return {}
 
     def _perform_checkpoint_restoration(
@@ -720,8 +738,8 @@ class CheckpointManager:
                 "restoration_time": 1.2,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing checkpoint restoration: {e}")
+        except Exception:
+            self.print(error("Error performing checkpoint restoration: {e}"))
             return {}
 
     def _perform_checkpoint_validation_core(
@@ -737,8 +755,10 @@ class CheckpointManager:
                 "validation_method": "checksum",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing checkpoint validation core: {e}")
+        except Exception:
+            self.print(
+                validation_error("Error performing checkpoint validation core: {e}"),
+            )
             return {}
 
     # Checkpoint validation methods
@@ -755,8 +775,8 @@ class CheckpointManager:
                 "validation_method": "checksum_check",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing integrity validation: {e}")
+        except Exception:
+            self.print(validation_error("Error performing integrity validation: {e}"))
             return {}
 
     def _perform_format_validation(
@@ -772,8 +792,8 @@ class CheckpointManager:
                 "validation_method": "format_check",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing format validation: {e}")
+        except Exception:
+            self.print(validation_error("Error performing format validation: {e}"))
             return {}
 
     def _perform_metadata_validation(
@@ -789,8 +809,8 @@ class CheckpointManager:
                 "validation_method": "metadata_check",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing metadata validation: {e}")
+        except Exception:
+            self.print(validation_error("Error performing metadata validation: {e}"))
             return {}
 
     def _perform_compatibility_validation(
@@ -806,8 +826,10 @@ class CheckpointManager:
                 "validation_method": "version_check",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing compatibility validation: {e}")
+        except Exception:
+            self.print(
+                validation_error("Error performing compatibility validation: {e}"),
+            )
             return {}
 
     # Checkpoint cleanup methods
@@ -824,8 +846,8 @@ class CheckpointManager:
                 "scheduling_method": "age_based",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing cleanup scheduling: {e}")
+        except Exception:
+            self.print(error("Error performing cleanup scheduling: {e}"))
             return {}
 
     def _perform_cleanup_execution(
@@ -841,8 +863,8 @@ class CheckpointManager:
                 "execution_method": "batch",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing cleanup execution: {e}")
+        except Exception:
+            self.print(execution_error("Error performing cleanup execution: {e}"))
             return {}
 
     def _perform_cleanup_verification(
@@ -858,8 +880,8 @@ class CheckpointManager:
                 "verification_method": "file_check",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing cleanup verification: {e}")
+        except Exception:
+            self.print(error("Error performing cleanup verification: {e}"))
             return {}
 
     def _perform_cleanup_reporting(
@@ -875,8 +897,8 @@ class CheckpointManager:
                 "report_location": "/reports/cleanup_report.json",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing cleanup reporting: {e}")
+        except Exception:
+            self.print(error("Error performing cleanup reporting: {e}"))
             return {}
 
     @handle_errors(
@@ -899,8 +921,8 @@ class CheckpointManager:
 
             self.logger.info("Checkpoint results stored successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error storing checkpoint results: {e}")
+        except Exception:
+            self.print(error("Error storing checkpoint results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -925,8 +947,8 @@ class CheckpointManager:
                 return self.checkpoint_results.get(checkpoint_type, {})
             return self.checkpoint_results.copy()
 
-        except Exception as e:
-            self.logger.error(f"Error getting checkpoint results: {e}")
+        except Exception:
+            self.print(error("Error getting checkpoint results: {e}"))
             return {}
 
     @handle_errors(
@@ -955,8 +977,8 @@ class CheckpointManager:
 
             return history
 
-        except Exception as e:
-            self.logger.error(f"Error getting checkpoint history: {e}")
+        except Exception:
+            self.print(error("Error getting checkpoint history: {e}"))
             return []
 
     def get_checkpoint_status(self) -> dict[str, Any]:
@@ -1004,8 +1026,8 @@ class CheckpointManager:
 
             self.logger.info("✅ Checkpoint Manager stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping checkpoint manager: {e}")
+        except Exception:
+            self.print(error("Error stopping checkpoint manager: {e}"))
 
 
 # Global checkpoint manager instance

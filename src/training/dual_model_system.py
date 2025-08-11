@@ -13,6 +13,13 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    execution_error,
+    failed,
+    initialization_error,
+    invalid,
+)
 
 
 class DualModelSystem:
@@ -34,6 +41,17 @@ class DualModelSystem:
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("DualModelSystem")
+        # Backward-compatibility shim for legacy self.print calls
+        # to avoid AttributeError during transitional cleanup.
+        if not hasattr(self, "print"):
+
+            def _shim_print(message: str) -> None:
+                try:
+                    self.logger.error(str(message))
+                except Exception:
+                    pass
+
+            self.print = _shim_print  # type: ignore[attr-defined]
 
         # Model state
         self.analyst_model: Any | None = None
@@ -145,8 +163,8 @@ class DualModelSystem:
             )
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Dual Model System initialization failed: {e}")
+        except Exception:
+            self.logger.exception("❌ Dual Model System initialization failed")
             return False
 
     @handle_errors(
@@ -204,7 +222,8 @@ class DualModelSystem:
             self.logger.info("Dual model configuration loaded successfully")
 
         except Exception as e:
-            self.logger.error(f"Error loading dual model configuration: {e}")
+            error_msg = f"Error loading dual model configuration: {e}"
+            self.logger.error(error_msg)
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -256,7 +275,8 @@ class DualModelSystem:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+            error_msg = f"Error validating dual model configuration: {e}"
+            self.logger.error(error_msg)
             return False
 
     @handle_errors(
@@ -361,8 +381,10 @@ class DualModelSystem:
                 "✅ ML Confidence Predictor with meta-labeling initialized successfully",
             )
 
-        except Exception as e:
-            self.logger.error(f"Error initializing ML Confidence Predictor: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing ML Confidence Predictor: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -388,7 +410,9 @@ class DualModelSystem:
                 self.analyst_model = None
 
         except Exception as e:
-            self.logger.error(f"Error initializing Analyst model: {e}")
+            error_msg = f"Error initializing Analyst model: {e}"
+            self.logger.exception(error_msg)
+            self.print(initialization_error(error_msg))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -414,7 +438,9 @@ class DualModelSystem:
                 self.tactician_model = None
 
         except Exception as e:
-            self.logger.error(f"Error initializing Tactician model: {e}")
+            error_msg = f"Error initializing Tactician model: {e}"
+            self.logger.exception(error_msg)
+            self.print(initialization_error(error_msg))
 
     @handle_specific_errors(
         error_handlers={
@@ -443,7 +469,8 @@ class DualModelSystem:
         """
         try:
             if not self.is_initialized:
-                raise ValueError("Dual Model System not initialized")
+                msg = "Dual Model System not initialized"
+                raise ValueError(msg)
 
             self.logger.info("🎯 Making Dual Model Trading Decision")
 
@@ -458,7 +485,9 @@ class DualModelSystem:
             return await self._make_entry_decision(market_data, current_price)
 
         except Exception as e:
-            self.logger.error(f"Error making trading decision: {e}")
+            error_msg = f"Error making trading decision: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return self._get_fallback_decision()
 
     async def _make_entry_decision(
@@ -543,7 +572,9 @@ class DualModelSystem:
             return final_decision
 
         except Exception as e:
-            self.logger.error(f"Error making entry decision: {e}")
+            error_msg = f"Error making entry decision: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return self._get_fallback_decision()
 
     async def _make_exit_decision(
@@ -589,7 +620,7 @@ class DualModelSystem:
                 exit_action = "HOLD_POSITION"
 
             # Combine decisions
-            final_decision = {
+            return {
                 "action": exit_action,
                 "signal": exit_signal,
                 "exit_type": analyst_exit_decision["exit_type"],
@@ -603,10 +634,10 @@ class DualModelSystem:
                 "timestamp": datetime.now().isoformat(),
             }
 
-            return final_decision
-
         except Exception as e:
-            self.logger.error(f"Error making exit decision: {e}")
+            error_msg = f"Error making exit decision: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return self._get_fallback_decision()
 
     async def _get_analyst_decision(
@@ -663,7 +694,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting analyst decision: {e}")
+            self.print(error("Error getting analyst decision: {e}"))
             return {
                 "should_trade": False,
                 "direction": "HOLD",
@@ -691,7 +722,6 @@ class DualModelSystem:
             # Find the highest confidence score for price action above 0.3%
             # where adversarial movement is less than 50% of it
             best_confidence = 0.0
-            best_target = None
 
             for target_str, confidence in price_target_confidences.items():
                 target = float(target_str.replace("%", ""))
@@ -707,9 +737,7 @@ class DualModelSystem:
 
                     # Check if adversarial movement is less than 50% of the target confidence
                     if adversarial_confidence < (confidence * 0.5):
-                        if confidence > best_confidence:
-                            best_confidence = confidence
-                            best_target = target
+                        best_confidence = max(confidence, best_confidence)
 
             # If no suitable target found, use overall confidence
             if best_confidence == 0.0:
@@ -743,7 +771,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error analyzing analyst confidence: {e}")
+            self.print(error("Error analyzing analyst confidence: {e}"))
             return {
                 "should_trade": False,
                 "direction": "HOLD",
@@ -799,7 +827,7 @@ class DualModelSystem:
             return decision
 
         except Exception as e:
-            self.logger.error(f"Error getting model-based analyst decision: {e}")
+            self.print(error("Error getting model-based analyst decision: {e}"))
             return {
                 "should_trade": False,
                 "direction": "HOLD",
@@ -865,7 +893,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting tactician decision: {e}")
+            self.print(error("Error getting tactician decision: {e}"))
             return {
                 "should_execute": False,
                 "timing_signal": 0.0,
@@ -920,7 +948,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error analyzing tactician confidence: {e}")
+            self.print(error("Error analyzing tactician confidence: {e}"))
             return {
                 "should_execute": False,
                 "timing_signal": 0.0,
@@ -969,7 +997,7 @@ class DualModelSystem:
             return decision
 
         except Exception as e:
-            self.logger.error(f"Error getting model-based tactician decision: {e}")
+            self.print(error("Error getting model-based tactician decision: {e}"))
             return {
                 "should_execute": False,
                 "timing_signal": 0.0,
@@ -1011,7 +1039,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting analyst exit decision: {e}")
+            self.print(error("Error getting analyst exit decision: {e}"))
             return {
                 "should_exit": False,
                 "exit_type": "HOLD",
@@ -1113,7 +1141,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error analyzing analyst exit confidence: {e}")
+            self.print(error("Error analyzing analyst exit confidence: {e}"))
             return {
                 "should_exit": False,
                 "exit_type": "HOLD",
@@ -1155,7 +1183,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting tactician exit decision: {e}")
+            self.print(error("Error getting tactician exit decision: {e}"))
             return {
                 "should_execute": False,
                 "timing_signal": 0.0,
@@ -1219,7 +1247,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.logger.error(f"Error analyzing tactician exit confidence: {e}")
+            self.print(error("Error analyzing tactician exit confidence: {e}"))
             return {
                 "should_execute": False,
                 "timing_signal": 0.0,
@@ -1235,11 +1263,12 @@ class DualModelSystem:
         """Calculate final confidence using the specified formula."""
         try:
             # Final_Confidence = Calibrated_Analyst_Score * Calibrated_Tactician_Score^2
-            final_confidence = analyst_confidence * (tactician_confidence**2)
-            return final_confidence
+            return analyst_confidence * (tactician_confidence**2)
 
         except Exception as e:
-            self.logger.error(f"Error calculating final confidence: {e}")
+            error_msg = f"Error calculating final confidence: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return 0.0
 
     def _calculate_normalized_confidence(self, final_confidence: float) -> float:
@@ -1250,7 +1279,9 @@ class DualModelSystem:
             return max(0.0, min(1.0, normalized_confidence))  # Clamp between 0 and 1
 
         except Exception as e:
-            self.logger.error(f"Error calculating normalized confidence: {e}")
+            error_msg = f"Error calculating normalized confidence: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return 0.0
 
     def is_enter_signal_valid(self) -> bool:
@@ -1266,7 +1297,9 @@ class DualModelSystem:
             return time_diff <= self.enter_signal_validity_duration
 
         except Exception as e:
-            self.logger.error(f"Error checking enter signal validity: {e}")
+            error_msg = f"Error checking enter signal validity: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return False
 
     def get_current_signal(self) -> dict[str, Any] | None:
@@ -1316,7 +1349,9 @@ class DualModelSystem:
             return "iceberg"  # Very low confidence, use iceberg to minimize impact
 
         except Exception as e:
-            self.logger.error(f"Error determining execution strategy: {e}")
+            error_msg = f"Error determining execution strategy: {e}"
+            self.logger.exception(error_msg)
+            self.print(execution_error(error_msg))
             return "immediate"  # Default to immediate execution
 
     def _calculate_recommended_quantity(self, normalized_confidence: float) -> float:
@@ -1333,7 +1368,9 @@ class DualModelSystem:
             return min(recommended_quantity, max_quantity)
 
         except Exception as e:
-            self.logger.error(f"Error calculating recommended quantity: {e}")
+            error_msg = f"Error calculating recommended quantity: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return 0.05  # Default to 5%
 
     def _calculate_recommended_leverage(self, normalized_confidence: float) -> float:
@@ -1344,14 +1381,12 @@ class DualModelSystem:
             max_leverage = 100.0
 
             # Scale leverage by normalized confidence
-            recommended_leverage = (
-                min_leverage + (max_leverage - min_leverage) * normalized_confidence
-            )
-
-            return recommended_leverage
+            return min_leverage + (max_leverage - min_leverage) * normalized_confidence
 
         except Exception as e:
-            self.logger.error(f"Error calculating recommended leverage: {e}")
+            error_msg = f"Error calculating recommended leverage: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return 20.0  # Default to 20x leverage
 
     def _determine_execution_priority(self, normalized_confidence: float) -> int:
@@ -1369,7 +1404,9 @@ class DualModelSystem:
             return 2  # Lowest priority
 
         except Exception as e:
-            self.logger.error(f"Error determining execution priority: {e}")
+            error_msg = f"Error determining execution priority: {e}"
+            self.logger.exception(error_msg)
+            self.print(execution_error(error_msg))
             return 5  # Default to medium priority
 
     async def trigger_model_training(
@@ -1410,7 +1447,7 @@ class DualModelSystem:
             return training_result
 
         except Exception as e:
-            self.logger.error(f"Error triggering model training: {e}")
+            self.print(error("Error triggering model training: {e}"))
             return {"success": False, "error": str(e)}
 
     async def _update_system_after_training(
@@ -1434,7 +1471,9 @@ class DualModelSystem:
             )
 
         except Exception as e:
-            self.logger.error(f"Error updating system after training: {e}")
+            error_msg = f"Error updating system after training: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
 
     def get_training_status(self) -> dict[str, Any]:
         """Get training status for the dual model system."""
@@ -1462,7 +1501,7 @@ class DualModelSystem:
             return training_status
 
         except Exception as e:
-            self.logger.error(f"Error getting training status: {e}")
+            self.print(error("Error getting training status: {e}"))
             return {"error": str(e)}
 
     async def update_model_performance(
@@ -1489,7 +1528,9 @@ class DualModelSystem:
                 self.performance_history = self.performance_history[-100:]
 
         except Exception as e:
-            self.logger.error(f"Error updating model performance: {e}")
+            error_msg = f"Error updating model performance: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
 
     def should_trigger_training(self) -> bool:
         """Check if training should be triggered."""
@@ -1499,7 +1540,9 @@ class DualModelSystem:
             return False
 
         except Exception as e:
-            self.logger.error(f"Error checking training trigger: {e}")
+            error_msg = f"Error checking training trigger: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
             return False
 
     def get_system_info(self) -> dict[str, Any]:
@@ -1547,7 +1590,9 @@ class DualModelSystem:
             self.logger.info("✅ Dual Model System stopped successfully")
 
         except Exception as e:
-            self.logger.error(f"Error stopping dual model system: {e}")
+            error_msg = f"Error stopping dual model system: {e}"
+            self.logger.error(error_msg)
+            self.print(error(error_msg))
 
 
 # Global dual model system instance

@@ -26,6 +26,20 @@ from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 async def run_enhanced_training(symbol: str, lookback_days: int, timeframe: str = "1h"):
@@ -62,7 +76,7 @@ async def run_enhanced_training(symbol: str, lookback_days: int, timeframe: str 
             logger.info(f"  {key}: {value}")
 
         return True
-    logger.error("❌ Training failed!")
+    print(failed("❌ Training failed!")))
     return False
 
 
@@ -194,13 +208,13 @@ def main():
 Examples:
   # Run training with 2 years of data
   python scripts/run_enhanced_training.py --symbol ETHUSDT --lookback 730
-  
+
   # Run with custom timeframe
   python scripts/run_enhanced_training.py --symbol BTCUSDT --lookback 365 --timeframe 4h
-  
+
   # Run efficiency demo
   python scripts/run_enhanced_training.py --demo
-  
+
   # Run checkpoint demo
   python scripts/run_enhanced_training.py --checkpoint
         """,

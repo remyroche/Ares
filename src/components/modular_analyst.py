@@ -10,6 +10,13 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+)
 
 
 class ModularAnalyst:
@@ -72,7 +79,7 @@ class ModularAnalyst:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for modular analyst")
+                self.print(invalid("Invalid configuration for modular analyst"))
                 return False
 
             # Initialize analysis modules
@@ -81,8 +88,8 @@ class ModularAnalyst:
             self.logger.info("✅ Modular Analyst initialization completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Modular Analyst initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Modular Analyst initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -113,8 +120,8 @@ class ModularAnalyst:
 
             self.logger.info("Analyst configuration loaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error loading analyst configuration: {e}")
+        except Exception:
+            self.print(error("Error loading analyst configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -131,12 +138,12 @@ class ModularAnalyst:
         try:
             # Validate analysis interval
             if self.analysis_interval <= 0:
-                self.logger.error("Invalid analysis interval")
+                self.print(invalid("Invalid analysis interval"))
                 return False
 
             # Validate max analysis history
             if self.max_analysis_history <= 0:
-                self.logger.error("Invalid max analysis history")
+                self.print(invalid("Invalid max analysis history"))
                 return False
 
             # Validate that at least one analysis type is enabled
@@ -148,14 +155,14 @@ class ModularAnalyst:
                     self.analyst_config.get("enable_risk_analysis", True),
                 ],
             ):
-                self.logger.error("At least one analysis type must be enabled")
+                self.print(error("At least one analysis type must be enabled"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -184,8 +191,8 @@ class ModularAnalyst:
 
             self.logger.info("Analysis modules initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing analysis modules: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing analysis modules: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -206,8 +213,10 @@ class ModularAnalyst:
 
             self.logger.info("Technical analysis module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing technical analysis: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing technical analysis: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -227,8 +236,10 @@ class ModularAnalyst:
 
             self.logger.info("Fundamental analysis module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing fundamental analysis: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing fundamental analysis: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -247,8 +258,10 @@ class ModularAnalyst:
 
             self.logger.info("Sentiment analysis module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing sentiment analysis: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing sentiment analysis: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -268,8 +281,8 @@ class ModularAnalyst:
 
             self.logger.info("Risk analysis module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing risk analysis: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing risk analysis: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -326,8 +339,8 @@ class ModularAnalyst:
             self.logger.info("✅ Market analysis completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error analyzing market data: {e}")
+        except Exception:
+            self.print(error("Error analyzing market data: {e}"))
             self.is_analyzing = False
             return False
 
@@ -351,22 +364,22 @@ class ModularAnalyst:
             required_fields = ["symbol", "price", "volume", "timestamp"]
             for field in required_fields:
                 if field not in market_data:
-                    self.logger.error(f"Missing required field: {field}")
+                    self.print(missing("Missing required field: {field}"))
                     return False
 
             # Validate data types
-            if not isinstance(market_data["price"], (int, float)):
-                self.logger.error("Invalid price data type")
+            if not isinstance(market_data["price"], int | float):
+                self.print(invalid("Invalid price data type"))
                 return False
 
-            if not isinstance(market_data["volume"], (int, float)):
-                self.logger.error("Invalid volume data type")
+            if not isinstance(market_data["volume"], int | float):
+                self.print(invalid("Invalid volume data type"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating market data: {e}")
+        except Exception:
+            self.print(error("Error validating market data: {e}"))
             return False
 
     @handle_errors(
@@ -415,8 +428,8 @@ class ModularAnalyst:
             self.logger.info("Technical analysis completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing technical analysis: {e}")
+        except Exception:
+            self.print(error("Error performing technical analysis: {e}"))
             return {}
 
     @handle_errors(
@@ -459,8 +472,8 @@ class ModularAnalyst:
             self.logger.info("Fundamental analysis completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing fundamental analysis: {e}")
+        except Exception:
+            self.print(error("Error performing fundamental analysis: {e}"))
             return {}
 
     @handle_errors(
@@ -503,8 +516,8 @@ class ModularAnalyst:
             self.logger.info("Sentiment analysis completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing sentiment analysis: {e}")
+        except Exception:
+            self.print(error("Error performing sentiment analysis: {e}"))
             return {}
 
     @handle_errors(
@@ -547,8 +560,8 @@ class ModularAnalyst:
             self.logger.info("Risk analysis completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing risk analysis: {e}")
+        except Exception:
+            self.print(error("Error performing risk analysis: {e}"))
             return {}
 
     # Technical analysis calculation methods
@@ -557,8 +570,8 @@ class ModularAnalyst:
         try:
             # Simulate SMA calculation
             return market_data.get("price", 0) * 1.02
-        except Exception as e:
-            self.logger.error(f"Error calculating SMA: {e}")
+        except Exception:
+            self.print(error("Error calculating SMA: {e}"))
             return 0.0
 
     def _calculate_ema(self, market_data: dict[str, Any]) -> float:
@@ -566,8 +579,8 @@ class ModularAnalyst:
         try:
             # Simulate EMA calculation
             return market_data.get("price", 0) * 1.01
-        except Exception as e:
-            self.logger.error(f"Error calculating EMA: {e}")
+        except Exception:
+            self.print(error("Error calculating EMA: {e}"))
             return 0.0
 
     def _calculate_rsi(self, market_data: dict[str, Any]) -> float:
@@ -575,8 +588,8 @@ class ModularAnalyst:
         try:
             # Simulate RSI calculation
             return 50.0 + (np.random.random() * 20 - 10)
-        except Exception as e:
-            self.logger.error(f"Error calculating RSI: {e}")
+        except Exception:
+            self.print(error("Error calculating RSI: {e}"))
             return 50.0
 
     def _calculate_macd(self, market_data: dict[str, Any]) -> dict[str, float]:
@@ -588,8 +601,8 @@ class ModularAnalyst:
                 "signal": market_data.get("price", 0) * 0.0008,
                 "histogram": market_data.get("price", 0) * 0.0002,
             }
-        except Exception as e:
-            self.logger.error(f"Error calculating MACD: {e}")
+        except Exception:
+            self.print(error("Error calculating MACD: {e}"))
             return {"macd": 0.0, "signal": 0.0, "histogram": 0.0}
 
     def _calculate_bollinger_bands(
@@ -601,8 +614,8 @@ class ModularAnalyst:
             price = market_data.get("price", 0)
             # Simulate Bollinger Bands calculation
             return {"upper": price * 1.05, "middle": price, "lower": price * 0.95}
-        except Exception as e:
-            self.logger.error(f"Error calculating Bollinger Bands: {e}")
+        except Exception:
+            self.print(error("Error calculating Bollinger Bands: {e}"))
             return {"upper": 0.0, "middle": 0.0, "lower": 0.0}
 
     # Fundamental analysis calculation methods
@@ -610,8 +623,8 @@ class ModularAnalyst:
         """Calculate market cap."""
         try:
             return market_data.get("price", 0) * market_data.get("volume", 0)
-        except Exception as e:
-            self.logger.error(f"Error calculating market cap: {e}")
+        except Exception:
+            self.print(error("Error calculating market cap: {e}"))
             return 0.0
 
     def _calculate_volume_metrics(
@@ -626,8 +639,8 @@ class ModularAnalyst:
                 "avg_volume": volume * 0.8,
                 "volume_ratio": 1.25,
             }
-        except Exception as e:
-            self.logger.error(f"Error calculating volume metrics: {e}")
+        except Exception:
+            self.print(error("Error calculating volume metrics: {e}"))
             return {"current_volume": 0.0, "avg_volume": 0.0, "volume_ratio": 0.0}
 
     def _calculate_price_change(self, market_data: dict[str, Any]) -> float:
@@ -635,8 +648,8 @@ class ModularAnalyst:
         try:
             # Simulate price change calculation
             return (np.random.random() - 0.5) * 0.1
-        except Exception as e:
-            self.logger.error(f"Error calculating price change: {e}")
+        except Exception:
+            self.print(error("Error calculating price change: {e}"))
             return 0.0
 
     def _calculate_volatility(self, market_data: dict[str, Any]) -> float:
@@ -644,8 +657,8 @@ class ModularAnalyst:
         try:
             # Simulate volatility calculation
             return np.random.random() * 0.05
-        except Exception as e:
-            self.logger.error(f"Error calculating volatility: {e}")
+        except Exception:
+            self.print(error("Error calculating volatility: {e}"))
             return 0.0
 
     # Sentiment analysis calculation methods
@@ -654,8 +667,8 @@ class ModularAnalyst:
         try:
             # Simulate social sentiment calculation
             return (np.random.random() - 0.5) * 2
-        except Exception as e:
-            self.logger.error(f"Error calculating social sentiment: {e}")
+        except Exception:
+            self.print(error("Error calculating social sentiment: {e}"))
             return 0.0
 
     def _calculate_news_sentiment(self, market_data: dict[str, Any]) -> float:
@@ -663,8 +676,8 @@ class ModularAnalyst:
         try:
             # Simulate news sentiment calculation
             return (np.random.random() - 0.5) * 2
-        except Exception as e:
-            self.logger.error(f"Error calculating news sentiment: {e}")
+        except Exception:
+            self.print(error("Error calculating news sentiment: {e}"))
             return 0.0
 
     def _calculate_market_sentiment(self, market_data: dict[str, Any]) -> float:
@@ -672,8 +685,8 @@ class ModularAnalyst:
         try:
             # Simulate market sentiment calculation
             return (np.random.random() - 0.5) * 2
-        except Exception as e:
-            self.logger.error(f"Error calculating market sentiment: {e}")
+        except Exception:
+            self.print(error("Error calculating market sentiment: {e}"))
             return 0.0
 
     # Risk analysis calculation methods
@@ -682,8 +695,8 @@ class ModularAnalyst:
         try:
             # Simulate VaR calculation
             return market_data.get("price", 0) * 0.02
-        except Exception as e:
-            self.logger.error(f"Error calculating VaR: {e}")
+        except Exception:
+            self.print(error("Error calculating VaR: {e}"))
             return 0.0
 
     def _calculate_max_drawdown(self, market_data: dict[str, Any]) -> float:
@@ -691,8 +704,8 @@ class ModularAnalyst:
         try:
             # Simulate max drawdown calculation
             return np.random.random() * 0.1
-        except Exception as e:
-            self.logger.error(f"Error calculating max drawdown: {e}")
+        except Exception:
+            self.print(error("Error calculating max drawdown: {e}"))
             return 0.0
 
     def _calculate_sharpe_ratio(self, market_data: dict[str, Any]) -> float:
@@ -700,8 +713,8 @@ class ModularAnalyst:
         try:
             # Simulate Sharpe ratio calculation
             return (np.random.random() - 0.5) * 2
-        except Exception as e:
-            self.logger.error(f"Error calculating Sharpe ratio: {e}")
+        except Exception:
+            self.print(error("Error calculating Sharpe ratio: {e}"))
             return 0.0
 
     def _calculate_risk_volatility(self, market_data: dict[str, Any]) -> float:
@@ -709,8 +722,8 @@ class ModularAnalyst:
         try:
             # Simulate risk volatility calculation
             return np.random.random() * 0.05
-        except Exception as e:
-            self.logger.error(f"Error calculating risk volatility: {e}")
+        except Exception:
+            self.print(error("Error calculating risk volatility: {e}"))
             return 0.0
 
     @handle_errors(
@@ -733,8 +746,8 @@ class ModularAnalyst:
 
             self.logger.info("Analysis results stored successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error storing analysis results: {e}")
+        except Exception:
+            self.print(error("Error storing analysis results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -759,8 +772,8 @@ class ModularAnalyst:
                 return self.analysis_results.get(analysis_type, {})
             return self.analysis_results.copy()
 
-        except Exception as e:
-            self.logger.error(f"Error getting analysis results: {e}")
+        except Exception:
+            self.print(error("Error getting analysis results: {e}"))
             return {}
 
     @handle_errors(
@@ -786,8 +799,8 @@ class ModularAnalyst:
 
             return history
 
-        except Exception as e:
-            self.logger.error(f"Error getting analysis history: {e}")
+        except Exception:
+            self.print(error("Error getting analysis history: {e}"))
             return []
 
     def get_analyst_status(self) -> dict[str, Any]:
@@ -835,8 +848,8 @@ class ModularAnalyst:
 
             self.logger.info("✅ Modular Analyst stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping modular analyst: {e}")
+        except Exception:
+            self.print(error("Error stopping modular analyst: {e}"))
 
 
 # Global modular analyst instance

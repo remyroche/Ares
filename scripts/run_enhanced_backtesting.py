@@ -22,6 +22,20 @@ from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
@@ -49,7 +63,7 @@ async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
     )
 
     if not session_id:
-        logger.error("❌ Enhanced training failed")
+        print(failed("❌ Enhanced training failed")))
         return False
 
     # Step 2: Run paper trading simulation
@@ -57,7 +71,7 @@ async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
     paper_success = await run_paper_trading_simulation(symbol, training_manager)
 
     if not paper_success:
-        logger.error("❌ Paper trading simulation failed")
+        print(failed("❌ Paper trading simulation failed")))
         return False
 
     # Step 3: Generate comprehensive report
@@ -95,7 +109,7 @@ async def run_paper_trading_simulation(symbol: str, training_manager):
         return True
 
     except Exception as e:
-        logger.error(f"❌ Paper trading simulation failed: {e}")
+        print(failed("❌ Paper trading simulation failed: {e}")))
         return False
 
 
@@ -152,7 +166,7 @@ async def run_backtesting_only(symbol: str, lookback_days: int = 730):
     if session_id:
         logger.info("✅ Backtesting completed successfully!")
         return True
-    logger.error("❌ Backtesting failed!")
+    print(failed("❌ Backtesting failed!")))
     return False
 
 
@@ -165,10 +179,10 @@ def main():
 Examples:
   # Full enhanced backtesting with paper trading
   python scripts/run_enhanced_backtesting.py --symbol ETHUSDT --lookback 730
-  
+
   # Backtesting only (no paper trading)
   python scripts/run_enhanced_backtesting.py --symbol ETHUSDT --backtesting-only
-  
+
   # Quick test with limited data
   python scripts/run_enhanced_backtesting.py --symbol ETHUSDT --lookback 90
         """,

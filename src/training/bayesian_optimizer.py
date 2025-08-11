@@ -77,7 +77,7 @@ class AdvancedHyperparameterOptimizer:
             sampler = optuna.samplers.TPESampler()
 
         # Create study with pruning
-        study = optuna.create_study(
+        return optuna.create_study(
             direction=direction,
             sampler=sampler,
             pruner=optuna.pruners.MedianPruner(
@@ -87,9 +87,10 @@ class AdvancedHyperparameterOptimizer:
             ),
         )
 
-        return study
-
-    def suggest_feature_engineering_params(self, trial: optuna.trial.Trial) -> dict[str, Any]:
+    def suggest_feature_engineering_params(
+        self,
+        trial: optuna.trial.Trial,
+    ) -> dict[str, Any]:
         """Suggest hyperparameters for feature engineering optimization."""
         params = {}
 
@@ -201,53 +202,70 @@ class AdvancedHyperparameterOptimizer:
 
         return params
 
-    def _add_feature_constraints(self, trial: optuna.trial.Trial, params: dict[str, Any]):
+    def _add_feature_constraints(
+        self,
+        trial: optuna.trial.Trial,
+        params: dict[str, Any],
+    ):
         """Add constraints for feature engineering parameters."""
-        
+
         # Ensure lookback window is reasonable for the data
         if params["lookback_window"] > 100:
             # Prune trials with very large lookback windows
-            raise optuna.TrialPruned("Lookback window too large")
-        
+            msg = "Lookback window too large"
+            raise optuna.TrialPruned(msg)
+
         # Ensure feature selection threshold is not too restrictive
         if params["feature_selection_threshold"] > 0.05:
             # Prune trials with very high thresholds
-            raise optuna.TrialPruned("Feature selection threshold too high")
+            msg = "Feature selection threshold too high"
+            raise optuna.TrialPruned(msg)
 
     def _add_model_constraints(self, trial: optuna.trial.Trial, params: dict[str, Any]):
         """Add constraints for model parameters."""
-        
+
         # Model-specific constraints
         if params["model_type"] == "random_forest":
             if params["max_depth"] > 20:
-                raise optuna.TrialPruned("Random forest max_depth too high")
+                msg = "Random forest max_depth too high"
+                raise optuna.TrialPruned(msg)
         elif params["model_type"] in ["xgboost", "lightgbm"]:
             if params["max_depth"] > 12:
-                raise optuna.TrialPruned("XGBoost/LightGBM max_depth too high")
-        
+                msg = "XGBoost/LightGBM max_depth too high"
+                raise optuna.TrialPruned(msg)
+
         # Ensure reasonable learning rate
         if params["learning_rate"] < 1e-5:
-            raise optuna.TrialPruned("Learning rate too low")
-        
+            msg = "Learning rate too low"
+            raise optuna.TrialPruned(msg)
+
         # Ensure reasonable regularization
         if params["reg_alpha"] > 100 or params["reg_lambda"] > 100:
-            raise optuna.TrialPruned("Regularization too high")
+            msg = "Regularization too high"
+            raise optuna.TrialPruned(msg)
 
-    def _add_trading_constraints(self, trial: optuna.trial.Trial, params: dict[str, Any]):
+    def _add_trading_constraints(
+        self,
+        trial: optuna.trial.Trial,
+        params: dict[str, Any],
+    ):
         """Add constraints for trading parameters."""
-        
+
         # Ensure TP > SL (proper constraint with pruning)
         if params["tp_multiplier"] <= params["sl_multiplier"]:
-            raise optuna.TrialPruned("TP multiplier must be greater than SL multiplier")
-        
+            msg = "TP multiplier must be greater than SL multiplier"
+            raise optuna.TrialPruned(msg)
+
         # Ensure reasonable position size
         if params["position_size"] > 0.3:
-            raise optuna.TrialPruned("Position size too high")
-        
+            msg = "Position size too high"
+            raise optuna.TrialPruned(msg)
+
         # Ensure reasonable risk-reward ratio
         risk_reward_ratio = params["tp_multiplier"] / params["sl_multiplier"]
         if risk_reward_ratio < 1.5:
-            raise optuna.TrialPruned("Risk-reward ratio too low")
+            msg = "Risk-reward ratio too low"
+            raise optuna.TrialPruned(msg)
 
     @handle_errors(
         exceptions=(Exception,),
@@ -256,25 +274,27 @@ class AdvancedHyperparameterOptimizer:
     )
     def feature_engineering_objective(self, trial: optuna.trial.Trial) -> Number:
         """Objective function for feature engineering optimization."""
-        
+
         # Suggest feature engineering parameters
         params = self.suggest_feature_engineering_params(trial)
-        
+
         # Run evaluation with fixed model and trading parameters
         score = self._evaluate_feature_engineering(params)
-        
+
         # Report intermediate results for pruning
         trial.report(score, step=0)
-        
+
         # Store trial history
-        self.trial_history.append({
-            "trial_number": trial.number,
-            "params": params,
-            "score": score,
-            "timestamp": pd.Timestamp.now(),
-            "stage": "feature_engineering"
-        })
-        
+        self.trial_history.append(
+            {
+                "trial_number": trial.number,
+                "params": params,
+                "score": score,
+                "timestamp": pd.Timestamp.now(),
+                "stage": "feature_engineering",
+            },
+        )
+
         return score
 
     @handle_errors(
@@ -284,29 +304,31 @@ class AdvancedHyperparameterOptimizer:
     )
     def model_optimization_objective(self, trial: optuna.trial.Trial) -> Number:
         """Objective function for model optimization."""
-        
+
         # Suggest model parameters
         params = self.suggest_model_params(trial)
-        
+
         # Combine with best feature engineering results
         if self.feature_engineering_results:
             params.update(self.feature_engineering_results["best_params"])
-        
+
         # Run evaluation with fixed trading parameters
         score = self._evaluate_model_optimization(params)
-        
+
         # Report intermediate results for pruning
         trial.report(score, step=0)
-        
+
         # Store trial history
-        self.trial_history.append({
-            "trial_number": trial.number,
-            "params": params,
-            "score": score,
-            "timestamp": pd.Timestamp.now(),
-            "stage": "model_optimization"
-        })
-        
+        self.trial_history.append(
+            {
+                "trial_number": trial.number,
+                "params": params,
+                "score": score,
+                "timestamp": pd.Timestamp.now(),
+                "stage": "model_optimization",
+            },
+        )
+
         return score
 
     @handle_errors(
@@ -316,88 +338,90 @@ class AdvancedHyperparameterOptimizer:
     )
     def trading_strategy_objective(self, trial: optuna.trial.Trial) -> Number:
         """Objective function for trading strategy optimization."""
-        
+
         # Suggest trading parameters
         params = self.suggest_trading_params(trial)
-        
+
         # Combine with best results from previous stages
         if self.feature_engineering_results:
             params.update(self.feature_engineering_results["best_params"])
         if self.model_optimization_results:
             params.update(self.model_optimization_results["best_params"])
-        
+
         # Run evaluation
         score = self._evaluate_trading_strategy(params)
-        
+
         # Report intermediate results for pruning
         trial.report(score, step=0)
-        
+
         # Store trial history
-        self.trial_history.append({
-            "trial_number": trial.number,
-            "params": params,
-            "score": score,
-            "timestamp": pd.Timestamp.now(),
-            "stage": "trading_strategy"
-        })
-        
+        self.trial_history.append(
+            {
+                "trial_number": trial.number,
+                "params": params,
+                "score": score,
+                "timestamp": pd.Timestamp.now(),
+                "stage": "trading_strategy",
+            },
+        )
+
         return score
 
     def _evaluate_feature_engineering(self, params: dict[str, Any]) -> Number:
         """Evaluate feature engineering parameters."""
         # Mock evaluation - replace with actual feature engineering evaluation
         base_score = 0.5
-        
+
         # Adjust score based on feature engineering quality
         if 10 <= params["lookback_window"] <= 50:
             base_score += 0.2
-        
+
         if 0.01 <= params["feature_selection_threshold"] <= 0.03:
             base_score += 0.15
-        
+
         # Add some randomness to simulate real evaluation
         noise = np.random.normal(0, 0.1)
         final_score = base_score + noise
-        
+
         return max(0, min(1, final_score))
 
     def _evaluate_model_optimization(self, params: dict[str, Any]) -> Number:
         """Evaluate model optimization parameters."""
         # Mock evaluation - replace with actual model evaluation
         base_score = 0.5
-        
+
         # Adjust score based on model quality
         if params["model_type"] in ["xgboost", "lightgbm"]:
             base_score += 0.1
-        
+
         if 0.01 <= params["learning_rate"] <= 0.1:
             base_score += 0.2
-        
+
         if 5 <= params["max_depth"] <= 10:
             base_score += 0.15
-        
+
         # Add some randomness to simulate real evaluation
         noise = np.random.normal(0, 0.1)
         final_score = base_score + noise
-        
+
         return max(0, min(1, final_score))
 
     def _evaluate_trading_strategy(self, params: dict[str, Any]) -> Number:
         """Evaluate trading strategy parameters."""
         # Mock evaluation - replace with actual trading strategy evaluation
         base_score = 0.5
-        
+
         # Adjust score based on trading strategy quality
         if params["tp_multiplier"] > params["sl_multiplier"] * 1.5:
             base_score += 0.1
-        
+
         if 0.05 <= params["position_size"] <= 0.2:
             base_score += 0.15
-        
+
         # Add some randomness to simulate real evaluation
         noise = np.random.normal(0, 0.1)
         final_score = base_score + noise
-        
+
         return max(0, min(1, final_score))
 
     @handle_errors(
@@ -422,7 +446,9 @@ class AdvancedHyperparameterOptimizer:
             show_progress_bar=True,
             callbacks=[self._optimization_callback],
         )
-        self.feature_engineering_results = self._analyze_optimization_results(feature_study)
+        self.feature_engineering_results = self._analyze_optimization_results(
+            feature_study,
+        )
 
         # Step 2: Optimize Model Hyperparameters
         self.logger.info("Stage 2: Optimizing model hyperparameters...")
@@ -433,7 +459,9 @@ class AdvancedHyperparameterOptimizer:
             show_progress_bar=True,
             callbacks=[self._optimization_callback],
         )
-        self.model_optimization_results = self._analyze_optimization_results(model_study)
+        self.model_optimization_results = self._analyze_optimization_results(
+            model_study,
+        )
 
         # Step 3: Optimize Trading Strategy
         self.logger.info("Stage 3: Optimizing trading strategy...")
@@ -444,12 +472,16 @@ class AdvancedHyperparameterOptimizer:
             show_progress_bar=True,
             callbacks=[self._optimization_callback],
         )
-        self.trading_strategy_results = self._analyze_optimization_results(trading_study)
+        self.trading_strategy_results = self._analyze_optimization_results(
+            trading_study,
+        )
 
         # Combine results
         final_results = self._combine_optimization_results()
 
-        self.logger.info("Decomposed hyperparameter optimization completed successfully")
+        self.logger.info(
+            "Decomposed hyperparameter optimization completed successfully",
+        )
 
         return final_results
 
@@ -493,7 +525,7 @@ class AdvancedHyperparameterOptimizer:
 
     def _combine_optimization_results(self) -> dict[str, Any]:
         """Combine results from all optimization stages."""
-        
+
         # Combine best parameters from all stages
         combined_params = {}
         if self.feature_engineering_results:
@@ -502,25 +534,25 @@ class AdvancedHyperparameterOptimizer:
             combined_params.update(self.model_optimization_results["best_params"])
         if self.trading_strategy_results:
             combined_params.update(self.trading_strategy_results["best_params"])
-        
+
         # Calculate overall score (weighted average)
         scores = []
         weights = []
-        
+
         if self.feature_engineering_results:
             scores.append(self.feature_engineering_results["best_score"])
             weights.append(0.3)
-        
+
         if self.model_optimization_results:
             scores.append(self.model_optimization_results["best_score"])
             weights.append(0.4)
-        
+
         if self.trading_strategy_results:
             scores.append(self.trading_strategy_results["best_score"])
             weights.append(0.3)
-        
+
         overall_score = np.average(scores, weights=weights) if scores else 0.0
-        
+
         return {
             "combined_params": combined_params,
             "overall_score": overall_score,

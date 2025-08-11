@@ -7,6 +7,7 @@ model drift detection, feature importance tracking, and automated retraining tri
 """
 
 import asyncio
+import contextlib
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -16,6 +17,11 @@ import numpy as np
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+)
 
 
 class DriftType(Enum):
@@ -189,8 +195,8 @@ class MLMonitor:
             self.logger.info("✅ ML Monitor initialization completed")
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ ML Monitor initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ ML Monitor initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -220,8 +226,8 @@ class MLMonitor:
 
             self.logger.info("Reference data loaded")
 
-        except Exception as e:
-            self.logger.error(f"Error loading reference data: {e}")
+        except Exception:
+            self.print(error("Error loading reference data: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -236,8 +242,8 @@ class MLMonitor:
 
             self.logger.info("Drift detection initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing drift detection: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing drift detection: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -252,8 +258,8 @@ class MLMonitor:
 
             self.logger.info("Feature importance tracking initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing feature tracking: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing feature tracking: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -268,8 +274,8 @@ class MLMonitor:
 
             self.logger.info("Online learning monitoring initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing online learning: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing online learning: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -302,8 +308,8 @@ class MLMonitor:
             self.logger.info("🚀 ML Monitor started")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error starting ML monitoring: {e}")
+        except Exception:
+            self.print(error("Error starting ML monitoring: {e}"))
             return False
 
     @handle_errors(
@@ -318,8 +324,8 @@ class MLMonitor:
                 await self._perform_drift_detection()
                 await asyncio.sleep(self.drift_check_interval)
 
-        except Exception as e:
-            self.logger.error(f"Error in drift detection loop: {e}")
+        except Exception:
+            self.print(error("Error in drift detection loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -333,8 +339,8 @@ class MLMonitor:
                 await self._capture_performance_snapshots()
                 await asyncio.sleep(self.performance_check_interval)
 
-        except Exception as e:
-            self.logger.error(f"Error in performance monitoring loop: {e}")
+        except Exception:
+            self.print(error("Error in performance monitoring loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -348,8 +354,8 @@ class MLMonitor:
                 await self._analyze_feature_importance()
                 await asyncio.sleep(self.feature_analysis_interval)
 
-        except Exception as e:
-            self.logger.error(f"Error in feature analysis loop: {e}")
+        except Exception:
+            self.print(error("Error in feature analysis loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -363,8 +369,8 @@ class MLMonitor:
                 await self._monitor_online_learning()
                 await asyncio.sleep(self.performance_check_interval)
 
-        except Exception as e:
-            self.logger.error(f"Error in online learning loop: {e}")
+        except Exception:
+            self.print(error("Error in online learning loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -374,7 +380,7 @@ class MLMonitor:
     async def _perform_drift_detection(self) -> None:
         """Perform drift detection for all models."""
         try:
-            for model_id in self.model_performance_history.keys():
+            for model_id in self.model_performance_history:
                 # Check concept drift
                 concept_drift_score = self._calculate_concept_drift(model_id)
                 if concept_drift_score > self.drift_threshold:
@@ -408,8 +414,8 @@ class MLMonitor:
                         self.drift_threshold,
                     )
 
-        except Exception as e:
-            self.logger.error(f"Error performing drift detection: {e}")
+        except Exception:
+            self.print(error("Error performing drift detection: {e}"))
 
     def _calculate_concept_drift(self, model_id: str) -> float:
         """Calculate concept drift score for a model."""
@@ -437,8 +443,8 @@ class MLMonitor:
 
             return min(drift_score, 1.0)
 
-        except Exception as e:
-            self.logger.error(f"Error calculating concept drift: {e}")
+        except Exception:
+            self.print(error("Error calculating concept drift: {e}"))
             return 0.0
 
     def _calculate_data_drift(self, model_id: str) -> float:
@@ -448,8 +454,8 @@ class MLMonitor:
             # For now, return a sample drift score
             return np.random.uniform(0.0, 0.2)
 
-        except Exception as e:
-            self.logger.error(f"Error calculating data drift: {e}")
+        except Exception:
+            self.print(error("Error calculating data drift: {e}"))
             return 0.0
 
     def _calculate_feature_drift(self, model_id: str) -> float:
@@ -463,7 +469,7 @@ class MLMonitor:
                 return 0.0
 
             # Calculate feature importance stability
-            feature_names = set(f.feature_name for f in feature_history)
+            feature_names = {f.feature_name for f in feature_history}
             stability_scores = []
 
             for feature_name in feature_names:
@@ -482,8 +488,8 @@ class MLMonitor:
                 return 1.0 - np.mean(stability_scores)
             return 0.0
 
-        except Exception as e:
-            self.logger.error(f"Error calculating feature drift: {e}")
+        except Exception:
+            self.print(error("Error calculating feature drift: {e}"))
             return 0.0
 
     @handle_errors(
@@ -525,8 +531,8 @@ class MLMonitor:
                 f"Drift alert created: {model_id} - {drift_type.value} - {severity}",
             )
 
-        except Exception as e:
-            self.logger.error(f"Error creating drift alert: {e}")
+        except Exception:
+            self.print(error("Error creating drift alert: {e}"))
 
     def _determine_alert_severity(self, drift_score: float, threshold: float) -> str:
         """Determine alert severity based on drift score."""
@@ -555,8 +561,8 @@ class MLMonitor:
             # This would integrate with the training pipeline
             # For now, just log the action
 
-        except Exception as e:
-            self.logger.error(f"Error triggering auto-retraining: {e}")
+        except Exception:
+            self.print(error("Error triggering auto-retraining: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -591,8 +597,8 @@ class MLMonitor:
                         self.model_performance_history[model_id][-1000:]
                     )
 
-        except Exception as e:
-            self.logger.error(f"Error capturing performance snapshots: {e}")
+        except Exception:
+            self.print(error("Error capturing performance snapshots: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -628,8 +634,8 @@ class MLMonitor:
                             self.feature_importance_history[model_id][-1000:]
                         )
 
-        except Exception as e:
-            self.logger.error(f"Error analyzing feature importance: {e}")
+        except Exception:
+            self.print(error("Error analyzing feature importance: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -654,8 +660,8 @@ class MLMonitor:
 
                 self.online_learning_metrics[model_id] = metrics
 
-        except Exception as e:
-            self.logger.error(f"Error monitoring online learning: {e}")
+        except Exception:
+            self.print(error("Error monitoring online learning: {e}"))
 
     def get_drift_alerts(self, severity: str | None = None) -> list[ModelDriftAlert]:
         """Get drift alerts, optionally filtered by severity."""
@@ -723,8 +729,8 @@ class MLMonitor:
                 "auto_retraining_enabled": self.auto_retraining_enabled,
             }
 
-        except Exception as e:
-            self.logger.error(f"Error getting ML monitoring summary: {e}")
+        except Exception:
+            self.print(error("Error getting ML monitoring summary: {e}"))
             return {}
 
     @handle_errors(
@@ -740,17 +746,15 @@ class MLMonitor:
             # Cancel all monitoring tasks
             for task in self.monitoring_tasks:
                 task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await task
-                except asyncio.CancelledError:
-                    pass
 
             self.monitoring_tasks.clear()
 
             self.logger.info("🛑 ML Monitor stopped")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping ML monitoring: {e}")
+        except Exception:
+            self.print(error("Error stopping ML monitoring: {e}"))
 
 
 @handle_errors(
@@ -775,6 +779,6 @@ async def setup_ml_monitor(config: dict[str, Any]) -> MLMonitor | None:
             return ml_monitor
         return None
 
-    except Exception as e:
-        system_logger.error(f"Error setting up ML monitor: {e}")
+    except Exception:
+        system_print(error("Error setting up ML monitor: {e}"))
         return None

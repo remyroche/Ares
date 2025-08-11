@@ -1,9 +1,11 @@
 import asyncio
+import json
 import logging
 from functools import wraps
 from typing import Any
 
 import ccxt.async_support as ccxt
+import websockets
 from ccxt.base.errors import (
     DDoSProtection,
     ExchangeError,
@@ -15,11 +17,22 @@ from ccxt.base.errors import (
 from src.interfaces.base_interfaces import MarketData
 from src.utils.error_handler import handle_network_operations
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 from .base_exchange import BaseExchange
-
-import json
-import websockets
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +54,10 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                 except (RateLimitExceeded, DDoSProtection) as e:
                     retries += 1
                     if retries >= max_retries:
-                        logger.error(
+                        logger.exception(
                             f"API Rate Limit Exceeded. Max retries reached for {func.__name__}. Error: {e}",
                         )
-                        raise e
+                        raise
                     logger.warning(
                         f"API Rate Limit Exceeded for {func.__name__}. "
                         f"Retrying in {backoff:.2f} seconds... (Attempt {retries}/{max_retries})",
@@ -54,10 +67,10 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                 except (ExchangeNotAvailable, RequestTimeout) as e:
                     retries += 1
                     if retries >= max_retries:
-                        logger.error(
+                        logger.exception(
                             f"Exchange not available or request timed out. Max retries reached for {func.__name__}. Error: {e}",
                         )
-                        raise e
+                        raise
                     logger.warning(
                         f"Exchange not available or request timed out for {func.__name__}. "
                         f"Retrying in {backoff:.2f} seconds... (Attempt {retries}/{max_retries})",
@@ -70,18 +83,19 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                     )
                     retries += 1
                     if retries >= max_retries:
-                        logger.error(
+                        logger.exception(
                             f"Max retries reached for {func.__name__} after multiple exchange errors. Last error: {e}",
                         )
-                        raise e
+                        raise
                     await asyncio.sleep(backoff)
                     backoff *= 2
                 except Exception as e:
-                    logger.error(
+                    logger.exception(
                         f"An unexpected error occurred in {func.__name__}: {e}",
                     )
-                    raise e
-            raise Exception(f"Exhausted retries for {func.__name__}")
+                    raise
+            msg = f"Exhausted retries for {func.__name__}"
+            raise Exception(msg)
 
         return wrapper
 
@@ -123,15 +137,14 @@ class OkxExchange(BaseExchange):
         """Get kline/candlestick data for a symbol."""
         try:
             market_id = await self._get_market_id(symbol)
-            ohlcv = await self.exchange.fetch_ohlcv(
+            return await self.exchange.fetch_ohlcv(
                 market_id,
                 timeframe=interval,
                 limit=limit,
             )
             # Return raw CCXT OHLCV (list of lists) for standardized conversion
-            return ohlcv
         except Exception as e:
-            logger.error(f"Error fetching klines from OKX for {symbol}: {e}")
+            print(error("Error fetching klines from OKX for {symbol}: {e}"))
             return []
 
     @retry_on_rate_limit()
@@ -160,9 +173,8 @@ class OkxExchange(BaseExchange):
                 params,
             )
         except Exception as e:
-            logger.error(f"Error creating order on OKX for {symbol}: {e}")
+            print(error("Error creating order on OKX for {symbol}: {e}"))
             return {"error": str(e), "status": "failed"}
-
 
     @retry_on_rate_limit()
     @handle_network_operations(
@@ -175,7 +187,7 @@ class OkxExchange(BaseExchange):
             market_id = await self._get_market_id(symbol)
             return await self.exchange.fetch_order(order_id, market_id)
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to get status for order {order_id} on OKX {symbol}: {e}",
             )
             return {"error": str(e)}
@@ -191,7 +203,7 @@ class OkxExchange(BaseExchange):
             market_id = await self._get_market_id(symbol)
             return await self.exchange.cancel_order(order_id, market_id)
         except Exception as e:
-            logger.error(f"Failed to cancel order {order_id} on OKX {symbol}: {e}")
+            print(failed("Failed to cancel order {order_id} on OKX {symbol}: {e}"))
             return {"error": str(e)}
 
     @retry_on_rate_limit()
@@ -204,7 +216,7 @@ class OkxExchange(BaseExchange):
         try:
             return await self.exchange.fetch_balance()
         except Exception as e:
-            logger.error(f"Failed to get account info from OKX: {e}")
+            print(failed("Failed to get account info from OKX: {e}"))
             return {"error": str(e)}
 
     @retry_on_rate_limit()
@@ -217,7 +229,7 @@ class OkxExchange(BaseExchange):
                 [market_id] if market_id else None,
             )
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to get position risk from OKX for {symbol or 'all symbols'}: {e}",
             )
             return []
@@ -230,7 +242,7 @@ class OkxExchange(BaseExchange):
             market_id = await self._get_market_id(symbol) if symbol else None
             return await self.exchange.fetch_open_orders(market_id)
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to get open orders from OKX for {symbol or 'all symbols'}: {e}",
             )
             return []
@@ -262,7 +274,11 @@ class OkxExchange(BaseExchange):
                         if not batch:
                             break
                         for item in batch:
-                            ts = item.get("timestamp") or item.get("fundingTime") or item.get("time")
+                            ts = (
+                                item.get("timestamp")
+                                or item.get("fundingTime")
+                                or item.get("time")
+                            )
                             if ts is None:
                                 continue
                             if ts < start_time_ms or ts > end_time_ms:
@@ -270,43 +286,54 @@ class OkxExchange(BaseExchange):
                             all_rates.append(
                                 {
                                     "symbol": item.get("symbol", market_id),
-                                    "funding_rate": item.get("fundingRate") or item.get("rate") or item.get("fundingRateDaily"),
+                                    "funding_rate": item.get("fundingRate")
+                                    or item.get("rate")
+                                    or item.get("fundingRateDaily"),
                                     "funding_time": ts,
                                     "next_funding_time": item.get("nextFundingTime", 0),
-                                }
+                                },
                             )
                         # Filter for valid numeric timestamps to avoid TypeError in max()
                         valid_timestamps = [
-                            i.get("timestamp") for i in batch 
-                            if i.get("timestamp") is not None and isinstance(i.get("timestamp"), (int, float))
+                            i.get("timestamp")
+                            for i in batch
+                            if i.get("timestamp") is not None
+                            and isinstance(i.get("timestamp"), int | float)
                         ]
                         since = max(valid_timestamps, default=since) + 1
                         await asyncio.sleep(0.1)
                     return all_rates
                 except Exception as e:
-                    logger.warning(f"CCXT funding rate history failed on OKX: {e}")
+                    print(failed("CCXT funding rate history failed on OKX: {e}"))
 
             # Fallback to current funding rate (single point) if history unavailable
             try:
                 info = await self.exchange.fetch_funding_rate(market_id)
                 if info:
-                    ts = info.get("timestamp") or info.get("fundingTime") or info.get("time")
+                    ts = (
+                        info.get("timestamp")
+                        or info.get("fundingTime")
+                        or info.get("time")
+                    )
                     if ts and start_time_ms <= ts <= end_time_ms:
                         return [
                             {
                                 "symbol": info.get("symbol", market_id),
-                                "funding_rate": info.get("fundingRate") or info.get("rate"),
+                                "funding_rate": info.get("fundingRate")
+                                or info.get("rate"),
                                 "funding_time": ts,
                                 "next_funding_time": info.get("nextFundingTime", 0),
-                            }
+                            },
                         ]
             except Exception as e:
-                logger.warning(f"CCXT fetch_funding_rate failed on OKX: {e}")
+                print(failed("CCXT fetch_funding_rate failed on OKX: {e}"))
 
             logger.info("No funding rate data available for OKX in the requested range")
             return []
         except Exception as e:
-            logger.error(f"Error fetching historical futures data from OKX for {symbol}: {e}")
+            logger.exception(
+                f"Error fetching historical futures data from OKX for {symbol}: {e}",
+            )
             return []
 
     async def close(self):
@@ -344,7 +371,7 @@ class OkxExchange(BaseExchange):
                 )
                 market_data_list.append(market_data)
             except (IndexError, ValueError, TypeError) as e:
-                logger.warning(f"Failed to convert candle data: {e}. Candle: {candle}")
+                print(failed("Failed to convert candle data: {e}. Candle: {candle}"))
                 continue
         return market_data_list
 
@@ -362,7 +389,7 @@ class OkxExchange(BaseExchange):
         try:
             return await self.exchange.fetch_balance()
         except Exception as e:
-            logger.error(f"Failed to get account info from OKX: {e}")
+            print(failed("Failed to get account info from OKX: {e}"))
             return {"error": str(e)}
 
     async def _create_order_raw(
@@ -386,7 +413,7 @@ class OkxExchange(BaseExchange):
                 params,
             )
         except Exception as e:
-            logger.error(f"Error creating order on OKX for {symbol}: {e}")
+            print(error("Error creating order on OKX for {symbol}: {e}"))
             return {"error": str(e), "status": "failed"}
 
     async def _get_position_risk_raw(
@@ -400,7 +427,7 @@ class OkxExchange(BaseExchange):
                 [market_id] if market_id else None,
             )
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to get position risk from OKX for {symbol or 'all symbols'}: {e}",
             )
             return []
@@ -435,7 +462,7 @@ class OkxExchange(BaseExchange):
 
             return all_ohlcv
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Error fetching historical klines from OKX for {symbol}: {e}",
             )
             return []
@@ -477,7 +504,7 @@ class OkxExchange(BaseExchange):
                                 and t.get("takerOrMaker", "taker") == "maker",
                                 "f": t.get("id", 0),
                                 "l": t.get("id", 0),
-                            }
+                            },
                         )
                 total_calls += 1
                 since = max(t.get("timestamp", since) for t in trades) + 1
@@ -500,7 +527,7 @@ class OkxExchange(BaseExchange):
             market_id = await self._get_market_id(symbol) if symbol else None
             return await self.exchange.fetch_open_orders(market_id)
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to get open orders from OKX for {symbol or 'all symbols'}: {e}",
             )
             return []
@@ -511,7 +538,7 @@ class OkxExchange(BaseExchange):
             market_id = await self._get_market_id(symbol)
             return await self.exchange.cancel_order(order_id, market_id)
         except Exception as e:
-            logger.error(f"Failed to cancel order {order_id} on OKX {symbol}: {e}")
+            print(failed("Failed to cancel order {order_id} on OKX {symbol}: {e}"))
             return {"error": str(e)}
 
     async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
@@ -523,7 +550,7 @@ class OkxExchange(BaseExchange):
             market_id = await self._get_market_id(symbol)
             return await self.exchange.fetch_order(order_id, market_id)
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to get status for order {order_id} on OKX {symbol}: {e}",
             )
             return {"error": str(e)}
@@ -542,7 +569,10 @@ class OkxExchange(BaseExchange):
                         async for raw in ws:
                             try:
                                 msg = json.loads(raw)
-                                if msg.get("arg", {}).get("channel") == "trades" and msg.get("arg", {}).get("instId") == market_id:
+                                if (
+                                    msg.get("arg", {}).get("channel") == "trades"
+                                    and msg.get("arg", {}).get("instId") == market_id
+                                ):
                                     for t in msg.get("data", []):
                                         std = {
                                             "type": "trade",
@@ -557,7 +587,9 @@ class OkxExchange(BaseExchange):
                                 continue
                 except Exception:
                     await asyncio.sleep(3)
+
         import asyncio
+
         await _run()
 
     async def subscribe_ticker(self, symbol: str, callback):
@@ -573,14 +605,23 @@ class OkxExchange(BaseExchange):
                         async for raw in ws:
                             try:
                                 msg = json.loads(raw)
-                                if msg.get("arg", {}).get("channel") == "tickers" and msg.get("arg", {}).get("instId") == market_id:
+                                if (
+                                    msg.get("arg", {}).get("channel") == "tickers"
+                                    and msg.get("arg", {}).get("instId") == market_id
+                                ):
                                     t = (msg.get("data") or [{}])[0]
                                     std = {
                                         "type": "ticker",
                                         "symbol": symbol,
-                                        "last": float(t.get("last")) if t.get("last") is not None else None,
-                                        "bid": float(t.get("bidPx")) if t.get("bidPx") is not None else None,
-                                        "ask": float(t.get("askPx")) if t.get("askPx") is not None else None,
+                                        "last": float(t.get("last"))
+                                        if t.get("last") is not None
+                                        else None,
+                                        "bid": float(t.get("bidPx"))
+                                        if t.get("bidPx") is not None
+                                        else None,
+                                        "ask": float(t.get("askPx"))
+                                        if t.get("askPx") is not None
+                                        else None,
                                         "timestamp": int(t.get("ts", 0)),
                                     }
                                     await callback(std)
@@ -588,7 +629,9 @@ class OkxExchange(BaseExchange):
                                 continue
                 except Exception:
                     await asyncio.sleep(3)
+
         import asyncio
+
         await _run()
 
     async def subscribe_order_book(self, symbol: str, callback):
@@ -604,7 +647,10 @@ class OkxExchange(BaseExchange):
                         async for raw in ws:
                             try:
                                 msg = json.loads(raw)
-                                if msg.get("arg", {}).get("channel") == "books" and msg.get("arg", {}).get("instId") == market_id:
+                                if (
+                                    msg.get("arg", {}).get("channel") == "books"
+                                    and msg.get("arg", {}).get("instId") == market_id
+                                ):
                                     d = (msg.get("data") or [{}])[0]
                                     bids = d.get("bids") or []
                                     asks = d.get("asks") or []
@@ -622,5 +668,7 @@ class OkxExchange(BaseExchange):
                                 continue
                 except Exception:
                     await asyncio.sleep(3)
+
         import asyncio
+
         await _run()

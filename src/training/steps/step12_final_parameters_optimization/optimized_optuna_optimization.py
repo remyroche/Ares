@@ -1,18 +1,22 @@
 # src/training/steps/optimized_optuna_optimization.py
 
+import logging
+import time
+from typing import Any
+
+import lightgbm as lgb
+import numpy as np
 import optuna
 import pandas as pd
-import numpy as np
-import lightgbm as lgb
 import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
-from sklearn.metrics import accuracy_score
-from typing import Any, Dict, Callable, Optional, List
-import logging
-import sys
-import time
+
 from src.utils.logger import setup_logging
+from src.utils.warning_symbols import (
+    failed,
+)
+
 setup_logging()
 
 # --- Configuration ---
@@ -33,9 +37,11 @@ class AdvancedOptunaManager:
     - Robustness: Handles categorical features and trial errors gracefully.
     """
 
-    def __init__(self,
-                 storage_url: str = "sqlite:///optuna_studies_advanced.db",
-                 study_name_prefix: str = "optimization"):
+    def __init__(
+        self,
+        storage_url: str = "sqlite:///optuna_studies_advanced.db",
+        study_name_prefix: str = "optimization",
+    ):
         """
         Initializes the AdvancedOptunaManager.
 
@@ -49,7 +55,7 @@ class AdvancedOptunaManager:
         self.logger = logging.getLogger(__name__)
         self._model_configs = self._get_model_configurations()
 
-    def _get_model_configurations(self) -> Dict[str, Dict[str, Any]]:
+    def _get_model_configurations(self) -> dict[str, dict[str, Any]]:
         """
         Returns a dictionary containing the configuration for each supported model.
         This design makes the manager easily extensible.
@@ -57,20 +63,14 @@ class AdvancedOptunaManager:
         return {
             "random_forest": {
                 "model": RandomForestClassifier,
-                "space": self._get_rf_space
+                "space": self._get_rf_space,
             },
-            "lightgbm": {
-                "model": lgb.LGBMClassifier,
-                "space": self._get_lgbm_space
-            },
-            "xgboost": {
-                "model": xgb.XGBClassifier,
-                "space": self._get_xgb_space
-            }
+            "lightgbm": {"model": lgb.LGBMClassifier, "space": self._get_lgbm_space},
+            "xgboost": {"model": xgb.XGBClassifier, "space": self._get_xgb_space},
         }
 
     # --- Hyperparameter Space Definitions ---
-    def _get_rf_space(self, trial: optuna.Trial) -> Dict[str, Any]:
+    def _get_rf_space(self, trial: optuna.Trial) -> dict[str, Any]:
         return {
             "n_estimators": trial.suggest_int("n_estimators", 100, 1000, step=50),
             "max_depth": trial.suggest_int("max_depth", 5, 50),
@@ -78,10 +78,10 @@ class AdvancedOptunaManager:
             "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20),
             "max_features": trial.suggest_float("max_features", 0.1, 1.0),
             "random_state": 42,
-            "n_jobs": 1 # Important for nested parallelism
+            "n_jobs": 1,  # Important for nested parallelism
         }
 
-    def _get_lgbm_space(self, trial: optuna.Trial) -> Dict[str, Any]:
+    def _get_lgbm_space(self, trial: optuna.Trial) -> dict[str, Any]:
         return {
             "n_estimators": trial.suggest_int("n_estimators", 100, 2000, step=100),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
@@ -91,10 +91,10 @@ class AdvancedOptunaManager:
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
             "random_state": 42,
             "verbose": -1,
-            "n_jobs": 1
+            "n_jobs": 1,
         }
 
-    def _get_xgb_space(self, trial: optuna.Trial) -> Dict[str, Any]:
+    def _get_xgb_space(self, trial: optuna.Trial) -> dict[str, Any]:
         return {
             "n_estimators": trial.suggest_int("n_estimators", 100, 2000, step=100),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
@@ -104,14 +104,20 @@ class AdvancedOptunaManager:
             "gamma": trial.suggest_float("gamma", 1e-8, 1.0, log=True),
             "random_state": 42,
             "verbosity": 0,
-            "n_jobs": 1
+            "n_jobs": 1,
         }
 
-    def _summarize_study(self, study: optuna.Study) -> Dict[str, Any]:
+    def _summarize_study(self, study: optuna.Study) -> dict[str, Any]:
         """Extracts key results from a completed study."""
-        
-        pruned_trials = study.get_trials(deepcopy=False, states=[optuna.trial.TrialState.PRUNED])
-        complete_trials = study.get_trials(deepcopy=False, states=[optuna.trial.TrialState.COMPLETE])
+
+        pruned_trials = study.get_trials(
+            deepcopy=False,
+            states=[optuna.trial.TrialState.PRUNED],
+        )
+        complete_trials = study.get_trials(
+            deepcopy=False,
+            states=[optuna.trial.TrialState.COMPLETE],
+        )
 
         summary = {
             "study_name": study.study_name,
@@ -132,9 +138,9 @@ class AdvancedOptunaManager:
         n_trials: int = 100,
         n_jobs: int = -1,
         cv_folds: int = 5,
-        early_stopping_patience: Optional[int] = 15,
-        subsample_fraction: Optional[float] = None
-    ) -> Dict[str, Any]:
+        early_stopping_patience: int | None = 15,
+        subsample_fraction: float | None = None,
+    ) -> dict[str, Any]:
         """
         Runs a full hyperparameter optimization for a specified model.
 
@@ -153,16 +159,20 @@ class AdvancedOptunaManager:
             A dictionary summarizing the results of the optimization study.
         """
         if model_type not in self._model_configs:
-            raise ValueError(f"Model type '{model_type}' is not configured.")
+            msg = f"Model type '{model_type}' is not configured."
+            raise ValueError(msg)
 
         study_name = f"{self.study_name_prefix}_{model_type}"
         study = optuna.create_study(
             storage=self.storage_url,
             study_name=study_name,
             direction="maximize",
-            pruner=optuna.pruners.HyperbandPruner(min_resource=1, max_resource=n_trials),
+            pruner=optuna.pruners.HyperbandPruner(
+                min_resource=1,
+                max_resource=n_trials,
+            ),
             sampler=optuna.samplers.TPESampler(seed=42),
-            load_if_exists=True
+            load_if_exists=True,
         )
 
         def objective(trial: optuna.Trial) -> float:
@@ -171,17 +181,21 @@ class AdvancedOptunaManager:
                 X_sample, y_sample = (X, y)
                 if subsample_fraction and subsample_fraction < 1.0:
                     X_sample, _, y_sample, _ = train_test_split(
-                        X, y, train_size=subsample_fraction, stratify=y, random_state=trial.number
+                        X,
+                        y,
+                        train_size=subsample_fraction,
+                        stratify=y,
+                        random_state=trial.number,
                     )
 
                 # --- Model and Hyperparameter Setup ---
                 config = self._model_configs[model_type]
                 params = config["space"](trial)
                 model = config["model"](**params)
-                
+
                 # --- Cross-validation and Pruning ---
                 cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
-                
+
                 # Custom pruning for RandomForest
                 if model_type == "random_forest":
                     # Iteratively train and report to enable pruning
@@ -189,34 +203,52 @@ class AdvancedOptunaManager:
                     n_estimators = params["n_estimators"]
                     for i, step in enumerate(range(10, n_estimators + 1, 10)):
                         model.n_estimators = step
-                        score = cross_val_score(model, X_sample, y_sample, cv=cv, scoring='accuracy').mean()
+                        score = cross_val_score(
+                            model,
+                            X_sample,
+                            y_sample,
+                            cv=cv,
+                            scoring="accuracy",
+                        ).mean()
                         intermediate_scores.append(score)
                         trial.report(score, step=i)
                         if trial.should_prune():
-                            raise optuna.TrialPruned()
+                            raise optuna.TrialPruned
                     return np.mean(intermediate_scores)
 
                 # Native pruning for LightGBM and XGBoost
-                else:
-                    score = cross_val_score(model, X_sample, y_sample, cv=cv, scoring='accuracy').mean()
-                    trial.report(score, step=0) # Report final score
-                    return score
+                score = cross_val_score(
+                    model,
+                    X_sample,
+                    y_sample,
+                    cv=cv,
+                    scoring="accuracy",
+                ).mean()
+                trial.report(score, step=0)  # Report final score
+                return score
 
             except optuna.TrialPruned:
                 raise
-            except Exception as e:
-                self.logger.error(f"Trial {trial.number} failed with error: {e}")
-                return 0.0 # Return a poor score to guide sampler away
+            except Exception:
+                self.print(failed("Trial {trial.number} failed with error: {e}"))
+                return 0.0  # Return a poor score to guide sampler away
 
         callbacks = []
         if early_stopping_patience:
-            callbacks.append(optuna.callbacks.EarlyStoppingCallback(early_stopping_patience, "maximize"))
-        
-        self.logger.info(f"Starting optimization for '{model_type}' with {n_trials} trials...")
+            callbacks.append(
+                optuna.callbacks.EarlyStoppingCallback(
+                    early_stopping_patience,
+                    "maximize",
+                ),
+            )
+
+        self.logger.info(
+            f"Starting optimization for '{model_type}' with {n_trials} trials...",
+        )
         start_time = time.time()
-        
+
         study.optimize(objective, n_trials=n_trials, n_jobs=n_jobs, callbacks=callbacks)
-        
+
         elapsed_time = time.time() - start_time
         self.logger.info(f"Optimization finished in {elapsed_time:.2f} seconds.")
 
@@ -225,49 +257,54 @@ class AdvancedOptunaManager:
 
 if __name__ == "__main__":
     # --- Example Usage ---
-    
+
     # 1. Create a larger, more realistic sample dataset
-    X, y = pd.DataFrame(np.random.randn(2000, 30)), pd.Series(np.random.randint(0, 2, 2000))
+    X, y = (
+        pd.DataFrame(np.random.randn(2000, 30)),
+        pd.Series(np.random.randint(0, 2, 2000)),
+    )
 
     # 2. Initialize the manager
     optimizer = AdvancedOptunaManager(study_name_prefix="production_models")
 
     # 3. Run optimization for LightGBM using data subsampling for speed
     # This will use only 50% of the data for each trial, making it much faster.
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("Optimizing LightGBM with Subsampling (50%)")
-    print("="*50)
+    print("=" * 50)
     lgbm_results = optimizer.optimize(
         model_type="lightgbm",
         X=X,
         y=y,
         n_trials=50,
         n_jobs=-1,
-        subsample_fraction=0.5 # Use 50% of data per trial
+        subsample_fraction=0.5,  # Use 50% of data per trial
     )
     print(f"LightGBM Results: {lgbm_results}")
 
     # 4. Run optimization for RandomForest with custom pruning
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("Optimizing RandomForest with Custom Pruning")
-    print("="*50)
+    print("=" * 50)
     rf_results = optimizer.optimize(
         model_type="random_forest",
         X=X,
         y=y,
-        n_trials=30, # Fewer trials as RF is slower
-        n_jobs=-1
+        n_trials=30,  # Fewer trials as RF is slower
+        n_jobs=-1,
     )
     print(f"RandomForest Results: {rf_results}")
 
     # 5. You can easily retrieve the full study from storage if needed
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("Loading previous study from storage")
-    print("="*50)
+    print("=" * 50)
     loaded_study = optuna.load_study(
         study_name="production_models_lightgbm",
-        storage=optimizer.storage_url
+        storage=optimizer.storage_url,
     )
-    print(f"Loaded study '{loaded_study.study_name}' with {len(loaded_study.trials)} trials.")
+    print(
+        f"Loaded study '{loaded_study.study_name}' with {len(loaded_study.trials)} trials.",
+    )
     print("Top 5 trials from loaded study:")
     print(loaded_study.trials_dataframe().sort_values("value", ascending=False).head())

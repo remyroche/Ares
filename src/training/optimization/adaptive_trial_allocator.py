@@ -13,6 +13,10 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+)
 
 
 @dataclass
@@ -59,7 +63,7 @@ class AdaptiveTrialAllocator:
         try:
             importance_scores = {}
 
-            for param_path, param_value in parameters.items():
+            for param_path in parameters:
                 # Base importance based on parameter category
                 base_importance = self._get_base_importance(param_path)
 
@@ -92,8 +96,8 @@ class AdaptiveTrialAllocator:
             )
             return importance_scores
 
-        except Exception as e:
-            self.logger.error(f"Error calculating parameter importance: {e}")
+        except Exception:
+            self.print(error("Error calculating parameter importance: {e}"))
             return {}
 
     def _get_base_importance(self, param_path: str) -> float:
@@ -126,8 +130,8 @@ class AdaptiveTrialAllocator:
                 return 0.5
             return 0.3
 
-        except Exception as e:
-            self.logger.warning(f"Error getting base importance for {param_path}: {e}")
+        except Exception:
+            self.print(warning("Error getting base importance for {param_path}: {e}"))
             return 0.3
 
     def _get_performance_importance(self, param_path: str) -> float:
@@ -185,7 +189,7 @@ class AdaptiveTrialAllocator:
             if not importance_scores:
                 # Fallback to equal allocation
                 equal_trials = self.allocation_config.total_trials // len(parameters)
-                return {param: equal_trials for param in parameters}
+                return dict.fromkeys(parameters, equal_trials)
 
             # Allocate trials proportionally to importance
             total_importance = sum(importance_scores.values())
@@ -235,8 +239,8 @@ class AdaptiveTrialAllocator:
             )
             return allocated_trials
 
-        except Exception as e:
-            self.logger.error(f"Error allocating trials adaptively: {e}")
+        except Exception:
+            self.print(error("Error allocating trials adaptively: {e}"))
             return {}
 
     @handle_errors(
@@ -257,8 +261,8 @@ class AdaptiveTrialAllocator:
 
             return True
 
-        except Exception as e:
-            self.logger.warning(f"Error tracking performance for {param_path}: {e}")
+        except Exception:
+            self.print(warning("Error tracking performance for {param_path}: {e}"))
             return False
 
     @handle_errors(
@@ -300,8 +304,8 @@ class AdaptiveTrialAllocator:
 
             return False
 
-        except Exception as e:
-            self.logger.warning(f"Error checking dynamic reallocation: {e}")
+        except Exception:
+            self.print(warning("Error checking dynamic reallocation: {e}"))
             return False
 
     @handle_errors(
@@ -356,8 +360,8 @@ class AdaptiveTrialAllocator:
 
             return allocated_trials
 
-        except Exception as e:
-            self.logger.error(f"Error calculating optimal allocation: {e}")
+        except Exception:
+            self.print(error("Error calculating optimal allocation: {e}"))
             return {}
 
     def get_allocation_statistics(self) -> dict[str, Any]:
@@ -368,7 +372,7 @@ class AdaptiveTrialAllocator:
 
             latest_allocation = self.allocation_history[-1]["allocation"]
 
-            stats = {
+            return {
                 "total_parameters": len(latest_allocation),
                 "total_trials": sum(latest_allocation.values()),
                 "average_trials_per_parameter": np.mean(
@@ -380,10 +384,8 @@ class AdaptiveTrialAllocator:
                 "tracked_parameters": len(self.parameter_performance),
             }
 
-            return stats
-
-        except Exception as e:
-            self.logger.error(f"Error getting allocation statistics: {e}")
+        except Exception:
+            self.print(error("Error getting allocation statistics: {e}"))
             return {}
 
     def get_parameter_performance_summary(self) -> dict[str, Any]:
@@ -403,8 +405,8 @@ class AdaptiveTrialAllocator:
 
             return summary
 
-        except Exception as e:
-            self.logger.error(f"Error getting performance summary: {e}")
+        except Exception:
+            self.print(error("Error getting performance summary: {e}"))
             return {}
 
     @handle_errors(
@@ -424,16 +426,16 @@ class AdaptiveTrialAllocator:
                 return False
 
             # Check min/max constraints
-            for param, trials in allocation.items():
+            for trials in allocation.values():
                 if trials < self.allocation_config.min_trials_per_parameter:
-                    self.logger.warning(f"Too few trials for {param}: {trials}")
+                    self.print(warning("Too few trials for {param}: {trials}"))
                     return False
                 if trials > self.allocation_config.max_trials_per_parameter:
-                    self.logger.warning(f"Too many trials for {param}: {trials}")
+                    self.print(warning("Too many trials for {param}: {trials}"))
                     return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating allocation: {e}")
+        except Exception:
+            self.print(error("Error validating allocation: {e}"))
             return False

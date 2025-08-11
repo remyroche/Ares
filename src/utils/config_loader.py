@@ -7,6 +7,10 @@ import yaml
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    missing,
+)
 
 
 class ConfigLoader:
@@ -34,7 +38,7 @@ class ConfigLoader:
         """
         try:
             if not os.path.exists(config_path):
-                self.logger.warning(f"Config file not found: {config_path}")
+                self.print(missing("Config file not found: {config_path}"))
                 return {}
 
             with open(config_path, encoding="utf-8") as file:
@@ -43,8 +47,8 @@ class ConfigLoader:
             self.logger.info(f"Successfully loaded config from: {config_path}")
             return config or {}
 
-        except Exception as e:
-            self.logger.error(f"Error loading config from {config_path}: {e}")
+        except Exception:
+            self.print(error("Error loading config from {config_path}: {e}"))
             return {}
 
     @handle_errors(
@@ -119,7 +123,7 @@ class ConfigLoader:
         """
         try:
             if not config:
-                self.logger.error(f"Empty {config_type} configuration")
+                self.print(error("Empty {config_type} configuration"))
                 return False
 
             # Check for required sections
@@ -160,8 +164,8 @@ class ConfigLoader:
             self.logger.info(f"✅ {config_type} configuration validation passed")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating {config_type} configuration: {e}")
+        except Exception:
+            self.print(error("Error validating {config_type} configuration: {e}"))
             return False
 
     @handle_errors(
@@ -188,8 +192,8 @@ class ConfigLoader:
 
             return merged_config
 
-        except Exception as e:
-            self.logger.error(f"Error merging configurations: {e}")
+        except Exception:
+            self.print(error("Error merging configurations: {e}"))
             return {}
 
     def _deep_merge(self, target: dict[str, Any], source: dict[str, Any]) -> None:
@@ -254,8 +258,8 @@ class ConfigLoader:
             )
             return {}
 
-        except Exception as e:
-            self.logger.error(f"Error loading config with fallback: {e}")
+        except Exception:
+            self.print(error("Error loading config with fallback: {e}"))
             return {}
 
 

@@ -9,6 +9,20 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 class MarketHealthAnalyzer:
@@ -84,7 +98,7 @@ class MarketHealthAnalyzer:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for market health analyzer")
+                self.print(invalid("Invalid configuration for market health analyzer"))
                 return False
 
             # Initialize market health analyzer modules
@@ -96,7 +110,9 @@ class MarketHealthAnalyzer:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Market Health Analyzer initialization failed: {e}")
+            self.logger.exception(
+                f"❌ Market Health Analyzer initialization failed: {e}",
+            )
             return False
 
     @handle_errors(
@@ -120,14 +136,14 @@ class MarketHealthAnalyzer:
         """Validate market health analyzer configuration."""
         try:
             if self.analysis_interval <= 0:
-                self.logger.error("analysis_interval must be positive")
+                self.print(error("analysis_interval must be positive"))
                 return False
 
             self.logger.info("Market health analyzer configuration validation passed")
             return True
 
         except Exception as e:
-            self.logger.error(f"Configuration validation failed: {e}")
+            self.print(failed("Configuration validation failed: {e}"))
             return False
 
     @handle_errors(
@@ -221,7 +237,7 @@ class MarketHealthAnalyzer:
         """
         try:
             if not self._validate_analysis_inputs(analysis_input):
-                self.logger.error("Invalid analysis inputs")
+                self.print(invalid("Invalid analysis inputs"))
                 return False
 
             self.is_analyzing = True
@@ -265,7 +281,7 @@ class MarketHealthAnalyzer:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error in market health analysis: {e}")
+            self.print(error("❌ Error in market health analysis: {e}"))
             self.is_analyzing = False
             return False
 
@@ -280,23 +296,23 @@ class MarketHealthAnalyzer:
             required_keys = ["market_data", "current_price"]
             for key in required_keys:
                 if key not in analysis_input:
-                    self.logger.error(f"Missing required analysis input: {key}")
+                    self.print(missing("Missing required analysis input: {key}"))
                     return False
 
             market_data = analysis_input.get("market_data")
             if not isinstance(market_data, pd.DataFrame) or market_data.empty:
-                self.logger.error("Invalid market data provided")
+                self.print(invalid("Invalid market data provided"))
                 return False
 
             current_price = analysis_input.get("current_price")
-            if not isinstance(current_price, (int, float)) or current_price <= 0:
-                self.logger.error("Invalid current price provided")
+            if not isinstance(current_price, int | float) or current_price <= 0:
+                self.print(invalid("Invalid current price provided"))
                 return False
 
             return True
 
         except Exception as e:
-            self.logger.error(f"Analysis inputs validation failed: {e}")
+            self.print(failed("Analysis inputs validation failed: {e}"))
             return False
 
     @handle_errors(
@@ -319,7 +335,7 @@ class MarketHealthAnalyzer:
         """
         try:
             market_data = analysis_input.get("market_data")
-            current_price = analysis_input.get("current_price")
+            analysis_input.get("current_price")
 
             # Calculate basic volatility metrics
             volatility_results = {
@@ -334,7 +350,7 @@ class MarketHealthAnalyzer:
             return volatility_results
 
         except Exception as e:
-            self.logger.error(f"Error performing volatility analysis: {e}")
+            self.print(error("Error performing volatility analysis: {e}"))
             return None
 
     def _calculate_current_volatility(self, market_data: pd.DataFrame) -> float:
@@ -352,7 +368,7 @@ class MarketHealthAnalyzer:
             return float(volatility) if not pd.isna(volatility) else 0.0
 
         except Exception as e:
-            self.logger.error(f"Error calculating current volatility: {e}")
+            self.print(error("Error calculating current volatility: {e}"))
             return 0.0
 
     def _classify_volatility_regime(self, market_data: pd.DataFrame) -> str:
@@ -369,7 +385,7 @@ class MarketHealthAnalyzer:
             return "EXTREME"
 
         except Exception as e:
-            self.logger.error(f"Error classifying volatility regime: {e}")
+            self.print(error("Error classifying volatility regime: {e}"))
             return "UNKNOWN"
 
     def _forecast_volatility(self, market_data: pd.DataFrame) -> float:
@@ -398,13 +414,13 @@ class MarketHealthAnalyzer:
             )
 
         except Exception as e:
-            self.logger.error(f"Error forecasting volatility: {e}")
+            self.print(error("Error forecasting volatility: {e}"))
             return 0.0
 
     def _assess_volatility_health(self, market_data: pd.DataFrame) -> str:
         """Assess overall volatility health."""
         try:
-            current_vol = self._calculate_current_volatility(market_data)
+            self._calculate_current_volatility(market_data)
             regime = self._classify_volatility_regime(market_data)
 
             if regime == "LOW":
@@ -416,7 +432,7 @@ class MarketHealthAnalyzer:
             return "DANGEROUS"
 
         except Exception as e:
-            self.logger.error(f"Error assessing volatility health: {e}")
+            self.print(error("Error assessing volatility health: {e}"))
             return "UNKNOWN"
 
     @handle_errors(
@@ -439,7 +455,7 @@ class MarketHealthAnalyzer:
         """
         try:
             market_data = analysis_input.get("market_data")
-            current_price = analysis_input.get("current_price")
+            analysis_input.get("current_price")
 
             # Calculate market health metrics
             health_results = {
@@ -454,7 +470,7 @@ class MarketHealthAnalyzer:
             return health_results
 
         except Exception as e:
-            self.logger.error(f"Error performing market health metrics: {e}")
+            self.print(error("Error performing market health metrics: {e}"))
             return None
 
     def _calculate_price_trend(self, market_data: pd.DataFrame) -> str:
@@ -480,7 +496,7 @@ class MarketHealthAnalyzer:
             return "SIDEWAYS"
 
         except Exception as e:
-            self.logger.error(f"Error calculating price trend: {e}")
+            self.print(error("Error calculating price trend: {e}"))
             return "UNKNOWN"
 
     def _assess_volume_health(self, market_data: pd.DataFrame) -> str:
@@ -500,7 +516,7 @@ class MarketHealthAnalyzer:
             return "NORMAL"
 
         except Exception as e:
-            self.logger.error(f"Error assessing volume health: {e}")
+            self.print(error("Error assessing volume health: {e}"))
             return "UNKNOWN"
 
     def _calculate_market_strength(self, market_data: pd.DataFrame) -> float:
@@ -522,9 +538,7 @@ class MarketHealthAnalyzer:
 
             # Combine factors
             strength = (positive_ratio * 60) + (min(avg_return * 1000, 40))
-
             return max(0.0, min(100.0, float(strength)))
-
         except Exception as e:
             self.logger.error(f"Error calculating market strength: {e}")
             return 50.0
@@ -672,7 +686,7 @@ class MarketHealthAnalyzer:
             return 0.0
 
         except Exception as e:
-            self.logger.error(f"Error calculating liquidity stress: {e}")
+            self.print(error("Error calculating liquidity stress: {e}"))
             return 0.0
 
     def _determine_liquidity_health(self, liquidity_metrics: dict[str, Any]) -> str:
@@ -688,14 +702,14 @@ class MarketHealthAnalyzer:
             return "good"
 
         except Exception as e:
-            self.logger.error(f"Error determining liquidity health: {e}")
+            self.print(error("Error determining liquidity health: {e}"))
             return "unknown"
 
     async def _calculate_overall_market_health(self) -> dict[str, Any]:
         """Calculate overall market health score incorporating liquidity factors."""
         try:
             volatility_analysis = self.analysis_results.get("volatility_analysis", {})
-            health_metrics = self.analysis_results.get("market_health_metrics", {})
+            self.analysis_results.get("market_health_metrics", {})
             liquidity_analysis = self.analysis_results.get("liquidity_analysis", {})
             stress_analysis = self.analysis_results.get("stress_analysis", {})
 
@@ -747,7 +761,7 @@ class MarketHealthAnalyzer:
             }
 
         except Exception as e:
-            self.logger.error(f"Error calculating overall market health: {e}")
+            self.print(error("Error calculating overall market health: {e}"))
             return {"overall_score": 0.5, "health_status": "unknown"}
 
     @handle_errors(
@@ -770,7 +784,7 @@ class MarketHealthAnalyzer:
         """
         try:
             market_data = analysis_input.get("market_data")
-            current_price = analysis_input.get("current_price")
+            analysis_input.get("current_price")
 
             # Calculate simple liquidity metrics
             liquidity_results = {
@@ -786,7 +800,7 @@ class MarketHealthAnalyzer:
             return liquidity_results
 
         except Exception as e:
-            self.logger.error(f"Error performing liquidity analysis: {e}")
+            self.print(error("Error performing liquidity analysis: {e}"))
             return None
 
     def _estimate_spread(self, market_data: pd.DataFrame) -> float:
@@ -804,7 +818,7 @@ class MarketHealthAnalyzer:
             return float(avg_spread) if not pd.isna(avg_spread) else 0.0
 
         except Exception as e:
-            self.logger.error(f"Error estimating spread: {e}")
+            self.print(error("Error estimating spread: {e}"))
             return 0.0
 
     def _assess_volume_liquidity(self, market_data: pd.DataFrame) -> str:
@@ -828,7 +842,7 @@ class MarketHealthAnalyzer:
             return "NORMAL"
 
         except Exception as e:
-            self.logger.error(f"Error assessing volume liquidity: {e}")
+            self.print(error("Error assessing volume liquidity: {e}"))
             return "UNKNOWN"
 
     def _estimate_price_impact(self, market_data: pd.DataFrame) -> float:
@@ -899,7 +913,7 @@ class MarketHealthAnalyzer:
             return "POOR"
 
         except Exception as e:
-            self.logger.error(f"Error classifying liquidity regime: {e}")
+            self.print(error("Error classifying liquidity regime: {e}"))
             return "UNKNOWN"
 
     @handle_errors(
@@ -922,7 +936,7 @@ class MarketHealthAnalyzer:
         """
         try:
             market_data = analysis_input.get("market_data")
-            current_price = analysis_input.get("current_price")
+            analysis_input.get("current_price")
 
             # Calculate simple stress metrics
             stress_results = {
@@ -938,7 +952,7 @@ class MarketHealthAnalyzer:
             return stress_results
 
         except Exception as e:
-            self.logger.error(f"Error performing stress analysis: {e}")
+            self.print(error("Error performing stress analysis: {e}"))
             return None
 
     def _calculate_volatility_stress(self, market_data: pd.DataFrame) -> float:
@@ -957,7 +971,7 @@ class MarketHealthAnalyzer:
             return float(vol_stress) if not pd.isna(vol_stress) else 1.0
 
         except Exception as e:
-            self.logger.error(f"Error calculating volatility stress: {e}")
+            self.print(error("Error calculating volatility stress: {e}"))
             return 1.0
 
     def _calculate_drawdown_stress(self, market_data: pd.DataFrame) -> float:
@@ -980,7 +994,7 @@ class MarketHealthAnalyzer:
             return float(drawdown_stress)
 
         except Exception as e:
-            self.logger.error(f"Error calculating drawdown stress: {e}")
+            self.print(error("Error calculating drawdown stress: {e}"))
             return 0.0
 
     def _calculate_volume_stress(self, market_data: pd.DataFrame) -> float:
@@ -1002,7 +1016,7 @@ class MarketHealthAnalyzer:
             return max(0.0, min(1.0, float(volume_stress)))
 
         except Exception as e:
-            self.logger.error(f"Error calculating volume stress: {e}")
+            self.print(error("Error calculating volume stress: {e}"))
             return 0.0
 
     def _calculate_stress_score(self, market_data: pd.DataFrame) -> float:
@@ -1020,7 +1034,7 @@ class MarketHealthAnalyzer:
             return max(0.0, min(100.0, float(stress_score)))
 
         except Exception as e:
-            self.logger.error(f"Error calculating stress score: {e}")
+            self.print(error("Error calculating stress score: {e}"))
             return 50.0
 
     def _classify_stress_regime(self, market_data: pd.DataFrame) -> str:
@@ -1037,7 +1051,7 @@ class MarketHealthAnalyzer:
             return "EXTREME"
 
         except Exception as e:
-            self.logger.error(f"Error classifying stress regime: {e}")
+            self.print(error("Error classifying stress regime: {e}"))
             return "UNKNOWN"
 
     @handle_errors(
@@ -1052,7 +1066,7 @@ class MarketHealthAnalyzer:
             # Results are already stored in self.analysis_results
             self.logger.info("Analysis results stored successfully")
         except Exception as e:
-            self.logger.error(f"Error storing analysis results: {e}")
+            self.print(error("Error storing analysis results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -1075,7 +1089,7 @@ class MarketHealthAnalyzer:
             return self.analysis_results.get(analysis_type, {})
 
         except Exception as e:
-            self.logger.error(f"Error getting analysis results: {e}")
+            self.print(error("Error getting analysis results: {e}"))
             return {}
 
     def get_analysis_status(self) -> dict[str, Any]:
@@ -1099,7 +1113,7 @@ class MarketHealthAnalyzer:
             self.analysis_results = {}
             self.logger.info("✅ Market Health Analyzer stopped successfully")
         except Exception as e:
-            self.logger.error(f"❌ Error stopping Market Health Analyzer: {e}")
+            self.print(error("❌ Error stopping Market Health Analyzer: {e}"))
 
 
 @handle_errors(
@@ -1128,9 +1142,9 @@ async def setup_market_health_analyzer(
         if await health_analyzer.initialize():
             system_logger.info("✅ Market Health Analyzer setup completed successfully")
             return health_analyzer
-        system_logger.error("❌ Market Health Analyzer setup failed")
+        system_print(failed("❌ Market Health Analyzer setup failed"))
         return None
 
     except Exception as e:
-        system_logger.error(f"❌ Error setting up Market Health Analyzer: {e}")
+        system_print(error("❌ Error setting up Market Health Analyzer: {e}"))
         return None

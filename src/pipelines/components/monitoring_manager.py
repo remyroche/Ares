@@ -13,6 +13,13 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    connection_error,
+    error,
+    failed,
+    initialization_error,
+    invalid,
+)
 
 
 class MonitoringManager:
@@ -81,7 +88,7 @@ class MonitoringManager:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for monitoring manager")
+                self.print(invalid("Invalid configuration for monitoring manager"))
                 return False
 
             # Initialize monitoring modules
@@ -92,8 +99,8 @@ class MonitoringManager:
             )
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Monitoring Manager initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Monitoring Manager initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -126,8 +133,8 @@ class MonitoringManager:
 
             self.logger.info("Monitoring configuration loaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error loading monitoring configuration: {e}")
+        except Exception:
+            self.print(error("Error loading monitoring configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -144,12 +151,12 @@ class MonitoringManager:
         try:
             # Validate monitoring interval
             if self.monitoring_interval <= 0:
-                self.logger.error("Invalid monitoring interval")
+                self.print(invalid("Invalid monitoring interval"))
                 return False
 
             # Validate max monitoring history
             if self.max_monitoring_history <= 0:
-                self.logger.error("Invalid max monitoring history")
+                self.print(invalid("Invalid max monitoring history"))
                 return False
 
             # Validate that at least one monitoring type is enabled
@@ -161,14 +168,14 @@ class MonitoringManager:
                     self.monitoring_config.get("enable_metrics_collection", True),
                 ],
             ):
-                self.logger.error("At least one monitoring type must be enabled")
+                self.print(error("At least one monitoring type must be enabled"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -197,8 +204,10 @@ class MonitoringManager:
 
             self.logger.info("Monitoring modules initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing monitoring modules: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing monitoring modules: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -218,8 +227,10 @@ class MonitoringManager:
 
             self.logger.info("Performance monitoring module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing performance monitoring: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing performance monitoring: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -239,8 +250,10 @@ class MonitoringManager:
 
             self.logger.info("Health monitoring module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing health monitoring: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing health monitoring: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -260,8 +273,8 @@ class MonitoringManager:
 
             self.logger.info("Alerting module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing alerting: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing alerting: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -281,8 +294,10 @@ class MonitoringManager:
 
             self.logger.info("Metrics collection module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing metrics collection: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing metrics collection: {e}"),
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -341,8 +356,8 @@ class MonitoringManager:
             self.logger.info("✅ Monitoring execution completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error executing monitoring: {e}")
+        except Exception:
+            self.print(error("Error executing monitoring: {e}"))
             self.is_monitoring = False
             return False
 
@@ -373,17 +388,17 @@ class MonitoringManager:
 
             # Validate data types
             if not isinstance(monitoring_input["monitoring_type"], str):
-                self.logger.error("Invalid monitoring type")
+                self.print(invalid("Invalid monitoring type"))
                 return False
 
             if not isinstance(monitoring_input["target_system"], str):
-                self.logger.error("Invalid target system")
+                self.print(invalid("Invalid target system"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating monitoring inputs: {e}")
+        except Exception:
+            self.print(error("Error validating monitoring inputs: {e}"))
             return False
 
     @handle_errors(
@@ -434,8 +449,8 @@ class MonitoringManager:
             self.logger.info("Performance monitoring completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing performance monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing performance monitoring: {e}"))
             return {}
 
     @handle_errors(
@@ -486,8 +501,8 @@ class MonitoringManager:
             self.logger.info("Health monitoring completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing health monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing health monitoring: {e}"))
             return {}
 
     @handle_errors(
@@ -536,8 +551,8 @@ class MonitoringManager:
             self.logger.info("Alerting completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing alerting: {e}")
+        except Exception:
+            self.print(error("Error performing alerting: {e}"))
             return {}
 
     @handle_errors(
@@ -588,8 +603,8 @@ class MonitoringManager:
             self.logger.info("Metrics collection completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing metrics collection: {e}")
+        except Exception:
+            self.print(error("Error performing metrics collection: {e}"))
             return {}
 
     # Performance monitoring methods
@@ -606,8 +621,8 @@ class MonitoringManager:
                 "cpu_temperature": 65.0,
                 "monitoring_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing CPU monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing CPU monitoring: {e}"))
             return {}
 
     def _perform_memory_monitoring(
@@ -623,8 +638,8 @@ class MonitoringManager:
                 "memory_total": 16.0,
                 "monitoring_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing memory monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing memory monitoring: {e}"))
             return {}
 
     def _perform_disk_monitoring(
@@ -640,8 +655,8 @@ class MonitoringManager:
                 "disk_total": 500.0,
                 "monitoring_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing disk monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing disk monitoring: {e}"))
             return {}
 
     def _perform_network_monitoring(
@@ -657,8 +672,8 @@ class MonitoringManager:
                 "network_packet_loss": 0.1,
                 "monitoring_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing network monitoring: {e}")
+        except Exception:
+            self.print(connection_error("Error performing network monitoring: {e}"))
             return {}
 
     # Health monitoring methods
@@ -675,8 +690,8 @@ class MonitoringManager:
                 "system_issues": 0,
                 "monitoring_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing system health monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing system health monitoring: {e}"))
             return {}
 
     def _perform_application_health_monitoring(
@@ -693,7 +708,9 @@ class MonitoringManager:
                 "monitoring_time": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error performing application health monitoring: {e}")
+            self.logger.exception(
+                f"Error performing application health monitoring: {e}",
+            )
             return {}
 
     def _perform_service_health_monitoring(
@@ -709,8 +726,8 @@ class MonitoringManager:
                 "service_issues": 0,
                 "monitoring_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing service health monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing service health monitoring: {e}"))
             return {}
 
     def _perform_dependency_health_monitoring(
@@ -726,8 +743,8 @@ class MonitoringManager:
                 "dependency_issues": 2,
                 "monitoring_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing dependency health monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing dependency health monitoring: {e}"))
             return {}
 
     # Alerting methods
@@ -744,8 +761,8 @@ class MonitoringManager:
                 "alert_status": "normal",
                 "generation_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing alert generation: {e}")
+        except Exception:
+            self.print(error("Error performing alert generation: {e}"))
             return {}
 
     def _perform_alert_routing(
@@ -760,8 +777,8 @@ class MonitoringManager:
                 "routing_status": "completed",
                 "routing_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing alert routing: {e}")
+        except Exception:
+            self.print(error("Error performing alert routing: {e}"))
             return {}
 
     def _perform_alert_escalation(
@@ -776,8 +793,8 @@ class MonitoringManager:
                 "escalation_status": "none",
                 "escalation_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing alert escalation: {e}")
+        except Exception:
+            self.print(error("Error performing alert escalation: {e}"))
             return {}
 
     def _perform_alert_resolution(
@@ -792,8 +809,8 @@ class MonitoringManager:
                 "resolution_status": "none",
                 "resolution_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing alert resolution: {e}")
+        except Exception:
+            self.print(error("Error performing alert resolution: {e}"))
             return {}
 
     # Metrics collection methods
@@ -809,8 +826,8 @@ class MonitoringManager:
                 "gathering_status": "completed",
                 "gathering_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing metrics gathering: {e}")
+        except Exception:
+            self.print(error("Error performing metrics gathering: {e}"))
             return {}
 
     def _perform_metrics_processing(
@@ -825,8 +842,8 @@ class MonitoringManager:
                 "processing_status": "completed",
                 "processing_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing metrics processing: {e}")
+        except Exception:
+            self.print(error("Error performing metrics processing: {e}"))
             return {}
 
     def _perform_metrics_storage(
@@ -841,8 +858,8 @@ class MonitoringManager:
                 "storage_status": "completed",
                 "storage_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing metrics storage: {e}")
+        except Exception:
+            self.print(error("Error performing metrics storage: {e}"))
             return {}
 
     def _perform_metrics_analysis(
@@ -857,8 +874,8 @@ class MonitoringManager:
                 "analysis_status": "completed",
                 "analysis_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing metrics analysis: {e}")
+        except Exception:
+            self.print(error("Error performing metrics analysis: {e}"))
             return {}
 
     @handle_errors(
@@ -881,8 +898,8 @@ class MonitoringManager:
 
             self.logger.info("Monitoring results stored successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error storing monitoring results: {e}")
+        except Exception:
+            self.print(error("Error storing monitoring results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -907,8 +924,8 @@ class MonitoringManager:
                 return self.monitoring_results.get(monitoring_type, {})
             return self.monitoring_results.copy()
 
-        except Exception as e:
-            self.logger.error(f"Error getting monitoring results: {e}")
+        except Exception:
+            self.print(error("Error getting monitoring results: {e}"))
             return {}
 
     @handle_errors(
@@ -937,8 +954,8 @@ class MonitoringManager:
 
             return history
 
-        except Exception as e:
-            self.logger.error(f"Error getting monitoring history: {e}")
+        except Exception:
+            self.print(error("Error getting monitoring history: {e}"))
             return []
 
     def get_monitoring_status(self) -> dict[str, Any]:
@@ -983,8 +1000,8 @@ class MonitoringManager:
 
             self.logger.info("✅ Monitoring Manager stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping monitoring manager: {e}")
+        except Exception:
+            self.print(error("Error stopping monitoring manager: {e}"))
 
 
 # Global monitoring manager instance

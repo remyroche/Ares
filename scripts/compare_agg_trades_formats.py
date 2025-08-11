@@ -17,6 +17,20 @@ sys.path.insert(0, str(project_root))
 from exchange.factory import ExchangeFactory
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 logger = system_logger.getChild("AggTradesFormatComparator")
 
@@ -78,11 +92,13 @@ async def compare_agg_trades_formats(
                         f"✅ Downloaded {len(trades)} trades from {exchange_name.upper()}",
                     )
                 else:
-                    logger.warning(f"⚠️ No trades received from {exchange_name.upper()}")
+                    print(warning("⚠️ No trades received from {exchange_name.upper()}")))
                     results[exchange_name] = pd.DataFrame()
 
             except Exception as e:
-                logger.error(f"❌ Error downloading from {exchange_name.upper()}: {e}")
+                logger.exception(
+                    f"❌ Error downloading from {exchange_name.upper()}: {e}",
+                )
                 results[exchange_name] = pd.DataFrame()
 
         # Compare formats
@@ -90,7 +106,7 @@ async def compare_agg_trades_formats(
 
         # Check if we have data from both exchanges
         if results["binance"].empty or results["mexc"].empty:
-            logger.error("❌ Missing data from one or both exchanges")
+            print(missing("❌ Missing data from one or both exchanges")))
             return False
 
         # Get column information
@@ -104,9 +120,9 @@ async def compare_agg_trades_formats(
         if set(binance_cols) == set(mexc_cols):
             logger.info("✅ Column names match between exchanges")
         else:
-            logger.error("❌ Column names don't match")
-            logger.error(f"   Binance only: {set(binance_cols) - set(mexc_cols)}")
-            logger.error(f"   MEXC only: {set(mexc_cols) - set(binance_cols)}")
+            print(error("❌ Column names don't match")))
+            print(error("   Binance only: {set(binance_cols) - set(mexc_cols)}")))
+            print(error("   MEXC only: {set(mexc_cols) - set(binance_cols)}")))
             return False
 
         # Check data types
@@ -155,11 +171,11 @@ async def compare_agg_trades_formats(
         missing_in_mexc = [col for col in required_cols if col not in mexc_cols]
 
         if missing_in_binance:
-            logger.error(f"❌ Binance missing columns: {missing_in_binance}")
+            print(missing("❌ Binance missing columns: {missing_in_binance}")))
             return False
 
         if missing_in_mexc:
-            logger.error(f"❌ MEXC missing columns: {missing_in_mexc}")
+            print(missing("❌ MEXC missing columns: {missing_in_mexc}")))
             return False
 
         logger.info("✅ All required columns present in both exchanges")
@@ -173,7 +189,7 @@ async def compare_agg_trades_formats(
                 logger.info(f"\n{exchange_name.upper()} null counts:")
                 for col, count in null_counts.items():
                     if count > 0:
-                        logger.warning(f"   {col}: {count} null values")
+                        print(warning("   {col}: {count} null values")))
                     else:
                         logger.info(f"   {col}: {count} null values")
 
@@ -185,7 +201,7 @@ async def compare_agg_trades_formats(
         return True
 
     except Exception as e:
-        logger.error(f"❌ Error comparing formats: {e}")
+        print(error("❌ Error comparing formats: {e}")))
         return False
 
 
@@ -213,7 +229,7 @@ async def main():
         logger.info("✅ Format comparison completed successfully!")
         sys.exit(0)
     else:
-        logger.error("❌ Format comparison failed!")
+        print(failed("❌ Format comparison failed!")))
         sys.exit(1)
 
 

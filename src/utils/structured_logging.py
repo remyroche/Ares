@@ -4,7 +4,10 @@ import contextvars
 import logging
 import uuid
 from contextlib import contextmanager
-from typing import Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fastapi import Request
 
 try:
     # Optional: only needed when JSON format is enabled
@@ -48,7 +51,7 @@ def generate_correlation_id() -> str:
 
 
 @contextmanager
-def correlation_context(correlation_id: Optional[str] = None):
+def correlation_context(correlation_id: str | None = None):
     """Context manager that sets a correlation ID for the duration of the block."""
     token = None
     cid = correlation_id or generate_correlation_id()
@@ -65,8 +68,8 @@ class CorrelationIdFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003 - filter is required API
         try:
-            setattr(record, "correlation_id", get_correlation_id())
-            setattr(record, "session_id", session_id_var.get())
+            record.correlation_id = get_correlation_id()
+            record.session_id = session_id_var.get()
         except Exception:
             # Best-effort enrichment should not break logging
             pass
@@ -79,7 +82,8 @@ def get_json_formatter(datefmt: str | None = None) -> logging.Formatter:
     Falls back to a plain formatter if python-json-logger is unavailable.
     """
     fmt = (
-        "%(asctime)s %(levelname)s %(name)s %(message)s %(correlation_id)s %(session_id)s"
+        "%(asctime)s %(levelname)s %(name)s %(message)s "
+        "%(correlation_id)s %(session_id)s"
     )
     if jsonlogger is None:
         return logging.Formatter(fmt=fmt, datefmt=datefmt)
@@ -89,14 +93,12 @@ def get_json_formatter(datefmt: str | None = None) -> logging.Formatter:
         timestamp=True,
         json_ensure_ascii=False,
         json_indent=None,
-        json_serializer=None,
         datefmt=datefmt,
     )
 
 
 # FastAPI middleware utilities (optional import to avoid hard dependency)
 try:
-    from fastapi import Request
     from starlette.middleware.base import BaseHTTPMiddleware
 
     class CorrelationIdMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]

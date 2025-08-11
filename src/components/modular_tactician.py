@@ -8,6 +8,12 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    initialization_error,
+    invalid,
+    missing,
+)
 
 
 class ModularTactician:
@@ -72,7 +78,7 @@ class ModularTactician:
 
         # Validate configuration
         if not self._validate_configuration():
-            self.logger.error("Invalid configuration for modular tactician")
+            self.print(invalid("Invalid configuration for modular tactician"))
             return False
 
         # Initialize tactician modules
@@ -101,12 +107,8 @@ class ModularTactician:
         # Update configuration
         self.tactician_interval = self.tactician_config["tactician_interval"]
         self.max_tactician_history = self.tactician_config["max_tactician_history"]
-        self.enable_entry_monitoring = self.tactician_config[
-            "enable_entry_monitoring"
-        ]
-        self.enable_exit_monitoring = self.tactician_config[
-            "enable_exit_monitoring"
-        ]
+        self.enable_entry_monitoring = self.tactician_config["enable_entry_monitoring"]
+        self.enable_exit_monitoring = self.tactician_config["enable_exit_monitoring"]
 
         self.logger.info("Tactician configuration loaded successfully")
 
@@ -124,12 +126,12 @@ class ModularTactician:
         """
         # Validate tactician interval
         if self.tactician_interval <= 0:
-            self.logger.error("Invalid tactician interval")
+            self.print(invalid("Invalid tactician interval"))
             return False
 
         # Validate max tactician history
         if self.max_tactician_history <= 0:
-            self.logger.error("Invalid max tactician history")
+            self.print(invalid("Invalid max tactician history"))
             return False
 
         # Validate that at least one tactician type is enabled
@@ -141,7 +143,7 @@ class ModularTactician:
                 self.tactician_config.get("enable_risk_monitoring", True),
             ],
         ):
-            self.logger.error("At least one tactician type must be enabled")
+            self.print(error("At least one tactician type must be enabled"))
             return False
 
         self.logger.info("Configuration validation successful")
@@ -173,8 +175,10 @@ class ModularTactician:
 
             self.logger.info("Tactician modules initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing tactician modules: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing tactician modules: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -194,8 +198,8 @@ class ModularTactician:
 
             self.logger.info("Entry monitoring module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing entry monitoring: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing entry monitoring: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -215,8 +219,8 @@ class ModularTactician:
 
             self.logger.info("Exit monitoring module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing exit monitoring: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing exit monitoring: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -236,8 +240,10 @@ class ModularTactician:
 
             self.logger.info("Position monitoring module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing position monitoring: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing position monitoring: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -257,8 +263,8 @@ class ModularTactician:
 
             self.logger.info("Risk monitoring module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing risk monitoring: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing risk monitoring: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -330,8 +336,8 @@ class ModularTactician:
             self.logger.info("✅ Tactician monitoring completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error executing tactician: {e}")
+        except Exception:
+            self.print(error("Error executing tactician: {e}"))
             self.is_tactician_active = False
             return False
 
@@ -360,29 +366,29 @@ class ModularTactician:
             required_market_fields = ["symbol", "price", "volume", "timestamp"]
             for field in required_market_fields:
                 if field not in market_data:
-                    self.logger.error(f"Missing required market data field: {field}")
+                    self.print(missing("Missing required market data field: {field}"))
                     return False
 
             # Check required strategy data fields
             required_strategy_fields = ["signal", "position_size", "timestamp"]
             for field in required_strategy_fields:
                 if field not in strategy_data:
-                    self.logger.error(f"Missing required strategy data field: {field}")
+                    self.print(missing("Missing required strategy data field: {field}"))
                     return False
 
             # Validate data types
-            if not isinstance(market_data["price"], (int, float)):
-                self.logger.error("Invalid price data type")
+            if not isinstance(market_data["price"], int | float):
+                self.print(invalid("Invalid price data type"))
                 return False
 
-            if not isinstance(strategy_data["position_size"], (int, float)):
-                self.logger.error("Invalid position size data type")
+            if not isinstance(strategy_data["position_size"], int | float):
+                self.print(invalid("Invalid position size data type"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating tactician inputs: {e}")
+        except Exception:
+            self.print(error("Error validating tactician inputs: {e}"))
             return False
 
     @handle_errors(
@@ -439,8 +445,8 @@ class ModularTactician:
             self.logger.info("Entry monitoring completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing entry monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing entry monitoring: {e}"))
             return {}
 
     @handle_errors(
@@ -497,8 +503,8 @@ class ModularTactician:
             self.logger.info("Exit monitoring completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing exit monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing exit monitoring: {e}"))
             return {}
 
     # Entry monitoring calculation methods
@@ -514,8 +520,8 @@ class ModularTactician:
             resistance_level = current_price * 1.02  # 2% above current price
 
             return current_price > resistance_level
-        except Exception as e:
-            self.logger.error(f"Error checking breakout entry: {e}")
+        except Exception:
+            self.print(error("Error checking breakout entry: {e}"))
             return False
 
     def _check_pullback_entry(
@@ -530,8 +536,8 @@ class ModularTactician:
             support_level = current_price * 0.98  # 2% below current price
 
             return current_price < support_level
-        except Exception as e:
-            self.logger.error(f"Error checking pullback entry: {e}")
+        except Exception:
+            self.print(error("Error checking pullback entry: {e}"))
             return False
 
     def _check_momentum_entry(
@@ -545,8 +551,8 @@ class ModularTactician:
             signal = strategy_data.get("signal", "HOLD")
 
             return signal in ["BUY", "SELL"]
-        except Exception as e:
-            self.logger.error(f"Error checking momentum entry: {e}")
+        except Exception:
+            self.print(error("Error checking momentum entry: {e}"))
             return False
 
     def _check_mean_reversion_entry(
@@ -563,8 +569,8 @@ class ModularTactician:
             deviation = abs(current_price - avg_price) / avg_price
 
             return deviation > 0.05  # 5% deviation threshold
-        except Exception as e:
-            self.logger.error(f"Error checking mean reversion entry: {e}")
+        except Exception:
+            self.print(error("Error checking mean reversion entry: {e}"))
             return False
 
     # Exit monitoring calculation methods
@@ -583,8 +589,8 @@ class ModularTactician:
             loss_pct = (current_price - entry_price) / entry_price
 
             return loss_pct < -stop_loss_pct
-        except Exception as e:
-            self.logger.error(f"Error checking stop loss exit: {e}")
+        except Exception:
+            self.print(error("Error checking stop loss exit: {e}"))
             return False
 
     def _check_take_profit_exit(
@@ -602,8 +608,8 @@ class ModularTactician:
             profit_pct = (current_price - entry_price) / entry_price
 
             return profit_pct > take_profit_pct
-        except Exception as e:
-            self.logger.error(f"Error checking take profit exit: {e}")
+        except Exception:
+            self.print(error("Error checking take profit exit: {e}"))
             return False
 
     def _check_trailing_stop_exit(
@@ -621,8 +627,8 @@ class ModularTactician:
             drawdown = (highest_price - current_price) / highest_price
 
             return drawdown > trailing_pct
-        except Exception as e:
-            self.logger.error(f"Error checking trailing stop exit: {e}")
+        except Exception:
+            self.print(error("Error checking trailing stop exit: {e}"))
             return False
 
     def _check_time_based_exit(
@@ -640,8 +646,8 @@ class ModularTactician:
             hold_time = current_time - entry_time
 
             return hold_time > max_hold_time
-        except Exception as e:
-            self.logger.error(f"Error checking time based exit: {e}")
+        except Exception:
+            self.print(error("Error checking time based exit: {e}"))
             return False
 
     @handle_errors(
@@ -698,8 +704,8 @@ class ModularTactician:
             self.logger.info("Position monitoring completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing position monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing position monitoring: {e}"))
             return {}
 
     @handle_errors(
@@ -756,8 +762,8 @@ class ModularTactician:
             self.logger.info("Risk monitoring completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing risk monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing risk monitoring: {e}"))
             return {}
 
     # Position monitoring calculation methods
@@ -775,8 +781,8 @@ class ModularTactician:
             profit_pct = (current_price - entry_price) / entry_price
 
             return profit_pct > 0.03  # 3% profit threshold for scaling
-        except Exception as e:
-            self.logger.error(f"Error checking scaling opportunity: {e}")
+        except Exception:
+            self.print(error("Error checking scaling opportunity: {e}"))
             return False
 
     def _check_averaging_opportunity(
@@ -793,8 +799,8 @@ class ModularTactician:
             loss_pct = (current_price - entry_price) / entry_price
 
             return loss_pct < -0.02  # 2% loss threshold for averaging
-        except Exception as e:
-            self.logger.error(f"Error checking averaging opportunity: {e}")
+        except Exception:
+            self.print(error("Error checking averaging opportunity: {e}"))
             return False
 
     def _check_hedging_opportunity(
@@ -809,8 +815,8 @@ class ModularTactician:
             high_volatility_threshold = 0.03  # 3% volatility threshold
 
             return volatility > high_volatility_threshold
-        except Exception as e:
-            self.logger.error(f"Error checking hedging opportunity: {e}")
+        except Exception:
+            self.print(error("Error checking hedging opportunity: {e}"))
             return False
 
     def _check_rebalancing_opportunity(
@@ -828,8 +834,8 @@ class ModularTactician:
             allocation_deviation = abs(current_allocation - target_allocation)
 
             return allocation_deviation > rebalance_threshold
-        except Exception as e:
-            self.logger.error(f"Error checking rebalancing opportunity: {e}")
+        except Exception:
+            self.print(error("Error checking rebalancing opportunity: {e}"))
             return False
 
     # Risk monitoring calculation methods
@@ -845,8 +851,8 @@ class ModularTactician:
             max_position_size = 0.25  # 25% max position size
 
             return position_size > max_position_size
-        except Exception as e:
-            self.logger.error(f"Error checking position sizing: {e}")
+        except Exception:
+            self.print(error("Error checking position sizing: {e}"))
             return False
 
     def _check_leverage_control(
@@ -861,8 +867,8 @@ class ModularTactician:
             max_leverage = 3.0  # 3x max leverage
 
             return current_leverage > max_leverage
-        except Exception as e:
-            self.logger.error(f"Error checking leverage control: {e}")
+        except Exception:
+            self.print(error("Error checking leverage control: {e}"))
             return False
 
     def _check_correlation_monitoring(
@@ -879,8 +885,8 @@ class ModularTactician:
             high_correlation_threshold = 0.8  # 80% correlation threshold
 
             return abs(correlation) > high_correlation_threshold
-        except Exception as e:
-            self.logger.error(f"Error checking correlation monitoring: {e}")
+        except Exception:
+            self.print(error("Error checking correlation monitoring: {e}"))
             return False
 
     def _check_volatility_adjustment(
@@ -895,8 +901,8 @@ class ModularTactician:
             volatility_threshold = 0.05  # 5% volatility threshold
 
             return current_volatility > volatility_threshold
-        except Exception as e:
-            self.logger.error(f"Error checking volatility adjustment: {e}")
+        except Exception:
+            self.print(error("Error checking volatility adjustment: {e}"))
             return False
 
     @handle_errors(
@@ -919,8 +925,8 @@ class ModularTactician:
 
             self.logger.info("Tactician results stored successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error storing tactician results: {e}")
+        except Exception:
+            self.print(error("Error storing tactician results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -945,8 +951,8 @@ class ModularTactician:
                 return self.tactician_results.get(tactician_type, {})
             return self.tactician_results.copy()
 
-        except Exception as e:
-            self.logger.error(f"Error getting tactician results: {e}")
+        except Exception:
+            self.print(error("Error getting tactician results: {e}"))
             return {}
 
     @handle_errors(
@@ -975,8 +981,8 @@ class ModularTactician:
 
             return history
 
-        except Exception as e:
-            self.logger.error(f"Error getting tactician history: {e}")
+        except Exception:
+            self.print(error("Error getting tactician history: {e}"))
             return []
 
     def get_tactician_status(self) -> dict[str, Any]:
@@ -1024,8 +1030,8 @@ class ModularTactician:
 
             self.logger.info("✅ Modular Tactician stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping modular tactician: {e}")
+        except Exception:
+            self.print(error("Error stopping modular tactician: {e}"))
 
 
 # Global modular tactician instance

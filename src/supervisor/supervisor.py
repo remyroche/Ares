@@ -8,8 +8,16 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+)
 
-DEFAULT_SUPERVISOR_CONFIG = {"supervisor": {"supervision_interval": 60, "max_history": 100}}
+DEFAULT_SUPERVISOR_CONFIG = {
+    "supervisor": {"supervision_interval": 60, "max_history": 100},
+}
 
 
 class CircuitBreaker:
@@ -29,7 +37,8 @@ class CircuitBreaker:
             if time.time() - self.last_failure_time > self.timeout:
                 self.state = "HALF_OPEN"
             else:
-                raise Exception("Circuit breaker is OPEN")
+                msg = "Circuit breaker is OPEN"
+                raise Exception(msg)
 
         try:
             result = await func(*args, **kwargs)
@@ -37,12 +46,12 @@ class CircuitBreaker:
                 self.state = "CLOSED"
                 self.failure_count = 0
             return result
-        except Exception as e:
+        except Exception:
             self.failure_count += 1
             self.last_failure_time = time.time()
             if self.failure_count >= self.failure_threshold:
                 self.state = "OPEN"
-            raise e
+            raise
 
 
 class OnlineLearningManager:
@@ -74,8 +83,8 @@ class OnlineLearningManager:
 
             self.logger.info(f"Updated performance for model {model_id}: {performance}")
 
-        except Exception as e:
-            self.logger.error(f"Error updating model performance: {e}")
+        except Exception:
+            self.print(error("Error updating model performance: {e}"))
 
     @handle_errors(exceptions=(Exception,), default_return=None)
     async def _recalculate_weights(self) -> None:
@@ -99,9 +108,7 @@ class OnlineLearningManager:
             if total_performance == 0:
                 # Equal weights if no performance
                 equal_weight = 1.0 / len(avg_performances)
-                self.model_weights = {
-                    model_id: equal_weight for model_id in avg_performances
-                }
+                self.model_weights = dict.fromkeys(avg_performances, equal_weight)
             else:
                 # Weight based on performance
                 for model_id, avg_perf in avg_performances.items():
@@ -112,8 +119,8 @@ class OnlineLearningManager:
 
             self.logger.info(f"Recalculated weights: {self.model_weights}")
 
-        except Exception as e:
-            self.logger.error(f"Error recalculating weights: {e}")
+        except Exception:
+            self.print(error("Error recalculating weights: {e}"))
 
     def get_model_weights(self) -> dict[str, float]:
         """Get current model weights."""
@@ -224,7 +231,7 @@ class Supervisor:
             self.logger.info("Initializing Supervisor...")
             await self._load_supervisor_configuration()
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for supervisor")
+                self.print(invalid("Invalid configuration for supervisor"))
                 return False
             await self._initialize_components()
             await self._setup_circuit_breakers()
@@ -232,8 +239,8 @@ class Supervisor:
             await self._setup_component_monitors()
             self.logger.info("✅ Supervisor initialization completed successfully")
             return True
-        except Exception as e:
-            self.logger.error(f"❌ Supervisor initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Supervisor initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -252,8 +259,8 @@ class Supervisor:
             self.max_recovery_attempts = self.supervisor_config["max_recovery_attempts"]
             self.recovery_cooldown = self.supervisor_config["recovery_cooldown"]
             self.logger.info("Supervisor configuration loaded successfully")
-        except Exception as e:
-            self.logger.error(f"Error loading supervisor configuration: {e}")
+        except Exception:
+            self.print(error("Error loading supervisor configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -263,21 +270,21 @@ class Supervisor:
     def _validate_configuration(self) -> bool:
         try:
             if self.supervision_interval <= 0:
-                self.logger.error("Invalid supervision interval")
+                self.print(invalid("Invalid supervision interval"))
                 return False
             if self.max_history <= 0:
-                self.logger.error("Invalid max history")
+                self.print(invalid("Invalid max history"))
                 return False
             if self.max_recovery_attempts <= 0:
-                self.logger.error("Invalid max recovery attempts")
+                self.print(invalid("Invalid max recovery attempts"))
                 return False
             if self.recovery_cooldown <= 0:
-                self.logger.error("Invalid recovery cooldown")
+                self.print(invalid("Invalid recovery cooldown"))
                 return False
             self.logger.info("Configuration validation successful")
             return True
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -303,8 +310,8 @@ class Supervisor:
             }
 
             self.logger.info("Components initialized successfully")
-        except Exception as e:
-            self.logger.error(f"Error initializing components: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing components: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -328,8 +335,8 @@ class Supervisor:
             }
 
             self.logger.info("Circuit breakers setup complete")
-        except Exception as e:
-            self.logger.error(f"Error setting up circuit breakers: {e}")
+        except Exception:
+            self.print(error("Error setting up circuit breakers: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -344,8 +351,8 @@ class Supervisor:
             self.online_learning = OnlineLearningManager(online_learning_config)
 
             self.logger.info("Online learning setup complete")
-        except Exception as e:
-            self.logger.error(f"Error setting up online learning: {e}")
+        except Exception:
+            self.print(error("Error setting up online learning: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -356,13 +363,13 @@ class Supervisor:
         """Setup component-specific monitoring."""
         try:
             # Initialize component monitors with default states
-            for component, monitors in self.component_monitors.items():
+            for monitors in self.component_monitors.values():
                 for monitor_name in monitors:
                     monitors[monitor_name] = False
 
             self.logger.info("Component monitors setup complete")
-        except Exception as e:
-            self.logger.error(f"Error setting up component monitors: {e}")
+        except Exception:
+            self.print(error("Error setting up component monitors: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -419,7 +426,7 @@ class Supervisor:
                 self.health_checks[component] = health_status
 
                 if not health_status:
-                    self.logger.warning(f"⚠️ Component {component} health check failed")
+                    self.print(failed("⚠️ Component {component} health check failed"))
                     await self._trigger_recovery(component)
 
             # Log overall health status
@@ -435,17 +442,17 @@ class Supervisor:
                 f"System health: {health_percentage:.1f}% ({healthy_components}/{total_components} components healthy)",
             )
 
-        except Exception as e:
-            self.logger.error(f"Error monitoring system health: {e}")
+        except Exception:
+            self.print(error("Error monitoring system health: {e}"))
 
     def _monitor_analyst_features(self) -> None:
         """Monitor Analyst component features."""
         if "analyst" not in self.components or not self.components["analyst"]:
             return
-        
+
         analyst = self.components["analyst"]
         analyst_monitors = self.component_monitors["analyst"]
-        
+
         # Define analyst features to monitor
         analyst_features = {
             "dual_model_system": "dual_model_system",
@@ -453,71 +460,73 @@ class Supervisor:
             "liquidation_risk_model": "liquidation_risk_model",
             "feature_engineering_orchestrator": "feature_engineering_orchestrator",
             "ml_confidence_predictor": "ml_confidence_predictor",
-            "regime_classifier": "regime_classifier"
+            "regime_classifier": "regime_classifier",
         }
-        
+
         # Monitor each feature
         for monitor_key, feature_name in analyst_features.items():
             analyst_monitors[monitor_key] = (
-                hasattr(analyst, feature_name) and getattr(analyst, feature_name) is not None
+                hasattr(analyst, feature_name)
+                and getattr(analyst, feature_name) is not None
             )
-
 
     def _monitor_strategist_features(self) -> None:
         """Monitor Strategist component features."""
         if "strategist" not in self.components or not self.components["strategist"]:
             return
-        
+
         strategist = self.components["strategist"]
         strategist_monitors = self.component_monitors["strategist"]
-        
+
         # Define strategist features to monitor
         strategist_features = {
             "regime_classifier": "regime_classifier",
             "ml_confidence_predictor": "ml_confidence_predictor",
-            "volatility_targeting": "volatility_info"
+            "volatility_targeting": "volatility_info",
         }
-        
+
         # Monitor each feature
         for monitor_key, feature_name in strategist_features.items():
             strategist_monitors[monitor_key] = (
-                hasattr(strategist, feature_name) and getattr(strategist, feature_name) is not None
+                hasattr(strategist, feature_name)
+                and getattr(strategist, feature_name) is not None
             )
-
 
     def _monitor_tactician_features(self) -> None:
         """Monitor Tactician component features."""
         if "tactician" not in self.components or not self.components["tactician"]:
             return
-        
+
         tactician = self.components["tactician"]
         tactician_monitors = self.component_monitors["tactician"]
-        
+
         # Define tactician features to monitor
         tactician_features = {
             "sr_breakout_predictor": "sr_breakout_predictor",
             "position_sizer": "position_sizer",
             "leverage_sizer": "leverage_sizer",
             "position_division_strategy": "position_division_strategy",
-            "ml_predictions": "ml_predictions"
+            "ml_predictions": "ml_predictions",
         }
-        
+
         # Monitor each feature
         for monitor_key, feature_name in tactician_features.items():
             tactician_monitors[monitor_key] = (
-                hasattr(tactician, feature_name) and getattr(tactician, feature_name) is not None
+                hasattr(tactician, feature_name)
+                and getattr(tactician, feature_name) is not None
             )
-
 
     def _monitor_enhanced_training_manager_features(self) -> None:
         """Monitor Enhanced Training Manager component features."""
-        if ("enhanced_training_manager" not in self.components or 
-            not self.components["enhanced_training_manager"]):
+        if (
+            "enhanced_training_manager" not in self.components
+            or not self.components["enhanced_training_manager"]
+        ):
             return
-        
+
         training_manager = self.components["enhanced_training_manager"]
         training_monitors = self.component_monitors["enhanced_training_manager"]
-        
+
         # Define training manager features to monitor
         training_features = {
             "advanced_model_training": "advanced_model_training",
@@ -525,15 +534,15 @@ class Supervisor:
             "multi_timeframe_training": "multi_timeframe_training",
             "adaptive_training": "adaptive_training",
             "multi_timeframe_manager": "multi_timeframe_manager",
-            "ensemble_creator": "ensemble_creator"
+            "ensemble_creator": "ensemble_creator",
         }
-        
+
         # Monitor each feature
         for monitor_key, feature_name in training_features.items():
             training_monitors[monitor_key] = (
-                hasattr(training_manager, feature_name) and getattr(training_manager, feature_name) is not None
+                hasattr(training_manager, feature_name)
+                and getattr(training_manager, feature_name) is not None
             )
-
 
     def _log_component_feature_status(self) -> None:
         """Log the status of all component features."""
@@ -543,9 +552,8 @@ class Supervisor:
             if total_features > 0:
                 feature_percentage = (active_features / total_features) * 100
                 self.logger.info(
-                    f"{component} features: {feature_percentage:.1f}% ({active_features}/{total_features} active)"
+                    f"{component} features: {feature_percentage:.1f}% ({active_features}/{total_features} active)",
                 )
-
 
     @handle_errors(
         exceptions=(Exception,),
@@ -560,12 +568,12 @@ class Supervisor:
             self._monitor_strategist_features()
             self._monitor_tactician_features()
             self._monitor_enhanced_training_manager_features()
-            
+
             # Log component feature status
             self._log_component_feature_status()
 
-        except Exception as e:
-            self.logger.error(f"Error monitoring component features: {e}")
+        except Exception:
+            self.print(error("Error monitoring component features: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -584,7 +592,9 @@ class Supervisor:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error checking health for component {component}: {e}")
+            self.logger.exception(
+                f"Error checking health for component {component}: {e}",
+            )
             return False
 
     @handle_errors(
@@ -603,7 +613,7 @@ class Supervisor:
                 strategy_data = None
                 if hasattr(strategist, "current_strategy"):
                     strategy_data = strategist.current_strategy
- 
+
                 # Gather analyst market health and liquidation risk
                 market_health = None
                 liquidation_risk = None
@@ -611,7 +621,7 @@ class Supervisor:
                     analysis = analyst.get_analysis_results()
                     market_health = analysis.get("market_health")
                     liquidation_risk = analysis.get("liquidation_risk")
- 
+
                 tactics_input = {
                     "symbol": (strategy_data or {}).get("symbol"),
                     "exchange": (strategy_data or {}).get("exchange"),
@@ -620,17 +630,32 @@ class Supervisor:
                     "ml_predictions": (strategy_data or {}).get("ml_predictions", {}),
                     "market_health_analysis": market_health,
                     "liquidation_risk_analysis": liquidation_risk,
-                    "strategist_risk_parameters": (strategy_data or {}).get("risk_parameters", {}),
-                    "analyst_confidence": (strategy_data or {}).get("confidence_score", 0.5),
-                    "tactician_confidence": (tactician.status or {}).get("tactician_confidence", 0.5),
-                    "target_direction": (strategy_data or {}).get("entry_signals", {}).get("direction", "long"),
+                    "strategist_risk_parameters": (strategy_data or {}).get(
+                        "risk_parameters",
+                        {},
+                    ),
+                    "analyst_confidence": (strategy_data or {}).get(
+                        "confidence_score",
+                        0.5,
+                    ),
+                    "tactician_confidence": (tactician.status or {}).get(
+                        "tactician_confidence",
+                        0.5,
+                    ),
+                    "target_direction": (strategy_data or {})
+                    .get("entry_signals", {})
+                    .get("direction", "long"),
                 }
- 
+
                 # Validate minimal fields
-                if tactics_input["symbol"] and tactics_input["exchange"] and tactics_input["current_price"]:
+                if (
+                    tactics_input["symbol"]
+                    and tactics_input["exchange"]
+                    and tactics_input["current_price"]
+                ):
                     await tactician.execute_tactics(tactics_input)
-        except Exception as e:
-            self.logger.error(f"Error coordinating components: {e}")
+        except Exception:
+            self.print(error("Error coordinating components: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -661,8 +686,8 @@ class Supervisor:
 
             self.logger.info("Analyst-Strategist coordination completed")
 
-        except Exception as e:
-            self.logger.error(f"Error coordinating Analyst-Strategist: {e}")
+        except Exception:
+            self.print(error("Error coordinating Analyst-Strategist: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -690,8 +715,8 @@ class Supervisor:
 
             self.logger.info("Strategist-Tactician coordination completed")
 
-        except Exception as e:
-            self.logger.error(f"Error coordinating Strategist-Tactician: {e}")
+        except Exception:
+            self.print(error("Error coordinating Strategist-Tactician: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -721,8 +746,8 @@ class Supervisor:
 
             self.logger.info("Training Manager coordination completed")
 
-        except Exception as e:
-            self.logger.error(f"Error coordinating Training Manager: {e}")
+        except Exception:
+            self.print(error("Error coordinating Training Manager: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -778,15 +803,15 @@ class Supervisor:
             # Get updated weights
             updated_weights = self.online_learning.get_model_weights()
             self.supervision_results["online_learning"] = {
-                "timestamp": time.time(), # Changed from datetime.now() to time.time()
+                "timestamp": time.time(),  # Changed from datetime.now() to time.time()
                 "model_weights": updated_weights,
                 "model_performances": self.online_learning.get_model_performances(),
             }
 
             self.logger.info(f"Online learning updated: {updated_weights}")
 
-        except Exception as e:
-            self.logger.error(f"Error updating online learning: {e}")
+        except Exception:
+            self.print(error("Error updating online learning: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -822,8 +847,8 @@ class Supervisor:
 
             self.last_recovery_attempt[component] = current_time
 
-        except Exception as e:
-            self.logger.error(f"Error triggering recovery for {component}: {e}")
+        except Exception:
+            self.print(error("Error triggering recovery for {component}: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -849,8 +874,8 @@ class Supervisor:
             # Generic recovery
             return await self._generic_recovery(component)
 
-        except Exception as e:
-            self.logger.error(f"Error attempting recovery for {component}: {e}")
+        except Exception:
+            self.print(error("Error attempting recovery for {component}: {e}"))
             return False
 
     @handle_errors(
@@ -866,8 +891,8 @@ class Supervisor:
             # Mock recovery - replace with actual database reconnection logic
             await asyncio.sleep(1)
             return True
-        except Exception as e:
-            self.logger.error(f"Database recovery failed: {e}")
+        except Exception:
+            self.print(failed("Database recovery failed: {e}"))
             return False
 
     @handle_errors(
@@ -883,8 +908,8 @@ class Supervisor:
             # Mock recovery - replace with actual exchange reconnection logic
             await asyncio.sleep(1)
             return True
-        except Exception as e:
-            self.logger.error(f"Exchange recovery failed: {e}")
+        except Exception:
+            self.print(failed("Exchange recovery failed: {e}"))
             return False
 
     @handle_errors(
@@ -900,8 +925,8 @@ class Supervisor:
             # Mock recovery - replace with actual analyst restart logic
             await asyncio.sleep(1)
             return True
-        except Exception as e:
-            self.logger.error(f"Analyst recovery failed: {e}")
+        except Exception:
+            self.print(failed("Analyst recovery failed: {e}"))
             return False
 
     @handle_errors(
@@ -917,8 +942,8 @@ class Supervisor:
             # Mock recovery - replace with actual strategist restart logic
             await asyncio.sleep(1)
             return True
-        except Exception as e:
-            self.logger.error(f"Strategist recovery failed: {e}")
+        except Exception:
+            self.print(failed("Strategist recovery failed: {e}"))
             return False
 
     @handle_errors(
@@ -934,8 +959,8 @@ class Supervisor:
             # Mock recovery - replace with actual tactician restart logic
             await asyncio.sleep(1)
             return True
-        except Exception as e:
-            self.logger.error(f"Tactician recovery failed: {e}")
+        except Exception:
+            self.print(failed("Tactician recovery failed: {e}"))
             return False
 
     @handle_errors(
@@ -951,8 +976,8 @@ class Supervisor:
             # Mock recovery - replace with actual training manager restart logic
             await asyncio.sleep(1)
             return True
-        except Exception as e:
-            self.logger.error(f"Enhanced training manager recovery failed: {e}")
+        except Exception:
+            self.print(failed("Enhanced training manager recovery failed: {e}"))
             return False
 
     @handle_errors(
@@ -967,8 +992,8 @@ class Supervisor:
             # Mock recovery - replace with actual restart logic
             await asyncio.sleep(1)
             return True
-        except Exception as e:
-            self.logger.error(f"Generic recovery failed for {component}: {e}")
+        except Exception:
+            self.print(failed("Generic recovery failed for {component}: {e}"))
             return False
 
     @handle_errors(
@@ -983,8 +1008,8 @@ class Supervisor:
                 if not health_status:
                     await self._trigger_recovery(component)
 
-        except Exception as e:
-            self.logger.error(f"Error checking recovery needs: {e}")
+        except Exception:
+            self.print(error("Error checking recovery needs: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -994,7 +1019,9 @@ class Supervisor:
     async def _update_supervision_results(self) -> None:
         try:
             # Add timestamp
-            self.supervision_results["timestamp"] = time.time() # Changed from datetime.now() to time.time()
+            self.supervision_results["timestamp"] = (
+                time.time()
+            )  # Changed from datetime.now() to time.time()
 
             # Add health status
             self.supervision_results["health_status"] = self.health_checks.copy()
@@ -1017,8 +1044,8 @@ class Supervisor:
             if len(self.history) > self.max_history:
                 self.history.pop(0)
 
-        except Exception as e:
-            self.logger.error(f"Error updating supervision results: {e}")
+        except Exception:
+            self.print(error("Error updating supervision results: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1030,8 +1057,8 @@ class Supervisor:
         try:
             self.is_running = False
             self.logger.info("✅ Supervisor stopped successfully")
-        except Exception as e:
-            self.logger.error(f"Error stopping supervisor: {e}")
+        except Exception:
+            self.print(error("Error stopping supervisor: {e}"))
 
     def get_status(self) -> dict[str, Any]:
         return {
@@ -1089,7 +1116,9 @@ class Supervisor:
             else:
                 metrics = {}
 
-            max_drawdown = float(metrics.get("max_drawdown", 0.0))  # negative when losing
+            max_drawdown = float(
+                metrics.get("max_drawdown", 0.0),
+            )  # negative when losing
             total_return = float(metrics.get("total_return", 0.0))
 
             risk_cfg = self.supervisor_config.get("portfolio_guards", {})
@@ -1105,7 +1134,7 @@ class Supervisor:
                 if hasattr(tactician, "is_running"):
                     tactician.is_running = False
                 self.logger.warning(
-                    f"⛔ Portfolio guard triggered. MDD={max_drawdown:.2%}, Daily={daily_return:.2%}. Pausing Tactician."
+                    f"⛔ Portfolio guard triggered. MDD={max_drawdown:.2%}, Daily={daily_return:.2%}. Pausing Tactician.",
                 )
                 # Record in supervision results
                 self.supervision_results.setdefault("guards", {})["paused"] = True
@@ -1114,8 +1143,8 @@ class Supervisor:
                     "daily_return": daily_return,
                     "limits": {"dd_limit": dd_limit, "daily_limit": daily_loss_limit},
                 }
-        except Exception as e:
-            self.logger.error(f"Error enforcing portfolio guards: {e}")
+        except Exception:
+            self.print(error("Error enforcing portfolio guards: {e}"))
             return
 
 

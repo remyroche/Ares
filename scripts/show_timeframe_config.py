@@ -8,6 +8,20 @@ This script displays the current timeframe configuration in a user-friendly form
 """
 
 import sys
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 from pathlib import Path
 
 # Add project root to path
@@ -108,7 +122,7 @@ def show_timeframe_details(timeframe: str):
     timeframes = CONFIG.get("TIMEFRAMES", {})
 
     if timeframe not in timeframes:
-        print(f"❌ Timeframe '{timeframe}' not found in configuration")
+        print(missing("Timeframe '{timeframe}' not found in configuration")))
         return
 
     info = timeframes[timeframe]

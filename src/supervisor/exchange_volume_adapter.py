@@ -14,6 +14,14 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    execution_error,
+    failed,
+    initialization_error,
+    invalid,
+    warning,
+)
 
 
 class ExchangeVolumeAdapter:
@@ -100,7 +108,7 @@ class ExchangeVolumeAdapter:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for exchange volume adapter")
+                self.print(invalid("Invalid configuration for exchange volume adapter"))
                 return False
 
             # Initialize volume metrics
@@ -112,7 +120,9 @@ class ExchangeVolumeAdapter:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Exchange Volume Adapter initialization failed: {e}")
+            self.logger.exception(
+                f"❌ Exchange Volume Adapter initialization failed: {e}",
+            )
             return False
 
     @handle_errors(
@@ -132,8 +142,8 @@ class ExchangeVolumeAdapter:
 
             self.logger.info("Adapter configuration loaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error loading adapter configuration: {e}")
+        except Exception:
+            self.print(error("Error loading adapter configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -144,18 +154,18 @@ class ExchangeVolumeAdapter:
         """Validate adapter configuration."""
         try:
             if self.volume_history_window <= 0:
-                self.logger.error("Invalid volume history window")
+                self.print(invalid("Invalid volume history window"))
                 return False
 
             if not self.volume_profiles:
-                self.logger.error("No volume profiles defined")
+                self.print(error("No volume profiles defined"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -166,7 +176,7 @@ class ExchangeVolumeAdapter:
     async def _initialize_volume_metrics(self) -> None:
         """Initialize volume metrics for all exchanges."""
         try:
-            for exchange in self.volume_profiles.keys():
+            for exchange in self.volume_profiles:
                 self.current_volume_metrics[exchange] = {
                     "current_volume": 0,
                     "avg_volume_24h": 0,
@@ -178,8 +188,8 @@ class ExchangeVolumeAdapter:
 
             self.logger.info("Volume metrics initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing volume metrics: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing volume metrics: {e}"))
 
     def get_volume_profile(self, exchange: str) -> dict[str, Any]:
         """Get volume profile for a specific exchange."""
@@ -252,8 +262,8 @@ class ExchangeVolumeAdapter:
 
             return adjusted_size
 
-        except Exception as e:
-            self.logger.error(f"Error calculating position size adjustment: {e}")
+        except Exception:
+            self.print(error("Error calculating position size adjustment: {e}"))
             return base_position_size * 0.5  # Conservative fallback
 
     def calculate_spread_adjustment(self, exchange: str, base_spread: float) -> float:
@@ -263,8 +273,8 @@ class ExchangeVolumeAdapter:
             spread_multiplier = profile["spread_multiplier"]
             return base_spread * spread_multiplier
 
-        except Exception as e:
-            self.logger.error(f"Error calculating spread adjustment: {e}")
+        except Exception:
+            self.print(error("Error calculating spread adjustment: {e}"))
             return base_spread * 2.0  # Conservative fallback
 
     def calculate_slippage_adjustment(
@@ -278,8 +288,8 @@ class ExchangeVolumeAdapter:
             slippage_multiplier = profile["slippage_multiplier"]
             return base_slippage * slippage_multiplier
 
-        except Exception as e:
-            self.logger.error(f"Error calculating slippage adjustment: {e}")
+        except Exception:
+            self.print(error("Error calculating slippage adjustment: {e}"))
             return base_slippage * 2.5  # Conservative fallback
 
     def adjust_model_confidence(
@@ -325,8 +335,8 @@ class ExchangeVolumeAdapter:
 
             return adjusted_confidence
 
-        except Exception as e:
-            self.logger.error(f"Error adjusting model confidence: {e}")
+        except Exception:
+            self.print(error("Error adjusting model confidence: {e}"))
             return base_confidence * 0.8  # Conservative fallback
 
     def should_execute_trade(
@@ -372,23 +382,22 @@ class ExchangeVolumeAdapter:
             return True, "Trade execution approved"
 
         except Exception as e:
-            self.logger.error(f"Error checking trade execution: {e}")
+            self.print(execution_error("Error checking trade execution: {e}"))
             return False, f"Error: {e}"
 
     def get_adaptation_summary(self) -> dict[str, Any]:
         """Get summary of current volume adaptations."""
         try:
-            summary = {
+            return {
                 "enabled": self.enable_volume_adaptation,
                 "dynamic_adjustment": self.enable_dynamic_adjustment,
                 "volume_profiles": self.volume_profiles,
                 "current_metrics": self.current_volume_metrics,
                 "adaptation_history_count": len(self.adaptation_history),
             }
-            return summary
 
         except Exception as e:
-            self.logger.error(f"Error getting adaptation summary: {e}")
+            self.print(error("Error getting adaptation summary: {e}"))
             return {"error": str(e)}
 
     async def update_volume_metrics(
@@ -401,7 +410,7 @@ class ExchangeVolumeAdapter:
         """Update volume metrics for an exchange."""
         try:
             if exchange.upper() not in self.current_volume_metrics:
-                self.logger.warning(f"No metrics tracking for {exchange}")
+                self.print(warning("No metrics tracking for {exchange}"))
                 return
 
             metrics = self.current_volume_metrics[exchange.upper()]
@@ -429,8 +438,8 @@ class ExchangeVolumeAdapter:
             if len(self.adaptation_history) > max_history:
                 self.adaptation_history = self.adaptation_history[-max_history:]
 
-        except Exception as e:
-            self.logger.error(f"Error updating volume metrics: {e}")
+        except Exception:
+            self.print(error("Error updating volume metrics: {e}"))
 
     async def cleanup(self) -> None:
         """Cleanup resources."""
@@ -441,8 +450,8 @@ class ExchangeVolumeAdapter:
             self.current_volume_metrics.clear()
             self.logger.info("✅ Exchange Volume Adapter cleanup completed")
 
-        except Exception as e:
-            self.logger.error(f"Error during cleanup: {e}")
+        except Exception:
+            self.print(error("Error during cleanup: {e}"))
 
 
 @handle_errors(
@@ -463,6 +472,6 @@ async def setup_exchange_volume_adapter(
             return adapter
         return None
 
-    except Exception as e:
-        system_logger.error(f"Failed to setup exchange volume adapter: {e}")
+    except Exception:
+        system_print(failed("Failed to setup exchange volume adapter: {e}"))
         return None

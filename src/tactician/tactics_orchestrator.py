@@ -1,18 +1,23 @@
 # src/tactician/tactics_orchestrator.py
 
-import asyncio
 from datetime import datetime
 from typing import Any
 
+from exchange.factory import ExchangeFactory
+from src.config.environment import get_exchange_name
+from src.interfaces.base_interfaces import TradeDecision
+from src.interfaces.event_bus import EventType
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
-from src.config.environment import get_exchange_name
-from exchange.factory import ExchangeFactory
-from src.interfaces.base_interfaces import TradeDecision
-from src.interfaces.event_bus import EventType
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    invalid,
+    missing,
+)
 
 
 class DecisionPolicy:
@@ -37,7 +42,10 @@ class DecisionPolicy:
             "avg_decision_latency_ms": 0.0,
         }
 
-    async def decide(self, context: dict[str, Any]) -> tuple[TradeDecision | None, dict[str, Any]]:
+    async def decide(
+        self,
+        context: dict[str, Any],
+    ) -> tuple[TradeDecision | None, dict[str, Any]]:
         start_time = datetime.now()
         try:
             sizing = context.get("sizing_results", {})
@@ -52,26 +60,37 @@ class DecisionPolicy:
             leverage_val = float(leverage.get("recommended_leverage", 1.0) or 1.0)
             stop_loss = float(leverage.get("stop_loss", 0.0) or 0.0)
             take_profit = float(leverage.get("take_profit", 0.0) or 0.0)
-            directional_conf = float(ml.get("directional_confidence", {}).get("long", 0.5) or 0.5)
+            directional_conf = float(
+                ml.get("directional_confidence", {}).get("long", 0.5) or 0.5,
+            )
             target_direction = context.get("target_direction", "long")
 
             # Confidence product gate (historical rule)
             analyst_confidence = float(context.get("analyst_confidence", 0.0) or 0.0)
-            tactician_confidence = float(context.get("tactician_confidence", 0.0) or 0.0)
-            confidence_product = (tactician_confidence ** 2) * analyst_confidence
+            tactician_confidence = float(
+                context.get("tactician_confidence", 0.0) or 0.0,
+            )
+            confidence_product = (tactician_confidence**2) * analyst_confidence
 
             # Optional extra signals for auditing (not gating)
             sr_score = float(sr.get("breakout_strength", 0.0) or 0.0)
-            market_risk = float(context.get("market_health_analysis", {}).get("risk_score", 0.5) or 0.5)
-            strategist_risk = float(context.get("strategist_risk_parameters", {}).get("risk_score", 0.5) or 0.5)
+            market_risk = float(
+                context.get("market_health_analysis", {}).get("risk_score", 0.5) or 0.5,
+            )
+            strategist_risk = float(
+                context.get("strategist_risk_parameters", {}).get("risk_score", 0.5)
+                or 0.5,
+            )
             risk_score = max(market_risk, strategist_risk)
 
             # Decision gates (only confidence product + positive size)
             approved = (confidence_product > self.min_conf_product) and (final_size > 0)
 
             action = (
-                "OPEN_LONG" if target_direction == "long" else "OPEN_SHORT"
-            ) if approved else "HOLD"
+                ("OPEN_LONG" if target_direction == "long" else "OPEN_SHORT")
+                if approved
+                else "HOLD"
+            )
 
             metadata = {
                 "thresholds": {
@@ -116,14 +135,19 @@ class DecisionPolicy:
                 self.metrics["decisions_approved"] += 1
             else:
                 self.metrics["decisions_rejected"] += 1
-            latency_ms = max((datetime.now() - start_time).total_seconds() * 1000.0, 0.0)
+            latency_ms = max(
+                (datetime.now() - start_time).total_seconds() * 1000.0,
+                0.0,
+            )
             prev_avg = self.metrics["avg_decision_latency_ms"]
             n = self.metrics["decisions_total"]
-            self.metrics["avg_decision_latency_ms"] = prev_avg + (latency_ms - prev_avg) / n
+            self.metrics["avg_decision_latency_ms"] = (
+                prev_avg + (latency_ms - prev_avg) / n
+            )
 
             return decision, metadata
         except Exception as e:
-            self.logger.error(f"Decision error: {e}")
+            self.print(error("Decision error: {e}"))
             return None, {"error": str(e)}
 
 
@@ -142,17 +166,20 @@ class TacticsOrchestrator:
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("TacticsOrchestrator")
-        
+
         # Tactics state
         self.is_running: bool = False
         self.tactics_start_time: datetime | None = None
         self.tactics_results: dict[str, Any] = {}
-        
+
         # Configuration
-        self.tactics_config: dict[str, Any] = self.config.get("tactics_orchestrator", {})
+        self.tactics_config: dict[str, Any] = self.config.get(
+            "tactics_orchestrator",
+            {},
+        )
         self.tactics_interval: int = self.tactics_config.get("tactics_interval", 30)
         self.max_history: int = self.tactics_config.get("max_history", 100)
-        
+
         # Component managers (will be initialized)
         self.position_monitor = None
         self.sr_breakout_predictor = None
@@ -181,13 +208,13 @@ class TacticsOrchestrator:
         """
         try:
             self.logger.info("Initializing Tactics Orchestrator...")
-            
+
             # Initialize component managers
             await self._initialize_component_managers()
-            
+
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for tactics orchestrator")
+                self.print(invalid("Invalid configuration for tactics orchestrator"))
                 return False
 
             # Decision policy and event bus (if provided via container elsewhere)
@@ -195,15 +222,16 @@ class TacticsOrchestrator:
             try:
                 # Optional import to avoid hard DI coupling here
                 from src.interfaces.event_bus import event_bus as global_event_bus
+
                 self.event_bus = global_event_bus
             except Exception:
                 self.event_bus = None
-                
+
             self.logger.info("✅ Tactics Orchestrator initialized successfully")
             return True
-            
-        except Exception as e:
-            self.logger.error(f"❌ Tactics Orchestrator initialization failed: {e}")
+
+        except Exception:
+            self.print(failed("❌ Tactics Orchestrator initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -216,37 +244,46 @@ class TacticsOrchestrator:
         try:
             # Initialize position monitor
             from src.tactician.position_monitor import PositionMonitor
+
             self.position_monitor = PositionMonitor(self.config)
             await self.position_monitor.initialize()
-            
+
             # Initialize SR breakout predictor
             from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+
             self.sr_breakout_predictor = SRBreakoutPredictor(self.config)
             await self.sr_breakout_predictor.initialize()
-            
+
             # Initialize position sizer
             from src.tactician.position_sizer import PositionSizer
+
             self.position_sizer = PositionSizer(self.config)
             await self.position_sizer.initialize()
-            
+
             # Initialize leverage sizer
             from src.tactician.leverage_sizer import LeverageSizer
+
             self.leverage_sizer = LeverageSizer(self.config)
             await self.leverage_sizer.initialize()
-            
+
             # Initialize position division strategy
-            from src.tactician.position_division_strategy import PositionDivisionStrategy
+            from src.tactician.position_division_strategy import (
+                PositionDivisionStrategy,
+            )
+
             self.position_division_strategy = PositionDivisionStrategy(self.config)
             await self.position_division_strategy.initialize()
-            
+
             # Initialize ML tactics manager
             from src.tactician.ml_tactics_manager import MLTacticsManager
+
             self.ml_tactics_manager = MLTacticsManager(self.config)
             await self.ml_tactics_manager.initialize()
 
             # Attach order manager to position monitor if available for trailing updates
             try:
                 from src.tactician.enhanced_order_manager import EnhancedOrderManager
+
                 self.order_manager = EnhancedOrderManager(self.config)
                 await self.order_manager.initialize()
                 # Wire a real exchange client when not paper trading
@@ -255,16 +292,20 @@ class TacticsOrchestrator:
                     exchange_client = ExchangeFactory.get_exchange(exchange_name)
                     await self.order_manager.attach_exchange_client(exchange_client)
                 except Exception as e:
-                    self.logger.warning(f"Failed to attach exchange client to order manager: {e}")
+                    self.logger.warning(
+                        f"Failed to attach exchange client to order manager: {e}",
+                    )
                 if hasattr(self.position_monitor, "order_manager"):
                     self.position_monitor.order_manager = self.order_manager
             except Exception as e:
-                self.logger.warning(f"Order manager initialization failed or unavailable: {e}")
-            
+                self.logger.warning(
+                    f"Order manager initialization failed or unavailable: {e}",
+                )
+
             self.logger.info("✅ All component managers initialized")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize component managers: {e}")
+
+        except Exception:
+            self.print(failed("❌ Failed to initialize component managers: {e}"))
             raise
 
     @handle_errors(
@@ -281,26 +322,32 @@ class TacticsOrchestrator:
         """
         try:
             # Validate required configuration sections
-            required_sections = ["tactics_orchestrator", "position_monitor", "sr_breakout_predictor"]
-            
+            required_sections = [
+                "tactics_orchestrator",
+                "position_monitor",
+                "sr_breakout_predictor",
+            ]
+
             for section in required_sections:
                 if section not in self.config:
-                    self.logger.error(f"Missing required configuration section: {section}")
+                    self.logger.error(
+                        f"Missing required configuration section: {section}",
+                    )
                     return False
-            
+
             # Validate tactics orchestrator specific settings
             if self.tactics_interval <= 0:
-                self.logger.error("Invalid tactics_interval configuration")
+                self.print(invalid("Invalid tactics_interval configuration"))
                 return False
-                
+
             if self.max_history <= 0:
-                self.logger.error("Invalid max_history configuration")
+                self.print(invalid("Invalid max_history configuration"))
                 return False
-                
+
             return True
-            
-        except Exception as e:
-            self.logger.error(f"Configuration validation failed: {e}")
+
+        except Exception:
+            self.print(failed("Configuration validation failed: {e}"))
             return False
 
     @handle_specific_errors(
@@ -329,25 +376,25 @@ class TacticsOrchestrator:
             self.logger.info("🚀 Starting tactics pipeline execution...")
             self.tactics_start_time = datetime.now()
             self.is_running = True
-            
+
             # Validate tactics input
             if not self._validate_tactics_input(tactics_input):
                 return False
-            
+
             # Execute tactics pipeline
             success = await self._execute_tactics_pipeline(tactics_input)
-            
+
             if success:
                 self.logger.info("✅ Tactics pipeline completed successfully")
                 await self._store_tactics_results(tactics_input)
             else:
-                self.logger.error("❌ Tactics pipeline failed")
-            
+                self.print(failed("❌ Tactics pipeline failed"))
+
             self.is_running = False
             return success
-            
-        except Exception as e:
-            self.logger.error(f"❌ Tactics execution failed: {e}")
+
+        except Exception:
+            self.print(failed("❌ Tactics execution failed: {e}"))
             self.is_running = False
             return False
 
@@ -368,21 +415,21 @@ class TacticsOrchestrator:
         """
         try:
             required_fields = ["symbol", "exchange", "timeframe", "current_price"]
-            
+
             for field in required_fields:
                 if field not in tactics_input:
-                    self.logger.error(f"Missing required tactics input field: {field}")
+                    self.print(missing("Missing required tactics input field: {field}"))
                     return False
-            
+
             # Validate specific field values
             if tactics_input.get("current_price", 0) <= 0:
-                self.logger.error("Invalid current_price value")
+                self.print(invalid("Invalid current_price value"))
                 return False
-                
+
             return True
-            
-        except Exception as e:
-            self.logger.error(f"Tactics input validation failed: {e}")
+
+        except Exception:
+            self.print(failed("Tactics input validation failed: {e}"))
             return False
 
     @handle_errors(
@@ -405,14 +452,16 @@ class TacticsOrchestrator:
         """
         try:
             self.logger.info("📊 Executing tactics pipeline...")
-            
+
             # Step 1: Position Monitoring
             self.logger.info("🔧 Step 1: Position Monitoring")
-            position_results = await self.position_monitor.monitor_positions(tactics_input)
+            position_results = await self.position_monitor.monitor_positions(
+                tactics_input,
+            )
             if not position_results:
-                self.logger.error("❌ Position monitoring failed")
+                self.print(failed("❌ Position monitoring failed"))
                 return False
-            
+
             # Gather context inputs
             analyst_market_health = tactics_input.get("market_health_analysis")
             strategist_risk_parameters = tactics_input.get("strategist_risk_parameters")
@@ -424,11 +473,13 @@ class TacticsOrchestrator:
 
             # Step 2: SR Breakout Prediction
             self.logger.info("🔧 Step 2: SR Breakout Prediction")
-            sr_results = await self.sr_breakout_predictor.predict_breakouts(tactics_input)
+            sr_results = await self.sr_breakout_predictor.predict_breakouts(
+                tactics_input,
+            )
             if not sr_results:
-                self.logger.error("❌ SR breakout prediction failed")
+                self.print(failed("❌ SR breakout prediction failed"))
                 return False
-            
+
             # Step 3: Position Sizing
             self.logger.info("🔧 Step 3: Position Sizing")
             sizing_results = await self.position_sizer.calculate_position_size(
@@ -440,14 +491,16 @@ class TacticsOrchestrator:
                 strategist_risk_parameters=strategist_risk_parameters,
             )
             if not sizing_results:
-                self.logger.error("❌ Position sizing failed")
+                self.print(failed("❌ Position sizing failed"))
                 return False
-            
+
             # Step 4: Leverage Sizing
             self.logger.info("🔧 Step 4: Leverage Sizing")
             leverage_results = await self.leverage_sizer.calculate_leverage(
                 ml_predictions=ml_predictions,
-                liquidation_risk_analysis=(tactics_input.get("liquidation_risk_analysis") or {}),
+                liquidation_risk_analysis=(
+                    tactics_input.get("liquidation_risk_analysis") or {}
+                ),
                 market_health_analysis=analyst_market_health,
                 current_price=current_price,
                 target_direction=target_direction,
@@ -455,30 +508,32 @@ class TacticsOrchestrator:
                 tactician_confidence=tactician_confidence,
             )
             if not leverage_results:
-                self.logger.error("❌ Leverage sizing failed")
+                self.print(failed("❌ Leverage sizing failed"))
                 return False
-            
+
             # Step 5: Position Division
             self.logger.info("🔧 Step 5: Position Division")
             if hasattr(self.position_division_strategy, "analyze_and_divide"):
-                division_results = await self.position_division_strategy.analyze_and_divide(
-                    tactics_input,
-                    market_health_analysis=analyst_market_health,
-                    strategist_risk_parameters=strategist_risk_parameters,
-                    analyst_confidence=analyst_confidence,
-                    tactician_confidence=tactician_confidence,
+                division_results = (
+                    await self.position_division_strategy.analyze_and_divide(
+                        tactics_input,
+                        market_health_analysis=analyst_market_health,
+                        strategist_risk_parameters=strategist_risk_parameters,
+                        analyst_confidence=analyst_confidence,
+                        tactician_confidence=tactician_confidence,
+                    )
                 )
             else:
                 division_results = {"status": "skipped"}
             if not division_results:
-                self.logger.error("❌ Position division failed")
+                self.print(failed("❌ Position division failed"))
                 return False
-            
+
             # Step 6: ML Tactics
             self.logger.info("🔧 Step 6: ML Tactics")
             ml_results = await self.ml_tactics_manager.execute_ml_tactics(tactics_input)
             if not ml_results:
-                self.logger.error("❌ ML tactics failed")
+                self.print(failed("❌ ML tactics failed"))
                 return False
 
             # Decision aggregation and event publishing
@@ -489,7 +544,11 @@ class TacticsOrchestrator:
                 "sr_results": sr_results,
                 "ml_predictions": ml_predictions,
             }
-            decision, decision_meta = await self.decision_policy.decide(decision_context) if self.decision_policy else (None, {})
+            decision, decision_meta = (
+                await self.decision_policy.decide(decision_context)
+                if self.decision_policy
+                else (None, {})
+            )
             if self.event_bus and decision is not None:
                 await self.event_bus.publish(
                     EventType.TRADE_DECISION_MADE,
@@ -513,12 +572,12 @@ class TacticsOrchestrator:
                 "tactics_input": tactics_input,
                 "execution_time": datetime.now() - self.tactics_start_time,
             }
-            
+
             self.logger.info("✅ Tactics pipeline completed successfully")
             return True
-            
-        except Exception as e:
-            self.logger.error(f"❌ Tactics pipeline execution failed: {e}")
+
+        except Exception:
+            self.print(failed("❌ Tactics pipeline execution failed: {e}"))
             return False
 
     @handle_errors(
@@ -536,12 +595,12 @@ class TacticsOrchestrator:
         try:
             # Store results in a format that can be retrieved later
             results_key = f"{tactics_input['symbol']}_{tactics_input['exchange']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            
+
             # This would typically store to database or file system
             self.logger.info(f"📁 Storing tactics results with key: {results_key}")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to store tactics results: {e}")
+
+        except Exception:
+            self.print(failed("❌ Failed to store tactics results: {e}"))
 
     def get_tactics_status(self) -> dict[str, Any]:
         """
@@ -553,9 +612,13 @@ class TacticsOrchestrator:
         return {
             "is_running": self.is_running,
             "tactics_start_time": self.tactics_start_time,
-            "tactics_duration": datetime.now() - self.tactics_start_time if self.tactics_start_time else None,
+            "tactics_duration": datetime.now() - self.tactics_start_time
+            if self.tactics_start_time
+            else None,
             "has_results": bool(self.tactics_results),
-            "decision_metrics": (self.decision_policy.metrics if self.decision_policy else {}),
+            "decision_metrics": (
+                self.decision_policy.metrics if self.decision_policy else {}
+            ),
         }
 
     def get_tactics_results(self) -> dict[str, Any]:
@@ -576,7 +639,7 @@ class TacticsOrchestrator:
         """Stop the tactics orchestrator and cleanup resources."""
         try:
             self.logger.info("🛑 Stopping Tactics Orchestrator...")
-            
+
             # Stop component managers
             if self.position_monitor:
                 await self.position_monitor.stop()
@@ -590,12 +653,12 @@ class TacticsOrchestrator:
                 await self.position_division_strategy.stop()
             if self.ml_tactics_manager:
                 await self.ml_tactics_manager.stop()
-            
+
             self.is_running = False
             self.logger.info("✅ Tactics Orchestrator stopped successfully")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to stop Tactics Orchestrator: {e}")
+
+        except Exception:
+            self.print(failed("❌ Failed to stop Tactics Orchestrator: {e}"))
 
 
 @handle_errors(
@@ -620,6 +683,6 @@ async def setup_tactics_orchestrator(
         if await orchestrator.initialize():
             return orchestrator
         return None
-    except Exception as e:
-        system_logger.error(f"Failed to setup tactics orchestrator: {e}")
-        return None 
+    except Exception:
+        system_print(failed("Failed to setup tactics orchestrator: {e}"))
+        return None

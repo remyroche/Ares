@@ -7,6 +7,11 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    invalid,
+)
 
 
 class Monitoring:
@@ -40,12 +45,12 @@ class Monitoring:
             self.logger.info("Initializing Monitoring...")
             await self._load_monitoring_configuration()
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for monitoring")
+                self.print(invalid("Invalid configuration for monitoring"))
                 return False
             self.logger.info("✅ Monitoring initialization completed successfully")
             return True
-        except Exception as e:
-            self.logger.error(f"❌ Monitoring initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Monitoring initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -60,8 +65,8 @@ class Monitoring:
             self.check_interval = self.monitoring_config["check_interval"]
             self.max_history = self.monitoring_config["max_history"]
             self.logger.info("Monitoring configuration loaded successfully")
-        except Exception as e:
-            self.logger.error(f"Error loading monitoring configuration: {e}")
+        except Exception:
+            self.print(error("Error loading monitoring configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -71,15 +76,15 @@ class Monitoring:
     def _validate_configuration(self) -> bool:
         try:
             if self.check_interval <= 0:
-                self.logger.error("Invalid check interval")
+                self.print(invalid("Invalid check interval"))
                 return False
             if self.max_history <= 0:
-                self.logger.error("Invalid max history")
+                self.print(invalid("Invalid max history"))
                 return False
             self.logger.info("Configuration validation successful")
             return True
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_specific_errors(
@@ -97,8 +102,8 @@ class Monitoring:
                 await self._perform_monitoring()
                 await asyncio.sleep(self.check_interval)
             return True
-        except Exception as e:
-            self.logger.error(f"Error in monitoring run: {e}")
+        except Exception:
+            self.print(error("Error in monitoring run: {e}"))
             self.is_running = False
             return False
 
@@ -117,8 +122,8 @@ class Monitoring:
             await self._check_system_health()
             await self._update_metrics()
             self.logger.info(f"Monitoring tick at {now}")
-        except Exception as e:
-            self.logger.error(f"Error in monitoring step: {e}")
+        except Exception:
+            self.print(error("Error in monitoring step: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -136,8 +141,8 @@ class Monitoring:
             }
             self.metrics["system_health"] = health_status
             self.logger.info("System health check completed")
-        except Exception as e:
-            self.logger.error(f"Error checking system health: {e}")
+        except Exception:
+            self.print(error("Error checking system health: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -150,8 +155,8 @@ class Monitoring:
             self.metrics["last_update"] = datetime.now().isoformat()
             self.metrics["uptime"] = "2h 15m 30s"
             self.logger.info("Metrics updated successfully")
-        except Exception as e:
-            self.logger.error(f"Error updating metrics: {e}")
+        except Exception:
+            self.print(error("Error updating metrics: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -164,8 +169,8 @@ class Monitoring:
             self.is_running = False
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Monitoring stopped successfully")
-        except Exception as e:
-            self.logger.error(f"Error stopping monitoring: {e}")
+        except Exception:
+            self.print(error("Error stopping monitoring: {e}"))
 
     def get_status(self) -> dict[str, Any]:
         return self.status.copy()

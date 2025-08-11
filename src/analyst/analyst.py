@@ -2,22 +2,33 @@
 
 from datetime import datetime
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
 import pandas as pd
 
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
-from src.analyst.liquidation_risk_model import LiquidationRiskModel
-from src.analyst.market_health_analyzer import MarketHealthAnalyzer
+from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 
 # Import dual model system and other components
-from src.training.dual_model_system import DualModelSystem
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+)
+
+if TYPE_CHECKING:
+    from src.analyst.liquidation_risk_model import LiquidationRiskModel
+    from src.analyst.market_health_analyzer import MarketHealthAnalyzer
+    from src.training.dual_model_system import DualModelSystem
 
 
 class Analyst:
@@ -181,8 +192,8 @@ class Analyst:
             self.logger.info("Analyst configuration validation passed")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Configuration validation failed: {e}")
+        except Exception:
+            self.logger.exception("Configuration validation failed")
             return False
 
     @handle_errors(
@@ -238,9 +249,11 @@ class Analyst:
             if self.dual_model_system:
                 self.logger.info("✅ Dual Model System initialized successfully")
             else:
-                self.logger.error("❌ Failed to initialize Dual Model System")
-        except Exception as e:
-            self.logger.error(f"Error initializing Dual Model System: {e}")
+                self.print(failed("❌ Failed to initialize Dual Model System"))
+        except Exception:
+            self.print(
+                initialization_error("Error initializing Dual Model System: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -258,9 +271,11 @@ class Analyst:
             if self.market_health_analyzer:
                 self.logger.info("✅ Market Health Analyzer initialized successfully")
             else:
-                self.logger.error("❌ Failed to initialize Market Health Analyzer")
-        except Exception as e:
-            self.logger.error(f"Error initializing Market Health Analyzer: {e}")
+                self.print(failed("❌ Failed to initialize Market Health Analyzer"))
+        except Exception:
+            self.print(
+                initialization_error("Error initializing Market Health Analyzer: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -278,9 +293,11 @@ class Analyst:
             if self.liquidation_risk_model:
                 self.logger.info("✅ Liquidation Risk Model initialized successfully")
             else:
-                self.logger.error("❌ Failed to initialize Liquidation Risk Model")
-        except Exception as e:
-            self.logger.error(f"Error initializing Liquidation Risk Model: {e}")
+                self.print(failed("❌ Failed to initialize Liquidation Risk Model"))
+        except Exception:
+            self.print(
+                initialization_error("Error initializing Liquidation Risk Model: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -297,7 +314,7 @@ class Analyst:
                 "✅ Feature Engineering Orchestrator initialized successfully",
             )
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error initializing Feature Engineering Orchestrator: {e}",
             )
 
@@ -322,7 +339,11 @@ class Analyst:
     async def _initialize_regime_classifier(self) -> None:
         """Initialize Unified Regime Classifier."""
         self.logger.info("Initializing Unified Regime Classifier...")
-        self.regime_classifier = UnifiedRegimeClassifier(self.config, "UNKNOWN", "UNKNOWN")
+        self.regime_classifier = UnifiedRegimeClassifier(
+            self.config,
+            "UNKNOWN",
+            "UNKNOWN",
+        )
         self.logger.info("Unified Regime Classifier initialized successfully")
 
     @handle_specific_errors(
@@ -434,9 +455,9 @@ class Analyst:
             self.logger.info("✅ Comprehensive analysis completed successfully")
             return True
 
-        except Exception as e:
+        except Exception:
             self.is_analyzing = False
-            self.logger.error(f"❌ Analysis failed: {e}")
+            self.print(failed("❌ Analysis failed: {e}"))
             return False
 
     @handle_errors(
@@ -473,7 +494,7 @@ class Analyst:
             required_keys = ["market_data", "current_price"]
             for key in required_keys:
                 if key not in analysis_input:
-                    self.logger.error(f"Missing required analysis input: {key}")
+                    self.logger.error("Missing required analysis input: %s", key)
                     return False
 
             market_data = analysis_input.get("market_data")
@@ -488,8 +509,8 @@ class Analyst:
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Analysis inputs validation failed: {e}")
+        except Exception:
+            self.logger.exception("Analysis inputs validation failed")
             return False
 
     @handle_errors(
@@ -510,8 +531,8 @@ class Analyst:
         Returns:
             dict: Technical analysis results
         """
-        market_data = analysis_input.get("market_data")
-        current_price = analysis_input.get("current_price")
+        analysis_input.get("market_data")
+        analysis_input.get("current_price")
 
         # Perform technical analysis
         technical_results = {
@@ -536,7 +557,7 @@ class Analyst:
             current_price = analysis_input.get("current_price")
 
             # Simple price analysis
-            price_results = {
+            return {
                 "current_price": current_price,
                 "price_change_1h": market_data["close"].pct_change(1).iloc[-1]
                 if len(market_data) > 0
@@ -549,10 +570,8 @@ class Analyst:
                 else "bearish",
             }
 
-            return price_results
-
-        except Exception as e:
-            self.logger.error(f"Error performing price analysis: {e}")
+        except Exception:
+            self.print(error("Error performing price analysis: {e}"))
             return {}
 
     def _perform_volume_analysis(
@@ -566,7 +585,7 @@ class Analyst:
             if "volume" not in market_data.columns:
                 return {}
 
-            volume_results = {
+            return {
                 "current_volume": market_data["volume"].iloc[-1],
                 "volume_ma": market_data["volume"].rolling(window=20).mean().iloc[-1],
                 "volume_ratio": market_data["volume"].iloc[-1]
@@ -577,10 +596,8 @@ class Analyst:
                 else "low",
             }
 
-            return volume_results
-
-        except Exception as e:
-            self.logger.error(f"Error performing volume analysis: {e}")
+        except Exception:
+            self.print(error("Error performing volume analysis: {e}"))
             return {}
 
     def _perform_indicator_analysis(
@@ -591,7 +608,7 @@ class Analyst:
         try:
             market_data = analysis_input.get("market_data")
 
-            indicator_results = {
+            return {
                 "rsi": market_data.get("rsi", {}).iloc[-1]
                 if "rsi" in market_data.columns
                 else None,
@@ -610,10 +627,8 @@ class Analyst:
                 else None,
             }
 
-            return indicator_results
-
-        except Exception as e:
-            self.logger.error(f"Error performing indicator analysis: {e}")
+        except Exception:
+            self.print(error("Error performing indicator analysis: {e}"))
             return {}
 
     def _perform_pattern_analysis(
@@ -623,15 +638,13 @@ class Analyst:
         """Perform pattern analysis."""
         try:
             # Simple pattern analysis
-            pattern_results = {
+            return {
                 "patterns_detected": [],
                 "pattern_confidence": 0.0,
             }
 
-            return pattern_results
-
-        except Exception as e:
-            self.logger.error(f"Error performing pattern analysis: {e}")
+        except Exception:
+            self.print(error("Error performing pattern analysis: {e}"))
             return {}
 
     def _perform_volatility_analysis(
@@ -643,7 +656,7 @@ class Analyst:
             market_data = analysis_input.get("market_data")
 
             returns = market_data["close"].pct_change()
-            volatility_results = {
+            return {
                 "current_volatility": returns.rolling(window=20).std().iloc[-1],
                 "volatility_regime": "high"
                 if returns.rolling(window=20).std().iloc[-1] > 0.04
@@ -654,10 +667,8 @@ class Analyst:
                 else "decreasing",
             }
 
-            return volatility_results
-
-        except Exception as e:
-            self.logger.error(f"Error performing volatility analysis: {e}")
+        except Exception:
+            self.print(error("Error performing volatility analysis: {e}"))
             return {}
 
     def _perform_correlation_analysis(
@@ -667,15 +678,13 @@ class Analyst:
         """Perform correlation analysis."""
         try:
             # Simple correlation analysis
-            correlation_results = {
+            return {
                 "price_volume_correlation": 0.0,
                 "correlation_regime": "normal",
             }
 
-            return correlation_results
-
-        except Exception as e:
-            self.logger.error(f"Error performing correlation analysis: {e}")
+        except Exception:
+            self.print(error("Error performing correlation analysis: {e}"))
             return {}
 
     def _perform_drawdown_analysis(
@@ -688,7 +697,7 @@ class Analyst:
 
             rolling_max = market_data["close"].rolling(window=20).max()
             drawdown = (market_data["close"] - rolling_max) / rolling_max
-            drawdown_results = {
+            return {
                 "current_drawdown": drawdown.iloc[-1],
                 "max_drawdown": drawdown.min(),
                 "drawdown_regime": "high"
@@ -696,26 +705,22 @@ class Analyst:
                 else "normal",
             }
 
-            return drawdown_results
-
-        except Exception as e:
-            self.logger.error(f"Error performing drawdown analysis: {e}")
+        except Exception:
+            self.print(error("Error performing drawdown analysis: {e}"))
             return {}
 
     def _perform_risk_scoring(self, analysis_input: dict[str, Any]) -> dict[str, Any]:
         """Perform risk scoring."""
         try:
             # Simple risk scoring
-            risk_results = {
+            return {
                 "overall_risk_score": 0.5,
                 "risk_level": "medium",
                 "risk_factors": [],
             }
 
-            return risk_results
-
-        except Exception as e:
-            self.logger.error(f"Error performing risk scoring: {e}")
+        except Exception:
+            self.print(error("Error performing risk scoring: {e}"))
             return {}
 
     @handle_errors(
@@ -758,8 +763,8 @@ class Analyst:
             self.logger.info("ML predictions completed successfully")
             return ml_results
 
-        except Exception as e:
-            self.logger.error(f"Error performing ML predictions: {e}")
+        except Exception:
+            self.print(error("Error performing ML predictions: {e}"))
             return {}
 
     @handle_errors(
@@ -767,7 +772,6 @@ class Analyst:
         default_return=None,
         context="SR analysis",
     )
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -788,7 +792,7 @@ class Analyst:
         """
         try:
             market_data = analysis_input.get("market_data")
-            current_price = analysis_input.get("current_price")
+            analysis_input.get("current_price")
 
             if self.regime_classifier:
                 # Use the new unified regime classifier for both regime and location
@@ -829,8 +833,8 @@ class Analyst:
             )
             return regime_results
 
-        except Exception as e:
-            self.logger.error(f"Error performing regime classification: {e}")
+        except Exception:
+            self.print(error("Error performing regime classification: {e}"))
             return {}
 
     @handle_errors(
@@ -851,8 +855,8 @@ class Analyst:
                 self.analysis_history.pop(0)
 
             self.logger.info("Analysis results stored successfully")
-        except Exception as e:
-            self.logger.error(f"Error storing analysis results: {e}")
+        except Exception:
+            self.print(error("Error storing analysis results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -874,8 +878,8 @@ class Analyst:
                 return self.analysis_results
             return self.analysis_results.get(analysis_type, {})
 
-        except Exception as e:
-            self.logger.error(f"Error getting analysis results: {e}")
+        except Exception:
+            self.print(error("Error getting analysis results: {e}"))
             return {}
 
     @handle_errors(
@@ -898,8 +902,8 @@ class Analyst:
                 return self.analysis_history
             return self.analysis_history[-limit:]
 
-        except Exception as e:
-            self.logger.error(f"Error getting analysis history: {e}")
+        except Exception:
+            self.print(error("Error getting analysis history: {e}"))
             return []
 
     def get_analysis_status(self) -> dict[str, Any]:
@@ -942,8 +946,8 @@ class Analyst:
             self.analysis_history = []
 
             self.logger.info("✅ Analyst stopped successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Error stopping Analyst: {e}")
+        except Exception:
+            self.print(error("❌ Error stopping Analyst: {e}"))
 
 
 @handle_errors(
@@ -973,6 +977,6 @@ async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
         system_logger.error("❌ Analyst setup failed")
         return None
 
-    except Exception as e:
-        system_logger.error(f"❌ Error setting up Analyst: {e}")
+    except Exception:
+        system_logger.exception("❌ Error setting up Analyst")
         return None

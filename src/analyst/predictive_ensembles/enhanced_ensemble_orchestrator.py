@@ -21,6 +21,11 @@ from src.analyst.predictive_ensembles.multi_timeframe_ensemble import (
 )
 from src.config import CONFIG
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    warning,
+)
 
 
 class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
@@ -151,7 +156,7 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
                         if save_success:
                             self.logger.info(f"💾 Saved {ensemble_key} to {model_path}")
                         else:
-                            self.logger.warning(f"⚠️ Failed to save {ensemble_key}")
+                            self.print(failed("⚠️ Failed to save {ensemble_key}"))
                 else:
                     self.logger.error(
                         f"❌ {model_type} for {regime_key} training failed",
@@ -210,7 +215,7 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
         """Initialize enhanced regime ensembles."""
         self.logger.info("🔧 Initializing enhanced regime ensembles...")
 
-        for regime_key in self.regime_ensembles.keys():
+        for regime_key in self.regime_ensembles:
             self.enhanced_regime_ensembles[regime_key] = {}
             self.logger.debug(f"📊 Initialized {regime_key} ensemble")
 
@@ -250,7 +255,7 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
                             f"⚠️ No predictions collected from {ensemble_key}",
                         )
                 else:
-                    self.logger.warning(f"⚠️ {ensemble_key} not trained, skipping")
+                    self.print(warning("⚠️ {ensemble_key} not trained, skipping"))
 
         self.logger.info(f"📊 Collected data from {ensemble_count} trained ensembles")
 
@@ -315,8 +320,8 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
                     f"⚠️ No {base_timeframe} data available for meta-learner training",
                 )
 
-        except Exception as e:
-            self.logger.error(f"💥 Error getting enhanced predictions: {e}")
+        except Exception:
+            self.print(error("💥 Error getting enhanced predictions: {e}"))
 
         return predictions
 
@@ -407,7 +412,7 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
                             f"⚠️ No prediction output from {ensemble_key}",
                         )
                 else:
-                    self.logger.warning(f"⚠️ {ensemble_key} not trained")
+                    self.print(warning("⚠️ {ensemble_key} not trained"))
 
         self.logger.info(
             f"📊 Processed {ensemble_count} ensembles, {successful_ensembles} successful",
@@ -425,7 +430,7 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
                 )
             )
         else:
-            self.logger.warning("⚠️ No enhanced predictions available, using fallback")
+            self.print(warning("⚠️ No enhanced predictions available, using fallback"))
             final_prediction, final_confidence = "HOLD", 0.0
 
         # Get current ensemble weights
@@ -507,7 +512,7 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
             return prediction, confidence
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"💥 Error in enhanced global meta-learner prediction: {e}",
             )
             return "HOLD", 0.0
@@ -551,7 +556,7 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
         """Simple combination of enhanced predictions (fallback)."""
         try:
             if not enhanced_predictions:
-                self.logger.warning("⚠️ No enhanced predictions available")
+                self.print(warning("⚠️ No enhanced predictions available"))
                 return "HOLD", 0.0
 
             self.logger.debug("📊 Using simple prediction combination...")
@@ -584,7 +589,7 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
             return final_prediction, final_confidence
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"💥 Error in simple enhanced prediction combination: {e}",
             )
             return "HOLD", 0.0
@@ -596,7 +601,7 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
         saved_count = 0
         total_count = 0
 
-        for regime_key, enhanced_ensembles in self.enhanced_regime_ensembles.items():
+        for enhanced_ensembles in self.enhanced_regime_ensembles.values():
             for ensemble_key, ensemble in enhanced_ensembles.items():
                 total_count += 1
 
@@ -611,9 +616,9 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
                         saved_count += 1
                         self.logger.debug(f"💾 Saved {ensemble_key}")
                     else:
-                        self.logger.warning(f"⚠️ Failed to save {ensemble_key}")
+                        self.print(failed("⚠️ Failed to save {ensemble_key}"))
                 else:
-                    self.logger.warning(f"⚠️ {ensemble_key} not trained, skipping save")
+                    self.print(warning("⚠️ {ensemble_key} not trained, skipping save"))
 
         self.logger.info(f"💾 Saved {saved_count}/{total_count} enhanced models")
 
@@ -624,7 +629,7 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
         loaded_count = 0
         total_count = 0
 
-        for regime_key in self.regime_ensembles.keys():
+        for regime_key in self.regime_ensembles:
             for model_type in self.model_types:
                 ensemble_key = f"{regime_key}_{model_type}"
                 total_count += 1
@@ -648,7 +653,7 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
                     loaded_count += 1
                     self.logger.debug(f"📂 Loaded {ensemble_key}")
                 else:
-                    self.logger.warning(f"⚠️ Failed to load {ensemble_key}")
+                    self.print(failed("⚠️ Failed to load {ensemble_key}"))
 
         self.logger.info(f"📂 Loaded {loaded_count}/{total_count} enhanced models")
 

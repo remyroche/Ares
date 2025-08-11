@@ -5,6 +5,20 @@ The issue is that the consolidated files have wrong column mapping and corrupted
 """
 
 import glob
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 import os
 import sys
 from pathlib import Path
@@ -25,7 +39,7 @@ def fix_consolidated_klines():
     print(f"Found {len(raw_files)} raw CSV files")
 
     if not raw_files:
-        print("❌ No raw CSV files found!")
+        print(warning("No raw CSV files found!")))
         return False
 
     # Read and combine all raw CSV files
@@ -36,11 +50,11 @@ def fix_consolidated_klines():
             print(f"📊 Loaded {len(df)} records from {os.path.basename(file)}")
             all_data.append(df)
         except Exception as e:
-            print(f"⚠️ Error reading {file}: {e}")
+            print(warning("Error reading {file}: {e}")))
             continue
 
     if not all_data:
-        print("❌ No valid data found!")
+        print(warning("No valid data found!")))
         return False
 
     # Combine all data
@@ -80,11 +94,11 @@ def main():
     if success:
         print("✅ Consolidated data fix completed successfully!")
     else:
-        print("❌ Consolidated data fix failed!")
+        print(failed("Consolidated data fix failed!")))
         return 1
 
     return 0
 
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())

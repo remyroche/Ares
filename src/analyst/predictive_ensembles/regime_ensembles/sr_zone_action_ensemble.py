@@ -3,6 +3,10 @@ import pandas as pd
 from lightgbm import LGBMClassifier
 from pytorch_tabnet.tab_model import TabNetClassifier
 
+from src.utils.warning_symbols import (
+    failed,
+)
+
 from .base_ensemble import BaseEnsemble
 
 
@@ -51,8 +55,8 @@ class SRZoneActionEnsemble(BaseEnsemble):
                 batch_size=1024,
             )
             self.models["sr_tabnet"] = tabnet
-        except Exception as e:
-            self.logger.error(f"S/R TabNet training failed: {e}")
+        except Exception:
+            self.print(failed("S/R TabNet training failed: {e}"))
 
         # Train a specialized Order Flow LGBM
         X_of = aligned_data[self.order_flow_features].fillna(0)

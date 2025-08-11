@@ -7,10 +7,16 @@ import pickle
 from datetime import datetime
 from typing import Any
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from src.utils.logger import system_logger
+from src.utils.error_handler import handle_errors
+from src.utils.warning_symbols import (
+    error,
+    failed,
+)
+from src.training.steps.unified_data_loader import get_unified_data_loader
 
 
 class TacticianSpecialistTrainingStep:
@@ -21,20 +27,23 @@ class TacticianSpecialistTrainingStep:
         self.logger = system_logger
         self.models = {}
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="tactician specialist training step initialization",
+    )
     async def initialize(self) -> None:
         """Initialize the tactician specialist training step."""
-        try:
-            self.logger.info("Initializing Tactician Specialist Training Step...")
-            self.logger.info(
-                "Tactician Specialist Training Step initialized successfully",
-            )
+        self.logger.info("Initializing Tactician Specialist Training Step...")
+        self.logger.info(
+            "Tactician Specialist Training Step initialized successfully",
+        )
 
-        except Exception as e:
-            self.logger.error(
-                f"Error initializing Tactician Specialist Training Step: {e}",
-            )
-            raise
-
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"status": "FAILED", "error": "Execution failed"},
+        context="tactician specialist training step execution",
+    )
     async def execute(
         self,
         training_input: dict[str, Any],
@@ -60,22 +69,203 @@ class TacticianSpecialistTrainingStep:
 
             # Load tactician labeled data
             labeled_data_dir = f"{data_dir}/tactician_labeled_data"
-            labeled_file = (
+            labeled_file_parquet = (
+                f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.parquet"
+            )
+            labeled_file_pickle = (
                 f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl"
             )
 
-            if not os.path.exists(labeled_file):
-                raise FileNotFoundError(
-                    f"Tactician labeled data not found: {labeled_file}",
-                )
+            if os.path.exists(labeled_file_parquet):
+                # Prefer partitioned dataset scan from labeled store if available
+                try:
+                    from src.training.enhanced_training_manager_optimized import (
+                        ParquetDatasetManager,
+                    )
 
-            # Load labeled data
-            with open(labeled_file, "rb") as f:
-                labeled_data = pickle.load(f)
+                    pdm = ParquetDatasetManager(logger=self.logger)
+                    part_base = os.path.join(data_dir, "parquet", "labeled")
+                    if os.path.isdir(part_base):
+                        filters = [
+                            ("exchange", "==", exchange),
+                            ("symbol", "==", symbol),
+                            ("timeframe", "==", training_input.get("timeframe", "1m")),
+                            ("split", "==", "train"),
+                        ]
+                        # Reader shortcut: prefer materialized projection if available
+                        feat_cols = training_input.get(
+                            "model_feature_columns"
+                        ) or training_input.get("feature_columns")
+                        label_col = training_input.get("label_column", "label")
+                        proj_base = os.path.join(
+                            "data_cache",
+                            "parquet",
+                            f"proj_features_{training_input.get('model_name', 'default')}",
+                        )
+                        if (
+                            isinstance(feat_cols, list)
+                            and len(feat_cols) > 0
+                            and os.path.isdir(proj_base)
+                        ):
+                            proj_filters = [
+                                ("exchange", "==", exchange),
+                                ("symbol", "==", symbol),
+                                (
+                                    "timeframe",
+                                    "==",
+                                    training_input.get("timeframe", "1m"),
+                                ),
+                                ("split", "==", "train"),
+                            ]
+                            cols = ["timestamp", *feat_cols, label_col]
+                            labeled_data = pdm.cached_projection(
+                                base_dir=proj_base,
+                                filters=proj_filters,
+                                columns=cols,
+                                cache_dir="data_cache/projections",
+                                cache_key_prefix=f"proj_features_{training_input.get('model_name','default')}_{exchange}_{symbol}_{training_input.get('timeframe','1m')}_train",
+                                snapshot_version="v1",
+                                ttl_seconds=3600,
+                                batch_size=131072,
+                            )
+                        else:
+                            cache_key = f"labeled_{exchange}_{symbol}_{training_input.get('timeframe','1m')}_train"
+                            labeled_data = pdm.cached_projection(
+                                base_dir=part_base,
+                                filters=filters,
+                                columns=[],
+                                cache_dir="data_cache/projections",
+                                cache_key_prefix=cache_key,
+                                snapshot_version="v1",
+                                ttl_seconds=3600,
+                                batch_size=131072,
+                                arrow_transform=lambda tbl: (
+                                    (lambda _t: _t)(
+                                        (
+                                            lambda _pa, pc: (
+                                                _t := tbl,
+                                                (
+                                                    _t := _t.set_column(
+                                                        _t.schema.get_field_index(
+                                                            "timestamp"
+                                                        ),
+                                                        "timestamp",
+                                                        pc.cast(
+                                                            _t.column("timestamp"),
+                                                            _pa.int64(),
+                                                        ),
+                                                    )
+                                                )
+                                                if (
+                                                    "timestamp" in _t.schema.names
+                                                    and not _pa.types.is_int64(
+                                                        _t.schema.field(
+                                                            "timestamp"
+                                                        ).type
+                                                    )
+                                                )
+                                                else None,
+                                                _t,
+                                            )
+                                        )(
+                                            __import__("pyarrow"),
+                                            __import__("pyarrow.compute"),
+                                        )
+                                    )
+                                ),
+                            )
+                    else:
+                        try:
+                            feat_cols = training_input.get(
+                                "model_feature_columns"
+                            ) or training_input.get("feature_columns")
+                            label_col = training_input.get("label_column", "label")
+                            from src.utils.logger import (
+                                log_io_operation,
+                                log_dataframe_overview,
+                            )
+
+                            if isinstance(feat_cols, list) and len(feat_cols) > 0:
+                                with log_io_operation(
+                                    self.logger,
+                                    "read_parquet",
+                                    labeled_file_parquet,
+                                    columns=True,
+                                ):
+                                    labeled_data = pd.read_parquet(
+                                        labeled_file_parquet,
+                                        columns=["timestamp", *feat_cols, label_col],
+                                    )
+                            else:
+                                with log_io_operation(
+                                    self.logger, "read_parquet", labeled_file_parquet
+                                ):
+                                    labeled_data = pd.read_parquet(labeled_file_parquet)
+                            try:
+                                log_dataframe_overview(
+                                    self.logger, labeled_data, name="labeled_data"
+                                )
+                            except Exception:
+                                pass
+                        except Exception:
+                            with log_io_operation(
+                                self.logger, "read_parquet", labeled_file_parquet
+                            ):
+                                labeled_data = pd.read_parquet(labeled_file_parquet)
+                except Exception:
+                    try:
+                        feat_cols = training_input.get(
+                            "model_feature_columns"
+                        ) or training_input.get("feature_columns")
+                        label_col = training_input.get("label_column", "label")
+                        from src.utils.logger import log_io_operation
+
+                        if isinstance(feat_cols, list) and len(feat_cols) > 0:
+                            with log_io_operation(
+                                self.logger,
+                                "read_parquet",
+                                labeled_file_parquet,
+                                columns=True,
+                            ):
+                                labeled_data = pd.read_parquet(
+                                    labeled_file_parquet,
+                                    columns=["timestamp", *feat_cols, label_col],
+                                )
+                        else:
+                            with log_io_operation(
+                                self.logger, "read_parquet", labeled_file_parquet
+                            ):
+                                labeled_data = pd.read_parquet(labeled_file_parquet)
+                    except Exception:
+                        with log_io_operation(
+                            self.logger, "read_parquet", labeled_file_parquet
+                        ):
+                            labeled_data = pd.read_parquet(labeled_file_parquet)
+            elif os.path.exists(labeled_file_pickle):
+                with open(labeled_file_pickle, "rb") as f:
+                    labeled_data = pickle.load(f)
+            else:
+                msg = (
+                    "Tactician labeled data not found: "
+                    f"{labeled_file_parquet} or {labeled_file_pickle}. Step 9 requires labeled data from Step 8."
+                )
+                raise FileNotFoundError(msg)
 
             # Convert to DataFrame if needed
             if not isinstance(labeled_data, pd.DataFrame):
                 labeled_data = pd.DataFrame(labeled_data)
+            try:
+                shape = getattr(labeled_data, "shape", None)
+                self.logger.info(f"Loaded tactician labeled data: shape={shape}")
+                if (
+                    isinstance(labeled_data, pd.DataFrame)
+                    and "tactician_label" in labeled_data.columns
+                ):
+                    self.logger.info(
+                        f"Label distribution: {labeled_data['tactician_label'].value_counts().to_dict()}",
+                    )
+            except Exception:
+                pass
 
             # Train tactician specialist models
             training_results = await self._train_tactician_models(
@@ -115,7 +305,7 @@ class TacticianSpecialistTrainingStep:
             }
 
         except Exception as e:
-            self.logger.error(f"❌ Error in Tactician Specialist Training: {e}")
+            self.print(error("❌ Error in Tactician Specialist Training: {e}"))
             return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
     async def _train_tactician_models(
@@ -144,17 +334,21 @@ class TacticianSpecialistTrainingStep:
             # Save target columns before dropping object columns
             target_columns = ["tactician_label", "regime"]
             y = data["tactician_label"].copy()
-            
+
             # First, explicitly drop any datetime columns
-            datetime_columns = data.select_dtypes(include=['datetime64[ns]', 'datetime64', 'datetime']).columns.tolist()
+            datetime_columns = data.select_dtypes(
+                include=["datetime64[ns]", "datetime64", "datetime"],
+            ).columns.tolist()
             if datetime_columns:
                 self.logger.info(f"Dropping datetime columns: {datetime_columns}")
                 data = data.drop(columns=datetime_columns)
-            
+
             # Also drop any object columns that might contain datetime strings
             # But preserve target columns
-            object_columns = data.select_dtypes(include=['object']).columns.tolist()
-            object_columns_to_drop = [col for col in object_columns if col not in target_columns]
+            object_columns = data.select_dtypes(include=["object"]).columns.tolist()
+            object_columns_to_drop = [
+                col for col in object_columns if col not in target_columns
+            ]
             if object_columns_to_drop:
                 self.logger.info(f"Dropping object columns: {object_columns_to_drop}")
                 data = data.drop(columns=object_columns_to_drop)
@@ -162,44 +356,50 @@ class TacticianSpecialistTrainingStep:
             # Get only numeric columns for features
             excluded_columns = target_columns
             numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
-            feature_columns = [col for col in numeric_columns if col not in excluded_columns]
-            
+            feature_columns = [
+                col for col in numeric_columns if col not in excluded_columns
+            ]
+
             if not feature_columns:
-                self.logger.warning(f"No numeric feature columns found for tactician training")
+                self.logger.warning(
+                    "No numeric feature columns found for tactician training",
+                )
                 # Create a simple fallback feature
-                data['simple_feature'] = np.random.randn(len(data))
-                feature_columns = ['simple_feature']
-            
+                data["simple_feature"] = np.random.randn(len(data))
+                feature_columns = ["simple_feature"]
+
             X = data[feature_columns].copy()
-            
+
             # Additional safety check - ensure all columns are numeric
             for col in X.columns:
                 if not pd.api.types.is_numeric_dtype(X[col]):
-                    self.logger.warning(f"Non-numeric column detected: {col} with dtype {X[col].dtype}")
+                    self.logger.warning(
+                        f"Non-numeric column detected: {col} with dtype {X[col].dtype}",
+                    )
                     X = X.drop(columns=[col])
                     feature_columns.remove(col)
-            
+
             # Remove any remaining NaN values
             X = X.fillna(0)
-            
+
             # Final check - ensure X is purely numeric
-            if not X.select_dtypes(include=[np.number]).shape[1] == X.shape[1]:
-                self.logger.error("Non-numeric columns still present in feature matrix")
+            if X.select_dtypes(include=[np.number]).shape[1] != X.shape[1]:
+                self.print(error("Non-numeric columns still present in feature matrix"))
                 # Force conversion to numeric, dropping any problematic columns
                 X = X.select_dtypes(include=[np.number])
-            
-            self.logger.info(f"Using {len(feature_columns)} feature columns for tactician training")
+
+            self.logger.info(
+                f"Using {len(feature_columns)} feature columns for tactician training",
+            )
 
             # Split data for training and validation
-            from sklearn.model_selection import train_test_split
+            # ❌ REMOVED: Stratified split with shuffle (causes data leakage)
+            # ✅ IMPLEMENTED: Chronological time-series split (leak-proof)
+            split_point = int(len(X) * 0.8)  # 80% train, 20% test
+            X_train, X_test = X.iloc[:split_point], X.iloc[split_point:]
+            y_train, y_test = y.iloc[:split_point], y.iloc[split_point:]
 
-            X_train, X_test, y_train, y_test = train_test_split(
-                X,
-                y,
-                test_size=0.2,
-                random_state=42,
-                stratify=y,
-            )
+            self.logger.info("✅ Using chronological time-series split (leak-proof)")
 
             # Train different model types
             models = {}
@@ -248,8 +448,8 @@ class TacticianSpecialistTrainingStep:
 
             return models
 
-        except Exception as e:
-            self.logger.error(f"Error training tactician models: {e}")
+        except Exception:
+            self.print(error("Error training tactician models: {e}"))
             raise
 
     async def _train_lightgbm(
@@ -304,11 +504,17 @@ class TacticianSpecialistTrainingStep:
 
             # Train with validation set
             eval_set = [(X_test, y_test)]
-            model.fit(X_train, y_train, eval_set=eval_set, eval_metric="logloss", verbose=False)
+            model.fit(
+                X_train,
+                y_train,
+                eval_set=eval_set,
+                eval_metric="logloss",
+                verbose=False,
+            )
 
             # Evaluate model
             y_pred = model.predict(X_test)
-            y_pred_proba = model.predict_proba(X_test)
+            model.predict_proba(X_test)
             accuracy = accuracy_score(y_test, y_pred)
 
             # Get feature importance
@@ -333,8 +539,8 @@ class TacticianSpecialistTrainingStep:
                 },
             }
 
-        except Exception as e:
-            self.logger.error(f"Error training LightGBM: {e}")
+        except Exception:
+            self.print(error("Error training LightGBM: {e}"))
             raise
 
     async def _train_calibrated_logistic(
@@ -372,7 +578,7 @@ class TacticianSpecialistTrainingStep:
 
             # Evaluate model
             y_pred = calibrated_model.predict(X_test)
-            y_pred_proba = calibrated_model.predict_proba(X_test)
+            calibrated_model.predict_proba(X_test)
             accuracy = accuracy_score(y_test, y_pred)
 
             return {
@@ -391,8 +597,8 @@ class TacticianSpecialistTrainingStep:
                 },
             }
 
-        except Exception as e:
-            self.logger.error(f"Error training Calibrated Logistic Regression: {e}")
+        except Exception:
+            self.print(error("Error training Calibrated Logistic Regression: {e}"))
             raise
 
     async def _train_xgboost(
@@ -443,6 +649,7 @@ class TacticianSpecialistTrainingStep:
                 random_state=42,
                 eval_metric="logloss",
                 early_stopping_rounds=50,
+                verbose=0,  # Reduce verbose output during training
             )
 
             # Train with validation set
@@ -451,7 +658,7 @@ class TacticianSpecialistTrainingStep:
 
             # Evaluate model
             y_pred = model.predict(X_test)
-            y_pred_proba = model.predict_proba(X_test)
+            model.predict_proba(X_test)
             accuracy = accuracy_score(y_test, y_pred)
 
             # Get feature importance
@@ -476,8 +683,8 @@ class TacticianSpecialistTrainingStep:
                 },
             }
 
-        except Exception as e:
-            self.logger.error(f"Error training XGBoost: {e}")
+        except Exception:
+            self.print(error("Error training XGBoost: {e}"))
             raise
 
     async def _train_random_forest(
@@ -508,7 +715,7 @@ class TacticianSpecialistTrainingStep:
 
             # Evaluate model
             y_pred = model.predict(X_test)
-            y_pred_proba = model.predict_proba(X_test)
+            model.predict_proba(X_test)
             accuracy = accuracy_score(y_test, y_pred)
 
             # Get feature importance
@@ -532,8 +739,8 @@ class TacticianSpecialistTrainingStep:
                 },
             }
 
-        except Exception as e:
-            self.logger.error(f"Error training Random Forest: {e}")
+        except Exception:
+            self.print(error("Error training Random Forest: {e}"))
             raise
 
 
@@ -542,6 +749,7 @@ async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
     data_dir: str = "data/training",
+    force_rerun: bool = False,
     **kwargs,
 ) -> bool:
     """
@@ -567,6 +775,7 @@ async def run_step(
             "symbol": symbol,
             "exchange": exchange,
             "data_dir": data_dir,
+            "force_rerun": force_rerun,
             **kwargs,
         }
 
@@ -575,8 +784,8 @@ async def run_step(
 
         return result.get("status") == "SUCCESS"
 
-    except Exception as e:
-        print(f"❌ Tactician specialist training failed: {e}")
+    except Exception:
+        print(failed("Tactician specialist training failed: {e}"))
         return False
 
 

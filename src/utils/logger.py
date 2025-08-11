@@ -9,11 +9,19 @@ import logging
 import logging.handlers
 import os
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from contextlib import contextmanager
 
 from .structured_logging import CorrelationIdFilter, get_json_formatter  # added
+from .warning_symbols import (
+    critical,
+    error,
+    failed,
+    warning,
+)
 
 
 class EnhancedLogger:
@@ -48,6 +56,11 @@ class EnhancedLogger:
         self.enable_json: bool = bool(self.log_config.get("json", True))
         self.enable_correlation: bool = bool(self.log_config.get("correlation", True))
 
+        # Warning symbol integration
+        self.enable_warning_symbols: bool = bool(
+            self.log_config.get("warning_symbols", True),
+        )
+
     async def initialize(self) -> bool:
         """
         Initialize enhanced logger with enhanced error handling.
@@ -72,8 +85,8 @@ class EnhancedLogger:
             self.logger.info("✅ Enhanced Logger initialization completed successfully")
             return True
 
-        except Exception as e:
-            print(f"❌ Enhanced Logger initialization failed: {e}")
+        except Exception:
+            print(failed("Enhanced Logger initialization failed: {e}"))
             return False
 
     async def _load_logger_configuration(self) -> None:
@@ -92,6 +105,7 @@ class EnhancedLogger:
             self.log_config.setdefault("file_output", True)
             self.log_config.setdefault("json", True)
             self.log_config.setdefault("correlation", True)
+            self.log_config.setdefault("warning_symbols", True)
 
             # Update configuration
             self.log_level = self.log_config["level"]
@@ -101,6 +115,9 @@ class EnhancedLogger:
             self.backup_count = self.log_config["backup_count"]
             self.enable_json = bool(self.log_config.get("json", True))
             self.enable_correlation = bool(self.log_config.get("correlation", True))
+            self.enable_warning_symbols = bool(
+                self.log_config.get("warning_symbols", True),
+            )
 
             print("Logger configuration loaded successfully")
 
@@ -219,7 +236,70 @@ class EnhancedLogger:
             # Fallback to basic logger if not initialized
             return logging.getLogger(name)
 
-        return self.logger.getChild(name)
+        base_logger = self.logger.getChild(name)
+
+        if self.enable_warning_symbols:
+            return self._create_enhanced_logger(base_logger)
+
+        return base_logger
+
+    def _create_enhanced_logger(self, base_logger: logging.Logger) -> logging.Logger:
+        """
+        Create an enhanced logger with warning symbols.
+
+        Args:
+            base_logger: Base logger to enhance
+
+        Returns:
+            Enhanced logger with warning symbols
+        """
+
+        class EnhancedLoggerWithWarnings:
+            def __init__(self, logger: logging.Logger):
+                self._logger = logger
+                self._original_methods = {}
+
+                # Store original methods
+                self._original_methods["error"] = logger.error
+                self._original_methods["warning"] = logger.warning
+                self._original_methods["critical"] = logger.critical
+                self._original_methods["exception"] = logger.exception
+
+                # Override methods with warning symbols
+                self.error = self._enhanced_error
+                self.warning = self._enhanced_warning
+                self.critical = self._enhanced_critical
+                self.exception = self._enhanced_exception
+
+            def _enhanced_error(self, msg: str, *args, **kwargs):
+                """Enhanced error logging with warning symbol."""
+                enhanced_msg = error(msg)
+                return self._original_methods["error"](enhanced_msg, *args, **kwargs)
+
+            def _enhanced_warning(self, msg: str, *args, **kwargs):
+                """Enhanced warning logging with warning symbol."""
+                enhanced_msg = warning(msg)
+                return self._original_methods["warning"](enhanced_msg, *args, **kwargs)
+
+            def _enhanced_critical(self, msg: str, *args, **kwargs):
+                """Enhanced critical logging with warning symbol."""
+                enhanced_msg = critical(msg)
+                return self._original_methods["critical"](enhanced_msg, *args, **kwargs)
+
+            def _enhanced_exception(self, msg: str, *args, **kwargs):
+                """Enhanced exception logging with warning symbol."""
+                enhanced_msg = error(msg)
+                return self._original_methods["exception"](
+                    enhanced_msg,
+                    *args,
+                    **kwargs,
+                )
+
+            def __getattr__(self, name):
+                """Delegate all other attributes to the base logger."""
+                return getattr(self._logger, name)
+
+        return EnhancedLoggerWithWarnings(base_logger)
 
     def set_level(self, level: str) -> bool:
         """
@@ -267,7 +347,7 @@ class EnhancedLogger:
 
     async def stop(self) -> None:
         """Stop the enhanced logger."""
-        print("🛑 Stopping Enhanced Logger...")
+        print(error("Stopping Enhanced Logger..."))
 
         try:
             if self.logger:
@@ -322,6 +402,7 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
                     "backup_count": 5,
                     "json": True,
                     "correlation": True,
+                    "warning_symbols": True,
                 },
             }
 
@@ -387,7 +468,7 @@ if system_logger is None:
 
     # Temporarily disable comprehensive logging integration to prevent duplicate messages
     # try:
-    #     from src.utils.comprehensive_logger import get_comprehensive_logger
+    #     from utils.comprehensive_logger import get_comprehensive_logger
 
     #     comprehensive_logger = get_comprehensive_logger()
     #     if comprehensive_logger:
@@ -398,6 +479,7 @@ if system_logger is None:
 
 # Temporarily set logging to INFO level for debugging
 import logging
+
 logging.getLogger().setLevel(logging.INFO)
 for handler in logging.getLogger().handlers:
     handler.setLevel(logging.INFO)
@@ -441,8 +523,25 @@ def get_logger(name: str) -> logging.Logger:
     except ImportError:
         pass
 
-    # Fallback to old system
-    return system_logger.getChild(name)
+    # Fallback to old system with enhanced warning symbols
+    base_logger = system_logger.getChild(name)
+
+    # Check if we should add warning symbols
+    try:
+        # Try to get the enhanced logger configuration
+        if (
+            hasattr(system_logger, "_logger")
+            and hasattr(
+                system_logger._logger,
+                "enable_warning_symbols",
+            )
+            and system_logger._logger.enable_warning_symbols
+        ):
+            return system_logger._logger._create_enhanced_logger(base_logger)
+    except (AttributeError, TypeError):
+        pass
+
+    return base_logger
 
 
 def get_system_logger_with_comprehensive_integration() -> logging.Logger:
@@ -506,3 +605,147 @@ def ensure_comprehensive_logging_available():
     except ImportError:
         pass
     return False
+
+
+# -------- I/O and DataFrame troubleshooting helpers (lightweight, no external deps) --------
+
+
+def _format_bytes(num_bytes: int | None) -> str:
+    """Human-friendly byte size formatter."""
+    try:
+        if num_bytes is None:
+            return "n/a"
+        step_unit = 1024.0
+        units = ["B", "KB", "MB", "GB", "TB"]
+        size = float(num_bytes)
+        for unit in units:
+            if size < step_unit:
+                return f"{size:.1f}{unit}"
+            size /= step_unit
+        return f"{size:.1f}PB"
+    except Exception:
+        return str(num_bytes) if num_bytes is not None else "n/a"
+
+
+@contextmanager
+def log_io_operation(
+    logger: logging.Logger,
+    operation: str,
+    path: str | os.PathLike | None = None,
+    **context: Any,
+):
+    """Context-managed I/O logging with duration and best-effort file size.
+
+    - Logs start and end of an I/O operation with optional context (e.g., columns, filters, compression)
+    - On exception, logs with exception() and re-raises (no swallowing)
+    """
+    start = time.perf_counter()
+    try:
+        ctx = " ".join(f"{k}={v}" for k, v in context.items() if v is not None)
+        logger.info(
+            f"🔧 {operation} start"
+            + (f" path={path}" if path is not None else "")
+            + (f" {ctx}" if ctx else ""),
+        )
+    except Exception:
+        # Logging issues should never break execution
+        pass
+    try:
+        yield
+        elapsed = time.perf_counter() - start
+        size_str = "n/a"
+        try:
+            if (
+                path is not None
+                and os.path.exists(str(path))
+                and os.path.isfile(str(path))
+            ):
+                size_str = _format_bytes(os.path.getsize(str(path)))
+        except Exception:
+            pass
+        try:
+            logger.info(
+                f"✅ {operation} ok"
+                + (f" path={path}" if path is not None else "")
+                + f" elapsed={elapsed:.3f}s size={size_str}",
+            )
+        except Exception:
+            pass
+    except Exception as e:
+        elapsed = time.perf_counter() - start
+        try:
+            logger.exception(
+                f"❌ {operation} failed"
+                + (f" path={path}" if path is not None else "")
+                + f" after {elapsed:.3f}s: {e}",
+            )
+        except Exception:
+            pass
+        raise
+
+
+def log_dataframe_overview(
+    logger: logging.Logger,
+    df: Any,
+    *,
+    name: str | None = None,
+    sample_rows: int = 3,
+) -> None:
+    """Log essential DataFrame diagnostics without heavy output.
+
+    - shape, columns count, memory usage, dtype summary
+    - null counts for up to first 10 columns
+    - sample of first rows (limited)
+    """
+    try:
+        if df is None:
+            logger.info("📭 DataFrame is None")
+            return
+        if not hasattr(df, "shape") or not hasattr(df, "columns"):
+            logger.info("📦 Object is not a pandas DataFrame-like; skipping overview")
+            return
+        df_name = name or "DataFrame"
+        rows, cols = getattr(df, "shape", (None, None))
+        columns_list = list(getattr(df, "columns", []))
+        mem_mb = None
+        try:
+            mem_mb = float(df.memory_usage(deep=True).sum()) / (1024.0**2)
+        except Exception:
+            pass
+        try:
+            dtypes_summary = (
+                getattr(df, "dtypes", None)
+                .astype(str)  # type: ignore[operator]
+                .value_counts()  # type: ignore[attr-defined]
+                .to_dict()  # type: ignore[attr-defined]
+                if hasattr(df, "dtypes")
+                else {}
+            )
+        except Exception:
+            dtypes_summary = {}
+        logger.info(
+            f"🧮 {df_name}: rows={rows} cols={cols} memory={mem_mb:.2f}MB dtypes={dtypes_summary}",
+        )
+        # Nulls snapshot for up to 10 columns
+        try:
+            nulls = (
+                df[columns_list[:10]].isnull().sum().to_dict()  # type: ignore[index]
+                if columns_list
+                else {}
+            )
+            if nulls:
+                logger.info(f"🧪 {df_name} nulls (first 10 cols): {nulls}")
+        except Exception:
+            pass
+        # Sample rows
+        try:
+            if rows and rows > 0:
+                sample = df.head(min(sample_rows, int(rows)))
+                # Convert to lightweight dict form
+                preview = sample.to_dict(orient="records")  # type: ignore[attr-defined]
+                logger.debug(f"🔎 {df_name} sample: {preview}")
+        except Exception:
+            pass
+    except Exception:
+        # Never fail due to logging
+        pass

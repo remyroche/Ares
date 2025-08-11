@@ -4,6 +4,7 @@ Data Optimizer for Ares Trading System.
 Enhances data processing efficiency and memory usage.
 """
 
+import contextlib
 import gc
 from datetime import datetime
 from functools import lru_cache
@@ -13,6 +14,11 @@ import pandas as pd
 
 from src.utils.comprehensive_logger import get_component_logger
 from src.utils.error_handler import handle_errors
+from src.utils.warning_symbols import (
+    error,
+    initialization_error,
+    missing,
+)
 
 
 class DataOptimizer:
@@ -47,15 +53,18 @@ class DataOptimizer:
         # Initialize optimization strategies
         self._initialize_optimization_strategies()
 
-    def _initialize_optimization_strategies(self) -> None:
-        """Initialize data optimization strategies."""
-        self.optimization_strategies = {
-            "memory_optimization": self._optimize_memory_usage,
-            "data_type_optimization": self._optimize_data_types,
-            "chunk_processing": self.process_in_chunks,
-            "compression": self._apply_compression,
-            "caching": self._apply_caching,
-        }
+
+# Shared column projection helpers for Parquet reads
+def ohlcv_columns() -> list[str]:
+    return ["timestamp", "open", "high", "low", "close", "volume"]
+
+
+def trade_columns() -> list[str]:
+    return ["timestamp", "price", "quantity", "is_buyer_maker", "agg_trade_id"]
+
+
+def regime_columns() -> list[str]:
+    return ["timestamp", "regime", "confidence"]
 
     @handle_errors(
         exceptions=(Exception,),
@@ -78,8 +87,8 @@ class DataOptimizer:
             self.logger.info("✅ Data Optimizer initialized successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error initializing Data Optimizer: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing Data Optimizer: {e}"))
             return False
 
     def _initialize_cache(self) -> None:
@@ -89,8 +98,8 @@ class DataOptimizer:
             self.cache_timestamps = {}
             self.logger.info("Data cache initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing cache: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing cache: {e}"))
 
     async def optimize_dataframe(
         self,
@@ -127,8 +136,8 @@ class DataOptimizer:
 
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error optimizing DataFrame: {e}")
+        except Exception:
+            self.print(error("Error optimizing DataFrame: {e}"))
             return df
 
     async def _apply_auto_optimization(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -147,8 +156,8 @@ class DataOptimizer:
 
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error in auto optimization: {e}")
+        except Exception:
+            self.print(error("Error in auto optimization: {e}"))
             return df
 
     async def _optimize_memory_usage(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -172,8 +181,8 @@ class DataOptimizer:
             self.logger.info("✅ Memory optimization completed")
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error optimizing memory usage: {e}")
+        except Exception:
+            self.print(error("Error optimizing memory usage: {e}"))
             return df
 
     async def _optimize_data_types(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -207,8 +216,8 @@ class DataOptimizer:
 
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error optimizing data types: {e}")
+        except Exception:
+            self.print(error("Error optimizing data types: {e}"))
             return df
 
     async def _apply_compression(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -218,8 +227,8 @@ class DataOptimizer:
             # In practice, you might use more sophisticated compression
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error applying compression: {e}")
+        except Exception:
+            self.print(error("Error applying compression: {e}"))
             return df
 
     async def _remove_unnecessary_columns(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -239,8 +248,8 @@ class DataOptimizer:
 
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error removing unnecessary columns: {e}")
+        except Exception:
+            self.print(error("Error removing unnecessary columns: {e}"))
             return df
 
     async def _optimize_index(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -252,8 +261,8 @@ class DataOptimizer:
 
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error optimizing index: {e}")
+        except Exception:
+            self.print(error("Error optimizing index: {e}"))
             return df
 
     async def _optimize_for_speed(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -270,8 +279,8 @@ class DataOptimizer:
             self.logger.info("✅ Speed optimization completed")
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error optimizing for speed: {e}")
+        except Exception:
+            self.print(error("Error optimizing for speed: {e}"))
             return df
 
     async def _optimize_for_vectorization(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -279,15 +288,13 @@ class DataOptimizer:
         try:
             # Ensure numeric columns are numeric for vectorized operations
             for column in df.select_dtypes(include=["object"]).columns:
-                try:
+                with contextlib.suppress(Exception):
                     df[column] = pd.to_numeric(df[column], errors="ignore")
-                except:
-                    pass
 
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error optimizing for vectorization: {e}")
+        except Exception:
+            self.print(error("Error optimizing for vectorization: {e}"))
             return df
 
     async def _apply_compression(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -297,8 +304,8 @@ class DataOptimizer:
             # In practice, you might use more sophisticated compression
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error applying compression: {e}")
+        except Exception:
+            self.print(error("Error applying compression: {e}"))
             return df
 
     async def _apply_caching(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -308,8 +315,8 @@ class DataOptimizer:
             # In practice, you might use more sophisticated caching
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error applying caching: {e}")
+        except Exception:
+            self.print(error("Error applying caching: {e}"))
             return df
 
     async def _optimize_balanced(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -329,8 +336,8 @@ class DataOptimizer:
             self.logger.info("✅ Balanced optimization completed")
             return df
 
-        except Exception as e:
-            self.logger.error(f"Error in balanced optimization: {e}")
+        except Exception:
+            self.print(error("Error in balanced optimization: {e}"))
             return df
 
     async def process_in_chunks(
@@ -357,8 +364,8 @@ class DataOptimizer:
             )
             return chunks
 
-        except Exception as e:
-            self.logger.error(f"Error processing data in chunks: {e}")
+        except Exception:
+            self.print(error("Error processing data in chunks: {e}"))
             return [pd.DataFrame(data)] if isinstance(data, list) else [data]
 
     @lru_cache(maxsize=128)
@@ -372,8 +379,8 @@ class DataOptimizer:
                 "processing_time": 0,
             }
 
-        except Exception as e:
-            self.logger.error(f"Error in cached optimization: {e}")
+        except Exception:
+            self.print(error("Error in cached optimization: {e}"))
             return {}
 
     async def optimize_market_data(self, market_data: pd.DataFrame) -> pd.DataFrame:
@@ -388,7 +395,7 @@ class DataOptimizer:
             ]
 
             if missing_columns:
-                self.logger.warning(f"Missing required columns: {missing_columns}")
+                self.print(missing("Missing required columns: {missing_columns}"))
 
             # Optimize data types for market data
             numeric_columns = ["open", "high", "low", "close", "volume"]
@@ -409,8 +416,8 @@ class DataOptimizer:
             self.logger.info(f"Market data optimized: {len(market_data)} rows")
             return market_data
 
-        except Exception as e:
-            self.logger.error(f"Error optimizing market data: {e}")
+        except Exception:
+            self.print(error("Error optimizing market data: {e}"))
             return market_data
 
     async def optimize_ensemble_data(
@@ -438,18 +445,16 @@ class DataOptimizer:
                             # Align data types with reference
                             for col in other_data.columns:
                                 if col in reference_dtypes:
-                                    try:
+                                    with contextlib.suppress(Exception):
                                         other_data[col] = other_data[col].astype(
                                             reference_dtypes[col],
                                         )
-                                    except:
-                                        pass
 
             self.logger.info(f"Ensemble data optimized: {len(optimized_data)} datasets")
             return optimized_data
 
-        except Exception as e:
-            self.logger.error(f"Error optimizing ensemble data: {e}")
+        except Exception:
+            self.print(error("Error optimizing ensemble data: {e}"))
             return ensemble_data
 
     def get_optimization_stats(self) -> dict[str, Any]:
@@ -482,7 +487,7 @@ class DataOptimizer:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting optimization stats: {e}")
+            self.print(error("Error getting optimization stats: {e}"))
             return {"error": str(e)}
 
     @handle_errors(
@@ -507,8 +512,8 @@ class DataOptimizer:
 
             self.logger.info("✅ Data Optimizer stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping Data Optimizer: {e}")
+        except Exception:
+            self.print(error("Error stopping Data Optimizer: {e}"))
 
 
 # Global data optimizer instance

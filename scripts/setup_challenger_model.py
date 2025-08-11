@@ -22,6 +22,20 @@ sys.path.insert(0, str(project_root))
 import mlflow
 
 from src.utils.logger import setup_logging, system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 from src.utils.state_manager import StateManager
 
 
@@ -42,7 +56,7 @@ def setup_challenger_model(run_id: str):
             logger.info(f"Run name: {run.data.tags.get('mlflow.runName', 'N/A')}")
             logger.info(f"Status: {run.info.status}")
         except Exception as e:
-            logger.error(f"Could not find MLflow run {run_id}: {e}")
+            print(error("Could not find MLflow run {run_id}: {e}")))
             return False
 
         # Set the challenger model run ID
@@ -52,7 +66,7 @@ def setup_challenger_model(run_id: str):
         return True
 
     except Exception as e:
-        logger.error(f"Error setting up challenger model: {e}")
+        print(error("Error setting up challenger model: {e}")))
         return False
 
 
@@ -72,7 +86,7 @@ def list_available_models():
         # Find the experiment
         experiment = client.get_experiment_by_name(experiment_name)
         if not experiment:
-            logger.error(f"Experiment '{experiment_name}' not found")
+            print(missing("Experiment '{experiment_name}' not found")))
             return False
 
         # Search for runs
@@ -102,7 +116,7 @@ def list_available_models():
         return True
 
     except Exception as e:
-        logger.error(f"Error listing models: {e}")
+        print(error("Error listing models: {e}")))
         return False
 
 
@@ -122,7 +136,7 @@ def clear_challenger_model():
         return True
 
     except Exception as e:
-        logger.error(f"Error clearing challenger model: {e}")
+        print(error("Error clearing challenger model: {e}")))
         return False
 
 
@@ -135,10 +149,10 @@ def main():
 Examples:
   # Set up a challenger model
   python scripts/setup_challenger_model.py --run-id abc123def456
-  
+
   # List available models
   python scripts/setup_challenger_model.py --list-models
-  
+
   # Clear challenger model
   python scripts/setup_challenger_model.py --clear
         """,

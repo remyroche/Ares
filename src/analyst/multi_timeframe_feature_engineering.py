@@ -30,6 +30,10 @@ from src.analyst.feature_engineering_orchestrator import FeatureEngineeringEngin
 from src.config import CONFIG
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+)
 
 
 class MultiTimeframeFeatureEngineering:
@@ -328,7 +332,7 @@ class MultiTimeframeFeatureEngineering:
 
             for timeframe, data in data_dict.items():
                 if data.empty:
-                    self.logger.warning(f"Empty data for {timeframe}, skipping")
+                    self.print(warning("Empty data for {timeframe}, skipping"))
                     continue
 
                 self.logger.info(f"📊 Generating features for {timeframe}...")
@@ -370,8 +374,8 @@ class MultiTimeframeFeatureEngineering:
 
             return features_dict
 
-        except Exception as e:
-            self.logger.error(f"Error generating multi-timeframe features: {e}")
+        except Exception:
+            self.print(error("Error generating multi-timeframe features: {e}"))
             return {}
 
     async def _generate_base_features(
@@ -397,17 +401,17 @@ class MultiTimeframeFeatureEngineering:
         """
         try:
             # Use base feature engineering engine
-            base_features = self.base_feature_engine.generate_all_features(
+            return self.base_feature_engine.generate_all_features(
                 klines_df=data,
                 agg_trades_df=agg_trades or pd.DataFrame(),
                 futures_df=futures or pd.DataFrame(),
                 sr_levels=sr_levels or [],
             )
 
-            return base_features
-
         except Exception as e:
-            self.logger.error(f"Error generating base features for {timeframe}: {e}")
+            self.logger.exception(
+                f"Error generating base features for {timeframe}: {e}",
+            )
             return data.copy()
 
     async def _generate_timeframe_specific_features(
@@ -462,16 +466,14 @@ class MultiTimeframeFeatureEngineering:
             )
 
             # Calculate timeframe-specific trend indicators
-            features = self._calculate_timeframe_trend_indicators(
+            return self._calculate_timeframe_trend_indicators(
                 features,
                 timeframe,
                 indicator_params,
             )
 
-            return features
-
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error generating timeframe-specific features for {timeframe}: {e}",
             )
             return base_features
@@ -483,7 +485,7 @@ class MultiTimeframeFeatureEngineering:
         indicator_params: dict[str, Any],
     ) -> pd.DataFrame:
         """
-        Calculate timeframe-specific technical indicators.
+        Calculate timeframe-specific technical indicators using price differences.
 
         Args:
             df: Features DataFrame
@@ -494,18 +496,31 @@ class MultiTimeframeFeatureEngineering:
             DataFrame with technical indicators
         """
         try:
-            # RSI
+            # Convert price data to differences for technical indicators
+            close_diff = df["close"].diff().fillna(0)
+            high_diff = df["high"].diff().fillna(0)
+            low_diff = df["low"].diff().fillna(0)
+
+            # Create a temporary DataFrame with price differences for pandas_ta
+            temp_df = df.copy()
+            temp_df["close"] = close_diff
+            temp_df["high"] = high_diff
+            temp_df["low"] = low_diff
+
+            # RSI using price differences
             rsi_params = indicator_params.get("rsi", {})
             rsi_length = rsi_params.get("length", 14)
-            df[f"rsi_{timeframe}"] = df.ta.rsi(close=df["close"], length=rsi_length)
+            df[f"rsi_{timeframe}"] = temp_df.ta.rsi(
+                close=temp_df["close"], length=rsi_length
+            )
 
-            # MACD
+            # MACD using price differences
             macd_params = indicator_params.get("macd", {})
             fast = macd_params.get("fast", 12)
             slow = macd_params.get("slow", 26)
             signal = macd_params.get("signal", 9)
-            macd_result = df.ta.macd(
-                close=df["close"],
+            macd_result = temp_df.ta.macd(
+                close=temp_df["close"],
                 fast=fast,
                 slow=slow,
                 signal=signal,
@@ -515,10 +530,10 @@ class MultiTimeframeFeatureEngineering:
                 df[f"macd_signal_{timeframe}"] = macd_result.iloc[:, 1]
                 df[f"macd_hist_{timeframe}"] = macd_result.iloc[:, 2]
 
-            # Bollinger Bands
+            # Bollinger Bands using price differences
             bb_params = indicator_params.get("bbands", {})
             bb_length = bb_params.get("length", 20)
-            bb_result = df.ta.bbands(close=df["close"], length=bb_length)
+            bb_result = temp_df.ta.bbands(close=temp_df["close"], length=bb_length)
             if bb_result is not None:
                 df[f"bb_upper_{timeframe}"] = bb_result.iloc[:, 0]
                 df[f"bb_middle_{timeframe}"] = bb_result.iloc[:, 1]
@@ -526,23 +541,23 @@ class MultiTimeframeFeatureEngineering:
                 df[f"bb_width_{timeframe}"] = bb_result.iloc[:, 3]
                 df[f"bb_percent_{timeframe}"] = bb_result.iloc[:, 4]
 
-            # ATR
+            # ATR using price differences
             atr_params = indicator_params.get("atr", {})
             atr_length = atr_params.get("length", 14)
-            df[f"atr_{timeframe}"] = df.ta.atr(
-                high=df["high"],
-                low=df["low"],
-                close=df["close"],
+            df[f"atr_{timeframe}"] = temp_df.ta.atr(
+                high=temp_df["high"],
+                low=temp_df["low"],
+                close=temp_df["close"],
                 length=atr_length,
             )
 
-            # ADX
+            # ADX using price differences
             adx_params = indicator_params.get("adx", {})
             adx_length = adx_params.get("length", 14)
-            adx_result = df.ta.adx(
-                high=df["high"],
-                low=df["low"],
-                close=df["close"],
+            adx_result = temp_df.ta.adx(
+                high=temp_df["high"],
+                low=temp_df["low"],
+                close=temp_df["close"],
                 length=adx_length,
             )
             if adx_result is not None:
@@ -550,13 +565,13 @@ class MultiTimeframeFeatureEngineering:
                 df[f"dmp_{timeframe}"] = adx_result.iloc[:, 1]
                 df[f"dmn_{timeframe}"] = adx_result.iloc[:, 2]
 
-            # Stochastic
+            # Stochastic using price differences
             stoch_params = indicator_params.get("stoch", {})
             stoch_length = stoch_params.get("length", 14)
-            stoch_result = df.ta.stoch(
-                high=df["high"],
-                low=df["low"],
-                close=df["close"],
+            stoch_result = temp_df.ta.stoch(
+                high=temp_df["high"],
+                low=temp_df["low"],
+                close=temp_df["close"],
                 length=stoch_length,
             )
             if stoch_result is not None:
@@ -566,7 +581,7 @@ class MultiTimeframeFeatureEngineering:
             return df
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error calculating technical indicators for {timeframe}: {e}",
             )
             return df
@@ -618,7 +633,7 @@ class MultiTimeframeFeatureEngineering:
             return df
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error calculating volume indicators for {timeframe}: {e}",
             )
             return df
@@ -663,7 +678,7 @@ class MultiTimeframeFeatureEngineering:
             return df
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error calculating volatility indicators for {timeframe}: {e}",
             )
             return df
@@ -712,7 +727,7 @@ class MultiTimeframeFeatureEngineering:
             return df
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error calculating momentum indicators for {timeframe}: {e}",
             )
             return df
@@ -770,7 +785,7 @@ class MultiTimeframeFeatureEngineering:
             return df
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error calculating trend indicators for {timeframe}: {e}",
             )
             return df
@@ -819,7 +834,9 @@ class MultiTimeframeFeatureEngineering:
             return df
 
         except Exception as e:
-            self.logger.error(f"Error adding timeframe metadata for {timeframe}: {e}")
+            self.logger.exception(
+                f"Error adding timeframe metadata for {timeframe}: {e}",
+            )
             return df
 
     def _cache_features(self, timeframe: str, features: pd.DataFrame) -> None:
@@ -839,8 +856,8 @@ class MultiTimeframeFeatureEngineering:
                 oldest_key = min(self.feature_cache.keys())
                 del self.feature_cache[oldest_key]
 
-        except Exception as e:
-            self.logger.error(f"Error caching features for {timeframe}: {e}")
+        except Exception:
+            self.print(error("Error caching features for {timeframe}: {e}"))
 
     def _clean_cache(self) -> None:
         """Clean old entries from the feature cache."""
@@ -849,7 +866,7 @@ class MultiTimeframeFeatureEngineering:
             if (current_time - self.last_cache_cleanup) > timedelta(minutes=10):
                 keys_to_remove = []
 
-                for key in self.feature_cache.keys():
+                for key in self.feature_cache:
                     # Extract timestamp from key
                     try:
                         timestamp_str = key.split("_")[-2] + "_" + key.split("_")[-1]
@@ -865,8 +882,8 @@ class MultiTimeframeFeatureEngineering:
 
                 self.last_cache_cleanup = current_time
 
-        except Exception as e:
-            self.logger.error(f"Error cleaning cache: {e}")
+        except Exception:
+            self.print(error("Error cleaning cache: {e}"))
 
     def get_timeframe_parameters(self, timeframe: str) -> dict[str, Any]:
         """

@@ -29,6 +29,20 @@ from src.training.steps.step1_data_collection import (
     run_step as run_data_collection_step,
 )
 from src.utils.logger import setup_logging, system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 async def main():
@@ -37,7 +51,7 @@ async def main():
     logger = system_logger.getChild("ResumeTraining")
 
     if len(sys.argv) < 2:
-        logger.error("A symbol argument is required.")
+        print(error("A symbol argument is required.")))
         print(__doc__)
         sys.exit(1)
 
@@ -62,7 +76,7 @@ async def main():
     )
 
     if klines_df is None:
-        logger.error("Data consolidation step failed. Cannot resume training.")
+        print(failed("Data consolidation step failed. Cannot resume training.")))
         sys.exit(1)
 
     logger.info(
@@ -84,7 +98,7 @@ async def main():
                 f"Resumed training pipeline completed successfully for {symbol}. MLflow Run ID: {run_id}",
             )
         else:
-            logger.error(f"Resumed training pipeline failed for {symbol}.")
+            print(failed("Resumed training pipeline failed for {symbol}.")))
             sys.exit(1)
     finally:
         if db_manager:

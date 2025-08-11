@@ -7,12 +7,17 @@ metrics dashboard, advanced tracing, ML monitoring, report scheduling, and track
 """
 
 import asyncio
+import contextlib
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    initialization_error,
+)
 
 from .advanced_tracer import AdvancedTracer, setup_advanced_tracer
 from .correlation_manager import CorrelationManager, setup_correlation_manager
@@ -107,7 +112,7 @@ class MonitoringIntegrationManager:
             return True
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"❌ Monitoring Integration Manager initialization failed: {e}",
             )
             return False
@@ -154,8 +159,8 @@ class MonitoringIntegrationManager:
             if self.components.tracking_system:
                 self.logger.info("✅ Tracking System initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing components: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing components: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -170,8 +175,12 @@ class MonitoringIntegrationManager:
 
             self.logger.info("Cross-component tracking initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing cross-component tracking: {e}")
+        except Exception:
+            self.print(
+                initialization_error(
+                    "Error initializing cross-component tracking: {e}"
+                ),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -186,8 +195,10 @@ class MonitoringIntegrationManager:
 
             self.logger.info("Performance correlation initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing performance correlation: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing performance correlation: {e}"),
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -210,8 +221,8 @@ class MonitoringIntegrationManager:
             self.logger.info("🚀 Monitoring Integration started")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error starting integration: {e}")
+        except Exception:
+            self.print(error("Error starting integration: {e}"))
             return False
 
     @handle_errors(
@@ -246,8 +257,8 @@ class MonitoringIntegrationManager:
             if self.components.tracking_system:
                 await self.components.tracking_system.start_tracking()
 
-        except Exception as e:
-            self.logger.error(f"Error starting all components: {e}")
+        except Exception:
+            self.print(error("Error starting all components: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -262,8 +273,8 @@ class MonitoringIntegrationManager:
                 await self._update_performance_correlations()
                 await asyncio.sleep(30)  # Update every 30 seconds
 
-        except Exception as e:
-            self.logger.error(f"Error in integration loop: {e}")
+        except Exception:
+            self.print(error("Error in integration loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -314,8 +325,8 @@ class MonitoringIntegrationManager:
 
             self.cross_component_metrics = metrics
 
-        except Exception as e:
-            self.logger.error(f"Error updating cross-component metrics: {e}")
+        except Exception:
+            self.print(error("Error updating cross-component metrics: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -343,8 +354,8 @@ class MonitoringIntegrationManager:
 
             self.performance_correlations = correlations
 
-        except Exception as e:
-            self.logger.error(f"Error updating performance correlations: {e}")
+        except Exception:
+            self.print(error("Error updating performance correlations: {e}"))
 
     def get_integration_status(self) -> dict[str, Any]:
         """Get integration status."""
@@ -364,8 +375,8 @@ class MonitoringIntegrationManager:
                 "performance_correlation": self.enable_performance_correlation,
             }
 
-        except Exception as e:
-            self.logger.error(f"Error getting integration status: {e}")
+        except Exception:
+            self.print(error("Error getting integration status: {e}"))
             return {}
 
     def get_cross_component_metrics(self) -> dict[str, Any]:
@@ -419,8 +430,8 @@ class MonitoringIntegrationManager:
 
             return dashboard_data
 
-        except Exception as e:
-            self.logger.error(f"Error getting unified dashboard data: {e}")
+        except Exception:
+            self.print(error("Error getting unified dashboard data: {e}"))
             return {}
 
     @handle_errors(
@@ -436,18 +447,16 @@ class MonitoringIntegrationManager:
             # Stop integration task
             if self.integration_task:
                 self.integration_task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await self.integration_task
-                except asyncio.CancelledError:
-                    pass
 
             # Stop all components
             await self._stop_all_components()
 
             self.logger.info("🛑 Monitoring Integration stopped")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping integration: {e}")
+        except Exception:
+            self.print(error("Error stopping integration: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -481,8 +490,8 @@ class MonitoringIntegrationManager:
             if self.components.tracking_system:
                 await self.components.tracking_system.stop_tracking()
 
-        except Exception as e:
-            self.logger.error(f"Error stopping all components: {e}")
+        except Exception:
+            self.print(error("Error stopping all components: {e}"))
 
 
 @handle_errors(
@@ -509,6 +518,6 @@ async def setup_monitoring_integration_manager(
             return integration_manager
         return None
 
-    except Exception as e:
-        system_logger.error(f"Error setting up monitoring integration manager: {e}")
+    except Exception:
+        system_print(error("Error setting up monitoring integration manager: {e}"))
         return None

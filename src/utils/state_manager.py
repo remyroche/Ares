@@ -20,6 +20,12 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    invalid,
+    missing,
+    warning,
+)
 
 
 class StateManager:
@@ -76,7 +82,7 @@ class StateManager:
 
         # Validate configuration
         if not self._validate_configuration():
-            self.logger.error("Invalid configuration for state manager")
+            self.print(invalid("Invalid configuration for state manager"))
             return False
 
         # Load existing state
@@ -106,11 +112,11 @@ class StateManager:
     def _validate_configuration(self) -> bool:
         """Validate state manager configuration."""
         if not self.state_file:
-            self.logger.error("State file not configured")
+            self.print(error("State file not configured"))
             return False
 
         if self.save_interval <= 0:
-            self.logger.error("Invalid save interval")
+            self.print(invalid("Invalid save interval"))
             return False
 
         return True
@@ -130,8 +136,8 @@ class StateManager:
                 with state_path.open("r") as f:
                     self.state = json.load(f)
                 self.logger.info(f"State loaded from: {self.state_file}")
-            except Exception as e:
-                self.logger.warning(f"Could not load existing state: {e}")
+            except Exception:
+                self.print(warning("Could not load existing state: {e}"))
                 self.state = {}
 
     @handle_errors(
@@ -178,7 +184,7 @@ class StateManager:
             bool: True if successful, False otherwise
         """
         if not key:
-            self.logger.error("Invalid state key")
+            self.print(invalid("Invalid state key"))
             return False
 
         # Update state
@@ -218,7 +224,7 @@ class StateManager:
             Any: State value or default
         """
         if not key:
-            self.logger.error("Invalid state key")
+            self.print(invalid("Invalid state key"))
             return default
 
         return self.state.get(key, default)
@@ -240,7 +246,7 @@ class StateManager:
         """
         try:
             if not key:
-                self.logger.error("Invalid state key")
+                self.print(invalid("Invalid state key"))
                 return False
 
             if key in self.state:
@@ -261,11 +267,11 @@ class StateManager:
 
                 self.logger.info(f"State deleted: {key}")
                 return True
-            self.logger.warning(f"State key not found: {key}")
+            self.print(missing("State key not found: {key}"))
             return False
 
-        except Exception as e:
-            self.logger.exception(f"Error deleting state: {e}")
+        except Exception:
+            self.print(error("Error deleting state: {e}"))
             return False
 
     @handle_file_operations(
@@ -287,8 +293,8 @@ class StateManager:
 
             self.logger.info(f"State saved to: {self.state_file}")
 
-        except Exception as e:
-            self.logger.exception(f"Error saving state: {e}")
+        except Exception:
+            self.print(error("Error saving state: {e}"))
 
     @handle_file_operations(
         default_return=None,
@@ -299,7 +305,7 @@ class StateManager:
         try:
             state_path = Path(self.state_file)
             if not state_path.exists():
-                self.logger.warning("No state file to backup")
+                self.print(warning("No state file to backup"))
                 return
 
             # Create backup filename
@@ -311,8 +317,8 @@ class StateManager:
 
             self.logger.info(f"State backup created: {backup_file}")
 
-        except Exception as e:
-            self.logger.exception(f"Error creating state backup: {e}")
+        except Exception:
+            self.print(error("Error creating state backup: {e}"))
 
     def get_state_status(self) -> dict[str, Any]:
         """
@@ -353,8 +359,8 @@ class StateManager:
 
             self.logger.info("✅ State Manager stopped successfully")
 
-        except Exception as e:
-            self.logger.exception(f"Error stopping state manager: {e}")
+        except Exception:
+            self.print(error("Error stopping state manager: {e}"))
 
 
 # Global state manager instance

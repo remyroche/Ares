@@ -1,73 +1,117 @@
 # Autoencoder Feature Generator Configuration
+# This file configures the autoencoder feature generation and analysis pipeline
 
-# Data preprocessing
 preprocessing:
-  scaler_type: "robust"  # "robust", "standard", "minmax"
-  outlier_threshold: 3.0
-  missing_value_strategy: "forward_fill"  # "forward_fill", "backward_fill", "interpolate", "zero"
-  feature_selection_threshold: 0.99  # 99% threshold for feature filtering
-  iqr_multiplier: 3.0  # Multiplier for IQR outlier detection
+  scaler_type: "robust"  # Options: "robust", "standard", "minmax"
+  outlier_threshold: 3.0  # Final clipping threshold for scaled features
+  missing_value_strategy: "forward_fill"  # Options: "forward_fill", "zero"
+  iqr_multiplier: 3.0  # IQR multiplier for outlier detection
+  
+  # Price return conversion settings
+  use_price_returns: true  # Enable price return conversion
+  price_return_method: "pct_change"  # Options: "pct_change", "diff", "log_returns"
+  
+  # Feature selection optimization (NEW)
+  enable_feature_selection: true  # Enable optimized feature selection to avoid redundancy
+  primary_price_feature: "close"  # Preferred price feature (fallback to first available)
+  primary_volume_feature: "volume"  # Preferred volume feature (fallback to first available)
 
-# Sequence preparation
 sequence:
-  timesteps: 10
-  overlap: 0.5  # 50% overlap between sequences
-  min_sequence_length: 5
-  use_target_prediction: true  # Whether to predict targets or reconstruct sequences
+  timesteps: 10  # Number of timesteps for sequence creation
+  overlap: 0.5  # Overlap ratio between sequences
 
-# Autoencoder architecture
 autoencoder:
-  encoding_dim: 32
-  dropout_rate: 0.3
-  learning_rate: 0.001
-  batch_size: 32
-  epochs: 100
-  validation_split: 0.2
-  early_stopping_patience: 10
-  reduce_lr_patience: 5
-  min_lr: 1e-6
-  target_prediction: true  # Predict targets instead of reconstructing sequences
+  epochs: 100  # Maximum training epochs
+  early_stopping_patience: 10  # Early stopping patience
+  reduce_lr_patience: 5  # Learning rate reduction patience
+  min_lr: 1e-6  # Minimum learning rate
+  encoding_dim: 32  # Latent space dimension
 
-# CNN architecture (for sequence-aware models)
-cnn:
-  filters: [16, 32, 64]
-  kernel_size: [3, 5, 7]
-  pool_size: 2
-  activation: "relu"
-  kernel_regularizer: 0.001
-  max_norm_constraint: 2.0
-
-# Training parameters
 training:
-  n_trials: 50
-  timeout_seconds: 1800  # 30 minutes
-  n_jobs: -1
-  pruning_enabled: true
-  pruning_metric: "val_loss"
-  pruning_patience: 5
+  n_trials: 50  # Number of Optuna optimization trials
+  n_jobs: 1  # Number of parallel jobs (1 recommended for GPU)
+  pruning_enabled: true  # Enable Optuna pruning
 
-# Feature filtering (Random Forest + SHAP)
 feature_filtering:
-  n_estimators: 100
-  max_depth: 10
-  min_samples_split: 5
-  min_samples_leaf: 2
-  random_state: 42
-  importance_threshold: 0.99  # 99% threshold for feature importance
-  use_existing_labels: true  # Use existing triple barrier labels if available
+  n_estimators: 100  # Random Forest estimators for feature filtering
+  max_depth: 10  # Max depth for Random Forest
+  importance_threshold: 0.99  # Cumulative importance threshold
+  shap_imbalance_threshold: 100.0  # Threshold for extreme imbalance handling
+  enable_shap_imbalance_handling: true  # Enable imbalance handling
+  sample_percentage: 10.0  # Percentage of data to sample for SHAP
+  min_sample_size: 1000  # Minimum sample size for SHAP
+  max_sample_size: 1000000  # Maximum sample size for SHAP
+  enable_feature_prefiltering: true  # Enable pre-filtering for SHAP
+  max_features_for_shap: 50  # Maximum features for SHAP computation
+  shap_n_estimators: 50  # RF estimators for SHAP
+  shap_max_depth: 8  # Max depth for SHAP RF
+  shap_min_samples_split: 10  # Min samples split for SHAP RF
+  shap_min_samples_leaf: 5  # Min samples leaf for SHAP RF
+  timeout_per_5000_samples: 60  # Timeout per 5000 samples (seconds)
+  min_features_for_ae: 15  # Minimum features required for autoencoder
+  min_features_for_shap: 20  # Minimum features for SHAP refinement
 
-# Triple barrier parameters (only used if use_existing_labels is false)
-triple_barrier:
-  profit_take: 0.001  # 0.1%
-  stop_loss: 0.0005   # 0.05%
-  time_barrier: 300   # 5 minutes (in seconds)
-  vectorized: true     # Use vectorized implementation for speed
+feature_analysis:
+  enable_analysis: true  # Enable feature importance analysis
+  high_correlation_threshold: 0.7  # Threshold for high correlation features
+  low_correlation_threshold: 0.1  # Threshold for low correlation features
+  stability_window: 100  # Window size for stability analysis
+  stability_threshold: 0.7  # Threshold for stable features
+  regime_analysis_enabled: true  # Enable regime-specific analysis
+  comparison_with_original: true  # Compare with original features
 
-# Output configuration
 output:
-  save_autoencoder: true
-  save_config: true
-  save_preprocessor: true
-  output_dir: "models/autoencoder_features"
-  config_filename: "autoencoder_config.yaml"
-  preserve_index: true  # Preserve DataFrame index for proper alignment
+  output_dir: "models/autoencoder_features"  # Output directory for models
+
+# Feature interaction configuration for causality-aware interactions
+feature_interactions:
+  enable_interactions: true
+  max_interactions: 60
+  interaction_threshold: 0.1
+  
+  # Lag configuration for causality and temporal relationships
+  lag_config:
+    enable_lagged_interactions: true
+    max_lag: 5
+    causality_test_lags: [1, 2, 3, 5]
+  
+  # Specific causality pairs for market microstructure modeling
+  causality_pairs:
+    - ["spread_bps", "volume_roc"]
+    - ["volatility_atr", "momentum_roc"]
+    - ["liquidity_amihud", "price_impact"]
+    - ["order_flow_imbalance", "spread_change"]
+  
+  # Tiered feature selection strategy for 180 features
+  feature_selection_tiers:
+    tier_1_base_features: 60        # Core technical indicators (reduced from 80)
+    tier_2_normalized_features: 30  # Z-scores, changes, accelerations (reduced from 40)
+    tier_3_interaction_features: 45 # Spread*volume, volatility*momentum (reduced from 60)
+    tier_4_lagged_features: 30      # Lagged interactions, causality (reduced from 40)
+    tier_5_causality_features: 15   # Market microstructure causality (reduced from 20)
+    total_max_features: 180         # Reduced from 240
+  
+  # Dynamic feature selection based on dataset size
+  dynamic_selection:
+    small_dataset_threshold: 100000    # <100k samples
+    medium_dataset_threshold: 500000   # 100k-500k samples
+    large_dataset_threshold: 1000000   # 500k-1M samples
+    # >1M samples: use full feature set
+  
+  # Stability selection configuration for robust feature selection
+  stability_selection:
+    n_bootstrap_samples: 50           # Number of bootstrap samples for stability
+    stability_threshold: 0.7          # Minimum stability score (0-1)
+    min_features_per_tier: 5          # Minimum features to keep per tier
+    enable_look_ahead_bias_prevention: true  # Prevent data leakage
+    time_series_validation: true      # Use time-series aware validation
+    walk_forward_validation: true     # Embed selection in walk-forward loop
+    
+    # SHAP analysis configuration
+    shap_analysis:
+      validation_sample_size: 2000    # Increased from 500 for better SHAP estimation
+      min_sample_size: 1000           # Minimum samples for SHAP analysis
+      max_sample_size: 5000           # Maximum samples for computational efficiency
+      sample_strategy: "stratified"   # Stratified sampling for balanced representation
+      background_sample_size: 500     # Background samples for KernelExplainer
+      enable_adaptive_sampling: true  # Adapt sample size based on dataset size

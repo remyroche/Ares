@@ -18,6 +18,9 @@ from src.interfaces import (
     ITactician,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    failed,
+)
 
 T = TypeVar("T")
 
@@ -73,8 +76,14 @@ class DependencyContainer:
     ) -> None:
         """Register a service with enhanced configuration support."""
         # Map legacy singleton flag to lifetime if not explicitly provided
-        if lifetime not in {ServiceLifetime.SINGLETON, ServiceLifetime.TRANSIENT, ServiceLifetime.SCOPED}:
-            lifetime = ServiceLifetime.SINGLETON if singleton else ServiceLifetime.TRANSIENT
+        if lifetime not in {
+            ServiceLifetime.SINGLETON,
+            ServiceLifetime.TRANSIENT,
+            ServiceLifetime.SCOPED,
+        }:
+            lifetime = (
+                ServiceLifetime.SINGLETON if singleton else ServiceLifetime.TRANSIENT
+            )
 
         self._services[service_name] = ServiceRegistration(
             service_type=service_type,
@@ -99,7 +108,9 @@ class DependencyContainer:
         self._factories[service_name] = factory_func
         # Also create a registration placeholder so resolve() can work
         self._services[service_name] = ServiceRegistration(
-            service_type=service_name if isinstance(service_name, type) else type(factory_func),
+            service_type=service_name
+            if isinstance(service_name, type)
+            else type(factory_func),
             implementation=None,
             singleton=(lifetime == ServiceLifetime.SINGLETON),
             config=config,
@@ -166,7 +177,10 @@ class DependencyContainer:
                 return self._instances[service_name]
 
             # Scoped instances
-            if self._current_scope and service_name in self._scoped_instances.get(self._current_scope, {}):
+            if self._current_scope and service_name in self._scoped_instances.get(
+                self._current_scope,
+                {},
+            ):
                 return self._scoped_instances[self._current_scope][service_name]
 
             # Get or create service registration
@@ -177,7 +191,10 @@ class DependencyContainer:
                 service_reg = self._services.get(service_name)
 
             if not service_reg:
-                raise ValueError(f"Service '{getattr(service_name, '__name__', service_name)}' not registered")
+                msg = f"Service '{getattr(service_name, '__name__', service_name)}' not registered"
+                raise ValueError(
+                    msg,
+                )
 
             # Instance already provided
             if service_reg.instance is not None:
@@ -195,7 +212,9 @@ class DependencyContainer:
             return instance
 
         except Exception as e:
-            self.logger.error(f"Failed to resolve service '{getattr(service_name, '__name__', service_name)}': {e}")
+            self.logger.exception(
+                f"Failed to resolve service '{getattr(service_name, '__name__', service_name)}': {e}",
+            )
             raise
 
     def _create_instance(
@@ -235,7 +254,9 @@ class DependencyContainer:
             return instance
 
         except Exception as e:
-            self.logger.error(f"Failed to create instance for '{getattr(service_name, '__name__', service_name)}': {e}")
+            self.logger.exception(
+                f"Failed to create instance for '{getattr(service_name, '__name__', service_name)}': {e}",
+            )
             raise
 
     def _get_constructor_params(
@@ -269,8 +290,8 @@ class DependencyContainer:
                 instance.config = config
             elif hasattr(instance, "_config"):
                 instance._config = config
-        except Exception as e:
-            self.logger.warning(f"Failed to inject config into instance: {e}")
+        except Exception:
+            self.print(failed("Failed to inject config into instance: {e}"))
 
     def register_config_service(self, config: dict[str, Any]) -> None:
         """Register configuration as a service."""
@@ -317,7 +338,10 @@ class AsyncServiceContainer(DependencyContainer):
                 return self._instances[service_name]
 
             # Scoped instances
-            if self._current_scope and service_name in self._scoped_instances.get(self._current_scope, {}):
+            if self._current_scope and service_name in self._scoped_instances.get(
+                self._current_scope,
+                {},
+            ):
                 return self._scoped_instances[self._current_scope][service_name]
 
             # Get service registration
@@ -327,7 +351,10 @@ class AsyncServiceContainer(DependencyContainer):
                 service_reg = self._services.get(service_name)
 
             if not service_reg:
-                raise ValueError(f"Service '{getattr(service_name, '__name__', service_name)}' not registered")
+                msg = f"Service '{getattr(service_name, '__name__', service_name)}' not registered"
+                raise ValueError(
+                    msg,
+                )
 
             # Instance already provided
             if service_reg.instance is not None:
@@ -345,7 +372,9 @@ class AsyncServiceContainer(DependencyContainer):
             return instance
 
         except Exception as e:
-            self.logger.error(f"Failed to resolve async service '{getattr(service_name, '__name__', service_name)}': {e}")
+            self.logger.exception(
+                f"Failed to resolve async service '{getattr(service_name, '__name__', service_name)}': {e}",
+            )
             raise
 
     async def _create_instance_async(
@@ -395,7 +424,7 @@ class AsyncServiceContainer(DependencyContainer):
             return instance
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Failed to create async instance for '{getattr(service_name, '__name__', service_name)}': {e}",
             )
             raise
@@ -564,7 +593,7 @@ class ModularTradingSystem:
         await self.event_bus.stop()
 
         # Stop components
-        for name, component in self.components.items():
+        for component in self.components.values():
             if hasattr(component, "stop"):
                 await component.stop()
 

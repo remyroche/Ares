@@ -7,17 +7,24 @@ with partial fill management.
 """
 
 import asyncio
+import contextlib
 import time
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
-import uuid
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-import uuid
 from src.utils.prometheus_metrics import metrics
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    missing,
+    warning,
+)
 
 
 class OrderType(Enum):
@@ -228,24 +235,38 @@ class EnhancedOrderManager:
 
             # In live mode, require an injected exchange client to be attached before use
             if not self.paper_trading and not self.exchange_client:
-                self.logger.error("Live mode requires an injected exchange client. Call attach_exchange_client first.")
+                self.logger.error(
+                    "Live mode requires an injected exchange client. Call attach_exchange_client first.",
+                )
                 return False
 
             self.is_initialized = True
             self.logger.info("✅ Enhanced Order Manager initialized successfully")
             # Best-effort reconciliation of open orders if live and client attached
             try:
-                if not self.paper_trading and self.exchange_client and hasattr(self.exchange_client, "get_open_orders"):
+                if (
+                    not self.paper_trading
+                    and self.exchange_client
+                    and hasattr(self.exchange_client, "get_open_orders")
+                ):
                     await self._reconcile_open_orders()
                 # Start order status polling if supported
-                if not self.paper_trading and self.exchange_client and hasattr(self.exchange_client, "get_order_status"):
-                    self._status_poll_interval = float(self.order_config.get("status_poll_interval", 2.0))
+                if (
+                    not self.paper_trading
+                    and self.exchange_client
+                    and hasattr(self.exchange_client, "get_order_status")
+                ):
+                    self._status_poll_interval = float(
+                        self.order_config.get("status_poll_interval", 2.0),
+                    )
                     self._status_task = asyncio.create_task(self._order_status_worker())
-            except Exception as rec_err:
-                self.logger.warning(f"Open orders reconciliation skipped: {rec_err}")
+            except Exception:
+                self.print(warning("Open orders reconciliation skipped: {rec_err}"))
             return True
-        except Exception as e:
-            self.logger.error(f"Error initializing Enhanced Order Manager: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing Enhanced Order Manager: {e}"),
+            )
             return False
 
     @handle_errors(
@@ -261,11 +282,11 @@ class EnhancedOrderManager:
             if not self.paper_trading and hasattr(client, "connect"):
                 connected = await client.connect()
                 if not connected:
-                    self.logger.error("Failed to connect injected exchange client.")
+                    self.print(failed("Failed to connect injected exchange client."))
                     return False
             return True
-        except Exception as e:
-            self.logger.error(f"Error attaching exchange client: {e}")
+        except Exception:
+            self.print(error("Error attaching exchange client: {e}"))
             return False
 
     @handle_errors(
@@ -301,12 +322,18 @@ class EnhancedOrderManager:
             # Live mode: push updates to exchange by cancelling and recreating closing orders
             if updated and self.exchange_client and not self.paper_trading:
                 # Normalize side and compute closing side
-                side_str = side.value if isinstance(side, OrderSide) else str(side).lower()
+                side_str = (
+                    side.value if isinstance(side, OrderSide) else str(side).lower()
+                )
                 is_long = side_str in ("buy", "long")
                 closing_side = "SELL" if is_long else "BUY"
 
                 # Use any one order under the link to derive average price and quantity
-                linked_orders = [o for o in self.active_orders.values() if o.order_link_id == order_link_id and o.symbol == symbol]
+                linked_orders = [
+                    o
+                    for o in self.active_orders.values()
+                    if o.order_link_id == order_link_id and o.symbol == symbol
+                ]
                 if linked_orders:
                     ref = linked_orders[0]
                     avg_price = ref.average_price or (ref.price or 0.0)
@@ -316,7 +343,10 @@ class EnhancedOrderManager:
                     for o in linked_orders:
                         try:
                             if hasattr(self.exchange_client, "cancel_order"):
-                                await self.exchange_client.cancel_order(symbol=symbol, order_id=o.order_id)
+                                await self.exchange_client.cancel_order(
+                                    symbol=symbol,
+                                    order_id=o.order_id,
+                                )
                         except Exception:
                             # Ignore cancellation failures and continue
                             pass
@@ -328,7 +358,9 @@ class EnhancedOrderManager:
                         # Take Profit
                         if trailing_tp_pct is not None and trailing_tp_pct > 0:
                             tp_price = (
-                                avg_price * (1 + trailing_tp_pct) if is_long else avg_price * (1 - trailing_tp_pct)
+                                avg_price * (1 + trailing_tp_pct)
+                                if is_long
+                                else avg_price * (1 - trailing_tp_pct)
                             )
                             try:
                                 if hasattr(self.exchange_client, "create_order"):
@@ -340,12 +372,16 @@ class EnhancedOrderManager:
                                         price=tp_price,
                                     )
                             except Exception as e:
-                                self.logger.error(f"Failed to place TP order for {order_link_id}: {e}")
+                                self.logger.exception(
+                                    f"Failed to place TP order for {order_link_id}: {e}",
+                                )
 
                         # Stop Loss (submit protective LIMIT as placeholder)
                         if trailing_stop_pct is not None and trailing_stop_pct > 0:
                             sl_price = (
-                                avg_price * (1 - trailing_stop_pct) if is_long else avg_price * (1 + trailing_stop_pct)
+                                avg_price * (1 - trailing_stop_pct)
+                                if is_long
+                                else avg_price * (1 + trailing_stop_pct)
                             )
                             try:
                                 if hasattr(self.exchange_client, "create_order"):
@@ -357,32 +393,37 @@ class EnhancedOrderManager:
                                         price=sl_price,
                                     )
                             except Exception as e:
-                                self.logger.error(f"Failed to place SL order for {order_link_id}: {e}")
+                                self.logger.exception(
+                                    f"Failed to place SL order for {order_link_id}: {e}",
+                                )
 
             if updated:
                 self.logger.info(
-                    f"Updated trailing levels for link {order_link_id}: stop={trailing_stop_pct}, tp={trailing_tp_pct}"
+                    f"Updated trailing levels for link {order_link_id}: stop={trailing_stop_pct}, tp={trailing_tp_pct}",
                 )
                 return True
 
             self.logger.warning(
-                f"No active orders found to update for link {order_link_id} on {symbol}"
+                f"No active orders found to update for link {order_link_id} on {symbol}",
             )
             return False
-        except Exception as e:
-            self.logger.error(f"Error updating trailing levels: {e}")
+        except Exception:
+            self.print(error("Error updating trailing levels: {e}"))
             return False
 
     def _validate_configuration(self) -> None:
         """Validate order manager configuration."""
         if self.max_leverage <= 0 or self.max_leverage > 100:
-            raise ValueError("Invalid max_leverage configuration")
+            msg = "Invalid max_leverage configuration"
+            raise ValueError(msg)
 
         if self.min_order_size <= 0:
-            raise ValueError("Invalid min_order_size configuration")
+            msg = "Invalid min_order_size configuration"
+            raise ValueError(msg)
 
         if self.max_order_size <= self.min_order_size:
-            raise ValueError("max_order_size must be greater than min_order_size")
+            msg = "max_order_size must be greater than min_order_size"
+            raise ValueError(msg)
 
     def _initialize_order_tracking(self) -> None:
         """Initialize order tracking systems."""
@@ -462,7 +503,7 @@ class EnhancedOrderManager:
                 volume_data,
                 momentum_data,
             ):
-                self.logger.warning(f"Micro breakout conditions not met for {symbol}")
+                self.print(warning("Micro breakout conditions not met for {symbol}"))
                 return None
 
             # Calculate stop-limit order parameters
@@ -496,8 +537,8 @@ class EnhancedOrderManager:
 
             return order_state
 
-        except Exception as e:
-            self.logger.error(f"Error placing CHASE_MICRO_BREAKOUT order: {e}")
+        except Exception:
+            self.print(error("Error placing CHASE_MICRO_BREAKOUT order: {e}"))
             return None
 
     def _validate_micro_breakout_conditions(
@@ -542,8 +583,8 @@ class EnhancedOrderManager:
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating micro breakout conditions: {e}")
+        except Exception:
+            self.print(error("Error validating micro breakout conditions: {e}"))
             return False
 
     def _calculate_chase_order_prices(
@@ -567,8 +608,8 @@ class EnhancedOrderManager:
 
             return stop_price, limit_price
 
-        except Exception as e:
-            self.logger.error(f"Error calculating chase order prices: {e}")
+        except Exception:
+            self.print(error("Error calculating chase order prices: {e}"))
             return current_price, current_price
 
     async def _track_chase_order(self, order_state: OrderState) -> None:
@@ -577,8 +618,8 @@ class EnhancedOrderManager:
             # Start monitoring the chase order
             asyncio.create_task(self._monitor_chase_order(order_state))
 
-        except Exception as e:
-            self.logger.error(f"Error tracking chase order: {e}")
+        except Exception:
+            self.print(error("Error tracking chase order: {e}"))
 
     async def _monitor_chase_order(self, order_state: OrderState) -> None:
         """Monitor chase order and handle timeouts/retries."""
@@ -608,8 +649,8 @@ class EnhancedOrderManager:
                 await asyncio.sleep(5)
                 attempts += 1
 
-        except Exception as e:
-            self.logger.error(f"Error monitoring chase order: {e}")
+        except Exception:
+            self.print(error("Error monitoring chase order: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -652,7 +693,7 @@ class EnhancedOrderManager:
                 quantity,
                 liquidity_data,
             ):
-                self.logger.warning(f"Limit order conditions not met for {symbol}")
+                self.print(warning("Limit order conditions not met for {symbol}"))
                 return None
 
             # Set default leverage if not provided
@@ -663,7 +704,7 @@ class EnhancedOrderManager:
             max_leverage = self.limit_order_return_config.get("max_leverage", 5.0)
             if leverage > max_leverage:
                 leverage = max_leverage
-                self.logger.warning(f"Leverage reduced to {leverage} (max allowed)")
+                self.print(warning("Leverage reduced to {leverage} (max allowed)"))
 
             # Calculate adjusted quantity based on leverage
             adjusted_quantity = quantity * leverage
@@ -692,8 +733,8 @@ class EnhancedOrderManager:
 
             return order_state
 
-        except Exception as e:
-            self.logger.error(f"Error placing LIMIT_ORDER_RETURN order: {e}")
+        except Exception:
+            self.print(error("Error placing LIMIT_ORDER_RETURN order: {e}"))
             return None
 
     def _validate_limit_order_conditions(
@@ -731,8 +772,8 @@ class EnhancedOrderManager:
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating limit order conditions: {e}")
+        except Exception:
+            self.print(error("Error validating limit order conditions: {e}"))
             return False
 
     async def _track_limit_order(self, order_state: OrderState) -> None:
@@ -741,8 +782,8 @@ class EnhancedOrderManager:
             # Start monitoring the limit order
             asyncio.create_task(self._monitor_limit_order(order_state))
 
-        except Exception as e:
-            self.logger.error(f"Error tracking limit order: {e}")
+        except Exception:
+            self.print(error("Error tracking limit order: {e}"))
 
     async def _monitor_limit_order(self, order_state: OrderState) -> None:
         """Monitor limit order and handle partial fills."""
@@ -789,8 +830,8 @@ class EnhancedOrderManager:
                 # Wait before next check
                 await asyncio.sleep(10)
 
-        except Exception as e:
-            self.logger.error(f"Error monitoring limit order: {e}")
+        except Exception:
+            self.print(error("Error monitoring limit order: {e}"))
 
     async def _handle_partial_fill_success(self, order_state: OrderState) -> None:
         """Handle successful partial fill."""
@@ -805,8 +846,8 @@ class EnhancedOrderManager:
             self.successful_orders += 1
             self.total_volume_traded += order_state.executed_quantity
 
-        except Exception as e:
-            self.logger.error(f"Error handling partial fill success: {e}")
+        except Exception:
+            self.print(error("Error handling partial fill success: {e}"))
 
     async def _handle_partial_fill_adjustment(self, order_state: OrderState) -> None:
         """Handle partial fill by adjusting the order."""
@@ -830,8 +871,8 @@ class EnhancedOrderManager:
                 # Keep current price, just wait longer
                 pass
 
-        except Exception as e:
-            self.logger.error(f"Error handling partial fill adjustment: {e}")
+        except Exception:
+            self.print(error("Error handling partial fill adjustment: {e}"))
 
     async def _place_order(self, order_request: OrderRequest) -> OrderState | None:
         """Place an order and return the order state."""
@@ -844,7 +885,7 @@ class EnhancedOrderManager:
             cached = self._idempotency_cache.get(order_request.order_link_id)
             if cached and cached in self.active_orders:
                 self.logger.info(
-                    f"Idempotent order submission detected for link_id={order_request.order_link_id}; returning existing order {cached}"
+                    f"Idempotent order submission detected for link_id={order_request.order_link_id}; returning existing order {cached}",
                 )
                 return self.active_orders[cached]
 
@@ -857,14 +898,21 @@ class EnhancedOrderManager:
             )
 
             # Validate stop order requires stop price
-            if order_request.order_type in (OrderType.STOP_LIMIT, OrderType.STOP_MARKET) and norm_stop is None:
-                self.logger.error("Stop order requires stop_price; rejecting order")
+            if (
+                order_request.order_type
+                in (OrderType.STOP_LIMIT, OrderType.STOP_MARKET)
+                and norm_stop is None
+            ):
+                self.print(error("Stop order requires stop_price; rejecting order"))
                 return None
 
             # Clamp leverage if provided
-            if order_request.leverage is not None and order_request.leverage > self.max_leverage:
+            if (
+                order_request.leverage is not None
+                and order_request.leverage > self.max_leverage
+            ):
                 self.logger.warning(
-                    f"Requested leverage {order_request.leverage} exceeds max {self.max_leverage}; clamping"
+                    f"Requested leverage {order_request.leverage} exceeds max {self.max_leverage}; clamping",
                 )
                 order_request.leverage = self.max_leverage
 
@@ -928,7 +976,9 @@ class EnhancedOrderManager:
                         order_state.status = OrderStatus.FILLED
             else:
                 if not self.exchange_client:
-                    self.logger.error("Live mode requires an exchange connection. Order not placed.")
+                    self.logger.error(
+                        "Live mode requires an exchange connection. Order not placed.",
+                    )
                     order_state.status = OrderStatus.REJECTED
                     return None
                 # Live execution via exchange client
@@ -950,19 +1000,33 @@ class EnhancedOrderManager:
                 # Enforce symbol-specific leverage and margin mode if provided
                 limits = self.symbol_risk_limits.get(order_request.symbol, {})
                 per_symbol_max = float(limits.get("max_leverage", self.max_leverage))
-                if order_request.leverage is not None and order_request.leverage > per_symbol_max:
+                if (
+                    order_request.leverage is not None
+                    and order_request.leverage > per_symbol_max
+                ):
                     self.logger.warning(
-                        f"Leverage {order_request.leverage} > symbol max {per_symbol_max}; clamping"
+                        f"Leverage {order_request.leverage} > symbol max {per_symbol_max}; clamping",
                     )
                     order_request.leverage = per_symbol_max
                 margin_mode = limits.get("margin_mode")
                 try:
                     if margin_mode and hasattr(self.exchange_client, "set_margin_mode"):
-                        await self.exchange_client.set_margin_mode(symbol=order_request.symbol, mode=margin_mode)
-                    if order_request.leverage and hasattr(self.exchange_client, "set_leverage"):
-                        await self.exchange_client.set_leverage(symbol=order_request.symbol, leverage=float(order_request.leverage))
+                        await self.exchange_client.set_margin_mode(
+                            symbol=order_request.symbol,
+                            mode=margin_mode,
+                        )
+                    if order_request.leverage and hasattr(
+                        self.exchange_client,
+                        "set_leverage",
+                    ):
+                        await self.exchange_client.set_leverage(
+                            symbol=order_request.symbol,
+                            leverage=float(order_request.leverage),
+                        )
                 except Exception as lev_err:
-                    self.logger.error(f"Error setting margin/leverage on exchange: {lev_err}")
+                    self.logger.exception(
+                        f"Error setting margin/leverage on exchange: {lev_err}",
+                    )
 
                 # Duck-typed order creation to be exchange-agnostic
                 if hasattr(self.exchange_client, "create_order"):
@@ -974,38 +1038,43 @@ class EnhancedOrderManager:
                         quantity=qty,
                         price=price,
                         time_in_force=order_state.time_in_force,
-                        stop_price=float(order_state.stop_price) if order_state.stop_price else None,
+                        stop_price=float(order_state.stop_price)
+                        if order_state.stop_price
+                        else None,
                         new_client_order_id=order_state.order_link_id,
                         reduce_only=order_request.reduce_only,
                         close_on_trigger=order_request.close_on_trigger,
                         take_profit=order_request.take_profit,
                         stop_loss=order_request.stop_loss,
-                        post_only=bool(order_request.post_only) if order_request.post_only is not None else None,
+                        post_only=bool(order_request.post_only)
+                        if order_request.post_only is not None
+                        else None,
                     )
                 else:
-                    self.logger.error("Exchange client missing create_order method")
+                    self.print(missing("Exchange client missing create_order method"))
                     resp = None
                 if resp is None:
                     order_state.status = OrderStatus.REJECTED
-                    try:
-                        metrics.step_failure_counter.labels(step_name="order_create", error_type="reject").inc()
-                    except Exception:
-                        pass
+                    with contextlib.suppress(Exception):
+                        metrics.step_failure_counter.labels(
+                            step_name="order_create",
+                            error_type="reject",
+                        ).inc()
                 else:
                     # Keep pending/open; fills will be tracked by polling get_order_status elsewhere
                     order_state.status = OrderStatus.PENDING
-                    try:
-                        metrics.step_success_counter.labels(step_name="order_create").inc()
-                    except Exception:
-                        pass
+                    with contextlib.suppress(Exception):
+                        metrics.step_success_counter.labels(
+                            step_name="order_create",
+                        ).inc()
 
             self.logger.info(
                 f"Order placed: order_id={order_id} link_id={order_request.order_link_id} strategy={order_request.strategy_type}",
             )
             return order_state
 
-        except Exception as e:
-            self.logger.error(f"Error placing order: {e}")
+        except Exception:
+            self.print(error("Error placing order: {e}"))
             return None
 
     async def _cancel_order(self, order_id: str) -> bool:
@@ -1016,17 +1085,25 @@ class EnhancedOrderManager:
                     order_state = self.active_orders[order_id]
 
                 # Attempt server-side cancel if live
-                if not self.paper_trading and self.exchange_client and hasattr(self.exchange_client, "cancel_order"):
+                if (
+                    not self.paper_trading
+                    and self.exchange_client
+                    and hasattr(self.exchange_client, "cancel_order")
+                ):
                     try:
                         cancelled = await self.exchange_client.cancel_order(
                             symbol=order_state.symbol,
                             order_id=order_id,
                         )
                         if not cancelled:
-                            self.logger.error(f"Exchange failed to cancel order: {order_id}")
+                            self.logger.error(
+                                f"Exchange failed to cancel order: {order_id}",
+                            )
                             return False
                     except Exception as exc:
-                        self.logger.error(f"Error calling exchange cancel for {order_id}: {exc}")
+                        self.logger.exception(
+                            f"Error calling exchange cancel for {order_id}: {exc}",
+                        )
                         return False
 
                 # Update local state
@@ -1037,21 +1114,22 @@ class EnhancedOrderManager:
                     self.order_history.append(order_state)
                     del self.active_orders[order_id]
 
-                self.logger.info(f"Order cancelled: order_id={order_id} link_id={order_state.order_link_id}")
-                try:
+                self.logger.info(
+                    f"Order cancelled: order_id={order_id} link_id={order_state.order_link_id}",
+                )
+                with contextlib.suppress(Exception):
                     metrics.step_success_counter.labels(step_name="order_cancel").inc()
-                except Exception:
-                    pass
                 return True
 
             return False
 
-        except Exception as e:
-            self.logger.error(f"Error cancelling order: {e}")
-            try:
-                metrics.step_failure_counter.labels(step_name="order_cancel", error_type="exception").inc()
-            except Exception:
-                pass
+        except Exception:
+            self.print(error("Error cancelling order: {e}"))
+            with contextlib.suppress(Exception):
+                metrics.step_failure_counter.labels(
+                    step_name="order_cancel",
+                    error_type="exception",
+                ).inc()
             return False
 
     async def _reconcile_open_orders(self) -> None:
@@ -1069,7 +1147,11 @@ class EnhancedOrderManager:
                 if order_id in self.active_orders:
                     continue
                 try:
-                    side = OrderSide.BUY if str(o.get("side", "")).upper() == "BUY" else OrderSide.SELL
+                    side = (
+                        OrderSide.BUY
+                        if str(o.get("side", "")).upper() == "BUY"
+                        else OrderSide.SELL
+                    )
                     # Map known order types; default to LIMIT
                     otype_map = {
                         "MARKET": OrderType.MARKET,
@@ -1079,7 +1161,10 @@ class EnhancedOrderManager:
                         "TAKE_PROFIT": OrderType.TAKE_PROFIT,
                         "TAKE_PROFIT_LIMIT": OrderType.TAKE_PROFIT_LIMIT,
                     }
-                    otype = otype_map.get(str(o.get("type", "")).upper(), OrderType.LIMIT)
+                    otype = otype_map.get(
+                        str(o.get("type", "")).upper(),
+                        OrderType.LIMIT,
+                    )
                     state = OrderState(
                         order_id=order_id,
                         symbol=str(o.get("symbol")),
@@ -1089,21 +1174,26 @@ class EnhancedOrderManager:
                         executed_quantity=float(o.get("executedQty", 0.0)),
                         remaining_quantity=max(
                             0.0,
-                            float(o.get("origQty", 0.0)) - float(o.get("executedQty", 0.0)),
+                            float(o.get("origQty", 0.0))
+                            - float(o.get("executedQty", 0.0)),
                         ),
                         price=float(o.get("price", 0.0)) or None,
                         stop_price=float(o.get("stopPrice", 0.0)) or None,
                         time_in_force=str(o.get("timeInForce", "GTC")),
                         order_link_id=o.get("clientOrderId"),
-                        status=self._map_exchange_status(str(o.get("status", "PENDING"))),
+                        status=self._map_exchange_status(
+                            str(o.get("status", "PENDING")),
+                        ),
                     )
                     async with self._lock:
                         self.active_orders[order_id] = state
                 except Exception:
                     continue
-            self.logger.info(f"Reconciled {len(self.active_orders)} open orders from exchange")
-        except Exception as e:
-            self.logger.error(f"Error reconciling open orders: {e}")
+            self.logger.info(
+                f"Reconciled {len(self.active_orders)} open orders from exchange",
+            )
+        except Exception:
+            self.print(error("Error reconciling open orders: {e}"))
 
     def _map_exchange_status(self, status: str) -> OrderStatus:
         s = status.upper()
@@ -1132,21 +1222,42 @@ class EnhancedOrderManager:
                             state = self.active_orders.get(oid)
                             if not state:
                                 continue
-                            if hasattr(self.exchange_client, "get_order_status") and self.exchange_client:
-                                resp = await self.exchange_client.get_order_status(symbol=state.symbol, order_id=oid)  # type: ignore[attr-defined]
+                            if (
+                                hasattr(self.exchange_client, "get_order_status")
+                                and self.exchange_client
+                            ):
+                                resp = await self.exchange_client.get_order_status(
+                                    symbol=state.symbol,
+                                    order_id=oid,
+                                )  # type: ignore[attr-defined]
                                 if not resp:
                                     continue
-                                executed_qty = float(resp.get("executedQty", state.executed_quantity))
-                                price = float(resp.get("price", state.price or 0.0)) or state.price
-                                status = self._map_exchange_status(str(resp.get("status", "PENDING")))
+                                executed_qty = float(
+                                    resp.get("executedQty", state.executed_quantity),
+                                )
+                                price = (
+                                    float(resp.get("price", state.price or 0.0))
+                                    or state.price
+                                )
+                                status = self._map_exchange_status(
+                                    str(resp.get("status", "PENDING")),
+                                )
                                 # Update
                                 state.executed_quantity = executed_qty
-                                state.remaining_quantity = max(0.0, state.original_quantity - executed_qty)
+                                state.remaining_quantity = max(
+                                    0.0,
+                                    state.original_quantity - executed_qty,
+                                )
                                 state.price = price
                                 state.status = status
                                 state.updated_time = datetime.now()
                                 # Auto-move to history if terminal
-                                if status in (OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED, OrderStatus.EXPIRED):
+                                if status in (
+                                    OrderStatus.FILLED,
+                                    OrderStatus.CANCELLED,
+                                    OrderStatus.REJECTED,
+                                    OrderStatus.EXPIRED,
+                                ):
                                     async with self._lock:
                                         self.order_history.append(state)
                                         self.active_orders.pop(oid, None)
@@ -1156,8 +1267,8 @@ class EnhancedOrderManager:
                     await asyncio.sleep(getattr(self, "_status_poll_interval", 2.0))
         except asyncio.CancelledError:
             self.logger.info("Order status worker cancelled")
-        except Exception as e:
-            self.logger.error(f"Error in order status worker: {e}")
+        except Exception:
+            self.print(error("Error in order status worker: {e}"))
 
     async def _modify_order_price(self, order_id: str, new_price: float) -> bool:
         """Modify the price of an active order."""
@@ -1172,8 +1283,8 @@ class EnhancedOrderManager:
 
             return False
 
-        except Exception as e:
-            self.logger.error(f"Error modifying order price: {e}")
+        except Exception:
+            self.print(error("Error modifying order price: {e}"))
             return False
 
     def _normalize_order_params(
@@ -1210,9 +1321,13 @@ class EnhancedOrderManager:
                 q = max(q, required_q)
 
             return q, p, s
-        except Exception as e:
-            self.logger.error(f"Error normalizing order params for {symbol}: {e}")
-            return max(float(quantity), 0.0), (float(price) if price is not None else None), (float(stop_price) if stop_price is not None else None)
+        except Exception:
+            self.print(error("Error normalizing order params for {symbol}: {e}"))
+            return (
+                max(float(quantity), 0.0),
+                (float(price) if price is not None else None),
+                (float(stop_price) if stop_price is not None else None),
+            )
 
     def get_order_status(self, order_id: str) -> OrderState | None:
         """Get the status of an order."""
@@ -1258,15 +1373,13 @@ class EnhancedOrderManager:
             status_task = getattr(self, "_status_task", None)
             if status_task:
                 status_task.cancel()
-                try:
+                with contextlib.suppress(Exception):
                     await status_task
-                except Exception:
-                    pass
 
             self.logger.info("✅ Enhanced Order Manager stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping enhanced order manager: {e}")
+        except Exception:
+            self.print(error("Error stopping enhanced order manager: {e}"))
 
 
 # Factory function for creating enhanced order manager
@@ -1298,6 +1411,6 @@ async def setup_enhanced_order_manager(
             return order_manager
         return None
 
-    except Exception as e:
-        print(f"❌ Error setting up enhanced order manager: {e}")
+    except Exception:
+        print(warning("Error setting up enhanced order manager: {e}"))
         return None

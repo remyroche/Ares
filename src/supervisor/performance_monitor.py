@@ -10,6 +10,12 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    invalid,
+    warning,
+)
 
 
 class PerformanceMonitor:
@@ -59,14 +65,14 @@ class PerformanceMonitor:
             self.logger.info("Initializing Performance Monitor...")
             await self._load_monitor_configuration()
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for performance monitor")
+                self.print(invalid("Invalid configuration for performance monitor"))
                 return False
             self.logger.info(
                 "✅ Performance Monitor initialization completed successfully",
             )
             return True
-        except Exception as e:
-            self.logger.error(f"❌ Performance Monitor initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Performance Monitor initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -81,8 +87,8 @@ class PerformanceMonitor:
             self.monitor_interval = self.monitor_config["monitor_interval"]
             self.max_history = self.monitor_config["max_history"]
             self.logger.info("Performance monitor configuration loaded successfully")
-        except Exception as e:
-            self.logger.error(f"Error loading monitor configuration: {e}")
+        except Exception:
+            self.print(error("Error loading monitor configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -92,15 +98,15 @@ class PerformanceMonitor:
     def _validate_configuration(self) -> bool:
         try:
             if self.monitor_interval <= 0:
-                self.logger.error("Invalid monitor interval")
+                self.print(invalid("Invalid monitor interval"))
                 return False
             if self.max_history <= 0:
-                self.logger.error("Invalid max history")
+                self.print(invalid("Invalid max history"))
                 return False
             self.logger.info("Configuration validation successful")
             return True
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_specific_errors(
@@ -118,8 +124,8 @@ class PerformanceMonitor:
                 await self._perform_monitoring()
                 await asyncio.sleep(self.monitor_interval)
             return True
-        except Exception as e:
-            self.logger.error(f"Error in performance monitor run: {e}")
+        except Exception:
+            self.print(error("Error in performance monitor run: {e}"))
             self.is_running = False
             return False
 
@@ -138,8 +144,8 @@ class PerformanceMonitor:
             await self._collect_performance_metrics()
             await self._check_performance_alerts()
             self.logger.info(f"Performance monitoring tick at {now}")
-        except Exception as e:
-            self.logger.error(f"Error in performance monitoring step: {e}")
+        except Exception:
+            self.print(error("Error in performance monitoring step: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -158,8 +164,8 @@ class PerformanceMonitor:
             }
             self.performance_metrics.update(metrics)
             self.logger.info("Performance metrics collected successfully")
-        except Exception as e:
-            self.logger.error(f"Error collecting performance metrics: {e}")
+        except Exception:
+            self.print(error("Error collecting performance metrics: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -176,7 +182,7 @@ class PerformanceMonitor:
                     "message": "Maximum drawdown exceeded threshold",
                 }
                 self.alerts.append(alert)
-                self.logger.warning("Performance alert: Maximum drawdown exceeded")
+                self.print(warning("Performance alert: Maximum drawdown exceeded"))
 
             if self.performance_metrics.get("sharpe_ratio", 0) < 1.0:
                 alert = {
@@ -185,11 +191,11 @@ class PerformanceMonitor:
                     "message": "Sharpe ratio below threshold",
                 }
                 self.alerts.append(alert)
-                self.logger.warning("Performance alert: Sharpe ratio below threshold")
+                self.print(warning("Performance alert: Sharpe ratio below threshold"))
 
             self.logger.info("Performance alerts checked successfully")
-        except Exception as e:
-            self.logger.error(f"Error checking performance alerts: {e}")
+        except Exception:
+            self.print(error("Error checking performance alerts: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -202,8 +208,8 @@ class PerformanceMonitor:
             self.is_running = False
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Performance Monitor stopped successfully")
-        except Exception as e:
-            self.logger.error(f"Error stopping performance monitor: {e}")
+        except Exception:
+            self.print(error("Error stopping performance monitor: {e}"))
 
     def get_status(self) -> dict[str, Any]:
         return self.status.copy()
@@ -317,7 +323,7 @@ class PerformanceMonitor:
                             f"Distribution shift (KS p-value: {p_value:.4f})",
                         )
             except ImportError:
-                self.logger.warning("scipy not available for KS test")
+                self.print(warning("scipy not available for KS test"))
 
             # Create drift alert if detected
             if drift_detected:
@@ -346,7 +352,9 @@ class PerformanceMonitor:
             return drift_detected
 
         except Exception as e:
-            self.logger.error(f"Error detecting concept drift for {model_name}: {e}")
+            self.logger.exception(
+                f"Error detecting concept drift for {model_name}: {e}",
+            )
             return False
 
     def get_model_performance_history(self, model_name: str) -> list[dict[str, Any]]:

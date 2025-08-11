@@ -1,8 +1,9 @@
 # exchange/base_exchange.py
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any, Callable, Awaitable
+from typing import Any
 
 from src.interfaces.base_interfaces import IExchangeClient, MarketData
 
@@ -384,7 +385,7 @@ class BaseExchange(IExchangeClient, ABC):
         Returns:
             datetime object
         """
-        if isinstance(timestamp, (int, float)):
+        if isinstance(timestamp, int | float):
             # Assume milliseconds if timestamp is large
             if timestamp > 1e10:
                 timestamp = timestamp / 1000
@@ -392,7 +393,7 @@ class BaseExchange(IExchangeClient, ABC):
         if isinstance(timestamp, str):
             # Try to parse as ISO format
             try:
-                return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                return datetime.fromisoformat(timestamp)
             except ValueError:
                 # Try other common formats
                 for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
@@ -400,20 +401,34 @@ class BaseExchange(IExchangeClient, ABC):
                         return datetime.strptime(timestamp, fmt)
                     except ValueError:
                         continue
-                raise ValueError(f"Unable to parse timestamp: {timestamp}")
+                msg = f"Unable to parse timestamp: {timestamp}"
+                raise ValueError(msg)
         else:
-            raise ValueError(f"Unsupported timestamp type: {type(timestamp)}")
+            msg = f"Unsupported timestamp type: {type(timestamp)}"
+            raise ValueError(msg)
 
     # --- Optional streaming hooks (to be implemented by subclasses as needed) ---
-    async def subscribe_trades(self, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+    async def subscribe_trades(
+        self,
+        symbol: str,
+        callback: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
         """Subscribe to live trades for symbol and invoke callback(trade_dict)."""
         raise NotImplementedError
 
-    async def subscribe_ticker(self, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+    async def subscribe_ticker(
+        self,
+        symbol: str,
+        callback: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
         """Subscribe to live ticker/mark price updates and invoke callback(ticker_dict)."""
         raise NotImplementedError
 
-    async def subscribe_order_book(self, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+    async def subscribe_order_book(
+        self,
+        symbol: str,
+        callback: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
         """Subscribe to live order book updates and invoke callback(book_dict)."""
         raise NotImplementedError
 
@@ -423,9 +438,11 @@ class BaseExchange(IExchangeClient, ABC):
         try:
             # Prefer a direct ticker if subclass implements get_ticker
             if hasattr(self, "get_ticker"):
-                ticker = await getattr(self, "get_ticker")(symbol)
+                ticker = await self.get_ticker(symbol)
                 if ticker:
-                    last = ticker.get("last") or ticker.get("mark") or ticker.get("close")
+                    last = (
+                        ticker.get("last") or ticker.get("mark") or ticker.get("close")
+                    )
                     if last is not None:
                         return float(last)
                     # derive mid if possible
@@ -435,7 +452,7 @@ class BaseExchange(IExchangeClient, ABC):
                         return (float(bid) + float(ask)) / 2.0
             # Fallback to order book mid
             if hasattr(self, "get_order_book"):
-                book = await getattr(self, "get_order_book")(symbol, 5)
+                book = await self.get_order_book(symbol, 5)
                 bids = book.get("bids") or []
                 asks = book.get("asks") or []
                 best_bid = float(bids[0][0]) if bids else None
@@ -459,13 +476,24 @@ class BaseExchange(IExchangeClient, ABC):
                 # Find matching symbol
                 for p in risk:
                     inst = p.get("symbol") or p.get("info", {}).get("symbol")
-                    if inst and inst.replace("-", "").replace("_", "").upper().startswith(symbol.upper().replace("USDT", "")):
-                        liq = p.get("liquidationPrice") or p.get("liqPrice") or p.get("liquidation_price")
+                    if inst and inst.replace("-", "").replace(
+                        "_",
+                        "",
+                    ).upper().startswith(symbol.upper().replace("USDT", "")):
+                        liq = (
+                            p.get("liquidationPrice")
+                            or p.get("liqPrice")
+                            or p.get("liquidation_price")
+                        )
                         if liq:
                             return float(liq)
                 # Otherwise take first
                 p = risk[0]
-                liq = p.get("liquidationPrice") or p.get("liqPrice") or p.get("liquidation_price")
+                liq = (
+                    p.get("liquidationPrice")
+                    or p.get("liqPrice")
+                    or p.get("liquidation_price")
+                )
                 if liq:
                     return float(liq)
         except Exception:

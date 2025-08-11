@@ -8,12 +8,12 @@ from src.config.environment import get_environment_settings
 def get_trading_config() -> dict[str, Any]:
     """
     Get the complete trading configuration.
-    
+
     Returns:
         dict: Complete trading configuration
     """
     settings = get_environment_settings()
-    
+
     return {
         # --- Basic Trading Parameters ---
         "trading_symbol": settings.trade_symbol,
@@ -24,7 +24,6 @@ def get_trading_config() -> dict[str, Any]:
         "maker_fee": 0.0002,
         "state_file": "ares_state.json",
         "lookback_years": 2,  # 2 years of historical data
-        
         # --- Exchange Configurations ---
         "exchanges": {
             "binance": {
@@ -49,33 +48,28 @@ def get_trading_config() -> dict[str, Any]:
                 "password": settings.okx_password,
             },
         },
-        
         # --- Risk Management Configuration ---
         "risk_management": {
             "max_position_size": 0.3,  # Maximum position size as fraction of portfolio (30%)
             "max_daily_loss": 0.1,  # Maximum daily loss as fraction of portfolio (10%)
             "max_drawdown": 0.50,  # Maximum drawdown before stopping (50%)
             "kill_switch_threshold": 0.50,  # Loss threshold for kill switch (50%)
-            
             "position_sizing": {
                 "confidence_based_scaling": True,  # Enable confidence-based position sizing
                 "base_position_size": 0.05,  # Base position size (5% of portfolio)
                 "max_positions_per_signal": 5,  # Maximum number of positions for same signal
-                
                 "confidence_thresholds": {
                     "low_confidence": 0.6,  # Confidence threshold for low confidence
                     "medium_confidence": 0.75,  # Confidence threshold for medium confidence
                     "high_confidence": 0.85,  # Confidence threshold for high confidence
                     "very_high_confidence": 0.95,  # Confidence threshold for very high confidence
                 },
-                
                 "position_size_multipliers": {
                     "low_confidence": 0.5,  # 50% of base size for low confidence
                     "medium_confidence": 1.0,  # 100% of base size for medium confidence
                     "high_confidence": 1.5,  # 150% of base size for high confidence
                     "very_high_confidence": 2.0,  # 200% of base size for very high confidence
                 },
-                
                 "successive_position_rules": {
                     "enable_successive_positions": True,  # Enable multiple positions for high confidence
                     "min_confidence_for_successive": 0.85,  # Minimum confidence for successive positions
@@ -84,7 +78,6 @@ def get_trading_config() -> dict[str, Any]:
                     "size_reduction_factor": 0.8,  # Each successive position is 80% of previous
                     "max_total_exposure": 0.3,  # Maximum total exposure across all positions (30%)
                 },
-                
                 "volatility_adjustment": {
                     "enable_volatility_scaling": True,
                     "atr_multiplier": 1.0,
@@ -99,7 +92,6 @@ def get_trading_config() -> dict[str, Any]:
                         "high_volatility": 0.7,  # Reduce size by 30% in high volatility
                     },
                 },
-                
                 "regime_based_adjustment": {
                     "enable_regime_adjustment": True,
                     "regime_multipliers": {
@@ -108,7 +100,6 @@ def get_trading_config() -> dict[str, Any]:
                         "SIDEWAYS_RANGE": 0.9,  # Reduce size by 10% in sideways
                     },
                 },
-                
                 "risk_limits": {
                     "max_single_position": 0.15,  # Maximum single position (15%)
                     "max_total_exposure": 0.3,  # Maximum total exposure (30%)
@@ -117,7 +108,6 @@ def get_trading_config() -> dict[str, Any]:
                     "max_leverage": 10.0,  # Maximum leverage allowed
                 },
             },
-            
             "dynamic_risk_management": {
                 "enable_dynamic_risk": True,
                 "drawdown_adjustment": {
@@ -152,7 +142,6 @@ def get_trading_config() -> dict[str, Any]:
                 },
             },
         },
-        
         # --- Position Management Configuration ---
         "position_management": {
             "position_closing": {
@@ -186,7 +175,6 @@ def get_trading_config() -> dict[str, Any]:
                     },
                 },
             },
-            
             "position_monitoring": {
                 "enable_real_time_monitoring": True,
                 "monitoring_interval_seconds": 10,
@@ -203,14 +191,12 @@ def get_trading_config() -> dict[str, Any]:
                 },
             },
         },
-        
         # --- Pipeline Configuration ---
         "pipeline": {
             "loop_interval_seconds": 10,  # Main loop interval for live trading
             "max_retries": 3,  # Maximum retries for failed operations
             "timeout_seconds": 30,  # Timeout for operations
         },
-        
         # --- Analyst Configuration ---
         "analyst": {
             "unified_regime_classifier": {
@@ -221,8 +207,11 @@ def get_trading_config() -> dict[str, Any]:
                 "target_timeframe": "1h",
                 "volatility_period": 10,
                 "enable_sr_integration": True,
-                "adx_sideways_threshold": 20,  # Middle ground - balanced regime diversity
-                "volatility_threshold": 0.014,  # Middle ground - balanced volatility classification
+                # Regime thresholds (tunable)
+                "adx_sideways_threshold": 18,  # Lowered for better regime balance (was 20)
+                "volatility_threshold": 0.020,  # Slightly lower so VOLATILE can appear when returns std rises
+                "atr_normalized_threshold": 0.028,  # ATR/close threshold to mark VOLATILE
+                "volatility_percentile_threshold": 0.75,  # Top 25% vol considered high
             },
             "analysis_interval": 3600,
             "max_analysis_history": 100,
@@ -237,7 +226,7 @@ def get_trading_config() -> dict[str, Any]:
 def get_risk_management_config() -> dict[str, Any]:
     """
     Get risk management configuration.
-    
+
     Returns:
         dict: Risk management configuration
     """
@@ -248,7 +237,7 @@ def get_risk_management_config() -> dict[str, Any]:
 def get_position_management_config() -> dict[str, Any]:
     """
     Get position management configuration.
-    
+
     Returns:
         dict: Position management configuration
     """
@@ -259,7 +248,7 @@ def get_position_management_config() -> dict[str, Any]:
 def get_exchange_config() -> dict[str, Any]:
     """
     Get exchange configuration.
-    
+
     Returns:
         dict: Exchange configuration
     """
@@ -270,7 +259,7 @@ def get_exchange_config() -> dict[str, Any]:
 def get_pipeline_config() -> dict[str, Any]:
     """
     Get pipeline configuration.
-    
+
     Returns:
         dict: Pipeline configuration
     """
@@ -281,7 +270,7 @@ def get_pipeline_config() -> dict[str, Any]:
 def get_position_sizing_config() -> dict[str, Any]:
     """
     Get position sizing configuration.
-    
+
     Returns:
         dict: Position sizing configuration
     """
@@ -292,7 +281,7 @@ def get_position_sizing_config() -> dict[str, Any]:
 def get_dynamic_risk_config() -> dict[str, Any]:
     """
     Get dynamic risk management configuration.
-    
+
     Returns:
         dict: Dynamic risk management configuration
     """
@@ -303,7 +292,7 @@ def get_dynamic_risk_config() -> dict[str, Any]:
 def get_position_closing_config() -> dict[str, Any]:
     """
     Get position closing configuration.
-    
+
     Returns:
         dict: Position closing configuration
     """
@@ -314,9 +303,9 @@ def get_position_closing_config() -> dict[str, Any]:
 def get_position_monitoring_config() -> dict[str, Any]:
     """
     Get position monitoring configuration.
-    
+
     Returns:
         dict: Position monitoring configuration
     """
     position_config = get_position_management_config()
-    return position_config.get("position_monitoring", {}) 
+    return position_config.get("position_monitoring", {})

@@ -5,11 +5,15 @@ Deprecated: Forward to src.core.dependency_injection
 This module remains for backward compatibility and forwards to the canonical DI container.
 """
 
-from typing import Any, Optional, Type, TypeVar
+from typing import Any, TypeVar
 
 from src.core.dependency_injection import (
     AsyncServiceContainer as _AsyncServiceContainer,
+)
+from src.core.dependency_injection import (
     DependencyContainer as _DependencyContainer,
+)
+from src.core.dependency_injection import (
     ServiceLifetime as _ServiceLifetime,
 )
 
@@ -21,7 +25,7 @@ DependencyContainer = _DependencyContainer
 AsyncServiceContainer = _AsyncServiceContainer
 
 # Global container instance (backward compatibility)
-_global_container: Optional[_DependencyContainer] = None
+_global_container: _DependencyContainer | None = None
 
 
 def get_container() -> _DependencyContainer:
@@ -32,10 +36,10 @@ def get_container() -> _DependencyContainer:
 
 
 def register_service(
-    service_type: Type[T],
-    implementation: Optional[Type[T]] = None,
+    service_type: type[T],
+    implementation: type[T] | None = None,
     lifetime: str = ServiceLifetime.SINGLETON,
-    config: Optional[dict[str, Any]] = None,
+    config: dict[str, Any] | None = None,
 ) -> None:
     container = get_container()
     # Use type as key to align with canonical container usage
@@ -49,7 +53,6 @@ def register_service(
     )
 
 
-async def resolve_service(service_type: Type[T]) -> T:
+async def resolve_service(service_type: type[T]) -> T:
     container = get_container()
-    resolved = container.resolve(service_type)
-    return resolved  # type: ignore[return-value]
+    return container.resolve(service_type)

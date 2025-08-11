@@ -13,6 +13,14 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+    validation_error,
+)
 
 
 class DataManager:
@@ -72,7 +80,7 @@ class DataManager:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for data manager")
+                self.print(invalid("Invalid configuration for data manager"))
                 return False
 
             # Initialize data modules
@@ -81,8 +89,8 @@ class DataManager:
             self.logger.info("✅ Data Manager initialization completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Data Manager initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Data Manager initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -109,8 +117,8 @@ class DataManager:
 
             self.logger.info("Data configuration loaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error loading data configuration: {e}")
+        except Exception:
+            self.print(error("Error loading data configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -127,12 +135,12 @@ class DataManager:
         try:
             # Validate data interval
             if self.data_interval <= 0:
-                self.logger.error("Invalid data interval")
+                self.print(invalid("Invalid data interval"))
                 return False
 
             # Validate max data history
             if self.max_data_history <= 0:
-                self.logger.error("Invalid max data history")
+                self.print(invalid("Invalid max data history"))
                 return False
 
             # Validate that at least one data type is enabled
@@ -144,14 +152,14 @@ class DataManager:
                     self.data_config.get("enable_data_validation", True),
                 ],
             ):
-                self.logger.error("At least one data type must be enabled")
+                self.print(error("At least one data type must be enabled"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -180,8 +188,8 @@ class DataManager:
 
             self.logger.info("Data modules initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing data modules: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing data modules: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -201,8 +209,8 @@ class DataManager:
 
             self.logger.info("Data collection module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing data collection: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing data collection: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -222,8 +230,8 @@ class DataManager:
 
             self.logger.info("Data processing module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing data processing: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing data processing: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -243,8 +251,8 @@ class DataManager:
 
             self.logger.info("Data storage module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing data storage: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing data storage: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -264,8 +272,8 @@ class DataManager:
 
             self.logger.info("Data validation module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing data validation: {e}")
+        except Exception:
+            self.print(validation_error("Error initializing data validation: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -320,8 +328,8 @@ class DataManager:
             self.logger.info("✅ Data management completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error managing data: {e}")
+        except Exception:
+            self.print(error("Error managing data: {e}"))
             self.is_managing = False
             return False
 
@@ -345,22 +353,22 @@ class DataManager:
             required_fields = ["data_type", "source", "timestamp"]
             for field in required_fields:
                 if field not in data_input:
-                    self.logger.error(f"Missing required data input field: {field}")
+                    self.print(missing("Missing required data input field: {field}"))
                     return False
 
             # Validate data types
             if not isinstance(data_input["data_type"], str):
-                self.logger.error("Invalid data type")
+                self.print(invalid("Invalid data type"))
                 return False
 
             if not isinstance(data_input["source"], str):
-                self.logger.error("Invalid data source")
+                self.print(invalid("Invalid data source"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating data inputs: {e}")
+        except Exception:
+            self.print(error("Error validating data inputs: {e}"))
             return False
 
     @handle_errors(
@@ -403,8 +411,8 @@ class DataManager:
             self.logger.info("Data collection completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing data collection: {e}")
+        except Exception:
+            self.print(error("Error performing data collection: {e}"))
             return {}
 
     @handle_errors(
@@ -451,8 +459,8 @@ class DataManager:
             self.logger.info("Data processing completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing data processing: {e}")
+        except Exception:
+            self.print(error("Error performing data processing: {e}"))
             return {}
 
     @handle_errors(
@@ -492,8 +500,8 @@ class DataManager:
             self.logger.info("Data storage completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing data storage: {e}")
+        except Exception:
+            self.print(error("Error performing data storage: {e}"))
             return {}
 
     @handle_errors(
@@ -544,8 +552,8 @@ class DataManager:
             self.logger.info("Data validation completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing data validation: {e}")
+        except Exception:
+            self.print(validation_error("Error performing data validation: {e}"))
             return {}
 
     # Data collection methods
@@ -562,8 +570,8 @@ class DataManager:
                 "records_collected": 1000,
                 "collection_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error collecting market data: {e}")
+        except Exception:
+            self.print(error("Error collecting market data: {e}"))
             return {}
 
     def _collect_historical_data(self, data_input: dict[str, Any]) -> dict[str, Any]:
@@ -575,8 +583,8 @@ class DataManager:
                 "date_range": "2023-01-01 to 2024-01-01",
                 "collection_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error collecting historical data: {e}")
+        except Exception:
+            self.print(error("Error collecting historical data: {e}"))
             return {}
 
     def _collect_real_time_data(self, data_input: dict[str, Any]) -> dict[str, Any]:
@@ -588,8 +596,8 @@ class DataManager:
                 "update_frequency": "1s",
                 "collection_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error collecting real-time data: {e}")
+        except Exception:
+            self.print(error("Error collecting real-time data: {e}"))
             return {}
 
     def _collect_aggregated_data(self, data_input: dict[str, Any]) -> dict[str, Any]:
@@ -601,8 +609,8 @@ class DataManager:
                 "aggregation_level": "1h",
                 "collection_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error collecting aggregated data: {e}")
+        except Exception:
+            self.print(error("Error collecting aggregated data: {e}"))
             return {}
 
     # Data processing methods
@@ -616,8 +624,8 @@ class DataManager:
                 "filled_missing": 25,
                 "cleaning_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing data cleaning: {e}")
+        except Exception:
+            self.print(error("Error performing data cleaning: {e}"))
             return {}
 
     def _perform_data_transformation(
@@ -632,8 +640,8 @@ class DataManager:
                 "transformation_type": "normalization",
                 "transformation_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing data transformation: {e}")
+        except Exception:
+            self.print(error("Error performing data transformation: {e}"))
             return {}
 
     def _perform_feature_engineering(
@@ -648,8 +656,8 @@ class DataManager:
                 "feature_types": ["technical", "fundamental", "sentiment"],
                 "engineering_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing feature engineering: {e}")
+        except Exception:
+            self.print(error("Error performing feature engineering: {e}"))
             return {}
 
     def _perform_data_aggregation(self, data_input: dict[str, Any]) -> dict[str, Any]:
@@ -661,8 +669,8 @@ class DataManager:
                 "aggregation_method": "mean",
                 "aggregation_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing data aggregation: {e}")
+        except Exception:
+            self.print(error("Error performing data aggregation: {e}"))
             return {}
 
     # Data storage methods
@@ -675,8 +683,8 @@ class DataManager:
                 "database_type": "sqlite",
                 "storage_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing database storage: {e}")
+        except Exception:
+            self.print(error("Error performing database storage: {e}"))
             return {}
 
     def _perform_file_storage(self, data_input: dict[str, Any]) -> dict[str, Any]:
@@ -688,8 +696,8 @@ class DataManager:
                 "file_format": "parquet",
                 "storage_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing file storage: {e}")
+        except Exception:
+            self.print(error("Error performing file storage: {e}"))
             return {}
 
     def _perform_cache_storage(self, data_input: dict[str, Any]) -> dict[str, Any]:
@@ -701,8 +709,8 @@ class DataManager:
                 "cache_type": "redis",
                 "storage_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing cache storage: {e}")
+        except Exception:
+            self.print(error("Error performing cache storage: {e}"))
             return {}
 
     def _perform_backup_storage(self, data_input: dict[str, Any]) -> dict[str, Any]:
@@ -714,8 +722,8 @@ class DataManager:
                 "backup_size": "1.5GB",
                 "storage_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing backup storage: {e}")
+        except Exception:
+            self.print(error("Error performing backup storage: {e}"))
             return {}
 
     # Data validation methods
@@ -731,8 +739,10 @@ class DataManager:
                 "quality_issues": 5,
                 "validation_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing data quality validation: {e}")
+        except Exception:
+            self.print(
+                validation_error("Error performing data quality validation: {e}"),
+            )
             return {}
 
     def _perform_data_integrity_validation(
@@ -747,8 +757,10 @@ class DataManager:
                 "integrity_issues": 2,
                 "validation_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing data integrity validation: {e}")
+        except Exception:
+            self.print(
+                validation_error("Error performing data integrity validation: {e}"),
+            )
             return {}
 
     def _perform_data_consistency_validation(
@@ -763,8 +775,10 @@ class DataManager:
                 "consistency_issues": 3,
                 "validation_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing data consistency validation: {e}")
+        except Exception:
+            self.print(
+                validation_error("Error performing data consistency validation: {e}"),
+            )
             return {}
 
     def _perform_data_completeness_validation(
@@ -779,8 +793,10 @@ class DataManager:
                 "completeness_issues": 1,
                 "validation_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing data completeness validation: {e}")
+        except Exception:
+            self.print(
+                validation_error("Error performing data completeness validation: {e}"),
+            )
             return {}
 
     @handle_errors(
@@ -803,8 +819,8 @@ class DataManager:
 
             self.logger.info("Data results stored successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error storing data results: {e}")
+        except Exception:
+            self.print(error("Error storing data results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -826,8 +842,8 @@ class DataManager:
                 return self.data_results.get(data_type, {})
             return self.data_results.copy()
 
-        except Exception as e:
-            self.logger.error(f"Error getting data results: {e}")
+        except Exception:
+            self.print(error("Error getting data results: {e}"))
             return {}
 
     @handle_errors(
@@ -853,8 +869,8 @@ class DataManager:
 
             return history
 
-        except Exception as e:
-            self.logger.error(f"Error getting data history: {e}")
+        except Exception:
+            self.print(error("Error getting data history: {e}"))
             return []
 
     def get_data_status(self) -> dict[str, Any]:
@@ -899,8 +915,8 @@ class DataManager:
 
             self.logger.info("✅ Data Manager stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping data manager: {e}")
+        except Exception:
+            self.print(error("Error stopping data manager: {e}"))
 
 
 # Global data manager instance

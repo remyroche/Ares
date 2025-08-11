@@ -11,6 +11,20 @@ This script demonstrates the enhanced event bus capabilities including:
 """
 
 import asyncio
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 import sys
 from pathlib import Path
 
@@ -23,15 +37,16 @@ from src.examples.enhanced_event_bus_example import main
 if __name__ == "__main__":
     print("🚀 Running Enhanced Event Bus Example")
     print("=" * 50)
-    
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n⚠️ Example interrupted by user")
     except Exception as e:
-        print(f"❌ Error running example: {e}")
+        print(warning("Error running example: {e}")))
         import traceback
+
         traceback.print_exc()
-    
+
     print("=" * 50)
     print("✅ Enhanced Event Bus Example completed")

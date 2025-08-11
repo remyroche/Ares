@@ -20,7 +20,9 @@ sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
-from src.training.steps.multi_timeframe_training.multi_timeframe_training_manager import MultiTimeframeTrainingManager
+from src.training.steps.multi_timeframe_training.multi_timeframe_training_manager import (
+    MultiTimeframeTrainingManager,
+)
 from src.utils.logger import system_logger
 
 
@@ -114,15 +116,13 @@ async def run_quick_multi_timeframe_test(symbol: str):
     CONFIG["MULTI_TIMEFRAME_TRAINING"]["enable_ensemble"] = True
     CONFIG["MULTI_TIMEFRAME_TRAINING"]["enable_cross_validation"] = False
 
-    results = await run_multi_timeframe_training(
+    return await run_multi_timeframe_training(
         symbol=symbol,
         timeframes=timeframes,
         lookback_days=lookback_days,
         enable_ensemble=True,
         parallel=False,
     )
-
-    return results
 
 
 async def run_ensemble_only(symbol: str, timeframes: list[str]):
@@ -265,19 +265,19 @@ def main():
 Examples:
   # List all available timeframes and their purposes
   python scripts/run_multi_timeframe_training.py --list-timeframes
-  
+
   # Full multi-timeframe training
   python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --timeframes 1h,4h,1d
-  
+
   # Quick test with limited data
   python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --quick-test
-  
+
   # Ensemble only (assumes models already trained)
   python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --ensemble-only --timeframes 1h,4h,1d
-  
+
   # Analyze timeframe correlations
   python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --analyze --timeframes 1h,4h,1d
-  
+
   # Sequential training (no parallel)
   python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --timeframes 1h,4h,1d --sequential
         """,

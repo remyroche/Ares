@@ -356,9 +356,7 @@ class RegimeSpecificOptimizer:
         params = self._suggest_regime_parameters(trial)
 
         # Evaluate parameters
-        score = self._evaluate_regime_parameters(params, market_data)
-
-        return score
+        return self._evaluate_regime_parameters(params, market_data)
 
     def _suggest_regime_parameters(self, trial: optuna.trial.Trial) -> dict[str, Any]:
         """Suggest parameters within regime-specific constraints."""

@@ -4,6 +4,10 @@ from lightgbm import LGBMClassifier
 from sklearn.cluster import KMeans
 from sklearn.svm import SVC
 
+from src.utils.warning_symbols import (
+    failed,
+)
+
 from .base_ensemble import BaseEnsemble
 
 
@@ -24,8 +28,8 @@ class SidewaysRangeEnsemble(BaseEnsemble):
                 random_state=42,
                 n_init=10,
             ).fit(cluster_features)
-        except Exception as e:
-            self.logger.error(f"KMeans training failed: {e}")
+        except Exception:
+            self.print(failed("KMeans training failed: {e}"))
 
         X_of = aligned_data[self.order_flow_features].fillna(0)
         of_params = self._tune_hyperparameters(

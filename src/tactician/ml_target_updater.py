@@ -12,6 +12,20 @@ from src.utils.error_handler import (
     handle_network_operations,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 class MLTargetUpdater:
@@ -103,7 +117,7 @@ class MLTargetUpdater:
     async def start_monitoring(self):
         """Start the continuous target monitoring and updating process."""
         if self.is_running:
-            self.logger.warning("Target updater is already running")
+            self.print(warning("Target updater is already running"))
             return
 
         self.is_running = True
@@ -189,7 +203,7 @@ class MLTargetUpdater:
                 self.last_update_time[position_id] = time.time()
 
         except Exception as e:
-            self.logger.error(f"Error in update cycle: {e}", exc_info=True)
+            self.print(error(f"Error in update cycle: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, TypeError),
@@ -242,7 +256,7 @@ class MLTargetUpdater:
             return False
 
         except Exception as e:
-            self.logger.error(f"Error checking emergency update conditions: {e}")
+            self.print(error("Error checking emergency update conditions: {e}"))
             return False
 
     @handle_network_operations(
@@ -304,7 +318,7 @@ class MLTargetUpdater:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting current market data: {e}")
+            self.print(error("Error getting current market data: {e}"))
             return None
 
     def _determine_signal_type(self, position: dict[str, Any]) -> str | None:
@@ -370,17 +384,15 @@ class MLTargetUpdater:
             )
 
             # Get ML predictions
-            ml_targets = self.ml_target_predictor.predict_dynamic_targets(
+            return self.ml_target_predictor.predict_dynamic_targets(
                 signal_type=signal_type,
                 technical_analysis_data=market_data,
                 current_features=current_features,
                 current_atr=current_atr,
             )
 
-            return ml_targets
-
         except Exception as e:
-            self.logger.error(f"Error getting ML targets: {e}")
+            self.print(error("Error getting ML targets: {e}"))
             return None
 
     @handle_errors(
@@ -410,9 +422,7 @@ class MLTargetUpdater:
         )
 
         # Finalize update decision
-        update_decision = self._finalize_update_decision(update_decision)
-
-        return update_decision
+        return self._finalize_update_decision(update_decision)
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, TypeError),
@@ -765,7 +775,7 @@ class MLTargetUpdater:
                     updates_made.append(f"TP: {old_tp:.6f} -> {new_tp:.6f}")
 
                 except Exception as e:
-                    self.logger.error(f"Failed to update take profit: {e}")
+                    self.print(failed("Failed to update take profit: {e}"))
 
             # Update stop loss if needed
             if update_decision.get("update_sl") and self.enable_stop_loss_updates:
@@ -777,7 +787,7 @@ class MLTargetUpdater:
                     updates_made.append(f"SL: {old_sl:.6f} -> {new_sl:.6f}")
 
                 except Exception as e:
-                    self.logger.error(f"Failed to update stop loss: {e}")
+                    self.print(failed("Failed to update stop loss: {e}"))
 
             if updates_made:
                 # Update position in state manager
@@ -800,7 +810,7 @@ class MLTargetUpdater:
                 )
 
         except Exception as e:
-            self.logger.error(f"Error executing target update: {e}", exc_info=True)
+            self.print(error(f"Error executing target update: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, TypeError),

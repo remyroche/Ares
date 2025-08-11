@@ -14,6 +14,14 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    execution_error,
+    initialization_error,
+    invalid,
+    missing,
+    validation_error,
+)
 
 
 @dataclass
@@ -178,7 +186,7 @@ class BasePipeline:
 
         # Validate configuration
         if not self._validate_configuration():
-            self.logger.error("Invalid configuration for base pipeline")
+            self.print(invalid("Invalid configuration for base pipeline"))
             return False
 
         # Initialize pipeline modules
@@ -226,12 +234,12 @@ class BasePipeline:
         """
         # Validate pipeline interval
         if self.pipeline_interval <= 0:
-            self.logger.error("Invalid pipeline interval")
+            self.print(invalid("Invalid pipeline interval"))
             return False
 
         # Validate max pipeline history
         if self.max_pipeline_history <= 0:
-            self.logger.error("Invalid max pipeline history")
+            self.print(invalid("Invalid max pipeline history"))
             return False
 
         # Validate that at least one processing type is enabled
@@ -243,7 +251,7 @@ class BasePipeline:
                 self.pipeline_config.get("enable_execution_processing", True),
             ],
         ):
-            self.logger.error("At least one processing type must be enabled")
+            self.print(error("At least one processing type must be enabled"))
             return False
 
         self.logger.info("Configuration validation successful")
@@ -275,8 +283,8 @@ class BasePipeline:
 
             self.logger.info("Pipeline modules initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing pipeline modules: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing pipeline modules: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -296,8 +304,8 @@ class BasePipeline:
 
             self.logger.info("Data processing module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing data processing: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing data processing: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -317,8 +325,10 @@ class BasePipeline:
 
             self.logger.info("Analysis processing module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing analysis processing: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing analysis processing: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -338,8 +348,10 @@ class BasePipeline:
 
             self.logger.info("Strategy processing module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing strategy processing: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing strategy processing: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -359,8 +371,10 @@ class BasePipeline:
 
             self.logger.info("Execution processing module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing execution processing: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing execution processing: {e}"),
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -415,8 +429,8 @@ class BasePipeline:
             self.logger.info("✅ Pipeline processing completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error executing pipeline: {e}")
+        except Exception:
+            self.print(error("Error executing pipeline: {e}"))
             self.is_running = False
             return False
 
@@ -440,22 +454,22 @@ class BasePipeline:
             required_fields = ["symbol", "timestamp", "data_type"]
             for field in required_fields:
                 if field not in input_data:
-                    self.logger.error(f"Missing required input data field: {field}")
+                    self.print(missing("Missing required input data field: {field}"))
                     return False
 
             # Validate data types
             if not isinstance(input_data["symbol"], str):
-                self.logger.error("Invalid symbol data type")
+                self.print(invalid("Invalid symbol data type"))
                 return False
 
-            if not isinstance(input_data["timestamp"], (str, datetime)):
-                self.logger.error("Invalid timestamp data type")
+            if not isinstance(input_data["timestamp"], str | datetime):
+                self.print(invalid("Invalid timestamp data type"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating pipeline inputs: {e}")
+        except Exception:
+            self.print(error("Error validating pipeline inputs: {e}"))
             return False
 
     @handle_errors(
@@ -500,8 +514,8 @@ class BasePipeline:
             self.logger.info("Data processing completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing data processing: {e}")
+        except Exception:
+            self.print(error("Error performing data processing: {e}"))
             return {}
 
     @handle_errors(
@@ -550,8 +564,8 @@ class BasePipeline:
             self.logger.info("Analysis processing completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing analysis processing: {e}")
+        except Exception:
+            self.print(error("Error performing analysis processing: {e}"))
             return {}
 
     @handle_errors(
@@ -598,8 +612,8 @@ class BasePipeline:
             self.logger.info("Strategy processing completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing strategy processing: {e}")
+        except Exception:
+            self.print(error("Error performing strategy processing: {e}"))
             return {}
 
     @handle_errors(
@@ -646,8 +660,8 @@ class BasePipeline:
             self.logger.info("Execution processing completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing execution processing: {e}")
+        except Exception:
+            self.print(execution_error("Error performing execution processing: {e}"))
             return {}
 
     # Data processing methods
@@ -664,8 +678,8 @@ class BasePipeline:
                 "records_collected": 1000,
                 "collection_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing data collection: {e}")
+        except Exception:
+            self.print(error("Error performing data collection: {e}"))
             return {}
 
     def _perform_data_validation(self, input_data: dict[str, Any]) -> dict[str, Any]:
@@ -677,8 +691,8 @@ class BasePipeline:
                 "invalid_records": 0,
                 "validation_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing data validation: {e}")
+        except Exception:
+            self.print(validation_error("Error performing data validation: {e}"))
             return {}
 
     def _perform_data_transformation(
@@ -693,8 +707,8 @@ class BasePipeline:
                 "transformed_records": 1000,
                 "transformation_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing data transformation: {e}")
+        except Exception:
+            self.print(error("Error performing data transformation: {e}"))
             return {}
 
     def _perform_data_storage(self, input_data: dict[str, Any]) -> dict[str, Any]:
@@ -706,8 +720,8 @@ class BasePipeline:
                 "stored_records": 1000,
                 "storage_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing data storage: {e}")
+        except Exception:
+            self.print(error("Error performing data storage: {e}"))
             return {}
 
     # Analysis processing methods
@@ -720,8 +734,8 @@ class BasePipeline:
                 "analysis_completed": True,
                 "analysis_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing technical analysis: {e}")
+        except Exception:
+            self.print(error("Error performing technical analysis: {e}"))
             return {}
 
     def _perform_fundamental_analysis(
@@ -736,8 +750,8 @@ class BasePipeline:
                 "analysis_completed": True,
                 "analysis_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing fundamental analysis: {e}")
+        except Exception:
+            self.print(error("Error performing fundamental analysis: {e}"))
             return {}
 
     def _perform_sentiment_analysis(self, input_data: dict[str, Any]) -> dict[str, Any]:
@@ -750,8 +764,8 @@ class BasePipeline:
                 "analysis_completed": True,
                 "analysis_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing sentiment analysis: {e}")
+        except Exception:
+            self.print(error("Error performing sentiment analysis: {e}"))
             return {}
 
     def _perform_risk_analysis(self, input_data: dict[str, Any]) -> dict[str, Any]:
@@ -764,8 +778,8 @@ class BasePipeline:
                 "analysis_completed": True,
                 "analysis_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing risk analysis: {e}")
+        except Exception:
+            self.print(error("Error performing risk analysis: {e}"))
             return {}
 
     # Strategy processing methods
@@ -779,8 +793,8 @@ class BasePipeline:
                 "signal_strength": "Strong",
                 "generation_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing signal generation: {e}")
+        except Exception:
+            self.print(error("Error performing signal generation: {e}"))
             return {}
 
     def _perform_position_sizing(self, input_data: dict[str, Any]) -> dict[str, Any]:
@@ -793,8 +807,8 @@ class BasePipeline:
                 "risk_per_trade": 0.02,
                 "sizing_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing position sizing: {e}")
+        except Exception:
+            self.print(error("Error performing position sizing: {e}"))
             return {}
 
     def _perform_risk_management(self, input_data: dict[str, Any]) -> dict[str, Any]:
@@ -807,8 +821,8 @@ class BasePipeline:
                 "max_drawdown": 0.20,
                 "risk_management_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing risk management: {e}")
+        except Exception:
+            self.print(error("Error performing risk management: {e}"))
             return {}
 
     def _perform_portfolio_optimization(
@@ -824,8 +838,8 @@ class BasePipeline:
                 "expected_return": 0.15,
                 "optimization_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing portfolio optimization: {e}")
+        except Exception:
+            self.print(error("Error performing portfolio optimization: {e}"))
             return {}
 
     # Execution processing methods
@@ -839,8 +853,8 @@ class BasePipeline:
                 "order_status": "FILLED",
                 "order_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing order management: {e}")
+        except Exception:
+            self.print(error("Error performing order management: {e}"))
             return {}
 
     def _perform_position_management(
@@ -856,8 +870,8 @@ class BasePipeline:
                 "position_size": 0.1,
                 "position_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing position management: {e}")
+        except Exception:
+            self.print(error("Error performing position management: {e}"))
             return {}
 
     def _perform_performance_tracking(
@@ -873,8 +887,8 @@ class BasePipeline:
                 "sharpe_ratio": 1.2,
                 "tracking_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing performance tracking: {e}")
+        except Exception:
+            self.print(error("Error performing performance tracking: {e}"))
             return {}
 
     def _perform_risk_monitoring(self, input_data: dict[str, Any]) -> dict[str, Any]:
@@ -887,8 +901,8 @@ class BasePipeline:
                 "risk_status": "OK",
                 "monitoring_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing risk monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing risk monitoring: {e}"))
             return {}
 
     @handle_errors(
@@ -911,8 +925,8 @@ class BasePipeline:
 
             self.logger.info("Pipeline results stored successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error storing pipeline results: {e}")
+        except Exception:
+            self.print(error("Error storing pipeline results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -937,8 +951,8 @@ class BasePipeline:
                 return self.pipeline_results.get(pipeline_type, {})
             return self.pipeline_results.copy()
 
-        except Exception as e:
-            self.logger.error(f"Error getting pipeline results: {e}")
+        except Exception:
+            self.print(error("Error getting pipeline results: {e}"))
             return {}
 
     @handle_errors(
@@ -964,8 +978,8 @@ class BasePipeline:
 
             return history
 
-        except Exception as e:
-            self.logger.error(f"Error getting pipeline history: {e}")
+        except Exception:
+            self.print(error("Error getting pipeline history: {e}"))
             return []
 
     def get_pipeline_status(self) -> dict[str, Any]:
@@ -1013,8 +1027,8 @@ class BasePipeline:
 
             self.logger.info("✅ Base Pipeline stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping base pipeline: {e}")
+        except Exception:
+            self.print(error("Error stopping base pipeline: {e}"))
 
 
 # Global base pipeline instance

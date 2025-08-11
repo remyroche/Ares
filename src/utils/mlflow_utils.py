@@ -7,6 +7,9 @@ import mlflow
 
 from src.config import ARES_VERSION
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    failed,
+)
 
 
 def log_bot_version_to_mlflow(run_id: str | None = None) -> None:
@@ -31,7 +34,7 @@ def log_bot_version_to_mlflow(run_id: str | None = None) -> None:
                 f"✅ Logged bot version {ARES_VERSION} to active MLFlow run",
             )
     except Exception as e:
-        system_logger.error(f"❌ Failed to log bot version to MLFlow: {e}")
+        system_logger.exception(f"❌ Failed to log bot version to MLFlow: {e}")
 
 
 def log_training_metadata_to_mlflow(
@@ -71,7 +74,7 @@ def log_training_metadata_to_mlflow(
             system_logger.info("✅ Logged training metadata to active MLFlow run")
 
     except Exception as e:
-        system_logger.error(f"❌ Failed to log training metadata to MLFlow: {e}")
+        system_logger.exception(f"❌ Failed to log training metadata to MLFlow: {e}")
 
 
 def get_run_with_bot_version(run_id: str) -> dict[str, Any] | None:
@@ -88,7 +91,7 @@ def get_run_with_bot_version(run_id: str) -> dict[str, Any] | None:
         client = mlflow.tracking.MlflowClient()
         run = client.get_run(run_id)
 
-        run_info = {
+        return {
             "run_id": run_id,
             "status": run.info.status,
             "start_time": run.info.start_time,
@@ -100,8 +103,6 @@ def get_run_with_bot_version(run_id: str) -> dict[str, Any] | None:
             "timeframe": run.data.tags.get("timeframe", "Unknown"),
         }
 
-        return run_info
-
     except Exception as e:
-        system_logger.error(f"❌ Failed to get MLFlow run {run_id}: {e}")
+        system_logger.exception(f"❌ Failed to get MLFlow run {run_id}: {e}")
         return None

@@ -7,36 +7,50 @@ for paper trading and backtesting with comprehensive metrics.
 """
 
 import asyncio
-import pandas as pd
-import numpy as np
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 from datetime import datetime, timedelta
-from typing import Dict, Any
 
-from src.launcher.enhanced_trading_launcher import setup_enhanced_trading_launcher
+import numpy as np
+import pandas as pd
+
 from src.config.enhanced_reporting_config import get_enhanced_reporting_config
+from src.launcher.enhanced_trading_launcher import setup_enhanced_trading_launcher
 
 
 async def example_paper_trading():
     """Example of paper trading with enhanced reporting."""
     print("🚀 Starting Paper Trading Example with Enhanced Reporting...")
-    
+
     # Get configuration
     config = get_enhanced_reporting_config()
-    
+
     # Setup enhanced trading launcher
     launcher = await setup_enhanced_trading_launcher(config)
     if not launcher:
-        print("❌ Failed to setup enhanced trading launcher")
+        print(failed("Failed to setup enhanced trading launcher")))
         return
-    
+
     # Launch paper trading
     success = await launcher.launch_paper_trading()
     if not success:
-        print("❌ Failed to launch paper trading")
+        print(failed("Failed to launch paper trading")))
         return
-    
+
     print("✅ Paper trading launched successfully")
-    
+
     # Execute some example trades with detailed metadata
     trades = [
         {
@@ -170,7 +184,7 @@ async def example_paper_trading():
             },
         },
     ]
-    
+
     # Execute trades
     for trade in trades:
         success = await launcher.execute_trade(
@@ -181,30 +195,32 @@ async def example_paper_trading():
             timestamp=trade["timestamp"],
             trade_metadata=trade["trade_metadata"],
         )
-        
+
         if success:
-            print(f"✅ Executed {trade['side']} trade: {trade['quantity']} {trade['symbol']} @ ${trade['price']:.2f}")
+            print(
+                f"✅ Executed {trade['side']} trade: {trade['quantity']} {trade['symbol']} @ ${trade['price']:.2f}",
+            )
         else:
-            print(f"❌ Failed to execute trade: {trade['symbol']}")
-    
+            print(failed("Failed to execute trade: {trade['symbol']}")))
+
     # Get performance metrics
     metrics = launcher.get_performance_metrics()
-    print(f"\n📊 Performance Metrics:")
+    print("\n📊 Performance Metrics:")
     print(f"Total Trades: {metrics.get('total_trades', 0)}")
     print(f"Total PnL: ${metrics.get('total_pnl', 0):.2f}")
     print(f"Win Rate: {metrics.get('win_rate', 0):.2%}")
     print(f"Sharpe Ratio: {metrics.get('sharpe_ratio', 0):.2f}")
-    
+
     # Get portfolio summary
     portfolio = launcher.get_portfolio_summary()
-    print(f"\n💼 Portfolio Summary:")
+    print("\n💼 Portfolio Summary:")
     print(f"Total Value: ${portfolio.get('total_value', 0):.2f}")
     print(f"Positions Count: {portfolio.get('positions_count', 0)}")
-    
+
     # Generate comprehensive report
     report = await launcher.generate_comprehensive_report("example")
     print(f"\n📋 Generated comprehensive report with {len(report)} sections")
-    
+
     # Stop launcher
     await launcher.stop()
     print("✅ Paper trading example completed")
@@ -213,37 +229,43 @@ async def example_paper_trading():
 async def example_backtesting():
     """Example of backtesting with enhanced reporting."""
     print("\n🚀 Starting Backtesting Example with Enhanced Reporting...")
-    
+
     # Get configuration
     config = get_enhanced_reporting_config()
-    
+
     # Setup enhanced trading launcher
     launcher = await setup_enhanced_trading_launcher(config)
     if not launcher:
-        print("❌ Failed to setup enhanced trading launcher")
+        print(failed("Failed to setup enhanced trading launcher")))
         return
-    
+
     # Generate sample historical data
-    dates = pd.date_range(start='2023-01-01', end='2023-12-31', freq='D')
-    historical_data = pd.DataFrame({
-        'open': np.random.uniform(100, 200, len(dates)),
-        'high': np.random.uniform(200, 300, len(dates)),
-        'low': np.random.uniform(50, 150, len(dates)),
-        'close': np.random.uniform(100, 200, len(dates)),
-        'volume': np.random.uniform(1000000, 5000000, len(dates)),
-    }, index=dates)
-    
+    dates = pd.date_range(start="2023-01-01", end="2023-12-31", freq="D")
+    historical_data = pd.DataFrame(
+        {
+            "open": np.random.uniform(100, 200, len(dates)),
+            "high": np.random.uniform(200, 300, len(dates)),
+            "low": np.random.uniform(50, 150, len(dates)),
+            "close": np.random.uniform(100, 200, len(dates)),
+            "volume": np.random.uniform(1000000, 5000000, len(dates)),
+        },
+        index=dates,
+    )
+
     # Generate sample strategy signals
-    strategy_signals = pd.DataFrame({
-        'signal': np.random.choice([-1, 0, 1], len(dates), p=[0.3, 0.4, 0.3]),
-        'close': historical_data['close'],
-        'symbol': ['ETHUSDT'] * len(dates),
-    }, index=dates)
-    
+    strategy_signals = pd.DataFrame(
+        {
+            "signal": np.random.choice([-1, 0, 1], len(dates), p=[0.3, 0.4, 0.3]),
+            "close": historical_data["close"],
+            "symbol": ["ETHUSDT"] * len(dates),
+        },
+        index=dates,
+    )
+
     # Add some trend to make it more realistic
     trend = np.cumsum(np.random.normal(0, 0.01, len(dates)))
-    strategy_signals['close'] = 150 + trend * 50
-    
+    strategy_signals["close"] = 150 + trend * 50
+
     # Backtest configuration
     backtest_config = {
         "strategy": "example_strategy",
@@ -302,38 +324,40 @@ async def example_backtesting():
             "prediction_consistency": 0.8,
         },
     }
-    
+
     # Launch backtest
     results = await launcher.launch_backtest(
         historical_data=historical_data,
         strategy_signals=strategy_signals,
         backtest_config=backtest_config,
     )
-    
+
     if results:
         print("✅ Backtest completed successfully")
-        
+
         # Display results
         performance_metrics = results.get("performance_metrics", {})
-        print(f"\n📊 Backtest Results:")
+        print("\n📊 Backtest Results:")
         print(f"Total Trades: {performance_metrics.get('total_trades', 0)}")
         print(f"Total PnL: ${performance_metrics.get('total_pnl', 0):.2f}")
         print(f"Win Rate: {performance_metrics.get('win_rate', 0):.2%}")
         print(f"Sharpe Ratio: {performance_metrics.get('sharpe_ratio', 0):.2f}")
         print(f"Max Drawdown: {performance_metrics.get('max_drawdown', 0):.2%}")
         print(f"Total Return: {performance_metrics.get('total_return', 0):.2%}")
-        
+
         # Get trade history
         trade_history = launcher.get_trade_history()
         print(f"\n📈 Trade History: {len(trade_history)} trades")
-        
+
         # Get portfolio summary
         portfolio = launcher.get_portfolio_summary()
-        print(f"\n💼 Final Portfolio Value: ${portfolio.get('final_portfolio_value', 0):.2f}")
-        
+        print(
+            f"\n💼 Final Portfolio Value: ${portfolio.get('final_portfolio_value', 0):.2f}",
+        )
+
     else:
-        print("❌ Backtest failed")
-    
+        print(failed("Backtest failed")))
+
     # Stop launcher
     await launcher.stop()
     print("✅ Backtesting example completed")
@@ -343,18 +367,18 @@ async def main():
     """Main function to run examples."""
     print("🎯 Enhanced Reporting System Examples")
     print("=" * 50)
-    
+
     try:
         # Run paper trading example
         await example_paper_trading()
-        
+
         # Run backtesting example
         await example_backtesting()
-        
+
         print("\n🎉 All examples completed successfully!")
-        
+
     except Exception as e:
-        print(f"❌ Error running examples: {e}")
+        print(warning("Error running examples: {e}")))
 
 
 if __name__ == "__main__":

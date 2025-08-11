@@ -16,6 +16,12 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    invalid,
+    missing,
+)
 
 
 class PositionCloser:
@@ -90,15 +96,15 @@ class PositionCloser:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for position closer")
+                self.print(invalid("Invalid configuration for position closer"))
                 return False
 
             self.is_initialized = True
             self.logger.info("✅ Position Closer initialization completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Position Closer initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Position Closer initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -116,31 +122,31 @@ class PositionCloser:
         try:
             # Validate confidence thresholds
             if not (0.0 <= self.neutral_signal_threshold <= 1.0):
-                self.logger.error("Neutral signal threshold must be between 0 and 1")
+                self.print(error("Neutral signal threshold must be between 0 and 1"))
                 return False
 
             if not (0.0 <= self.close_signal_threshold <= 1.0):
-                self.logger.error("Close signal threshold must be between 0 and 1")
+                self.print(error("Close signal threshold must be between 0 and 1"))
                 return False
 
             if not (0.0 <= self.tactician_close_threshold <= 1.0):
-                self.logger.error("Tactician close threshold must be between 0 and 1")
+                self.print(error("Tactician close threshold must be between 0 and 1"))
                 return False
 
             # Validate ATR settings
             if self.atr_multiplier <= 0:
-                self.logger.error("ATR multiplier must be positive")
+                self.print(error("ATR multiplier must be positive"))
                 return False
 
             if self.max_position_hold_hours <= 0:
-                self.logger.error("Max position hold hours must be positive")
+                self.print(error("Max position hold hours must be positive"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_specific_errors(
@@ -174,7 +180,8 @@ class PositionCloser:
         """
         try:
             if not self.is_initialized:
-                raise ValueError("Position Closer not initialized")
+                msg = "Position Closer not initialized"
+                raise ValueError(msg)
 
             self.logger.info("🔍 Analyzing position closing...")
 
@@ -222,8 +229,8 @@ class PositionCloser:
             )
             return closing_analysis
 
-        except Exception as e:
-            self.logger.error(f"Error analyzing position closing: {e}")
+        except Exception:
+            self.print(error("Error analyzing position closing: {e}"))
             return self._get_fallback_closing_decision()
 
     def _determine_closing_decision(
@@ -239,7 +246,7 @@ class PositionCloser:
         """Determine closing decision based on confidence scores and exit rules."""
         try:
             position_direction = current_position.get("direction", "LONG")
-            entry_price = current_position.get("entry_price", current_price)
+            current_position.get("entry_price", current_price)
 
             # Check for hard stop-loss first
             if hard_stop_triggered:
@@ -304,7 +311,7 @@ class PositionCloser:
             }
 
         except Exception as e:
-            self.logger.error(f"Error determining closing decision: {e}")
+            self.print(error("Error determining closing decision: {e}"))
             return {
                 "action": "HOLD",
                 "reason": f"Error determining closing decision: {e}",
@@ -321,7 +328,7 @@ class PositionCloser:
 
             # Convert to datetime if it's a string
             if isinstance(entry_time, str):
-                entry_time = datetime.fromisoformat(entry_time.replace("Z", "+00:00"))
+                entry_time = datetime.fromisoformat(entry_time)
 
             current_time = datetime.now()
             time_diff = (
@@ -330,8 +337,8 @@ class PositionCloser:
 
             return time_diff >= self.max_position_hold_hours
 
-        except Exception as e:
-            self.logger.error(f"Error checking time-based exit: {e}")
+        except Exception:
+            self.print(error("Error checking time-based exit: {e}"))
             return False
 
     def _check_hard_stop_loss(
@@ -361,8 +368,8 @@ class PositionCloser:
             # Hard stop-loss at 90% of liquidation point (conservative)
             return price_change_pct <= -0.9
 
-        except Exception as e:
-            self.logger.error(f"Error checking hard stop-loss: {e}")
+        except Exception:
+            self.print(error("Error checking hard stop-loss: {e}"))
             return False
 
     def _check_atr_based_exit(
@@ -394,8 +401,8 @@ class PositionCloser:
                 return price_change >= atr_threshold
             return False
 
-        except Exception as e:
-            self.logger.error(f"Error checking ATR-based exit: {e}")
+        except Exception:
+            self.print(error("Error checking ATR-based exit: {e}"))
             return False
 
     def _calculate_atr(self, market_data: pd.DataFrame, timeframe: str) -> float:
@@ -407,7 +414,7 @@ class PositionCloser:
             # Ensure we have the required columns
             required_columns = ["high", "low", "close"]
             if not all(col in market_data.columns for col in required_columns):
-                self.logger.warning("Missing required columns for ATR calculation")
+                self.print(missing("Missing required columns for ATR calculation"))
                 return 0.0
 
             # Calculate True Range
@@ -433,8 +440,8 @@ class PositionCloser:
 
             return float(latest_atr)
 
-        except Exception as e:
-            self.logger.error(f"Error calculating ATR: {e}")
+        except Exception:
+            self.print(error("Error calculating ATR: {e}"))
             return 0.0
 
     def _get_fallback_closing_decision(self) -> dict[str, Any]:
@@ -473,8 +480,8 @@ class PositionCloser:
             if len(self.closed_positions) > 1000:
                 self.closed_positions = self.closed_positions[-1000:]
 
-        except Exception as e:
-            self.logger.error(f"Error recording closed position: {e}")
+        except Exception:
+            self.print(error("Error recording closed position: {e}"))
 
     def get_closed_positions(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Get closed positions history."""
@@ -483,8 +490,8 @@ class PositionCloser:
                 return self.closed_positions.copy()
             return self.closed_positions[-limit:]
 
-        except Exception as e:
-            self.logger.error(f"Error getting closed positions: {e}")
+        except Exception:
+            self.print(error("Error getting closed positions: {e}"))
             return []
 
     def get_closing_statistics(self) -> dict[str, Any]:
@@ -514,11 +521,11 @@ class PositionCloser:
                     try:
                         if isinstance(entry_time, str):
                             entry_time = datetime.fromisoformat(
-                                entry_time.replace("Z", "+00:00"),
+                                entry_time,
                             )
                         if isinstance(exit_time, str):
                             exit_time = datetime.fromisoformat(
-                                exit_time.replace("Z", "+00:00"),
+                                exit_time,
                             )
                         hold_time = (
                             exit_time - entry_time
@@ -543,8 +550,8 @@ class PositionCloser:
                 "success_rate": success_rate,
             }
 
-        except Exception as e:
-            self.logger.error(f"Error getting closing statistics: {e}")
+        except Exception:
+            self.print(error("Error getting closing statistics: {e}"))
             return {
                 "total_closed": 0,
                 "partial_closes": 0,
@@ -566,8 +573,8 @@ class PositionCloser:
             self.is_initialized = False
             self.logger.info("✅ Position Closer stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping position closer: {e}")
+        except Exception:
+            self.print(error("Error stopping position closer: {e}"))
 
 
 # Global position closer instance

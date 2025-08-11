@@ -6,18 +6,29 @@ This module provides a comprehensive launcher for paper trading, live trading,
 and backtesting with integrated detailed reporting capabilities.
 """
 
-import asyncio
-import json
-import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 
+from src.backtesting.enhanced_backtester import (
+    EnhancedBacktester,
+    setup_enhanced_backtester,
+)
+from src.integration.paper_trading_integration import (
+    PaperTradingIntegration,
+    setup_paper_trading_integration,
+)
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.integration.paper_trading_integration import PaperTradingIntegration, setup_paper_trading_integration
-from src.backtesting.enhanced_backtester import EnhancedBacktester, setup_enhanced_backtester
+from src.utils.warning_symbols import (
+    error,
+    execution_error,
+    failed,
+    initialization_error,
+    invalid,
+    warning,
+)
 
 
 class EnhancedTradingLauncher:
@@ -25,7 +36,7 @@ class EnhancedTradingLauncher:
     Enhanced trading launcher with comprehensive reporting integration.
     """
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize enhanced trading launcher.
 
@@ -34,21 +45,30 @@ class EnhancedTradingLauncher:
         """
         self.config = config
         self.logger = system_logger.getChild("EnhancedTradingLauncher")
-        
+
         # Trading components
-        self.paper_trading_integration: Optional[PaperTradingIntegration] = None
-        self.enhanced_backtester: Optional[EnhancedBacktester] = None
-        
+        self.paper_trading_integration: PaperTradingIntegration | None = None
+        self.enhanced_backtester: EnhancedBacktester | None = None
+
         # Launcher state
         self.is_initialized: bool = False
         self.current_mode: str = "none"  # "paper", "live", "backtest"
-        
+
         # Configuration
         self.launcher_config = config.get("enhanced_trading_launcher", {})
-        self.enable_paper_trading = self.launcher_config.get("enable_paper_trading", True)
-        self.enable_live_trading = self.launcher_config.get("enable_live_trading", False)
+        self.enable_paper_trading = self.launcher_config.get(
+            "enable_paper_trading",
+            True,
+        )
+        self.enable_live_trading = self.launcher_config.get(
+            "enable_live_trading",
+            False,
+        )
         self.enable_backtesting = self.launcher_config.get("enable_backtesting", True)
-        self.enable_detailed_reporting = self.launcher_config.get("enable_detailed_reporting", True)
+        self.enable_detailed_reporting = self.launcher_config.get(
+            "enable_detailed_reporting",
+            True,
+        )
 
     @handle_specific_errors(
         error_handlers={
@@ -70,7 +90,9 @@ class EnhancedTradingLauncher:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for enhanced trading launcher")
+                self.print(
+                    invalid("Invalid configuration for enhanced trading launcher"),
+                )
                 return False
 
             # Initialize components based on configuration
@@ -81,7 +103,9 @@ class EnhancedTradingLauncher:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Enhanced Trading Launcher initialization failed: {e}")
+            self.logger.exception(
+                f"❌ Enhanced Trading Launcher initialization failed: {e}",
+            )
             return False
 
     @handle_errors(
@@ -93,18 +117,20 @@ class EnhancedTradingLauncher:
         """Validate launcher configuration."""
         try:
             # Check if at least one trading mode is enabled
-            if not any([
-                self.enable_paper_trading,
-                self.enable_live_trading,
-                self.enable_backtesting,
-            ]):
-                self.logger.error("At least one trading mode must be enabled")
+            if not any(
+                [
+                    self.enable_paper_trading,
+                    self.enable_live_trading,
+                    self.enable_backtesting,
+                ],
+            ):
+                self.print(error("At least one trading mode must be enabled"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -117,11 +143,15 @@ class EnhancedTradingLauncher:
         try:
             # Initialize paper trading integration
             if self.enable_paper_trading:
-                self.paper_trading_integration = await setup_paper_trading_integration(self.config)
+                self.paper_trading_integration = await setup_paper_trading_integration(
+                    self.config,
+                )
                 if self.paper_trading_integration:
                     self.logger.info("✅ Paper trading integration initialized")
                 else:
-                    self.logger.warning("⚠️ Failed to initialize paper trading integration")
+                    self.logger.warning(
+                        "⚠️ Failed to initialize paper trading integration",
+                    )
 
             # Initialize enhanced backtester
             if self.enable_backtesting:
@@ -129,10 +159,10 @@ class EnhancedTradingLauncher:
                 if self.enhanced_backtester:
                     self.logger.info("✅ Enhanced backtester initialized")
                 else:
-                    self.logger.warning("⚠️ Failed to initialize enhanced backtester")
+                    self.print(failed("⚠️ Failed to initialize enhanced backtester"))
 
-        except Exception as e:
-            self.logger.error(f"Error initializing components: {e}")
+        except Exception:
+            self.print(initialization_error("Error initializing components: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -144,7 +174,7 @@ class EnhancedTradingLauncher:
     )
     async def launch_paper_trading(
         self,
-        trading_config: Optional[Dict[str, Any]] = None,
+        trading_config: dict[str, Any] | None = None,
     ) -> bool:
         """
         Launch paper trading with enhanced reporting.
@@ -157,11 +187,11 @@ class EnhancedTradingLauncher:
         """
         try:
             if not self.is_initialized:
-                self.logger.error("Launcher not initialized")
+                self.print(initialization_error("Launcher not initialized"))
                 return False
 
             if not self.paper_trading_integration:
-                self.logger.error("Paper trading integration not available")
+                self.print(error("Paper trading integration not available"))
                 return False
 
             self.logger.info("🚀 Launching paper trading with enhanced reporting...")
@@ -172,13 +202,15 @@ class EnhancedTradingLauncher:
                 self.config.update(trading_config)
 
             # Generate initial report
-            await self.paper_trading_integration.generate_comprehensive_report("initial")
+            await self.paper_trading_integration.generate_comprehensive_report(
+                "initial",
+            )
 
             self.logger.info("✅ Paper trading launched successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error launching paper trading: {e}")
+        except Exception:
+            self.print(error("Error launching paper trading: {e}"))
             return False
 
     @handle_specific_errors(
@@ -191,7 +223,7 @@ class EnhancedTradingLauncher:
     )
     async def launch_live_trading(
         self,
-        trading_config: Optional[Dict[str, Any]] = None,
+        trading_config: dict[str, Any] | None = None,
     ) -> bool:
         """
         Launch live trading with enhanced reporting.
@@ -204,11 +236,11 @@ class EnhancedTradingLauncher:
         """
         try:
             if not self.is_initialized:
-                self.logger.error("Launcher not initialized")
+                self.print(initialization_error("Launcher not initialized"))
                 return False
 
             if not self.enable_live_trading:
-                self.logger.error("Live trading not enabled")
+                self.print(error("Live trading not enabled"))
                 return False
 
             self.logger.info("🚀 Launching live trading with enhanced reporting...")
@@ -220,12 +252,12 @@ class EnhancedTradingLauncher:
 
             # TODO: Initialize live trading components
             # This would integrate with the existing live trading system
-            self.logger.warning("⚠️ Live trading not yet implemented")
+            self.print(warning("⚠️ Live trading not yet implemented"))
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error launching live trading: {e}")
+        except Exception:
+            self.print(error("Error launching live trading: {e}"))
             return False
 
     @handle_specific_errors(
@@ -240,8 +272,8 @@ class EnhancedTradingLauncher:
         self,
         historical_data: pd.DataFrame,
         strategy_signals: pd.DataFrame,
-        backtest_config: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        backtest_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Launch enhanced backtest with comprehensive reporting.
 
@@ -255,14 +287,16 @@ class EnhancedTradingLauncher:
         """
         try:
             if not self.is_initialized:
-                self.logger.error("Launcher not initialized")
+                self.print(initialization_error("Launcher not initialized"))
                 return {}
 
             if not self.enhanced_backtester:
-                self.logger.error("Enhanced backtester not available")
+                self.print(error("Enhanced backtester not available"))
                 return {}
 
-            self.logger.info("🚀 Launching enhanced backtest with comprehensive reporting...")
+            self.logger.info(
+                "🚀 Launching enhanced backtest with comprehensive reporting...",
+            )
             self.current_mode = "backtest"
 
             # Update configuration if provided
@@ -282,8 +316,8 @@ class EnhancedTradingLauncher:
             self.logger.info("✅ Enhanced backtest completed successfully")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error launching backtest: {e}")
+        except Exception:
+            self.print(error("Error launching backtest: {e}"))
             return {}
 
     @handle_specific_errors(
@@ -301,7 +335,7 @@ class EnhancedTradingLauncher:
         quantity: float,
         price: float,
         timestamp: datetime,
-        trade_metadata: Optional[Dict[str, Any]] = None,
+        trade_metadata: dict[str, Any] | None = None,
     ) -> bool:
         """
         Execute trade with integrated reporting.
@@ -319,7 +353,7 @@ class EnhancedTradingLauncher:
         """
         try:
             if not self.is_initialized:
-                self.logger.error("Launcher not initialized")
+                self.print(initialization_error("Launcher not initialized"))
                 return False
 
             if self.current_mode == "paper" and self.paper_trading_integration:
@@ -331,92 +365,95 @@ class EnhancedTradingLauncher:
                     timestamp=timestamp,
                     trade_metadata=trade_metadata,
                 )
-            elif self.current_mode == "live":
+            if self.current_mode == "live":
                 # TODO: Implement live trading execution
-                self.logger.warning("⚠️ Live trading execution not yet implemented")
+                self.print(
+                    execution_error("⚠️ Live trading execution not yet implemented"),
+                )
                 return False
-            else:
-                self.logger.error(f"Trade execution not available for mode: {self.current_mode}")
-                return False
-
-        except Exception as e:
-            self.logger.error(f"Error executing trade: {e}")
+            self.logger.error(
+                f"Trade execution not available for mode: {self.current_mode}",
+            )
             return False
 
-    def get_performance_metrics(self) -> Dict[str, Any]:
+        except Exception:
+            self.print(error("Error executing trade: {e}"))
+            return False
+
+    def get_performance_metrics(self) -> dict[str, Any]:
         """Get comprehensive performance metrics for current mode."""
         try:
             if self.current_mode == "paper" and self.paper_trading_integration:
                 return self.paper_trading_integration.get_performance_metrics()
-            elif self.current_mode == "backtest" and self.enhanced_backtester:
+            if self.current_mode == "backtest" and self.enhanced_backtester:
                 return self.enhanced_backtester.get_backtest_results()
-            elif self.current_mode == "live":
+            if self.current_mode == "live":
                 # TODO: Implement live trading metrics
                 return {"mode": "live", "status": "not_implemented"}
-            else:
-                return {"mode": self.current_mode, "status": "no_metrics_available"}
+            return {"mode": self.current_mode, "status": "no_metrics_available"}
 
-        except Exception as e:
-            self.logger.error(f"Error getting performance metrics: {e}")
+        except Exception:
+            self.print(error("Error getting performance metrics: {e}"))
             return {}
 
-    def get_trade_history(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_trade_history(self, symbol: str | None = None) -> list[dict[str, Any]]:
         """Get trade history for current mode."""
         try:
             if self.current_mode == "paper" and self.paper_trading_integration:
                 return self.paper_trading_integration.get_trade_history(symbol)
-            elif self.current_mode == "backtest" and self.enhanced_backtester:
+            if self.current_mode == "backtest" and self.enhanced_backtester:
                 results = self.enhanced_backtester.get_backtest_results()
                 return results.get("trade_history", [])
-            else:
-                return []
-
-        except Exception as e:
-            self.logger.error(f"Error getting trade history: {e}")
             return []
 
-    def get_portfolio_summary(self) -> Dict[str, Any]:
+        except Exception:
+            self.print(error("Error getting trade history: {e}"))
+            return []
+
+    def get_portfolio_summary(self) -> dict[str, Any]:
         """Get portfolio summary for current mode."""
         try:
             if self.current_mode == "paper" and self.paper_trading_integration:
                 return self.paper_trading_integration.get_portfolio_summary()
-            elif self.current_mode == "backtest" and self.enhanced_backtester:
+            if self.current_mode == "backtest" and self.enhanced_backtester:
                 results = self.enhanced_backtester.get_backtest_results()
                 return {
                     "final_portfolio_value": results.get("final_portfolio_value", 0.0),
                     "current_positions": results.get("current_positions", {}),
                     "performance_metrics": results.get("performance_metrics", {}),
                 }
-            else:
-                return {}
+            return {}
 
-        except Exception as e:
-            self.logger.error(f"Error getting portfolio summary: {e}")
+        except Exception:
+            self.print(error("Error getting portfolio summary: {e}"))
             return {}
 
     async def generate_comprehensive_report(
         self,
         report_type: str = "comprehensive",
-        export_formats: List[str] = None,
-    ) -> Dict[str, Any]:
+        export_formats: list[str] = None,
+    ) -> dict[str, Any]:
         """Generate comprehensive report for current mode."""
         try:
             if export_formats is None:
                 export_formats = ["json", "csv", "html"]
 
             if self.current_mode == "paper" and self.paper_trading_integration:
-                return await self.paper_trading_integration.generate_comprehensive_report(
-                    report_type, export_formats
+                return (
+                    await self.paper_trading_integration.generate_comprehensive_report(
+                        report_type,
+                        export_formats,
+                    )
                 )
-            elif self.current_mode == "backtest" and self.enhanced_backtester:
+            if self.current_mode == "backtest" and self.enhanced_backtester:
                 return await self.enhanced_backtester.generate_backtest_report(
-                    report_type, export_formats
+                    report_type,
+                    export_formats,
                 )
-            else:
-                return await self._generate_basic_report(report_type, export_formats)
+            return await self._generate_basic_report(report_type, export_formats)
 
-        except Exception as e:
-            self.logger.error(f"Error generating comprehensive report: {e}")
+        except Exception:
+            self.print(error("Error generating comprehensive report: {e}"))
             return {}
 
     @handle_errors(
@@ -427,8 +464,8 @@ class EnhancedTradingLauncher:
     async def _generate_basic_report(
         self,
         report_type: str,
-        export_formats: List[str],
-    ) -> Dict[str, Any]:
+        export_formats: list[str],
+    ) -> dict[str, Any]:
         """Generate basic report when detailed reporting is not available."""
         try:
             import json
@@ -451,7 +488,7 @@ class EnhancedTradingLauncher:
                     "is_initialized": self.is_initialized,
                     "current_mode": self.current_mode,
                     "enable_detailed_reporting": self.enable_detailed_reporting,
-                }
+                },
             }
 
             # Export reports
@@ -469,11 +506,11 @@ class EnhancedTradingLauncher:
 
             return report_data
 
-        except Exception as e:
-            self.logger.error(f"Error generating basic report: {e}")
+        except Exception:
+            self.print(error("Error generating basic report: {e}"))
             return {}
 
-    def get_launcher_status(self) -> Dict[str, Any]:
+    def get_launcher_status(self) -> dict[str, Any]:
         """Get launcher status."""
         return {
             "is_initialized": self.is_initialized,
@@ -506,8 +543,8 @@ class EnhancedTradingLauncher:
             self.current_mode = "none"
             self.logger.info("✅ Enhanced Trading Launcher stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping launcher: {e}")
+        except Exception:
+            self.print(error("Error stopping launcher: {e}"))
 
 
 @handle_errors(
@@ -516,7 +553,7 @@ class EnhancedTradingLauncher:
     context="enhanced trading launcher setup",
 )
 async def setup_enhanced_trading_launcher(
-    config: Dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> EnhancedTradingLauncher | None:
     """
     Setup enhanced trading launcher.
@@ -536,9 +573,8 @@ async def setup_enhanced_trading_launcher(
 
         if success:
             return launcher
-        else:
-            return None
+        return None
 
     except Exception as e:
-        system_logger.error(f"Error setting up enhanced trading launcher: {e}")
+        system_logger.exception(f"Error setting up enhanced trading launcher: {e}")
         return None

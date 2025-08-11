@@ -1,4 +1,18 @@
 import numpy as np
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 import pandas as pd
 from arch import arch_model
 from keras.layers import (
@@ -101,7 +115,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             self.logger.info("Training GARCH model for volatility modeling...")
             self.models["garch"] = self._train_garch_model(aligned_data, y_encoded)
         except Exception as e:
-            self.logger.error(f"GARCH training failed: {e}")
+            self.print(failed("GARCH training failed: {e}"))
 
         self.logger.info("✅ VolatileRegime base models training completed")
 
@@ -128,7 +142,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return np.array([]), np.array([])
 
         except Exception as e:
-            self.logger.error(f"Error preparing sequence data: {e}")
+            self.print(error("Error preparing sequence data: {e}"))
             return np.array([]), np.array([])
 
     def _train_dl_model(self, X_seq, y_seq_encoded, num_classes, is_transformer=False):
@@ -144,7 +158,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return self._build_lstm_model(input_shape, num_classes)
 
         except Exception as e:
-            self.logger.error(f"Error training DL model: {e}")
+            self.print(error("Error training DL model: {e}"))
             return None
 
     def _build_lstm_model(self, input_shape, num_classes):
@@ -186,7 +200,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return model
 
         except Exception as e:
-            self.logger.error(f"Error building LSTM model: {e}")
+            self.print(error("Error building LSTM model: {e}"))
             return None
 
     def _build_transformer_model(self, input_shape, num_classes):
@@ -237,7 +251,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return model
 
         except Exception as e:
-            self.logger.error(f"Error building Transformer model: {e}")
+            self.print(error("Error building Transformer model: {e}"))
             return None
 
     def _train_tabnet_model(self, X_flat, y_flat_encoded):
@@ -253,7 +267,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             )
             return tabnet
         except Exception as e:
-            self.logger.error(f"TabNet training failed: {e}")
+            self.print(failed("TabNet training failed: {e}"))
             return None
 
     def _train_garch_model(self, aligned_data, y_encoded):
@@ -264,11 +278,10 @@ class VolatileRegimeEnsemble(BaseEnsemble):
 
             # Fit GARCH model
             garch_model = arch_model(returns, vol="GARCH", p=1, q=1)
-            fitted_model = garch_model.fit(disp="off")
+            return garch_model.fit(disp="off")
 
-            return fitted_model
         except Exception as e:
-            self.logger.error(f"GARCH model training failed: {e}")
+            self.print(failed("GARCH model training failed: {e}"))
             return None
 
     def _generate_meta_features(self, aligned_data: pd.DataFrame) -> pd.DataFrame:
@@ -313,9 +326,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             ]
 
         # Fill NaN values
-        meta_features = meta_features.fillna(0)
-
-        return meta_features
+        return meta_features.fillna(0)
 
     def predict(self, current_features: pd.DataFrame) -> tuple[float, float]:
         """Make prediction for volatile regime."""
@@ -342,60 +353,6 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             ensemble_confidence = np.mean(confidences)
 
             return weighted_pred, ensemble_confidence
-
-            # Volatility LGBM
-            if self.models["volatility_lgbm"]:
-                pred = self.models["volatility_lgbm"].predict_proba(X_flat)[0]
-                predictions["volatility_lgbm"] = pred[
-                    1
-                ]  # Probability of positive class
-                confidences["volatility_lgbm"] = np.max(pred)
-
-            # TabNet
-            if self.models["volatility_tabnet"]:
-                pred = self.models["volatility_tabnet"].predict_proba(X_flat.values)[0]
-                predictions["volatility_tabnet"] = pred[1]
-                confidences["volatility_tabnet"] = np.max(pred)
-
-            # Order Flow LGBM
-            if self.models["order_flow_lgbm"]:
-                pred = self.models["order_flow_lgbm"].predict_proba(X_of)[0]
-                predictions["order_flow_lgbm"] = pred[1]
-                confidences["order_flow_lgbm"] = np.max(pred)
-
-            # Random Forest
-            if self.models["random_forest"]:
-                pred = self.models["random_forest"].predict_proba(X_flat)[0]
-                predictions["random_forest"] = pred[1]
-                confidences["random_forest"] = np.max(pred)
-
-            # SVM
-            if self.models["svm"]:
-                pred = self.models["svm"].predict_proba(X_flat)[0]
-                predictions["svm"] = pred[1]
-                confidences["svm"] = np.max(pred)
-
-            # Combine predictions using weighted average
-            if predictions:
-                # Use confidence as weight
-                total_weight = sum(confidences.values())
-                if total_weight > 0:
-                    weighted_prediction = (
-                        sum(
-                            pred * confidences[model]
-                            for model, pred in predictions.items()
-                        )
-                        / total_weight
-                    )
-                    overall_confidence = np.mean(list(confidences.values()))
-                else:
-                    weighted_prediction = np.mean(list(predictions.values()))
-                    overall_confidence = 0.5
-            else:
-                weighted_prediction = 0.5
-                overall_confidence = 0.5
-
-            return weighted_prediction, overall_confidence
 
         except Exception as e:
             self.logger.error(f"Error in VolatileRegime prediction: {e}")

@@ -13,6 +13,11 @@ import optuna
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    warning,
+)
 
 
 @dataclass
@@ -66,7 +71,7 @@ class ParallelParameterOptimizer:
             }
 
             # Group parameters based on their category
-            for param_path, param_value in all_parameters.items():
+            for param_path in all_parameters:
                 if "confidence" in param_path.lower():
                     parameter_groups["confidence_parameters"].append(param_path)
                 elif "sizing" in param_path.lower() or "position" in param_path.lower():
@@ -89,8 +94,8 @@ class ParallelParameterOptimizer:
             )
             return parameter_groups
 
-        except Exception as e:
-            self.logger.error(f"Error grouping parameters: {e}")
+        except Exception:
+            self.print(error("Error grouping parameters: {e}"))
             return {}
 
     @handle_errors(
@@ -120,8 +125,7 @@ class ParallelParameterOptimizer:
                         params[param] = trial.suggest_float(param, 0.0, 1.0)
 
                 # Simulate performance (replace with actual evaluation)
-                performance = self._evaluate_confidence_parameters(params)
-                return performance
+                return self._evaluate_confidence_parameters(params)
 
             # Create study
             study = optuna.create_study(direction="maximize")
@@ -133,8 +137,8 @@ class ParallelParameterOptimizer:
                 "parameter_type": "confidence",
             }
 
-        except Exception as e:
-            self.logger.error(f"Error optimizing confidence parameters: {e}")
+        except Exception:
+            self.print(error("Error optimizing confidence parameters: {e}"))
             return None
 
     @handle_errors(
@@ -164,8 +168,7 @@ class ParallelParameterOptimizer:
                         params[param] = trial.suggest_float(param, 0.0, 1.0)
 
                 # Simulate performance
-                performance = self._evaluate_sizing_parameters(params)
-                return performance
+                return self._evaluate_sizing_parameters(params)
 
             # Create study
             study = optuna.create_study(direction="maximize")
@@ -177,8 +180,8 @@ class ParallelParameterOptimizer:
                 "parameter_type": "sizing",
             }
 
-        except Exception as e:
-            self.logger.error(f"Error optimizing sizing parameters: {e}")
+        except Exception:
+            self.print(error("Error optimizing sizing parameters: {e}"))
             return None
 
     @handle_errors(
@@ -208,8 +211,7 @@ class ParallelParameterOptimizer:
                         params[param] = trial.suggest_float(param, 0.0, 1.0)
 
                 # Simulate performance
-                performance = self._evaluate_risk_parameters(params)
-                return performance
+                return self._evaluate_risk_parameters(params)
 
             # Create study
             study = optuna.create_study(direction="maximize")
@@ -221,8 +223,8 @@ class ParallelParameterOptimizer:
                 "parameter_type": "risk",
             }
 
-        except Exception as e:
-            self.logger.error(f"Error optimizing risk parameters: {e}")
+        except Exception:
+            self.print(error("Error optimizing risk parameters: {e}"))
             return None
 
     @handle_errors(
@@ -242,7 +244,7 @@ class ParallelParameterOptimizer:
             )
 
             if not parameter_groups:
-                self.logger.warning("No parameters to optimize")
+                self.print(warning("No parameters to optimize"))
                 return None
 
             # Create optimization tasks
@@ -277,8 +279,8 @@ class ParallelParameterOptimizer:
             self.logger.info("Parallel optimization completed successfully")
             return combined_results
 
-        except Exception as e:
-            self.logger.error(f"Error in parallel optimization: {e}")
+        except Exception:
+            self.print(error("Error in parallel optimization: {e}"))
             return None
 
     @handle_errors(
@@ -305,7 +307,7 @@ class ParallelParameterOptimizer:
 
             for result in results:
                 if isinstance(result, Exception):
-                    self.logger.warning(f"Optimization task failed: {result}")
+                    self.print(failed("Optimization task failed: {result}"))
                     continue
 
                 if result is None:
@@ -329,8 +331,8 @@ class ParallelParameterOptimizer:
             self.logger.info(f"Combined {valid_results} optimization results")
             return combined_results
 
-        except Exception as e:
-            self.logger.error(f"Error combining optimization results: {e}")
+        except Exception:
+            self.print(error("Error combining optimization results: {e}"))
             return {}
 
     def _evaluate_confidence_parameters(self, params: dict[str, Any]) -> float:
@@ -355,8 +357,8 @@ class ParallelParameterOptimizer:
 
             return min(performance, 1.0)
 
-        except Exception as e:
-            self.logger.warning(f"Error evaluating confidence parameters: {e}")
+        except Exception:
+            self.print(warning("Error evaluating confidence parameters: {e}"))
             return 0.0
 
     def _evaluate_sizing_parameters(self, params: dict[str, Any]) -> float:
@@ -381,8 +383,8 @@ class ParallelParameterOptimizer:
 
             return min(performance, 1.0)
 
-        except Exception as e:
-            self.logger.warning(f"Error evaluating sizing parameters: {e}")
+        except Exception:
+            self.print(warning("Error evaluating sizing parameters: {e}"))
             return 0.0
 
     def _evaluate_risk_parameters(self, params: dict[str, Any]) -> float:
@@ -407,8 +409,8 @@ class ParallelParameterOptimizer:
 
             return min(performance, 1.0)
 
-        except Exception as e:
-            self.logger.warning(f"Error evaluating risk parameters: {e}")
+        except Exception:
+            self.print(warning("Error evaluating risk parameters: {e}"))
             return 0.0
 
     def get_parallel_statistics(self) -> dict[str, Any]:

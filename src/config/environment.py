@@ -125,30 +125,29 @@ class EnvironmentSettings(BaseSettings):
     def current_exchange_credentials(self) -> dict[str, Any]:
         """Get credentials for the current exchange."""
         exchange = self.exchange_name.lower()
-        
+
         if exchange == "gateio":
             return {
                 "api_key": self.gateio_api_key,
                 "api_secret": self.gateio_api_secret,
             }
-        elif exchange == "mexc":
+        if exchange == "mexc":
             return {
                 "api_key": self.mexc_api_key,
                 "api_secret": self.mexc_api_secret,
             }
-        elif exchange == "okx":
+        if exchange == "okx":
             return {
                 "api_key": self.okx_api_key,
                 "api_secret": self.okx_api_secret,
                 "password": self.okx_password,
             }
-        elif exchange == "binance":
+        if exchange == "binance":
             return {
                 "api_key": self.binance_api_key,
                 "api_secret": self.binance_api_secret,
             }
-        else:
-            return {}
+        return {}
 
     # --- Validators ---
     class Config:
@@ -161,7 +160,7 @@ try:
     system_logger.info(
         f"Environment configuration loaded successfully. "
         f"Trading Environment: {settings.trading_environment}, "
-        f"Exchange: {settings.exchange_name}"
+        f"Exchange: {settings.exchange_name}",
     )
 except Exception as e:
     system_logger.error(f"Failed to load or validate environment configuration: {e}")
@@ -171,7 +170,7 @@ except Exception as e:
 def get_environment_settings() -> EnvironmentSettings:
     """
     Get the global environment settings instance.
-    
+
     Returns:
         EnvironmentSettings: The global settings instance
     """
@@ -181,7 +180,7 @@ def get_environment_settings() -> EnvironmentSettings:
 def get_trading_environment() -> str:
     """
     Get the current trading environment.
-    
+
     Returns:
         str: The trading environment (LIVE, TESTNET, or PAPER)
     """
@@ -191,7 +190,7 @@ def get_trading_environment() -> str:
 def get_exchange_name() -> str:
     """
     Get the current exchange name.
-    
+
     Returns:
         str: The exchange name
     """
@@ -201,7 +200,7 @@ def get_exchange_name() -> str:
 def get_trade_symbol() -> str:
     """
     Get the current trade symbol.
-    
+
     Returns:
         str: The trade symbol
     """
@@ -211,7 +210,7 @@ def get_trade_symbol() -> str:
 def get_timeframe() -> str:
     """
     Get the current timeframe.
-    
+
     Returns:
         str: The timeframe
     """
@@ -221,7 +220,7 @@ def get_timeframe() -> str:
 def get_initial_equity() -> float:
     """
     Get the initial equity.
-    
+
     Returns:
         float: The initial equity
     """
@@ -231,7 +230,7 @@ def get_initial_equity() -> float:
 def is_live_mode() -> bool:
     """
     Check if running in live mode.
-    
+
     Returns:
         bool: True if in live mode, False otherwise
     """
@@ -241,7 +240,7 @@ def is_live_mode() -> bool:
 def get_exchange_credentials() -> dict[str, Any]:
     """
     Get credentials for the current exchange.
-    
+
     Returns:
         dict: Exchange credentials
     """
@@ -251,7 +250,7 @@ def get_exchange_credentials() -> dict[str, Any]:
 def get_database_config() -> dict[str, Any]:
     """
     Get database configuration.
-    
+
     Returns:
         dict: Database configuration
     """
@@ -272,7 +271,7 @@ def get_database_config() -> dict[str, Any]:
 def get_mlflow_config() -> dict[str, Any]:
     """
     Get MLflow configuration.
-    
+
     Returns:
         dict: MLflow configuration
     """
@@ -285,7 +284,7 @@ def get_mlflow_config() -> dict[str, Any]:
 def get_email_config() -> dict[str, Any]:
     """
     Get email configuration.
-    
+
     Returns:
         dict: Email configuration
     """
@@ -293,4 +292,4 @@ def get_email_config() -> dict[str, Any]:
         "sender_address": settings.email_sender_address,
         "sender_password": settings.email_sender_password,
         "recipient_address": settings.email_recipient_address,
-    } 
+    }

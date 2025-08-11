@@ -15,9 +15,23 @@ from typing import Any
 
 from src.config_optuna import get_parameter_value
 from src.tactician.position_division_strategy import PositionDivisionStrategy
+from src.utils.confidence import normalize_dual_confidence
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.confidence import normalize_dual_confidence
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 class PositionAction(Enum):
@@ -206,7 +220,9 @@ class PositionMonitor:
                             tactician_confidence,
                         )
                     except Exception as e:
-                        self.logger.error(f"Error adjusting dynamic trailing levels for {position_id}: {e}")
+                        self.logger.exception(
+                            f"Error adjusting dynamic trailing levels for {position_id}: {e}",
+                        )
 
                     # Execute recommended action
                     await self._execute_position_action(assessment)
@@ -298,12 +314,15 @@ class PositionMonitor:
     ) -> None:
         """Adjust trailing stop and take-profit dynamically based on evolving confidence."""
         # Compute normalized dual confidence
-        _, normalized = normalize_dual_confidence(analyst_confidence, tactician_confidence)
+        _, normalized = normalize_dual_confidence(
+            analyst_confidence,
+            tactician_confidence,
+        )
 
         # Determine new trailing offsets as a function of confidence
         # Higher confidence -> wider trailing stop, more ambitious TP; lower confidence -> tighten
         base_trailing_stop = position_data.get("base_trailing_stop_pct", 0.005)  # 0.5%
-        base_trailing_tp = position_data.get("base_trailing_tp_pct", 0.01)       # 1%
+        base_trailing_tp = position_data.get("base_trailing_tp_pct", 0.01)  # 1%
 
         # Scale between 0.5x..1.5x based on confidence
         scale = 0.5 + normalized
@@ -326,7 +345,7 @@ class PositionMonitor:
                 trailing_tp_pct=new_trailing_tp,
             )
             self.logger.info(
-                f"🔧 Adjusted trailing levels for {position_id}: stop={new_trailing_stop:.4%}, tp={new_trailing_tp:.4%}"
+                f"🔧 Adjusted trailing levels for {position_id}: stop={new_trailing_stop:.4%}, tp={new_trailing_tp:.4%}",
             )
 
     @handle_errors(
@@ -345,44 +364,45 @@ class PositionMonitor:
         """Analyze position using the position division strategy."""
         try:
             # Prepare ML predictions for the division strategy
-            division_result = (
-                await self.position_division_strategy.analyze_position_division(
-                    ml_predictions={
-                        "price_target_confidences": {
-                            "0.5": current_confidence,
-                            "1.0": max(0.0, current_confidence * 0.9),
-                            "1.5": max(0.0, current_confidence * 0.8),
-                            "2.0": max(0.0, current_confidence * 0.7),
-                        },
-                        "adversarial_confidences": {
-                            "0.5": max(0.0, 1.0 - current_confidence),
-                            "1.0": max(0.0, 1.0 - current_confidence * 0.9),
-                            "1.5": max(0.0, 1.0 - current_confidence * 0.8),
-                            "2.0": max(0.0, 1.0 - current_confidence * 0.7),
-                        },
-                        "directional_confidence": {"current": current_confidence},
+            return await self.position_division_strategy.analyze_position_division(
+                ml_predictions={
+                    "price_target_confidences": {
+                        "0.5": current_confidence,
+                        "1.0": max(0.0, current_confidence * 0.9),
+                        "1.5": max(0.0, current_confidence * 0.8),
+                        "2.0": max(0.0, current_confidence * 0.7),
                     },
-                    current_positions=[
-                        {
-                            "position_id": position_id,
-                            "entry_price": position_data.get("entry_price", 0.0),
-                            "position_size": position_data.get("position_size", 0.0),
-                            "entry_confidence": position_data.get("entry_confidence", 0.5),
-                            "current_price": position_data.get("current_price", 0.0),
-                            "normalized_confidence": current_confidence,
-                        },
-                    ],
-                    current_price=position_data.get("current_price", 0.0),
-                    short_term_analysis=position_data.get("short_term_analysis"),
-                    analyst_confidence=analyst_confidence,
-                    tactician_confidence=tactician_confidence,
-                )
+                    "adversarial_confidences": {
+                        "0.5": max(0.0, 1.0 - current_confidence),
+                        "1.0": max(0.0, 1.0 - current_confidence * 0.9),
+                        "1.5": max(0.0, 1.0 - current_confidence * 0.8),
+                        "2.0": max(0.0, 1.0 - current_confidence * 0.7),
+                    },
+                    "directional_confidence": {"current": current_confidence},
+                },
+                current_positions=[
+                    {
+                        "position_id": position_id,
+                        "entry_price": position_data.get("entry_price", 0.0),
+                        "position_size": position_data.get("position_size", 0.0),
+                        "entry_confidence": position_data.get(
+                            "entry_confidence",
+                            0.5,
+                        ),
+                        "current_price": position_data.get("current_price", 0.0),
+                        "normalized_confidence": current_confidence,
+                    },
+                ],
+                current_price=position_data.get("current_price", 0.0),
+                short_term_analysis=position_data.get("short_term_analysis"),
+                analyst_confidence=analyst_confidence,
+                tactician_confidence=tactician_confidence,
             )
 
-            return division_result
-
         except Exception as e:
-            self.logger.error(f"Error analyzing position with division strategy: {e}")
+            self.logger.exception(
+                f"Error analyzing position with division strategy: {e}",
+            )
             return None
 
     @handle_errors(
@@ -403,12 +423,10 @@ class PositionMonitor:
 
             # Confidence tends to decrease over time and with volatility
             confidence_adjustment = -0.01 * time_in_position - 0.05 * market_volatility
-            current_confidence = max(
+            return max(
                 0.0,
                 min(1.0, base_confidence + confidence_adjustment),
             )
-
-            return current_confidence
 
         except Exception as e:
             self.logger.error(f"Error getting current confidence: {e}")
@@ -538,7 +556,9 @@ class PositionMonitor:
             return PositionAction.STAY, "Conditions acceptable - maintain position"
 
         except Exception as e:
-            self.logger.error(f"Error determining position action from division: {e}")
+            self.logger.exception(
+                f"Error determining position action from division: {e}",
+            )
             return PositionAction.STAY, "Error in assessment - default to stay"
 
     @handle_errors(
@@ -551,7 +571,7 @@ class PositionMonitor:
         try:
             action = assessment.recommended_action
 
-            if action == PositionAction.EXIT or action == PositionAction.FULL_CLOSE:
+            if action in (PositionAction.EXIT, PositionAction.FULL_CLOSE):
                 await self._execute_exit(assessment)
             elif action == PositionAction.SCALE_UP:
                 await self._execute_scale_up(assessment)
@@ -579,12 +599,26 @@ class PositionMonitor:
                 # Close by placing an opposite-side MARKET order for remaining qty
                 pos = self.active_positions.get(assessment.position_id, {})  # type: ignore[attr-defined]
                 symbol = pos.get("symbol")
-                qty = float(max(0.0, pos.get("remaining_qty", pos.get("quantity", 0.0))))
+                qty = float(
+                    max(0.0, pos.get("remaining_qty", pos.get("quantity", 0.0)))
+                )
                 side = pos.get("side")
                 if symbol and qty > 0 and side:
-                    from src.tactician.enhanced_order_manager import OrderRequest, OrderSide, OrderType
-                    closing_side = OrderSide.SELL if side.lower() == "long" else OrderSide.BUY
-                    orq = OrderRequest(symbol=symbol, side=closing_side, order_type=OrderType.MARKET, quantity=qty)
+                    from src.tactician.enhanced_order_manager import (
+                        OrderRequest,
+                        OrderSide,
+                        OrderType,
+                    )
+
+                    closing_side = (
+                        OrderSide.SELL if side.lower() == "long" else OrderSide.BUY
+                    )
+                    orq = OrderRequest(
+                        symbol=symbol,
+                        side=closing_side,
+                        order_type=OrderType.MARKET,
+                        quantity=qty,
+                    )
                     await self.order_manager._place_order(orq)
         except Exception as e:
             self.logger.error(f"Error executing exit via order manager: {e}")
@@ -601,9 +635,21 @@ class PositionMonitor:
                 side = pos.get("side")
                 add_qty = float(max(0.0, pos.get("scale_up_qty", 0.0)))
                 if symbol and side and add_qty > 0:
-                    from src.tactician.enhanced_order_manager import OrderRequest, OrderSide, OrderType
-                    ord_side = OrderSide.BUY if side.lower() == "long" else OrderSide.SELL
-                    orq = OrderRequest(symbol=symbol, side=ord_side, order_type=OrderType.MARKET, quantity=add_qty)
+                    from src.tactician.enhanced_order_manager import (
+                        OrderRequest,
+                        OrderSide,
+                        OrderType,
+                    )
+
+                    ord_side = (
+                        OrderSide.BUY if side.lower() == "long" else OrderSide.SELL
+                    )
+                    orq = OrderRequest(
+                        symbol=symbol,
+                        side=ord_side,
+                        order_type=OrderType.MARKET,
+                        quantity=add_qty,
+                    )
                     await self.order_manager._place_order(orq)
         except Exception as e:
             self.logger.error(f"Error executing scale up via order manager: {e}")
@@ -620,9 +666,21 @@ class PositionMonitor:
                 side = pos.get("side")
                 reduce_qty = float(max(0.0, pos.get("scale_down_qty", 0.0)))
                 if symbol and side and reduce_qty > 0:
-                    from src.tactician.enhanced_order_manager import OrderRequest, OrderSide, OrderType
-                    closing_side = OrderSide.SELL if side.lower() == "long" else OrderSide.BUY
-                    orq = OrderRequest(symbol=symbol, side=closing_side, order_type=OrderType.MARKET, quantity=reduce_qty)
+                    from src.tactician.enhanced_order_manager import (
+                        OrderRequest,
+                        OrderSide,
+                        OrderType,
+                    )
+
+                    closing_side = (
+                        OrderSide.SELL if side.lower() == "long" else OrderSide.BUY
+                    )
+                    orq = OrderRequest(
+                        symbol=symbol,
+                        side=closing_side,
+                        order_type=OrderType.MARKET,
+                        quantity=reduce_qty,
+                    )
                     await self.order_manager._place_order(orq)
         except Exception as e:
             self.logger.error(f"Error executing scale down via order manager: {e}")
@@ -708,7 +766,9 @@ class PositionMonitor:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting position status for {position_id}: {e}")
+            self.logger.exception(
+                f"Error getting position status for {position_id}: {e}",
+            )
             return None
 
     @handle_errors(

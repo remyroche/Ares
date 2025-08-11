@@ -1,3 +1,4 @@
+import contextlib
 import os
 from datetime import datetime
 from typing import Any
@@ -18,6 +19,20 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    warning,
+    critical,
+    problem,
+    failed,
+    invalid,
+    missing,
+    timeout,
+    connection_error,
+    validation_error,
+    initialization_error,
+    execution_error,
+)
 
 
 class MLConfidencePredictor:
@@ -228,14 +243,20 @@ class MLConfidencePredictor:
                 return self._generate_fallback_predictions(current_price)
 
             # Generate predictions
-            price_target_confidences = await self._generate_price_target_predictions(features)
-            adversarial_confidences = await self._generate_adversarial_predictions(features)
+            price_target_confidences = await self._generate_price_target_predictions(
+                features,
+            )
+            adversarial_confidences = await self._generate_adversarial_predictions(
+                features,
+            )
             directional_analysis = self._generate_directional_confidence_analysis(
                 price_target_confidences,
                 adversarial_confidences,
                 current_price,
             )
-            ensemble_predictions = await self._generate_ensemble_predictions_if_available(features)
+            ensemble_predictions = (
+                await self._generate_ensemble_predictions_if_available(features)
+            )
 
             # Build and return result
             result = self._build_prediction_result(
@@ -252,7 +273,9 @@ class MLConfidencePredictor:
             return result
 
         except Exception as e:
-            self.logger.error(f"Error in price target confidence prediction: {str(e)}")
+            self.logger.exception(
+                f"Error in price target confidence prediction: {str(e)}",
+            )
             return self._generate_fallback_predictions(current_price)
 
     @handle_errors(
@@ -297,15 +320,12 @@ class MLConfidencePredictor:
         Returns:
             bool: True if trained models are available
         """
-        return (
-            self.is_trained
-            and (
-                self.price_target_models
-                or self.adversarial_models
-                or self.ensemble_models
-                or self.regime_models
-                or self.multi_timeframe_models
-            )
+        return self.is_trained and (
+            self.price_target_models
+            or self.adversarial_models
+            or self.ensemble_models
+            or self.regime_models
+            or self.multi_timeframe_models
         )
 
     @handle_errors(
@@ -327,11 +347,14 @@ class MLConfidencePredictor:
             dict: Price target confidence predictions
         """
         price_target_confidences = {}
-        
+
         for target in self.price_movement_levels:
             model_key = f"price_target_{target:.1f}"
             confidence = self._get_prediction_for_target(
-                features, model_key, "price_target", target
+                features,
+                model_key,
+                "price_target",
+                target,
             )
             price_target_confidences[f"{target:.1f}%"] = confidence
 
@@ -356,11 +379,14 @@ class MLConfidencePredictor:
             dict: Adversarial confidence predictions
         """
         adversarial_confidences = {}
-        
+
         for level in self.adversarial_movement_levels:
             model_key = f"adversarial_{level:.1f}"
             confidence = self._get_prediction_for_target(
-                features, model_key, "adversarial", level
+                features,
+                model_key,
+                "adversarial",
+                level,
             )
             adversarial_confidences[f"{level:.1f}%"] = confidence
 
@@ -394,8 +420,7 @@ class MLConfidencePredictor:
 
         if model_key in models and models[model_key] is not None:
             return self._predict_single_target(features, model_key, model_type)
-        else:
-            return fallback_func(target_level)
+        return fallback_func(target_level)
 
     @handle_errors(
         exceptions=(Exception,),
@@ -471,7 +496,7 @@ class MLConfidencePredictor:
         """
         try:
             if not self.meta_labeling_system:
-                self.logger.warning("Meta-labeling system not available")
+                self.print(warning("Meta-labeling system not available"))
                 return None
 
             # Generate base confidence predictions
@@ -502,7 +527,9 @@ class MLConfidencePredictor:
             return combined_predictions
 
         except Exception as e:
-            self.logger.error(f"Error generating predictions with meta-labeling: {e}")
+            self.logger.exception(
+                f"Error generating predictions with meta-labeling: {e}",
+            )
             return None
 
     async def _generate_ensemble_predictions(
@@ -531,7 +558,7 @@ class MLConfidencePredictor:
                         )
 
                 except Exception as e:
-                    self.logger.error(
+                    self.logger.exception(
                         f"Error predicting with ensemble {ensemble_name}: {e}",
                     )
                     continue
@@ -539,7 +566,7 @@ class MLConfidencePredictor:
             return ensemble_predictions
 
         except Exception as e:
-            self.logger.error(f"Error generating ensemble predictions: {e}")
+            self.print(error("Error generating ensemble predictions: {e}"))
             return {}
 
     async def _generate_analyst_meta_labels(
@@ -559,23 +586,21 @@ class MLConfidencePredictor:
             )
 
             # Generate analyst labels
-            analyst_labels = await self.meta_labeling_system._generate_analyst_labels(
+            return await self.meta_labeling_system._generate_analyst_labels(
                 market_data,
                 volume_data,
                 None,
             )
 
-            return analyst_labels
-
         except Exception as e:
-            self.logger.error(f"Error generating analyst meta-labels: {e}")
+            self.print(error("Error generating analyst meta-labels: {e}"))
             return {}
 
     async def refresh_models_from_enhanced_training(self) -> bool:
         """Refresh models from enhanced training manager."""
         try:
             if not self.enhanced_training_manager:
-                self.logger.warning("Enhanced training manager not available")
+                self.print(warning("Enhanced training manager not available"))
                 return False
 
             self.logger.info("Refreshing models from enhanced training manager...")
@@ -603,7 +628,7 @@ class MLConfidencePredictor:
             return False
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error refreshing models from enhanced training manager: {e}",
             )
             return False
@@ -648,7 +673,7 @@ class MLConfidencePredictor:
                     "models": list(tactician_models.keys()),
                 }
 
-            model_info = {
+            return {
                 "price_target_models": len(self.price_target_models),
                 "adversarial_models": len(self.adversarial_models),
                 "ensemble_models": len(self.ensemble_models),
@@ -667,10 +692,8 @@ class MLConfidencePredictor:
                 "tactician_models": tactician_models_info,
             }
 
-            return model_info
-
         except Exception as e:
-            self.logger.error(f"Error getting enhanced training model info: {e}")
+            self.print(error("Error getting enhanced training model info: {e}"))
             return {"error": str(e)}
 
     async def _generate_tactician_meta_labels(
@@ -690,18 +713,14 @@ class MLConfidencePredictor:
             )
 
             # Generate tactician labels
-            tactician_labels = (
-                await self.meta_labeling_system._generate_tactician_labels(
-                    market_data,
-                    volume_data,
-                    None,
-                )
+            return await self.meta_labeling_system._generate_tactician_labels(
+                market_data,
+                volume_data,
+                None,
             )
 
-            return tactician_labels
-
         except Exception as e:
-            self.logger.error(f"Error generating tactician meta-labels: {e}")
+            self.print(error("Error generating tactician meta-labels: {e}"))
             return {}
 
     @handle_errors(
@@ -728,7 +747,9 @@ class MLConfidencePredictor:
             self.logger.info("Enhanced training integration initialized successfully")
 
         except Exception as e:
-            self.logger.error(f"Error initializing enhanced training integration: {e}")
+            self.logger.exception(
+                f"Error initializing enhanced training integration: {e}",
+            )
             # Continue without enhanced training manager if not available
             self.enhanced_training_manager = None
 
@@ -762,7 +783,9 @@ class MLConfidencePredictor:
             self.logger.info("✅ Model training capabilities initialized successfully")
 
         except Exception as e:
-            self.logger.error(f"Error initializing model training capabilities: {e}")
+            self.logger.exception(
+                f"Error initializing model training capabilities: {e}",
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -820,7 +843,7 @@ class MLConfidencePredictor:
             )
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error initializing feature engineering integration: {e}",
             )
             self.advanced_feature_engineering = None
@@ -863,7 +886,9 @@ class MLConfidencePredictor:
             self.logger.info("✅ Meta-labeling system initialized successfully")
 
         except Exception as e:
-            self.logger.error(f"Error initializing meta-labeling system: {e}")
+            self.print(
+                initialization_error("Error initializing meta-labeling system: {e}")
+            )
             # Continue without meta-labeling system if not available
             self.meta_labeling_system = None
 
@@ -884,7 +909,7 @@ class MLConfidencePredictor:
         """
         try:
             if not self.meta_labeling_system:
-                self.logger.warning("Meta-labeling system not available")
+                self.print(warning("Meta-labeling system not available"))
                 return await self.predict_confidence_table(
                     market_data,
                     market_data["close"].iloc[-1],
@@ -934,7 +959,9 @@ class MLConfidencePredictor:
             return combined_result
 
         except Exception as e:
-            self.logger.error(f"Error generating predictions with meta-labeling: {e}")
+            self.logger.exception(
+                f"Error generating predictions with meta-labeling: {e}",
+            )
             return await self.predict_confidence_table(
                 market_data,
                 market_data["close"].iloc[-1],
@@ -980,7 +1007,7 @@ class MLConfidencePredictor:
             return analyst_labels
 
         except Exception as e:
-            self.logger.error(f"Error generating analyst meta-labels: {e}")
+            self.print(error("Error generating analyst meta-labels: {e}"))
             return {}
 
     async def _generate_tactician_meta_labels(
@@ -1008,19 +1035,15 @@ class MLConfidencePredictor:
                 else pd.DataFrame({"volume": [1000] * len(market_data)})
             )
 
-            tactician_labels = (
-                await self.meta_labeling_system.generate_tactician_labels(
-                    market_data,
-                    volume_data,
-                    None,
-                    timeframe,
-                )
+            return await self.meta_labeling_system.generate_tactician_labels(
+                market_data,
+                volume_data,
+                None,
+                timeframe,
             )
 
-            return tactician_labels
-
         except Exception as e:
-            self.logger.error(f"Error generating tactician meta-labels: {e}")
+            self.print(error("Error generating tactician meta-labels: {e}"))
             return {}
 
     @handle_errors(
@@ -1032,14 +1055,12 @@ class MLConfidencePredictor:
         """Load trained models from enhanced training manager."""
         try:
             if not self.enhanced_training_manager:
-                self.logger.warning("Enhanced training manager not available")
+                self.print(warning("Enhanced training manager not available"))
                 return
 
             # Get trained models from enhanced training manager
-            try:
-                training_results = self.enhanced_training_manager.get_enhanced_training_results()
-            except AttributeError:
-                training_results = {}
+            with contextlib.suppress(AttributeError):
+                (self.enhanced_training_manager.get_enhanced_training_results())
 
             # Load different types of models
             self._load_analyst_models()
@@ -1053,19 +1074,21 @@ class MLConfidencePredictor:
             self._log_model_loading_summary()
 
         except Exception as e:
-            self.logger.error(f"Error loading trained models: {e}")
+            self.print(error("Error loading trained models: {e}"))
             raise
 
     def _load_analyst_models(self) -> None:
         """Load analyst models (multi-timeframe models) from enhanced training manager."""
         if not hasattr(self.enhanced_training_manager, "analyst_models"):
             return
-        
+
         analyst_models = self.enhanced_training_manager.analyst_models
         if not analyst_models:
-            self.logger.warning("No analyst models available in enhanced training manager")
+            self.logger.warning(
+                "No analyst models available in enhanced training manager",
+            )
             return
-        
+
         for timeframe in self.analyst_timeframes:
             for model_name in ["tcn", "tabnet", "transformer"]:
                 model_key = f"{timeframe}_{model_name}"
@@ -1078,51 +1101,56 @@ class MLConfidencePredictor:
                 else:
                     self.logger.debug(f"Analyst model not found: {model_key}")
 
-
     def _load_tactician_models(self) -> None:
         """Load tactician models (1m timeframe models) from enhanced training manager."""
         if not hasattr(self.enhanced_training_manager, "tactician_models"):
             return
-        
+
         tactician_models = self.enhanced_training_manager.tactician_models
         if not tactician_models:
-            self.logger.warning("No tactician models available in enhanced training manager")
+            self.logger.warning(
+                "No tactician models available in enhanced training manager",
+            )
             return
-        
+
         for model_name in ["lstm", "gru", "transformer"]:
             model_key = f"1m_{model_name}"
             if model_key in tactician_models:
                 # Create adversarial models for different risk levels
                 for level in self.adversarial_movement_levels:
                     adversarial_key = f"adversarial_{level:.1f}"
-                    self.adversarial_models[adversarial_key] = tactician_models[model_key]
+                    self.adversarial_models[adversarial_key] = tactician_models[
+                        model_key
+                    ]
                 self.logger.info(f"Loaded tactician model: {model_key}")
             else:
                 self.logger.debug(f"Tactician model not found: {model_key}")
 
-
     def _load_ensemble_models(self) -> None:
         """Load ensemble models from enhanced training manager."""
-        if not (hasattr(self.enhanced_training_manager, "ensemble_creator") and 
-                self.enhanced_training_manager.ensemble_creator):
+        if not (
+            hasattr(self.enhanced_training_manager, "ensemble_creator")
+            and self.enhanced_training_manager.ensemble_creator
+        ):
             return
-        
+
         try:
-            ensemble_models = self.enhanced_training_manager.ensemble_creator.get_ensembles()
+            ensemble_models = (
+                self.enhanced_training_manager.ensemble_creator.get_ensembles()
+            )
             if ensemble_models:
                 self.ensemble_models = ensemble_models
                 self.logger.info(f"Loaded {len(ensemble_models)} ensemble models")
             else:
                 self.logger.debug("No ensemble models available")
         except Exception as e:
-            self.logger.warning(f"Could not load ensemble models: {e}")
-
+            self.print(warning("Could not load ensemble models: {e}"))
 
     def _load_calibrated_models(self) -> None:
         """Load calibrated models from enhanced training manager."""
         if not hasattr(self.enhanced_training_manager, "calibration_systems"):
             return
-        
+
         calibration_systems = self.enhanced_training_manager.calibration_systems
         if calibration_systems:
             self.calibrated_models = calibration_systems
@@ -1130,13 +1158,14 @@ class MLConfidencePredictor:
         else:
             self.logger.debug("No calibrated models available")
 
-
     def _load_regime_models(self) -> None:
         """Load regime-specific models from enhanced training manager."""
-        if not (hasattr(self.enhanced_training_manager, "regime_training_manager") and 
-                self.enhanced_training_manager.regime_training_manager):
+        if not (
+            hasattr(self.enhanced_training_manager, "regime_training_manager")
+            and self.enhanced_training_manager.regime_training_manager
+        ):
             return
-        
+
         try:
             regime_models = self.enhanced_training_manager.regime_training_manager.get_regime_models()
             if regime_models:
@@ -1145,25 +1174,27 @@ class MLConfidencePredictor:
             else:
                 self.logger.debug("No regime models available")
         except Exception as e:
-            self.logger.warning(f"Could not load regime models: {e}")
-
+            self.print(warning("Could not load regime models: {e}"))
 
     def _load_multi_timeframe_models(self) -> None:
         """Load multi-timeframe models from enhanced training manager."""
-        if not (hasattr(self.enhanced_training_manager, "multi_timeframe_manager") and 
-                self.enhanced_training_manager.multi_timeframe_manager):
+        if not (
+            hasattr(self.enhanced_training_manager, "multi_timeframe_manager")
+            and self.enhanced_training_manager.multi_timeframe_manager
+        ):
             return
-        
+
         try:
             multi_timeframe_models = self.enhanced_training_manager.multi_timeframe_manager.get_timeframe_models()
             if multi_timeframe_models:
                 self.multi_timeframe_models = multi_timeframe_models
-                self.logger.info(f"Loaded {len(multi_timeframe_models)} multi-timeframe models")
+                self.logger.info(
+                    f"Loaded {len(multi_timeframe_models)} multi-timeframe models",
+                )
             else:
                 self.logger.debug("No multi-timeframe models available")
         except Exception as e:
-            self.logger.warning(f"Could not load multi-timeframe models: {e}")
-
+            self.print(warning("Could not load multi-timeframe models: {e}"))
 
     def _log_model_loading_summary(self) -> None:
         """Log a summary of all loaded models."""
@@ -1173,7 +1204,9 @@ class MLConfidencePredictor:
         self.logger.info(f"  - Ensemble models: {len(self.ensemble_models)}")
         self.logger.info(f"  - Calibrated models: {len(self.calibrated_models)}")
         self.logger.info(f"  - Regime models: {len(self.regime_models)}")
-        self.logger.info(f"  - Multi-timeframe models: {len(self.multi_timeframe_models)}")
+        self.logger.info(
+            f"  - Multi-timeframe models: {len(self.multi_timeframe_models)}",
+        )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -1227,7 +1260,7 @@ class MLConfidencePredictor:
                 self.is_trained = True
                 self.logger.info("✅ Loaded existing confidence predictor model")
             except Exception as e:
-                self.logger.warning(f"Failed to load existing model: {e}")
+                self.print(failed("Failed to load existing model: {e}"))
                 self.model = None
                 self.is_trained = False
 
@@ -1252,18 +1285,18 @@ class MLConfidencePredictor:
 
             for param in required_params:
                 if param not in self.predictor_config:
-                    self.logger.error(f"Missing required parameter: {param}")
+                    self.print(missing("Missing required parameter: {param}"))
                     return False
 
             # Validate parameter values
             if self.predictor_config["min_samples_for_training"] < 100:
-                self.logger.error("Minimum samples for training must be at least 100")
+                self.print(error("Minimum samples for training must be at least 100"))
                 return False
 
             return True
 
         except Exception as e:
-            self.logger.error(f"Configuration validation error: {e}")
+            self.print(validation_error("Configuration validation error: {e}"))
             return False
 
     @handle_specific_errors(
@@ -1306,14 +1339,20 @@ class MLConfidencePredictor:
                 return self._generate_fallback_predictions(current_price)
 
             # Generate predictions
-            price_target_confidences = await self._generate_price_target_predictions(features)
-            adversarial_confidences = await self._generate_adversarial_predictions(features)
+            price_target_confidences = await self._generate_price_target_predictions(
+                features,
+            )
+            adversarial_confidences = await self._generate_adversarial_predictions(
+                features,
+            )
             directional_analysis = self._generate_directional_confidence_analysis(
                 price_target_confidences,
                 adversarial_confidences,
                 current_price,
             )
-            ensemble_predictions = await self._generate_ensemble_predictions_if_available(features)
+            ensemble_predictions = (
+                await self._generate_ensemble_predictions_if_available(features)
+            )
 
             # Build and return result
             result = self._build_prediction_result(
@@ -1330,7 +1369,9 @@ class MLConfidencePredictor:
             return result
 
         except Exception as e:
-            self.logger.error(f"Error in price target confidence prediction: {str(e)}")
+            self.logger.exception(
+                f"Error in price target confidence prediction: {str(e)}",
+            )
             return self._generate_fallback_predictions(current_price)
 
     @handle_errors(
@@ -1375,15 +1416,12 @@ class MLConfidencePredictor:
         Returns:
             bool: True if trained models are available
         """
-        return (
-            self.is_trained
-            and (
-                self.price_target_models
-                or self.adversarial_models
-                or self.ensemble_models
-                or self.regime_models
-                or self.multi_timeframe_models
-            )
+        return self.is_trained and (
+            self.price_target_models
+            or self.adversarial_models
+            or self.ensemble_models
+            or self.regime_models
+            or self.multi_timeframe_models
         )
 
     @handle_errors(
@@ -1405,11 +1443,14 @@ class MLConfidencePredictor:
             dict: Price target confidence predictions
         """
         price_target_confidences = {}
-        
+
         for target in self.price_movement_levels:
             model_key = f"price_target_{target:.1f}"
             confidence = self._get_prediction_for_target(
-                features, model_key, "price_target", target
+                features,
+                model_key,
+                "price_target",
+                target,
             )
             price_target_confidences[f"{target:.1f}%"] = confidence
 
@@ -1434,11 +1475,14 @@ class MLConfidencePredictor:
             dict: Adversarial confidence predictions
         """
         adversarial_confidences = {}
-        
+
         for level in self.adversarial_movement_levels:
             model_key = f"adversarial_{level:.1f}"
             confidence = self._get_prediction_for_target(
-                features, model_key, "adversarial", level
+                features,
+                model_key,
+                "adversarial",
+                level,
             )
             adversarial_confidences[f"{level:.1f}%"] = confidence
 
@@ -1472,8 +1516,7 @@ class MLConfidencePredictor:
 
         if model_key in models and models[model_key] is not None:
             return self._predict_single_target(features, model_key, model_type)
-        else:
-            return fallback_func(target_level)
+        return fallback_func(target_level)
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1596,7 +1639,7 @@ class MLConfidencePredictor:
                     )
 
                 except Exception as e:
-                    self.logger.error(
+                    self.logger.exception(
                         f"Error generating predictions for model {model_name}: {e}",
                     )
                     ensemble_predictions[model_name] = 0.5
@@ -1657,9 +1700,7 @@ class MLConfidencePredictor:
 
             # Ensure numeric columns only
             numeric_columns = features.select_dtypes(include=[np.number]).columns
-            features = features[numeric_columns]
-
-            return features
+            return features[numeric_columns]
 
         except Exception as e:
             self.logger.error(f"Error preparing features: {e}")
@@ -1685,7 +1726,7 @@ class MLConfidencePredictor:
                 return 1.0
 
             values = list(predictions.values())
-            mean_val = np.mean(values)
+            np.mean(values)
 
             # Calculate agreement as inverse of standard deviation
             std_val = np.std(values)
@@ -1725,7 +1766,7 @@ class MLConfidencePredictor:
             return risk_assessment
 
         except Exception as e:
-            self.logger.error(f"Error assessing ensemble risk: {e}")
+            self.print(error("Error assessing ensemble risk: {e}"))
             return {
                 "risk_level": "UNKNOWN",
                 "confidence_range": 0.0,
@@ -1787,7 +1828,7 @@ class MLConfidencePredictor:
             return analysis_result
 
         except Exception as e:
-            self.logger.error(f"Error in directional prediction: {str(e)}")
+            self.print(error("Error in directional prediction: {str(e)}"))
             return None
 
     async def _predict_primary_direction(
@@ -1812,8 +1853,9 @@ class MLConfidencePredictor:
         )
 
         if not base_predictions:
+            msg = "Unable to generate base predictions - model may not be trained"
             raise ValueError(
-                "Unable to generate base predictions - model may not be trained",
+                msg,
             )
 
         # Analyze confidence scores to determine primary direction
@@ -1821,7 +1863,8 @@ class MLConfidencePredictor:
         adversarial_confidences = base_predictions.get("adversarial_confidences", {})
 
         if not price_target_confidences and not adversarial_confidences:
-            raise ValueError("No valid prediction data available")
+            msg = "No valid prediction data available"
+            raise ValueError(msg)
 
         # Calculate weighted average confidence for each direction
         up_confidence = self._calculate_directional_confidence(
@@ -1907,7 +1950,9 @@ class MLConfidencePredictor:
             return adversarial_analysis
 
         except Exception as e:
-            self.logger.error(f"Error in adversarial probability calculation: {str(e)}")
+            self.logger.exception(
+                f"Error in adversarial probability calculation: {str(e)}",
+            )
             return {}
 
     async def _calculate_adverse_probability(
@@ -1938,8 +1983,9 @@ class MLConfidencePredictor:
         )
 
         if not base_predictions:
+            msg = "Unable to generate base predictions for adverse probability calculation"
             raise ValueError(
-                "Unable to generate base predictions for adverse probability calculation",
+                msg,
             )
 
         # Determine which prediction set to use based on primary direction
@@ -1951,14 +1997,18 @@ class MLConfidencePredictor:
             predictions = base_predictions.get("price_target_confidences", {})
 
         if not predictions:
+            msg = (
+                f"No valid prediction data available for {primary_direction} direction"
+            )
             raise ValueError(
-                f"No valid prediction data available for {primary_direction} direction",
+                msg,
             )
 
         # Find the closest available level
-        available_levels = [float(k.replace("%", "")) for k in predictions.keys()]
+        available_levels = [float(k.replace("%", "")) for k in predictions]
         if not available_levels:
-            raise ValueError("No prediction levels available")
+            msg = "No prediction levels available"
+            raise ValueError(msg)
 
         closest_level = min(available_levels, key=lambda x: abs(x - adverse_level))
 
@@ -2004,7 +2054,7 @@ class MLConfidencePredictor:
             return weighted_sum / total_weight if total_weight > 0 else 0.0
 
         except Exception as e:
-            self.logger.error(f"Error calculating directional confidence: {str(e)}")
+            self.print(error("Error calculating directional confidence: {str(e)}"))
             return 0.0
 
     def _get_magnitude_levels(
@@ -2023,7 +2073,8 @@ class MLConfidencePredictor:
             List of magnitude levels
         """
         if not predictions:
-            raise ValueError(f"No predictions available for {direction} direction")
+            msg = f"No predictions available for {direction} direction"
+            raise ValueError(msg)
 
         levels = []
         for level_str in predictions:
@@ -2034,8 +2085,9 @@ class MLConfidencePredictor:
                 levels.append(level)
 
         if not levels:
+            msg = f"No significant probability levels found for {direction} direction"
             raise ValueError(
-                f"No significant probability levels found for {direction} direction",
+                msg,
             )
 
         return sorted(levels)
@@ -2051,7 +2103,8 @@ class MLConfidencePredictor:
             Risk score (0-1, higher = more risky)
         """
         if not adverse_probabilities:
-            raise ValueError("No adverse probabilities provided for risk calculation")
+            msg = "No adverse probabilities provided for risk calculation"
+            raise ValueError(msg)
 
         # Weight higher adverse levels more heavily
         weighted_risk = 0.0
@@ -2065,7 +2118,8 @@ class MLConfidencePredictor:
             total_weight += weight
 
         if total_weight <= 0:
-            raise ValueError("Invalid adverse probability data - no valid weights")
+            msg = "Invalid adverse probability data - no valid weights"
+            raise ValueError(msg)
 
         return weighted_risk / total_weight
 
@@ -2085,8 +2139,9 @@ class MLConfidencePredictor:
             Recommended stop loss level
         """
         if not adverse_probabilities:
+            msg = "No adverse probabilities provided for stop loss calculation"
             raise ValueError(
-                "No adverse probabilities provided for stop loss calculation",
+                msg,
             )
 
         # Find the level where adverse probability exceeds 30%
@@ -2113,8 +2168,9 @@ class MLConfidencePredictor:
             Risk assessment dictionary
         """
         if not adversarial_analysis:
+            msg = "No adversarial analysis data provided for risk assessment"
             raise ValueError(
-                "No adversarial analysis data provided for risk assessment",
+                msg,
             )
 
         # Calculate overall risk metrics
@@ -2224,17 +2280,19 @@ class MLConfidencePredictor:
             if self.enhanced_order_manager:
                 self.logger.info("✅ Enhanced order manager initialized successfully")
             else:
-                self.logger.warning("Failed to initialize enhanced order manager")
+                self.print(failed("Failed to initialize enhanced order manager"))
 
             # Initialize async order executor
             self.async_order_executor = await setup_async_order_executor(order_config)
             if self.async_order_executor:
                 self.logger.info("✅ Async order executor initialized successfully")
             else:
-                self.logger.warning("Failed to initialize async order executor")
+                self.print(failed("Failed to initialize async order executor"))
 
         except Exception as e:
-            self.logger.error(f"Error initializing enhanced order manager: {e}")
+            self.print(
+                initialization_error("Error initializing enhanced order manager: {e}")
+            )
             self.enhanced_order_manager = None
             self.async_order_executor = None
 
@@ -2305,7 +2363,7 @@ class MLConfidencePredictor:
             }
 
         except Exception as e:
-            self.logger.error(f"Error executing CHASE_MICRO_BREAKOUT: {e}")
+            self.print(error("Error executing CHASE_MICRO_BREAKOUT: {e}"))
             return {"success": False, "error": str(e), "order_id": None}
 
     async def execute_limit_order_return(
@@ -2373,7 +2431,7 @@ class MLConfidencePredictor:
             }
 
         except Exception as e:
-            self.logger.error(f"Error executing LIMIT_ORDER_RETURN: {e}")
+            self.print(error("Error executing LIMIT_ORDER_RETURN: {e}"))
             return {"success": False, "error": str(e), "order_id": None}
 
     def get_order_status(self, order_id: str) -> dict[str, Any] | None:
@@ -2403,7 +2461,7 @@ class MLConfidencePredictor:
             return None
 
         except Exception as e:
-            self.logger.error(f"Error getting order status: {e}")
+            self.print(error("Error getting order status: {e}"))
             return None
 
     def get_strategy_orders(self, strategy_id: str) -> list[dict[str, Any]]:
@@ -2434,7 +2492,7 @@ class MLConfidencePredictor:
             ]
 
         except Exception as e:
-            self.logger.error(f"Error getting strategy orders: {e}")
+            self.print(error("Error getting strategy orders: {e}"))
             return []
 
     def get_order_manager_performance(self) -> dict[str, Any]:
@@ -2446,7 +2504,7 @@ class MLConfidencePredictor:
             return self.enhanced_order_manager.get_performance_metrics()
 
         except Exception as e:
-            self.logger.error(f"Error getting order manager performance: {e}")
+            self.print(error("Error getting order manager performance: {e}"))
             return {}
 
     async def execute_order_with_strategy(
@@ -2543,7 +2601,7 @@ class MLConfidencePredictor:
             }
 
         except Exception as e:
-            self.logger.error(f"Error executing order with strategy: {e}")
+            self.print(error("Error executing order with strategy: {e}"))
             return {"success": False, "error": str(e), "execution_id": None}
 
     def get_execution_status(self, execution_id: str) -> dict[str, Any] | None:
@@ -2568,7 +2626,7 @@ class MLConfidencePredictor:
             return {"error": "Execution not found"}
 
         except Exception as e:
-            self.logger.error(f"Error getting execution status: {e}")
+            self.print(execution_error("Error getting execution status: {e}"))
             return {"error": str(e)}
 
     def get_execution_performance(self) -> dict[str, Any]:
@@ -2580,7 +2638,7 @@ class MLConfidencePredictor:
             return self.async_order_executor.get_performance_metrics()
 
         except Exception as e:
-            self.logger.error(f"Error getting execution performance: {e}")
+            self.print(execution_error("Error getting execution performance: {e}"))
             return {"error": str(e)}
 
     async def trigger_model_training(
@@ -2679,7 +2737,7 @@ class MLConfidencePredictor:
             return {"success": False, "error": "Training execution failed"}
 
         except Exception as e:
-            self.logger.error(f"Error triggering model training: {e}")
+            self.print(error("Error triggering model training: {e}"))
             return {"success": False, "error": str(e)}
 
     def _should_trigger_training(self) -> bool:
@@ -2707,16 +2765,13 @@ class MLConfidencePredictor:
                 return True
 
             # Check data availability
-            if len(self.model_performance_history) >= self.training_config.get(
+            return len(self.model_performance_history) >= self.training_config.get(
                 "min_samples_for_retraining",
                 1000,
-            ):
-                return True
-
-            return False
+            )
 
         except Exception as e:
-            self.logger.error(f"Error checking training conditions: {e}")
+            self.print(error("Error checking training conditions: {e}"))
             return False
 
     def _calculate_performance_degradation(self) -> float:
@@ -2736,12 +2791,10 @@ class MLConfidencePredictor:
 
             # Compare with baseline performance
             baseline_performance = 0.7  # Expected baseline accuracy
-            degradation = max(0.0, baseline_performance - avg_recent)
-
-            return degradation
+            return max(0.0, baseline_performance - avg_recent)
 
         except Exception as e:
-            self.logger.error(f"Error calculating performance degradation: {e}")
+            self.print(error("Error calculating performance degradation: {e}"))
             return 0.0
 
     async def update_model_performance(
@@ -2759,7 +2812,7 @@ class MLConfidencePredictor:
                 self.model_performance_history = self.model_performance_history[-100:]
 
         except Exception as e:
-            self.logger.error(f"Error updating model performance: {e}")
+            self.print(error("Error updating model performance: {e}"))
 
     def get_training_status(self) -> dict[str, Any]:
         """Get current training status and history."""
@@ -2780,7 +2833,7 @@ class MLConfidencePredictor:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting training status: {e}")
+            self.print(error("Error getting training status: {e}"))
             return {"error": str(e)}
 
     @handle_errors(
@@ -2795,9 +2848,13 @@ class MLConfidencePredictor:
             # Cleanup code here if needed
             self.logger.info("✅ ML Confidence Predictor stopped successfully")
         except Exception as e:
-            self.logger.error(f"Error stopping ML Confidence Predictor: {e}")
+            self.print(error("Error stopping ML Confidence Predictor: {e}"))
 
-    def update_ensemble_weights(self, performance_history: dict[str, float] = None, regime: str = None):
+    def update_ensemble_weights(
+        self,
+        performance_history: dict[str, float] = None,
+        regime: str = None,
+    ):
         """
         Dynamically update ensemble weights based on recent performance, regime, or meta-model.
         If a meta-model is available, use it for weighting; otherwise, use recent accuracy.
@@ -2805,9 +2862,13 @@ class MLConfidencePredictor:
         if performance_history:
             total = sum(performance_history.values())
             if total > 0:
-                self.ensemble_weights = {k: v / total for k, v in performance_history.items()}
+                self.ensemble_weights = {
+                    k: v / total for k, v in performance_history.items()
+                }
             else:
-                self.ensemble_weights = {k: 1.0 / len(performance_history) for k in performance_history}
+                self.ensemble_weights = {
+                    k: 1.0 / len(performance_history) for k in performance_history
+                }
         # Placeholder: regime-specific or meta-model weighting can be added here
         # Example: if regime and regime in self.regime_models: ...
         self.logger.info(f"Updated ensemble weights: {self.ensemble_weights}")
@@ -2856,189 +2917,8 @@ async def setup_ml_confidence_predictor(
         return None
 
     except Exception as e:
-        system_logger.error(f"Error setting up ML Confidence Predictor: {e}")
+        system_print(error("Error setting up ML Confidence Predictor: {e}"))
         return None
-
-    async def train_price_target_confidence_model(
-        self,
-        historical_data: pd.DataFrame,
-        price_targets: list[float] = None,
-        adversarial_levels: list[float] = None,
-    ) -> bool:
-        """
-        Train ML model for price target confidence predictions.
-
-        This replaces direction-based training with price target confidence training.
-
-        Args:
-            historical_data: Historical market data with features
-            price_targets: List of price targets to predict confidence for (e.g., [0.5, 1.0, 1.5, 2.0])
-            adversarial_levels: List of adversarial levels to predict confidence for (e.g., [0.1, 0.2, 0.3, 0.4])
-
-        Returns:
-            bool: True if training successful
-        """
-        try:
-            self.logger.info("Training price target confidence model...")
-
-            if price_targets is None:
-                price_targets = self.price_movement_levels
-            if adversarial_levels is None:
-                adversarial_levels = self.adversarial_movement_levels
-
-            # Prepare training data with price target labels
-            training_data = await self._prepare_price_target_training_data(
-                historical_data,
-                price_targets,
-                adversarial_levels,
-            )
-
-            if training_data is None or training_data.empty:
-                raise ValueError("No valid training data available")
-
-            # Train separate models for each price target
-            self.price_target_models = {}
-            self.adversarial_models = {}
-
-            # Train price target confidence models
-            for target in price_targets:
-                model_key = f"price_target_{target:.1f}"
-                self.price_target_models[
-                    model_key
-                ] = await self._train_single_target_model(
-                    training_data,
-                    target,
-                    "price_target",
-                )
-
-            # Train adversarial confidence models
-            for level in adversarial_levels:
-                model_key = f"adversarial_{level:.1f}"
-                self.adversarial_models[
-                    model_key
-                ] = await self._train_single_target_model(
-                    training_data,
-                    level,
-                    "adversarial",
-                )
-
-            self.is_trained = True
-            self.last_training_time = datetime.now()
-
-            self.logger.info("✅ Price target confidence model trained successfully")
-            self.logger.info(
-                f"   - {len(self.price_target_models)} price target models",
-            )
-            self.logger.info(f"   - {len(self.adversarial_models)} adversarial models")
-
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error training price target confidence model: {str(e)}")
-            return False
-
-    async def _prepare_price_target_training_data(
-        self,
-        historical_data: pd.DataFrame,
-        price_targets: list[float],
-        adversarial_levels: list[float],
-    ) -> pd.DataFrame:
-        """
-        Prepare training data with price target labels.
-
-        Args:
-            historical_data: Historical market data
-            price_targets: List of price targets
-            adversarial_levels: List of adversarial levels
-
-        Returns:
-            DataFrame with features and target labels
-        """
-        try:
-            # Calculate future price movements for each historical point
-            future_movements = []
-
-            for i in range(len(historical_data) - 1):
-                current_price = historical_data.iloc[i]["close"]
-                future_prices = historical_data.iloc[i + 1 :]["close"]
-
-                # Calculate if each price target was reached
-                target_labels = {}
-                for target in price_targets:
-                    target_price = current_price * (1 + target / 100)
-                    reached_target = (future_prices >= target_price).any()
-                    target_labels[f"target_{target:.1f}"] = 1 if reached_target else 0
-
-                # Calculate if adversarial levels were reached before targets
-                adversarial_labels = {}
-                for level in adversarial_levels:
-                    adversarial_price = current_price * (
-                        1 - level / 100
-                    )  # Downward movement
-                    reached_adversarial = (future_prices <= adversarial_price).any()
-                    adversarial_labels[f"adversarial_{level:.1f}"] = (
-                        1 if reached_adversarial else 0
-                    )
-
-                # Combine features and labels
-                row_data = {
-                    "timestamp": historical_data.index[i],
-                    **target_labels,
-                    **adversarial_labels,
-                }
-
-                # Add technical features
-                for col in historical_data.columns:
-                    if col not in ["timestamp", "close"]:
-                        row_data[col] = historical_data.iloc[i][col]
-
-                future_movements.append(row_data)
-
-            return pd.DataFrame(future_movements)
-
-        except Exception as e:
-            self.logger.error(f"Error preparing price target training data: {str(e)}")
-            return None
-
-    async def _train_single_target_model(
-        self,
-        training_data: pd.DataFrame,
-        target_level: float,
-        model_type: str,
-    ) -> Any:
-        """
-        Train a single model for a specific price target or adversarial level.
-
-        Args:
-            training_data: Training data with features and labels
-            target_level: Target level (price target or adversarial level)
-            model_type: Type of model ("price_target" or "adversarial")
-
-        Returns:
-            Trained model
-        """
-        try:
-            # Prepare features and target
-            feature_columns = [
-                col
-                for col in training_data.columns
-                if col not in ["timestamp"]
-                and not col.startswith(("target_", "adversarial_"))
-            ]
-
-            X = training_data[feature_columns].fillna(0)
-
-            if model_type == "price_target":
-                target_column = f"target_{target_level:.1f}"
-            else:
-                target_column = f"adversarial_{target_level:.1f}"
-
-            y = training_data[target_column]
-
-            # Train LightGBM model
-            model = LGBMClassifier(
-                n_estimators=100,
-                learning_rate=0.1,
                 max_depth=6,
                 random_state=42,
                 verbose=-1,
@@ -3061,7 +2941,7 @@ async def setup_ml_confidence_predictor(
             return model
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 f"Error training {model_type} model for level {target_level}: {str(e)}",
             )
             return None
@@ -3111,7 +2991,7 @@ async def setup_ml_confidence_predictor(
             self.logger.info("✅ Mock models created successfully for testing")
 
         except Exception as e:
-            self.logger.error(f"Error creating mock models: {e}")
+            self.print(error("Error creating mock models: {e}"))
 
     def _create_mock_model(self, model_name: str) -> Any:
         """Create a mock model for testing."""
@@ -3133,8 +3013,7 @@ async def setup_ml_confidence_predictor(
 
                 proba = np.random.random((len(X), 2))
                 # Normalize to sum to 1
-                proba = proba / proba.sum(axis=1, keepdims=True)
-                return proba
+                return proba / proba.sum(axis=1, keepdims=True)
 
         return MockModel(model_name)
 
@@ -3188,7 +3067,7 @@ async def setup_ml_confidence_predictor(
             return len(analyst_models) > 0 or len(tactician_models) > 0
 
         except Exception as e:
-            self.logger.error(f"Error checking enhanced training availability: {e}")
+            self.print(error("Error checking enhanced training availability: {e}"))
             return False
 
     def get_model_availability_status(self) -> dict[str, Any]:
@@ -3287,9 +3166,11 @@ async def setup_ml_confidence_predictor(
             return status
 
         except Exception as e:
-            self.logger.error(f"Error getting model availability status: {e}")
+            self.print(error("Error getting model availability status: {e}"))
             return {
                 "error": str(e),
                 "enhanced_training_manager_available": False,
                 "is_trained": False,
             }
+
+    return None

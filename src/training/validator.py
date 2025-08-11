@@ -125,7 +125,7 @@ class TrainingStepValidator:
         for metric, threshold in config.items():
             if metric in metrics:
                 value = metrics[metric]
-                if isinstance(threshold, (int, float)):
+                if isinstance(threshold, int | float):
                     if metric.startswith("min_") and value < threshold:
                         errors.append(f"{metric}: {value} < {threshold}")
                     elif metric.startswith("max_") and value > threshold:

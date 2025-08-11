@@ -192,11 +192,17 @@ class VectorizedLabellingOrchestrator:
             # 5. Feature selection
             if self.enable_feature_selection:
                 self.logger.info("🎯 Performing feature selection...")
-                selected_features = await self.feature_selector.select_optimal_features(
+                selected = await self.feature_selector.select_optimal_features(
                     combined_data,
                     labeled_data["label"] if "label" in labeled_data.columns else None,
                 )
-                combined_data = selected_features
+                if isinstance(selected, pd.DataFrame) and selected.shape[1] > 0:
+                    combined_data = selected
+                else:
+                    self.logger.warning("Feature selection returned 0 columns; keeping pre-selection data.")
+                
+                # Remove raw OHLCV columns after feature selection
+                combined_data = self._remove_raw_ohlcv_columns(combined_data)
 
             # 6. Data normalization
             if self.enable_data_normalization:
@@ -205,12 +211,21 @@ class VectorizedLabellingOrchestrator:
                     combined_data,
                 )
                 combined_data = normalized_data
+                
+                # Remove raw OHLCV columns after normalization
+                combined_data = self._remove_raw_ohlcv_columns(combined_data)
 
             # 7. Autoencoder feature generation
             self.logger.info("🤖 Generating autoencoder features...")
             if self.autoencoder_generator is not None:
+                # Remove label column before passing to autoencoder to prevent data leakage
+                autoencoder_input_data = combined_data.copy()
+                if "label" in autoencoder_input_data.columns:
+                    autoencoder_input_data = autoencoder_input_data.drop(columns=["label"])
+                    self.logger.info("🗑️ Removed 'label' column from autoencoder input to prevent data leakage")
+                
                 autoencoder_features = self.autoencoder_generator.generate_features(
-                    combined_data,
+                    autoencoder_input_data,
                     "vectorized_regime",
                     labeled_data["label"].values if "label" in labeled_data.columns else np.zeros(len(combined_data)),
                 )
@@ -224,6 +239,9 @@ class VectorizedLabellingOrchestrator:
                 autoencoder_features,
                 labeled_data,
             )
+            
+            # Remove raw OHLCV columns to prevent data leakage
+            final_data = self._remove_raw_ohlcv_columns(final_data)
 
             # 9. Memory optimization
             if self.enable_memory_efficient_types:
@@ -256,8 +274,11 @@ class VectorizedLabellingOrchestrator:
             }
 
         except Exception as e:
-            self.logger.error(f"Error in vectorized labeling orchestration: {e}")
-            return {}
+            try:
+                self.logger.error(f"Error in vectorized labeling orchestration: {e}")
+            finally:
+                # Ensure we always return a consistent structure
+                return {}
 
     def _combine_features_and_labels_vectorized(
         self,
@@ -266,6 +287,12 @@ class VectorizedLabellingOrchestrator:
     ) -> pd.DataFrame:
         """Combine features and labels using vectorized operations."""
         try:
+            # Ensure OHLCV data is present first
+            labeled_data = self._ensure_ohlcv_data(labeled_data)
+            
+            # Remove metadata columns first
+            labeled_data = self._remove_metadata_columns(labeled_data)
+            
             # Remove datetime columns from labeled_data to prevent dtype conflicts
             labeled_data = self._remove_datetime_columns(labeled_data)
             
@@ -273,24 +300,181 @@ class VectorizedLabellingOrchestrator:
             if not advanced_features:
                 return labeled_data
             
-            # Convert advanced features to DataFrame
-            features_df = pd.DataFrame([advanced_features])
-            
-            # Replicate features for all rows
-            features_df = pd.concat([features_df] * len(labeled_data), ignore_index=True)
-            features_df.index = labeled_data.index
+            # Build a features DataFrame aligned to labeled_data index
+            target_index = labeled_data.index
+            num_rows = len(target_index)
+            features_df = pd.DataFrame(index=target_index)
+
+            def _as_1d_array(value: Any) -> Optional[np.ndarray]:
+                """Normalize a feature value to a 1D numpy array if possible, else None."""
+                if isinstance(value, pd.Series):
+                    return value.values.reshape(-1)
+                if isinstance(value, np.ndarray):
+                    # Handle multi-dimensional arrays more flexibly
+                    if value.ndim == 1:
+                        return value
+                    elif value.ndim == 2:
+                        # For 2D arrays, try to flatten them
+                        if value.shape[0] == 1 or value.shape[1] == 1:
+                            return value.reshape(-1)
+                        # If it's a 2D array with multiple columns, take the first column
+                        # This handles cases where features might be stored as 2D arrays
+                        return value[:, 0] if value.shape[1] > 0 else None
+                    elif value.ndim > 2:
+                        # For higher dimensional arrays, try to flatten them
+                        # This handles wavelet features and other multi-dimensional features
+                        try:
+                            return value.reshape(-1)
+                        except Exception:
+                            # If flattening fails, try to take the first element along extra dimensions
+                            return value.reshape(value.shape[0], -1)[:, 0] if value.shape[0] > 0 else None
+                    return None
+                if isinstance(value, list):
+                    try:
+                        arr = np.asarray(value)
+                        if arr.ndim == 1:
+                            return arr
+                        elif arr.ndim == 2:
+                            if arr.shape[0] == 1 or arr.shape[1] == 1:
+                                return arr.reshape(-1)
+                            return arr[:, 0] if arr.shape[1] > 0 else None
+                        elif arr.ndim > 2:
+                            return arr.reshape(-1)
+                        return None
+                    except Exception:
+                        return None
+                # Enhanced scalar detection - only skip if it's truly a scalar (single value)
+                # For engineered features, even if they appear scalar, they might be valid
+                if isinstance(value, (int, float, str, bool)):
+                    # Only skip if it's a single scalar value, not a feature array
+                    return None
+                # For other types, try to convert to array
+                try:
+                    if hasattr(value, '__len__') and len(value) > 1:
+                        # If it has length > 1, it might be a feature array
+                        arr = np.asarray(value)
+                        if arr.ndim == 1:
+                            return arr
+                        elif arr.ndim == 2:
+                            return arr[:, 0] if arr.shape[1] > 0 else None
+                        elif arr.ndim > 2:
+                            return arr.reshape(-1)
+                    return None
+                except Exception:
+                    return None
+
+            added_columns: list[str] = []
+            skipped_scalars: list[str] = []
+            trimmed_aligned: list[str] = []
+            padded_aligned: list[str] = []
+
+            for feature_name, feature_value in advanced_features.items():
+                arr = _as_1d_array(feature_value)
+                if arr is None:
+                    # Skip scalar/non-array features to avoid constant columns
+                    skipped_scalars.append(feature_name)
+                    # Add debugging to understand what's being skipped
+                    if len(skipped_scalars) <= 10:  # Only log first 10 to avoid spam
+                        self.logger.debug(f"Skipping feature '{feature_name}': type={type(feature_value)}, "
+                                        f"shape={getattr(feature_value, 'shape', 'N/A') if hasattr(feature_value, 'shape') else 'N/A'}")
+                    continue
+
+                # Align array length to labeled_data length
+                if len(arr) > num_rows:
+                    # Keep the most recent values (align to the end)
+                    arr = arr[-num_rows:]
+                    trimmed_aligned.append(feature_name)
+                elif len(arr) < num_rows:
+                    # Left-pad with NaN so the tail aligns to the label index
+                    pad_size = num_rows - len(arr)
+                    arr = np.concatenate([np.full(pad_size, np.nan), arr])
+                    padded_aligned.append(feature_name)
+
+                # Add to DataFrame
+                try:
+                    features_df[feature_name] = pd.to_numeric(arr, errors="coerce")
+                    added_columns.append(feature_name)
+                except Exception:
+                    # If a column still fails, skip it
+                    continue
+
+            # Drop columns that are entirely NaN (e.g., failed conversions)
+            if not features_df.empty:
+                features_df = features_df.dropna(axis=1, how="all")
+
+            # Remove constant columns (nunique <= 1) to avoid useless features
+            if not features_df.empty:
+                nunique = features_df.nunique(dropna=True)
+                constant_cols = nunique[nunique <= 1].index.tolist()
+                if constant_cols:
+                    self.logger.warning(f"Dropping {len(constant_cols)} constant features")
+                    features_df = features_df.drop(columns=constant_cols)
 
             # Combine with labeled data
             combined_data = pd.concat([labeled_data, features_df], axis=1)
 
-            # Remove duplicate columns
+            # Remove duplicate columns if any
             combined_data = combined_data.loc[:, ~combined_data.columns.duplicated()]
+
+            # Remove raw OHLCV columns to prevent data leakage
+            combined_data = self._remove_raw_ohlcv_columns(combined_data)
+
+            # Log a brief summary for diagnostics (without spamming)
+            try:
+                self.logger.info(
+                    f"Combined features: added={len(added_columns)}, "
+                    f"trimmed={len(trimmed_aligned)}, padded={len(padded_aligned)}, "
+                    f"skipped_scalars={len(skipped_scalars)}"
+                )
+            except Exception:
+                pass
 
             return combined_data
 
         except Exception as e:
-            self.logger.error(f"Error combining features and labels: {e}")
+            # Provide more diagnostics for common alignment issues
+            try:
+                self.logger.error(
+                    f"Error combining features and labels: {e}. "
+                    f"labeled_data.shape={labeled_data.shape if isinstance(labeled_data, pd.DataFrame) else 'n/a'}"
+                )
+            except Exception:
+                self.logger.error(f"Error combining features and labels: {e}")
             return labeled_data
+
+    def _ensure_ohlcv_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Ensure OHLCV data is present in the dataset."""
+        required_ohlcv = ['open', 'high', 'low', 'close', 'volume']
+        missing_ohlcv = [col for col in required_ohlcv if col not in data.columns]
+        
+        if missing_ohlcv:
+            self.logger.warning(f"⚠️ Missing OHLCV columns: {missing_ohlcv}")
+            # Try to create minimal OHLCV from available data
+            if 'avg_price' in data.columns:
+                if 'open' not in data.columns:
+                    data['open'] = data['avg_price']
+                if 'high' not in data.columns:
+                    data['high'] = data['avg_price']
+                if 'low' not in data.columns:
+                    data['low'] = data['avg_price']
+                if 'close' not in data.columns:
+                    data['close'] = data['avg_price']
+            
+            if 'trade_volume' in data.columns and 'volume' not in data.columns:
+                data['volume'] = data['trade_volume']
+        
+        return data
+
+    def _remove_metadata_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Remove metadata columns that are not actual features."""
+        metadata_columns = ['year', 'exchange', 'symbol', 'timeframe']
+        columns_to_remove = [col for col in metadata_columns if col in data.columns]
+        
+        if columns_to_remove:
+            self.logger.info(f"🗑️ Removing metadata columns: {columns_to_remove}")
+            data = data.drop(columns=columns_to_remove)
+        
+        return data
 
     def _remove_datetime_columns(self, data: pd.DataFrame) -> pd.DataFrame:
         """Remove datetime columns to prevent dtype conflicts in ML training."""
@@ -316,6 +500,27 @@ class VectorizedLabellingOrchestrator:
             
         except Exception as e:
             self.logger.error(f"Error removing datetime columns: {e}")
+            return data
+
+    def _remove_raw_ohlcv_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Remove raw OHLCV columns to prevent data leakage in ML training."""
+        try:
+            # Define raw OHLCV columns that should not be used as features
+            raw_ohlcv_columns = ["open", "high", "low", "close", "volume"]
+            
+            # Find columns that match raw OHLCV names
+            ohlcv_columns_found = [col for col in raw_ohlcv_columns if col in data.columns]
+            
+            # Remove raw OHLCV columns
+            if ohlcv_columns_found:
+                self.logger.warning(f"🚨 CRITICAL: Found raw OHLCV columns in features: {ohlcv_columns_found}")
+                self.logger.warning(f"🚨 Removing raw OHLCV columns to prevent data leakage!")
+                data = data.drop(columns=ohlcv_columns_found)
+            
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"Error removing raw OHLCV columns: {e}")
             return data
 
     def _prepare_final_data_vectorized(
@@ -681,6 +886,13 @@ class VectorizedFeatureSelector:
         self.correlation_threshold = self.feature_selection_config.get("correlation_threshold", 0.98)  # Increased from 0.95
         self.max_removal_percentage = self.feature_selection_config.get("max_removal_percentage", 0.3)
         
+        # PCA combination configuration
+        pca_config = self.feature_selection_config.get("pca_combination", {})
+        self.pca_high_vif_threshold = pca_config.get("high_vif_threshold", 20.0)
+        self.pca_correlation_threshold = pca_config.get("correlation_threshold", 0.7)
+        self.pca_variance_explained_threshold = pca_config.get("variance_explained_threshold", 0.95)
+        self.pca_scaling_method = pca_config.get("scaling_method", "standard")
+        
         # Enable/disable flags
         self.enable_constant_removal = self.feature_selection_config.get("enable_constant_removal", True)
         self.enable_correlation_removal = self.feature_selection_config.get("enable_correlation_removal", True)
@@ -744,7 +956,7 @@ class VectorizedFeatureSelector:
                         constant_features.append(col)
                 
                 if constant_features:
-                    self.logger.info(f"Removed {len(constant_features)} constant features")
+                    self.logger.info(f"Removed {len(constant_features)} constant features: {constant_features}")
                     data = data.drop(columns=constant_features)
 
             # Safety check after constant removal
@@ -766,23 +978,39 @@ class VectorizedFeatureSelector:
                         self.logger.info(f"Removed {len(correlated_features)} highly correlated features")
                         data = data.drop(columns=correlated_features)
                     else:
-                        self.logger.info(f"Skipping correlated feature removal (removal %: {removal_percentage:.2f})")
+                        self.logger.info(f"Skipping correlated feature removal (removal %: {removal_percentage:.2f} > threshold: {self.max_removal_percentage:.2f})")
 
-            # Remove high VIF features (only if enabled and we have enough features)
+            # Combine high VIF features using PCA instead of removal (if enabled and we have enough features)
             if (self.enable_vif_removal and 
                 len(data.columns) > self.min_features_to_keep and 
                 len(data.columns) > 2):  # Need at least 2 features for VIF
                 
-                high_vif_features = self._remove_high_vif_features_vectorized(data)
-                if high_vif_features:
+                self.logger.info("🔄 Applying PCA-based feature combination for highly collinear features...")
+                data = self._combine_high_vif_features_with_pca(data)
+                
+                # After PCA combination, also remove any remaining extremely high VIF features
+                # (those that couldn't be combined due to insufficient correlation)
+                remaining_high_vif_features = self._remove_high_vif_features_vectorized(data)
+                if remaining_high_vif_features:
                     # Check removal percentage
-                    removal_percentage = len(high_vif_features) / len(data.columns)
-                    if (removal_percentage <= self.max_removal_percentage and 
-                        len(data.columns) - len(high_vif_features) >= self.min_features_to_keep):
-                        self.logger.info(f"Removed {len(high_vif_features)} high VIF features")
-                        data = data.drop(columns=high_vif_features)
+                    removal_percentage = len(remaining_high_vif_features) / len(data.columns)
+                    
+                    # For remaining high VIF features, be more conservative
+                    vif_removal_threshold = 0.3
+                    
+                    if (removal_percentage <= vif_removal_threshold and 
+                        len(data.columns) - len(remaining_high_vif_features) >= self.min_features_to_keep):
+                        self.logger.info(f"Removed {len(remaining_high_vif_features)} remaining high VIF features (removal %: {removal_percentage:.2f})")
+                        data = data.drop(columns=remaining_high_vif_features)
                     else:
-                        self.logger.info(f"Skipping VIF feature removal (removal %: {removal_percentage:.2f})")
+                        self.logger.warning(f"⚠️ Remaining high VIF features detected but skipping removal (removal %: {removal_percentage:.2f} > threshold: {vif_removal_threshold:.2f})")
+                        # Still remove some high VIF features to reduce multicollinearity
+                        if len(remaining_high_vif_features) > 0:
+                            # Remove the top 30% of remaining high VIF features
+                            features_to_remove = remaining_high_vif_features[:max(1, len(remaining_high_vif_features)//3)]
+                            if len(data.columns) - len(features_to_remove) >= self.min_features_to_keep:
+                                self.logger.info(f"Removing top 30% of remaining high VIF features: {len(features_to_remove)} features")
+                                data = data.drop(columns=features_to_remove)
 
             # Remove low mutual information features (if enabled, labels provided, and we have enough features)
             if (self.enable_mutual_info_removal and 
@@ -798,7 +1026,7 @@ class VectorizedFeatureSelector:
                         self.logger.info(f"Removed {len(low_mi_features)} low mutual information features")
                         data = data.drop(columns=low_mi_features)
                     else:
-                        self.logger.info(f"Skipping mutual info feature removal (removal %: {removal_percentage:.2f})")
+                        self.logger.info(f"Skipping mutual info feature removal (removal %: {removal_percentage:.2f} > threshold: {self.max_removal_percentage:.2f})")
 
             # Remove low importance features (if enabled, labels provided, and we have enough features)
             if (self.enable_importance_removal and 
@@ -814,7 +1042,7 @@ class VectorizedFeatureSelector:
                         self.logger.info(f"Removed {len(low_importance_features)} low importance features")
                         data = data.drop(columns=low_importance_features)
                     else:
-                        self.logger.info(f"Skipping importance feature removal (removal %: {removal_percentage:.2f})")
+                        self.logger.info(f"Skipping importance feature removal (removal %: {removal_percentage:.2f} > threshold: {self.max_removal_percentage:.2f})")
 
             final_features = len(data.columns)
             self.logger.info(f"Feature selection completed. Initial features: {initial_features}, Final features: {final_features}")
@@ -868,6 +1096,219 @@ class VectorizedFeatureSelector:
             self.logger.error(f"Error removing correlated features: {e}")
             return []
 
+    def _combine_high_vif_features_with_pca(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Combine highly collinear features using PCA instead of removal."""
+        try:
+            from sklearn.linear_model import LinearRegression
+            from sklearn.impute import SimpleImputer
+            from sklearn.decomposition import PCA
+            from sklearn.cluster import AgglomerativeClustering
+            from sklearn.preprocessing import StandardScaler
+            import numpy as np
+            
+            # Handle NaN values by imputing with median
+            imputer = SimpleImputer(strategy='median')
+            data_imputed = pd.DataFrame(
+                imputer.fit_transform(data),
+                columns=data.columns,
+                index=data.index
+            )
+            
+            # Calculate VIF scores for all features
+            vif_scores = {}
+            for col in data_imputed.columns:
+                other_cols = [c for c in data_imputed.columns if c != col]
+                if len(other_cols) > 0:
+                    X = data_imputed[other_cols]
+                    y = data_imputed[col]
+                    
+                    reg = LinearRegression()
+                    reg.fit(X, y)
+                    
+                    y_pred = reg.predict(X)
+                    ss_res = np.sum((y - y_pred) ** 2)
+                    ss_tot = np.sum((y - np.mean(y)) ** 2)
+                    r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+                    
+                    vif = 1 / (1 - r_squared) if r_squared != 1 else np.inf
+                    vif_scores[col] = vif
+            
+            # Use a high threshold to ensure only highly correlated features are combined
+            high_vif_features = [col for col, vif in vif_scores.items() if vif > self.pca_high_vif_threshold]
+            
+            if not high_vif_features:
+                self.logger.info(f"✅ No features with VIF > {self.pca_high_vif_threshold} found for PCA combination")
+                return data
+            
+            self.logger.info(f"🔍 VIF Analysis: Found {len(high_vif_features)} features with VIF > {self.pca_high_vif_threshold} for PCA combination")
+            
+            # Log the highly collinear features
+            sorted_vif = sorted([(col, vif_scores[col]) for col in high_vif_features], 
+                              key=lambda x: x[1], reverse=True)
+            for col, vif in sorted_vif:
+                if vif == np.inf:
+                    self.logger.warning(f"⚠️ Feature '{col}' has infinite VIF (perfect multicollinearity)")
+                else:
+                    self.logger.info(f"📊 High VIF feature - {col}: {vif:.2f}")
+            
+            # Create correlation matrix for high VIF features
+            high_vif_data = data_imputed[high_vif_features]
+            correlation_matrix = high_vif_data.corr().abs()
+            
+            # Use hierarchical clustering to group highly correlated features
+            # Convert correlation matrix to distance matrix (1 - correlation)
+            distance_matrix = 1 - correlation_matrix.values
+            
+            # Apply hierarchical clustering
+            clustering = AgglomerativeClustering(
+                n_clusters=None,  # Let it determine optimal number
+                distance_threshold=1 - self.pca_correlation_threshold,  # Features with correlation > threshold will be grouped
+                linkage='complete'
+            )
+            
+            cluster_labels = clustering.fit_predict(distance_matrix)
+            
+            # Group features by clusters
+            feature_clusters = {}
+            for i, label in enumerate(cluster_labels):
+                if label not in feature_clusters:
+                    feature_clusters[label] = []
+                feature_clusters[label].append(high_vif_features[i])
+            
+            # Filter out single-feature clusters (no need for PCA)
+            multi_feature_clusters = {k: v for k, v in feature_clusters.items() if len(v) > 1}
+            
+            if not multi_feature_clusters:
+                self.logger.info("✅ No multi-feature clusters found for PCA combination")
+                return data
+            
+            self.logger.info(f"🔍 Found {len(multi_feature_clusters)} clusters of highly collinear features for PCA combination")
+            
+            # Apply PCA to each cluster
+            result_data = data.copy()
+            features_to_remove = []
+            pca_components_added = 0
+            
+            for cluster_id, features in multi_feature_clusters.items():
+                self.logger.info(f"📊 Processing cluster {cluster_id}: {features}")
+                
+                # Prepare data for PCA
+                cluster_data = data_imputed[features]
+                
+                # Log original feature statistics before scaling
+                self.logger.info(f"📊 Cluster {cluster_id} - Original feature statistics:")
+                for feature in features:
+                    mean_val = cluster_data[feature].mean()
+                    std_val = cluster_data[feature].std()
+                    range_val = cluster_data[feature].max() - cluster_data[feature].min()
+                    self.logger.info(f"   {feature}: mean={mean_val:.4f}, std={std_val:.4f}, range={range_val:.4f}")
+                
+                # Scale the data - crucial for PCA to work correctly
+                # This ensures features with larger numerical ranges don't disproportionately influence PCA
+                if self.pca_scaling_method == "standard":
+                    from sklearn.preprocessing import StandardScaler
+                    scaler = StandardScaler()
+                    self.logger.info(f"📊 Using StandardScaler (z-score normalization) for cluster {cluster_id}")
+                elif self.pca_scaling_method == "robust":
+                    from sklearn.preprocessing import RobustScaler
+                    scaler = RobustScaler()
+                    self.logger.info(f"📊 Using RobustScaler (robust to outliers) for cluster {cluster_id}")
+                elif self.pca_scaling_method == "minmax":
+                    from sklearn.preprocessing import MinMaxScaler
+                    scaler = MinMaxScaler()
+                    self.logger.info(f"📊 Using MinMaxScaler (0-1 scaling) for cluster {cluster_id}")
+                else:
+                    # Default to StandardScaler if invalid method specified
+                    from sklearn.preprocessing import StandardScaler
+                    scaler = StandardScaler()
+                    self.logger.warning(f"⚠️ Invalid scaling method '{self.pca_scaling_method}', using StandardScaler")
+                
+                cluster_data_scaled = scaler.fit_transform(cluster_data)
+                
+                # Validate scaling results
+                cluster_data_scaled_df = pd.DataFrame(cluster_data_scaled, columns=features, index=cluster_data.index)
+                self.logger.info(f"📊 Cluster {cluster_id} - Scaled feature statistics:")
+                for feature in features:
+                    mean_val = cluster_data_scaled_df[feature].mean()
+                    std_val = cluster_data_scaled_df[feature].std()
+                    min_val = cluster_data_scaled_df[feature].min()
+                    max_val = cluster_data_scaled_df[feature].max()
+                    self.logger.info(f"   {feature}: mean={mean_val:.6f}, std={std_val:.6f}, range=[{min_val:.6f}, {max_val:.6f}]")
+                
+                # Verify scaling was successful based on the scaling method used
+                scaling_validation = True
+                if self.pca_scaling_method == "standard":
+                    # For StandardScaler: should be ~0 mean, ~1 std
+                    for feature in features:
+                        mean_val = abs(cluster_data_scaled_df[feature].mean())
+                        std_val = abs(cluster_data_scaled_df[feature].std() - 1.0)
+                        if mean_val > 1e-10 or std_val > 1e-10:
+                            self.logger.warning(f"⚠️ StandardScaler validation failed for {feature}: mean={mean_val:.2e}, std_deviation_from_1={std_val:.2e}")
+                            scaling_validation = False
+                elif self.pca_scaling_method == "robust":
+                    # For RobustScaler: should be ~0 median, ~1 IQR-based scale
+                    for feature in features:
+                        median_val = abs(cluster_data_scaled_df[feature].median())
+                        if median_val > 1e-10:
+                            self.logger.warning(f"⚠️ RobustScaler validation failed for {feature}: median={median_val:.2e}")
+                            scaling_validation = False
+                elif self.pca_scaling_method == "minmax":
+                    # For MinMaxScaler: should be in [0, 1] range
+                    for feature in features:
+                        min_val = cluster_data_scaled_df[feature].min()
+                        max_val = cluster_data_scaled_df[feature].max()
+                        if min_val < -1e-10 or max_val > 1 + 1e-10:
+                            self.logger.warning(f"⚠️ MinMaxScaler validation failed for {feature}: range=[{min_val:.2e}, {max_val:.2e}]")
+                            scaling_validation = False
+                
+                if not scaling_validation:
+                    self.logger.warning(f"⚠️ Scaling validation failed for cluster {cluster_id}, but continuing with PCA")
+                else:
+                    self.logger.info(f"✅ Scaling validation passed for cluster {cluster_id}")
+                
+                # Apply PCA - keep components that explain the configured percentage of variance
+                pca = PCA(n_components=self.pca_variance_explained_threshold)
+                pca_components = pca.fit_transform(cluster_data_scaled)
+                
+                # Get number of components
+                n_components = pca_components.shape[1]
+                
+                if n_components == 0:
+                    self.logger.warning(f"⚠️ PCA for cluster {cluster_id} produced 0 components, skipping")
+                    continue
+                
+                # Create new feature names
+                cluster_name = f"pca_cluster_{cluster_id}"
+                for i in range(n_components):
+                    component_name = f"{cluster_name}_pc{i+1}"
+                    
+                    # Add the PCA component to the result data
+                    result_data[component_name] = pca_components[:, i]
+                    pca_components_added += 1
+                
+                # Mark original features for removal
+                features_to_remove.extend(features)
+                
+                # Log the variance explained
+                explained_variance_ratio = pca.explained_variance_ratio_
+                cumulative_variance = np.cumsum(explained_variance_ratio)
+                self.logger.info(f"📊 Cluster {cluster_id} PCA: {n_components} components explain {cumulative_variance[-1]:.3f} of variance")
+                for i, (var_ratio, cum_var) in enumerate(zip(explained_variance_ratio, cumulative_variance)):
+                    self.logger.info(f"   PC{i+1}: {var_ratio:.3f} variance, cumulative: {cum_var:.3f}")
+            
+            # Remove original highly collinear features
+            if features_to_remove:
+                result_data = result_data.drop(columns=features_to_remove)
+                self.logger.info(f"🔄 Removed {len(features_to_remove)} highly collinear features")
+                self.logger.info(f"🔄 Added {pca_components_added} PCA meta-features")
+                self.logger.info(f"🔄 Net change: {pca_components_added - len(features_to_remove)} features")
+            
+            return result_data
+
+        except Exception as e:
+            self.logger.error(f"Error combining high VIF features with PCA: {e}")
+            return data
+
     def _remove_high_vif_features_vectorized(self, data: pd.DataFrame) -> List[str]:
         """Remove features with high Variance Inflation Factor using vectorized operations."""
         try:
@@ -904,8 +1345,22 @@ class VectorizedFeatureSelector:
                     vif = 1 / (1 - r_squared) if r_squared != 1 else np.inf
                     vif_scores[col] = vif
             
-            # Return features with high VIF
+            # Log VIF scores for debugging
             high_vif_features = [col for col, vif in vif_scores.items() if vif > self.vif_threshold]
+            
+            if high_vif_features:
+                self.logger.info(f"🔍 VIF Analysis: Found {len(high_vif_features)} features with VIF > {self.vif_threshold}")
+                # Log the top 5 highest VIF features
+                sorted_vif = sorted(vif_scores.items(), key=lambda x: x[1], reverse=True)
+                top_vif = sorted_vif[:5]
+                for col, vif in top_vif:
+                    if vif == np.inf:
+                        self.logger.warning(f"⚠️ Feature '{col}' has infinite VIF (perfect multicollinearity)")
+                    else:
+                        self.logger.info(f"📊 VIF scores - {col}: {vif:.2f}")
+            else:
+                self.logger.info(f"✅ VIF Analysis: All features have VIF <= {self.vif_threshold}")
+            
             return high_vif_features
 
         except Exception as e:
@@ -972,8 +1427,13 @@ class VectorizedFeatureSelector:
                 max_depth=5,
                 random_state=42,
                 verbose=-1,
+                verbosity=-1,
             )
-            model.fit(data_imputed, labels)
+            # Suppress LightGBM training output
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                model.fit(data_imputed, labels)
             
             # Get feature importance
             feature_importance = dict(zip(data_imputed.columns, model.feature_importances_))

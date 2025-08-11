@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Tuple
+from typing import Any
 
 
-def _require_keys(d: dict[str, Any], keys: list[str], ctx: str, errors: List[str]) -> None:
+def _require_keys(
+    d: dict[str, Any],
+    keys: list[str],
+    ctx: str,
+    errors: list[str],
+) -> None:
     for k in keys:
         if k not in d:
             errors.append(f"Missing key '{k}' in {ctx}")
 
 
-def validate_system_config(config: dict[str, Any]) -> Tuple[bool, list[str]]:
+def validate_system_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     errors: list[str] = []
     if not isinstance(config, dict):
         return False, ["System config must be a dict"]
@@ -19,7 +24,15 @@ def validate_system_config(config: dict[str, Any]) -> Tuple[bool, list[str]]:
     # Required top-level sections
     _require_keys(
         config,
-        ["logging", "database", "data", "checkpointing", "reporting", "mlflow", "version"],
+        [
+            "logging",
+            "database",
+            "data",
+            "checkpointing",
+            "reporting",
+            "mlflow",
+            "version",
+        ],
         "system config",
         errors,
     )
@@ -40,24 +53,28 @@ def validate_system_config(config: dict[str, Any]) -> Tuple[bool, list[str]]:
     return len(errors) == 0, errors
 
 
-def validate_trading_config(config: dict[str, Any]) -> Tuple[bool, list[str]]:
+def validate_trading_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     errors: list[str] = []
     if not isinstance(config, dict):
         return False, ["Trading config must be a dict"]
 
-    _require_keys(config, ["risk_management", "position_management", "pipeline", "analyst"], "trading config", errors)
+    _require_keys(
+        config,
+        ["risk_management", "position_management", "pipeline", "analyst"],
+        "trading config",
+        errors,
+    )
 
     rm = config.get("risk_management", {})
     if not isinstance(rm, dict):
         errors.append("risk_management must be a dict")
-    else:
-        if "position_sizing" not in rm:
-            errors.append("risk_management.position_sizing is required")
+    elif "position_sizing" not in rm:
+        errors.append("risk_management.position_sizing is required")
 
     return len(errors) == 0, errors
 
 
-def validate_training_config(config: dict[str, Any]) -> Tuple[bool, list[str]]:
+def validate_training_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     errors: list[str] = []
     if not isinstance(config, dict):
         return False, ["Training config must be a dict"]
@@ -68,14 +85,13 @@ def validate_training_config(config: dict[str, Any]) -> Tuple[bool, list[str]]:
     data_cfg = config.get("DATA_CONFIG", {})
     if not isinstance(data_cfg, dict):
         errors.append("DATA_CONFIG must be a dict")
-    else:
-        if not isinstance(data_cfg.get("default_lookback_days", 730), int):
-            errors.append("DATA_CONFIG.default_lookback_days must be an int")
+    elif not isinstance(data_cfg.get("default_lookback_days", 730), int):
+        errors.append("DATA_CONFIG.default_lookback_days must be an int")
 
     return len(errors) == 0, errors
 
 
-def validate_complete_config(config: dict[str, Any]) -> Tuple[bool, list[str]]:
+def validate_complete_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     """Validate the combined top-level config structure and sections."""
     errors: list[str] = []
 

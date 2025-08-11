@@ -5,15 +5,24 @@ This module provides lifecycle management functionality for pipeline
 components, including initialization, execution, and cleanup phases.
 """
 
-from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    validation_error,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class LifecycleManager:
@@ -85,7 +94,7 @@ class LifecycleManager:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for lifecycle manager")
+                self.print(invalid("Invalid configuration for lifecycle manager"))
                 return False
 
             # Initialize lifecycle modules
@@ -96,8 +105,8 @@ class LifecycleManager:
             )
             return True
 
-        except Exception as e:
-            self.logger.error(f"❌ Lifecycle Manager initialization failed: {e}")
+        except Exception:
+            self.print(failed("❌ Lifecycle Manager initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -128,8 +137,8 @@ class LifecycleManager:
 
             self.logger.info("Lifecycle configuration loaded successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error loading lifecycle configuration: {e}")
+        except Exception:
+            self.print(error("Error loading lifecycle configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -146,12 +155,12 @@ class LifecycleManager:
         try:
             # Validate lifecycle interval
             if self.lifecycle_interval <= 0:
-                self.logger.error("Invalid lifecycle interval")
+                self.print(invalid("Invalid lifecycle interval"))
                 return False
 
             # Validate max lifecycle history
             if self.max_lifecycle_history <= 0:
-                self.logger.error("Invalid max lifecycle history")
+                self.print(invalid("Invalid max lifecycle history"))
                 return False
 
             # Validate that at least one lifecycle type is enabled
@@ -163,14 +172,14 @@ class LifecycleManager:
                     self.lifecycle_config.get("enable_graceful_shutdown", True),
                 ],
             ):
-                self.logger.error("At least one lifecycle type must be enabled")
+                self.print(error("At least one lifecycle type must be enabled"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating configuration: {e}")
+        except Exception:
+            self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -199,8 +208,10 @@ class LifecycleManager:
 
             self.logger.info("Lifecycle modules initialized successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing lifecycle modules: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing lifecycle modules: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -220,8 +231,10 @@ class LifecycleManager:
 
             self.logger.info("Component management module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing component management: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing component management: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -241,8 +254,10 @@ class LifecycleManager:
 
             self.logger.info("Dependency management module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing dependency management: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing dependency management: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -262,8 +277,10 @@ class LifecycleManager:
 
             self.logger.info("Health monitoring module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing health monitoring: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing health monitoring: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -283,8 +300,10 @@ class LifecycleManager:
 
             self.logger.info("Graceful shutdown module initialized")
 
-        except Exception as e:
-            self.logger.error(f"Error initializing graceful shutdown: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error initializing graceful shutdown: {e}"),
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -345,8 +364,8 @@ class LifecycleManager:
             self.logger.info("✅ Lifecycle management completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error managing lifecycle: {e}")
+        except Exception:
+            self.print(error("Error managing lifecycle: {e}"))
             self.is_managing = False
             return False
 
@@ -377,17 +396,17 @@ class LifecycleManager:
 
             # Validate data types
             if not isinstance(lifecycle_input["operation_type"], str):
-                self.logger.error("Invalid operation type")
+                self.print(invalid("Invalid operation type"))
                 return False
 
             if not isinstance(lifecycle_input["component_name"], str):
-                self.logger.error("Invalid component name")
+                self.print(invalid("Invalid component name"))
                 return False
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error validating lifecycle inputs: {e}")
+        except Exception:
+            self.print(error("Error validating lifecycle inputs: {e}"))
             return False
 
     @handle_errors(
@@ -441,8 +460,8 @@ class LifecycleManager:
             self.logger.info("Component management completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing component management: {e}")
+        except Exception:
+            self.print(error("Error performing component management: {e}"))
             return {}
 
     @handle_errors(
@@ -502,8 +521,8 @@ class LifecycleManager:
             self.logger.info("Dependency management completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing dependency management: {e}")
+        except Exception:
+            self.print(error("Error performing dependency management: {e}"))
             return {}
 
     @handle_errors(
@@ -550,8 +569,8 @@ class LifecycleManager:
             self.logger.info("Health monitoring completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing health monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing health monitoring: {e}"))
             return {}
 
     @handle_errors(
@@ -600,8 +619,8 @@ class LifecycleManager:
             self.logger.info("Graceful shutdown completed")
             return results
 
-        except Exception as e:
-            self.logger.error(f"Error performing graceful shutdown: {e}")
+        except Exception:
+            self.print(error("Error performing graceful shutdown: {e}"))
             return {}
 
     # Component management methods
@@ -619,8 +638,8 @@ class LifecycleManager:
                 "registry_status": "registered",
                 "registry_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing component registry: {e}")
+        except Exception:
+            self.print(error("Error performing component registry: {e}"))
             return {}
 
     def _perform_component_initialization(
@@ -637,8 +656,10 @@ class LifecycleManager:
                 "initialization_status": "initialized",
                 "initialization_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing component initialization: {e}")
+        except Exception:
+            self.print(
+                initialization_error("Error performing component initialization: {e}"),
+            )
             return {}
 
     def _perform_component_cleanup(
@@ -655,8 +676,8 @@ class LifecycleManager:
                 "cleanup_status": "cleaned",
                 "cleanup_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing component cleanup: {e}")
+        except Exception:
+            self.print(error("Error performing component cleanup: {e}"))
             return {}
 
     def _perform_component_monitoring(
@@ -674,8 +695,8 @@ class LifecycleManager:
                 "health_score": 0.95,
                 "monitoring_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing component monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing component monitoring: {e}"))
             return {}
 
     # Dependency management methods
@@ -691,8 +712,8 @@ class LifecycleManager:
                 "resolution_status": "resolved",
                 "resolution_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing dependency resolution: {e}")
+        except Exception:
+            self.print(error("Error performing dependency resolution: {e}"))
             return {}
 
     def _perform_dependency_validation(
@@ -707,8 +728,8 @@ class LifecycleManager:
                 "validation_status": "valid",
                 "validation_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing dependency validation: {e}")
+        except Exception:
+            self.print(validation_error("Error performing dependency validation: {e}"))
             return {}
 
     def _perform_dependency_monitoring(
@@ -723,8 +744,8 @@ class LifecycleManager:
                 "monitoring_status": "active",
                 "monitoring_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing dependency monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing dependency monitoring: {e}"))
             return {}
 
     def _perform_dependency_cleanup(
@@ -739,8 +760,8 @@ class LifecycleManager:
                 "cleanup_status": "cleaned",
                 "cleanup_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing dependency cleanup: {e}")
+        except Exception:
+            self.print(error("Error performing dependency cleanup: {e}"))
             return {}
 
     # Health monitoring methods
@@ -754,8 +775,8 @@ class LifecycleManager:
                 "health_score": 0.98,
                 "check_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing health checks: {e}")
+        except Exception:
+            self.print(error("Error performing health checks: {e}"))
             return {}
 
     def _perform_performance_monitoring(
@@ -771,8 +792,8 @@ class LifecycleManager:
                 "performance_score": 0.92,
                 "monitoring_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing performance monitoring: {e}")
+        except Exception:
+            self.print(error("Error performing performance monitoring: {e}"))
             return {}
 
     def _perform_error_tracking(
@@ -788,8 +809,8 @@ class LifecycleManager:
                 "error_status": "low",
                 "tracking_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing error tracking: {e}")
+        except Exception:
+            self.print(error("Error performing error tracking: {e}"))
             return {}
 
     def _perform_alerting(self, lifecycle_input: dict[str, Any]) -> dict[str, Any]:
@@ -802,8 +823,8 @@ class LifecycleManager:
                 "alert_status": "normal",
                 "alerting_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing alerting: {e}")
+        except Exception:
+            self.print(error("Error performing alerting: {e}"))
             return {}
 
     # Graceful shutdown methods
@@ -819,8 +840,8 @@ class LifecycleManager:
                 "signal_status": "sent",
                 "signal_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing shutdown signals: {e}")
+        except Exception:
+            self.print(error("Error performing shutdown signals: {e}"))
             return {}
 
     def _perform_shutdown_component_cleanup(
@@ -835,8 +856,8 @@ class LifecycleManager:
                 "cleanup_status": "completed",
                 "cleanup_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing shutdown component cleanup: {e}")
+        except Exception:
+            self.print(error("Error performing shutdown component cleanup: {e}"))
             return {}
 
     def _perform_resource_release(
@@ -851,8 +872,8 @@ class LifecycleManager:
                 "release_status": "completed",
                 "release_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing resource release: {e}")
+        except Exception:
+            self.print(error("Error performing resource release: {e}"))
             return {}
 
     def _perform_finalization(self, lifecycle_input: dict[str, Any]) -> dict[str, Any]:
@@ -863,8 +884,8 @@ class LifecycleManager:
                 "finalization_status": "completed",
                 "finalization_time": datetime.now().isoformat(),
             }
-        except Exception as e:
-            self.logger.error(f"Error performing finalization: {e}")
+        except Exception:
+            self.print(error("Error performing finalization: {e}"))
             return {}
 
     @handle_errors(
@@ -887,8 +908,8 @@ class LifecycleManager:
 
             self.logger.info("Lifecycle results stored successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error storing lifecycle results: {e}")
+        except Exception:
+            self.print(error("Error storing lifecycle results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -913,8 +934,8 @@ class LifecycleManager:
                 return self.lifecycle_results.get(lifecycle_type, {})
             return self.lifecycle_results.copy()
 
-        except Exception as e:
-            self.logger.error(f"Error getting lifecycle results: {e}")
+        except Exception:
+            self.print(error("Error getting lifecycle results: {e}"))
             return {}
 
     @handle_errors(
@@ -943,8 +964,8 @@ class LifecycleManager:
 
             return history
 
-        except Exception as e:
-            self.logger.error(f"Error getting lifecycle history: {e}")
+        except Exception:
+            self.print(error("Error getting lifecycle history: {e}"))
             return []
 
     def get_lifecycle_status(self) -> dict[str, Any]:
@@ -998,8 +1019,8 @@ class LifecycleManager:
 
             self.logger.info("✅ Lifecycle Manager stopped successfully")
 
-        except Exception as e:
-            self.logger.error(f"Error stopping lifecycle manager: {e}")
+        except Exception:
+            self.print(error("Error stopping lifecycle manager: {e}"))
 
 
 # Global lifecycle manager instance

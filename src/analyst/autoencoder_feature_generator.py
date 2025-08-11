@@ -1125,6 +1125,39 @@ class FeatureFilter:
                     f"   {i+1}. {feature_name}: {importance:.6f} (cumulative: {cumulative:.6f})"
                 )
 
+            # Suspicious dominance detection (relative, warn-only)
+            try:
+                total_imp = float(total_importance) if total_importance else 0.0
+                if total_imp > 0 and len(sorted_indices) > 0:
+                    top1 = float(sorted_importance[0])
+                    top2 = float(sorted_importance[0] + (sorted_importance[1] if len(sorted_importance) > 1 else 0.0))
+                    top1_ratio = top1 / total_imp
+                    top2_ratio = top2 / total_imp
+                    thresh1 = float(self.config.get("feature_filtering.suspicious_top1_ratio", 0.60))
+                    thresh2 = float(self.config.get("feature_filtering.suspicious_top2_ratio", 0.85))
+                    if top1_ratio >= thresh1 or top2_ratio >= thresh2:
+                        suspicious_names = [X.columns[sorted_indices[0]]]
+                        if len(sorted_indices) > 1:
+                            suspicious_names.append(X.columns[sorted_indices[1]])
+                        patterns = ["price_impact", "volume_price_impact", "market_depth", "order_flow_imbalance", "liquidity_score", "bid_ask_spread"]
+                        matched = [n for n in suspicious_names if any(p in n.lower() for p in patterns)]
+                        if matched:
+                            self.logger.warning(
+                                f"⚠️ Suspicious dominance: top features {matched} account for top1={top1_ratio:.1%}, top2={top2_ratio:.1%} of total importance"
+                            )
+                        else:
+                            self.logger.warning(
+                                f"⚠️ Suspicious dominance: top features {suspicious_names} account for top1={top1_ratio:.1%}, top2={top2_ratio:.1%} of total importance"
+                            )
+                    # Also warn on very low effective number of features (importance concentration)
+                    denom = float(np.sum(np.square(sorted_importance))) if np.isfinite(np.sum(np.square(sorted_importance))) else 0.0
+                    if total_imp > 0 and denom > 0:
+                        eff = (total_imp ** 2) / denom
+                        if eff < float(self.config.get("feature_filtering.suspicious_effective_features", 5.0)):
+                            self.logger.warning(f"⚠️ Importance highly concentrated: effective_features≈{eff:.1f}")
+            except Exception:
+                pass
+
             # Get feature selection parameters from config
             threshold = self.config.get(
                 "feature_filtering.importance_threshold", 0.90

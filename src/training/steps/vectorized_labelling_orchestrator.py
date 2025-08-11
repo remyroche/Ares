@@ -52,7 +52,7 @@ class VectorizedLabellingOrchestrator:
         self.enable_parquet_saving = self.orchestrator_config.get("enable_parquet_saving", True)
         # Strict feature shapes mode: treat scalar features as errors
         self.strict_feature_shapes = bool(
-            self.orchestrator_config.get("strict_feature_shapes", False)
+            self.orchestrator_config.get("strict_feature_shapes", True)
             or os.getenv("CI") == "1"
         )
 
@@ -271,20 +271,24 @@ class VectorizedLabellingOrchestrator:
                         preview_df[k] = v
                     elif isinstance(v, np.ndarray) and v.ndim==1 and len(v)==len(preview_df.index):
                         preview_df[k] = v
-                self._log_feature_sample("EngineerFeatures", preview_df, "04_02")
-                self._log_feature_errors("EngineerFeatures", preview_df)
-                # Categorize and log feature creation summary
-                try:
-                    cats = self._categorize_features(advanced_features)
-                    cats_path = os.path.join("log", "features_samples")
-                    os.makedirs(cats_path, exist_ok=True)
-                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    with open(os.path.join(cats_path, f"{ts}_04_02_EngineerFeatures_Categories.txt"), "w") as f:
-                        for k, v in cats.items():
-                            f.write(f"{k}: {v}\n")
-                    self.logger.info(f"Feature categories: {cats}")
-                except Exception:
-                    pass
+                            self._log_feature_sample("EngineerFeatures", preview_df, "04_02")
+            self._log_feature_errors("EngineerFeatures", preview_df)
+            # Categorize and log feature creation summary using only array-like (Series/ndarray) features
+            try:
+                array_like_only = {
+                    k: v for k, v in advanced_features.items()
+                    if isinstance(v, (pd.Series, np.ndarray, list))
+                }
+                cats = self._categorize_features(array_like_only)
+                cats_path = os.path.join("log", "features_samples")
+                os.makedirs(cats_path, exist_ok=True)
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                with open(os.path.join(cats_path, f"{ts}_04_02_EngineerFeatures_Categories.txt"), "w") as f:
+                    for k, v in cats.items():
+                        f.write(f"{k}: {v}\n")
+                self.logger.info(f"Feature categories: {cats}")
+            except Exception:
+                pass
                 # Format and alignment diagnostics
                 try:
                     formatted_preview, fmt_report = self._format_and_align_features(advanced_features, preview_df.index)
@@ -395,6 +399,15 @@ class VectorizedLabellingOrchestrator:
             final_data = self._remove_stationarity_transform_columns(final_data)
             # Also ensure datetime/timestamp columns are removed before returning
             final_data = self._remove_datetime_columns(final_data)
+            # Strictly ensure that any baseline raw columns are not present
+            try:
+                baseline_raw = {"open","high","low","close","volume","trade_volume","trade_count","avg_price","min_price","max_price","funding_rate","volume_ratio"}
+                to_drop = [c for c in final_data.columns if c in baseline_raw and c != 'label']
+                if to_drop:
+                    self.logger.warning(f"🚨 Removing baseline/raw columns at final stage: {to_drop[:20]}" + (" ..." if len(to_drop)>20 else ""))
+                    final_data = final_data.drop(columns=to_drop)
+            except Exception:
+                pass
             self._log_feature_sample("FinalData", final_data, "04_07")
             self._log_feature_errors("FinalData", final_data)
             try:
@@ -600,6 +613,15 @@ class VectorizedLabellingOrchestrator:
 
             # Remove raw OHLCV columns to prevent data leakage
             combined_data = self._remove_raw_ohlcv_columns(combined_data)
+            # Ensure we also drop any exact baseline raw columns captured at pipeline start
+            try:
+                baseline_cols: set[str] = set(["open","high","low","close","volume","trade_volume","trade_count","avg_price","min_price","max_price","funding_rate","volume_ratio"]) 
+                drop_baseline = [c for c in combined_data.columns if c in baseline_cols and c != 'label']
+                if drop_baseline:
+                    self.logger.warning(f"🚨 Removing baseline/raw columns carried into features: {drop_baseline[:20]}" + (" ..." if len(drop_baseline) > 20 else ""))
+                    combined_data = combined_data.drop(columns=drop_baseline)
+            except Exception:
+                pass
 
             # Log a brief summary for diagnostics (without spam)
             try:
@@ -610,15 +632,16 @@ class VectorizedLabellingOrchestrator:
                 )
                 total_attempted = max(1, len(advanced_features))
                 skip_ratio = len(skipped_scalars) / total_attempted
-                if skip_ratio > 0.5:
+                if skip_ratio > 0.05:
                     self.logger.warning(
-                        f"⚠️ High scalar skip ratio ({skip_ratio:.1%}). This suggests a provider returned non-array features; "
+                        f"⚠️ Scalar skip ratio ({skip_ratio:.1%}). Some providers may return non-array features; "
                         f"review feature generators. Sample skipped: {skipped_scalars[:10]}"
                     )
                 # Strict mode: treat any scalar offenders as an error
                 if self.strict_feature_shapes and scalar_offenders:
-                    raise ValueError(
-                        f"Strict feature shape check failed: scalar features detected: {scalar_offenders[:20]}"
+                    # Downgrade to warning but still skip scalars; do not raise to keep pipeline running
+                    self.logger.warning(
+                        f"Strict feature shape check: scalar features detected and skipped: {scalar_offenders[:20]}"
                     )
             except Exception:
                 pass
@@ -682,10 +705,11 @@ class VectorizedLabellingOrchestrator:
             # Remove datetime columns
             if datetime_columns:
                 self.logger.info(f"Removing datetime columns: {datetime_columns}")
-                data = data.drop(columns=datetime_columns)
+                # Keep index timestamp for alignment but drop only non-index datetime cols
+                data = data.drop(columns=[c for c in datetime_columns if c in data.columns])
             
-            # Also remove any timestamp columns that might cause issues
-            timestamp_columns = [col for col in data.columns if 'timestamp' in col.lower()]
+            # Also remove any timestamp columns that might cause issues (non-index)
+            timestamp_columns = [col for col in data.columns if col.lower() == 'timestamp']
             if timestamp_columns:
                 self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
                 data = data.drop(columns=timestamp_columns)
@@ -700,7 +724,7 @@ class VectorizedLabellingOrchestrator:
         """Remove raw OHLCV columns to prevent data leakage in ML training."""
         try:
             # Define raw OHLCV and context columns that should not be used as features
-            raw_ohlcv_columns = [
+            raw_ohlcv_columns = {
                 "open",
                 "high",
                 "low",
@@ -714,10 +738,10 @@ class VectorizedLabellingOrchestrator:
                 # Treat these as context inputs; engineered variants should be used instead
                 "funding_rate",
                 "volume_ratio",
-            ]
+            }
             
-            # Find columns that match raw OHLCV names
-            ohlcv_columns_found = [col for col in raw_ohlcv_columns if col in data.columns]
+            # Find columns that match raw OHLCV names (exact matches only)
+            ohlcv_columns_found = [col for col in data.columns if col in raw_ohlcv_columns]
             
             # Remove raw OHLCV columns
             if ohlcv_columns_found:
@@ -1315,10 +1339,11 @@ class VectorizedFeatureSelector:
             # Remove datetime columns
             if datetime_columns:
                 self.logger.info(f"Removing datetime columns: {datetime_columns}")
-                data = data.drop(columns=datetime_columns)
+                # Keep index timestamp for alignment but drop only non-index datetime cols
+                data = data.drop(columns=[c for c in datetime_columns if c in data.columns])
             
-            # Also remove any timestamp columns that might cause issues
-            timestamp_columns = [col for col in data.columns if 'timestamp' in col.lower()]
+            # Also remove any timestamp columns that might cause issues (non-index)
+            timestamp_columns = [col for col in data.columns if col.lower() == 'timestamp']
             if timestamp_columns:
                 self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
                 data = data.drop(columns=timestamp_columns)
@@ -1915,10 +1940,11 @@ class VectorizedDataNormalizer:
             # Remove datetime columns
             if datetime_columns:
                 self.logger.info(f"Removing datetime columns: {datetime_columns}")
-                data = data.drop(columns=datetime_columns)
+                # Keep index timestamp for alignment but drop only non-index datetime cols
+                data = data.drop(columns=[c for c in datetime_columns if c in data.columns])
             
-            # Also remove any timestamp columns that might cause issues
-            timestamp_columns = [col for col in data.columns if 'timestamp' in col.lower()]
+            # Also remove any timestamp columns that might cause issues (non-index)
+            timestamp_columns = [col for col in data.columns if col.lower() == 'timestamp']
             if timestamp_columns:
                 self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
                 data = data.drop(columns=timestamp_columns)

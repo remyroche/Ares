@@ -555,13 +555,13 @@ class VectorizedAdvancedFeatureEngineering:
     ) -> dict[str, Any]:
         """
         Engineer advanced features for improved prediction accuracy using vectorized operations.
-
+        
         Args:
             price_data: OHLCV price data
             volume_data: Volume and trade flow data
             order_flow_data: Order book and flow data (optional)
             sr_levels: Support/resistance levels (optional)
-
+        
         Returns:
             Dictionary containing engineered features
         """
@@ -626,11 +626,12 @@ class VectorizedAdvancedFeatureEngineering:
                 )
                 features.update(candlestick_features)
 
-            # S/R distance features
-            if self.sr_distance_calculator and sr_levels:
+            # S/R distance features — infer levels if not provided
+            inferred_sr = sr_levels if sr_levels else self._infer_sr_levels(price_data)
+            if self.sr_distance_calculator and inferred_sr:
                 sr_distance_features = await self.sr_distance_calculator.calculate_sr_distances(
                     price_data,
-                    sr_levels,
+                    inferred_sr,
                 )
                 features.update(sr_distance_features)
 
@@ -1052,6 +1053,15 @@ class VectorizedAdvancedFeatureEngineering:
             Tuple of (transformed_price_data, transformed_volume_data)
         """
         try:
+            # Ensure datetime index if timestamp column exists
+            if not isinstance(price_data.index, pd.DatetimeIndex) and "timestamp" in price_data.columns:
+                try:
+                    price_data = price_data.copy()
+                    price_data.index = pd.to_datetime(price_data["timestamp"], errors="coerce")
+                    price_data = price_data.sort_index()
+                except Exception:
+                    pass
+
             # Check if price_data has OHLCV structure
             required_ohlcv_columns = ['open', 'high', 'low', 'close']
             available_price_columns = price_data.columns.tolist()
@@ -1075,6 +1085,17 @@ class VectorizedAdvancedFeatureEngineering:
                 else:
                     # Create a default volume column if none exists
                     volume_data['volume'] = 1.0
+
+            # Align volume_data index to price_data index when possible
+            try:
+                if isinstance(price_data.index, pd.DatetimeIndex):
+                    if not isinstance(volume_data.index, pd.DatetimeIndex) and "timestamp" in volume_data.columns:
+                        volume_data = volume_data.copy()
+                        volume_data.index = pd.to_datetime(volume_data["timestamp"], errors="coerce")
+                    # Final align if still mismatched
+                    volume_data = volume_data.reindex(price_data.index, method="ffill").fillna(method="bfill")
+            except Exception:
+                pass
             
             return price_data, volume_data
             
@@ -1214,15 +1235,19 @@ class VectorizedAdvancedFeatureEngineering:
             
             offset = timeframe_map.get(timeframe, "1T")
             
-            # Check if data has datetime index, if not create one
+            # Ensure we have a DatetimeIndex. Prefer an existing 'timestamp' column.
             if not isinstance(data.index, pd.DatetimeIndex):
                 data = data.copy()
-                # Create a proper datetime index
-                data.index = pd.date_range(
-                    start='2023-01-01',
-                    periods=len(data),
-                    freq='1min'
-                )
+                if "timestamp" in data.columns:
+                    try:
+                        data.index = pd.to_datetime(data["timestamp"], errors="coerce")
+                        data = data.sort_index()
+                    except Exception:
+                        # Fallback synthetic index
+                        data.index = pd.date_range(start='1970-01-01', periods=len(data), freq='1min')
+                else:
+                    # Fallback synthetic index
+                    data.index = pd.date_range(start='1970-01-01', periods=len(data), freq='1min')
             
             # Check if OHLCV columns exist, if not, create them from available data
             required_columns = ['open', 'high', 'low', 'close', 'volume']
@@ -1302,20 +1327,21 @@ class VectorizedAdvancedFeatureEngineering:
             # Basic price features as full series aligned to index
             price_change_series = price_data["close"].pct_change()
             price_vol_series = price_data["close"].pct_change().rolling(window=20).std()
-            features["price_change"] = price_change_series
-            features["price_volatility"] = price_vol_series
+            # Stabilize with forward/backward fills to avoid constants from NaNs
+            features["price_change"] = price_change_series.fillna(0)
+            features["price_volatility"] = price_vol_series.fillna(method="ffill").fillna(method="bfill").fillna(0)
 
             # Volume features as full series
             volume_change_series = volume_data["volume"].pct_change()
             volume_ma_ratio_series = volume_data["volume"] / volume_data["volume"].rolling(window=20, min_periods=1).mean()
-            features["volume_change"] = volume_change_series
-            features["volume_ma_ratio"] = volume_ma_ratio_series
+            features["volume_change"] = volume_change_series.fillna(0)
+            features["volume_ma_ratio"] = volume_ma_ratio_series.replace([np.inf, -np.inf], np.nan).fillna(method="ffill").fillna(method="bfill").fillna(0)
             # Additional multi-horizon volume MA ratios
             try:
                 vol_ma_5 = volume_data["volume"].rolling(window=5, min_periods=1).mean()
                 vol_ma_15 = volume_data["volume"].rolling(window=15, min_periods=1).mean()
-                features["5m_volume_ma_ratio"] = (volume_data["volume"] / (vol_ma_5.replace(0, np.nan))).replace([np.inf, -np.inf], np.nan).fillna(1.0)
-                features["15m_volume_ma_ratio"] = (volume_data["volume"] / (vol_ma_15.replace(0, np.nan))).replace([np.inf, -np.inf], np.nan).fillna(1.0)
+                features["5m_volume_ma_ratio"] = (volume_data["volume"] / (vol_ma_5.replace(0, np.nan))).replace([np.inf, -np.inf], np.nan).fillna(method="ffill").fillna(method="bfill").fillna(1.0)
+                features["15m_volume_ma_ratio"] = (volume_data["volume"] / (vol_ma_15.replace(0, np.nan))).replace([np.inf, -np.inf], np.nan).fillna(method="ffill").fillna(method="bfill").fillna(1.0)
             except Exception:
                 pass
 
@@ -1392,6 +1418,25 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.error(f"Error generating meta labels: {e}")
             return {}
+
+    def _infer_sr_levels(self, price_data: pd.DataFrame) -> dict[str, Any]:
+        """Infer simple support/resistance levels from recent price distribution as a fallback.
+        Uses quantiles over a rolling window.
+        """
+        try:
+            close = price_data["close"].astype(float)
+            # Use last 2,000 points if available to infer static levels
+            recent = close.tail(min(len(close), 2000))
+            if recent.empty:
+                return {"support_levels": [], "resistance_levels": []}
+            q_support = np.quantile(recent.dropna(), [0.1, 0.2, 0.3])
+            q_resist = np.quantile(recent.dropna(), [0.7, 0.8, 0.9])
+            return {
+                "support_levels": [float(x) for x in q_support],
+                "resistance_levels": [float(x) for x in q_resist],
+            }
+        except Exception:
+            return {"support_levels": [], "resistance_levels": []}
 
 
 class VectorizedVolatilityRegimeModel:
@@ -2172,30 +2217,9 @@ class VectorizedCandlestickPatternAnalyzer:
 
             window = 20  # rolling window for counts/densities
 
-            # Calculate pattern type features (rolling count and presence per row)
-            pattern_types = [
-                "engulfing_patterns",
-                "hammer_hanging_man",
-                "shooting_star_inverted_hammer",
-                "tweezer_patterns",
-                "marubozu_patterns",
-                "three_methods_patterns",
-                "doji_patterns",
-                "spinning_top_patterns",
-            ]
-
-            for pattern_type in pattern_types:
-                if pattern_type in patterns:
-                    pattern_data = patterns[pattern_type]
-                    # Sum boolean arrays within type per row and then apply rolling sum
-                    per_row_sum = np.zeros(len(df), dtype=float)
-                    for key, arr in pattern_data.items():
-                        if isinstance(arr, np.ndarray) and arr.dtype == bool:
-                            per_row_sum += arr.astype(float)
-                    per_row_series = pd.Series(per_row_sum, index=df.index)
-                    count_series = per_row_series.rolling(window, min_periods=1).sum()
-                    features[f"{pattern_type}_count"] = count_series.values
-                    features[f"{pattern_type}_present"] = (count_series > 0).astype(float).values
+            # Historically we created aggregated per-type counts/presence here which are often linear combinations
+            # of specific pattern counts and led to multicollinearity. We now skip per-type aggregates and rely on
+            # specific pattern counts/presence plus total/bullish/bearish summaries.
 
             # Specific pattern rolling counts/presence
             specific_patterns = [
@@ -2225,43 +2249,61 @@ class VectorizedCandlestickPatternAnalyzer:
                 features[f"{pattern}_count"] = count_series.values
                 features[f"{pattern}_present"] = (count_series > 0).astype(float).values
 
-            # Aggregate densities per row
-            total_patterns_series = sum(
-                pd.Series(features.get(f"{pt}_count"), index=df.index) for pt in pattern_types if f"{pt}_count" in features
-            )
+            # Aggregate densities per row using specific pattern counts only
+            total_patterns_series = pd.Series(0.0, index=df.index)
+            for p in specific_patterns:
+                key = f"{p}_count"
+                if key in features:
+                    total_patterns_series = total_patterns_series.add(
+                        pd.Series(features[key], index=df.index), fill_value=0.0
+                    )
             features["total_patterns"] = total_patterns_series.values
             features["pattern_density"] = (total_patterns_series / window).values
 
             # Bullish vs bearish per row
-            bullish_series = sum(
-                pd.Series(features.get(f"{p}_count"), index=df.index)
-                for p in [
-                    "bullish_engulfing",
-                    "hammer",
-                    "inverted_hammer",
-                    "tweezer_bottom",
-                    "bullish_marubozu",
-                    "rising_three_methods",
-                ]
-                if f"{p}_count" in features
-            )
-            bearish_series = sum(
-                pd.Series(features.get(f"{p}_count"), index=df.index)
-                for p in [
-                    "bearish_engulfing",
-                    "hanging_man",
-                    "shooting_star",
-                    "tweezer_top",
-                    "bearish_marubozu",
-                    "falling_three_methods",
-                ]
-                if f"{p}_count" in features
-            )
+            bullish_series = pd.Series(0.0, index=df.index)
+            for p in [
+                "bullish_engulfing",
+                "hammer",
+                "inverted_hammer",
+                "tweezer_bottom",
+                "bullish_marubozu",
+                "rising_three_methods",
+            ]:
+                key = f"{p}_count"
+                if key in features:
+                    bullish_series = bullish_series.add(
+                        pd.Series(features[key], index=df.index), fill_value=0.0
+                    )
+            bearish_series = pd.Series(0.0, index=df.index)
+            for p in [
+                "bearish_engulfing",
+                "hanging_man",
+                "shooting_star",
+                "tweezer_top",
+                "bearish_marubozu",
+                "falling_three_methods",
+            ]:
+                key = f"{p}_count"
+                if key in features:
+                    bearish_series = bearish_series.add(
+                        pd.Series(features[key], index=df.index), fill_value=0.0
+                    )
             features["bullish_patterns"] = bullish_series.values
             features["bearish_patterns"] = bearish_series.values
             with np.errstate(divide='ignore', invalid='ignore'):
                 ratio = (bullish_series / (bearish_series + 1e-8)).replace([np.inf, -np.inf], np.nan).fillna(0)
             features["bullish_bearish_ratio"] = ratio.values
+
+            # Ensure numeric stability: replace inf/nan
+            for k in list(features.keys()):
+                v = features[k]
+                try:
+                    arr = np.asarray(v, dtype=float)
+                    arr = np.where(np.isfinite(arr), arr, 0.0)
+                    features[k] = arr
+                except Exception:
+                    continue
 
             return features
 
@@ -2784,38 +2826,67 @@ class VectorizedWaveletTransformAnalyzer:
             # Remove boundary effects from energy calculation
             if self.boundary_handling == "truncate" and coeffs.shape[1] > 20:
                 truncate_size = max(1, coeffs.shape[1] // 10)
-                energy_clean = np.sum(np.abs(coeffs[:, truncate_size:-truncate_size]) ** 2, axis=1)
+                coeffs_clean = coeffs[:, truncate_size:-truncate_size]
+                energy_clean = np.sum(np.abs(coeffs_clean) ** 2, axis=1)
             else:
+                coeffs_clean = coeffs
                 energy_clean = energy
             
-            features[f"{wavelet_type}_{series_name}_total_energy"] = np.sum(energy_clean)
-            features[f"{wavelet_type}_{series_name}_max_energy"] = np.max(energy_clean)
-            features[f"{wavelet_type}_{series_name}_min_energy"] = np.min(energy_clean)
-            features[f"{wavelet_type}_{series_name}_energy_std"] = np.std(energy_clean)
+            features[f"{wavelet_type}_{series_name}_total_energy"] = float(np.sum(energy_clean))
+            features[f"{wavelet_type}_{series_name}_max_energy"] = float(np.max(energy_clean))
+            features[f"{wavelet_type}_{series_name}_min_energy"] = float(np.min(energy_clean))
+            features[f"{wavelet_type}_{series_name}_energy_std"] = float(np.std(energy_clean))
             
             # Frequency features
             if len(energy_clean) > 0:
-                features[f"{wavelet_type}_{series_name}_dominant_freq"] = freqs[np.argmax(energy_clean)]
-                features[f"{wavelet_type}_{series_name}_freq_range"] = np.max(freqs) - np.min(freqs)
-                features[f"{wavelet_type}_{series_name}_energy_bandwidth"] = np.std(freqs[energy_clean > np.mean(energy_clean)])
+                features[f"{wavelet_type}_{series_name}_dominant_freq"] = float(freqs[np.argmax(energy_clean)])
+                features[f"{wavelet_type}_{series_name}_freq_range"] = float(np.max(freqs) - np.min(freqs))
+                # Energy spread across frequency band
+                mask = energy_clean > np.mean(energy_clean)
+                if np.any(mask):
+                    features[f"{wavelet_type}_{series_name}_energy_bandwidth"] = float(np.std(freqs[mask]))
             
             # Scale-specific features
-            features[f"{wavelet_type}_{series_name}_min_scale"] = np.min(scales)
-            features[f"{wavelet_type}_{series_name}_max_scale"] = np.max(scales)
-            features[f"{wavelet_type}_{series_name}_scale_range"] = np.max(scales) - np.min(scales)
+            features[f"{wavelet_type}_{series_name}_min_scale"] = float(np.min(scales))
+            features[f"{wavelet_type}_{series_name}_max_scale"] = float(np.max(scales))
+            features[f"{wavelet_type}_{series_name}_scale_range"] = float(np.max(scales) - np.min(scales))
             
             # Statistical features
-            features[f"{wavelet_type}_{series_name}_coeff_mean"] = np.mean(np.abs(coeffs))
-            features[f"{wavelet_type}_{series_name}_coeff_std"] = np.std(np.abs(coeffs))
-            features[f"{wavelet_type}_{series_name}_coeff_max"] = np.max(np.abs(coeffs))
-            features[f"{wavelet_type}_{series_name}_coeff_min"] = np.min(np.abs(coeffs))
+            abs_coeffs = np.abs(coeffs)
+            features[f"{wavelet_type}_{series_name}_coeff_mean"] = float(np.mean(abs_coeffs))
+            features[f"{wavelet_type}_{series_name}_coeff_std"] = float(np.std(abs_coeffs))
+            features[f"{wavelet_type}_{series_name}_coeff_max"] = float(np.max(abs_coeffs))
+            features[f"{wavelet_type}_{series_name}_coeff_min"] = float(np.min(abs_coeffs))
             
             # Entropy features
-            total_energy = np.sum(np.abs(coeffs) ** 2)
+            total_energy = np.sum(abs_coeffs ** 2)
             if total_energy > 0:
-                entropy = -np.sum((np.abs(coeffs) ** 2) / total_energy * 
-                                np.log((np.abs(coeffs) ** 2) / total_energy + 1e-10))
-                features[f"{wavelet_type}_{series_name}_entropy"] = entropy
+                p = (abs_coeffs ** 2) / total_energy
+                features[f"{wavelet_type}_{series_name}_entropy"] = float(
+                    -np.sum(p * np.log(p + 1e-12))
+                )
+
+            # NEW: Time-series features aligned to signal length
+            # Aggregate energy across scales per time step
+            ts_energy = np.sum(np.abs(coeffs_clean) ** 2, axis=0)  # shape: (T' )
+            # Normalize TS for stability
+            if np.nanmax(ts_energy) > 0:
+                ts_energy_norm = ts_energy / (np.nanmax(ts_energy) + 1e-12)
+            else:
+                ts_energy_norm = ts_energy
+            features[f"{wavelet_type}_{series_name}_energy_ts"] = ts_energy
+            features[f"{wavelet_type}_{series_name}_energy_ts_norm"] = ts_energy_norm
+
+            # Dominant scale per time step (as scale index) and as frequency if available
+            power = np.abs(coeffs_clean) ** 2  # (scales, time)
+            dom_idx_ts = np.argmax(power, axis=0).astype(float)
+            features[f"{wavelet_type}_{series_name}_dominant_scale_ts"] = dom_idx_ts
+            # Map dominant index to frequency if shapes align
+            try:
+                dom_freq_ts = freqs[dom_idx_ts.astype(int)]
+                features[f"{wavelet_type}_{series_name}_dominant_freq_ts"] = dom_freq_ts.astype(float)
+            except Exception:
+                pass
 
             return features
 
@@ -2824,51 +2895,76 @@ class VectorizedWaveletTransformAnalyzer:
             return {}
 
     def _select_optimal_wavelet_features(self, features: dict[str, Any]) -> dict[str, Any]:
-        """Select optimal wavelet features based on configured method."""
+        """Select optimal wavelet features based on configured method.
+        Includes both scalar and array-like features by scoring arrays using variance/energy.
+        """
         try:
             if len(features) <= self.max_features_per_wavelet:
                 return features
-            
-            if self.feature_selection_method == "variance":
-                # Select features with highest variance
-                feature_vars = {}
-                for feature_name, feature_value in features.items():
-                    if isinstance(feature_value, (int, float)) and not np.isnan(feature_value):
-                        feature_vars[feature_name] = abs(feature_value)
-                
-                # Sort by variance and select top features
-                sorted_features = sorted(feature_vars.items(), key=lambda x: x[1], reverse=True)
-                selected_features = dict(sorted_features[:self.max_features_per_wavelet])
-                
-            elif self.feature_selection_method == "energy":
-                # Select features with highest energy content
-                energy_features = {}
-                for feature_name, feature_value in features.items():
-                    if "energy" in feature_name.lower() and isinstance(feature_value, (int, float)):
-                        energy_features[feature_name] = abs(feature_value)
-                
-                sorted_features = sorted(energy_features.items(), key=lambda x: x[1], reverse=True)
-                selected_features = dict(sorted_features[:self.max_features_per_wavelet])
-                
-            elif self.feature_selection_method == "entropy":
-                # Select features with highest entropy
-                entropy_features = {}
-                for feature_name, feature_value in features.items():
-                    if "entropy" in feature_name.lower() and isinstance(feature_value, (int, float)):
-                        entropy_features[feature_name] = abs(feature_value)
-                
-                sorted_features = sorted(entropy_features.items(), key=lambda x: x[1], reverse=True)
-                selected_features = dict(sorted_features[:self.max_features_per_wavelet])
-                
-            else:  # random
-                # Random selection
-                feature_items = list(features.items())
-                random.shuffle(feature_items)
-                selected_features = dict(feature_items[:self.max_features_per_wavelet])
-            
-            self.logger.info(f"Selected {len(selected_features)} features from {len(features)} candidates "
-                           f"using {self.feature_selection_method} method")
-            
+
+            # Build (name, value, score) tuples depending on selection method
+            scored: list[tuple[str, Any, float]] = []
+            method = self.feature_selection_method
+
+            for feature_name, feature_value in features.items():
+                try:
+                    # Numeric scalar
+                    if isinstance(feature_value, (int, float, np.integer, np.floating)):
+                        val = float(feature_value)
+                        if np.isnan(val) or np.isinf(val):
+                            continue
+                        score = abs(val)
+                        scored.append((feature_name, feature_value, score))
+                        continue
+
+                    # Pandas Series → use values
+                    if isinstance(feature_value, pd.Series):
+                        arr = feature_value.astype(float).values
+                    # Numpy array/list → convert to ndarray
+                    elif isinstance(feature_value, (np.ndarray, list)):
+                        arr = np.asarray(feature_value, dtype=float)
+                    else:
+                        # Unsupported type
+                        continue
+
+                    if arr.ndim == 0 or arr.size == 0:
+                        continue
+
+                    if method == "variance":
+                        score = float(np.nanvar(arr))
+                    elif method == "energy":
+                        score = float(np.nansum(np.square(arr)))
+                    elif method == "entropy":
+                        # Normalize to probability distribution for entropy proxy
+                        abs_arr = np.abs(arr)
+                        total = np.nansum(abs_arr)
+                        if total <= 0 or np.isnan(total):
+                            continue
+                        p = abs_arr / total
+                        # Avoid log(0)
+                        score = float(-np.nansum(p * np.log(p + 1e-12)))
+                    else:  # random
+                        score = np.random.random()
+
+                    # Filter extremely low-variance arrays
+                    if method in ("variance", "energy") and score < self.min_feature_variance:
+                        continue
+
+                    scored.append((feature_name, feature_value, score))
+                except Exception:
+                    continue
+
+            if not scored:
+                return features
+
+            # Sort by score desc and take top-K
+            scored.sort(key=lambda x: x[2], reverse=True)
+            selected_items = scored[: self.max_features_per_wavelet]
+            selected_features = {name: value for name, value, _ in selected_items}
+
+            self.logger.info(
+                f"Selected {len(selected_features)} features from {len(features)} candidates using {method} method",
+            )
             return selected_features
 
         except Exception as e:

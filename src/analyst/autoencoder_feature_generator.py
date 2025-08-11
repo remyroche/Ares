@@ -246,13 +246,12 @@ class PriceReturnConverter:
 
                 # Categorize features
                 if any(
-                    price_pattern in col_lower
+                    price_pattern == col_lower
                     for price_pattern in [
                         "open",
                         "high",
                         "low",
                         "close",
-                        "price",
                         "avg_price",
                         "min_price",
                         "max_price",
@@ -260,11 +259,12 @@ class PriceReturnConverter:
                 ):
                     available_price_features.append(col)
                 elif any(
-                    volume_pattern in col_lower
-                    for volume_pattern in ["volume", "trade_volume", "vol"]
+                    volume_pattern == col_lower
+                    for volume_pattern in ["volume", "trade_volume"]
                 ):
                     available_volume_features.append(col)
 
+            # Log only true raw candidates (not engineered proxies)
             self.logger.info(
                 f"📊 Found {len(available_price_features)} price features: {available_price_features}"
             )
@@ -280,17 +280,27 @@ class PriceReturnConverter:
                 selected_price_feature = self.primary_price_feature
             elif available_price_features:
                 selected_price_feature = available_price_features[0]
-                self.logger.info(
-                    f"🎯 Selected '{selected_price_feature}' as primary price feature (preferred '{self.primary_price_feature}' not available)"
-                )
+                if selected_price_feature not in {"open","high","low","close","avg_price","min_price","max_price"}:
+                    self.logger.info(
+                        f"🎯 Selected engineered price proxy '{selected_price_feature}' (preferred '{self.primary_price_feature}' not available); will not convert to returns"
+                    )
+                else:
+                    self.logger.info(
+                        f"🎯 Selected '{selected_price_feature}' as primary price feature (preferred '{self.primary_price_feature}' not available)"
+                    )
 
             if self.primary_volume_feature in available_volume_features:
                 selected_volume_feature = self.primary_volume_feature
             elif available_volume_features:
                 selected_volume_feature = available_volume_features[0]
-                self.logger.info(
-                    f"🎯 Selected '{selected_volume_feature}' as primary volume feature (preferred '{self.primary_volume_feature}' not available)"
-                )
+                if selected_volume_feature not in {"volume","trade_volume"}:
+                    self.logger.info(
+                        f"🎯 Selected engineered volume proxy '{selected_volume_feature}' (preferred '{self.primary_volume_feature}' not available); will not convert to returns"
+                    )
+                else:
+                    self.logger.info(
+                        f"🎯 Selected '{selected_volume_feature}' as primary volume feature (preferred '{self.primary_volume_feature}' not available)"
+                    )
 
             # Remove redundant raw price and volume columns, but keep engineered features
             features_to_remove = []
@@ -306,13 +316,12 @@ class PriceReturnConverter:
 
                 # Remove redundant price features (keep only selected one)
                 if any(
-                    price_pattern in col_lower
+                    price_pattern == col_lower
                     for price_pattern in [
                         "open",
                         "high",
                         "low",
                         "close",
-                        "price",
                         "avg_price",
                         "min_price",
                         "max_price",
@@ -323,23 +332,27 @@ class PriceReturnConverter:
 
                 # Remove redundant volume features (keep only selected one)
                 elif any(
-                    volume_pattern in col_lower
-                    for volume_pattern in ["volume", "trade_volume", "vol"]
+                    volume_pattern == col_lower
+                    for volume_pattern in ["volume", "trade_volume"]
                 ):
                     if selected_volume_feature and col != selected_volume_feature:
                         features_to_remove.append(col)
 
             if features_to_remove:
-                self.logger.info(
-                    f"🗑️ Removing {len(features_to_remove)} redundant features: {features_to_remove}"
-                )
-                converted_df = converted_df.drop(columns=features_to_remove)
+                # Only remove exact raw columns, do not remove engineered proxies
+                raw_only = [c for c in features_to_remove if c in {"open","high","low","close","avg_price","min_price","max_price","volume","trade_volume"}]
+                if raw_only:
+                    self.logger.info(
+                        f"🗑️ Removing {len(raw_only)} redundant raw features: {raw_only}"
+                    )
+                    converted_df = converted_df.drop(columns=raw_only)
 
             # Convert selected features to returns
             features_to_convert = []
-            if selected_price_feature:
+            # Only convert if the selected features are truly raw OHLCV, not engineered proxies
+            if selected_price_feature in {"open","high","low","close","avg_price","min_price","max_price"}:
                 features_to_convert.append(selected_price_feature)
-            if selected_volume_feature:
+            if selected_volume_feature in {"volume","trade_volume"}:
                 features_to_convert.append(selected_volume_feature)
 
             self.logger.info(
@@ -578,6 +591,8 @@ class FeatureFilter:
             "trade_volume","trade_count","avg_price","min_price","max_price",
             # Treat these as raw context inputs, not engineered features
             "funding_rate","volume_ratio",
+            # Project-specific: treat this as non-feature for autoencoder filtering per user guidance
+            "volume_price_impact",
         }
 
     def _exclude_raw_and_meta(self, df: pd.DataFrame) -> pd.DataFrame:

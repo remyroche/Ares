@@ -20,9 +20,11 @@ import pandas as pd
 try:
     import pyarrow as pa  # type: ignore
     import pyarrow.parquet as pq  # type: ignore
+    import pyarrow.dataset as ds  # type: ignore
 except ImportError:
     pa = None  # type: ignore
     pq = None  # type: ignore
+    ds = None  # type: ignore
 from sklearn.base import BaseEstimator
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
@@ -1128,6 +1130,107 @@ class ParquetDatasetManager:
         except Exception as e:
             self.logger.error(f"❌ Failed to write parquet file {file_path}: {e}")
             raise
+
+    def write_partitioned_dataset(
+        self,
+        df: pd.DataFrame,
+        base_dir: str,
+        partition_cols: list[str] | None = None,
+        schema_name: str | None = None,
+        compression: str = "snappy",
+        metadata: dict[str, Any] | None = None,
+        min_rows_per_group: int = 128_000,
+        max_rows_per_file: int = 5_000_000,
+    ) -> None:
+        """Write a hive-partitioned dataset using pyarrow.dataset.write_dataset."""
+        try:
+            os.makedirs(base_dir, exist_ok=True)
+            table = pa.Table.from_pandas(df, preserve_index=False)
+            if metadata:
+                try:
+                    schema_with_meta = table.schema.with_metadata(
+                        {str(k): (str(v) if v is not None else "") for k, v in metadata.items()}
+                    )
+                    table = table.cast(schema_with_meta)
+                except Exception:
+                    pass
+            partitioning = (
+                ds.partitioning(partition_cols, flavor="hive") if partition_cols else None
+            )
+            write_args = {
+                "base_dir": base_dir,
+                "format": "parquet",
+                "basename_template": "part-{i}.parquet",
+                "existing_data_behavior": "overwrite_or_ignore",
+                "max_rows_per_file": max_rows_per_file,
+                "min_rows_per_group": min_rows_per_group,
+                "max_rows_per_group": min(max_rows_per_file, 1_048_576),
+                "partitioning": partitioning,
+            }
+            ds.write_dataset(table, **write_args)
+            self.logger.info(
+                f"✅ Partitioned dataset written to {base_dir} with partitions={partition_cols or []}"
+            )
+        except Exception as e:
+            self.logger.error(f"❌ Failed to write partitioned dataset to {base_dir}: {e}")
+            raise
+
+    def materialize_projection(
+        self,
+        base_dir: str,
+        filters: list[tuple[str, str, Any]] | None,
+        columns: list[str] | None,
+        output_dir: str,
+        partition_cols: list[str] | None = None,
+        schema_name: str | None = None,
+        compression: str = "snappy",
+        batch_size: int = 131072,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Scan an existing dataset, project columns with filters, and write to a new partitioned dataset."""
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+            dataset = ds.dataset(base_dir, format="parquet")
+            scanner = dataset.scanner(columns=columns, filter=self._build_filter(filters), batch_size=batch_size)
+            table = scanner.to_table()
+            if metadata:
+                try:
+                    schema_with_meta = table.schema.with_metadata(
+                        {str(k): (str(v) if v is not None else "") for k, v in metadata.items()}
+                    )
+                    table = table.cast(schema_with_meta)
+                except Exception:
+                    pass
+            ds.write_dataset(
+                table,
+                base_dir=output_dir,
+                format="parquet",
+                basename_template="part-{i}.parquet",
+                existing_data_behavior="overwrite_or_ignore",
+                partitioning=(ds.partitioning(partition_cols, flavor="hive") if partition_cols else None),
+                max_rows_per_file=5_000_000,
+                min_rows_per_group=128_000,
+                max_rows_per_group=1_048_576,
+            )
+            self.logger.info(
+                f"✅ Materialized projection to {output_dir} (columns={columns}, filters={filters})"
+            )
+        except Exception as e:
+            self.logger.error(f"❌ Failed to materialize projection to {output_dir}: {e}")
+            raise
+
+    @staticmethod
+    def _build_filter(filters: list[tuple[str, str, Any]] | None):
+        if not filters:
+            return None
+        try:
+            expr = None
+            for col, op, val in filters:
+                term = (ds.field(col) == val) if op == "==" else None
+                expr = term if expr is None else (expr & term)
+            return expr
+        except Exception:
+            return None
 
     def read_parquet(
         self, file_path: str, columns: list[str] | None = None

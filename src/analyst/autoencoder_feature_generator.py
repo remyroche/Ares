@@ -567,6 +567,19 @@ class FeatureFilter:
             "timestamp", "time", "year", "month", "day", "day_of_week", "day_of_month", "quarter",
             "exchange", "symbol", "timeframe", "split"
         }
+        # Define all raw/non-feature columns to be excluded
+        self.raw_columns = {
+            "open","high","low","close","volume",
+            "trade_volume","trade_count","avg_price","min_price","max_price",
+        }
+
+    def _exclude_raw_and_meta(self, df: pd.DataFrame) -> pd.DataFrame:
+        cols_to_drop = [c for c in df.columns if c in self.non_feature_columns or c in self.raw_columns]
+        if cols_to_drop:
+            self.logger.warning(f"🚨 Excluding non-feature/raw columns: {cols_to_drop}")
+            df = df.drop(columns=cols_to_drop)
+            self.logger.info(f"📊 Features shape after exclusion: {df.shape}")
+        return df
 
     def filter_features(
         self,
@@ -584,21 +597,11 @@ class FeatureFilter:
                 f"📈 Label distribution: {dict(zip(*np.unique(labels, return_counts=True)))}"
             )
 
-            # CRITICAL: Filter out raw OHLCV data that should not be used as features
-            raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
-            raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]
-            
-            # Also drop non-feature calendar/metadata columns
-            calendar_cols = [c for c in features_df.columns if c in self.non_feature_columns]
-
-            columns_to_drop = list(dict.fromkeys([*raw_ohlcv_columns, *calendar_cols]))
-            if columns_to_drop:
-                self.logger.warning(f"🚨 Excluding non-feature/raw columns: {columns_to_drop}")
-                features_df = features_df.drop(columns=columns_to_drop)
-                self.logger.info(f"📊 Features shape after exclusion: {features_df.shape}")
-                if features_df.empty:
-                    self.logger.error("🚨 CRITICAL: No engineered features remaining after exclusion")
-                    return pd.DataFrame()
+            # CRITICAL: Filter out all raw/non-feature columns first
+            features_df = self._exclude_raw_and_meta(features_df)
+            if features_df.empty:
+                self.logger.error("🚨 CRITICAL: No engineered features remaining after exclusion")
+                return pd.DataFrame()
 
             X = features_df.select_dtypes(include=[np.number]).fillna(0)
             y = labels
@@ -1096,14 +1099,14 @@ class FeatureFilter:
 
             # Get feature selection parameters from config
             threshold = self.config.get(
-                "feature_filtering.importance_threshold", 0.95
-            )  # Reduced from 0.99
+                "feature_filtering.importance_threshold", 0.90
+            )
             min_features = self.config.get(
-                "feature_filtering.min_features_to_keep", 5
-            )  # Reduced from 15
+                "feature_filtering.min_features_to_keep", 15
+            )
             max_features = self.config.get(
-                "feature_filtering.max_features_to_keep", 50
-            )  # New constraint
+                "feature_filtering.max_features_to_keep", 80
+            )
             min_importance_per_feature = self.config.get(
                 "feature_filtering.min_importance_per_feature", 0.001
             )
@@ -2411,7 +2414,7 @@ class AutoencoderFeatureGenerator:
         Raw price data like 'volume', 'close', 'open', 'high', 'low' should be excluded.
         """
         # CRITICAL: Filter out raw OHLCV data that should not be used as features
-        raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
+        raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price']
         raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]
         
         # Drop calendar/metadata columns that are not predictive features

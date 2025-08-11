@@ -81,6 +81,9 @@ class AnalystLabelingFeatureEngineeringStep:
             
             for col in feature_columns:
                 try:
+                    # Skip non-numeric columns during variance checks (e.g., datetime/timestamp/strings)
+                    if not np.issubdtype(features_df[col].dtype, np.number):
+                        continue
                     feature_values = features_df[col].dropna()
                     
                     if len(feature_values) == 0:
@@ -334,6 +337,34 @@ class AnalystLabelingFeatureEngineeringStep:
                         # Validate feature quality for 240+ feature set
                         labeled_data = await self._validate_and_enhance_features(labeled_data)
                         
+                        # Drop datetime/timestamp columns before any further processing
+                        try:
+                            datetime_cols = [
+                                c for c in labeled_data.columns
+                                if str(labeled_data[c].dtype).startswith("datetime64") or "timestamp" in c.lower()
+                            ]
+                            if datetime_cols:
+                                self.logger.info(f"Removing datetime columns prior to saving/validation: {datetime_cols}")
+                                labeled_data = labeled_data.drop(columns=datetime_cols)
+                        except Exception:
+                            pass
+
+                        # Remove metadata columns that should not be features
+                        meta_cols = [c for c in labeled_data.columns if c in [
+                            'year','month','day','day_of_week','day_of_month','quarter','exchange','symbol','timeframe','split'
+                        ]]
+                        if meta_cols:
+                            self.logger.info(f"Removing metadata columns from features: {meta_cols}")
+                            labeled_data = labeled_data.drop(columns=meta_cols)
+
+                        # Remove any raw OHLCV/trade activity columns if present
+                        raw_cols = [c for c in [
+                            'open','high','low','close','volume','trade_volume','trade_count','avg_price','min_price','max_price'
+                        ] if c in labeled_data.columns]
+                        if raw_cols:
+                            self.logger.warning(f"🚨 Removing raw columns from features: {raw_cols}")
+                            labeled_data = labeled_data.drop(columns=raw_cols)
+
                         # Ensure OHLCV columns exist in labeled_data artifacts for validator visibility
                         ohlcv_need = ["open","high","low","close","volume"]
                         for _col in ohlcv_need:

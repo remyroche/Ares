@@ -218,12 +218,13 @@ class RegimeDataSplittingStep:
                 rd["timestamp_hour"] = pd.to_datetime(rd["timestamp"]).dt.floor("1h")
 
             merged_data = ud.merge(
-                rd[["timestamp_hour", "regime", "confidence"]],
+                rd["timestamp_hour"].to_frame().join(rd[["regime", "confidence"]]),
                 on="timestamp_hour",
                 how="left",
             )
             # Cleanup helper key
-            # Keep original minute timestamp in place for downstream consumers
+            if "timestamp_hour" in merged_data.columns:
+                merged_data = merged_data.drop(columns=["timestamp_hour"])  # keep original minute timestamp
 
             # Fill missing regimes with a default
             if merged_data["regime"].isna().any():

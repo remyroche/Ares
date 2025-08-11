@@ -266,12 +266,13 @@ class AnalystLabelingFeatureEngineeringStep:
             self.logger.info("🔄 Loading unified data...")
             data_loader = get_unified_data_loader(self.config)
 
-            # Load unified data with optimizations for ML training (180 days for comprehensive feature engineering)
+            # Load unified data with optimizations for ML training (use configured lookback)
+            lookback_days = self.config.get("lookback_days", 180)
             price_data = await data_loader.load_unified_data(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
-                lookback_days=180,
+                lookback_days=lookback_days,
                 use_streaming=True,  # Enable streaming for large datasets
             )
 
@@ -797,7 +798,7 @@ class AnalystLabelingFeatureEngineeringStep:
 
                 lookback_days = training_input.get(
                     "lookback_days",
-                    180 if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else 730,
+                    self.config.get("lookback_days", 180),
                 )
 
                 labeled_full = labeled_data.copy()

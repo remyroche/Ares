@@ -1154,9 +1154,20 @@ class ParquetDatasetManager:
                     table = table.cast(schema_with_meta)
                 except Exception:
                     pass
-            partitioning = (
-                ds.partitioning(partition_cols, flavor="hive") if partition_cols else None
-            )
+            # schema_name is accepted for compatibility; no-op here but reserved for future schema enforcement
+            partitioning = None
+            if partition_cols:
+                # Build a partition schema from table schema, defaulting to string if absent
+                fields = []
+                for col in partition_cols:
+                    try:
+                        f = table.schema.field(col)
+                        fields.append(pa.field(col, f.type))
+                    except KeyError:
+                        # Default to string if column not in table schema
+                        fields.append(pa.field(col, pa.string()))
+                partition_schema = pa.schema(fields)
+                partitioning = ds.partitioning(partition_schema, flavor="hive")
             write_args = {
                 "base_dir": base_dir,
                 "format": "parquet",

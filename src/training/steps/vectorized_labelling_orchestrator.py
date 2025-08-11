@@ -205,6 +205,9 @@ class VectorizedLabellingOrchestrator:
                 advanced_features,
             )
 
+            # Drop stationarity helper columns prior to selection/normalization
+            combined_data = self._remove_stationarity_transform_columns(combined_data)
+
             # 5. Feature selection
             if self.enable_feature_selection:
                 self.logger.info("🎯 Performing feature selection...")
@@ -230,6 +233,7 @@ class VectorizedLabellingOrchestrator:
                 
                 # Remove raw OHLCV columns after normalization
                 combined_data = self._remove_raw_ohlcv_columns(combined_data)
+                combined_data = self._remove_stationarity_transform_columns(combined_data)
 
             # 7. Autoencoder feature generation
             self.logger.info("🤖 Generating autoencoder features...")
@@ -258,6 +262,7 @@ class VectorizedLabellingOrchestrator:
             
             # Remove raw OHLCV columns to prevent data leakage
             final_data = self._remove_raw_ohlcv_columns(final_data)
+            final_data = self._remove_stationarity_transform_columns(final_data)
             # Also ensure datetime/timestamp columns are removed before returning
             final_data = self._remove_datetime_columns(final_data)
 
@@ -590,6 +595,21 @@ class VectorizedLabellingOrchestrator:
             self.logger.error(f"Error removing raw OHLCV columns: {e}")
             return data
 
+    def _remove_stationarity_transform_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Remove intermediate stationarity helper columns that are not final engineered features."""
+        try:
+            to_drop = [
+                c for c in data.columns
+                if c.endswith("_log") or c.endswith("_returns") or c.endswith("_log_returns") or c.endswith("_diff") or c.endswith("_detrended")
+            ]
+            if to_drop:
+                self.logger.info(f"Removing stationarity helper columns: {to_drop[:20]}" + (" ..." if len(to_drop) > 20 else ""))
+                data = data.drop(columns=to_drop)
+            return data
+        except Exception as e:
+            self.logger.error(f"Error removing stationarity helper columns: {e}")
+            return data
+
     def _prepare_final_data_vectorized(
         self,
         autoencoder_features: pd.DataFrame,
@@ -615,6 +635,12 @@ class VectorizedLabellingOrchestrator:
 
             # Remove columns with all NaN values
             final_data = final_data.dropna(axis=1, how="all")
+
+            # Drop stationarity helper columns (keep engineered features only)
+            label_only = final_data[["label"]] if "label" in final_data.columns else None
+            features_only = final_data.drop(columns=["label"]) if "label" in final_data.columns else final_data
+            features_only = self._remove_stationarity_transform_columns(features_only)
+            final_data = pd.concat([features_only, label_only], axis=1) if label_only is not None else features_only
 
             return final_data
 

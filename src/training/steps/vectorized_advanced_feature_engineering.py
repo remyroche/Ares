@@ -570,6 +570,10 @@ class VectorizedAdvancedFeatureEngineering:
                 self.logger.error("Vectorized advanced feature engineering not initialized")
                 return {}
 
+            # Normalize datetime indexes to UTC to avoid tz mismatch during resampling/merges
+            price_data = self._ensure_utc_datetime_index(price_data)
+            volume_data = self._ensure_utc_datetime_index(volume_data)
+
             # Validate and transform data to ensure OHLCV structure
             price_data, volume_data = self._validate_and_transform_data(price_data, volume_data)
 
@@ -672,6 +676,100 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.error(f"Error engineering vectorized advanced features: {e}")
             return {}
+
+    def _ensure_utc_datetime_index(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Coerce DataFrame index to a UTC tz-aware DatetimeIndex and sort."""
+        try:
+            df = data.copy()
+            # If there's an explicit timestamp column, prefer it
+            if "timestamp" in df.columns and not isinstance(df.index, pd.DatetimeIndex):
+                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
+                df = df.dropna(subset=["timestamp"]).set_index("timestamp")
+            elif not isinstance(df.index, pd.DatetimeIndex):
+                # Attempt to convert the existing index
+                df.index = pd.to_datetime(df.index, errors="coerce", utc=True)
+            else:
+                # Already a DatetimeIndex; normalize tz to UTC
+                if df.index.tz is None:
+                    df.index = df.index.tz_localize("UTC")
+                else:
+                    df.index = df.index.tz_convert("UTC")
+            df = df.sort_index()
+            return df
+        except Exception:
+            return data
+
+    def _resample_data_vectorized(self, data: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+        """Resample data to specified timeframe using vectorized operations."""
+        try:
+            # Normalize to UTC tz-aware index first to avoid tz comparison issues
+            data = self._ensure_utc_datetime_index(data)
+
+            # Convert timeframe string to pandas offset
+            timeframe_map = {
+                "1m": "1min",
+                "5m": "5min",
+                "15m": "15min",
+                "30m": "30min",
+            }
+
+            offset = timeframe_map.get(timeframe, "1T")
+
+            # Check if OHLCV columns exist, if not, create them from available data
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            available_columns = data.columns.tolist()
+
+            # If we don't have OHLCV columns, try to create them from available data
+            if not all(col in available_columns for col in required_columns):
+                # Check if we have price and quantity columns (like in trade data)
+                if 'price' in available_columns and 'quantity' in available_columns:
+                    try:
+                        resampled = data.resample(offset).agg({
+                            'price': ['first', 'max', 'min', 'last'],
+                            'quantity': 'sum'
+                        })
+                        # Flatten column names
+                        resampled.columns = ['open', 'high', 'low', 'close', 'volume']
+                        return resampled.dropna()
+                    except Exception as resample_error:
+                        self.logger.error(f"Error resampling trade data: {resample_error}")
+                        return data
+                # Check if we have volume-only data (like volume features)
+                elif any(col.startswith('volume') for col in available_columns):
+                    try:
+                        agg_dict = {}
+                        for col in available_columns:
+                            if col == 'volume':
+                                agg_dict[col] = 'sum'
+                            elif col.startswith('volume_'):
+                                agg_dict[col] = 'mean'
+                            else:
+                                agg_dict[col] = 'mean'
+                        resampled = data.resample(offset).agg(agg_dict)
+                        return resampled.dropna()
+                    except Exception as resample_error:
+                        self.logger.error(f"Error resampling volume data: {resample_error}")
+                        return data
+                else:
+                    self.logger.warning(f"Cannot resample data: missing required columns. Available: {available_columns}")
+                    return data
+            else:
+                try:
+                    resampled = data.resample(offset).agg({
+                        'open': 'first',
+                        'high': 'max',
+                        'low': 'min',
+                        'close': 'last',
+                        'volume': 'sum',
+                    })
+                    return resampled.dropna()
+                except Exception as resample_error:
+                    self.logger.error(f"Error during resampling: {resample_error}")
+                    return data
+
+        except Exception as e:
+            self.logger.error(f"Error resampling data: {e}")
+            return data
 
     async def _get_wavelet_features_with_caching(
         self,
@@ -1103,94 +1201,6 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.error(f"Error engineering multi-timeframe features: {e}")
             return {}
-
-    def _resample_data_vectorized(self, data: pd.DataFrame, timeframe: str) -> pd.DataFrame:
-        """Resample data to specified timeframe using vectorized operations."""
-        try:
-            # Convert timeframe string to pandas offset
-            timeframe_map = {
-                "1m": "1min",
-                "5m": "5min",
-                "15m": "15min",
-                "30m": "30min",
-            }
-            
-            offset = timeframe_map.get(timeframe, "1T")
-            
-            # Check if data has datetime index, if not create one
-            if not isinstance(data.index, pd.DatetimeIndex):
-                data = data.copy()
-                # Create a proper datetime index
-                data.index = pd.date_range(
-                    start='2023-01-01',
-                    periods=len(data),
-                    freq='1min'
-                )
-            
-            # Check if OHLCV columns exist, if not, create them from available data
-            required_columns = ['open', 'high', 'low', 'close', 'volume']
-            available_columns = data.columns.tolist()
-            
-            # If we don't have OHLCV columns, try to create them from available data
-            if not all(col in available_columns for col in required_columns):
-                # Check if we have price and quantity columns (like in trade data)
-                if 'price' in available_columns and 'quantity' in available_columns:
-                    # Create OHLCV from trade data
-                    try:
-                        resampled = data.resample(offset).agg({
-                            'price': ['first', 'max', 'min', 'last'],
-                            'quantity': 'sum'
-                        })
-                        # Flatten column names
-                        resampled.columns = ['open', 'high', 'low', 'close', 'volume']
-                        return resampled.dropna()
-                    except Exception as resample_error:
-                        self.logger.error(f"Error resampling trade data: {resample_error}")
-                        return data
-                # Check if we have volume-only data (like volume features)
-                elif any(col.startswith('volume') for col in available_columns):
-                    # Handle volume-only data by resampling each volume column appropriately
-                    try:
-                        # Create aggregation dictionary for volume columns
-                        agg_dict = {}
-                        for col in available_columns:
-                            if col == 'volume':
-                                agg_dict[col] = 'sum'
-                            elif col.startswith('volume_'):
-                                # For derived volume features, use mean aggregation
-                                agg_dict[col] = 'mean'
-                            else:
-                                # For other columns, use mean
-                                agg_dict[col] = 'mean'
-                        
-                        resampled = data.resample(offset).agg(agg_dict)
-                        return resampled.dropna()
-                    except Exception as resample_error:
-                        self.logger.error(f"Error resampling volume data: {resample_error}")
-                        return data
-                else:
-                    # If we can't create OHLCV, return original data without resampling
-                    self.logger.warning(f"Cannot resample data: missing required columns. Available: {available_columns}")
-                    # Return data with proper index but no resampling
-                    return data
-            else:
-                # Standard OHLCV resampling
-                try:
-                    resampled = data.resample(offset).agg({
-                        'open': 'first',
-                        'high': 'max',
-                        'low': 'min',
-                        'close': 'last',
-                        'volume': 'sum',
-                    })
-                    return resampled.dropna()
-                except Exception as resample_error:
-                    self.logger.error(f"Error during resampling: {resample_error}")
-                    return data
-
-        except Exception as e:
-            self.logger.error(f"Error resampling data: {e}")
-            return data
 
     async def _calculate_timeframe_features_vectorized(
         self,
@@ -2181,11 +2191,11 @@ class VectorizedWaveletTransformAnalyzer:
         self.enable_parallel_processing = self.wavelet_config.get("enable_parallel_processing", False)
         self.computation_timeout = self.wavelet_config.get("computation_timeout", 30)  # seconds
         
-        # Enable/disable specific transforms
+        # Enable/disable specific transforms (default expensive/unimplemented ones to False)
         self.enable_continuous_wavelet = self.wavelet_config.get("enable_continuous_wavelet", True)
         self.enable_discrete_wavelet = self.wavelet_config.get("enable_discrete_wavelet", True)
-        self.enable_wavelet_packet = self.wavelet_config.get("enable_wavelet_packet", True)
-        self.enable_denoising = self.wavelet_config.get("enable_denoising", True)
+        self.enable_wavelet_packet = self.wavelet_config.get("enable_wavelet_packet", False)
+        self.enable_denoising = self.wavelet_config.get("enable_denoising", False)
 
         # Wavelet types for different analyses (limited for efficiency)
         self.wavelet_types = ["db1", "db2", "db4", "db8", "haar", "sym2", "sym4", "coif1", "coif2"]

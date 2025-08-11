@@ -128,12 +128,11 @@ class AnalystLabelingFeatureEngineeringStep:
                         raise Exception("Orchestrator returned invalid data")
                         
                 except Exception as e:
-                    self.logger.warning(f"Vectorized labeling orchestrator failed during execution: {e}, using fallback")
-                    result = self._create_fallback_labeled_data(price_data)
+                    self.logger.error(f"Vectorized labeling orchestrator failed during execution: {e}")
+                    return {"status": "FAILED", "error": str(e)}
             else:
-                # Fallback: create simple labeled data
-                self.logger.warning("Vectorized labeling orchestrator not initialized, using fallback labeling")
-                result = self._create_fallback_labeled_data(price_data)
+                self.logger.error("Vectorized labeling orchestrator not initialized; aborting step")
+                return {"status": "FAILED", "error": "orchestrator_not_initialized"}
             
             # Get the labeled data
             labeled_data = result.get("data", price_data)

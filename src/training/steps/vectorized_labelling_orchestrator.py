@@ -76,14 +76,16 @@ class VectorizedLabellingOrchestrator:
                 max_lookahead=self.orchestrator_config.get("max_lookahead", 100),
             )
 
-            # Initialize advanced feature engineer with error handling
+            # Initialize advanced feature engineer (required)
             try:
                 from src.training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineering
                 self.advanced_feature_engineer = VectorizedAdvancedFeatureEngineering(self.config)
                 await self.advanced_feature_engineer.initialize()
             except Exception as e:
-                self.logger.warning(f"Failed to initialize advanced feature engineer: {e}")
-                self.advanced_feature_engineer = None
+                self.logger.error(f"Failed to initialize advanced feature engineer: {e}")
+                # Do not proceed without advanced features
+                self.is_initialized = False
+                return False
 
             # Initialize autoencoder generator with error handling
             try:
@@ -110,26 +112,9 @@ class VectorizedLabellingOrchestrator:
             self.logger.error(
                 f"❌ Error initializing vectorized labeling orchestrator: {e}",
             )
-            # Set basic components even if some advanced ones fail
-            from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
-            self.triple_barrier_labeler = OptimizedTripleBarrierLabeling()
-            self.stationarity_checker = VectorizedStationarityChecker(self.config)
-            self.feature_selector = VectorizedFeatureSelector(self.config)
-            self.data_normalizer = VectorizedDataNormalizer(self.config)
-
-            # Attempt to still initialize advanced feature engineer as a best-effort fallback
-            try:
-                from src.training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineering
-                self.advanced_feature_engineer = VectorizedAdvancedFeatureEngineering(self.config)
-                await self.advanced_feature_engineer.initialize()
-                self.logger.info("✅ Advanced feature engineer initialized in fallback path")
-            except Exception as fe:
-                self.logger.warning(f"⚠️ Advanced feature engineer fallback initialization failed: {fe}")
-                self.advanced_feature_engineer = None
-
-            self.is_initialized = True
-            self.logger.warning("⚠️ Vectorized labeling orchestrator initialized with fallback components")
-            return True
+            # Do not proceed without advanced features
+            self.is_initialized = False
+            return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -174,18 +159,17 @@ class VectorizedLabellingOrchestrator:
                 volume_data = stationary_data.get("volume_data", volume_data)
                 order_flow_data = stationary_data.get("order_flow_data", order_flow_data)
 
-            # 2. Advanced feature engineering
+            # 2. Advanced feature engineering (required)
             self.logger.info("🔧 Generating advanced features...")
-            if self.advanced_feature_engineer is not None:
-                advanced_features = await self.advanced_feature_engineer.engineer_features(
-                    price_data,
-                    volume_data,
-                    order_flow_data,
-                    sr_levels,
-                )
-            else:
-                self.logger.warning("Advanced feature engineer not available, using basic features")
-                advanced_features = {}
+            if self.advanced_feature_engineer is None:
+                self.logger.error("Advanced feature engineer not available; aborting step")
+                return {}
+            advanced_features = await self.advanced_feature_engineer.engineer_features(
+                price_data,
+                volume_data,
+                order_flow_data,
+                sr_levels,
+            )
 
             # 3. Triple barrier labeling
             self.logger.info("🏷️ Applying triple barrier labeling...")

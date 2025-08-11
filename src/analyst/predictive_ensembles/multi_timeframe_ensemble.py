@@ -278,33 +278,14 @@ class MultiTimeframeEnsemble:
                 random_state=42,
                 verbose=-1,
             )
-
-            # Cross-validation
-            self.logger.info("🔄 Starting cross-validation...")
-            skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
-
-            for fold, (train_idx, val_idx) in enumerate(skf.split(X, y), 1):
-                self.logger.info(
-                    f"📊 Fold {fold}/3: {len(train_idx)} train, {len(val_idx)} validation",
-                )
-
-                X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-                y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
-
-                model.fit(
-                    X_train,
-                    y_train,
-                    eval_set=[(X_val, y_val)],
-                    eval_metric="logloss",
-                    early_stopping_rounds=10,
-                    verbose=False,
-                )
-
-            self.logger.info("✅ XGBoost model training completed")
+            try:
+                from lightgbm import log_evaluation
+                model.fit(X, y, callbacks=[log_evaluation(0)])
+            except Exception:
+                model.fit(X, y)
             return model
-
         except Exception as e:
-            self.logger.error(f"💥 Error training XGBoost model: {e}")
+            self.logger.error(f"💥 Error training LightGBM (XGB alt) model: {e}")
             return None
 
     def _train_lstm_model(self, X: pd.DataFrame, y: pd.Series) -> Any | None:

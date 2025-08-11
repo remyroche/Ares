@@ -58,8 +58,15 @@ def train_and_evaluate_worker_ray(
         try:
             if model_name in ['lightgbm', 'xgboost'] and X_va is not None and y_va is not None:
                 if model_name == 'lightgbm':
-                    model_instance.fit(X_tr, y_tr, eval_set=[(X_va, y_va)],
-                                       callbacks=[lgb.early_stopping(early_stopping_patience, verbose=False)])
+                    model_instance.fit(
+                        X_tr,
+                        y_tr,
+                        eval_set=[(X_va, y_va)],
+                        callbacks=[
+                            lgb.early_stopping(early_stopping_patience, verbose=False),
+                            lgb.log_evaluation(0),
+                        ],
+                    )
                 else:
                     model_instance.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
             else:

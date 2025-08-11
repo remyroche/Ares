@@ -196,6 +196,40 @@ class RegimeDataSplittingStep:
             with open(summary_file, "w") as f:
                 json.dump(splitting_summary, f, indent=2)
 
+            # Additionally, create generic train/validation/test split files for downstream validators
+            try:
+                self.logger.info("🔧 Creating generic train/validation/test splits for validators...")
+                df_for_split = historical_data.copy()
+                # Ensure timestamp index where possible
+                if 'timestamp' in df_for_split.columns and not isinstance(df_for_split.index, pd.DatetimeIndex):
+                    df_for_split['timestamp'] = pd.to_datetime(df_for_split['timestamp'], errors='coerce')
+                    df_for_split = df_for_split.dropna(subset=['timestamp']).set_index('timestamp').sort_index()
+                elif not isinstance(df_for_split.index, pd.DatetimeIndex):
+                    # Create synthetic index to preserve order
+                    df_for_split.index = pd.date_range(end=pd.Timestamp.utcnow(), periods=len(df_for_split), freq='T')
+
+                total = len(df_for_split)
+                if total >= 10:
+                    tr_end = int(total * 0.8)
+                    va_end = int(total * 0.9)
+                    train_split = df_for_split.iloc[:tr_end]
+                    val_split = df_for_split.iloc[tr_end:va_end]
+                    test_split = df_for_split.iloc[va_end:]
+
+                    split_out = [
+                        (f"{data_dir}/{exchange}_{symbol}_train_data.pkl", train_split),
+                        (f"{data_dir}/{exchange}_{symbol}_validation_data.pkl", val_split),
+                        (f"{data_dir}/{exchange}_{symbol}_test_data.pkl", test_split),
+                    ]
+                    for path, df_out in split_out:
+                        with open(path, 'wb') as f:
+                            pickle.dump(df_out, f)
+                        self.logger.info(f"✅ Saved split file: {path} ({df_out.shape})")
+                else:
+                    self.logger.warning(f"⚠️ Not enough records ({total}) to create generic splits")
+            except Exception as _split_err:
+                self.logger.warning(f"⚠️ Failed to create generic split files: {_split_err}")
+
             self.logger.info(
                 f"✅ Regime data splitting completed. Results saved to {regime_data_dir}",
             )

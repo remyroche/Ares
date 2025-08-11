@@ -56,6 +56,7 @@ class AnalystLabelingFeatureEngineeringStep:
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             data_dir = training_input.get("data_dir", "data/training")
+            lookback_days = training_input.get("lookback_days")
             
             # Load the historical data
             data_file_path = f"{data_dir}/{exchange}_{symbol}_historical_data.pkl"
@@ -137,15 +138,41 @@ class AnalystLabelingFeatureEngineeringStep:
             
             # Get the labeled data
             labeled_data = result.get("data", price_data)
+
+            # Ensure OHLCV columns are present in labeled_data for downstream validators
+            for col in required_ohlcv_columns:
+                if col not in labeled_data.columns and col in price_data.columns:
+                    labeled_data[col] = price_data[col]
+
+            # Remove timestamp/datetime columns from feature set; keep them only for index/logging
+            datetime_cols = [c for c in labeled_data.columns if str(labeled_data[c].dtype).lower().startswith('datetime') or 'timestamp' in c.lower()]
+            if datetime_cols:
+                self.logger.info(f"Removing datetime/timestamp columns from features: {datetime_cols}")
+                # Preserve index by setting timestamp as index if present
+                if 'timestamp' in labeled_data.columns and not isinstance(labeled_data.index, pd.DatetimeIndex):
+                    labeled_data['timestamp'] = pd.to_datetime(labeled_data['timestamp'], errors='coerce')
+                    labeled_data = labeled_data.set_index('timestamp').sort_index()
+                labeled_data = labeled_data.drop(columns=[c for c in datetime_cols if c in labeled_data.columns])
+
+            # Exclude raw OHLCV from model features to prevent leakage (but keep in labeled outputs)
+            # We'll save the full labeled_data with OHLCV; feature selection later should ignore these
+            feature_exclude = set(required_ohlcv_columns)
+            # Also drop common constant/meta columns from features
+            meta_constant_cols = [c for c in ["symbol", "exchange", "timeframe", "year", "month", "day"] if c in labeled_data.columns]
+            if meta_constant_cols:
+                self.logger.info(f"Dropping meta/constant columns from features: {meta_constant_cols}")
+                feature_exclude.update(meta_constant_cols)
+            feature_columns = [c for c in labeled_data.columns if c not in feature_exclude]
+            model_ready_data = labeled_data[feature_columns]
             
             # Split the data into train/validation/test sets (80/10/10 split)
-            total_rows = len(labeled_data)
+            total_rows = len(model_ready_data)
             train_end = int(total_rows * 0.8)
             val_end = int(total_rows * 0.9)
             
-            train_data = labeled_data.iloc[:train_end]
-            validation_data = labeled_data.iloc[train_end:val_end]
-            test_data = labeled_data.iloc[val_end:]
+            train_data = model_ready_data.iloc[:train_end]
+            validation_data = model_ready_data.iloc[train_end:val_end]
+            test_data = model_ready_data.iloc[val_end:]
             
             # Save feature files that the validator expects
             feature_files = [
@@ -174,11 +201,14 @@ class AnalystLabelingFeatureEngineeringStep:
             except Exception as e:
                 self.logger.warning(f"Could not save Parquet features: {e}")
             
-            # Also save labeled data files for compatibility
+            # Also save labeled data files for compatibility (include OHLCV and all columns)
+            labeled_train = labeled_data.loc[train_data.index]
+            labeled_val = labeled_data.loc[validation_data.index]
+            labeled_test = labeled_data.loc[test_data.index]
             labeled_files = [
-                (f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl", train_data),
-                (f"{data_dir}/{exchange}_{symbol}_labeled_validation.pkl", validation_data),
-                (f"{data_dir}/{exchange}_{symbol}_labeled_test.pkl", test_data)
+                (f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl", labeled_train),
+                (f"{data_dir}/{exchange}_{symbol}_labeled_validation.pkl", labeled_val),
+                (f"{data_dir}/{exchange}_{symbol}_labeled_test.pkl", labeled_test)
             ]
             
             for file_path, data in labeled_files:
@@ -189,9 +219,9 @@ class AnalystLabelingFeatureEngineeringStep:
             # Parquet for labeled data too
             try:
                 parquet_labeled = [
-                    (f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet", mem_mgr.optimize_dataframe(train_data.copy())),
-                    (f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet", mem_mgr.optimize_dataframe(validation_data.copy())),
-                    (f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet", mem_mgr.optimize_dataframe(test_data.copy())),
+                    (f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet", mem_mgr.optimize_dataframe(labeled_train.copy())),
+                    (f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet", mem_mgr.optimize_dataframe(labeled_val.copy())),
+                    (f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet", mem_mgr.optimize_dataframe(labeled_test.copy())),
                 ]
                 for file_path, df in parquet_labeled:
                     df.to_parquet(file_path, compression="snappy", index=False)
@@ -202,11 +232,6 @@ class AnalystLabelingFeatureEngineeringStep:
             # Integrate UnifiedDataManager to create time-based train/validation/test splits
             try:
                 from src.training.data_manager import UnifiedDataManager
-                lookback_days = training_input.get(
-                    "lookback_days",
-                    60 if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else 730,
-                )
-
                 labeled_full = labeled_data.copy()
                 # Ensure datetime index for time-based splits
                 if "timestamp" in labeled_full.columns:
@@ -222,7 +247,7 @@ class AnalystLabelingFeatureEngineeringStep:
                     )
 
                 data_manager = UnifiedDataManager(
-                    data_dir=data_dir, symbol=symbol, exchange=exchange, lookback_days=lookback_days
+                    data_dir=data_dir, symbol=symbol, exchange=exchange, lookback_days=lookback_days if lookback_days else (60 if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else 730)
                 )
                 db_result = data_manager.create_unified_database(labeled_full)
                 pipeline_state["unified_database"] = db_result
@@ -232,7 +257,7 @@ class AnalystLabelingFeatureEngineeringStep:
 
             # Update pipeline state with results
             pipeline_state.update({
-                "labeled_data": result.get("data", price_data),
+                "labeled_data": labeled_data,
                 "feature_engineering_metadata": result.get("metadata", {}),
                 "feature_engineering_completed": True,
                 "labeling_completed": True,

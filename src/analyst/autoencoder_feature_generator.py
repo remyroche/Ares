@@ -116,7 +116,7 @@ class FeatureFilter:
     def filter_features(self, features_df: pd.DataFrame, labels: np.ndarray) -> pd.DataFrame:
         """Filter features using Random Forest + SHAP importance."""
         try:
-            self.logger.info("Starting feature filtering with Random Forest + SHAP...")
+            self.logger.info("🔍 Starting feature filtering with Random Forest + SHAP...")
             
             X = features_df.select_dtypes(include=[np.number]).fillna(0)
             y = labels
@@ -161,7 +161,7 @@ class FeatureFilter:
             
             selected_features = X.columns[selected_indices].tolist()
             
-            self.logger.info(f"Selected {len(selected_features)} features out of {len(X.columns)} to capture {threshold*100}% of importance.")
+            self.logger.info(f"📊 FeatureFilter: selected {len(selected_features)}/{len(X.columns)} features to reach {threshold*100:.0f}% importance")
             
             return features_df[selected_features].copy()
             

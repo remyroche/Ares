@@ -261,6 +261,17 @@ class StepOrchestrator:
         if not setup_success:
             return False
         
+        # Determine lookback_days (default to 180 for blank/step-based quick runs)
+        import os as _os
+        default_lookback = 180
+        try:
+            env_lb = int(_os.getenv("LOOKBACK_DAYS", str(default_lookback)))
+        except Exception:
+            env_lb = default_lookback
+        lookback_days = env_lb
+        _os.environ["LOOKBACK_DAYS"] = str(lookback_days)
+        self.logger.info(f"📈 Lookback Days (orchestrator): {lookback_days}")
+
         # Prepare training input for enhanced training manager
         training_input = {
             "symbol": self.symbol,
@@ -269,7 +280,7 @@ class StepOrchestrator:
             "data_dir": self.data_dir,
             "start_step": start_step,
             "force_rerun": force_rerun,
-            "lookback_days": 30  # Add missing lookback_days field
+            "lookback_days": lookback_days  # propagate lookback to all steps
         }
         
         # Execute the enhanced training pipeline

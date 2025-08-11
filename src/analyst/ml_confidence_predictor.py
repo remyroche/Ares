@@ -5,7 +5,7 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
-from lightgbm import LGBMClassifier
+from lightgbm import LGBMClassifier, early_stopping, log_evaluation
 from sklearn.model_selection import StratifiedKFold
 
 # Import enhanced order manager for tactician order management
@@ -3055,7 +3055,7 @@ async def setup_ml_confidence_predictor(
                     X_train,
                     y_train,
                     eval_set=[(X_val, y_val)],
-                    callbacks=[LGBMClassifier.early_stopping(10, verbose=False)],
+                    callbacks=[early_stopping(10, verbose=False), log_evaluation(0)],
                 )
 
             return model

@@ -1603,38 +1603,38 @@ def parse_arguments() -> argparse.Namespace:
         description="Ares Trading Bot Launcher",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  python ares_launcher.py paper --symbol ETHUSDT --exchange BINANCE
-  python ares_launcher.py backtest --symbol ETHUSDT --exchange BINANCE --gui
-  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --gui
-  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step3_regime_data_splitting
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step3_regime_data_splitting
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step4_analyst_labeling_feature_engineering
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_analyst_specialist_training
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step6_analyst_enhancement
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step7_analyst_ensemble_creation
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step8_tactician_labeling
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step9_tactician_specialist_training
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step10_tactician_ensemble_creation
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step11_confidence_calibration
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step12_final_parameters_optimization
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step13_walk_forward_validation
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step14_monte_carlo_validation
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step15_ab_testing
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step16_saving
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification --force-rerun
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_analyst_specialist_training --force-rerun --gui
-  python ares_launcher.py model_trainer --symbol ETHUSDT --exchange BINANCE --step step4_analyst_labeling_feature_engineering
-  python ares_launcher.py live --symbol ETHUSDT --exchange BINANCE
-  python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE
-  python ares_launcher.py load --symbol ETHUSDT --exchange MEXC
-  python ares_launcher.py load --symbol ETHUSDT --exchange GATEIO
-  python ares_launcher.py portfolio --gui
-  python ares_launcher.py gui --mode paper --symbol ETHUSDT --exchange BINANCE
-  python ares_launcher.py precompute --symbol ETHUSDT --exchange BINANCE
-        """,
+ Examples:
+   python ares_launcher.py paper --symbol ETHUSDT --exchange BINANCE
+   python ares_launcher.py backtest --symbol ETHUSDT --exchange BINANCE --gui
+   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --gui
+   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step3_regime_data_splitting
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step3_regime_data_splitting
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step4_analyst_labeling_feature_engineering
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_analyst_specialist_training
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step6_analyst_enhancement
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step7_analyst_ensemble_creation
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step8_tactician_labeling
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step9_tactician_specialist_training
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step10_tactician_ensemble_creation
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step11_confidence_calibration
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step12_final_parameters_optimization
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step13_walk_forward_validation
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step14_monte_carlo_validation
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step15_ab_testing
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step16_saving
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification --force-rerun
+   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_analyst_specialist_training --force-rerun --gui
+   python ares_launcher.py model_trainer --symbol ETHUSDT --exchange BINANCE --step step4_analyst_labeling_feature_engineering
+   python ares_launcher.py live --symbol ETHUSDT --exchange BINANCE
+   python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE
+   python ares_launcher.py load --symbol ETHUSDT --exchange MEXC
+   python ares_launcher.py load --symbol ETHUSDT --exchange GATEIO
+   python ares_launcher.py portfolio --gui
+   python ares_launcher.py gui --mode paper --symbol ETHUSDT --exchange BINANCE
+   python ares_launcher.py precompute --symbol ETHUSDT --exchange BINANCE
+         """,
     )
 
     parser.add_argument(
@@ -1736,6 +1736,12 @@ Examples:
         help="Force rerun of completed steps",
     )
 
+    parser.add_argument(
+        "--lookback-days",
+        type=int,
+        help="Override lookback days used by training steps (default: 180 for blank, 730 for full)",
+    )
+
     return parser.parse_args()
 
 
@@ -1781,6 +1787,12 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
     """Execute the requested command based on parsed arguments."""
     print(f"🔍 DEBUG: Executing command: {args.command}")
     print(f"🔍 DEBUG: Symbol: {args.symbol}, Exchange: {args.exchange}")
+
+    # Respect --lookback-days by setting env, used downstream by orchestrators/steps
+    if hasattr(args, "lookback_days") and args.lookback_days:
+        import os as _os
+        _os.environ["LOOKBACK_DAYS"] = str(args.lookback_days)
+        logging.getLogger(__name__).info(f"LOOKBACK_DAYS set to {args.lookback_days}")
 
     command_handlers = {
         "backtest": lambda: launcher.run_backtesting(

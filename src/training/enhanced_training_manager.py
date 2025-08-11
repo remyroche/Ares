@@ -932,6 +932,7 @@ class EnhancedTrainingManager:
                 data_dir=data_dir,
                 timeframe=timeframe,
                 exchange=exchange,
+                lookback_days=self.lookback_days,
             )
             
             if not step2_success:
@@ -997,6 +998,7 @@ class EnhancedTrainingManager:
                     data_dir=data_dir,
                     timeframe=timeframe,
                     exchange=exchange,
+                    lookback_days=self.lookback_days,
                 )
                 
                 if not step4_success:

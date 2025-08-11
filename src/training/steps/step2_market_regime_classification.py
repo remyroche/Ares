@@ -100,45 +100,64 @@ class MarketRegimeClassificationStep:
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         data_dir = training_input.get("data_dir", "data/training")
-        
+        # Optional lookback_days (can be provided by orchestrator or env)
+        import os as _os
+        lookback_days = training_input.get("lookback_days")
+        if lookback_days is None:
+            try:
+                lookback_days = int(_os.getenv("LOOKBACK_DAYS", "0")) or None
+            except Exception:
+                lookback_days = None
+
         # Initialize the unified regime classifier with exchange and symbol
         if self.regime_classifier is None:
             self.regime_classifier = UnifiedRegimeClassifier(self.config, exchange, symbol)
             await self.regime_classifier.initialize()
-        
+
         # Try to load pre-consolidated data first
         consolidated_file = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
         data_file_path = f"{data_dir}/{exchange}_{symbol}_historical_data.pkl"
-        
+
         historical_data = None
-        
+
         # Try consolidated parquet file first
         if os.path.exists(consolidated_file):
             self.logger.info(f"📁 Loading pre-consolidated data from: {consolidated_file}")
             try:
                 trade_data = pd.read_parquet(consolidated_file)
                 self.logger.info(f"✅ Loaded consolidated trade data: {len(trade_data)} records")
-                
+
+                # Apply lookback filtering on raw trades if requested
+                if lookback_days:
+                    if not pd.api.types.is_datetime64_any_dtype(trade_data["timestamp"]):
+                        trade_data["timestamp"] = pd.to_datetime(trade_data["timestamp"], errors="coerce")
+                    end_ts = trade_data["timestamp"].max()
+                    start_ts = end_ts - pd.Timedelta(days=int(lookback_days))
+                    self.logger.info(f"   Date range: {start_ts.isoformat()} to {end_ts.isoformat()}")
+                    trade_data = trade_data[trade_data["timestamp"] >= start_ts]
+                    self.logger.info(f"   Filtered trades to last {lookback_days} days: {len(trade_data)} records")
+
+                # Resample to 1h OHLCV
+                self.logger.info("🔄 Resampling data to 1h timeframe for regime classification...")
                 # Convert trade data to OHLCV format
-                self.logger.info("🔄 Converting trade data to OHLCV format...")
                 historical_data = convert_trade_data_to_ohlcv(trade_data, timeframe="1h")
-                self.logger.info(f"✅ Converted to OHLCV: {len(historical_data)} records")
-                
+                self.logger.info(f"✅ Resampled to 1h: {len(historical_data)} records")
+
             except Exception as e:
                 self.logger.warning(f"⚠️  Failed to load consolidated data: {e}")
                 historical_data = None
-        
+
         # Fallback to pickle file if consolidated data not available
         if historical_data is None:
             if not os.path.exists(data_file_path):
                 raise FileNotFoundError(f"Data file not found: {data_file_path}")
-            
+
             self.logger.info(f"📁 Loading data from pickle file: {data_file_path}")
             import pickle
-            
+
             with open(data_file_path, "rb") as f:
                 payload = pickle.load(f)
-            
+
             # Expect a dict with keys like 'klines', 'agg_trades', 'futures'
             if isinstance(payload, dict):
                 historical_data = payload.get("klines")
@@ -151,13 +170,29 @@ class MarketRegimeClassificationStep:
                 historical_data = payload
             else:
                 raise ValueError(f"Unsupported pickle payload type: {type(payload)} from {data_file_path}")
-            
+
             # Ensure 'timestamp' column exists
             if isinstance(historical_data.index, pd.DatetimeIndex) and 'timestamp' not in historical_data.columns:
                 historical_data = historical_data.copy()
                 historical_data['timestamp'] = historical_data.index
-            
+
             self.logger.info(f"✅ Loaded historical OHLCV data: {len(historical_data)} records")
+
+            # Apply lookback on OHLCV if requested
+            if lookback_days:
+                if 'timestamp' in historical_data.columns:
+                    if not pd.api.types.is_datetime64_any_dtype(historical_data['timestamp']):
+                        historical_data['timestamp'] = pd.to_datetime(historical_data['timestamp'], errors='coerce')
+                    end_ts = historical_data['timestamp'].max()
+                    start_ts = end_ts - pd.Timedelta(days=int(lookback_days))
+                    self.logger.info(f"   Date range: {start_ts.isoformat()} to {end_ts.isoformat()}")
+                    historical_data = historical_data[historical_data['timestamp'] >= start_ts]
+                elif isinstance(historical_data.index, pd.DatetimeIndex):
+                    end_ts = historical_data.index.max()
+                    start_ts = end_ts - pd.Timedelta(days=int(lookback_days))
+                    self.logger.info(f"   Date range: {start_ts.isoformat()} to {end_ts.isoformat()}")
+                    historical_data = historical_data.loc[historical_data.index >= start_ts]
+                self.logger.info(f"   Filtered OHLCV to last {lookback_days} days: {len(historical_data)} records")
 
         # Perform regime classification
         regime_results = await self._classify_market_regimes(

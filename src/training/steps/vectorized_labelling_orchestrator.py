@@ -110,12 +110,23 @@ class VectorizedLabellingOrchestrator:
             self.logger.error(
                 f"❌ Error initializing vectorized labeling orchestrator: {e}",
             )
-            # Set basic components even if advanced ones fail
+            # Set basic components even if some advanced ones fail
             from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
             self.triple_barrier_labeler = OptimizedTripleBarrierLabeling()
             self.stationarity_checker = VectorizedStationarityChecker(self.config)
             self.feature_selector = VectorizedFeatureSelector(self.config)
             self.data_normalizer = VectorizedDataNormalizer(self.config)
+
+            # Attempt to still initialize advanced feature engineer as a best-effort fallback
+            try:
+                from src.training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineering
+                self.advanced_feature_engineer = VectorizedAdvancedFeatureEngineering(self.config)
+                await self.advanced_feature_engineer.initialize()
+                self.logger.info("✅ Advanced feature engineer initialized in fallback path")
+            except Exception as fe:
+                self.logger.warning(f"⚠️ Advanced feature engineer fallback initialization failed: {fe}")
+                self.advanced_feature_engineer = None
+
             self.is_initialized = True
             self.logger.warning("⚠️ Vectorized labeling orchestrator initialized with fallback components")
             return True

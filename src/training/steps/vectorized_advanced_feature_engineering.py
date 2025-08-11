@@ -2247,7 +2247,7 @@ class VectorizedWaveletTransformAnalyzer:
         self.scale_resolution = self.wavelet_config.get("scale_resolution", "octave")
         
         # Feature dimensionality management
-        self.max_features_per_wavelet = self.wavelet_config.get("max_features_per_wavelet", 40)
+        self.max_features_per_wavelet = self.wavelet_config.get("max_features_per_wavelet", 80)
         self.feature_selection_method = self.wavelet_config.get("feature_selection_method", "variance")
         self.min_feature_variance = self.wavelet_config.get("min_feature_variance", 1e-6)
         

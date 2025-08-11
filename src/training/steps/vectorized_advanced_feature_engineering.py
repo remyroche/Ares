@@ -670,10 +670,43 @@ class VectorizedAdvancedFeatureEngineering:
                 )
                 selected_features.update(meta_labels)
 
+            # Enforce generator contract: ensure all values are 1D arrays of length n
+            n = len(price_data)
+            sanitized: dict[str, Any] = {}
+            offenders: list[str] = []
+            for k, v in selected_features.items():
+                try:
+                    if isinstance(v, pd.Series):
+                        arr = v.values.reshape(-1)
+                    elif isinstance(v, np.ndarray):
+                        arr = v.reshape(-1) if v.ndim >= 1 else None
+                    elif isinstance(v, list):
+                        arr = np.asarray(v).reshape(-1)
+                    else:
+                        # scalar or unsupported type; mark offender and skip
+                        offenders.append(k)
+                        continue
+                    # Align to n rows (pad left with NaN or trim head)
+                    if len(arr) > n:
+                        arr = arr[-n:]
+                    elif len(arr) < n:
+                        pad = n - len(arr)
+                        arr = np.concatenate([np.full(pad, np.nan), arr])
+                    sanitized[k] = arr
+                except Exception:
+                    offenders.append(k)
+                    continue
+
+            if offenders:
+                self.logger.warning(
+                    f"⚠️ Feature generator contract: skipped scalar/invalid outputs for features: {offenders[:20]}" +
+                    (" ..." if len(offenders) > 20 else "")
+                )
+
             self.logger.info(
-                f"✅ Engineered {len(selected_features)} vectorized advanced features including wavelet transforms",
+                f"✅ Engineered {len(sanitized)} vectorized advanced features including wavelet transforms",
             )
-            return selected_features
+            return sanitized
 
         except Exception as e:
             self.logger.error(f"Error engineering vectorized advanced features: {e}")

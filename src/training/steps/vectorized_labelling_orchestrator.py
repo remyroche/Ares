@@ -7,6 +7,7 @@ and autoencoder_feature_generator.py with advanced preprocessing and feature sel
 """
 
 import numpy as np
+import os
 import pandas as pd
 import pywt
 from typing import Any, Dict, List, Optional, Tuple
@@ -36,6 +37,11 @@ class VectorizedLabellingOrchestrator:
         self.enable_feature_selection = self.orchestrator_config.get("enable_feature_selection", True)
         self.enable_memory_efficient_types = self.orchestrator_config.get("enable_memory_efficient_types", True)
         self.enable_parquet_saving = self.orchestrator_config.get("enable_parquet_saving", True)
+        # Strict feature shapes mode: treat scalar features as errors
+        self.strict_feature_shapes = bool(
+            self.orchestrator_config.get("strict_feature_shapes", False)
+            or os.getenv("CI") == "1"
+        )
 
         # Feature selection configuration
         self.feature_selection_config = self.orchestrator_config.get("feature_selection", {})
@@ -394,6 +400,7 @@ class VectorizedLabellingOrchestrator:
 
             added_columns: list[str] = []
             skipped_scalars: list[str] = []
+            scalar_offenders: list[str] = []
             trimmed_aligned: list[str] = []
             padded_aligned: list[str] = []
 
@@ -402,6 +409,7 @@ class VectorizedLabellingOrchestrator:
                 if arr is None:
                     # Skip scalar/non-array features to avoid constant columns
                     skipped_scalars.append(feature_name)
+                    scalar_offenders.append(feature_name)
                     # Add debugging to understand what's being skipped
                     if len(skipped_scalars) <= 5:  # Only log first 5 to avoid spam
                         self.logger.debug(f"Skipping feature '{feature_name}': type={type(feature_value)}, "
@@ -465,6 +473,11 @@ class VectorizedLabellingOrchestrator:
                     self.logger.warning(
                         f"⚠️ High scalar skip ratio ({skip_ratio:.1%}). This suggests a provider returned non-array features; "
                         f"review feature generators. Sample skipped: {skipped_scalars[:10]}"
+                    )
+                # Strict mode: treat any scalar offenders as an error
+                if self.strict_feature_shapes and scalar_offenders:
+                    raise ValueError(
+                        f"Strict feature shape check failed: scalar features detected: {scalar_offenders[:20]}"
                     )
             except Exception:
                 pass

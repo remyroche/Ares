@@ -1,9 +1,0 @@
-{
-  "input_features": 104,
-  "converted_arrays": 104,
-  "coerced_types": 0,
-  "trimmed": 0,
-  "padded": 0,
-  "filled_nan": 71708,
-  "non_numeric_dropped": []
-}

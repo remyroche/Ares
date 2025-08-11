@@ -165,6 +165,11 @@ class PriceReturnConverter:
         self.enable_feature_selection = config.get(
             "preprocessing.enable_feature_selection", True
         )
+        # Columns that are not true engineered features and should be excluded
+        self.non_feature_columns = {
+            "timestamp", "time", "year", "month", "day", "day_of_week", "day_of_month", "quarter",
+            "exchange", "symbol", "timeframe", "split"
+        }
 
     def convert_price_features_to_returns(
         self, features_df: pd.DataFrame
@@ -173,12 +178,6 @@ class PriceReturnConverter:
         Convert price features to returns (price differences) to improve autoencoder training.
         Optimized to select only one representative price feature and one volume feature
         to avoid redundancy.
-
-        Args:
-            features_df: DataFrame containing features, potentially including price data
-
-        Returns:
-            DataFrame with optimized price features converted to returns
         """
         if not self.use_price_returns:
             self.logger.info(
@@ -193,6 +192,12 @@ class PriceReturnConverter:
         # Create a copy to avoid modifying the original
         converted_df = features_df.copy()
 
+        # Drop non-feature calendar/metadata columns up-front
+        drop_cols = [c for c in converted_df.columns if c in self.non_feature_columns]
+        if drop_cols:
+            self.logger.info(f"🗑️ Dropping non-feature columns before conversion: {drop_cols}")
+            converted_df = converted_df.drop(columns=drop_cols)
+
         if self.enable_feature_selection:
             # OPTIMIZED APPROACH: Select only one price feature and one volume feature
             self.logger.info("🎯 Using optimized feature selection to avoid redundancy")
@@ -204,7 +209,7 @@ class PriceReturnConverter:
             for col in converted_df.columns:
                 col_lower = col.lower()
 
-                # Skip regime and categorical features
+                # Skip regime and categorical and already-return-like engineered features
                 if any(
                     exclude_pattern in col_lower
                     for exclude_pattern in [
@@ -218,20 +223,25 @@ class PriceReturnConverter:
                 ):
                     continue
 
-                # Skip features with very limited unique values (likely categorical)
+                # Skip already engineered return-like features
+                if any(suffix in col_lower for suffix in ["_returns", "_diff", "_log_returns", "_ratio"]):
+                    continue
+
+                # Skip array-valued columns
                 try:
-                    # Check if the column contains array-valued cells
                     sample_value = converted_df[col].iloc[0]
                     if isinstance(sample_value, (np.ndarray, list)):
                         self.logger.warning(f"Skipping array-valued column {col}: contains {type(sample_value)}")
                         continue
-                    
+                except Exception:
+                    pass
+
+                # Skip low-cardinality categorical-like columns
+                try:
                     unique_count = converted_df[col].nunique()
                     if unique_count <= 5:
                         continue
-                except (TypeError, ValueError) as e:
-                    # Handle numpy arrays and other non-hashable types
-                    self.logger.warning(f"Error checking uniqueness for column {col}: {e}")
+                except (TypeError, ValueError):
                     continue
 
                 # Categorize features
@@ -248,14 +258,12 @@ class PriceReturnConverter:
                         "max_price",
                     ]
                 ):
-                    if col not in available_price_features:
-                        available_price_features.append(col)
+                    available_price_features.append(col)
                 elif any(
                     volume_pattern in col_lower
                     for volume_pattern in ["volume", "trade_volume", "vol"]
                 ):
-                    if col not in available_volume_features:
-                        available_volume_features.append(col)
+                    available_volume_features.append(col)
 
             self.logger.info(
                 f"📊 Found {len(available_price_features)} price features: {available_price_features}"
@@ -268,7 +276,6 @@ class PriceReturnConverter:
             selected_price_feature = None
             selected_volume_feature = None
 
-            # Select price feature (prefer 'close' if available, otherwise first available)
             if self.primary_price_feature in available_price_features:
                 selected_price_feature = self.primary_price_feature
             elif available_price_features:
@@ -276,10 +283,7 @@ class PriceReturnConverter:
                 self.logger.info(
                     f"🎯 Selected '{selected_price_feature}' as primary price feature (preferred '{self.primary_price_feature}' not available)"
                 )
-            else:
-                self.logger.warning("⚠️ No price features found for conversion")
 
-            # Select volume feature (prefer 'volume' if available, otherwise first available)
             if self.primary_volume_feature in available_volume_features:
                 selected_volume_feature = self.primary_volume_feature
             elif available_volume_features:
@@ -287,36 +291,17 @@ class PriceReturnConverter:
                 self.logger.info(
                     f"🎯 Selected '{selected_volume_feature}' as primary volume feature (preferred '{self.primary_volume_feature}' not available)"
                 )
-            else:
-                self.logger.warning("⚠️ No volume features found for conversion")
 
-            # Remove redundant price and volume features
+            # Remove redundant raw price and volume columns, but keep engineered features
             features_to_remove = []
             for col in converted_df.columns:
                 col_lower = col.lower()
 
-                # Skip regime and categorical features
-                if any(
-                    exclude_pattern in col_lower
-                    for exclude_pattern in [
-                        "regime",
-                        "categorical",
-                        "class",
-                        "label",
-                        "category",
-                        "type",
-                    ]
-                ):
+                # Skip non-feature or engineered return-like
+                if col in self.non_feature_columns:
+                    features_to_remove.append(col)
                     continue
-
-                # Skip features with very limited unique values
-                try:
-                    unique_count = converted_df[col].nunique()
-                    if unique_count <= 5:
-                        continue
-                except (TypeError, ValueError) as e:
-                    # Handle numpy arrays and other non-hashable types
-                    self.logger.warning(f"Error checking uniqueness for column {col}: {e}")
+                if any(suffix in col_lower for suffix in ["_returns", "_diff", "_log_returns", "_ratio"]):
                     continue
 
                 # Remove redundant price features (keep only selected one)
@@ -333,7 +318,7 @@ class PriceReturnConverter:
                         "max_price",
                     ]
                 ):
-                    if col != selected_price_feature:
+                    if selected_price_feature and col != selected_price_feature:
                         features_to_remove.append(col)
 
                 # Remove redundant volume features (keep only selected one)
@@ -341,10 +326,9 @@ class PriceReturnConverter:
                     volume_pattern in col_lower
                     for volume_pattern in ["volume", "trade_volume", "vol"]
                 ):
-                    if col != selected_volume_feature:
+                    if selected_volume_feature and col != selected_volume_feature:
                         features_to_remove.append(col)
 
-            # Remove redundant features
             if features_to_remove:
                 self.logger.info(
                     f"🗑️ Removing {len(features_to_remove)} redundant features: {features_to_remove}"
@@ -578,6 +562,11 @@ class FeatureFilter:
             )
         self.config = config
         self.logger = system_logger.getChild("FeatureFilter")
+        # Treat calendar/metadata columns as non-features
+        self.non_feature_columns = {
+            "timestamp", "time", "year", "month", "day", "day_of_week", "day_of_month", "quarter",
+            "exchange", "symbol", "timeframe", "split"
+        }
 
     def filter_features(
         self,
@@ -599,19 +588,16 @@ class FeatureFilter:
             raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
             raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]
             
-            if raw_ohlcv_columns:
-                self.logger.warning(f"🚨 CRITICAL: Found raw OHLCV columns in features: {raw_ohlcv_columns}")
-                self.logger.warning(f"🚨 These should be excluded from feature filtering")
-                self.logger.warning(f"🚨 Raw price data should be processed into engineered features first")
-                
-                # Remove raw OHLCV columns
-                features_df = features_df.drop(columns=raw_ohlcv_columns)
-                self.logger.info(f"✅ Removed {len(raw_ohlcv_columns)} raw OHLCV columns from features")
-                self.logger.info(f"📊 Features shape after removal: {features_df.shape}")
-                
+            # Also drop non-feature calendar/metadata columns
+            calendar_cols = [c for c in features_df.columns if c in self.non_feature_columns]
+
+            columns_to_drop = list(dict.fromkeys([*raw_ohlcv_columns, *calendar_cols]))
+            if columns_to_drop:
+                self.logger.warning(f"🚨 Excluding non-feature/raw columns: {columns_to_drop}")
+                features_df = features_df.drop(columns=columns_to_drop)
+                self.logger.info(f"📊 Features shape after exclusion: {features_df.shape}")
                 if features_df.empty:
-                    self.logger.error("🚨 CRITICAL: No engineered features remaining after removing raw OHLCV data")
-                    self.logger.error("🚨 This indicates a serious data pipeline issue")
+                    self.logger.error("🚨 CRITICAL: No engineered features remaining after exclusion")
                     return pd.DataFrame()
 
             X = features_df.select_dtypes(include=[np.number]).fillna(0)
@@ -2428,18 +2414,20 @@ class AutoencoderFeatureGenerator:
         raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
         raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]
         
-        if raw_ohlcv_columns:
-            self.logger.warning(f"🚨 CRITICAL: Found raw OHLCV columns in features: {raw_ohlcv_columns}")
-            self.logger.warning(f"🚨 These should be excluded from autoencoder feature generation")
-            self.logger.warning(f"🚨 Raw price data should be processed into engineered features first")
-            
-            # Remove raw OHLCV columns
-            features_df = features_df.drop(columns=raw_ohlcv_columns)
-            self.logger.info(f"✅ Removed {len(raw_ohlcv_columns)} raw OHLCV columns from features")
+        # Drop calendar/metadata columns that are not predictive features
+        calendar_cols = [c for c in features_df.columns if c in {
+            'year','month','day','day_of_week','day_of_month','quarter','exchange','symbol','timeframe','split'
+        }]
+        drop_cols = list(dict.fromkeys([*raw_ohlcv_columns, *calendar_cols]))
+        
+        if drop_cols:
+            self.logger.warning(f"🚨 Removing non-feature columns to prevent leakage/noise: {drop_cols}")
+            features_df = features_df.drop(columns=drop_cols)
+            self.logger.info(f"✅ Removed {len(drop_cols)} non-feature columns from features")
             self.logger.info(f"📊 Features shape after removal: {features_df.shape}")
             
             if features_df.empty:
-                self.logger.error("🚨 CRITICAL: No engineered features remaining after removing raw OHLCV data")
+                self.logger.error("🚨 CRITICAL: No engineered features remaining after removing non-feature columns")
                 self.logger.error("🚨 This indicates a serious data pipeline issue")
                 return pd.DataFrame()
         """Generate autoencoder-based features for a specific market regime."""

@@ -633,27 +633,28 @@ class UnifiedRegimeClassifier:
             # Check for sideways movement (moderate directional strength)
             is_sideways = mean_adx < adx_sideways_threshold
             
-            # First check if it's clearly sideways (low ADX and small returns)
-            if is_sideways and abs(mean_return) < 0.0003:  # Reduced sideways return threshold
+            # Tweak thresholds to reduce SIDEWAYS dominance
+            small_return = 0.0002
+            dir_return = 0.0004
+
+            # First check if it's clearly sideways (low ADX and very small returns)
+            if is_sideways and abs(mean_return) < small_return:
                 regime = "SIDEWAYS"
-            # Then check for strong directional movements (reduced ADX requirement)
-            elif mean_return > 0.0005 and mean_adx > adx_sideways_threshold:  # Reduced return threshold
+            # Then check for directional movements with slightly lower return threshold
+            elif mean_return > dir_return and mean_adx >= adx_sideways_threshold:
                 regime = "BULL"
-            elif mean_return < -0.0005 and mean_adx > adx_sideways_threshold:  # Reduced return threshold
+            elif mean_return < -dir_return and mean_adx >= adx_sideways_threshold:
                 regime = "BEAR"
-            # For borderline cases, use a more balanced approach
+            # For borderline cases, use a balanced approach
             elif is_sideways:
-                # If ADX is low but returns are significant, still classify as directional
-                if abs(mean_return) > 0.0002:  # Small but meaningful returns
+                # If ADX is low but returns are modest, still classify as directional
+                if abs(mean_return) >= small_return:
                     regime = "BULL" if mean_return > 0 else "BEAR"
                 else:
                     regime = "SIDEWAYS"
             else:
                 # Default to directional based on return sign
-                if mean_return >= 0:
-                    regime = "BULL"
-                else:
-                    regime = "BEAR"
+                regime = "BULL" if mean_return >= 0 else "BEAR"
 
             state_analysis[state] = {
                 "regime": regime,
@@ -679,6 +680,35 @@ class UnifiedRegimeClassifier:
 
         # Persist mapping without post-hoc coverage enforcement
         state_analysis["state_to_regime_map"] = state_to_regime_map
+
+        # Post-mapping balancing: softly constrain SIDEWAYS to ~20-40% by reassigning borderline states
+        try:
+            total = sum(d.get("count", 0) for s, d in state_analysis.items() if s != "state_to_regime_map")
+            if total > 0:
+                sideways_count = sum(d.get("count", 0) for s, d in state_analysis.items() if s != "state_to_regime_map" and d.get("regime") == "SIDEWAYS")
+                sideways_ratio = sideways_count / total
+                target_min, target_max = 0.20, 0.40
+                if sideways_ratio > target_max:
+                    # Reassign the weakest SIDEWAYS states (highest |mean_return|) to directional to reduce ratio
+                    candidates = [
+                        (s, d) for s, d in state_analysis.items()
+                        if s != "state_to_regime_map" and d.get("regime") == "SIDEWAYS"
+                    ]
+                    # Sort by abs(mean_return) descending (more directional), then by mean_adx descending
+                    candidates.sort(key=lambda x: (abs(x[1].get("mean_return", 0.0)), x[1].get("mean_adx", 0.0)), reverse=True)
+                    to_flip = 0
+                    while sideways_ratio > target_max and to_flip < len(candidates):
+                        s, d = candidates[to_flip]
+                        new_regime = "BULL" if d.get("mean_return", 0.0) >= 0 else "BEAR"
+                        state_analysis[s]["regime"] = new_regime
+                        sideways_count -= d.get("count", 0)
+                        sideways_ratio = sideways_count / total if total else sideways_ratio
+                        to_flip += 1
+                    # Rebuild map
+                    state_to_regime_map = {s: d["regime"] for s, d in state_analysis.items() if s != "state_to_regime_map"}
+                    state_analysis["state_to_regime_map"] = state_to_regime_map
+        except Exception:
+            pass
 
         # Log summary of how regimes are derived from HMM states
         mapped_counts: dict[str, int] = {}

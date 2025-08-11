@@ -585,7 +585,7 @@ class FeatureFilter:
             )
 
             # CRITICAL: Filter out raw OHLCV data that should not be used as features
-            raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
+            raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price']
             raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]
             
             # Also drop non-feature calendar/metadata columns
@@ -1096,14 +1096,14 @@ class FeatureFilter:
 
             # Get feature selection parameters from config
             threshold = self.config.get(
-                "feature_filtering.importance_threshold", 0.95
-            )  # Reduced from 0.99
+                "feature_filtering.importance_threshold", 0.90
+            )
             min_features = self.config.get(
-                "feature_filtering.min_features_to_keep", 5
-            )  # Reduced from 15
+                "feature_filtering.min_features_to_keep", 15
+            )
             max_features = self.config.get(
-                "feature_filtering.max_features_to_keep", 50
-            )  # New constraint
+                "feature_filtering.max_features_to_keep", 80
+            )
             min_importance_per_feature = self.config.get(
                 "feature_filtering.min_importance_per_feature", 0.001
             )
@@ -2411,7 +2411,7 @@ class AutoencoderFeatureGenerator:
         Raw price data like 'volume', 'close', 'open', 'high', 'low' should be excluded.
         """
         # CRITICAL: Filter out raw OHLCV data that should not be used as features
-        raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
+        raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price']
         raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]
         
         # Drop calendar/metadata columns that are not predictive features

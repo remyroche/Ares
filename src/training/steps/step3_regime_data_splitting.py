@@ -226,6 +226,40 @@ class RegimeDataSplittingStep:
                 regime_df = merged_data[merged_data["regime"] == regime].copy()
                 regime_splits[regime] = regime_df
 
+            # Soft rebalance: if SIDEWAYS dominates excessively, reassign borderline rows
+            try:
+                total_rows = len(merged_data)
+                if total_rows > 0:
+                    sideways_rows = (merged_data["regime"] == "SIDEWAYS").sum()
+                    sideways_ratio = sideways_rows / total_rows
+                    # If SIDEWAYS > 90%, reassign a small portion of borderline SIDEWAYS rows based on returns sign
+                    if sideways_ratio > 0.90 and all(c in merged_data.columns for c in ["close"]):
+                        self.logger.warning(
+                            f"⚠️ SIDEWAYS ratio too high ({sideways_ratio:.1%}); reassigning borderline rows to BULL/BEAR"
+                        )
+                        df = merged_data.copy()
+                        # Compute 1-step returns for sign signal
+                        df["_ret"] = df["close"].pct_change().fillna(0)
+                        # Select a small fraction of SIDEWAYS rows with non-trivial movement to flip
+                        borderline = df[(df["regime"] == "SIDEWAYS") & (df["_ret"].abs() > 0.0002)]
+                        # Cap flips to 10% of total to avoid overcorrection
+                        max_flips = int(0.10 * total_rows)
+                        if len(borderline) > max_flips:
+                            borderline = borderline.tail(max_flips)
+                        # Apply reassignment
+                        idx_pos = borderline.index[borderline["_ret"] > 0]
+                        idx_neg = borderline.index[borderline["_ret"] < 0]
+                        df.loc[idx_pos, "regime"] = "BULL"
+                        df.loc[idx_neg, "regime"] = "BEAR"
+                        df = df.drop(columns=["_ret"]) 
+                        # Rebuild splits
+                        regime_splits = {}
+                        for regime in df["regime"].unique():
+                            regime_splits[regime] = df[df["regime"] == regime].copy()
+                        self.logger.info("✅ Applied soft rebalance to regime splits")
+            except Exception:
+                pass
+
             self.logger.info(
                 f"✅ Successfully split data by regimes: {len(regime_splits)} regimes"
             )

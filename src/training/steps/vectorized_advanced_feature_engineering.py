@@ -1241,7 +1241,15 @@ class VectorizedAdvancedFeatureEngineering:
             volume_ma_ratio_series = volume_data["volume"] / volume_data["volume"].rolling(window=20).mean()
             features["volume_change"] = volume_change_series.values
             features["volume_ma_ratio"] = volume_ma_ratio_series.values
-
+            # Additional multi-horizon volume MA ratios to avoid constant 0 values
+            try:
+                vol_ma_5 = volume_data["volume"].rolling(window=5, min_periods=1).mean()
+                vol_ma_15 = volume_data["volume"].rolling(window=15, min_periods=1).mean()
+                features["5m_volume_ma_ratio"] = (volume_data["volume"] / (vol_ma_5.replace(0, np.nan))).fillna(0).values
+                features["15m_volume_ma_ratio"] = (volume_data["volume"] / (vol_ma_15.replace(0, np.nan))).fillna(0).values
+            except Exception:
+                pass
+ 
             return features
 
         except Exception as e:

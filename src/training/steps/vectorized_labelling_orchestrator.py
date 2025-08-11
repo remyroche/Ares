@@ -56,6 +56,24 @@ class VectorizedLabellingOrchestrator:
 
         self.is_initialized = False
 
+    def _ensure_utc_datetime_index(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Coerce DataFrame index to UTC tz-aware DatetimeIndex and sort."""
+        try:
+            df = data.copy()
+            if "timestamp" in df.columns and not isinstance(df.index, pd.DatetimeIndex):
+                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
+                df = df.dropna(subset=["timestamp"]).set_index("timestamp")
+            elif not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index, errors="coerce", utc=True)
+            else:
+                if df.index.tz is None:
+                    df.index = df.index.tz_localize("UTC")
+                else:
+                    df.index = df.index.tz_convert("UTC")
+            return df.sort_index()
+        except Exception:
+            return data
+
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
@@ -151,6 +169,12 @@ class VectorizedLabellingOrchestrator:
 
             self.logger.info("🎯 Starting comprehensive vectorized labeling and feature engineering orchestration...")
 
+            # Normalize input indexes early to avoid UTC/non-UTC comparison issues
+            price_data = self._ensure_utc_datetime_index(price_data)
+            volume_data = self._ensure_utc_datetime_index(volume_data)
+            if order_flow_data is not None and isinstance(order_flow_data, pd.DataFrame):
+                order_flow_data = self._ensure_utc_datetime_index(order_flow_data)
+
             # 1. Stationary checks
             if self.enable_stationary_checks:
                 self.logger.info("📊 Performing stationary checks...")
@@ -181,6 +205,9 @@ class VectorizedLabellingOrchestrator:
             labeled_data = self.triple_barrier_labeler.apply_triple_barrier_labeling_vectorized(
                 price_data.copy()
             )
+
+            # Ensure labeled_data index is UTC as well
+            labeled_data = self._ensure_utc_datetime_index(labeled_data)
 
             # 4. Combine features and labels
             self.logger.info("🔗 Combining features and labels...")
@@ -692,6 +719,40 @@ class VectorizedFeatureSelector:
         self.enable_safety_checks = self.feature_selection_config.get("enable_safety_checks", True)
         self.return_original_on_failure = self.feature_selection_config.get("return_original_on_failure", True)
 
+        # Exclusion patterns for raw OHLC and returns-like columns
+        # Default patterns target: exact OHLC columns and obvious derivatives like returns/log_returns/momentum
+        self.exclusion_patterns = self.feature_selection_config.get(
+            "exclusion_patterns",
+            [
+                r"^(open|high|low|close|volume)$",
+                r".*(^|_)returns$",
+                r".*(^|_)log_returns$",
+                r".*(^|_)momentum(_\d+)?$",
+                r"^price_momentum_\d+$",
+                r"^volume_momentum_\d+$",
+                r"^volume_ratio$",
+                r"^vwap$",
+            ],
+        )
+
+    def _apply_exclusions(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Drop columns that match configured exclusion regex patterns."""
+        try:
+            import re
+            cols = list(data.columns)
+            to_drop: list[str] = []
+            compiled = [re.compile(p) for p in self.exclusion_patterns]
+            for c in cols:
+                if any(p.match(c) for p in compiled):
+                    to_drop.append(c)
+            if to_drop:
+                self.logger.info(f"Excluding {len(to_drop)} raw/returns-like columns from selection: {to_drop[:10]}{'...' if len(to_drop)>10 else ''}")
+                return data.drop(columns=to_drop, errors="ignore")
+            return data
+        except Exception as e:
+            self.logger.warning(f"Failed to apply exclusion patterns: {e}")
+            return data
+
     def _remove_datetime_columns(self, data: pd.DataFrame) -> pd.DataFrame:
         """Remove datetime columns to prevent dtype conflicts in ML training."""
         try:
@@ -729,8 +790,9 @@ class VectorizedFeatureSelector:
             initial_features = len(data.columns)
             original_data = data.copy()  # Keep original for fallback
             
-            # Remove datetime columns first
+            # Remove datetime and excluded columns first
             data = self._remove_datetime_columns(data)
+            data = self._apply_exclusions(data)
             
             # Handle NaN values in feature selection
             self.logger.info("Handling NaN values in feature selection...")

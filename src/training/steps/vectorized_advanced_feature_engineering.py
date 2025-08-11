@@ -2191,11 +2191,11 @@ class VectorizedWaveletTransformAnalyzer:
         self.enable_parallel_processing = self.wavelet_config.get("enable_parallel_processing", False)
         self.computation_timeout = self.wavelet_config.get("computation_timeout", 30)  # seconds
         
-        # Enable/disable specific transforms (default expensive/unimplemented ones to False)
+        # Enable/disable specific transforms (keep default logging for all components)
         self.enable_continuous_wavelet = self.wavelet_config.get("enable_continuous_wavelet", True)
         self.enable_discrete_wavelet = self.wavelet_config.get("enable_discrete_wavelet", True)
-        self.enable_wavelet_packet = self.wavelet_config.get("enable_wavelet_packet", False)
-        self.enable_denoising = self.wavelet_config.get("enable_denoising", False)
+        self.enable_wavelet_packet = self.wavelet_config.get("enable_wavelet_packet", True)
+        self.enable_denoising = self.wavelet_config.get("enable_denoising", True)
 
         # Wavelet types for different analyses (limited for efficiency)
         self.wavelet_types = ["db1", "db2", "db4", "db8", "haar", "sym2", "sym4", "coif1", "coif2"]

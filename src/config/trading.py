@@ -201,7 +201,7 @@ def get_trading_config() -> dict[str, Any]:
         "analyst": {
             "unified_regime_classifier": {
                 "min_data_points": 500,  # Reduced from 1000 to allow smaller datasets
-                "n_states": 4,  # BULL, BEAR, SIDEWAYS, VOLATILE
+                "n_states": 3,  # BULL, BEAR, SIDEWAYS
                 "n_iter": 100,
                 "random_state": 42,
                 "target_timeframe": "1h",
@@ -209,8 +209,8 @@ def get_trading_config() -> dict[str, Any]:
                 "enable_sr_integration": True,
                 # Regime thresholds (tunable)
                 "adx_sideways_threshold": 18,  # Lowered for better regime balance (was 20)
-                "volatility_threshold": 0.020,  # Slightly lower so VOLATILE can appear when returns std rises
-                "atr_normalized_threshold": 0.028,  # ATR/close threshold to mark VOLATILE
+                "volatility_threshold": 0.020,  # Threshold for volatility-based regime classification
+                "atr_normalized_threshold": 0.028,  # ATR/close threshold for regime classification
                 "volatility_percentile_threshold": 0.75,  # Top 25% vol considered high
             },
             "analysis_interval": 3600,

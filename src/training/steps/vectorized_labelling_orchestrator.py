@@ -7,6 +7,7 @@ and autoencoder_feature_generator.py with advanced preprocessing and feature sel
 """
 
 import numpy as np
+import os
 import pandas as pd
 import pywt
 from typing import Any, Dict, List, Optional, Tuple
@@ -36,6 +37,11 @@ class VectorizedLabellingOrchestrator:
         self.enable_feature_selection = self.orchestrator_config.get("enable_feature_selection", True)
         self.enable_memory_efficient_types = self.orchestrator_config.get("enable_memory_efficient_types", True)
         self.enable_parquet_saving = self.orchestrator_config.get("enable_parquet_saving", True)
+        # Strict feature shapes mode: treat scalar features as errors
+        self.strict_feature_shapes = bool(
+            self.orchestrator_config.get("strict_feature_shapes", False)
+            or os.getenv("CI") == "1"
+        )
 
         # Feature selection configuration
         self.feature_selection_config = self.orchestrator_config.get("feature_selection", {})
@@ -151,6 +157,16 @@ class VectorizedLabellingOrchestrator:
 
             self.logger.info("🎯 Starting comprehensive vectorized labeling and feature engineering orchestration...")
 
+            # Systematic leakage guard: capture baseline columns present before feature generation
+            baseline_cols: set[str] = set(price_data.columns)
+            try:
+                if volume_data is not None:
+                    baseline_cols |= set(getattr(volume_data, 'columns', []))
+                if order_flow_data is not None:
+                    baseline_cols |= set(getattr(order_flow_data, 'columns', []))
+            except Exception:
+                pass
+
             # 1. Stationary checks
             if self.enable_stationary_checks:
                 self.logger.info("📊 Performing stationary checks...")
@@ -244,6 +260,15 @@ class VectorizedLabellingOrchestrator:
             final_data = self._remove_raw_ohlcv_columns(final_data)
             # Also ensure datetime/timestamp columns are removed before returning
             final_data = self._remove_datetime_columns(final_data)
+
+            # Systematic leakage guard: drop any baseline columns observed before feature generation
+            try:
+                drop_baseline = [c for c in final_data.columns if c in baseline_cols and c != 'label']
+                if drop_baseline:
+                    self.logger.warning(f"🚨 Removing baseline/raw columns carried into features: {drop_baseline[:20]}" + (" ..." if len(drop_baseline) > 20 else ""))
+                    final_data = final_data.drop(columns=drop_baseline)
+            except Exception:
+                pass
 
             # 9. Memory optimization
             if self.enable_memory_efficient_types:
@@ -375,6 +400,7 @@ class VectorizedLabellingOrchestrator:
 
             added_columns: list[str] = []
             skipped_scalars: list[str] = []
+            scalar_offenders: list[str] = []
             trimmed_aligned: list[str] = []
             padded_aligned: list[str] = []
 
@@ -383,8 +409,9 @@ class VectorizedLabellingOrchestrator:
                 if arr is None:
                     # Skip scalar/non-array features to avoid constant columns
                     skipped_scalars.append(feature_name)
+                    scalar_offenders.append(feature_name)
                     # Add debugging to understand what's being skipped
-                    if len(skipped_scalars) <= 10:  # Only log first 10 to avoid spam
+                    if len(skipped_scalars) <= 5:  # Only log first 5 to avoid spam
                         self.logger.debug(f"Skipping feature '{feature_name}': type={type(feature_value)}, "
                                         f"shape={getattr(feature_value, 'shape', 'N/A') if hasattr(feature_value, 'shape') else 'N/A'}")
                     continue
@@ -433,13 +460,25 @@ class VectorizedLabellingOrchestrator:
             # Remove raw OHLCV columns to prevent data leakage
             combined_data = self._remove_raw_ohlcv_columns(combined_data)
 
-            # Log a brief summary for diagnostics (without spamming)
+            # Log a brief summary for diagnostics (without spam)
             try:
                 self.logger.info(
                     f"Combined features: added={len(added_columns)}, "
                     f"trimmed={len(trimmed_aligned)}, padded={len(padded_aligned)}, "
                     f"skipped_scalars={len(skipped_scalars)}"
                 )
+                total_attempted = max(1, len(advanced_features))
+                skip_ratio = len(skipped_scalars) / total_attempted
+                if skip_ratio > 0.5:
+                    self.logger.warning(
+                        f"⚠️ High scalar skip ratio ({skip_ratio:.1%}). This suggests a provider returned non-array features; "
+                        f"review feature generators. Sample skipped: {skipped_scalars[:10]}"
+                    )
+                # Strict mode: treat any scalar offenders as an error
+                if self.strict_feature_shapes and scalar_offenders:
+                    raise ValueError(
+                        f"Strict feature shape check failed: scalar features detected: {scalar_offenders[:20]}"
+                    )
             except Exception:
                 pass
 
@@ -519,20 +558,21 @@ class VectorizedLabellingOrchestrator:
     def _remove_raw_ohlcv_columns(self, data: pd.DataFrame) -> pd.DataFrame:
         """Remove raw OHLCV columns to prevent data leakage in ML training."""
         try:
-            # Define raw OHLCV columns that should not be used as features
+            # Define raw OHLCV and context columns that should not be used as features
             raw_ohlcv_columns = [
                 "open",
                 "high",
                 "low",
                 "close",
                 "volume",
-                # Also exclude raw trading activity aggregates commonly present in unified data
                 "trade_volume",
                 "trade_count",
-                # Exclude raw price aggregations too
                 "avg_price",
                 "min_price",
                 "max_price",
+                # Treat these as context inputs; engineered variants should be used instead
+                "funding_rate",
+                "volume_ratio",
             ]
             
             # Find columns that match raw OHLCV names
@@ -1003,6 +1043,10 @@ class VectorizedFeatureSelector:
                     if (removal_percentage <= self.max_removal_percentage and 
                         len(data.columns) - len(correlated_features) >= self.min_features_to_keep):
                         self.logger.info(f"Removed {len(correlated_features)} highly correlated features")
+                        try:
+                            self.logger.info(f"Correlated features removed: {sorted(correlated_features)[:20]}" + (" ..." if len(correlated_features) > 20 else ""))
+                        except Exception:
+                            pass
                         data = data.drop(columns=correlated_features)
                     else:
                         self.logger.info(f"Skipping correlated feature removal (removal %: {removal_percentage:.2f} > threshold: {self.max_removal_percentage:.2f})")
@@ -1028,6 +1072,10 @@ class VectorizedFeatureSelector:
                     if (removal_percentage <= vif_removal_threshold and 
                         len(data.columns) - len(remaining_high_vif_features) >= self.min_features_to_keep):
                         self.logger.info(f"Removed {len(remaining_high_vif_features)} remaining high VIF features (removal %: {removal_percentage:.2f})")
+                        try:
+                            self.logger.info(f"High VIF features removed: {sorted(remaining_high_vif_features)[:20]}" + (" ..." if len(remaining_high_vif_features) > 20 else ""))
+                        except Exception:
+                            pass
                         data = data.drop(columns=remaining_high_vif_features)
                     else:
                         self.logger.warning(f"⚠️ Remaining high VIF features detected but skipping removal (removal %: {removal_percentage:.2f} > threshold: {vif_removal_threshold:.2f})")
@@ -1037,6 +1085,10 @@ class VectorizedFeatureSelector:
                             features_to_remove = remaining_high_vif_features[:max(1, len(remaining_high_vif_features)//3)]
                             if len(data.columns) - len(features_to_remove) >= self.min_features_to_keep:
                                 self.logger.info(f"Removing top 30% of remaining high VIF features: {len(features_to_remove)} features")
+                                try:
+                                    self.logger.info(f"High VIF features (top slice) removed: {sorted(features_to_remove)[:20]}" + (" ..." if len(features_to_remove) > 20 else ""))
+                                except Exception:
+                                    pass
                                 data = data.drop(columns=features_to_remove)
 
             # Remove low mutual information features (if enabled, labels provided, and we have enough features)
@@ -1051,6 +1103,10 @@ class VectorizedFeatureSelector:
                     if (removal_percentage <= self.max_removal_percentage and 
                         len(data.columns) - len(low_mi_features) >= self.min_features_to_keep):
                         self.logger.info(f"Removed {len(low_mi_features)} low mutual information features")
+                        try:
+                            self.logger.info(f"Low MI features removed: {sorted(low_mi_features)[:20]}" + (" ..." if len(low_mi_features) > 20 else ""))
+                        except Exception:
+                            pass
                         data = data.drop(columns=low_mi_features)
                     else:
                         self.logger.info(f"Skipping mutual info feature removal (removal %: {removal_percentage:.2f} > threshold: {self.max_removal_percentage:.2f})")
@@ -1067,6 +1123,10 @@ class VectorizedFeatureSelector:
                     if (removal_percentage <= self.max_removal_percentage and 
                         len(data.columns) - len(low_importance_features) >= self.min_features_to_keep):
                         self.logger.info(f"Removed {len(low_importance_features)} low importance features")
+                        try:
+                            self.logger.info(f"Low-importance features removed: {sorted(low_importance_features)[:20]}" + (" ..." if len(low_importance_features) > 20 else ""))
+                        except Exception:
+                            pass
                         data = data.drop(columns=low_importance_features)
                     else:
                         self.logger.info(f"Skipping importance feature removal (removal %: {removal_percentage:.2f} > threshold: {self.max_removal_percentage:.2f})")

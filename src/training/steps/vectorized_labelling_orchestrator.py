@@ -216,13 +216,6 @@ class VectorizedLabellingOrchestrator:
                 advanced_features,
             )
 
-            # If no engineered features were combined, generate minimal time-resolved indicators (not raw OHLC)
-            if combined_data.shape[1] == labeled_data.shape[1]:
-                self.logger.warning("No engineered features present after combination; generating minimal indicator set for training continuity")
-                minimal_df = await self.advanced_feature_engineer.engineer_features_df(price_data, volume_data)
-                if not minimal_df.empty:
-                    minimal_df = minimal_df.reindex(labeled_data.index).ffill().bfill()
-                    combined_data = pd.concat([combined_data, minimal_df], axis=1)
 
             # 5. Feature selection
             if self.enable_feature_selection:

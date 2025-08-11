@@ -677,6 +677,63 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.error(f"Error engineering vectorized advanced features: {e}")
             return {}
 
+    async def engineer_features_df(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: pd.DataFrame | None = None,
+        sr_levels: dict[str, Any] | None = None,
+    ) -> pd.DataFrame:
+        """Generate time-resolved indicator features aligned to price_data index."""
+        try:
+            price_data = self._ensure_utc_datetime_index(price_data)
+            volume_data = self._ensure_utc_datetime_index(volume_data)
+            df = pd.DataFrame(index=price_data.index)
+
+            close = price_data["close"].astype(float)
+            high = price_data.get("high", close).astype(float)
+            low = price_data.get("low", close).astype(float)
+            vol = volume_data.get("volume", pd.Series(index=price_data.index, dtype=float)).astype(float)
+
+            # EMA and MACD
+            ema12 = close.ewm(span=12, adjust=False).mean()
+            ema26 = close.ewm(span=26, adjust=False).mean()
+            macd = ema12 - ema26
+            macd_signal = macd.ewm(span=9, adjust=False).mean()
+            macd_hist = macd - macd_signal
+
+            df["ema_12"] = ema12
+            df["ema_26"] = ema26
+            df["macd"] = macd
+            df["macd_signal"] = macd_signal
+            df["macd_histogram"] = macd_hist
+
+            # Bollinger Bands
+            sma20 = close.rolling(20, min_periods=1).mean()
+            std20 = close.rolling(20, min_periods=1).std()
+            bb_upper = sma20 + 2 * std20
+            bb_lower = sma20 - 2 * std20
+            df["bb_upper"] = bb_upper
+            df["bb_lower"] = bb_lower
+            df["bb_width"] = (bb_upper - bb_lower) / sma20.replace(0, np.nan)
+            df["bb_position"] = (close - bb_lower) / (bb_upper - bb_lower).replace(0, np.nan)
+
+            # ATR
+            prev_close = close.shift(1)
+            tr = pd.concat([(high - low).abs(), (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
+            df["atr"] = tr.rolling(14, min_periods=1).mean()
+
+            # Volume ratio
+            vol_ma20 = vol.rolling(20, min_periods=1).mean()
+            df["volume_ma_ratio"] = vol / vol_ma20.replace(0, np.nan)
+
+            # Drop any all-NaN columns and fill inner gaps conservatively
+            df = df.dropna(axis=1, how="all").ffill().bfill()
+            return df
+        except Exception as e:
+            self.logger.error(f"Error generating time-resolved features: {e}")
+            return pd.DataFrame(index=price_data.index if isinstance(price_data, pd.DataFrame) else None)
+
     def _ensure_utc_datetime_index(self, data: pd.DataFrame) -> pd.DataFrame:
         """Coerce DataFrame index to a UTC tz-aware DatetimeIndex and sort."""
         try:

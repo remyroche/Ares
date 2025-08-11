@@ -190,7 +190,7 @@ class VectorizedLabellingOrchestrator:
             # 2. Advanced feature engineering
             self.logger.info("🔧 Generating advanced features...")
             if self.advanced_feature_engineer is not None:
-                advanced_features = await self.advanced_feature_engineer.engineer_features(
+                advanced_features = await self.advanced_feature_engineer.engineer_features_df(
                     price_data,
                     volume_data,
                     order_flow_data,
@@ -198,7 +198,7 @@ class VectorizedLabellingOrchestrator:
                 )
             else:
                 self.logger.warning("Advanced feature engineer not available, using basic features")
-                advanced_features = {}
+                advanced_features = pd.DataFrame(index=price_data.index)
 
             # 3. Triple barrier labeling
             self.logger.info("🏷️ Applying triple barrier labeling...")
@@ -215,6 +215,14 @@ class VectorizedLabellingOrchestrator:
                 labeled_data,
                 advanced_features,
             )
+
+            # If no engineered features were combined, generate minimal time-resolved indicators (not raw OHLC)
+            if combined_data.shape[1] == labeled_data.shape[1]:
+                self.logger.warning("No engineered features present after combination; generating minimal indicator set for training continuity")
+                minimal_df = await self.advanced_feature_engineer.engineer_features_df(price_data, volume_data)
+                if not minimal_df.empty:
+                    minimal_df = minimal_df.reindex(labeled_data.index).ffill().bfill()
+                    combined_data = pd.concat([combined_data, minimal_df], axis=1)
 
             # 5. Feature selection
             if self.enable_feature_selection:
@@ -297,15 +305,42 @@ class VectorizedLabellingOrchestrator:
             labeled_data = self._remove_datetime_columns(labeled_data)
             
             # If no advanced features, return labeled data as is
-            if not advanced_features:
+            if advanced_features is None:
                 return labeled_data
-            
-            # Convert advanced features to DataFrame
-            features_df = pd.DataFrame([advanced_features])
-            
-            # Replicate features for all rows
-            features_df = pd.concat([features_df] * len(labeled_data), ignore_index=True)
-            features_df.index = labeled_data.index
+
+            features_df: pd.DataFrame
+            if isinstance(advanced_features, pd.DataFrame):
+                features_df = advanced_features.copy()
+                # Ensure alignment to labeled index
+                features_df = features_df.reindex(labeled_data.index)
+            else:
+                if not advanced_features:
+                    return labeled_data
+                # Convert dict to single-row DataFrame replicated across index
+                features_df = pd.DataFrame([advanced_features])
+                features_df = pd.concat([features_df] * len(labeled_data), ignore_index=True)
+                features_df.index = labeled_data.index
+
+            # Drop raw OHLC/time and returns-like columns from features before combining
+            try:
+                import re
+                drop_patterns = [
+                    r"^(open|high|low|close|volume|average_price|bb_middle|pivot)$",
+                    r".*(^|_)returns$",
+                    r".*(^|_)log_returns$",
+                    r".*(^|_)momentum(_\d+)?$",
+                    r"^timestamp$",
+                ]
+                compiled = [re.compile(p) for p in drop_patterns]
+                cols_to_drop = [c for c in features_df.columns if any(p.match(c) for p in compiled)]
+                if cols_to_drop:
+                    self.logger.info(f"Excluding raw/returns-like columns from features before combine: {cols_to_drop[:10]}{'...' if len(cols_to_drop)>10 else ''}")
+                    features_df = features_df.drop(columns=cols_to_drop, errors="ignore")
+            except Exception as e:
+                self.logger.warning(f"Could not apply feature exclusion prior to combine: {e}")
+
+            if features_df.empty:
+                return labeled_data
 
             # Combine with labeled data
             combined_data = pd.concat([labeled_data, features_df], axis=1)
@@ -370,6 +405,26 @@ class VectorizedLabellingOrchestrator:
 
             # Remove columns with all NaN values
             final_data = final_data.dropna(axis=1, how="all")
+
+            # Strictly drop raw OHLC/time and returns-like columns from features
+            # Keep label intact
+            drop_patterns = [
+                r"^(open|high|low|close|volume|average_price|bb_middle|pivot)$",
+                r".*(^|_)returns$",
+                r".*(^|_)log_returns$",
+                r".*(^|_)momentum(_\d+)?$",
+                r"^timestamp$",
+            ]
+            try:
+                import re
+                cols_to_check = [c for c in final_data.columns if c != "label"]
+                compiled = [re.compile(p) for p in drop_patterns]
+                to_drop = [c for c in cols_to_check if any(p.match(c) for p in compiled)]
+                if to_drop:
+                    self.logger.info(f"Dropping {len(to_drop)} raw/excluded columns from final dataset")
+                    final_data = final_data.drop(columns=to_drop, errors="ignore")
+            except Exception as e:
+                self.logger.warning(f"Could not apply raw-feature drop filters: {e}")
 
             return final_data
 

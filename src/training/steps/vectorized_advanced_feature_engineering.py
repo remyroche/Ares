@@ -840,6 +840,26 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.error(f"Error calculating volume-price impact: {e}")
             return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
+    def _calculate_order_flow_imbalance_vectorized(self, order_flow_data: pd.DataFrame) -> pd.Series:
+        """Calculate order flow imbalance as per-row series (placeholder if not available)."""
+        try:
+            n = len(order_flow_data)
+            # Placeholder: return zeros; replace with real computation when order_flow_data is structured
+            return pd.Series(np.zeros(n), index=order_flow_data.index)
+        except Exception as e:
+            self.logger.error(f"Error calculating order flow imbalance: {e}")
+            return pd.Series(np.zeros(0))
+
+    def _calculate_bid_ask_spread_vectorized(self, order_flow_data: pd.DataFrame) -> pd.Series:
+        """Calculate bid-ask spread as per-row series (placeholder if not available)."""
+        try:
+            n = len(order_flow_data)
+            # Placeholder: return zeros; replace with real computation when order_flow_data is structured
+            return pd.Series(np.zeros(n), index=order_flow_data.index)
+        except Exception as e:
+            self.logger.error(f"Error calculating bid-ask spread: {e}")
+            return pd.Series(np.zeros(0))
+
     def _calculate_market_depth_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> pd.Series:
         """Calculate market depth as rolling average volume (per-row series)."""
         try:
@@ -854,7 +874,7 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             features = {}
 
-            # Adaptive moving averages
+            # Adaptive moving averages (per-row series)
             features["adaptive_sma"] = self._calculate_adaptive_sma_vectorized(price_data)
             features["adaptive_ema"] = self._calculate_adaptive_ema_vectorized(price_data)
 
@@ -868,94 +888,69 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.error(f"Error engineering adaptive indicators: {e}")
             return {}
 
-    def _calculate_adaptive_sma_vectorized(self, price_data: pd.DataFrame) -> float:
-        """Calculate adaptive SMA using vectorized operations."""
+    def _calculate_adaptive_sma_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
+        """Adaptive SMA as a weighted blend of short and long SMAs per row."""
         try:
-            # Adaptive SMA based on volatility
-            volatility = price_data["close"].pct_change().rolling(window=20).std()
-            # Handle NaN and infinite values before converting to int
-            adaptive_window_raw = 20 / (1 + volatility * 100)
-            adaptive_window_raw = adaptive_window_raw.fillna(20)  # Default to 20 if NaN
-            adaptive_window_raw = np.clip(adaptive_window_raw, 5, 50)
-            adaptive_window = adaptive_window_raw.astype(int)
-            
-            # Calculate adaptive SMA
-            adaptive_sma = price_data["close"].rolling(window=adaptive_window.iloc[-1]).mean().iloc[-1]
-            return adaptive_sma
-
+            close = price_data["close"]
+            vol = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
+            weight = (1 / (1 + vol * 100)).clip(0, 1)
+            sma_short = close.rolling(5, min_periods=1).mean()
+            sma_long = close.rolling(50, min_periods=1).mean()
+            adaptive = weight * sma_short + (1 - weight) * sma_long
+            return adaptive.fillna(method="ffill").fillna(method="bfill").fillna(0)
         except Exception as e:
             self.logger.error(f"Error calculating adaptive SMA: {e}")
-            return 0.0
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
-    def _calculate_adaptive_ema_vectorized(self, price_data: pd.DataFrame) -> float:
-        """Calculate adaptive EMA using vectorized operations."""
+    def _calculate_adaptive_ema_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
+        """Adaptive EMA as a weighted blend of short and long EMAs per row."""
         try:
-            # Adaptive EMA based on volatility
-            volatility = price_data["close"].pct_change().rolling(window=20).std()
-            # Handle NaN and infinite values
-            adaptive_span_raw = 12 / (1 + volatility * 100)
-            adaptive_span_raw = adaptive_span_raw.fillna(12)  # Default to 12 if NaN
-            adaptive_span = np.clip(adaptive_span_raw, 2, 50)
-            
-            # Calculate adaptive EMA
-            adaptive_ema = price_data["close"].ewm(span=adaptive_span.iloc[-1]).mean().iloc[-1]
-            return adaptive_ema
-
+            close = price_data["close"]
+            vol = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
+            weight = (1 / (1 + vol * 100)).clip(0, 1)
+            ema_short = close.ewm(span=5, adjust=False).mean()
+            ema_long = close.ewm(span=50, adjust=False).mean()
+            adaptive = weight * ema_short + (1 - weight) * ema_long
+            return adaptive.fillna(method="ffill").fillna(method="bfill").fillna(0)
         except Exception as e:
             self.logger.error(f"Error calculating adaptive EMA: {e}")
-            return 0.0
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
-    def _calculate_adaptive_atr_vectorized(self, price_data: pd.DataFrame) -> float:
-        """Calculate adaptive ATR using vectorized operations."""
+    def _calculate_adaptive_atr_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
+        """Adaptive ATR as a weighted blend of short and long ATR per row."""
         try:
-            # Adaptive ATR based on volatility regime
             high_low = price_data["high"] - price_data["low"]
-            high_close = np.abs(price_data["high"] - price_data["close"].shift())
-            low_close = np.abs(price_data["low"] - price_data["close"].shift())
-            
-            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-            
-            # Adaptive window based on volatility
-            volatility = true_range.rolling(window=20).std()
-            # Handle NaN and infinite values before converting to int
-            adaptive_window_raw = 14 / (1 + volatility * 10)
-            adaptive_window_raw = adaptive_window_raw.fillna(14)  # Default to 14 if NaN
-            adaptive_window_raw = np.clip(adaptive_window_raw, 5, 30)
-            adaptive_window = adaptive_window_raw.astype(int)
-            
-            adaptive_atr = true_range.rolling(window=adaptive_window.iloc[-1]).mean().iloc[-1]
-            return adaptive_atr
-
+            high_close = (price_data["high"] - price_data["close"].shift()).abs()
+            low_close = (price_data["low"] - price_data["close"].shift()).abs()
+            tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            vol = tr.rolling(20, min_periods=1).std().fillna(0)
+            weight = (1 / (1 + vol * 10)).clip(0, 1)
+            atr_short = tr.rolling(5, min_periods=1).mean()
+            atr_long = tr.rolling(30, min_periods=1).mean()
+            adaptive = weight * atr_short + (1 - weight) * atr_long
+            return adaptive.fillna(method="ffill").fillna(method="bfill").fillna(0)
         except Exception as e:
             self.logger.error(f"Error calculating adaptive ATR: {e}")
-            return 0.0
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
-    def _calculate_adaptive_bollinger_vectorized(self, price_data: pd.DataFrame) -> float:
-        """Calculate adaptive Bollinger Bands using vectorized operations."""
+    def _calculate_adaptive_bollinger_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
+        """Adaptive Bollinger position as a weighted blend of short/long band positions per row."""
         try:
-            # Adaptive Bollinger Bands based on volatility
-            volatility = price_data["close"].pct_change().rolling(window=20).std()
-            # Handle NaN and infinite values before converting to int
-            adaptive_window_raw = 20 / (1 + volatility * 100)
-            adaptive_window_raw = adaptive_window_raw.fillna(20)  # Default to 20 if NaN
-            adaptive_window_raw = np.clip(adaptive_window_raw, 10, 50)
-            adaptive_window = adaptive_window_raw.astype(int)
-            
-            # Calculate adaptive Bollinger Bands
-            sma = price_data["close"].rolling(window=adaptive_window.iloc[-1]).mean()
-            std = price_data["close"].rolling(window=adaptive_window.iloc[-1]).std()
-            
-            upper_band = sma + (std * 2)
-            lower_band = sma - (std * 2)
-            
-            # Return position within bands
-            current_price = price_data["close"].iloc[-1]
-            position = (current_price - lower_band.iloc[-1]) / (upper_band.iloc[-1] - lower_band.iloc[-1])
-            return position
-
+            close = price_data["close"]
+            vol = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
+            weight = (1 / (1 + vol * 100)).clip(0, 1)
+            sma_s = close.rolling(10, min_periods=1).mean(); std_s = close.rolling(10, min_periods=1).std()
+            sma_l = close.rolling(50, min_periods=1).mean(); std_l = close.rolling(50, min_periods=1).std()
+            upper_s = sma_s + 2 * std_s; lower_s = sma_s - 2 * std_s
+            upper_l = sma_l + 2 * std_l; lower_l = sma_l - 2 * std_l
+            with np.errstate(divide='ignore', invalid='ignore'):
+                pos_s = ((close - lower_s) / (upper_s - lower_s)).replace([np.inf, -np.inf], np.nan)
+                pos_l = ((close - lower_l) / (upper_l - lower_l)).replace([np.inf, -np.inf], np.nan)
+            position = weight * pos_s + (1 - weight) * pos_l
+            return position.fillna(method="ffill").fillna(method="bfill").fillna(0)
         except Exception as e:
             self.logger.error(f"Error calculating adaptive Bollinger Bands: {e}")
-            return 0.0
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
     def _select_optimal_features_vectorized(self, features: dict[str, Any]) -> dict[str, Any]:
         """Select optimal features using vectorized operations."""
@@ -1582,31 +1577,35 @@ class VectorizedSRDistanceCalculator:
         price_data: pd.DataFrame,
         sr_levels: dict[str, Any],
     ) -> dict[str, Any]:
-        """Calculate distances to support/resistance levels using price differences."""
+        """Calculate per-row distances to nearest support/resistance levels."""
         try:
-            current_price = price_data["close"].iloc[-1]
-            
-            # Extract support and resistance levels
-            support_levels = sr_levels.get("support_levels", [])
-            resistance_levels = sr_levels.get("resistance_levels", [])
-            
-            # Calculate distances
-            support_distances = [abs(current_price - level) / current_price for level in support_levels] if support_levels else [float('inf')]
-            resistance_distances = [abs(current_price - level) / current_price for level in resistance_levels] if resistance_levels else [float('inf')]
-            
-            nearest_support_distance = min(support_distances) if support_distances else 0.02
-            nearest_resistance_distance = min(resistance_distances) if resistance_distances else 0.03
-            
+            close = price_data["close"].astype(float)
+            support_levels = sr_levels.get("support_levels", []) or []
+            resistance_levels = sr_levels.get("resistance_levels", []) or []
+            if len(support_levels) == 0:
+                nsd = pd.Series(np.full(len(close), np.nan), index=close.index)
+            else:
+                dists = np.vstack([np.abs(close.values - lvl) / np.where(close.values!=0, close.values, np.nan) for lvl in support_levels])
+                nsd = pd.Series(np.nanmin(dists, axis=0), index=close.index)
+            if len(resistance_levels) == 0:
+                nrd = pd.Series(np.full(len(close), np.nan), index=close.index)
+            else:
+                dists = np.vstack([np.abs(close.values - lvl) / np.where(close.values!=0, close.values, np.nan) for lvl in resistance_levels])
+                nrd = pd.Series(np.nanmin(dists, axis=0), index=close.index)
             return {
-                "nearest_support_distance": nearest_support_distance,
-                "nearest_resistance_distance": nearest_resistance_distance,
-                "support_levels_count": len(support_levels),
-                "resistance_levels_count": len(resistance_levels),
+                "nearest_support_distance": nsd.fillna(method="ffill").fillna(method="bfill").fillna(0).values,
+                "nearest_resistance_distance": nrd.fillna(method="ffill").fillna(method="bfill").fillna(0).values,
+                "support_levels_count": pd.Series(np.full(len(close), len(support_levels)), index=close.index).values,
+                "resistance_levels_count": pd.Series(np.full(len(close), len(resistance_levels)), index=close.index).values,
             }
-
         except Exception as e:
             self.logger.error(f"Error calculating S/R distances: {e}")
-            return {"nearest_support_distance": 0.02, "nearest_resistance_distance": 0.03}
+            return {
+                "nearest_support_distance": pd.Series(np.zeros(len(price_data)), index=price_data.index).values,
+                "nearest_resistance_distance": pd.Series(np.zeros(len(price_data)), index=price_data.index).values,
+                "support_levels_count": pd.Series(np.zeros(len(price_data)), index=price_data.index).values,
+                "resistance_levels_count": pd.Series(np.zeros(len(price_data)), index=price_data.index).values,
+            }
 
 
 class VectorizedCandlestickPatternAnalyzer:

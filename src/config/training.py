@@ -55,7 +55,8 @@ def get_training_config() -> dict[str, Any]:
         
         # --- Global Data Configuration ---
         "DATA_CONFIG": {
-            "default_lookback_days": 730,  # Default lookback period for all timeframes (2 years)
+            "default_lookback_days": 1095,  # Default lookback period for all timeframes (3 years)
+            "exclude_recent_days": 2,       # Exclude the most recent N days from the lookback window
         },
         
         # --- Enhanced Training Configuration ---

@@ -55,6 +55,7 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
                 min_data_points,
                 data_dir,
                 str(lookback_days),
+                str(CONFIG.get("DATA_CONFIG", {}).get("exclude_recent_days", 0)),
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

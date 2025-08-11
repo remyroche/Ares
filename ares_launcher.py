@@ -486,7 +486,7 @@ class AresLauncher:
             symbol=symbol,
             exchange=exchange,
             training_mode="full",
-            lookback_days=730,  # 730 days for full training (2 years)
+            lookback_days=1095,  # 1095 days for full training (3 years)
             with_gui=with_gui,
         )
 
@@ -1257,7 +1257,7 @@ class AresLauncher:
         """Run step-based full training starting from a specific step with full parameters."""
         self.logger.info(f"🚀 Running step-based full training for {symbol} on {exchange}")
         self.logger.info(f"Starting from step: {start_step}")
-        self.logger.info("📊 Using full parameters (730 days lookback, full training parameters)")
+        self.logger.info("📊 Using full parameters (1095 days lookback, full training parameters)")
         
         if with_gui:
             if not self.launch_gui("training", symbol, exchange):
@@ -1317,7 +1317,7 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        lookback_days: int = 730,
+        lookback_days: int = 1095,
     ) -> bool:
         """Run data loading and consolidation for the specified symbol and exchange."""
         try:
@@ -1385,6 +1385,7 @@ class AresLauncher:
                 "1000",  # min_data_points
                 "data_cache",  # data_dir
                 str(lookback_days),  # Pass lookback period as positional argument
+                str(CONFIG.get("DATA_CONFIG", {}).get("exclude_recent_days", 0)),  # Exclude recent days
             ]
 
             self.logger.info(
@@ -1826,7 +1827,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
         "load": lambda: launcher.run_data_loading(
             args.symbol,
             args.exchange,
-            lookback_days=730
+            lookback_days=1095
             if not args.blank_mode
             else 30,  # Use 730 for standard, 30 for blank
         ),

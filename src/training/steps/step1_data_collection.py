@@ -84,7 +84,14 @@ class DataCollectionStep:
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         data_dir = training_input.get("data_dir", "data/training")
-        lookback_days = training_input.get("lookback_days", 7)
+        # Use centralized defaults with overrides
+        data_cfg = CONFIG.get("DATA_CONFIG", {}) if isinstance(CONFIG, dict) else {}
+        default_lookback = data_cfg.get("default_lookback_days", 730)
+        exclude_recent_days = training_input.get(
+            "exclude_recent_days",
+            data_cfg.get("exclude_recent_days", 0),
+        )
+        lookback_days = training_input.get("lookback_days", default_lookback)
 
         # Execute data collection using existing run_step function
         result = await run_step(
@@ -93,6 +100,7 @@ class DataCollectionStep:
             min_data_points="10000",
             data_dir=data_dir,
             lookback_days=lookback_days,
+            exclude_recent_days=exclude_recent_days,
         )
 
         if not result:
@@ -107,7 +115,11 @@ class DataCollectionStep:
         }
 
 
-def _get_source_files(pattern: str, lookback_days: int | None = None) -> list[str]:
+def _get_source_files(
+    pattern: str,
+    lookback_days: int | None = None,
+    exclude_recent_days: int = 0,
+) -> list[str]:
     """Get source files matching the pattern, optionally filtered by lookback days."""
     logger = system_logger.getChild("ConsolidateFiles")
     
@@ -138,32 +150,48 @@ def _get_source_files(pattern: str, lookback_days: int | None = None) -> list[st
         from datetime import datetime, timedelta
         import re
         
-        cutoff_date = datetime.now() - timedelta(days=lookback_days)
-        print(f"📅 Filtering files to last {lookback_days} days (since {cutoff_date.strftime('%Y-%m-%d')})")
-        logger.info(f"📅 Filtering files to last {lookback_days} days (since {cutoff_date.strftime('%Y-%m-%d')})")
+        now = datetime.now()
+        end_cutoff = now - timedelta(days=exclude_recent_days) if exclude_recent_days > 0 else now
+        start_cutoff = end_cutoff - timedelta(days=lookback_days)
+        print(
+            f"📅 Filtering files to window: {start_cutoff.strftime('%Y-%m-%d')} to {end_cutoff.strftime('%Y-%m-%d')} (lookback_days={lookback_days}, exclude_recent_days={exclude_recent_days})",
+        )
+        logger.info(
+            f"📅 Filtering files to window: {start_cutoff.strftime('%Y-%m-%d')} to {end_cutoff.strftime('%Y-%m-%d')} (lookback_days={lookback_days}, exclude_recent_days={exclude_recent_days})",
+        )
         
         filtered_files = []
         for file in source_files:
             filename = os.path.basename(file)
             try:
-                # Look for date patterns in filename (YYYY-MM-DD or YYYYMMDD)
+                # Look for date patterns in filename (YYYY-MM, YYYY-MM-DD or YYYYMMDD)
                 date_match = re.search(r"(\d{4})-(\d{2})-(\d{2})", filename)
                 if date_match:
                     file_date = datetime.strptime(date_match.group(0), "%Y-%m-%d")
                 else:
-                    # Try YYYYMMDD format
-                    date_match = re.search(r"(\d{4})(\d{2})(\d{2})", filename)
+                    # Try YYYY-MM (monthly files)
+                    date_match = re.search(r"(\d{4})-(\d{2})", filename)
                     if date_match:
-                        file_date = datetime.strptime(date_match.group(0), "%Y%m%d")
+                        year, month = int(date_match.group(1)), int(date_match.group(2))
+                        file_date = datetime(year, month, 1)
                     else:
-                        # If no date found, include the file (conservative approach)
-                        file_date = datetime.now()
+                        # Try YYYYMMDD format
+                        date_match = re.search(r"(\d{4})(\d{2})(\d{2})", filename)
+                        if date_match:
+                            file_date = datetime.strptime(date_match.group(0), "%Y%m%d")
+                        else:
+                            # If no date found, include the file (conservative approach)
+                            file_date = now
                 
-                if file_date >= cutoff_date:
+                if start_cutoff <= file_date <= end_cutoff:
                     filtered_files.append(file)
                 else:
-                    print(f"   ⏭️ Skipping {filename} (date: {file_date.strftime('%Y-%m-%d')})")
-                    logger.info(f"   ⏭️ Skipping {filename} (date: {file_date.strftime('%Y-%m-%d')})")
+                    print(
+                        f"   ⏭️ Skipping {filename} (date: {file_date.strftime('%Y-%m-%d')} not within window)",
+                    )
+                    logger.info(
+                        f"   ⏭️ Skipping {filename} (date: {file_date.strftime('%Y-%m-%d')} not within window)",
+                    )
             except Exception as e:
                 # If date parsing fails, include the file (conservative approach)
                 print(f"   ⚠️ Could not parse date from {filename}, including file")
@@ -171,8 +199,12 @@ def _get_source_files(pattern: str, lookback_days: int | None = None) -> list[st
                 filtered_files.append(file)
         
         source_files = filtered_files
-        print(f"📋 After filtering: {len(source_files)} files within {lookback_days} days")
-        logger.info(f"📋 After filtering: {len(source_files)} files within {lookback_days} days")
+        print(
+            f"📋 After filtering: {len(source_files)} files within window ({lookback_days} days, exclude_recent_days={exclude_recent_days})",
+        )
+        logger.info(
+            f"📋 After filtering: {len(source_files)} files within window ({lookback_days} days, exclude_recent_days={exclude_recent_days})",
+        )
     
     return source_files
 
@@ -420,6 +452,7 @@ def consolidate_files(
     dtype: dict | None = None,
     expected_columns: list[str] | None = None,
     lookback_days: int | None = None,
+    exclude_recent_days: int = 0,
 ) -> pd.DataFrame:
     """
     Incrementally consolidates multiple source CSVs into a single file with data validation.
@@ -437,7 +470,7 @@ def consolidate_files(
     logger.info("📁 Looking for files in data_cache directory...")
     
     # Get source files
-    source_files = _get_source_files(pattern, lookback_days)
+    source_files = _get_source_files(pattern, lookback_days, exclude_recent_days)
     
     # Log source files info
     print("📁 Source files:")
@@ -488,7 +521,7 @@ def consolidate_files(
     waited_time = 0
     
     while waited_time < max_wait_time:
-        current_files = _get_source_files(pattern, lookback_days)
+        current_files = _get_source_files(pattern, lookback_days, exclude_recent_days)
         if current_files:
             print(f"📁 Found {len(current_files)} files to process")
             logger.info(f"📁 Found {len(current_files)} files to process")
@@ -681,6 +714,7 @@ async def run_step(
     data_dir: str,
     download_new_data: bool = True,
     lookback_days: int | None = None,
+    exclude_recent_days: int = 0,
 ) -> tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]:
     """
     Orchestrates the data collection process by calling the robust, incremental downloader.
@@ -701,6 +735,7 @@ async def run_step(
     logger.info(f"Min data points: {min_data_points}")
     logger.info(f"Data directory: {data_dir}")
     logger.info(f"Lookback days: {lookback_days}")
+    logger.info(f"Exclude recent days: {exclude_recent_days}")
     logger.info(f"Python version: {sys.version}")
     logger.info(f"Working directory: {Path.cwd()}")
     print("=" * 80)  # Explicit print for subprocess output
@@ -833,6 +868,7 @@ async def run_step(
             index_col="timestamp",
             expected_columns=["timestamp", "open", "high", "low", "close", "volume"],
             lookback_days=lookback_days,
+            exclude_recent_days=exclude_recent_days,
         )
 
         logger.info(f"✅ Klines consolidation completed: {len(klines_df)} rows")
@@ -932,6 +968,7 @@ async def run_step(
                     "agg_trade_id",
                 ],
                 lookback_days=lookback_days,
+                exclude_recent_days=exclude_recent_days,
             )
 
             # For blank training mode, limit to a reasonable subset
@@ -992,6 +1029,7 @@ async def run_step(
             index_col="timestamp",
             expected_columns=["timestamp", "fundingRate"],
             lookback_days=lookback_days,
+            exclude_recent_days=exclude_recent_days,
         )
 
         logger.info(f"✅ Futures consolidation completed: {len(futures_df)} rows")
@@ -1016,7 +1054,9 @@ async def run_step(
             )
             print(f"✅ Filtering data to the last {lookback_days} days as per request.")
 
-            end_date = datetime.now(klines_df.index.tz if klines_df.index.tz else None)
+            tzinfo = klines_df.index.tz if not klines_df.empty else None
+            now_dt = datetime.now(tzinfo)
+            end_date = now_dt - timedelta(days=int(exclude_recent_days)) if exclude_recent_days > 0 else now_dt
             start_date = end_date - timedelta(days=int(lookback_days))
 
             original_klines_len = len(klines_df)
@@ -1024,11 +1064,11 @@ async def run_step(
             original_futures_len = len(futures_df)
 
             if not klines_df.empty:
-                klines_df = klines_df[klines_df.index >= start_date]
+                klines_df = klines_df[(klines_df.index >= start_date) & (klines_df.index <= end_date)]
             if not agg_trades_df.empty:
-                agg_trades_df = agg_trades_df[agg_trades_df.index >= start_date]
+                agg_trades_df = agg_trades_df[(agg_trades_df.index >= start_date) & (agg_trades_df.index <= end_date)]
             if not futures_df.empty:
-                futures_df = futures_df[futures_df.index >= start_date]
+                futures_df = futures_df[(futures_df.index >= start_date) & (futures_df.index <= end_date)]
 
             logger.info(f"   - Klines: {original_klines_len} -> {len(klines_df)} rows")
             logger.info(
@@ -1066,18 +1106,21 @@ async def run_step(
 
         end_time_ms = int(time.time() * 1000)
 
-        # Get lookback days with fallback
-        try:
-            lookback_days = CONFIG["MODEL_TRAINING"]["data_retention_days"]
-        except (KeyError, TypeError):
-            # Fallback if CONFIG is not available or MODEL_TRAINING section is missing
-            lookback_days = 730  # Default to 2 years
-            logger.warning(
-                f"⚠️ CONFIG['MODEL_TRAINING']['data_retention_days'] not available, using default: {lookback_days} days",
-            )
+        # Determine lookback days for metadata (prefer explicit parameter)
+        if lookback_days is not None:
+            lookback_days_for_metadata = int(lookback_days)
+        else:
+            try:
+                data_cfg = CONFIG.get("DATA_CONFIG", {}) if isinstance(CONFIG, dict) else {}
+                lookback_days_for_metadata = int(data_cfg.get("default_lookback_days", 730))
+            except Exception:
+                lookback_days_for_metadata = 730  # Default to 2 years
+                logger.warning(
+                    f"⚠️ Using default lookback_days for metadata: {lookback_days_for_metadata} days",
+                )
 
         start_time_ms = end_time_ms - int(
-            timedelta(days=lookback_days).total_seconds() * 1000,
+            timedelta(days=lookback_days_for_metadata).total_seconds() * 1000,
         )
         data_to_save = {
             "klines": klines_df,
@@ -1185,6 +1228,7 @@ if __name__ == "__main__":
     min_data_points = sys.argv[3]
     data_dir = sys.argv[4]
     lookback_days_arg = None
+    exclude_recent_days_arg = None
 
     # Only try to parse lookback_days if we have more than 4 arguments
     if len(sys.argv) > 5:
@@ -1195,12 +1239,22 @@ if __name__ == "__main__":
             print(f"Could not parse lookback_days argument: '{sys.argv[5]}'. Ignoring.")
             lookback_days_arg = None
 
+    # Optionally parse exclude_recent_days if provided
+    if len(sys.argv) > 6:
+        try:
+            exclude_recent_days_arg = int(sys.argv[6])
+            print(f"Parsed exclude_recent_days: {exclude_recent_days_arg}")
+        except (ValueError, IndexError):
+            print(f"Could not parse exclude_recent_days argument: '{sys.argv[6]}'. Ignoring.")
+            exclude_recent_days_arg = None
+
     print("Parsed arguments:")
     print(f"  Symbol: {symbol}")
     print(f"  Exchange: {exchange_name}")
     print(f"  Min data points: {min_data_points}")
     print(f"  Data dir: {data_dir}")
     print(f"  Lookback days: {lookback_days_arg}")
+    print(f"  Exclude recent days: {exclude_recent_days_arg}")
     print("Starting asyncio.run...")
 
     klines_df, agg_trades_df, futures_df = asyncio.run(
@@ -1210,6 +1264,7 @@ if __name__ == "__main__":
             min_data_points=min_data_points,
             data_dir=data_dir,
             lookback_days=lookback_days_arg,
+            exclude_recent_days=exclude_recent_days_arg or 0,
         ),
     )
 

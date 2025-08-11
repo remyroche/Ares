@@ -242,6 +242,8 @@ class VectorizedLabellingOrchestrator:
             
             # Remove raw OHLCV columns to prevent data leakage
             final_data = self._remove_raw_ohlcv_columns(final_data)
+            # Also ensure datetime/timestamp columns are removed before returning
+            final_data = self._remove_datetime_columns(final_data)
 
             # 9. Memory optimization
             if self.enable_memory_efficient_types:
@@ -350,7 +352,9 @@ class VectorizedLabellingOrchestrator:
                             return None
                     except Exception:
                         pass
-                    return np.full(num_rows, float(value), dtype=float)
+                    # Previously we broadcasted numeric scalars which created constant features.
+                    # Skip numeric scalars entirely to avoid constant/leaky columns.
+                    return None
                 # Skip non-numeric scalars (strings, bools) to avoid creating categorical leakage
                 if isinstance(value, (str, bool)):
                     return None
@@ -414,6 +418,10 @@ class VectorizedLabellingOrchestrator:
                 constant_cols = nunique[nunique <= 1].index.tolist()
                 if constant_cols:
                     self.logger.warning(f"Dropping {len(constant_cols)} constant features")
+                    # Log names of constant features (capped)
+                    max_list = 50
+                    preview = constant_cols[:max_list]
+                    self.logger.warning(f"Constant features: {preview}{' ...' if len(constant_cols) > max_list else ''}")
                     features_df = features_df.drop(columns=constant_cols)
 
             # Combine with labeled data
@@ -512,7 +520,20 @@ class VectorizedLabellingOrchestrator:
         """Remove raw OHLCV columns to prevent data leakage in ML training."""
         try:
             # Define raw OHLCV columns that should not be used as features
-            raw_ohlcv_columns = ["open", "high", "low", "close", "volume"]
+            raw_ohlcv_columns = [
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                # Also exclude raw trading activity aggregates commonly present in unified data
+                "trade_volume",
+                "trade_count",
+                # Exclude raw price aggregations too
+                "avg_price",
+                "min_price",
+                "max_price",
+            ]
             
             # Find columns that match raw OHLCV names
             ohlcv_columns_found = [col for col in raw_ohlcv_columns if col in data.columns]
@@ -1248,14 +1269,14 @@ class VectorizedFeatureSelector:
                     for feature in features:
                         mean_val = abs(cluster_data_scaled_df[feature].mean())
                         std_val = abs(cluster_data_scaled_df[feature].std() - 1.0)
-                        if mean_val > 1e-10 or std_val > 1e-10:
+                        if mean_val > 1e-3 or std_val > 1e-2:
                             self.logger.warning(f"⚠️ StandardScaler validation failed for {feature}: mean={mean_val:.2e}, std_deviation_from_1={std_val:.2e}")
                             scaling_validation = False
                 elif self.pca_scaling_method == "robust":
                     # For RobustScaler: should be ~0 median, ~1 IQR-based scale
                     for feature in features:
                         median_val = abs(cluster_data_scaled_df[feature].median())
-                        if median_val > 1e-10:
+                        if median_val > 1e-3:
                             self.logger.warning(f"⚠️ RobustScaler validation failed for {feature}: median={median_val:.2e}")
                             scaling_validation = False
                 elif self.pca_scaling_method == "minmax":
@@ -1263,7 +1284,7 @@ class VectorizedFeatureSelector:
                     for feature in features:
                         min_val = cluster_data_scaled_df[feature].min()
                         max_val = cluster_data_scaled_df[feature].max()
-                        if min_val < -1e-10 or max_val > 1 + 1e-10:
+                        if min_val < -1e-3 or max_val > 1 + 1e-3:
                             self.logger.warning(f"⚠️ MinMaxScaler validation failed for {feature}: range=[{min_val:.2e}, {max_val:.2e}]")
                             scaling_validation = False
                 

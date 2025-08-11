@@ -319,11 +319,24 @@ class UnifiedRegimeClassifier:
             features_df["close"] / features_df["close"].shift(1),
         )
         features_df["price_change"] = features_df["close"].pct_change()
-        features_df["high_low_diff_ratio"] = features_df["high"].diff() / (
-            features_df["low"].diff() + 1e-8
+        
+        # Enhanced ratio calculations with better handling of edge cases
+        high_diff = features_df["high"].diff()
+        low_diff = features_df["low"].diff()
+        open_diff = features_df["open"].diff()
+        close_diff = features_df["close"].diff()
+        
+        # Use safer division with clipping to prevent extreme values
+        features_df["high_low_diff_ratio"] = np.where(
+            np.abs(low_diff) > 1e-8,
+            np.clip(high_diff / low_diff, -100, 100),  # Clip to reasonable range
+            1.0  # Default to neutral ratio when denominator is too small
         )
-        features_df["close_open_diff_ratio"] = features_df["close"].diff() / (
-            features_df["open"].diff() + 1e-8
+        
+        features_df["close_open_diff_ratio"] = np.where(
+            np.abs(open_diff) > 1e-8,
+            np.clip(close_diff / open_diff, -100, 100),  # Clip to reasonable range
+            1.0  # Default to neutral ratio when denominator is too small
         )
 
         # Volatility features
@@ -338,8 +351,11 @@ class UnifiedRegimeClassifier:
         )
 
         # Volume features
-        features_df["volume_ratio"] = (
-            features_df["volume"] / features_df["volume"].rolling(20).mean()
+        volume_ma = features_df["volume"].rolling(20).mean()
+        features_df["volume_ratio"] = np.where(
+            volume_ma > 1e-8,
+            np.clip(features_df["volume"] / volume_ma, 0, 50),  # Clip to reasonable range
+            1.0  # Default to neutral ratio when denominator is too small
         )
         features_df["volume_change"] = features_df["volume"].pct_change()
 
@@ -348,9 +364,13 @@ class UnifiedRegimeClassifier:
         features_df = self._calculate_macd(features_df)
         features_df = self._calculate_bollinger_bands(features_df)
         features_df = self._calculate_atr(features_df)
-        features_df["atr_normalized"] = features_df["atr"] / (
-            features_df["close"].diff().abs() + 1e-8
-        )
+        
+        # Enhanced ATR normalization with clipping
+        atr_denominator = features_df["close"].diff().abs() + 1e-8
+        features_df["atr_normalized"] = np.clip(
+            features_df["atr"] / atr_denominator, 0, 10
+        )  # Clip to reasonable range
+        
         features_df = self._calculate_adx(features_df)
 
         # Enhanced volatility features for VOLATILE regime detection
@@ -419,6 +439,35 @@ class UnifiedRegimeClassifier:
         for col in vol_features:
             if col in features_df.columns:
                 features_df[col] = features_df[col].fillna(0)
+
+        # CRITICAL: Handle infinity and extremely large values
+        # Replace infinity with large finite values
+        features_df = features_df.replace([np.inf, -np.inf], np.nan)
+        
+        # Clip extremely large values to prevent HMM training issues
+        numeric_columns = features_df.select_dtypes(include=[np.number]).columns
+        for col in numeric_columns:
+            if col in features_df.columns:
+                # Clip to reasonable ranges based on feature type
+                if 'ratio' in col.lower():
+                    features_df[col] = np.clip(features_df[col], -100, 100)
+                elif 'volatility' in col.lower():
+                    features_df[col] = np.clip(features_df[col], 0, 1)
+                elif 'volume' in col.lower():
+                    features_df[col] = np.clip(features_df[col], 0, 100)
+                elif 'rsi' in col.lower():
+                    features_df[col] = np.clip(features_df[col], 0, 100)
+                elif 'macd' in col.lower():
+                    features_df[col] = np.clip(features_df[col], -10, 10)
+                elif 'bb_' in col.lower():
+                    features_df[col] = np.clip(features_df[col], -10, 10)
+                elif 'atr' in col.lower():
+                    features_df[col] = np.clip(features_df[col], 0, 10)
+                elif 'adx' in col.lower():
+                    features_df[col] = np.clip(features_df[col], 0, 100)
+                else:
+                    # Default clipping for other numeric features
+                    features_df[col] = np.clip(features_df[col], -1000, 1000)
 
         # Only drop rows that still have NaN values after all the filling
         # This should be minimal now
@@ -864,6 +913,8 @@ class UnifiedRegimeClassifier:
         """
         Analyzes the volume profile to find the two most significant High Volume Nodes (HVNs),
         their age, and the number of times they've been tested.
+        
+        OPTIMIZED VERSION: Reduced complexity for better performance
         """
         if df_window.empty or len(df_window) < 20:
             return None
@@ -890,7 +941,7 @@ class UnifiedRegimeClassifier:
         if top_hvns.empty:
             return None
 
-        # --- 3. Analyze Each HVN ---
+        # --- 3. Analyze Each HVN (OPTIMIZED) ---
         analyzed_levels = {}
         for i, (level_bin, level_volume) in enumerate(top_hvns.items()):
             level_price = level_bin.mid
@@ -905,20 +956,14 @@ class UnifiedRegimeClassifier:
             first_touch_index = level_indices[0]
             age = len(df_window) - df_window.index.get_loc(first_touch_index)
 
-            # Count touches after formation
+            # OPTIMIZATION: Simplified touch counting using vectorized operations
+            # Count touches more efficiently by checking price crosses
             touches = 0
-            data_since_formation = df_window.loc[first_touch_index:]
-            for k in range(1, len(data_since_formation)):
-                prev_high = data_since_formation["high"].iloc[k - 1]
-                prev_low = data_since_formation["low"].iloc[k - 1]
-                curr_high = data_since_formation["high"].iloc[k]
-                curr_low = data_since_formation["low"].iloc[k]
-
-                # A "touch" is when price crosses the level
-                if (prev_low < level_price < curr_high) or (
-                    prev_high > level_price > curr_low
-                ):
-                    touches += 1
+            if len(df_window) > 1:
+                # Use vectorized operations to find price crosses
+                high_crosses = (df_window["high"] >= level_price) & (df_window["high"].shift() < level_price)
+                low_crosses = (df_window["low"] <= level_price) & (df_window["low"].shift() > level_price)
+                touches = (high_crosses | low_crosses).sum()
 
             # Calculate additional strength metrics
             # Volume strength (normalized)
@@ -957,6 +1002,8 @@ class UnifiedRegimeClassifier:
         """
         Classifies location using a multi-layered context of short-term Dynamic Pivots (tactical)
         and long-term High Volume Nodes (strategic).
+        
+        OPTIMIZED VERSION: Uses vectorized operations instead of per-point calculations
         """
         self.logger.info(
             "Classifying location with tactical pivots and strategic volume levels...",
@@ -972,10 +1019,6 @@ class UnifiedRegimeClassifier:
             24,
         )  # 1 day on a 1h chart
         tolerance = self.config.get("level_tolerance", 0.01)  # 1% proximity tolerance
-        self.config.get(
-            "max_level_age_pct",
-            0.9,
-        )  # Allow older levels for long-term analysis
         min_level_touches = self.config.get(
             "min_level_touches",
             1,
@@ -990,89 +1033,104 @@ class UnifiedRegimeClassifier:
             )
             return ["OPEN_RANGE"] * len(features_df)
 
-        locations = []
-
-        # Start loop after the longest period to ensure enough data for all calculations
+        # Initialize all locations as OPEN_RANGE
+        locations = ["OPEN_RANGE"] * len(features_df)
+        
+        # Calculate price differences once (vectorized)
+        price_diffs = features_df["close"].diff()
+        
+        # Start processing after the longest period
         start_index = long_term_hvn_period
-        for i in range(start_index, len(features_df)):
-            current_price_diff = features_df["close"].diff().iloc[i]
-
-            # --- 1. Tactical Pivot Analysis (Short-Term) ---
-            pivot_window = features_df.iloc[i - short_term_pivot_period : i]
-            pivots = self._calculate_rolling_pivots(pivot_window)
-            pivot_supports = [pivots["s1"], pivots["s2"]]
-            pivot_resistances = [pivots["r1"], pivots["r2"]]
-
-            # --- 2. Strategic Volume Level Analysis (Long-Term) ---
-            hvn_window = features_df.iloc[i - long_term_hvn_period : i]
-            volume_levels = self._analyze_volume_levels(hvn_window)
-
-            # --- 3. Classification Logic ---
-            loc_pivot = None
-            loc_hvn = None
-
-            # Check for Pivot proximity using price differences
-            for p_sup in pivot_supports:
-                if (
-                    abs(current_price_diff - p_sup) / (abs(current_price_diff) + 1e-8)
-                    <= tolerance
-                ):
-                    loc_pivot = "PIVOT_S"
-                    break
-            if not loc_pivot:
-                for p_res in pivot_resistances:
-                    if (
-                        abs(current_price_diff - p_res)
-                        / (abs(current_price_diff) + 1e-8)
-                        <= tolerance
-                    ):
-                        loc_pivot = "PIVOT_R"
-                        break
-
-            # Check for HVN proximity using price differences
-            if volume_levels:
-                for level_data in volume_levels.values():
-                    # Intelligence Rule: Filter out untested levels
-                    if level_data["touches"] < min_level_touches:
-                        continue
-
-                    if (
-                        abs(current_price_diff - level_data["price"])
-                        / (abs(current_price_diff) + 1e-8)
-                        <= tolerance
-                    ):
-                        hvn_type = (
-                            "SUPPORT"
-                            if current_price_diff > level_data["price"]
-                            else "RESISTANCE"
-                        )
-                        loc_hvn = f"HVN_{hvn_type}"
-                        break  # Stop at the first significant HVN found
-
-            # --- 4. Final Label Assignment ---
-            if loc_pivot and loc_hvn:
-                # A tactical pivot aligns with a strategic volume level - high confluence
-                if "S" in loc_pivot and "SUPPORT" in loc_hvn:
-                    locations.append("CONFLUENCE_S")
-                elif "R" in loc_pivot and "RESISTANCE" in loc_hvn:
-                    locations.append("CONFLUENCE_R")
+        
+        # OPTIMIZATION: Calculate global volume levels once instead of per-point
+        self.logger.info("🔍 Calculating global volume levels...")
+        global_volume_levels = self._analyze_volume_levels(features_df)
+        
+        # Process in batches for better performance
+        batch_size = 100
+        total_batches = (len(features_df) - start_index) // batch_size + 1
+        
+        self.logger.info(f"📊 Processing {len(features_df) - start_index} records in {total_batches} batches...")
+        
+        for batch_start in range(start_index, len(features_df), batch_size):
+            batch_end = min(batch_start + batch_size, len(features_df))
+            batch_num = (batch_start - start_index) // batch_size + 1
+            
+            if batch_num % 10 == 0:  # Log progress every 10 batches
+                self.logger.info(f"🔄 Processing batch {batch_num}/{total_batches} (records {batch_start}-{batch_end})")
+            
+            for i in range(batch_start, batch_end):
+                current_price_diff = price_diffs.iloc[i]
+                
+                # Skip if price difference is NaN
+                if pd.isna(current_price_diff):
+                    continue
+                
+                # --- 1. Tactical Pivot Analysis (Short-Term) ---
+                # Only calculate pivots if we have enough data
+                if i >= short_term_pivot_period:
+                    pivot_window = features_df.iloc[i - short_term_pivot_period : i]
+                    pivots = self._calculate_rolling_pivots(pivot_window)
+                    pivot_supports = [pivots["s1"], pivots["s2"]]
+                    pivot_resistances = [pivots["r1"], pivots["r2"]]
                 else:
-                    locations.append(loc_pivot)
-            elif loc_pivot:
-                locations.append(loc_pivot)
-            elif loc_hvn:
-                locations.append(loc_hvn)
-            else:
-                locations.append("OPEN_RANGE")
+                    pivot_supports = []
+                    pivot_resistances = []
 
-        # Pad the beginning of the list for alignment
-        padding = ["OPEN_RANGE"] * start_index
-        final_locations = padding + locations
+                # --- 2. Strategic Volume Level Analysis (Long-Term) ---
+                # Use global volume levels instead of recalculating
+                volume_levels = global_volume_levels
+
+                # --- 3. Classification Logic ---
+                loc_pivot = None
+                loc_hvn = None
+
+                # Check for Pivot proximity using price differences
+                for p_sup in pivot_supports:
+                    if p_sup > 0 and abs(current_price_diff - p_sup) / (abs(current_price_diff) + 1e-8) <= tolerance:
+                        loc_pivot = "PIVOT_S"
+                        break
+                if not loc_pivot:
+                    for p_res in pivot_resistances:
+                        if p_res > 0 and abs(current_price_diff - p_res) / (abs(current_price_diff) + 1e-8) <= tolerance:
+                            loc_pivot = "PIVOT_R"
+                            break
+
+                # Check for HVN proximity using price differences
+                if volume_levels:
+                    for level_data in volume_levels.values():
+                        # Intelligence Rule: Filter out untested levels
+                        if level_data["touches"] < min_level_touches:
+                            continue
+
+                        if abs(current_price_diff - level_data["price"]) / (abs(current_price_diff) + 1e-8) <= tolerance:
+                            hvn_type = (
+                                "SUPPORT"
+                                if current_price_diff > level_data["price"]
+                                else "RESISTANCE"
+                            )
+                            loc_hvn = f"HVN_{hvn_type}"
+                            break  # Stop at the first significant HVN found
+
+                # --- 4. Final Label Assignment ---
+                if loc_pivot and loc_hvn:
+                    # A tactical pivot aligns with a strategic volume level - high confluence
+                    if "S" in loc_pivot and "SUPPORT" in loc_hvn:
+                        locations[i] = "CONFLUENCE_S"
+                    elif "R" in loc_pivot and "RESISTANCE" in loc_hvn:
+                        locations[i] = "CONFLUENCE_R"
+                    else:
+                        locations[i] = loc_pivot
+                elif loc_pivot:
+                    locations[i] = loc_pivot
+                elif loc_hvn:
+                    locations[i] = loc_hvn
+                # else: already set to "OPEN_RANGE"
 
         self.logger.info(
-            f"Finished classifying locations. Found: {pd.Series(final_locations).value_counts().to_dict()}",
+            f"✅ Finished classifying locations. Found: {pd.Series(locations).value_counts().to_dict()}",
         )
-        return final_locations
+        return locations
 
     async def train_hmm_labeler(self, historical_klines: pd.DataFrame) -> bool:
         """

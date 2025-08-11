@@ -273,6 +273,24 @@ class VectorizedLabellingOrchestrator:
                         preview_df[k] = v
                 self._log_feature_sample("EngineerFeatures", preview_df, "04_02")
                 self._log_feature_errors("EngineerFeatures", preview_df)
+                # Categorize and log feature creation summary
+                try:
+                    cats = self._categorize_features(advanced_features)
+                    cats_path = os.path.join("log", "features_samples")
+                    os.makedirs(cats_path, exist_ok=True)
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    with open(os.path.join(cats_path, f"{ts}_04_02_EngineerFeatures_Categories.txt"), "w") as f:
+                        for k, v in cats.items():
+                            f.write(f"{k}: {v}\n")
+                    self.logger.info(f"Feature categories: {cats}")
+                except Exception:
+                    pass
+                # Format and alignment diagnostics
+                try:
+                    formatted_preview, fmt_report = self._format_and_align_features(advanced_features, preview_df.index)
+                    self._log_feature_format_report("EngineerFeatures", fmt_report, "04_02")
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -290,6 +308,10 @@ class VectorizedLabellingOrchestrator:
             )
             self._log_feature_sample("Combine", combined_data, "04_03")
             self._log_feature_errors("Combine", combined_data)
+            try:
+                self._log_dataframe_columns("Combine", combined_data, "04_03")
+            except Exception:
+                pass
 
             # Drop stationarity helper columns prior to selection/normalization
             combined_data = self._remove_stationarity_transform_columns(combined_data)
@@ -310,6 +332,10 @@ class VectorizedLabellingOrchestrator:
                 combined_data = self._remove_raw_ohlcv_columns(combined_data)
                 self._log_feature_sample("FeatureSelection", combined_data, "04_04")
                 self._log_feature_errors("FeatureSelection", combined_data)
+                try:
+                    self._log_dataframe_columns("FeatureSelection", combined_data, "04_04")
+                except Exception:
+                    pass
 
             # 6. Data normalization
             if self.enable_data_normalization:
@@ -324,6 +350,10 @@ class VectorizedLabellingOrchestrator:
                 combined_data = self._remove_stationarity_transform_columns(combined_data)
                 self._log_feature_sample("Normalization", combined_data, "04_05")
                 self._log_feature_errors("Normalization", combined_data)
+                try:
+                    self._log_dataframe_columns("Normalization", combined_data, "04_05")
+                except Exception:
+                    pass
 
             # 7. Autoencoder feature generation
             self.logger.info("🤖 Generating autoencoder features...")
@@ -346,6 +376,10 @@ class VectorizedLabellingOrchestrator:
                 ae_df = autoencoder_features if isinstance(autoencoder_features, pd.DataFrame) else combined_data
                 self._log_feature_sample("Autoencoder", ae_df, "04_06")
                 self._log_feature_errors("Autoencoder", ae_df)
+                try:
+                    self._log_dataframe_columns("Autoencoder", ae_df, "04_06")
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -363,6 +397,10 @@ class VectorizedLabellingOrchestrator:
             final_data = self._remove_datetime_columns(final_data)
             self._log_feature_sample("FinalData", final_data, "04_07")
             self._log_feature_errors("FinalData", final_data)
+            try:
+                self._log_dataframe_columns("FinalData", final_data, "04_07")
+            except Exception:
+                pass
 
             # Systematic leakage guard: drop any baseline columns observed before feature generation
             try:
@@ -797,6 +835,176 @@ class VectorizedLabellingOrchestrator:
 
         except Exception as e:
             self.logger.error(f"Error saving data as Parquet: {e}")
+
+    def _log_feature_dict_summary(self, stage: str, features: dict[str, Any], step_no: str) -> None:
+        try:
+            os.makedirs("log/features_samples", exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_stage = stage.replace(" ", "_")
+            fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_Features.txt"
+            # Build summary
+            total = len(features)
+            type_counts: dict[str, int] = {}
+            lines: list[str] = []
+            for k, v in features.items():
+                t = type(v).__name__
+                type_counts[t] = type_counts.get(t, 0) + 1
+                # Summarize value
+                summary = ""
+                try:
+                    if isinstance(v, (int, float, np.integer, np.floating)):
+                        summary = f"value={float(v):.6g}"
+                    elif isinstance(v, pd.Series):
+                        summary = f"series(len={len(v)}, nan={int(v.isna().sum())})"
+                    elif isinstance(v, np.ndarray):
+                        summary = f"ndarray(shape={v.shape})"
+                    elif isinstance(v, (list, tuple)):
+                        summary = f"{type(v).__name__}(len={len(v)})"
+                    else:
+                        # Fallback to string repr trimmed
+                        s = str(v)
+                        summary = (s[:80] + "...") if len(s) > 80 else s
+                except Exception:
+                    summary = "<unavailable>"
+                lines.append(f"{k}: type={t} {summary}")
+            with open(fname, "w") as f:
+                f.write(f"Stage: {stage} | Step: {step_no} | Total features: {total}\n")
+                if type_counts:
+                    f.write("Type counts: " + ", ".join([f"{k}={v}" for k, v in sorted(type_counts.items())]) + "\n")
+                # Cap lines to avoid huge files
+                cap = 1000
+                for line in lines[:cap]:
+                    f.write(line + "\n")
+                if len(lines) > cap:
+                    f.write(f"... ({len(lines) - cap} more)\n")
+            self.logger.info(f"Feature list written: {fname}")
+        except Exception as e:
+            self.logger.warning(f"Failed to write feature list for {stage}: {e}")
+
+    def _log_dataframe_columns(self, stage: str, df: pd.DataFrame, step_no: str) -> None:
+        try:
+            os.makedirs("log/features_samples", exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_stage = stage.replace(" ", "_")
+            fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_Columns.txt"
+            cols = df.columns.tolist()
+            dtypes = df.dtypes.astype(str).to_dict()
+            numeric = df.select_dtypes(include=[np.number])
+            nan_total = int(numeric.isna().sum().sum()) if not numeric.empty else 0
+            inf_total = int(np.isinf(numeric).sum().sum()) if not numeric.empty else 0
+            with open(fname, "w") as f:
+                f.write(f"Stage: {stage} | Step: {step_no} | Columns: {len(cols)}\n")
+                f.write(f"NaN_total={nan_total} | Inf_total={inf_total}\n")
+                for c in cols:
+                    f.write(f"{c}: {dtypes.get(c, 'unknown')}\n")
+            self.logger.info(f"Column inventory written: {fname}")
+        except Exception as e:
+            self.logger.warning(f"Failed to write column inventory for {stage}: {e}")
+
+    def _categorize_features(self, features: dict[str, Any]) -> dict[str, int]:
+        categories: dict[str, int] = {
+            "wavelet": 0,
+            "momentum": 0,
+            "volatility": 0,
+            "correlation": 0,
+            "liquidity": 0,
+            "candlestick": 0,
+            "microstructure": 0,
+            "sr_distance": 0,
+            "other": 0,
+        }
+        for name in features.keys():
+            lname = name.lower()
+            if any(x in lname for x in ["db", "cmor", "morl", "wavelet", "cwt", "dwt"]):
+                categories["wavelet"] += 1
+            elif any(x in lname for x in ["momentum", "roc"]):
+                categories["momentum"] += 1
+            elif "volatility" in lname:
+                categories["volatility"] += 1
+            elif any(x in lname for x in ["corr", "correlation"]):
+                categories["correlation"] += 1
+            elif any(x in lname for x in ["liquidity", "depth", "spread"]):
+                categories["liquidity"] += 1
+            elif any(x in lname for x in ["engulf", "hammer", "doji", "marubozu", "tweezer", "spinning_top", "shooting_star"]):
+                categories["candlestick"] += 1
+            elif any(x in lname for x in ["order_flow", "price_impact", "market_depth", "volume_price_impact"]):
+                categories["microstructure"] += 1
+            elif any(x in lname for x in ["sr_distance", "support_resistance"]):
+                categories["sr_distance"] += 1
+            else:
+                categories["other"] += 1
+        return categories
+
+    def _format_and_align_features(self, features: dict[str, Any], target_index: pd.Index) -> tuple[dict[str, pd.Series], dict[str, Any]]:
+        """Ensure each feature is a well-formed pd.Series aligned to target_index.
+        Returns formatted_features and a report dict with diagnostics.
+        """
+        formatted: dict[str, pd.Series] = {}
+        report = {
+            "input_features": len(features),
+            "converted_arrays": 0,
+            "coerced_types": 0,
+            "trimmed": 0,
+            "padded": 0,
+            "filled_nan": 0,
+            "non_numeric_dropped": [],
+        }
+        num_rows = len(target_index)
+        for name, value in features.items():
+            try:
+                series: pd.Series | None = None
+                if isinstance(value, pd.Series):
+                    series = value.copy()
+                elif isinstance(value, np.ndarray):
+                    series = pd.Series(value)
+                    report["converted_arrays"] += 1
+                elif isinstance(value, list):
+                    series = pd.Series(value)
+                    report["converted_arrays"] += 1
+                else:
+                    # Skip scalars and unsupported types
+                    continue
+
+                # Align length by trim/pad as needed
+                if len(series) > num_rows:
+                    series = series.iloc[-num_rows:]
+                    report["trimmed"] += 1
+                elif len(series) < num_rows:
+                    pad = num_rows - len(series)
+                    series = pd.concat([pd.Series([np.nan] * pad), series], ignore_index=True)
+                    report["padded"] += 1
+
+                # Set target index and enforce numeric dtype
+                series.index = target_index
+                series = pd.to_numeric(series, errors="coerce")
+                # Fill NaNs by forward/backward fill then zero
+                before_nan = int(series.isna().sum())
+                if before_nan:
+                    series = series.fillna(method="ffill").fillna(method="bfill").fillna(0)
+                    report["filled_nan"] += before_nan
+
+                # Cast to float32 for efficiency
+                series = series.astype(np.float32)
+
+                formatted[name] = series
+            except Exception:
+                # Drop problematic features silently but record
+                report["non_numeric_dropped"].append(name)
+                continue
+        return formatted, report
+
+    def _log_feature_format_report(self, stage: str, report: dict[str, Any], step_no: str) -> None:
+        try:
+            os.makedirs("log/features_samples", exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_stage = stage.replace(" ", "_")
+            fname = f"log/features_samples/{ts}_{step_no}_{safe_stage}_FormatReport.json"
+            import json as _json
+            with open(fname, "w") as f:
+                f.write(_json.dumps(report, indent=2, default=str))
+            self.logger.info(f"Feature format report written: {fname}")
+        except Exception as e:
+            self.logger.warning(f"Failed to write feature format report: {e}")
 
 
 class VectorizedStationarityChecker:

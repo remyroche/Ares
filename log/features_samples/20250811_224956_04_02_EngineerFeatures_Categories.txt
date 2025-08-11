@@ -1,0 +1,9 @@
+wavelet: 0
+momentum: 6
+volatility: 10
+correlation: 6
+liquidity: 3
+candlestick: 36
+microstructure: 3
+sr_distance: 0
+other: 40

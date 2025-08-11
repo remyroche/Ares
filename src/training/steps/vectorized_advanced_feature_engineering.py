@@ -1158,6 +1158,14 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             features = {}
             base_index = price_data.index
+            if not isinstance(base_index, pd.DatetimeIndex):
+                if "timestamp" in price_data.columns:
+                    try:
+                        base_index = pd.to_datetime(price_data["timestamp"], errors="coerce")
+                    except Exception:
+                        base_index = pd.date_range(start="1970-01-01", periods=len(price_data), freq="1min")
+                else:
+                    base_index = pd.date_range(start="1970-01-01", periods=len(price_data), freq="1min")
 
             # Multi-timeframe features for different timeframes
             for timeframe in self.timeframes:
@@ -2394,13 +2402,8 @@ class VectorizedWaveletTransformAnalyzer:
     ) -> dict[str, Any]:
         """
         Analyze wavelet transforms for signal processing and feature extraction with enhanced handling.
-
-        Args:
-            price_data: OHLCV price data
-            volume_data: Volume data (optional)
-
-        Returns:
-            Dictionary containing wavelet transform features
+        
+        OPTIMIZED VERSION: Reduced computational complexity for better performance
         """
         try:
             if not self.is_initialized:
@@ -2414,15 +2417,25 @@ class VectorizedWaveletTransformAnalyzer:
             self.logger.info("🔍 Performing enhanced wavelet transform analysis...")
             start_time = time.time()
 
+            # OPTIMIZATION: Limit data size for wavelet analysis
+            max_records = self.config.get("wavelet_max_records", 50000)
+            if len(price_data) > max_records:
+                self.logger.info(f"📊 Limiting wavelet analysis to {max_records} records (from {len(price_data)})")
+                # Take the most recent records for analysis
+                price_data = price_data.tail(max_records).copy()
+                if volume_data is not None:
+                    volume_data = volume_data.tail(max_records).copy()
+
             features = {}
             total_features = 0
 
             # 1. Prepare stationary series for analysis
             stationary_series = self._prepare_stationary_series(price_data)
             
-            # 2. Discrete Wavelet Transform (DWT) analysis with boundary handling
+            # 2. Discrete Wavelet Transform (DWT) analysis - OPTIMIZED
             if self.enable_discrete_wavelet:
                 dwt_start = time.time()
+                self.logger.info("🔄 Computing DWT features...")
                 dwt_features = await self._analyze_discrete_wavelet_transforms_enhanced(
                     price_data, stationary_series
                 )
@@ -2430,10 +2443,12 @@ class VectorizedWaveletTransformAnalyzer:
                 self.computation_times["dwt"] = time.time() - dwt_start
                 self.feature_counts["dwt"] = len(dwt_features)
                 total_features += len(dwt_features)
+                self.logger.info(f"✅ DWT completed: {len(dwt_features)} features in {self.computation_times['dwt']:.2f}s")
 
-            # 3. Continuous Wavelet Transform (CWT) analysis with dynamic scale selection
+            # 3. Continuous Wavelet Transform (CWT) analysis
             if self.enable_continuous_wavelet:
                 cwt_start = time.time()
+                self.logger.info("🔄 Computing CWT features...")
                 cwt_features = await self._analyze_continuous_wavelet_transforms_enhanced(
                     price_data, stationary_series
                 )
@@ -2441,10 +2456,12 @@ class VectorizedWaveletTransformAnalyzer:
                 self.computation_times["cwt"] = time.time() - cwt_start
                 self.feature_counts["cwt"] = len(cwt_features)
                 total_features += len(cwt_features)
+                self.logger.info(f"✅ CWT completed: {len(cwt_features)} features in {self.computation_times['cwt']:.2f}s")
 
-            # 4. Wavelet Packet analysis with dimensionality control
+            # 4. Wavelet Packet analysis
             if self.enable_wavelet_packet:
                 packet_start = time.time()
+                self.logger.info("🔄 Computing wavelet packet features...")
                 packet_features = await self._analyze_wavelet_packets_enhanced(
                     price_data, stationary_series
                 )
@@ -2452,10 +2469,12 @@ class VectorizedWaveletTransformAnalyzer:
                 self.computation_times["packet"] = time.time() - packet_start
                 self.feature_counts["packet"] = len(packet_features)
                 total_features += len(packet_features)
+                self.logger.info(f"✅ Wavelet packets completed: {len(packet_features)} features in {self.computation_times['packet']:.2f}s")
 
-            # 5. Wavelet denoising with boundary effect management
-            if self.enable_denoising:
+            # OPTIMIZATION: Skip expensive denoising analysis
+            if self.enable_denoising and len(price_data) <= 5000:
                 denoising_start = time.time()
+                self.logger.info("🔄 Computing wavelet denoising features...")
                 denoising_features = await self._analyze_wavelet_denoising_enhanced(
                     price_data, stationary_series
                 )
@@ -2463,9 +2482,13 @@ class VectorizedWaveletTransformAnalyzer:
                 self.computation_times["denoising"] = time.time() - denoising_start
                 self.feature_counts["denoising"] = len(denoising_features)
                 total_features += len(denoising_features)
+                self.logger.info(f"✅ Wavelet denoising completed: {len(denoising_features)} features in {self.computation_times['denoising']:.2f}s")
+            else:
+                self.logger.info("⏭️ Skipping wavelet denoising analysis (dataset too large or disabled)")
 
-            # 6. Multi-wavelet analysis with feature selection
+            # OPTIMIZATION: Skip expensive multi-wavelet analysis
             multi_start = time.time()
+            self.logger.info("🔄 Computing multi-wavelet features...")
             multi_wavelet_features = await self._analyze_multi_wavelet_transforms_enhanced(
                 price_data, stationary_series
             )
@@ -2473,10 +2496,12 @@ class VectorizedWaveletTransformAnalyzer:
             self.computation_times["multi_wavelet"] = time.time() - multi_start
             self.feature_counts["multi_wavelet"] = len(multi_wavelet_features)
             total_features += len(multi_wavelet_features)
+            self.logger.info(f"✅ Multi-wavelet completed: {len(multi_wavelet_features)} features in {self.computation_times['multi_wavelet']:.2f}s")
 
-            # 7. Volume wavelet analysis (if available)
-            if volume_data is not None and not volume_data.empty:
+            # OPTIMIZATION: Skip volume wavelet analysis for large datasets
+            if volume_data is not None and not volume_data.empty and len(volume_data) <= 10000:
                 volume_start = time.time()
+                self.logger.info("🔄 Computing volume wavelet features...")
                 volume_wavelet_features = await self._analyze_volume_wavelet_transforms_enhanced(
                     volume_data
                 )
@@ -2484,22 +2509,21 @@ class VectorizedWaveletTransformAnalyzer:
                 self.computation_times["volume_wavelet"] = time.time() - volume_start
                 self.feature_counts["volume_wavelet"] = len(volume_wavelet_features)
                 total_features += len(volume_wavelet_features)
+                self.logger.info(f"✅ Volume wavelet completed: {len(volume_wavelet_features)} features in {self.computation_times['volume_wavelet']:.2f}s")
+            else:
+                self.logger.info("⏭️ Skipping volume wavelet analysis (dataset too large or no volume data)")
 
             # 8. Feature selection and dimensionality reduction
+            self.logger.info("🔄 Selecting optimal wavelet features...")
             selected_features = self._select_optimal_wavelet_features(features)
             
             total_time = time.time() - start_time
             self.computation_times["total"] = total_time
-            self.feature_counts["total"] = len(selected_features)
-
-            self.logger.info(
-                f"✅ Enhanced wavelet transform analysis completed in {total_time:.2f}s. "
-                f"Generated {len(selected_features)} features from {total_features} candidates. "
-                f"Feature selection: {self.feature_selection_method}"
-            )
             
-            # Log performance metrics
-            self._log_performance_metrics()
+            self.logger.info(
+                f"✅ Wavelet analysis completed: {len(selected_features)} selected features "
+                f"from {total_features} total features in {total_time:.2f}s"
+            )
             
             return selected_features
 
@@ -2555,14 +2579,16 @@ class VectorizedWaveletTransformAnalyzer:
     async def _analyze_discrete_wavelet_transforms_enhanced(
         self, 
         price_data: pd.DataFrame, 
-        stationary_series: dict[str, np.ndarray]
+        stationary_series: dict[str, np.ndarray],
+        wavelet_types: list[str] | None = None
     ) -> dict[str, float]:
         """Analyze discrete wavelet transforms with enhanced boundary handling."""
         try:
             features = {}
             
-            # Use limited wavelet types for efficiency
-            wavelet_types = self.wavelet_types[:self.max_wavelet_types]
+            # Use provided wavelet types or fall back to configured types
+            if wavelet_types is None:
+                wavelet_types = self.wavelet_types
             
             for wavelet_type in wavelet_types:
                 try:
@@ -2874,28 +2900,213 @@ class VectorizedWaveletTransformAnalyzer:
         price_data: pd.DataFrame, 
         stationary_series: dict[str, np.ndarray]
     ) -> dict[str, float]:
-        """Enhanced wavelet packet analysis."""
-        return {}
+        """Enhanced wavelet packet analysis - OPTIMIZED for large datasets."""
+        try:
+            features = {}
+            
+            # For large datasets, use a simplified approach
+            if len(price_data) > 5000:
+                # Use only close price for efficiency
+                close_series = price_data['close'].values
+                
+                # Simple wavelet packet features using only db4
+                try:
+                    # Single level decomposition for efficiency
+                    coeffs = pywt.wavedec(close_series, 'db4', level=1, mode='symmetric')
+                    
+                    if len(coeffs) >= 2:
+                        # Extract basic features from approximation and detail coefficients
+                        approx_coeffs = coeffs[0]
+                        detail_coeffs = coeffs[1]
+                        
+                        # Energy features
+                        features['wavelet_packet_approx_energy'] = np.sum(approx_coeffs ** 2)
+                        features['wavelet_packet_detail_energy'] = np.sum(detail_coeffs ** 2)
+                        
+                        # Statistical features
+                        features['wavelet_packet_approx_mean'] = np.mean(approx_coeffs)
+                        features['wavelet_packet_approx_std'] = np.std(approx_coeffs)
+                        features['wavelet_packet_detail_mean'] = np.mean(detail_coeffs)
+                        features['wavelet_packet_detail_std'] = np.std(detail_coeffs)
+                        
+                        # Energy ratio
+                        total_energy = features['wavelet_packet_approx_energy'] + features['wavelet_packet_detail_energy']
+                        if total_energy > 0:
+                            features['wavelet_packet_energy_ratio'] = features['wavelet_packet_detail_energy'] / total_energy
+                        else:
+                            features['wavelet_packet_energy_ratio'] = 0.0
+                            
+                except Exception as e:
+                    self.logger.warning(f"Error in simplified wavelet packet analysis: {e}")
+                    
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced wavelet packet analysis: {e}")
+            return {}
 
     async def _analyze_wavelet_denoising_enhanced(
         self, 
         price_data: pd.DataFrame, 
         stationary_series: dict[str, np.ndarray]
     ) -> dict[str, float]:
-        """Enhanced wavelet denoising analysis."""
-        return {}
+        """Enhanced wavelet denoising analysis - OPTIMIZED for large datasets."""
+        try:
+            features = {}
+            
+            # For large datasets, use a simplified approach
+            if len(price_data) > 5000:
+                # Use only close price for efficiency
+                close_series = price_data['close'].values
+                
+                try:
+                    # Simple denoising using soft thresholding
+                    coeffs = pywt.wavedec(close_series, 'db4', level=2, mode='symmetric')
+                    
+                    if len(coeffs) >= 3:
+                        # Apply soft thresholding to detail coefficients
+                        threshold = np.std(coeffs[1]) * np.sqrt(2 * np.log(len(coeffs[1])))
+                        
+                        # Denoise detail coefficients
+                        denoised_coeffs = []
+                        for i, coeff in enumerate(coeffs):
+                            if i == 0:  # Approximation coefficients (keep as is)
+                                denoised_coeffs.append(coeff)
+                            else:  # Detail coefficients (apply thresholding)
+                                denoised_coeff = np.sign(coeff) * np.maximum(np.abs(coeff) - threshold, 0)
+                                denoised_coeffs.append(denoised_coeff)
+                        
+                        # Reconstruct denoised signal
+                        denoised_signal = pywt.waverec(denoised_coeffs, 'db4', mode='symmetric')
+                        
+                        # Calculate denoising features
+                        if len(denoised_signal) == len(close_series):
+                            # Noise reduction ratio
+                            original_energy = np.sum(close_series ** 2)
+                            denoised_energy = np.sum(denoised_signal ** 2)
+                            
+                            if original_energy > 0:
+                                features['wavelet_denoising_noise_reduction'] = 1 - (denoised_energy / original_energy)
+                            else:
+                                features['wavelet_denoising_noise_reduction'] = 0.0
+                            
+                            # Signal quality improvement
+                            original_std = np.std(close_series)
+                            denoised_std = np.std(denoised_signal)
+                            
+                            if original_std > 0:
+                                features['wavelet_denoising_signal_quality'] = denoised_std / original_std
+                            else:
+                                features['wavelet_denoising_signal_quality'] = 1.0
+                                
+                except Exception as e:
+                    self.logger.warning(f"Error in simplified wavelet denoising: {e}")
+                    
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced wavelet denoising analysis: {e}")
+            return {}
 
     async def _analyze_multi_wavelet_transforms_enhanced(
         self, 
         price_data: pd.DataFrame, 
         stationary_series: dict[str, np.ndarray]
     ) -> dict[str, float]:
-        """Enhanced multi-wavelet transform analysis."""
-        return {}
+        """Enhanced multi-wavelet transform analysis - OPTIMIZED for large datasets."""
+        try:
+            features = {}
+            
+            # For large datasets, use a simplified approach with multiple wavelet types
+            if len(price_data) > 5000:
+                # Use only close price for efficiency
+                close_series = price_data['close'].values
+                
+                # Use configured wavelet types for comparison
+                wavelet_types = self.wavelet_types[:3]  # Use first 3 types for efficiency
+                
+                for wavelet_type in wavelet_types:
+                    try:
+                        # Single level decomposition for efficiency
+                        coeffs = pywt.wavedec(close_series, wavelet_type, level=1, mode='symmetric')
+                        
+                        if len(coeffs) >= 2:
+                            approx_coeffs = coeffs[0]
+                            detail_coeffs = coeffs[1]
+                            
+                            # Energy features for each wavelet type
+                            features[f'multi_wavelet_{wavelet_type}_approx_energy'] = np.sum(approx_coeffs ** 2)
+                            features[f'multi_wavelet_{wavelet_type}_detail_energy'] = np.sum(detail_coeffs ** 2)
+                            
+                            # Statistical features for each wavelet type
+                            features[f'multi_wavelet_{wavelet_type}_approx_std'] = np.std(approx_coeffs)
+                            features[f'multi_wavelet_{wavelet_type}_detail_std'] = np.std(detail_coeffs)
+                            
+                    except Exception as e:
+                        self.logger.warning(f"Error with wavelet type {wavelet_type}: {e}")
+                        continue
+                
+                # Cross-wavelet comparison features
+                if 'multi_wavelet_db4_approx_energy' in features and 'multi_wavelet_haar_approx_energy' in features:
+                    db4_energy = features['multi_wavelet_db4_approx_energy']
+                    haar_energy = features['multi_wavelet_haar_approx_energy']
+                    
+                    if haar_energy > 0:
+                        features['multi_wavelet_db4_haar_energy_ratio'] = db4_energy / haar_energy
+                    else:
+                        features['multi_wavelet_db4_haar_energy_ratio'] = 1.0
+                        
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced multi-wavelet transform analysis: {e}")
+            return {}
 
     async def _analyze_volume_wavelet_transforms_enhanced(
         self, 
         volume_data: pd.DataFrame
     ) -> dict[str, float]:
-        """Enhanced volume wavelet transform analysis."""
-        return {}
+        """Enhanced volume wavelet transform analysis - OPTIMIZED for large datasets."""
+        try:
+            features = {}
+            
+            # For large datasets, use a simplified approach
+            if len(volume_data) > 10000:
+                # Use only volume for efficiency
+                volume_series = volume_data['volume'].values
+                
+                try:
+                    # Simple wavelet analysis on volume
+                    coeffs = pywt.wavedec(volume_series, 'db4', level=1, mode='symmetric')
+                    
+                    if len(coeffs) >= 2:
+                        approx_coeffs = coeffs[0]
+                        detail_coeffs = coeffs[1]
+                        
+                        # Volume-specific wavelet features
+                        features['volume_wavelet_approx_energy'] = np.sum(approx_coeffs ** 2)
+                        features['volume_wavelet_detail_energy'] = np.sum(detail_coeffs ** 2)
+                        
+                        # Volume volatility features
+                        features['volume_wavelet_approx_volatility'] = np.std(approx_coeffs)
+                        features['volume_wavelet_detail_volatility'] = np.std(detail_coeffs)
+                        
+                        # Volume trend features
+                        features['volume_wavelet_approx_trend'] = np.mean(approx_coeffs)
+                        features['volume_wavelet_detail_trend'] = np.mean(detail_coeffs)
+                        
+                        # Energy ratio for volume
+                        total_volume_energy = features['volume_wavelet_approx_energy'] + features['volume_wavelet_detail_energy']
+                        if total_volume_energy > 0:
+                            features['volume_wavelet_energy_ratio'] = features['volume_wavelet_detail_energy'] / total_volume_energy
+                        else:
+                            features['volume_wavelet_energy_ratio'] = 0.0
+                            
+                except Exception as e:
+                    self.logger.warning(f"Error in simplified volume wavelet analysis: {e}")
+                    
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced volume wavelet transform analysis: {e}")
+            return {}

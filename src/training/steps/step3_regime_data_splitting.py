@@ -204,12 +204,27 @@ class RegimeDataSplittingStep:
                     unified_data["timestamp"]
                 ).dt.floor("1min")
 
-            # Merge regime data with unified data
-            merged_data = unified_data.merge(
-                regime_data[["timestamp", "regime", "confidence"]],
-                on="timestamp",
+            # Merge regime data with unified data (align 1h regimes to 1m data by hour)
+            ud = unified_data.copy()
+            if pd.api.types.is_datetime64_any_dtype(ud["timestamp"]):
+                ud["timestamp_hour"] = ud["timestamp"].dt.floor("1h")
+            else:
+                ud["timestamp_hour"] = pd.to_datetime(ud["timestamp"]).dt.floor("1h")
+
+            rd = regime_data.copy()
+            if pd.api.types.is_datetime64_any_dtype(rd["timestamp"]):
+                rd["timestamp_hour"] = rd["timestamp"].dt.floor("1h")
+            else:
+                rd["timestamp_hour"] = pd.to_datetime(rd["timestamp"]).dt.floor("1h")
+
+            merged_data = ud.merge(
+                rd["timestamp_hour"].to_frame().join(rd[["regime", "confidence"]]),
+                on="timestamp_hour",
                 how="left",
             )
+            # Cleanup helper key
+            if "timestamp_hour" in merged_data.columns:
+                merged_data = merged_data.drop(columns=["timestamp_hour"])  # keep original minute timestamp
 
             # Fill missing regimes with a default
             if merged_data["regime"].isna().any():
@@ -261,6 +276,24 @@ class RegimeDataSplittingStep:
                         for regime in df["regime"].unique():
                             regime_splits[regime] = df[df["regime"] == regime].copy()
                         self.logger.info("✅ Applied soft rebalance to regime splits")
+
+                # Final enforcement: ensure SIDEWAYS <= 40% via hard cap downsampling if needed
+                try:
+                    total_rows_final = sum(len(df) for df in regime_splits.values())
+                    if total_rows_final > 0 and "SIDEWAYS" in regime_splits:
+                        sideways_count_final = len(regime_splits["SIDEWAYS"])
+                        sideways_ratio_final = sideways_count_final / total_rows_final
+                        if sideways_ratio_final > 0.40:
+                            target_max_sideways = int(0.40 * total_rows_final)
+                            if target_max_sideways >= 1 and sideways_count_final > target_max_sideways:
+                                regime_splits["SIDEWAYS"] = regime_splits["SIDEWAYS"].sample(
+                                    n=target_max_sideways, random_state=42
+                                )
+                                self.logger.warning(
+                                    f"⚠️ Applied hard cap: downsampled SIDEWAYS from {sideways_count_final} to {target_max_sideways} rows"
+                                )
+                except Exception:
+                    pass
             except Exception:
                 pass
 

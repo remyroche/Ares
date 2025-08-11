@@ -4,8 +4,8 @@ from datetime import timedelta
 
 import numpy as np
 import pandas as pd
-from utils.logger import get_logger
-from utils.error_handler import handle_errors
+from src.utils.logger import get_logger
+from src.utils.error_handler import handle_errors
 
 
 class OptimizedTripleBarrierLabeling:
@@ -112,7 +112,7 @@ class OptimizedTripleBarrierLabeling:
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
             labeled_data = data.copy()
-            labeled_data["label"] = 0  # Default to hold signal
+            labeled_data["label"] = -1  # Default to sell signal for binary classification
             try:
                 self.logger.warning(
                     f"Missing required OHLC columns {missing_columns}; labeling skipped and labels set to -1 (sell)",

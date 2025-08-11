@@ -334,6 +334,12 @@ class AnalystLabelingFeatureEngineeringStep:
                         # Validate feature quality for 240+ feature set
                         labeled_data = await self._validate_and_enhance_features(labeled_data)
                         
+                        # Ensure OHLCV columns exist in labeled_data artifacts for validator visibility
+                        ohlcv_need = ["open","high","low","close","volume"]
+                        for _col in ohlcv_need:
+                            if _col not in labeled_data.columns and _col in price_data.columns:
+                                labeled_data[_col] = price_data[_col].values[: len(labeled_data)]
+                        
                         # Ensure the result has a 'label' column
                         if "label" not in labeled_data.columns:
                             self.logger.warning(

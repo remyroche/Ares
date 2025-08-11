@@ -375,15 +375,11 @@ class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
                             constant_features.append(col)
 
                     if constant_features:
-                        constant_ratio = len(constant_features) / feature_count
-                        if constant_ratio > 0.3:  # More than 30% constant features
-                            self.logger.warning(
-                                f"⚠️ High ratio of constant features: {constant_ratio:.3f} - continuing with caution"
-                            )
-                        else:
-                            self.logger.info(
-                                f"ℹ️ Found {len(constant_features)} constant features (acceptable)"
-                            )
+                        # Previously allowed up to a ratio; now warn strictly if any constant features
+                        self.logger.warning(
+                            f"⚠️ Found {len(constant_features)} constant features - this should be 0. Examples: {constant_features[:5]}"
+                        )
+                        # Do not fail the step here (warning), but make it visible
 
                     # Check for high correlation features
                     numeric_cols = feature_data.select_dtypes(

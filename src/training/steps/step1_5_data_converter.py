@@ -312,7 +312,7 @@ class ParquetDatasetManager:
         df: pd.DataFrame,
         base_dir: str,
         partition_cols: List[str],
-        schema_name: str,
+        schema_name: str | None,
         compression: str = "snappy",
         use_dictionary: Union[bool, Dict[str, bool]] = True,
         min_rows_per_group: int = 50000,
@@ -338,7 +338,9 @@ class ParquetDatasetManager:
                     f"Adjusted min_rows_per_group to {min_rows_per_group} to be less than max_rows_per_file ({max_rows_per_file})"
                 )
 
-        df = self.enforce_schema(df, schema_name)
+        # Enforce schema if provided; otherwise proceed with inferred schema
+        if schema_name:
+            df = self.enforce_schema(df, schema_name)
 
         # Verbose logging about the dataframe being written
         try:
@@ -388,10 +390,21 @@ class ParquetDatasetManager:
         # Create partitioning with specific columns to avoid too many partitions
         try:
             if partition_cols:
-                # Create partitioning with specific columns only
-                partitioning = ds.partitioning(partition_cols, flavor="hive")
+                # Build partition schema from df dtypes, defaulting to string
+                fields = []
+                for col in partition_cols:
+                    if col in df.columns:
+                        # Map pandas dtype to pyarrow
+                        try:
+                            dtype = pa.array(df[col]).type
+                        except Exception:
+                            dtype = pa.string()
+                        fields.append(pa.field(col, dtype))
+                    else:
+                        fields.append(pa.field(col, pa.string()))
+                partition_schema = pa.schema(fields)
+                partitioning = ds.partitioning(partition_schema, flavor="hive")
             else:
-                # No partitioning specified, use no partitioning
                 partitioning = None
         except Exception:
             # Fallback: no partitioning

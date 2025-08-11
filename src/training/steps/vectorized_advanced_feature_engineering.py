@@ -797,16 +797,17 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             features = {}
 
-            # Price impact features
+            # Price impact features (vectorized per-row)
             features["price_impact"] = self._calculate_price_impact_vectorized(price_data, volume_data)
             features["volume_price_impact"] = self._calculate_volume_price_impact_vectorized(price_data, volume_data)
 
-            # Order flow imbalance features
-            if order_flow_data is not None:
-                features["order_flow_imbalance"] = self._calculate_order_flow_imbalance_vectorized(order_flow_data)
-                features["bid_ask_spread"] = self._calculate_bid_ask_spread_vectorized(order_flow_data)
+            # Order-flow related features (proxies if book data not available)
+            features["order_flow_imbalance"] = self._calculate_order_flow_imbalance_vectorized(
+                price_data, volume_data, order_flow_data
+            )
+            features["bid_ask_spread"] = self._calculate_bid_ask_spread_vectorized(price_data)
 
-            # Market depth features
+            # Market depth features (vectorized per-row)
             features["market_depth"] = self._calculate_market_depth_vectorized(price_data, volume_data)
 
             return features
@@ -815,75 +816,115 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.error(f"Error engineering microstructure features: {e}")
             return {}
 
-    def _calculate_price_impact_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> float:
-        """Calculate price impact using price differences and vectorized operations."""
+    def _calculate_price_impact_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> pd.Series:
+        """Calculate per-row price impact using abs(close diff) normalized by rolling average volume."""
         try:
-            # Use price differences instead of percentage changes
             price_diff = price_data["close"].diff().abs()
-            volume_changes = volume_data["volume"].pct_change().abs()
-            
-            # Calculate price impact as correlation between price differences and volume changes
-            correlation = np.corrcoef(price_diff.dropna(), volume_changes.dropna())[0, 1]
-            return correlation if not np.isnan(correlation) else 0.0
-
+            avg_volume = (
+                volume_data["volume"].rolling(window=20, min_periods=1).mean().replace(0, np.nan)
+            )
+            impact = (price_diff / avg_volume).fillna(0)
+            return impact
         except Exception as e:
             self.logger.error(f"Error calculating price impact: {e}")
-            return 0.0
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
-    def _calculate_volume_price_impact_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> float:
-        """Calculate volume-price impact using price differences and vectorized operations."""
+    def _calculate_volume_price_impact_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> pd.Series:
+        """Calculate per-row volume-price impact: volume-weighted price diff normalized by rolling volume sum."""
         try:
-            # Calculate volume-weighted price differences
             price_diff = price_data["close"].diff()
-            volume_weights = volume_data["volume"] / volume_data["volume"].sum()
-            
-            # Volume-weighted average price difference
-            vwap_diff = np.sum(price_diff.dropna() * volume_weights.dropna())
-            return vwap_diff
-
+            rolling_vol_sum = volume_data["volume"].rolling(window=20, min_periods=1).sum().replace(0, np.nan)
+            weights = (volume_data["volume"] / rolling_vol_sum).replace([np.inf, -np.inf], np.nan)
+            vpi = (price_diff * weights).fillna(0)
+            return vpi
         except Exception as e:
             self.logger.error(f"Error calculating volume-price impact: {e}")
-            return 0.0
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
-    def _calculate_order_flow_imbalance_vectorized(self, order_flow_data: pd.DataFrame) -> float:
-        """Calculate order flow imbalance using vectorized operations."""
+    def _calculate_order_flow_imbalance_vectorized(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: pd.DataFrame | None = None,
+    ) -> pd.Series:
+        """Vectorized order flow imbalance using tick rule; uses book volumes if provided.
+
+        OFI ≈ sum(sign(Δp) * volume) / sum(volume) over a rolling window.
+        If order_flow_data has explicit buy/sell volumes, use (buy - sell) / (buy + sell).
+        """
         try:
-            # Simplified order flow imbalance calculation
-            # In practice, this would use actual order book data
-            return 0.0  # Placeholder
-
+            idx = price_data.index
+            # If explicit buy/sell volumes exist, use them
+            if order_flow_data is not None:
+                cols = {c.lower(): c for c in order_flow_data.columns}
+                buy_col = cols.get("buy_volume") or cols.get("bid_volume") or cols.get("buy")
+                sell_col = cols.get("sell_volume") or cols.get("ask_volume") or cols.get("sell")
+                if buy_col and sell_col:
+                    buy = pd.Series(order_flow_data[buy_col].values, index=order_flow_data.index).reindex(idx).fillna(0)
+                    sell = pd.Series(order_flow_data[sell_col].values, index=order_flow_data.index).reindex(idx).fillna(0)
+                    denom = (buy + sell).replace(0, np.nan)
+                    ofi = ((buy - sell) / denom).fillna(0)
+                    return ofi
+            # Tick rule proxy from close and volume
+            close = price_data["close"].astype(float)
+            vol = volume_data["volume"].astype(float)
+            price_delta = close.diff().fillna(0)
+            trade_sign = np.sign(price_delta)
+            signed_vol = trade_sign * vol
+            win = 20
+            num = signed_vol.rolling(win, min_periods=1).sum()
+            den = vol.rolling(win, min_periods=1).sum().replace(0, np.nan)
+            ofi = (num / den).replace([np.inf, -np.inf], np.nan).fillna(0)
+            return ofi
         except Exception as e:
             self.logger.error(f"Error calculating order flow imbalance: {e}")
-            return 0.0
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
-    def _calculate_bid_ask_spread_vectorized(self, order_flow_data: pd.DataFrame) -> float:
-        """Calculate bid-ask spread using vectorized operations."""
+    def _calculate_bid_ask_spread_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
+        """Estimate relative bid-ask spread using Corwin–Schultz with Roll as fallback (per-row)."""
         try:
-            # Simplified bid-ask spread calculation
-            # In practice, this would use actual order book data
-            return 0.0  # Placeholder
-
+            close = price_data["close"].astype(float)
+            high = price_data["high"].astype(float)
+            low = price_data["low"].astype(float)
+            # Corwin–Schultz estimator components
+            with np.errstate(divide='ignore', invalid='ignore'):
+                hl = np.log((high / low).replace(0, np.nan)) ** 2
+            beta = hl + hl.shift(1)
+            gamma = (np.log(np.maximum(high, high.shift(1)) / np.minimum(low, low.shift(1)).replace(0, np.nan))) ** 2
+            alpha = (np.sqrt(2 * beta) - np.sqrt(beta)) / (3 - 2 * np.sqrt(2))
+            cs_spread = 2 * (np.exp(alpha) - 1) / (1 + np.exp(alpha))
+            cs_spread = pd.Series(cs_spread, index=price_data.index)
+            # Roll estimator fallback (relative)
+            dp = close.diff()
+            roll_cov = dp.rolling(20, min_periods=2).cov(dp.shift(1))
+            roll_spread = 2 * np.sqrt(np.maximum(0, -roll_cov))
+            with np.errstate(divide='ignore', invalid='ignore'):
+                roll_spread_rel = (roll_spread / close).replace([np.inf, -np.inf], np.nan)
+            # Prefer CS, fill with Roll
+            spread = cs_spread.where(np.isfinite(cs_spread), roll_spread_rel)
+            spread = spread.fillna(method="ffill").fillna(method="bfill").fillna(0)
+            # Clip to reasonable bounds
+            spread = spread.clip(lower=0, upper=0.05)
+            return spread
         except Exception as e:
             self.logger.error(f"Error calculating bid-ask spread: {e}")
-            return 0.0
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
-    def _calculate_market_depth_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> float:
-        """Calculate market depth using vectorized operations."""
+    def _calculate_market_depth_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> pd.Series:
+        """Calculate market depth as rolling average volume (per-row series)."""
         try:
-            # Market depth as average volume over time
-            market_depth = volume_data["volume"].rolling(window=20).mean().iloc[-1]
+            market_depth = volume_data["volume"].rolling(window=20, min_periods=1).mean().fillna(0)
             return market_depth
-
         except Exception as e:
             self.logger.error(f"Error calculating market depth: {e}")
-            return 0.0
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
     def _engineer_adaptive_indicators_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """Engineer adaptive indicators using vectorized operations."""
         try:
             features = {}
 
-            # Adaptive moving averages
+            # Adaptive moving averages (per-row series)
             features["adaptive_sma"] = self._calculate_adaptive_sma_vectorized(price_data)
             features["adaptive_ema"] = self._calculate_adaptive_ema_vectorized(price_data)
 
@@ -897,94 +938,69 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.error(f"Error engineering adaptive indicators: {e}")
             return {}
 
-    def _calculate_adaptive_sma_vectorized(self, price_data: pd.DataFrame) -> float:
-        """Calculate adaptive SMA using vectorized operations."""
+    def _calculate_adaptive_sma_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
+        """Adaptive SMA as a weighted blend of short and long SMAs per row."""
         try:
-            # Adaptive SMA based on volatility
-            volatility = price_data["close"].pct_change().rolling(window=20).std()
-            # Handle NaN and infinite values before converting to int
-            adaptive_window_raw = 20 / (1 + volatility * 100)
-            adaptive_window_raw = adaptive_window_raw.fillna(20)  # Default to 20 if NaN
-            adaptive_window_raw = np.clip(adaptive_window_raw, 5, 50)
-            adaptive_window = adaptive_window_raw.astype(int)
-            
-            # Calculate adaptive SMA
-            adaptive_sma = price_data["close"].rolling(window=adaptive_window.iloc[-1]).mean().iloc[-1]
-            return adaptive_sma
-
+            close = price_data["close"]
+            vol = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
+            weight = (1 / (1 + vol * 100)).clip(0, 1)
+            sma_short = close.rolling(5, min_periods=1).mean()
+            sma_long = close.rolling(50, min_periods=1).mean()
+            adaptive = weight * sma_short + (1 - weight) * sma_long
+            return adaptive.fillna(method="ffill").fillna(method="bfill").fillna(0)
         except Exception as e:
             self.logger.error(f"Error calculating adaptive SMA: {e}")
-            return 0.0
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
-    def _calculate_adaptive_ema_vectorized(self, price_data: pd.DataFrame) -> float:
-        """Calculate adaptive EMA using vectorized operations."""
+    def _calculate_adaptive_ema_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
+        """Adaptive EMA as a weighted blend of short and long EMAs per row."""
         try:
-            # Adaptive EMA based on volatility
-            volatility = price_data["close"].pct_change().rolling(window=20).std()
-            # Handle NaN and infinite values
-            adaptive_span_raw = 12 / (1 + volatility * 100)
-            adaptive_span_raw = adaptive_span_raw.fillna(12)  # Default to 12 if NaN
-            adaptive_span = np.clip(adaptive_span_raw, 2, 50)
-            
-            # Calculate adaptive EMA
-            adaptive_ema = price_data["close"].ewm(span=adaptive_span.iloc[-1]).mean().iloc[-1]
-            return adaptive_ema
-
+            close = price_data["close"]
+            vol = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
+            weight = (1 / (1 + vol * 100)).clip(0, 1)
+            ema_short = close.ewm(span=5, adjust=False).mean()
+            ema_long = close.ewm(span=50, adjust=False).mean()
+            adaptive = weight * ema_short + (1 - weight) * ema_long
+            return adaptive.fillna(method="ffill").fillna(method="bfill").fillna(0)
         except Exception as e:
             self.logger.error(f"Error calculating adaptive EMA: {e}")
-            return 0.0
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
-    def _calculate_adaptive_atr_vectorized(self, price_data: pd.DataFrame) -> float:
-        """Calculate adaptive ATR using vectorized operations."""
+    def _calculate_adaptive_atr_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
+        """Adaptive ATR as a weighted blend of short and long ATR per row."""
         try:
-            # Adaptive ATR based on volatility regime
             high_low = price_data["high"] - price_data["low"]
-            high_close = np.abs(price_data["high"] - price_data["close"].shift())
-            low_close = np.abs(price_data["low"] - price_data["close"].shift())
-            
-            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-            
-            # Adaptive window based on volatility
-            volatility = true_range.rolling(window=20).std()
-            # Handle NaN and infinite values before converting to int
-            adaptive_window_raw = 14 / (1 + volatility * 10)
-            adaptive_window_raw = adaptive_window_raw.fillna(14)  # Default to 14 if NaN
-            adaptive_window_raw = np.clip(adaptive_window_raw, 5, 30)
-            adaptive_window = adaptive_window_raw.astype(int)
-            
-            adaptive_atr = true_range.rolling(window=adaptive_window.iloc[-1]).mean().iloc[-1]
-            return adaptive_atr
-
+            high_close = (price_data["high"] - price_data["close"].shift()).abs()
+            low_close = (price_data["low"] - price_data["close"].shift()).abs()
+            tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            vol = tr.rolling(20, min_periods=1).std().fillna(0)
+            weight = (1 / (1 + vol * 10)).clip(0, 1)
+            atr_short = tr.rolling(5, min_periods=1).mean()
+            atr_long = tr.rolling(30, min_periods=1).mean()
+            adaptive = weight * atr_short + (1 - weight) * atr_long
+            return adaptive.fillna(method="ffill").fillna(method="bfill").fillna(0)
         except Exception as e:
             self.logger.error(f"Error calculating adaptive ATR: {e}")
-            return 0.0
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
-    def _calculate_adaptive_bollinger_vectorized(self, price_data: pd.DataFrame) -> float:
-        """Calculate adaptive Bollinger Bands using vectorized operations."""
+    def _calculate_adaptive_bollinger_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
+        """Adaptive Bollinger position as a weighted blend of short/long band positions per row."""
         try:
-            # Adaptive Bollinger Bands based on volatility
-            volatility = price_data["close"].pct_change().rolling(window=20).std()
-            # Handle NaN and infinite values before converting to int
-            adaptive_window_raw = 20 / (1 + volatility * 100)
-            adaptive_window_raw = adaptive_window_raw.fillna(20)  # Default to 20 if NaN
-            adaptive_window_raw = np.clip(adaptive_window_raw, 10, 50)
-            adaptive_window = adaptive_window_raw.astype(int)
-            
-            # Calculate adaptive Bollinger Bands
-            sma = price_data["close"].rolling(window=adaptive_window.iloc[-1]).mean()
-            std = price_data["close"].rolling(window=adaptive_window.iloc[-1]).std()
-            
-            upper_band = sma + (std * 2)
-            lower_band = sma - (std * 2)
-            
-            # Return position within bands
-            current_price = price_data["close"].iloc[-1]
-            position = (current_price - lower_band.iloc[-1]) / (upper_band.iloc[-1] - lower_band.iloc[-1])
-            return position
-
+            close = price_data["close"]
+            vol = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
+            weight = (1 / (1 + vol * 100)).clip(0, 1)
+            sma_s = close.rolling(10, min_periods=1).mean(); std_s = close.rolling(10, min_periods=1).std()
+            sma_l = close.rolling(50, min_periods=1).mean(); std_l = close.rolling(50, min_periods=1).std()
+            upper_s = sma_s + 2 * std_s; lower_s = sma_s - 2 * std_s
+            upper_l = sma_l + 2 * std_l; lower_l = sma_l - 2 * std_l
+            with np.errstate(divide='ignore', invalid='ignore'):
+                pos_s = ((close - lower_s) / (upper_s - lower_s)).replace([np.inf, -np.inf], np.nan)
+                pos_l = ((close - lower_l) / (upper_l - lower_l)).replace([np.inf, -np.inf], np.nan)
+            position = weight * pos_s + (1 - weight) * pos_l
+            return position.fillna(method="ffill").fillna(method="bfill").fillna(0)
         except Exception as e:
             self.logger.error(f"Error calculating adaptive Bollinger Bands: {e}")
-            return 0.0
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
     def _select_optimal_features_vectorized(self, features: dict[str, Any]) -> dict[str, Any]:
         """Select optimal features using vectorized operations."""
@@ -1141,23 +1157,35 @@ class VectorizedAdvancedFeatureEngineering:
         """Engineer multi-timeframe features using vectorized operations."""
         try:
             features = {}
+            base_index = price_data.index
 
             # Multi-timeframe features for different timeframes
             for timeframe in self.timeframes:
                 # Resample data to timeframe
                 resampled_price = self._resample_data_vectorized(price_data, timeframe)
                 resampled_volume = self._resample_data_vectorized(volume_data, timeframe)
-                
+
                 # Calculate features for this timeframe
                 timeframe_features = await self._calculate_timeframe_features_vectorized(
                     resampled_price,
                     resampled_volume,
                     timeframe,
                 )
-                
-                # Add timeframe prefix to features
+
+                # Add timeframe prefix to features and align back to base index
                 for feature_name, feature_value in timeframe_features.items():
-                    features[f"{timeframe}_{feature_name}"] = feature_value
+                    # Ensure we have a Series to reindex
+                    if isinstance(feature_value, np.ndarray):
+                        series = pd.Series(feature_value, index=resampled_price.index)
+                    elif isinstance(feature_value, pd.Series):
+                        series = feature_value
+                    else:
+                        try:
+                            series = pd.Series(feature_value, index=resampled_price.index)
+                        except Exception:
+                            continue
+                    aligned = series.reindex(base_index, method="ffill").fillna(method="bfill").fillna(0)
+                    features[f"{timeframe}_{feature_name}"] = aligned
 
             return features
 
@@ -1266,23 +1294,23 @@ class VectorizedAdvancedFeatureEngineering:
             # Basic price features as full series aligned to index
             price_change_series = price_data["close"].pct_change()
             price_vol_series = price_data["close"].pct_change().rolling(window=20).std()
-            features["price_change"] = price_change_series.values
-            features["price_volatility"] = price_vol_series.values
-            
+            features["price_change"] = price_change_series
+            features["price_volatility"] = price_vol_series
+
             # Volume features as full series
             volume_change_series = volume_data["volume"].pct_change()
-            volume_ma_ratio_series = volume_data["volume"] / volume_data["volume"].rolling(window=20).mean()
-            features["volume_change"] = volume_change_series.values
-            features["volume_ma_ratio"] = volume_ma_ratio_series.values
-            # Additional multi-horizon volume MA ratios to avoid constant 0 values
+            volume_ma_ratio_series = volume_data["volume"] / volume_data["volume"].rolling(window=20, min_periods=1).mean()
+            features["volume_change"] = volume_change_series
+            features["volume_ma_ratio"] = volume_ma_ratio_series
+            # Additional multi-horizon volume MA ratios
             try:
                 vol_ma_5 = volume_data["volume"].rolling(window=5, min_periods=1).mean()
                 vol_ma_15 = volume_data["volume"].rolling(window=15, min_periods=1).mean()
-                features["5m_volume_ma_ratio"] = (volume_data["volume"] / (vol_ma_5.replace(0, np.nan))).fillna(0).values
-                features["15m_volume_ma_ratio"] = (volume_data["volume"] / (vol_ma_15.replace(0, np.nan))).fillna(0).values
+                features["5m_volume_ma_ratio"] = (volume_data["volume"] / (vol_ma_5.replace(0, np.nan))).replace([np.inf, -np.inf], np.nan).fillna(1.0)
+                features["15m_volume_ma_ratio"] = (volume_data["volume"] / (vol_ma_15.replace(0, np.nan))).replace([np.inf, -np.inf], np.nan).fillna(1.0)
             except Exception:
                 pass
- 
+
             return features
 
         except Exception as e:
@@ -1379,33 +1407,30 @@ class VectorizedVolatilityRegimeModel:
         """Model volatility regimes using price differences."""
         try:
             # Use price differences instead of returns
-            price_diff = price_data["close"].diff().dropna()
+            price_diff = price_data["close"].diff()
 
-            # Calculate various volatility measures using price differences
-            realized_vol = price_diff.rolling(20).std()
-            
-            # Parkinson volatility using price differences
+            # Calculate various volatility measures using price differences (series)
+            realized_vol = price_diff.rolling(20, min_periods=1).std()
+
+            # Parkinson and Garman-Klass volatility as series
             parkinson_vol = self._calculate_parkinson_volatility_vectorized(price_data)
-            
-            # Garman-Klass volatility using price differences
             garman_klass_vol = self._calculate_garman_klass_volatility_vectorized(price_data)
 
-            # Volatility regime classification
-            vol_percentile = realized_vol.rank(pct=True).iloc[-1] if not realized_vol.empty else 0.5
-
-            if vol_percentile > 0.8:
-                vol_regime = "high"
-            elif vol_percentile < 0.2:
-                vol_regime = "low"
-            else:
-                vol_regime = "medium"
+            # Volatility regime classification as numeric series
+            vol_percentile_series = realized_vol.rank(pct=True).fillna(0.5)
+            # Map to 0,1,2
+            vol_regime_numeric = pd.cut(
+                vol_percentile_series,
+                bins=[-np.inf, 0.2, 0.8, np.inf],
+                labels=[0, 1, 2],
+            ).astype("int8")
 
             return {
-                "realized_volatility": realized_vol.iloc[-1] if not realized_vol.empty else 0.0,
-                "parkinson_volatility": parkinson_vol.iloc[-1] if not parkinson_vol.empty else 0.0,
-                "garman_klass_volatility": garman_klass_vol.iloc[-1] if not garman_klass_vol.empty else 0.0,
-                "volatility_regime": vol_regime,
-                "volatility_percentile": vol_percentile,
+                "realized_volatility": realized_vol.fillna(0).values,
+                "parkinson_volatility": parkinson_vol.fillna(0).values if isinstance(parkinson_vol, pd.Series) else parkinson_vol,
+                "garman_klass_volatility": garman_klass_vol.fillna(0).values if isinstance(garman_klass_vol, pd.Series) else garman_klass_vol,
+                "volatility_regime": vol_regime_numeric.values,
+                "volatility_percentile": vol_percentile_series.values,
             }
 
         except Exception as e:
@@ -1418,23 +1443,21 @@ class VectorizedVolatilityRegimeModel:
             # Use high-low differences
             high_low_diff = price_data["high"] - price_data["low"]
             high_low_ratio = np.log(high_low_diff / price_data["close"].shift(1) + 1) ** 2
-            parkinson_vol = np.sqrt(high_low_ratio / (4 * np.log(2)))
-            return parkinson_vol.rolling(20).mean()
-        except Exception:
-            return pd.Series()
+            parkinson_vol = high_low_ratio.rolling(20, min_periods=1).mean()
+            return parkinson_vol
+        except Exception as e:
+            self.logger.error(f"Error calculating Parkinson volatility: {e}")
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
     def _calculate_garman_klass_volatility_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
-        """Calculate Garman-Klass volatility estimator using price differences."""
         try:
-            # Use price differences
-            c = price_data["close"].diff()
-            h = price_data["high"] - price_data["close"].shift(1)
-            l = price_data["low"] - price_data["close"].shift(1)
-
-            gk_vol = np.sqrt(0.5 * (h - l) ** 2 - (2 * np.log(2) - 1) * c**2)
-            return gk_vol.rolling(20).mean()
-        except Exception:
-            return pd.Series()
+            log_hl = np.log(price_data["high"] / price_data["low"]).pow(2)
+            log_co = np.log(price_data["close"] / price_data["open"]).pow(2)
+            gk = 0.5 * log_hl - (2 * np.log(2) - 1) * log_co
+            return gk.rolling(20, min_periods=1).mean()
+        except Exception as e:
+            self.logger.error(f"Error calculating Garman-Klass volatility: {e}")
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
 
 class VectorizedCorrelationAnalyzer:
@@ -1604,31 +1627,35 @@ class VectorizedSRDistanceCalculator:
         price_data: pd.DataFrame,
         sr_levels: dict[str, Any],
     ) -> dict[str, Any]:
-        """Calculate distances to support/resistance levels using price differences."""
+        """Calculate per-row distances to nearest support/resistance levels."""
         try:
-            current_price = price_data["close"].iloc[-1]
-            
-            # Extract support and resistance levels
-            support_levels = sr_levels.get("support_levels", [])
-            resistance_levels = sr_levels.get("resistance_levels", [])
-            
-            # Calculate distances
-            support_distances = [abs(current_price - level) / current_price for level in support_levels] if support_levels else [float('inf')]
-            resistance_distances = [abs(current_price - level) / current_price for level in resistance_levels] if resistance_levels else [float('inf')]
-            
-            nearest_support_distance = min(support_distances) if support_distances else 0.02
-            nearest_resistance_distance = min(resistance_distances) if resistance_distances else 0.03
-            
+            close = price_data["close"].astype(float)
+            support_levels = sr_levels.get("support_levels", []) or []
+            resistance_levels = sr_levels.get("resistance_levels", []) or []
+            if len(support_levels) == 0:
+                nsd = pd.Series(np.full(len(close), np.nan), index=close.index)
+            else:
+                dists = np.vstack([np.abs(close.values - lvl) / np.where(close.values!=0, close.values, np.nan) for lvl in support_levels])
+                nsd = pd.Series(np.nanmin(dists, axis=0), index=close.index)
+            if len(resistance_levels) == 0:
+                nrd = pd.Series(np.full(len(close), np.nan), index=close.index)
+            else:
+                dists = np.vstack([np.abs(close.values - lvl) / np.where(close.values!=0, close.values, np.nan) for lvl in resistance_levels])
+                nrd = pd.Series(np.nanmin(dists, axis=0), index=close.index)
             return {
-                "nearest_support_distance": nearest_support_distance,
-                "nearest_resistance_distance": nearest_resistance_distance,
-                "support_levels_count": len(support_levels),
-                "resistance_levels_count": len(resistance_levels),
+                "nearest_support_distance": nsd.fillna(method="ffill").fillna(method="bfill").fillna(0).values,
+                "nearest_resistance_distance": nrd.fillna(method="ffill").fillna(method="bfill").fillna(0).values,
+                "support_levels_count": pd.Series(np.full(len(close), len(support_levels)), index=close.index).values,
+                "resistance_levels_count": pd.Series(np.full(len(close), len(resistance_levels)), index=close.index).values,
             }
-
         except Exception as e:
             self.logger.error(f"Error calculating S/R distances: {e}")
-            return {"nearest_support_distance": 0.02, "nearest_resistance_distance": 0.03}
+            return {
+                "nearest_support_distance": pd.Series(np.zeros(len(price_data)), index=price_data.index).values,
+                "nearest_resistance_distance": pd.Series(np.zeros(len(price_data)), index=price_data.index).values,
+                "support_levels_count": pd.Series(np.zeros(len(price_data)), index=price_data.index).values,
+                "resistance_levels_count": pd.Series(np.zeros(len(price_data)), index=price_data.index).values,
+            }
 
 
 class VectorizedCandlestickPatternAnalyzer:
@@ -2135,7 +2162,9 @@ class VectorizedCandlestickPatternAnalyzer:
         try:
             features = {}
 
-            # Calculate pattern type features (count and presence)
+            window = 20  # rolling window for counts/densities
+
+            # Calculate pattern type features (rolling count and presence per row)
             pattern_types = [
                 "engulfing_patterns",
                 "hammer_hanging_man",
@@ -2150,16 +2179,17 @@ class VectorizedCandlestickPatternAnalyzer:
             for pattern_type in pattern_types:
                 if pattern_type in patterns:
                     pattern_data = patterns[pattern_type]
-                    # Count patterns
-                    pattern_count = sum(
-                        np.sum(pattern_data.get(key, np.zeros(len(df), dtype=bool)))
-                        for key in pattern_data.keys()
-                        if isinstance(pattern_data[key], np.ndarray) and pattern_data[key].dtype == bool
-                    )
-                    features[f"{pattern_type}_count"] = pattern_count
-                    features[f"{pattern_type}_present"] = 1.0 if pattern_count > 0 else 0.0
+                    # Sum boolean arrays within type per row and then apply rolling sum
+                    per_row_sum = np.zeros(len(df), dtype=float)
+                    for key, arr in pattern_data.items():
+                        if isinstance(arr, np.ndarray) and arr.dtype == bool:
+                            per_row_sum += arr.astype(float)
+                    per_row_series = pd.Series(per_row_sum, index=df.index)
+                    count_series = per_row_series.rolling(window, min_periods=1).sum()
+                    features[f"{pattern_type}_count"] = count_series.values
+                    features[f"{pattern_type}_present"] = (count_series > 0).astype(float).values
 
-            # Calculate specific pattern features
+            # Specific pattern rolling counts/presence
             specific_patterns = [
                 "bullish_engulfing",
                 "bearish_engulfing",
@@ -2178,76 +2208,57 @@ class VectorizedCandlestickPatternAnalyzer:
             ]
 
             for pattern in specific_patterns:
-                pattern_count = 0
+                per_row = np.zeros(len(df), dtype=float)
                 for pattern_data in patterns.values():
-                    if pattern in pattern_data:
-                        pattern_count += np.sum(pattern_data[pattern])
-                
-                features[f"{pattern}_count"] = pattern_count
-                features[f"{pattern}_present"] = 1.0 if pattern_count > 0 else 0.0
+                    if pattern in pattern_data and isinstance(pattern_data[pattern], np.ndarray):
+                        per_row += pattern_data[pattern].astype(float)
+                per_row_series = pd.Series(per_row, index=df.index)
+                count_series = per_row_series.rolling(window, min_periods=1).sum()
+                features[f"{pattern}_count"] = count_series.values
+                features[f"{pattern}_present"] = (count_series > 0).astype(float).values
 
-            # Calculate pattern density features
-            total_patterns = sum(
-                features.get(f"{pt}_count", 0) for pt in pattern_types
+            # Aggregate densities per row
+            total_patterns_series = sum(
+                pd.Series(features.get(f"{pt}_count"), index=df.index) for pt in pattern_types if f"{pt}_count" in features
             )
-            features["total_patterns"] = total_patterns
-            features["pattern_density"] = total_patterns / len(df) if len(df) > 0 else 0.0
+            features["total_patterns"] = total_patterns_series.values
+            features["pattern_density"] = (total_patterns_series / window).values
 
-            # Calculate bullish vs bearish pattern features
-            bullish_patterns = sum(
-                features.get(f"{pattern}_count", 0)
-                for pattern in ["bullish_engulfing", "hammer", "inverted_hammer", "tweezer_bottom", "bullish_marubozu", "rising_three_methods"]
+            # Bullish vs bearish per row
+            bullish_series = sum(
+                pd.Series(features.get(f"{p}_count"), index=df.index)
+                for p in [
+                    "bullish_engulfing",
+                    "hammer",
+                    "inverted_hammer",
+                    "tweezer_bottom",
+                    "bullish_marubozu",
+                    "rising_three_methods",
+                ]
+                if f"{p}_count" in features
             )
-            bearish_patterns = sum(
-                features.get(f"{pattern}_count", 0)
-                for pattern in ["bearish_engulfing", "hanging_man", "shooting_star", "tweezer_top", "bearish_marubozu", "falling_three_methods"]
+            bearish_series = sum(
+                pd.Series(features.get(f"{p}_count"), index=df.index)
+                for p in [
+                    "bearish_engulfing",
+                    "hanging_man",
+                    "shooting_star",
+                    "tweezer_top",
+                    "bearish_marubozu",
+                    "falling_three_methods",
+                ]
+                if f"{p}_count" in features
             )
-
-            features["bullish_patterns"] = bullish_patterns
-            features["bearish_patterns"] = bearish_patterns
-            features["bullish_bearish_ratio"] = bullish_patterns / (bearish_patterns + 1e-8)
-
-            # Calculate recent pattern features (last 5 candles)
-            recent_patterns = 0
-            recent_bullish_patterns = 0
-            recent_bearish_patterns = 0
-
-            for pattern_data in patterns.values():
-                for key, pattern_array in pattern_data.items():
-                    if isinstance(pattern_array, np.ndarray) and pattern_array.dtype == bool:
-                        if len(pattern_array) >= 5:
-                            recent_count = np.sum(pattern_array[-5:])
-                            recent_patterns += recent_count
-                            
-                            if any(bullish in key for bullish in ["bullish", "hammer", "inverted_hammer", "tweezer_bottom", "rising"]):
-                                recent_bullish_patterns += recent_count
-                            elif any(bearish in key for bearish in ["bearish", "hanging_man", "shooting_star", "tweezer_top", "falling"]):
-                                recent_bearish_patterns += recent_count
-
-            features["recent_patterns_count"] = recent_patterns
-            features["recent_bullish_patterns"] = recent_bullish_patterns
-            features["recent_bearish_patterns"] = recent_bearish_patterns
-
-            # Calculate pattern confidence features
-            all_confidences = []
-            for pattern_data in patterns.values():
-                for key, confidence_array in pattern_data.items():
-                    if "confidence" in key and isinstance(confidence_array, np.ndarray):
-                        all_confidences.extend(confidence_array[confidence_array > 0])
-
-            if all_confidences:
-                features["avg_pattern_confidence"] = np.mean(all_confidences)
-                features["max_pattern_confidence"] = np.max(all_confidences)
-                features["pattern_confidence_std"] = np.std(all_confidences)
-            else:
-                features["avg_pattern_confidence"] = 0.0
-                features["max_pattern_confidence"] = 0.0
-                features["pattern_confidence_std"] = 0.0
+            features["bullish_patterns"] = bullish_series.values
+            features["bearish_patterns"] = bearish_series.values
+            with np.errstate(divide='ignore', invalid='ignore'):
+                ratio = (bullish_series / (bearish_series + 1e-8)).replace([np.inf, -np.inf], np.nan).fillna(0)
+            features["bullish_bearish_ratio"] = ratio.values
 
             return features
 
         except Exception as e:
-            self.logger.error(f"Error converting patterns to features: {e}")
+            self.logger.error(f"Error converting candlestick patterns to features: {e}")
             return {}
 
 

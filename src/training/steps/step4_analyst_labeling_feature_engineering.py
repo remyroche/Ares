@@ -571,18 +571,52 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
 
             # Convert features to DataFrame and align with original data
             if advanced_features:
-                features_df = pd.DataFrame([advanced_features])
-                # Replicate features for all rows
-                features_df = pd.concat([features_df] * len(data), ignore_index=True)
-                features_df.index = data.index
+                # Align per-row features to data length; skip scalars
+                aligned = pd.DataFrame(index=data.index)
+                n = len(data)
+                for name, val in advanced_features.items():
+                    arr = None
+                    if isinstance(val, pd.Series):
+                        arr = val.values
+                    elif isinstance(val, np.ndarray):
+                        if val.ndim == 1:
+                            arr = val
+                        elif val.ndim == 2 and (val.shape[0] == 1 or val.shape[1] == 1):
+                            arr = val.reshape(-1)
+                    elif isinstance(val, list):
+                        tmp = np.asarray(val)
+                        if tmp.ndim == 1:
+                            arr = tmp
+                        elif tmp.ndim == 2 and (tmp.shape[0] == 1 or tmp.shape[1] == 1):
+                            arr = tmp.reshape(-1)
+                    if arr is None:
+                        continue
+                    if len(arr) > n:
+                        arr = arr[-n:]
+                    elif len(arr) < n:
+                        pad = n - len(arr)
+                        arr = np.concatenate([np.full(pad, np.nan), arr])
+                    try:
+                        aligned[name] = pd.to_numeric(arr, errors="coerce")
+                    except Exception:
+                        pass
 
-                # Add candlestick pattern features to original data
-                for col in features_df.columns:
-                    if col not in data.columns:  # Avoid overwriting existing columns
-                        data[col] = features_df[col]
+                # Drop fully-NaN and constant columns
+                if not aligned.empty:
+                    aligned = aligned.dropna(axis=1, how="all")
+                    nunique = aligned.nunique(dropna=True)
+                    const_cols = nunique[nunique <= 1].index.tolist()
+                    if const_cols:
+                        self.logger.warning(f"Dropping {len(const_cols)} constant candlestick features")
+                        aligned = aligned.drop(columns=const_cols)
+
+                # Add aligned features to original data
+                for col in aligned.columns:
+                    if col not in data.columns:
+                        data[col] = aligned[col]
 
                 self.logger.info(
-                    f"Added {len(features_df.columns)} candlestick pattern features",
+                    f"Added {len(aligned.columns)} candlestick pattern features",
                 )
             else:
                 self.logger.warning("No candlestick pattern features generated")

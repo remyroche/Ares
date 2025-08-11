@@ -192,11 +192,14 @@ class VectorizedLabellingOrchestrator:
             # 5. Feature selection
             if self.enable_feature_selection:
                 self.logger.info("🎯 Performing feature selection...")
-                selected_features = await self.feature_selector.select_optimal_features(
+                selected = await self.feature_selector.select_optimal_features(
                     combined_data,
                     labeled_data["label"] if "label" in labeled_data.columns else None,
                 )
-                combined_data = selected_features
+                if isinstance(selected, pd.DataFrame) and selected.shape[1] > 0:
+                    combined_data = selected
+                else:
+                    self.logger.warning("Feature selection returned 0 columns; keeping pre-selection data.")
 
             # 6. Data normalization
             if self.enable_data_normalization:
@@ -256,8 +259,11 @@ class VectorizedLabellingOrchestrator:
             }
 
         except Exception as e:
-            self.logger.error(f"Error in vectorized labeling orchestration: {e}")
-            return {}
+            try:
+                self.logger.error(f"Error in vectorized labeling orchestration: {e}")
+            finally:
+                # Ensure we always return a consistent structure
+                return {}
 
     def _combine_features_and_labels_vectorized(
         self,
@@ -273,23 +279,105 @@ class VectorizedLabellingOrchestrator:
             if not advanced_features:
                 return labeled_data
             
-            # Convert advanced features to DataFrame
-            features_df = pd.DataFrame([advanced_features])
-            
-            # Replicate features for all rows
-            features_df = pd.concat([features_df] * len(labeled_data), ignore_index=True)
-            features_df.index = labeled_data.index
+            # Build a features DataFrame aligned to labeled_data index
+            target_index = labeled_data.index
+            num_rows = len(target_index)
+            features_df = pd.DataFrame(index=target_index)
+
+            def _as_1d_array(value: Any) -> Optional[np.ndarray]:
+                """Normalize a feature value to a 1D numpy array if possible, else None."""
+                if isinstance(value, pd.Series):
+                    return value.values.reshape(-1)
+                if isinstance(value, np.ndarray):
+                    # Flatten (e.g., (N,1) -> (N,)) but avoid collapsing higher dims silently
+                    if value.ndim == 1:
+                        return value
+                    if value.ndim == 2 and (value.shape[0] == 1 or value.shape[1] == 1):
+                        return value.reshape(-1)
+                    return None
+                if isinstance(value, list):
+                    try:
+                        arr = np.asarray(value)
+                        if arr.ndim == 1:
+                            return arr
+                        if arr.ndim == 2 and (arr.shape[0] == 1 or arr.shape[1] == 1):
+                            return arr.reshape(-1)
+                        return None
+                    except Exception:
+                        return None
+                # Scalars and unsupported structures are not per-row features; skip them
+                return None
+
+            added_columns: list[str] = []
+            skipped_scalars: list[str] = []
+            trimmed_aligned: list[str] = []
+            padded_aligned: list[str] = []
+
+            for feature_name, feature_value in advanced_features.items():
+                arr = _as_1d_array(feature_value)
+                if arr is None:
+                    # Skip scalar/non-array features to avoid constant columns
+                    skipped_scalars.append(feature_name)
+                    continue
+
+                # Align array length to labeled_data length
+                if len(arr) > num_rows:
+                    # Keep the most recent values (align to the end)
+                    arr = arr[-num_rows:]
+                    trimmed_aligned.append(feature_name)
+                elif len(arr) < num_rows:
+                    # Left-pad with NaN so the tail aligns to the label index
+                    pad_size = num_rows - len(arr)
+                    arr = np.concatenate([np.full(pad_size, np.nan), arr])
+                    padded_aligned.append(feature_name)
+
+                # Add to DataFrame
+                try:
+                    features_df[feature_name] = pd.to_numeric(arr, errors="coerce")
+                    added_columns.append(feature_name)
+                except Exception:
+                    # If a column still fails, skip it
+                    continue
+
+            # Drop columns that are entirely NaN (e.g., failed conversions)
+            if not features_df.empty:
+                features_df = features_df.dropna(axis=1, how="all")
+
+            # Remove constant columns (nunique <= 1) to avoid useless features
+            if not features_df.empty:
+                nunique = features_df.nunique(dropna=True)
+                constant_cols = nunique[nunique <= 1].index.tolist()
+                if constant_cols:
+                    self.logger.warning(f"Dropping {len(constant_cols)} constant features")
+                    features_df = features_df.drop(columns=constant_cols)
 
             # Combine with labeled data
             combined_data = pd.concat([labeled_data, features_df], axis=1)
 
-            # Remove duplicate columns
+            # Remove duplicate columns if any
             combined_data = combined_data.loc[:, ~combined_data.columns.duplicated()]
+
+            # Log a brief summary for diagnostics (without spamming)
+            try:
+                self.logger.info(
+                    f"Combined features: added={len(added_columns)}, "
+                    f"trimmed={len(trimmed_aligned)}, padded={len(padded_aligned)}, "
+                    f"skipped_scalars={len(skipped_scalars)}"
+                )
+            except Exception:
+                pass
 
             return combined_data
 
         except Exception as e:
-            self.logger.error(f"Error combining features and labels: {e}")
+            # Provide more diagnostics for common alignment issues
+            try:
+                self.logger.error(
+                    f"Error combining features and labels: {e}. "
+                    f"labeled_data.shape={labeled_data.shape if isinstance(labeled_data, pd.DataFrame) else 'n/a'}"
+                )
+            except Exception:
+                self.logger.error(f"Error combining features and labels: {e}")
             return labeled_data
 
     def _remove_datetime_columns(self, data: pd.DataFrame) -> pd.DataFrame:

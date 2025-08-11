@@ -588,6 +588,12 @@ class VectorizedAdvancedFeatureEngineering:
                 volatility_features = await self.volatility_model.model_volatility_vectorized(
                     price_data,
                 )
+                # Ensure consistent numeric typing for downstream validation
+                if "volatility_regime" in volatility_features:
+                    vr = volatility_features["volatility_regime"]
+                    if isinstance(vr, str):
+                        mapping = {"low": 0, "medium": 1, "high": 2}
+                        volatility_features["volatility_regime"] = mapping.get(vr, 1)
                 features.update(volatility_features)
 
             # Correlation analysis features
@@ -950,13 +956,16 @@ class VectorizedAdvancedFeatureEngineering:
     def _select_optimal_features_vectorized(self, features: dict[str, Any]) -> dict[str, Any]:
         """Select optimal features using vectorized operations."""
         try:
-            # Simple feature selection based on variance
-            selected_features = {}
-            
+            # Keep only valid scalar features here; per-row arrays will be handled at combination stage
+            selected_features: dict[str, Any] = {}
             for feature_name, feature_value in features.items():
-                if isinstance(feature_value, (int, float)) and not np.isnan(feature_value):
+                if isinstance(feature_value, (int, float)):
+                    # Allow finite numeric scalars only
+                    if not (np.isnan(feature_value) or np.isinf(feature_value)):
+                        selected_features[feature_name] = float(feature_value)
+                elif isinstance(feature_value, (np.ndarray, pd.Series, list)):
+                    # Defer arrays/series/lists to combination step; include as-is
                     selected_features[feature_name] = feature_value
-            
             return selected_features
 
         except Exception as e:
@@ -1224,23 +1233,30 @@ class VectorizedAdvancedFeatureEngineering:
     ) -> dict[str, Any]:
         """Generate meta labels using vectorized operations."""
         try:
-            features = {}
+            n = len(price_data)
+            if n == 0:
+                return {}
 
-            # Meta-labeling based on volatility regime
-            volatility = price_data["close"].pct_change().rolling(window=20).std()
-            features["volatility_regime"] = 1 if volatility.iloc[-1] > volatility.quantile(0.75) else 0
+            # Volatility regime per row
+            vol = price_data["close"].pct_change().rolling(window=20).std()
+            vol_thresh = vol.quantile(0.75) if vol.notna().any() else 0.0
+            vol_regime_series = (vol > vol_thresh).astype(int).fillna(0)
 
-            # Meta-labeling based on volume regime
-            volume_ma = volume_data["volume"].rolling(window=20).mean()
-            features["volume_regime"] = 1 if volume_data["volume"].iloc[-1] > volume_ma.iloc[-1] else 0
+            # Volume regime per row
+            vol_ma = volume_data["volume"].rolling(window=20).mean()
+            volume_regime_series = (volume_data["volume"] > vol_ma).astype(int).fillna(0)
 
-            # Meta-labeling based on trend regime
+            # Trend regime per row
             sma_short = price_data["close"].rolling(window=10).mean()
             sma_long = price_data["close"].rolling(window=30).mean()
-            features["trend_regime"] = 1 if sma_short.iloc[-1] > sma_long.iloc[-1] else 0
+            trend_regime_series = (sma_short > sma_long).astype(int).fillna(0)
 
-            return features
-
+            return {
+                "volatility_regime": vol_regime_series.values,
+                "volume_regime": volume_regime_series.values,
+                "trend_regime": trend_regime_series.values,
+            }
+ 
         except Exception as e:
             self.logger.error(f"Error generating meta labels: {e}")
             return {}

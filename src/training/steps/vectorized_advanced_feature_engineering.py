@@ -1059,7 +1059,8 @@ class VectorizedAdvancedFeatureEngineering:
                     price_data = price_data.copy()
                     price_data.index = pd.to_datetime(price_data["timestamp"], errors="coerce")
                     price_data = price_data.sort_index()
-                except Exception:
+                except (KeyError, ValueError, TypeError):
+                    # Fall back to leaving the existing index as-is when timestamp parsing fails
                     pass
 
             # Check if price_data has OHLCV structure
@@ -1242,7 +1243,7 @@ class VectorizedAdvancedFeatureEngineering:
                     try:
                         data.index = pd.to_datetime(data["timestamp"], errors="coerce")
                         data = data.sort_index()
-                    except Exception:
+                    except (ValueError, TypeError, KeyError):
                         # Fallback synthetic index
                         data.index = pd.date_range(start='1970-01-01', periods=len(data), freq='1min')
                 else:
@@ -1435,7 +1436,7 @@ class VectorizedAdvancedFeatureEngineering:
                 "support_levels": [float(x) for x in q_support],
                 "resistance_levels": [float(x) for x in q_resist],
             }
-        except Exception:
+        except (KeyError, ValueError, IndexError):
             return {"support_levels": [], "resistance_levels": []}
 
 
@@ -2302,7 +2303,7 @@ class VectorizedCandlestickPatternAnalyzer:
                     arr = np.asarray(v, dtype=float)
                     arr = np.where(np.isfinite(arr), arr, 0.0)
                     features[k] = arr
-                except Exception:
+                except (TypeError, ValueError):
                     continue
 
             return features
@@ -2885,7 +2886,8 @@ class VectorizedWaveletTransformAnalyzer:
             try:
                 dom_freq_ts = freqs[dom_idx_ts.astype(int)]
                 features[f"{wavelet_type}_{series_name}_dominant_freq_ts"] = dom_freq_ts.astype(float)
-            except Exception:
+            except (IndexError, TypeError, ValueError):
+                # If index mapping fails, skip frequency TS without failing the feature generator
                 pass
 
             return features
@@ -2951,7 +2953,7 @@ class VectorizedWaveletTransformAnalyzer:
                         continue
 
                     scored.append((feature_name, feature_value, score))
-                except Exception:
+                except (TypeError, ValueError, OverflowError):
                     continue
 
             if not scored:

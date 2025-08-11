@@ -418,6 +418,10 @@ class VectorizedLabellingOrchestrator:
                 constant_cols = nunique[nunique <= 1].index.tolist()
                 if constant_cols:
                     self.logger.warning(f"Dropping {len(constant_cols)} constant features")
+                    # Log names of constant features (capped)
+                    max_list = 50
+                    preview = constant_cols[:max_list]
+                    self.logger.warning(f"Constant features: {preview}{' ...' if len(constant_cols) > max_list else ''}")
                     features_df = features_df.drop(columns=constant_cols)
 
             # Combine with labeled data

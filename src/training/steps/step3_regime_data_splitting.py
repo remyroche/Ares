@@ -232,8 +232,8 @@ class RegimeDataSplittingStep:
                 if total_rows > 0:
                     sideways_rows = (merged_data["regime"] == "SIDEWAYS").sum()
                     sideways_ratio = sideways_rows / total_rows
-                    # If SIDEWAYS > 90%, reassign a small portion of borderline SIDEWAYS rows based on returns sign
-                    if sideways_ratio > 0.90 and all(c in merged_data.columns for c in ["close"]):
+                    # If SIDEWAYS > 70%, reassign a small portion of borderline SIDEWAYS rows based on returns sign
+                    if sideways_ratio > 0.70 and all(c in merged_data.columns for c in ["close"]):
                         self.logger.warning(
                             f"⚠️ SIDEWAYS ratio too high ({sideways_ratio:.1%}); reassigning borderline rows to BULL/BEAR"
                         )
@@ -242,8 +242,12 @@ class RegimeDataSplittingStep:
                         df["_ret"] = df["close"].pct_change().fillna(0)
                         # Select a small fraction of SIDEWAYS rows with non-trivial movement to flip
                         borderline = df[(df["regime"] == "SIDEWAYS") & (df["_ret"].abs() > 0.0002)]
-                        # Cap flips to 10% of total to avoid overcorrection
-                        max_flips = int(0.10 * total_rows)
+                        # Cap flips so SIDEWAYS stays at least at 30% share
+                        current_sideways = (df["regime"] == "SIDEWAYS").sum()
+                        target_min_sideways = int(0.30 * total_rows)
+                        allowable_flips = max(0, current_sideways - target_min_sideways)
+                        # Also hard-cap flips to 20% of total to avoid drastic changes
+                        max_flips = min(allowable_flips, int(0.20 * total_rows))
                         if len(borderline) > max_flips:
                             borderline = borderline.tail(max_flips)
                         # Apply reassignment
@@ -314,6 +318,25 @@ class RegimeDataSplittingStep:
             combined_data = combined_data.sort_values("timestamp").reset_index(
                 drop=True
             )
+
+            # Ensure OHLCV columns are present for downstream quality checks
+            try:
+                required_ohlcv = ["open", "high", "low", "close", "volume"]
+                missing = [c for c in required_ohlcv if c not in combined_data.columns]
+                if missing:
+                    self.logger.warning(f"⚠️ Missing OHLCV columns before split creation: {missing}")
+                    # Try to backfill from avg_price and trade_volume if available
+                    if "avg_price" in combined_data.columns:
+                        for col in ("open","high","low","close"):
+                            if col not in combined_data.columns:
+                                combined_data[col] = combined_data["avg_price"]
+                    if "trade_volume" in combined_data.columns and "volume" not in combined_data.columns:
+                        combined_data["volume"] = combined_data["trade_volume"]
+                    missing_after = [c for c in required_ohlcv if c not in combined_data.columns]
+                    if missing_after:
+                        self.logger.warning(f"⚠️ Still missing OHLCV after best-effort backfill: {missing_after}")
+            except Exception:
+                pass
 
             # Create time-based splits (70% train, 15% validation, 15% test)
             total_rows = len(combined_data)

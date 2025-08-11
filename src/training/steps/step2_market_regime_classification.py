@@ -116,10 +116,8 @@ class MarketRegimeClassificationStep:
         self.logger.info("🔄 Loading data using unified data loader...")
         data_loader = get_unified_data_loader(self.config)
 
-        # Determine lookback period
-        lookback_days = 180  # Default to 180 days for regime classification
-        if os.environ.get("BLANK_TRAINING_MODE") == "1":
-            lookback_days = 30  # Shorter period for blank mode
+        # Determine lookback period: prefer training_input, fallback to config (default 180 days)
+        lookback_days = training_input.get("lookback_days", self.config.get("lookback_days", 180))
 
         # Load unified data with optimizations for ML training
         historical_data = await data_loader.load_unified_data(
@@ -179,36 +177,42 @@ class MarketRegimeClassificationStep:
 
         # Create DataFrame with expected columns
         if (
-            "regime_sequence" in regime_results
-            and "confidence_scores" in regime_results
-        ):
-            # Use timestamps from original data
-            timestamps = (
-                historical_data["timestamp"].tolist()
-                if "timestamp" in historical_data.columns
-                else list(range(len(regime_results["regime_sequence"])))
-            )
+                "regime_sequence" in regime_results
+                and "confidence_scores" in regime_results
+            ):
+                # Use timestamps from original data/index
+                if "timestamp" in historical_data.columns:
+                    timestamps = pd.to_datetime(historical_data["timestamp"]).tolist()
+                elif isinstance(historical_data.index, pd.DatetimeIndex):
+                    timestamps = historical_data.index.to_list()
+                else:
+                    # Fallback: generate hourly timestamps ending at current time
+                    try:
+                        periods = len(regime_results["regime_sequence"])
+                        timestamps = pd.date_range(end=pd.Timestamp.utcnow(), periods=periods, freq="1H").to_list()
+                    except Exception:
+                        timestamps = list(range(len(regime_results["regime_sequence"])))
 
-            # Ensure all sequences have the same length
-            min_length = min(
-                len(timestamps),
-                len(regime_results["regime_sequence"]),
-                len(regime_results["confidence_scores"]),
-            )
+                # Ensure all sequences have the same length
+                min_length = min(
+                    len(timestamps),
+                    len(regime_results["regime_sequence"]),
+                    len(regime_results["confidence_scores"]),
+                )
 
-            parquet_df = pd.DataFrame(
-                {
-                    "timestamp": timestamps[:min_length],
-                    "regime": regime_results["regime_sequence"][:min_length],
-                    "confidence": regime_results["confidence_scores"][:min_length],
-                }
-            )
+                parquet_df = pd.DataFrame(
+                    {
+                        "timestamp": timestamps[:min_length],
+                        "regime": regime_results["regime_sequence"][:min_length],
+                        "confidence": regime_results["confidence_scores"][:min_length],
+                    }
+                )
 
-            # Save to parquet
-            parquet_df.to_parquet(parquet_file_path, index=False)
-            self.logger.info(
-                f"✅ Saved regime classification results to parquet: {parquet_file_path}"
-            )
+                # Save to parquet
+                parquet_df.to_parquet(parquet_file_path, index=False)
+                self.logger.info(
+                    f"✅ Saved regime classification results to parquet: {parquet_file_path}"
+                )
 
         self.logger.info(
             f"✅ Market regime classification completed. Results saved to {regime_file_path}",

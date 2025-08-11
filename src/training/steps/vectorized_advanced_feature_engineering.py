@@ -801,10 +801,11 @@ class VectorizedAdvancedFeatureEngineering:
             features["price_impact"] = self._calculate_price_impact_vectorized(price_data, volume_data)
             features["volume_price_impact"] = self._calculate_volume_price_impact_vectorized(price_data, volume_data)
 
-            # Order flow imbalance features
-            if order_flow_data is not None:
-                features["order_flow_imbalance"] = self._calculate_order_flow_imbalance_vectorized(order_flow_data)
-                features["bid_ask_spread"] = self._calculate_bid_ask_spread_vectorized(order_flow_data)
+            # Order-flow related features (proxies if book data not available)
+            features["order_flow_imbalance"] = self._calculate_order_flow_imbalance_vectorized(
+                price_data, volume_data, order_flow_data
+            )
+            features["bid_ask_spread"] = self._calculate_bid_ask_spread_vectorized(price_data)
 
             # Market depth features (vectorized per-row)
             features["market_depth"] = self._calculate_market_depth_vectorized(price_data, volume_data)
@@ -840,25 +841,74 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.error(f"Error calculating volume-price impact: {e}")
             return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
-    def _calculate_order_flow_imbalance_vectorized(self, order_flow_data: pd.DataFrame) -> pd.Series:
-        """Calculate order flow imbalance as per-row series (placeholder if not available)."""
+    def _calculate_order_flow_imbalance_vectorized(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: pd.DataFrame | None = None,
+    ) -> pd.Series:
+        """Vectorized order flow imbalance using tick rule; uses book volumes if provided.
+
+        OFI ≈ sum(sign(Δp) * volume) / sum(volume) over a rolling window.
+        If order_flow_data has explicit buy/sell volumes, use (buy - sell) / (buy + sell).
+        """
         try:
-            n = len(order_flow_data)
-            # Placeholder: return zeros; replace with real computation when order_flow_data is structured
-            return pd.Series(np.zeros(n), index=order_flow_data.index)
+            idx = price_data.index
+            # If explicit buy/sell volumes exist, use them
+            if order_flow_data is not None:
+                cols = {c.lower(): c for c in order_flow_data.columns}
+                buy_col = cols.get("buy_volume") or cols.get("bid_volume") or cols.get("buy")
+                sell_col = cols.get("sell_volume") or cols.get("ask_volume") or cols.get("sell")
+                if buy_col and sell_col:
+                    buy = pd.Series(order_flow_data[buy_col].values, index=order_flow_data.index).reindex(idx).fillna(0)
+                    sell = pd.Series(order_flow_data[sell_col].values, index=order_flow_data.index).reindex(idx).fillna(0)
+                    denom = (buy + sell).replace(0, np.nan)
+                    ofi = ((buy - sell) / denom).fillna(0)
+                    return ofi
+            # Tick rule proxy from close and volume
+            close = price_data["close"].astype(float)
+            vol = volume_data["volume"].astype(float)
+            price_delta = close.diff().fillna(0)
+            trade_sign = np.sign(price_delta)
+            signed_vol = trade_sign * vol
+            win = 20
+            num = signed_vol.rolling(win, min_periods=1).sum()
+            den = vol.rolling(win, min_periods=1).sum().replace(0, np.nan)
+            ofi = (num / den).replace([np.inf, -np.inf], np.nan).fillna(0)
+            return ofi
         except Exception as e:
             self.logger.error(f"Error calculating order flow imbalance: {e}")
-            return pd.Series(np.zeros(0))
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
-    def _calculate_bid_ask_spread_vectorized(self, order_flow_data: pd.DataFrame) -> pd.Series:
-        """Calculate bid-ask spread as per-row series (placeholder if not available)."""
+    def _calculate_bid_ask_spread_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
+        """Estimate relative bid-ask spread using Corwin–Schultz with Roll as fallback (per-row)."""
         try:
-            n = len(order_flow_data)
-            # Placeholder: return zeros; replace with real computation when order_flow_data is structured
-            return pd.Series(np.zeros(n), index=order_flow_data.index)
+            close = price_data["close"].astype(float)
+            high = price_data["high"].astype(float)
+            low = price_data["low"].astype(float)
+            # Corwin–Schultz estimator components
+            with np.errstate(divide='ignore', invalid='ignore'):
+                hl = np.log((high / low).replace(0, np.nan)) ** 2
+            beta = hl + hl.shift(1)
+            gamma = (np.log(np.maximum(high, high.shift(1)) / np.minimum(low, low.shift(1)).replace(0, np.nan))) ** 2
+            alpha = (np.sqrt(2 * beta) - np.sqrt(beta)) / (3 - 2 * np.sqrt(2))
+            cs_spread = 2 * (np.exp(alpha) - 1) / (1 + np.exp(alpha))
+            cs_spread = pd.Series(cs_spread, index=price_data.index)
+            # Roll estimator fallback (relative)
+            dp = close.diff()
+            roll_cov = dp.rolling(20, min_periods=2).cov(dp.shift(1))
+            roll_spread = 2 * np.sqrt(np.maximum(0, -roll_cov))
+            with np.errstate(divide='ignore', invalid='ignore'):
+                roll_spread_rel = (roll_spread / close).replace([np.inf, -np.inf], np.nan)
+            # Prefer CS, fill with Roll
+            spread = cs_spread.where(np.isfinite(cs_spread), roll_spread_rel)
+            spread = spread.fillna(method="ffill").fillna(method="bfill").fillna(0)
+            # Clip to reasonable bounds
+            spread = spread.clip(lower=0, upper=0.05)
+            return spread
         except Exception as e:
             self.logger.error(f"Error calculating bid-ask spread: {e}")
-            return pd.Series(np.zeros(0))
+            return pd.Series(np.zeros(len(price_data)), index=price_data.index)
 
     def _calculate_market_depth_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> pd.Series:
         """Calculate market depth as rolling average volume (per-row series)."""

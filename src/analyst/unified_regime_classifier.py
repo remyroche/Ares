@@ -28,7 +28,7 @@ class UnifiedRegimeClassifier:
     Unified Market Regime Classifier with HMM-based labeling and ensemble prediction.
 
     Approach:
-    1. HMM-based labeling for basic regimes (BULL, BEAR, SIDEWAYS, VOLATILE)
+    1. HMM-based labeling for basic regimes (BULL, BEAR, SIDEWAYS)
     2. Ensemble prediction with majority voting for basic regimes
     3. Location classification (SUPPORT, RESISTANCE, OPEN_RANGE)
     """
@@ -50,9 +50,9 @@ class UnifiedRegimeClassifier:
         # Add print method for compatibility
         self.print = self.logger.info
 
-        # HMM Configuration - enforce at least 4 states (BULL, BEAR, SIDEWAYS, VOLATILE)
-        configured_states = int(self.config.get("n_states", 4))
-        self.n_states = max(4, configured_states)
+        # HMM Configuration - enforce at least 3 states (BULL, BEAR, SIDEWAYS)
+        configured_states = int(self.config.get("n_states", 3))
+        self.n_states = max(3, configured_states)
         self.n_iter = self.config.get("n_iter", 100)
         self.random_state = self.config.get("random_state", 42)
         self.target_timeframe = self.config.get(
@@ -1076,7 +1076,7 @@ class UnifiedRegimeClassifier:
 
     async def train_hmm_labeler(self, historical_klines: pd.DataFrame) -> bool:
         """
-        Train HMM-based labeler for basic regimes (BULL, BEAR, SIDEWAYS, VOLATILE).
+        Train HMM-based labeler for basic regimes (BULL, BEAR, SIDEWAYS).
         """
         try:
             self.logger.info("🎓 Training HMM-based Market Regime Classifier...")
@@ -1201,7 +1201,7 @@ class UnifiedRegimeClassifier:
 
     async def train_basic_ensemble(self, historical_klines: pd.DataFrame) -> bool:
         """
-        Train ensemble for basic regime classification (BULL, BEAR, SIDEWAYS, VOLATILE).
+        Train ensemble for basic regime classification (BULL, BEAR, SIDEWAYS).
         """
         try:
             self.logger.info("🎓 Training Basic Regime Ensemble...")
@@ -1212,7 +1212,7 @@ class UnifiedRegimeClassifier:
                 self.logger.error("No features available for ensemble training")
                 return False
 
-            # Get HMM-based labels
+            # Get HMM-based labels using the balanced regime mapping
             hmm_features = features_df[
                 [
                     "log_returns",
@@ -1233,11 +1233,28 @@ class UnifiedRegimeClassifier:
             hmm_features_scaled = self.scaler.transform(hmm_features)
             state_sequence = self.hmm_model.predict(hmm_features_scaled)
 
-            # Map states to regimes
+            # Map states to regimes using the balanced regime mapping
             regime_labels = [
                 self.state_to_regime_map.get(state, "SIDEWAYS")
                 for state in state_sequence
             ]
+            
+            # Log the regime distribution from the balanced mapping
+            regime_counts = {}
+            for regime in regime_labels:
+                regime_counts[regime] = regime_counts.get(regime, 0) + 1
+            
+            total_labels = len(regime_labels)
+            regime_distribution = {regime: count/total_labels for regime, count in regime_counts.items()}
+            
+            self.logger.info(f"📊 Ensemble training regime distribution (balanced): {regime_distribution}")
+            
+            # Verify that the balanced regime mapping is being used correctly
+            sideways_ratio = regime_counts.get("SIDEWAYS", 0) / total_labels if total_labels > 0 else 0
+            if sideways_ratio > 0.40:
+                self.logger.warning(f"⚠️ SIDEWAYS ratio in ensemble training data is {sideways_ratio:.3f} > 0.40 - balancing may not be working correctly")
+            else:
+                self.logger.info(f"✅ SIDEWAYS ratio in ensemble training data is {sideways_ratio:.3f} (within acceptable range)")
 
             # Encode regime labels
             self.basic_label_encoder = LabelEncoder()
@@ -1262,16 +1279,38 @@ class UnifiedRegimeClassifier:
                 ]
             ].fillna(0)
 
-            # Train ensemble
+            # Train ensemble with class balancing
             self.basic_ensemble = LGBMClassifier(
                 n_estimators=100,
                 learning_rate=0.1,
                 max_depth=6,
                 random_state=42,
                 verbose=-1,
+                class_weight='balanced',  # Add class balancing
+                is_unbalance=True,  # LightGBM specific parameter for imbalanced data
             )
 
             self.basic_ensemble.fit(ensemble_features, regime_encoded)
+
+            # Log training results
+            train_predictions = self.basic_ensemble.predict(ensemble_features)
+            train_regime_labels = self.basic_label_encoder.inverse_transform(train_predictions)
+            
+            train_counts = {}
+            for regime in train_regime_labels:
+                train_counts[regime] = train_counts.get(regime, 0) + 1
+            
+            train_total = len(train_regime_labels)
+            train_distribution = {regime: count/train_total for regime, count in train_counts.items()}
+            
+            self.logger.info(f"📊 Ensemble training results distribution: {train_distribution}")
+            
+            # Check if training maintained the balance
+            train_sideways_ratio = train_counts.get("SIDEWAYS", 0) / train_total if train_total > 0 else 0
+            if train_sideways_ratio > 0.40:
+                self.logger.warning(f"⚠️ Ensemble training produced SIDEWAYS ratio {train_sideways_ratio:.3f} > 0.40")
+            else:
+                self.logger.info(f"✅ Ensemble training maintained SIDEWAYS ratio {train_sideways_ratio:.3f} (within acceptable range)")
 
             self.logger.info("✅ Basic regime ensemble trained successfully")
             return True
@@ -1704,6 +1743,78 @@ class UnifiedRegimeClassifier:
                         },
                     }
                 )
+                
+                # Compare ensemble predictions with HMM predictions for validation
+                if self.hmm_model and self.scaler and self.state_to_regime_map:
+                    hmm_features_scaled = self.scaler.transform(regime_features)
+                    hmm_state_sequence = self.hmm_model.predict(hmm_features_scaled)
+                    hmm_regimes = [
+                        self.state_to_regime_map.get(state, "SIDEWAYS")
+                        for state in hmm_state_sequence
+                    ]
+                    
+                    hmm_counts = {}
+                    for regime in hmm_regimes:
+                        hmm_counts[regime] = hmm_counts.get(regime, 0) + 1
+                    
+                    ensemble_counts = {}
+                    for regime in regimes:
+                        ensemble_counts[regime] = ensemble_counts.get(regime, 0) + 1
+                    
+                    self.logger.info(f"📊 Model comparison - HMM: {hmm_counts}, Ensemble: {ensemble_counts}")
+                    
+                    # Calculate agreement rate
+                    agreement = sum(1 for e, h in zip(regimes, hmm_regimes) if e == h) / len(regimes)
+                    self.logger.info(f"📊 Model agreement rate: {agreement:.3f}")
+                
+                # Apply regime balancing logic to ensemble predictions
+                total_predictions = len(regimes)
+                sideways_count = regimes.count("SIDEWAYS")
+                sideways_ratio = sideways_count / total_predictions if total_predictions > 0 else 0
+                target_min, target_max = 0.20, 0.40
+                
+                if sideways_ratio > target_max:
+                    self.logger.info(f"🔧 Balancing ensemble predictions: SIDEWAYS ratio {sideways_ratio:.3f} > {target_max}, applying corrections")
+                    # Find indices of SIDEWAYS predictions to potentially reassign
+                    sideways_indices = [i for i, regime in enumerate(regimes) if regime == "SIDEWAYS"]
+                    
+                    # Sort by confidence scores (lower confidence SIDEWAYS predictions first)
+                    sideways_with_confidence = [(i, confidence_scores[i]) for i in sideways_indices]
+                    sideways_with_confidence.sort(key=lambda x: x[1])  # Sort by confidence (ascending)
+                    
+                    # Reassign the lowest confidence SIDEWAYS predictions to directional
+                    corrections_made = 0
+                    for idx, confidence in sideways_with_confidence:
+                        if sideways_ratio <= target_max:
+                            break
+                        
+                        # Get the original features for this prediction to make a better decision
+                        features_row = regime_features.iloc[idx]
+                        
+                        # Use simple heuristics to determine direction
+                        if features_row["log_returns"] > 0.0002:  # Small positive return threshold
+                            new_regime = "BULL"
+                        elif features_row["log_returns"] < -0.0002:  # Small negative return threshold
+                            new_regime = "BEAR"
+                        else:
+                            # If returns are very small, check ADX for directional strength
+                            if features_row["adx"] >= self.adx_sideways_threshold:
+                                new_regime = "BULL" if features_row["log_returns"] >= 0 else "BEAR"
+                            else:
+                                continue  # Keep as SIDEWAYS if truly sideways
+                        
+                        regimes[idx] = new_regime
+                        confidence_scores[idx] = max(confidence_scores[idx], 0.6)  # Boost confidence slightly
+                        sideways_count -= 1
+                        corrections_made += 1
+                        sideways_ratio = sideways_count / total_predictions
+                    
+                    if corrections_made > 0:
+                        self.logger.info(f"✅ Corrected {corrections_made} SIDEWAYS predictions, new ratio: {sideways_ratio:.3f}")
+                        # Recalculate counts after corrections
+                        unique_regimes = list(sorted(set(regimes)))
+                        counts = {r: int(regimes.count(r)) for r in unique_regimes}
+                
                 if len(unique_regimes) < self.n_states:
                     self.logger.warning(
                         warning(

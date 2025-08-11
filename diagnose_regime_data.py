@@ -316,7 +316,7 @@ def test_regime_classification(features_df):
         print("🔍 Testing HMM state interpretation...")
         
         # Create dummy state sequence for testing
-        n_states = 4
+        n_states = 3
         state_sequence = np.random.randint(0, n_states, len(features_df))
         
         # Test regime interpretation

@@ -470,9 +470,14 @@ class PriceReturnConverter:
 
                     # Handle different return calculation methods
                     if self.price_return_method == "pct_change":
-                        # Percentage change (most common)
-                        returns = original_values.pct_change().fillna(0)
-                        new_col_name = f"{col}_returns"
+                        # Percentage change (most common). Guard log-derived columns to avoid extreme spikes.
+                        if col.endswith("_log"):
+                            # For log series x=log(price), use diff(x) which equals log returns
+                            returns = original_values.diff().fillna(0)
+                            new_col_name = f"{col}_diff"
+                        else:
+                            returns = original_values.pct_change().fillna(0)
+                            new_col_name = f"{col}_returns"
                     elif self.price_return_method == "diff":
                         # Simple difference
                         returns = original_values.diff().fillna(0)
@@ -571,6 +576,8 @@ class FeatureFilter:
         self.raw_columns = {
             "open","high","low","close","volume",
             "trade_volume","trade_count","avg_price","min_price","max_price",
+            # Treat these as raw context inputs, not engineered features
+            "funding_rate","volume_ratio",
         }
 
     def _exclude_raw_and_meta(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -604,6 +611,12 @@ class FeatureFilter:
                 return pd.DataFrame()
 
             X = features_df.select_dtypes(include=[np.number]).fillna(0)
+            # Safety: ensure raw numeric columns are excluded
+            raw_in_numeric = [c for c in X.columns if c in self.raw_columns]
+            if raw_in_numeric:
+                self.logger.warning(f"🚨 Removing raw numeric columns from candidate features: {raw_in_numeric}")
+                X = X.drop(columns=raw_in_numeric)
+                features_df = features_df.drop(columns=raw_in_numeric)
             y = labels
 
             # Check if we have any numeric features
@@ -1088,7 +1101,7 @@ class FeatureFilter:
             total_importance = cumulative_importance[-1]
 
             self.logger.info(f"📊 Total importance: {total_importance:.6f}")
-            self.logger.info(f"🏆 Top 5 most important features:")
+            self.logger.info(f"🏆 Top features by importance:")
             for i in range(min(5, len(sorted_indices))):
                 feature_name = X.columns[sorted_indices[i]]
                 importance = sorted_importance[i]
@@ -1857,6 +1870,12 @@ class AutoencoderFeatureAnalyzer:
         try:
             # Prepare data
             X = encoded_features.select_dtypes(include=[np.number]).fillna(0)
+            # Safety: ensure raw numeric columns are excluded
+            raw_in_numeric = [c for c in X.columns if c in self.raw_columns]
+            if raw_in_numeric:
+                self.logger.warning(f"🚨 Removing raw numeric columns from candidate features: {raw_in_numeric}")
+                X = X.drop(columns=raw_in_numeric)
+                features_df = features_df.drop(columns=raw_in_numeric)
             y = labels
 
             if len(np.unique(y)) < 2:

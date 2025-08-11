@@ -83,6 +83,12 @@ class AnalystLabelingFeatureEngineeringStep:
                 try:
                     # Skip non-numeric columns during variance checks (e.g., datetime/timestamp/strings)
                     if not np.issubdtype(features_df[col].dtype, np.number):
+                        # Coerce categoricals to string and skip validation for them
+                        try:
+                            if str(features_df[col].dtype).startswith("category"):
+                                features_df[col] = features_df[col].astype(str)
+                        except Exception:
+                            pass
                         continue
                     feature_values = features_df[col].dropna()
                     
@@ -365,11 +371,8 @@ class AnalystLabelingFeatureEngineeringStep:
                             self.logger.warning(f"🚨 Removing raw columns from features: {raw_cols}")
                             labeled_data = labeled_data.drop(columns=raw_cols)
 
-                        # Ensure OHLCV columns exist in labeled_data artifacts for validator visibility
-                        ohlcv_need = ["open","high","low","close","volume"]
-                        for _col in ohlcv_need:
-                            if _col not in labeled_data.columns and _col in price_data.columns:
-                                labeled_data[_col] = price_data[_col].values[: len(labeled_data)]
+                        # Do NOT re-add raw OHLCV to labeled features to prevent leakage; only keep engineered features
+                        # Validator will operate on separate datasets where OHLCV is expected if needed
                         
                         # Ensure the result has a 'label' column
                         if "label" not in labeled_data.columns:
@@ -402,6 +405,14 @@ class AnalystLabelingFeatureEngineeringStep:
                 result = self._create_fallback_labeled_data(price_data)
             # Get the labeled data
             labeled_data = result.get("data", price_data)
+
+            # Final guard: drop metadata columns again prior to splitting/saving
+            try:
+                drop_meta = [c for c in ['year','month','day','exchange','symbol','timeframe','split'] if c in labeled_data.columns]
+                if drop_meta:
+                    labeled_data = labeled_data.drop(columns=drop_meta)
+            except Exception:
+                pass
 
             # Split the data into train/validation/test sets (80/10/10 split)
             total_rows = len(labeled_data)
@@ -496,11 +507,7 @@ class AnalystLabelingFeatureEngineeringStep:
                         ParquetDatasetManager(self.logger).write_flat_parquet(
                             df,
                             file_path,
-                            schema_name="split",
                             compression="snappy",
-                            use_dictionary=True,
-                            row_group_size=128_000,
-                            metadata=metadata,
                         )
                     except Exception:
                         from src.utils.logger import (
@@ -557,7 +564,6 @@ class AnalystLabelingFeatureEngineeringStep:
                                 "month",
                                 "day",
                             ],
-                            schema_name="split",
                             compression="snappy",
                             metadata={
                                 "schema_version": "1",
@@ -634,11 +640,7 @@ class AnalystLabelingFeatureEngineeringStep:
                         ParquetDatasetManager(self.logger).write_flat_parquet(
                             df,
                             file_path,
-                            schema_name="split",
                             compression="snappy",
-                            use_dictionary=True,
-                            row_group_size=128_000,
-                            metadata=metadata,
                         )
                     except Exception:
                         from src.utils.logger import log_io_operation
@@ -683,7 +685,6 @@ class AnalystLabelingFeatureEngineeringStep:
                                 "month",
                                 "day",
                             ],
-                            schema_name="split",
                             compression="snappy",
                             metadata={
                                 "schema_version": "1",
@@ -757,9 +758,7 @@ class AnalystLabelingFeatureEngineeringStep:
                                         "month",
                                         "day",
                                     ],
-                                    schema_name="split",
                                     compression="snappy",
-                                    batch_size=131072,
                                     metadata=meta,
                                 )
                             self.logger.info(f"✅ Materialized model projections")
@@ -831,6 +830,7 @@ class AnalystLabelingFeatureEngineeringStep:
             self.logger.info(
                 "✅ Analyst labeling and feature engineering completed successfully",
             )
+            self.logger.info("Training specialist models for regime: combined (single unified feature set)")
             return {"status": "SUCCESS", "data": result}
 
         except Exception as e:

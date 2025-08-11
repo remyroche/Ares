@@ -226,28 +226,28 @@ class RegimeDataSplittingStep:
                 regime_df = merged_data[merged_data["regime"] == regime].copy()
                 regime_splits[regime] = regime_df
 
-            # Soft rebalance: if SIDEWAYS dominates excessively, reassign borderline rows
+            # Soft rebalance: constrain SIDEWAYS to 20-40% by reassigning borderline rows
             try:
                 total_rows = len(merged_data)
                 if total_rows > 0:
                     sideways_rows = (merged_data["regime"] == "SIDEWAYS").sum()
                     sideways_ratio = sideways_rows / total_rows
-                    # If SIDEWAYS > 70%, reassign a small portion of borderline SIDEWAYS rows based on returns sign
-                    if sideways_ratio > 0.70 and all(c in merged_data.columns for c in ["close"]):
-                        self.logger.warning(
-                            f"⚠️ SIDEWAYS ratio too high ({sideways_ratio:.1%}); reassigning borderline rows to BULL/BEAR"
-                        )
+                    # If SIDEWAYS > 40%, reassign a portion of borderline SIDEWAYS rows based on returns sign
+                    if sideways_ratio > 0.40 and all(c in merged_data.columns for c in ["close"]):
+                        self.logger.warning(f"⚠️ SIDEWAYS ratio {sideways_ratio:.1%} > 40%; rebalancing to cap at 40%")
                         df = merged_data.copy()
                         # Compute 1-step returns for sign signal
                         df["_ret"] = df["close"].pct_change().fillna(0)
                         # Select a small fraction of SIDEWAYS rows with non-trivial movement to flip
                         borderline = df[(df["regime"] == "SIDEWAYS") & (df["_ret"].abs() > 0.0002)]
-                        # Cap flips so SIDEWAYS stays at least at 30% share
+                        # Compute allowable flips to keep SIDEWAYS within [20%,40%]
                         current_sideways = (df["regime"] == "SIDEWAYS").sum()
-                        target_min_sideways = int(0.30 * total_rows)
-                        allowable_flips = max(0, current_sideways - target_min_sideways)
-                        # Also hard-cap flips to 20% of total to avoid drastic changes
-                        max_flips = min(allowable_flips, int(0.20 * total_rows))
+                        target_min_sideways = int(0.20 * total_rows)
+                        target_max_sideways = int(0.40 * total_rows)
+                        # Flips needed to reach cap
+                        flips_needed = max(0, current_sideways - target_max_sideways)
+                        # Hard-cap flips to 20% of total to avoid drastic changes
+                        max_flips = min(flips_needed, int(0.20 * total_rows))
                         if len(borderline) > max_flips:
                             borderline = borderline.tail(max_flips)
                         # Apply reassignment

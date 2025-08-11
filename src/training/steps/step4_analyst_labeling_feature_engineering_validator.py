@@ -354,6 +354,8 @@ class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
                         )
                         return False
 
+                    # Note: Absence of raw OHLCV is fine; presence is blocked above.
+
                     # Check feature count (more lenient)
                     feature_count = len(feature_data.columns)
                     if feature_count < self.min_feature_count:

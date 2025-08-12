@@ -1095,25 +1095,19 @@ class VectorizedLabellingOrchestrator:
     def _choose_volume_context_column(self, volume_df: pd.DataFrame) -> str:
         """Choose which volume representation to preserve as context based on configuration and availability."""
         available = set(getattr(volume_df, 'columns', []))
-        if self.volume_representation == "returns":
-            # Prefer volume_returns; if missing, fall back to normalized -> log -> detrended -> raw volume
-            for c in ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"]:
-                if c in available:
-                    return c
-        elif self.volume_representation == "normalized":
-            for c in ["volume_normalized", "volume_returns", "volume_log", "volume_detrended", "volume"]:
-                if c in available:
-                    return c
-        elif self.volume_representation == "log":
-            for c in ["volume_log", "volume_returns", "volume_normalized", "volume_detrended", "volume"]:
-                if c in available:
-                    return c
-        elif self.volume_representation == "detrended":
-            for c in ["volume_detrended", "volume_returns", "volume_normalized", "volume_log", "volume"]:
-                if c in available:
-                    return c
-        # none or fallback
-        return next((c for c in ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"] if c in available), "volume")
+        priority_map = {
+            "returns": ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"],
+            "normalized": ["volume_normalized", "volume_returns", "volume_log", "volume_detrended", "volume"],
+            "log": ["volume_log", "volume_returns", "volume_normalized", "volume_detrended", "volume"],
+            "detrended": ["volume_detrended", "volume_returns", "volume_normalized", "volume_log", "volume"],
+        }
+        preferred_order = priority_map.get(self.volume_representation, [])
+        for col in preferred_order:
+            if col in available:
+                return col
+        # Fallback for 'none' or any other case
+        fallback_order = ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"]
+        return next((c for c in fallback_order if c in available), "volume")
 
     def _get_present_context_columns(self, df: pd.DataFrame) -> list[str]:
         """Return the list of context columns present in a given DataFrame, according to config."""
@@ -2130,13 +2124,10 @@ class VectorizedDataNormalizer:
             if self.keep_close_returns and "close_returns" in data.columns:
                 exclude.add("close_returns")
             # Determine chosen volume column to exclude from scaling
-            for c in ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"]:
-                if c in data.columns:
-                    # honor configured priority
-                    chosen = self._choose_volume_context_column(data)
-                    if c == chosen:
-                        exclude.add(c)
-                        break
+            # Determine chosen volume column once to exclude from scaling
+            chosen_vol_col = self._choose_volume_context_column(data)
+            if chosen_vol_col in data.columns:
+                exclude.add(chosen_vol_col)
             # Also exclude any configured non-feature context columns
             exclude |= {c for c in self.context_non_feature_columns if c in data.columns}
             scale_cols = [c for c in numeric_cols if c not in exclude]

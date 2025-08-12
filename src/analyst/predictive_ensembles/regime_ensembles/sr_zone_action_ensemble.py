@@ -117,7 +117,7 @@ class SRZoneActionEnsemble(BaseEnsemble):
             for col in meta_label_cols:
                 try:
                     meta_features[col] = int(df[col].iloc[-1])
-                except Exception:
+                except (KeyError, IndexError):
                     meta_features[col] = 0
             if meta_label_cols:
                 self.logger.info(f"SRZoneActionEnsemble meta-learner live features include meta-labels: {meta_label_cols}")

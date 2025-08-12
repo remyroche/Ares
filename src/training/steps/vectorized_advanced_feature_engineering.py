@@ -816,6 +816,10 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.info(
                 f"✅ Engineered {len(sanitized)} vectorized advanced features including wavelet transforms",
             )
++            try:
++                self.logger.info(f"🧾 Vectorized feature list ({len(sanitized)}): {sorted(list(sanitized.keys()))}")
++            except Exception:
++                pass
             return sanitized
 
         except Exception as e:
@@ -920,70 +924,70 @@ class VectorizedAdvancedFeatureEngineering:
             # Relative change (returns) and level as separate engineered metrics
             features["bid_ask_spread_returns"] = bas.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0)
             features["bid_ask_spread_level"] = bas  # bounded 0..0.05 already
-+
-+            # Order book wall features (stationary): use returns/diffs
-+            try:
-+                if order_flow_data is not None:
-+                    # Expect optional columns: bid_wall_price/size, ask_wall_price/size, mid
-+                    df = order_flow_data
-+                    if "mid" in df.columns:
-+                        mid = pd.Series(df["mid"].values, index=df.index).reindex(price_data.index, method="ffill")
-+                    else:
-+                        mid = price_data["close"].astype(float)
-+                    # Distances to nearest walls in pct
-+                    for side in ["bid", "ask"]:
-+                        pcol = f"{side}_wall_price"
-+                        scol = f"{side}_wall_size"
-+                        if pcol in df.columns:
-+                            wall_p = pd.Series(df[pcol].values, index=df.index).reindex(price_data.index, method="ffill")
-+                            with np.errstate(divide='ignore', invalid='ignore'):
-+                                dist = ((mid - wall_p).abs() / mid).replace([np.inf, -np.inf], np.nan).fillna(method="ffill").fillna(1.0)
-+                            features[f"nearest_{side}_wall_dist_pct"] = dist
-+                        if scol in df.columns:
-+                            wall_s = pd.Series(df[scol].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
-+                            # Use diff/returns for stationarity
-+                            features[f"nearest_{side}_wall_size_change"] = wall_s.diff().fillna(0)
-+                            with np.errstate(divide='ignore', invalid='ignore'):
-+                                features[f"nearest_{side}_wall_size_returns"] = (wall_s.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
-+                    # Imbalance if total sizes available
-+                    if "total_bid_size" in df.columns and "total_ask_size" in df.columns:
-+                        tb = pd.Series(df["total_bid_size"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
-+                        ta = pd.Series(df["total_ask_size"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
-+                        denom = (tb + ta).replace(0, np.nan)
-+                        imb = ((tb - ta) / denom).replace([np.inf, -np.inf], np.nan).fillna(0)
-+                        features["orderbook_wall_imbalance"] = imb
-+                    # Depth profile slope proxy: difference between near/far depth (if available)
-+                    if "depth_near" in df.columns and "depth_far" in df.columns:
-+                        near = pd.Series(df["depth_near"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
-+                        far = pd.Series(df["depth_far"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
-+                        slope = (near - far)
-+                        features["depth_profile_slope_proxy"] = slope.diff().fillna(0)
-+                    # Weighted mid-price (if bid/ask price/size available)
-+                    if all(c in df.columns for c in ["best_bid", "best_ask", "best_bid_size", "best_ask_size"]):
-+                        bb = pd.Series(df["best_bid"].values, index=df.index).reindex(price_data.index, method="ffill").astype(float)
-+                        ba = pd.Series(df["best_ask"].values, index=df.index).reindex(price_data.index, method="ffill").astype(float)
-+                        bbs = pd.Series(df["best_bid_size"].values, index=df.index).reindex(price_data.index, method="ffill").astype(float).replace(0, np.nan)
-+                        bas = pd.Series(df["best_ask_size"].values, index=df.index).reindex(price_data.index, method="ffill").astype(float).replace(0, np.nan)
-+                        wmp = (bb * bbs + ba * bas) / (bbs + bas)
-+                        features["weighted_mid_price_change"] = wmp.diff().fillna(0)
-+                        with np.errstate(divide='ignore', invalid='ignore'):
-+                            features["weighted_mid_price_returns"] = (wmp.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
-+                    # Aggregated orderbook pressure (if granular ladders available)
-+                    if all(c in df.columns for c in ["sum_bid_size_5", "sum_ask_size_5"]):
-+                        sb = pd.Series(df["sum_bid_size_5"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
-+                        sa = pd.Series(df["sum_ask_size_5"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
-+                        denom2 = (sb + sa).replace(0, np.nan)
-+                        press = ((sb - sa) / denom2).replace([np.inf, -np.inf], np.nan).fillna(0)
-+                        features["orderbook_pressure"] = press
-+                    # Trade-to-order ratio (if trades and orders counts provided)
-+                    if all(c in df.columns for c in ["trade_count", "order_count"]):
-+                        tr = pd.Series(df["trade_count"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
-+                        oc = pd.Series(df["order_count"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
-+                        with np.errstate(divide='ignore', invalid='ignore'):
-+                            tor = (tr / oc.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan).fillna(0)
-+                        features["trade_to_order_ratio"] = tor.diff().fillna(0)
-+            except Exception as _e:
-+                self.logger.warning(f"Order book wall feature engineering failed: {_e}")
+
+            # Order book wall features (stationary): use returns/diffs
+            try:
+                if order_flow_data is not None:
+                    # Expect optional columns: bid_wall_price/size, ask_wall_price/size, mid
+                    df = order_flow_data
+                    if "mid" in df.columns:
+                        mid = pd.Series(df["mid"].values, index=df.index).reindex(price_data.index, method="ffill")
+                    else:
+                        mid = price_data["close"].astype(float)
+                    # Distances to nearest walls in pct
+                    for side in ["bid", "ask"]:
+                        pcol = f"{side}_wall_price"
+                        scol = f"{side}_wall_size"
+                        if pcol in df.columns:
+                            wall_p = pd.Series(df[pcol].values, index=df.index).reindex(price_data.index, method="ffill")
+                            with np.errstate(divide='ignore', invalid='ignore'):
+                                dist = ((mid - wall_p).abs() / mid).replace([np.inf, -np.inf], np.nan).fillna(method="ffill").fillna(1.0)
+                            features[f"nearest_{side}_wall_dist_pct"] = dist
+                        if scol in df.columns:
+                            wall_s = pd.Series(df[scol].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
+                            # Use diff/returns for stationarity
+                            features[f"nearest_{side}_wall_size_change"] = wall_s.diff().fillna(0)
+                            with np.errstate(divide='ignore', invalid='ignore'):
+                                features[f"nearest_{side}_wall_size_returns"] = (wall_s.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+                    # Imbalance if total sizes available
+                    if "total_bid_size" in df.columns and "total_ask_size" in df.columns:
+                        tb = pd.Series(df["total_bid_size"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
+                        ta = pd.Series(df["total_ask_size"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
+                        denom = (tb + ta).replace(0, np.nan)
+                        imb = ((tb - ta) / denom).replace([np.inf, -np.inf], np.nan).fillna(0)
+                        features["orderbook_wall_imbalance"] = imb
+                    # Depth profile slope proxy: difference between near/far depth (if available)
+                    if "depth_near" in df.columns and "depth_far" in df.columns:
+                        near = pd.Series(df["depth_near"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
+                        far = pd.Series(df["depth_far"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
+                        slope = (near - far)
+                        features["depth_profile_slope_proxy"] = slope.diff().fillna(0)
+                    # Weighted mid-price (if bid/ask price/size available)
+                    if all(c in df.columns for c in ["best_bid", "best_ask", "best_bid_size", "best_ask_size"]):
+                        bb = pd.Series(df["best_bid"].values, index=df.index).reindex(price_data.index, method="ffill").astype(float)
+                        ba = pd.Series(df["best_ask"].values, index=df.index).reindex(price_data.index, method="ffill").astype(float)
+                        bbs = pd.Series(df["best_bid_size"].values, index=df.index).reindex(price_data.index, method="ffill").astype(float).replace(0, np.nan)
+                        bas = pd.Series(df["best_ask_size"].values, index=df.index).reindex(price_data.index, method="ffill").astype(float).replace(0, np.nan)
+                        wmp = (bb * bbs + ba * bas) / (bbs + bas)
+                        features["weighted_mid_price_change"] = wmp.diff().fillna(0)
+                        with np.errstate(divide='ignore', invalid='ignore'):
+                            features["weighted_mid_price_returns"] = (wmp.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+                    # Aggregated orderbook pressure (if granular ladders available)
+                    if all(c in df.columns for c in ["sum_bid_size_5", "sum_ask_size_5"]):
+                        sb = pd.Series(df["sum_bid_size_5"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
+                        sa = pd.Series(df["sum_ask_size_5"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
+                        denom2 = (sb + sa).replace(0, np.nan)
+                        press = ((sb - sa) / denom2).replace([np.inf, -np.inf], np.nan).fillna(0)
+                        features["orderbook_pressure"] = press
+                    # Trade-to-order ratio (if trades and orders counts provided)
+                    if all(c in df.columns for c in ["trade_count", "order_count"]):
+                        tr = pd.Series(df["trade_count"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
+                        oc = pd.Series(df["order_count"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
+                        with np.errstate(divide='ignore', invalid='ignore'):
+                            tor = (tr / oc.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan).fillna(0)
+                        features["trade_to_order_ratio"] = tor.diff().fillna(0)
+            except Exception as _e:
+                self.logger.warning(f"Order book wall feature engineering failed: {_e}")
  
              # Market depth features (vectorized per-row)
              md = self._calculate_market_depth_vectorized(price_data, volume_data)

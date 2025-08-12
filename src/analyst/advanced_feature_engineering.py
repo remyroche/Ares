@@ -1404,6 +1404,10 @@ class AdvancedFeatureEngineering:
             self.logger.info(
                 f"✅ Engineered {len(selected_features)} advanced features (including {interaction_count} interaction terms)",
             )
+            try:
+                self.logger.info(f"🧾 Feature list ({len(selected_features)}): {sorted(list(selected_features.keys()))}")
+            except Exception:
+                pass
             return selected_features
 
         except Exception as e:
@@ -2133,6 +2137,73 @@ class AdvancedFeatureEngineering:
         except Exception as e:
             self.logger.error(f"Error selecting optimal features: {e}")
             return features
+
+    def _calculate_adaptive_rsi(self, price_data: pd.DataFrame) -> dict[str, float]:
+        """Calculate an adaptive RSI using standard RSI with volatility-aware smoothing."""
+        try:
+            close = price_data["close"].astype(float)
+            delta = close.diff()
+            gain = delta.where(delta > 0, 0.0).rolling(14, min_periods=1).mean()
+            loss = (-delta.where(delta < 0, 0.0)).rolling(14, min_periods=1).mean()
+            rs = gain / loss.replace(0, np.nan)
+            rsi = (100 - (100 / (1 + rs))).fillna(50)
+            # Volatility-aware smoothing
+            vol = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
+            weight = (1 / (1 + vol * 100)).clip(0, 1)
+            smoothed = (weight * rsi.rolling(5, min_periods=1).mean() + (1 - weight) * rsi.rolling(20, min_periods=1).mean()).fillna(method="ffill").fillna(50)
+            return {"adaptive_rsi": float(smoothed.iloc[-1])}
+        except Exception:
+            return {"adaptive_rsi": 50.0}
+
+    def _calculate_adaptive_bollinger_bands(self, price_data: pd.DataFrame) -> dict[str, float]:
+        """Calculate adaptive Bollinger Bands and position based on volatility."""
+        try:
+            close = price_data["close"].astype(float)
+            sma = close.rolling(20, min_periods=1).mean()
+            std = close.rolling(20, min_periods=1).std().fillna(0)
+            # Adjust band width by recent volatility percentile
+            vol = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
+            vol_pct = (vol.rank(pct=True)).fillna(0.5)
+            width_mult = 1.5 + vol_pct  # 1.5..2.5x
+            upper = sma + width_mult * std
+            lower = sma - width_mult * std
+            denom = (upper - lower).replace(0, np.nan)
+            pos = ((close - lower) / denom).clip(0, 1).fillna(0.5)
+            return {
+                "adaptive_bb_upper": float(upper.iloc[-1] if not upper.empty else close.iloc[-1]),
+                "adaptive_bb_lower": float(lower.iloc[-1] if not lower.empty else close.iloc[-1]),
+                "adaptive_bb_position": float(pos.iloc[-1] if not pos.empty else 0.5),
+            }
+        except Exception:
+            return {"adaptive_bb_upper": float("nan"), "adaptive_bb_lower": float("nan"), "adaptive_bb_position": 0.5}
+
+    def _calculate_adaptive_macd(self, price_data: pd.DataFrame) -> dict[str, float]:
+        """Calculate an adaptive MACD with volatility-aware blending of spans."""
+        try:
+            close = price_data["close"].astype(float)
+            # Standard MACD components
+            ema12 = close.ewm(span=12, adjust=False).mean()
+            ema26 = close.ewm(span=26, adjust=False).mean()
+            macd = ema12 - ema26
+            signal = macd.ewm(span=9, adjust=False).mean()
+            hist = macd - signal
+            # Volatility-aware adjustment: blend with a slower set during high vol
+            ema_fast = close.ewm(span=8, adjust=False).mean()
+            ema_slow = close.ewm(span=34, adjust=False).mean()
+            macd_alt = ema_fast - ema_slow
+            signal_alt = macd_alt.ewm(span=9, adjust=False).mean()
+            vol = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
+            alpha = (1 / (1 + vol * 100)).clip(0, 1)  # more weight to slower during high vol
+            macd_adapt = (alpha * macd + (1 - alpha) * macd_alt).iloc[-1]
+            signal_adapt = (alpha * signal + (1 - alpha) * signal_alt).iloc[-1]
+            hist_adapt = macd_adapt - signal_adapt
+            return {
+                "adaptive_macd": float(macd_adapt),
+                "adaptive_macd_signal": float(signal_adapt),
+                "adaptive_macd_histogram": float(hist_adapt),
+            }
+        except Exception:
+            return {"adaptive_macd": 0.0, "adaptive_macd_signal": 0.0, "adaptive_macd_histogram": 0.0}
 
 
 class VolatilityRegimeModel:

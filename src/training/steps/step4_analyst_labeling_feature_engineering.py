@@ -572,6 +572,8 @@ class AnalystLabelingFeatureEngineeringStep:
                 center = float(np.average(p, weights=w)) if w.sum() > 0 else float(p.mean())
                 # Determine side by majority
                 side = group["side"].mode().iloc[0] if not group["side"].mode().empty else "support"
+                # Cluster width as price range
+                width = float(np.max(p) - np.min(p)) if p.size else 0.0
                 clusters.append({"cluster_id": int(cid), "center": center, "score": cluster_score, "side": side})
 
             return {"levels": levels_df, "clusters": clusters}
@@ -600,6 +602,10 @@ class AnalystLabelingFeatureEngineeringStep:
                     "sr_bounce_down": zeros,
                     "nearest_support_center": pd.Series(np.nan, index=df.index),
                     "nearest_resistance_center": pd.Series(np.nan, index=df.index),
+                    "nearest_support_score": pd.Series(0.0, index=df.index),
+                    "nearest_resistance_score": pd.Series(0.0, index=df.index),
+                    "nearest_support_band_pct": pd.Series(0.0, index=df.index),
+                    "nearest_resistance_band_pct": pd.Series(0.0, index=df.index),
                 }
 
             # Separate and pick top-N by score
@@ -609,20 +615,44 @@ class AnalystLabelingFeatureEngineeringStep:
             res = sorted(res, key=lambda x: x["score"], reverse=True)[:top_n]
             sup_levels = np.array([c["center"] for c in sup]) if sup else np.array([])
             res_levels = np.array([c["center"] for c in res]) if res else np.array([])
+            # Build maps for score and band width (percentage of price)
+            sup_score_map = {c["center"]: c.get("score", 0.0) for c in sup}
+            res_score_map = {c["center"]: c.get("score", 0.0) for c in res}
+            # If widths were computed, attach; else fallback tiny
+            sup_width_map = {c["center"]: abs(c.get("width", 0.0)) for c in sup}
+            res_width_map = {c["center"]: abs(c.get("width", 0.0)) for c in res}
 
             # For each bar, nearest support below and resistance above
             sup_arr = np.full(len(df), np.nan)
             res_arr = np.full(len(df), np.nan)
+            sup_score_arr = np.zeros(len(df))
+            res_score_arr = np.zeros(len(df))
+            sup_band_pct_arr = np.zeros(len(df))
+            res_band_pct_arr = np.zeros(len(df))
             for i, cp in enumerate(close.values):
                 if sup_levels.size:
                     below = sup_levels[sup_levels <= cp]
-                    sup_arr[i] = below[np.argmin(cp - below)] if below.size else np.nan
+                    if below.size:
+                        sel = below[np.argmin(cp - below)]
+                        sup_arr[i] = sel
+                        sup_score_arr[i] = float(sup_score_map.get(sel, 0.0))
+                        width = float(sup_width_map.get(sel, 0.0))
+                        sup_band_pct_arr[i] = float(width / max(1e-8, cp))
                 if res_levels.size:
                     above = res_levels[res_levels >= cp]
-                    res_arr[i] = above[np.argmin(above - cp)] if above.size else np.nan
+                    if above.size:
+                        sel = above[np.argmin(above - cp)]
+                        res_arr[i] = sel
+                        res_score_arr[i] = float(res_score_map.get(sel, 0.0))
+                        width = float(res_width_map.get(sel, 0.0))
+                        res_band_pct_arr[i] = float(width / max(1e-8, cp))
 
             sup_series = pd.Series(sup_arr, index=df.index)
             res_series = pd.Series(res_arr, index=df.index)
+            sup_score_series = pd.Series(sup_score_arr, index=df.index)
+            res_score_series = pd.Series(res_score_arr, index=df.index)
+            sup_band_pct_series = pd.Series(sup_band_pct_arr, index=df.index)
+            res_band_pct_series = pd.Series(res_band_pct_arr, index=df.index)
 
             with np.errstate(divide='ignore', invalid='ignore'):
                 dist_sup = ((close - sup_series) / close).clip(lower=0).fillna(1.0)
@@ -649,6 +679,10 @@ class AnalystLabelingFeatureEngineeringStep:
                 "sr_bounce_down": bounce_down.astype(int),
                 "nearest_support_center": sup_series,
                 "nearest_resistance_center": res_series,
+                "nearest_support_score": sup_score_series,
+                "nearest_resistance_score": res_score_series,
+                "nearest_support_band_pct": sup_band_pct_series,
+                "nearest_resistance_band_pct": res_band_pct_series,
             }
         except Exception as e:
             self.logger.warning(f"Final SR location features failed: {e}")
@@ -663,6 +697,10 @@ class AnalystLabelingFeatureEngineeringStep:
                 "sr_bounce_down": zeros,
                 "nearest_support_center": pd.Series(np.nan, index=df.index),
                 "nearest_resistance_center": pd.Series(np.nan, index=df.index),
+                "nearest_support_score": pd.Series(0.0, index=df.index),
+                "nearest_resistance_score": pd.Series(0.0, index=df.index),
+                "nearest_support_band_pct": pd.Series(0.0, index=df.index),
+                "nearest_resistance_band_pct": pd.Series(0.0, index=df.index),
             }
 
     def _build_sr_event_labels(
@@ -672,6 +710,10 @@ class AnalystLabelingFeatureEngineeringStep:
         breakout_thresh: float = 0.003,  # 0.3%
         bounce_thresh: float = 0.005,    # 0.5%
         horizon: int = 20,
+        min_consecutive: int = 2,
+        dedup_window_bars: int = 5,
+        min_zone_score: float = 0.0,
+        min_hist_touches: int = 1,
     ) -> pd.Series:
         """Build SR-event labels using nearest centers and OHLC data.
         -1 breakout, +1 bounce, 0 none. Triggered only on touches at t.
@@ -685,16 +727,40 @@ class AnalystLabelingFeatureEngineeringStep:
 
             labels = pd.Series(0, index=df.index, dtype=int)
             # Support touches
-            touch_sup = (sup_center.notna()) & ((low - sup_center) / close <= touch_tol_pct)
-            # Resistance touches
-            touch_res = (res_center.notna()) & ((res_center - high) / close <= touch_tol_pct)
-            touch_idx = np.where((touch_sup | touch_res).values)[0]
+            sup_band = df.get("nearest_support_band_pct", pd.Series(0.0, index=df.index)).astype(float)
+            res_band = df.get("nearest_resistance_band_pct", pd.Series(0.0, index=df.index)).astype(float)
+            sup_tol = np.maximum(touch_tol_pct, 0.5 * sup_band).astype(float)
+            res_tol = np.maximum(touch_tol_pct, 0.5 * res_band).astype(float)
+            # Touch conditions
+            touch_sup = (sup_center.notna()) & (((low - sup_center).abs() / close) <= sup_tol)
+            touch_res = (res_center.notna()) & (((res_center - high).abs() / close) <= res_tol)
+            # Require min consecutive bars in-zone
+            sup_roll = touch_sup.rolling(min_consecutive, min_periods=min_consecutive).sum().fillna(0) >= min_consecutive
+            res_roll = touch_res.rolling(min_consecutive, min_periods=min_consecutive).sum().fillna(0) >= min_consecutive
+            touch_sup = sup_roll
+            touch_res = res_roll
 
-            for i in touch_idx:
+            last_labeled = -dedup_window_bars - 1
+            ambiguous_count = 0
+            total_touches = len(touch_sup)
+            for i in touch_sup.index:
+                if i - last_labeled < dedup_window_bars:
+                    continue
                 end = min(len(df) - 1, i + horizon)
                 # Determine side
                 side = "support" if bool(touch_sup.iloc[i]) else "resistance"
                 level = float(sup_center.iloc[i] if side == "support" else res_center.iloc[i])
+                # Zone score curation
+                score = float(df.get("nearest_support_score", pd.Series(0.0, index=df.index)).iloc[i]) if side == "support" else float(df.get("nearest_resistance_score", pd.Series(0.0, index=df.index)).iloc[i])
+                if score < min_zone_score:
+                    continue
+                # Historical touches count
+                start_hist = max(0, i - horizon)
+                past = close.iloc[start_hist:i]
+                if len(past) > 0:
+                    hist_touches = int(((past - level).abs() / np.maximum(1e-8, past)) <= (touch_tol_pct)).sum()
+                    if hist_touches < min_hist_touches:
+                        continue
                 # scan ahead
                 window_close = close.iloc[i + 1 : end + 1]
                 window_high = high.iloc[i + 1 : end + 1]
@@ -709,16 +775,28 @@ class AnalystLabelingFeatureEngineeringStep:
                     breakout = bool(((window_close - level) / level < -breakout_thresh).any())
                     # Bounce up if price moves away by bounce_thresh without breakout first
                     away = bool(((window_high - level) / level > bounce_thresh).any())
+                    if away and breakout:
+                        ambiguous_count += 1
                     bounce = (away and not breakout)
                 else:
                     # Breakout up if closes above level by breakout_thresh
                     breakout = bool(((window_close - level) / level > breakout_thresh).any())
                     # Bounce down if price moves away by bounce_thresh without breakout first
                     away = bool(((level - window_low) / level > bounce_thresh).any())
+                    if away and breakout:
+                        ambiguous_count += 1
                     bounce = (away and not breakout)
 
                 labels.iloc[i] = -1 if breakout else (1 if bounce else 0)
+                if labels.iloc[i] != 0:
+                    last_labeled = i
 
+            try:
+                self.logger.info(
+                    f"SR-event labeling diagnostics: touches={total_touches}, ambiguous={ambiguous_count}"
+                )
+            except Exception:
+                pass
             return labels
         except Exception:
             return pd.Series(0, index=df.index, dtype=int)

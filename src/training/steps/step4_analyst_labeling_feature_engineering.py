@@ -39,6 +39,118 @@ class AnalystLabelingFeatureEngineeringStep:
         self.logger = system_logger.getChild("AnalystLabelingFeatureEngineeringStep")
         self.orchestrator = None
 
+    def _zscore(self, series: pd.Series, window: int = 50) -> pd.Series:
+        try:
+            roll = series.rolling(window=window, min_periods=max(5, window // 5))
+            z = (series - roll.mean()) / roll.std().replace(0, np.nan)
+            return z.replace([np.inf, -np.inf], np.nan)
+        except Exception:
+            return pd.Series(np.zeros(len(series), dtype=float), index=series.index)
+
+    async def _build_pipeline_a_stationary(self, price_data: pd.DataFrame) -> pd.DataFrame:
+        """Pipeline A: create stationary features directly from raw series made stationary."""
+        try:
+            df = price_data.copy()
+            features = pd.DataFrame(index=df.index)
+
+            # Core stationary transforms
+            if "close" in df.columns:
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    features["close_returns"] = df["close"].pct_change()
+
+            # Prefer trade_volume if present, else volume
+            vol_col = "trade_volume" if "trade_volume" in df.columns else ("volume" if "volume" in df.columns else None)
+            if vol_col is not None:
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    features["volume_returns"] = df[vol_col].pct_change()
+
+            # Funding rates dynamics
+            if "funding_rate" in df.columns:
+                features["funding_rate_change"] = df["funding_rate"].diff()
+
+            # Volatility of stationary series
+            if "close_returns" in features.columns:
+                features["returns_volatility_20"] = features["close_returns"].rolling(20).std()
+            if "volume_returns" in features.columns:
+                features["volume_returns_volatility_20"] = features["volume_returns"].rolling(20).std()
+
+            # Simple interactive features
+            if "close_returns" in features.columns and "volume_returns" in features.columns:
+                features["returns_x_volume_returns"] = (
+                    features["close_returns"] * features["volume_returns"]
+                )
+
+            # Cleanup
+            num = features.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
+            features[num.columns] = num
+            features = features.fillna(0)
+            # Drop any all-NaN columns defensively
+            features = features.dropna(axis=1, how="all")
+            return features
+        except Exception as e:
+            self.logger.warning(f"Pipeline A failed: {e}")
+            return pd.DataFrame(index=price_data.index)
+
+    async def _build_pipeline_b_ohlcv(self, price_data: pd.DataFrame) -> pd.DataFrame:
+        """Pipeline B: compute raw OHLCV indicators then transform to stationary features."""
+        try:
+            required = ["open", "high", "low", "close"]
+            if not all(c in price_data.columns for c in required):
+                self.logger.warning("Pipeline B skipped due to missing OHLCV columns")
+                return pd.DataFrame(index=price_data.index)
+
+            df = price_data.copy()
+            feats = pd.DataFrame(index=df.index)
+
+            close = df["close"].astype(float)
+            open_ = df["open"].astype(float)
+            high = df["high"].astype(float)
+            low = df["low"].astype(float)
+
+            # SMA distances (stationary)
+            sma20 = close.rolling(20, min_periods=1).mean()
+            sma50 = close.rolling(50, min_periods=1).mean()
+            with np.errstate(divide="ignore", invalid="ignore"):
+                feats["sma20_distance"] = (close / sma20) - 1.0
+                feats["sma50_distance"] = (close / sma50) - 1.0
+
+            # Garman–Klass volatility -> returns of vol
+            with np.errstate(divide="ignore", invalid="ignore"):
+                log_hl = np.log(high / low)
+                log_co = np.log(close / open_)
+            gk_var = (log_hl ** 2) / (2 * np.log(2)) - (2 * np.log(2) - 1) * (log_co ** 2)
+            gk_vol = np.sqrt(gk_var.clip(lower=0))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                feats["gk_vol_returns"] = (gk_vol / gk_vol.shift(1)) - 1.0
+
+            # Simple candlestick strength (engulfing bullish/bearish) -> z-scored
+            body = (close - open_).abs()
+            body_prev = body.shift(1)
+            # Bullish engulfing
+            bull_cond = (
+                (close > open_) & (df["close"].shift(1) < df["open"].shift(1))
+                & (open_ < df["close"].shift(1)) & (close > df["open"].shift(1))
+            )
+            bull_strength = (body / (body_prev.replace(0, np.nan))).where(bull_cond, 0.0)
+            feats["bullish_engulf_strength_z"] = self._zscore(bull_strength, window=50)
+            # Bearish engulfing
+            bear_cond = (
+                (close < open_) & (df["close"].shift(1) > df["open"].shift(1))
+                & (open_ > df["close"].shift(1)) & (close < df["open"].shift(1))
+            )
+            bear_strength = (body / (body_prev.replace(0, np.nan))).where(bear_cond, 0.0)
+            feats["bearish_engulf_strength_z"] = self._zscore(bear_strength, window=50)
+
+            # Cleanup
+            num = feats.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
+            feats[num.columns] = num
+            feats = feats.fillna(0)
+            feats = feats.dropna(axis=1, how="all")
+            return feats
+        except Exception as e:
+            self.logger.warning(f"Pipeline B failed: {e}")
+            return pd.DataFrame(index=price_data.index)
+
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
@@ -308,108 +420,60 @@ class AnalystLabelingFeatureEngineeringStep:
 
             self.logger.info("✅ Validated OHLCV data")
 
-            # Create volume data if not available
-            volume_data = None
-            if "volume" in price_data.columns:
-                volume_data = price_data[["volume"]]
-            else:
-                # Create synthetic volume data
-                volume_data = pd.DataFrame(
-                    {"volume": np.random.uniform(1000, 10000, len(price_data))},
-                    index=price_data.index,
+            # Dual-pipeline feature engineering
+            self.logger.info("🔀 Building Pipeline A (Stationary) and Pipeline B (OHLCV->Stationary)...")
+            features_a = await self._build_pipeline_a_stationary(price_data)
+            features_b = await self._build_pipeline_b_ohlcv(price_data)
+            combined_features = pd.concat([features_a, features_b], axis=1)
+
+            # Label using optimized triple barrier on raw OHLCV, then align features to labeled index
+            try:
+                from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+                    OptimizedTripleBarrierLabeling,
                 )
-                self.logger.warning("Created synthetic volume data")
-
-            # Check if orchestrator is initialized
-            if (
-                self.orchestrator
-                and hasattr(self.orchestrator, "is_initialized")
-                and self.orchestrator.is_initialized
-            ):
-                try:
-                    # Execute vectorized labeling and feature engineering
-                    result = await self.orchestrator.orchestrate_labeling_and_feature_engineering(
-                        price_data=price_data,
-                        volume_data=volume_data,
-                        order_flow_data=None,  # Not available in this context
-                        sr_levels=None,  # Not available in this context
-                    )
-
-                    # Enhanced feature validation and quality checks
-                    if result and isinstance(result.get("data"), pd.DataFrame):
-                        labeled_data = result.get("data")
-                        
-                        # Validate feature quality for 240+ feature set
-                        labeled_data = await self._validate_and_enhance_features(labeled_data)
-                        
-                        # Drop datetime/timestamp columns before any further processing
-                        try:
-                            datetime_cols = [
-                                c for c in labeled_data.columns
-                                if str(labeled_data[c].dtype).startswith("datetime64") or "timestamp" in c.lower()
-                            ]
-                            if datetime_cols:
-                                self.logger.info(f"Removing datetime columns prior to saving/validation: {datetime_cols}")
-                                labeled_data = labeled_data.drop(columns=datetime_cols)
-                        except Exception:
-                            pass
-
-                        # Remove metadata columns that should not be features
-                        meta_cols = [c for c in labeled_data.columns if c in [
-                            'year','month','day','day_of_week','day_of_month','quarter','exchange','symbol','timeframe','split'
-                        ]]
-                        if meta_cols:
-                            self.logger.info(f"Removing metadata columns from features: {meta_cols}")
-                            labeled_data = labeled_data.drop(columns=meta_cols)
-
-                        # Note: Keep OHLCV in labeled_data for labeling diagnostics; we'll drop OHLCV only for feature files
-
-                        # Ensure labeled_data contains OHLCV columns by merging from original price_data
-                        try:
-                            required_ohlcv = ['open','high','low','close','volume']
-                            missing_ohlcv = [c for c in required_ohlcv if c not in labeled_data.columns]
-                            if missing_ohlcv:
-                                self.logger.info(f"Re-adding missing OHLCV columns to labeled data: {missing_ohlcv}")
-                                ohlcv_source = price_data[[c for c in required_ohlcv if c in price_data.columns]].copy()
-                                labeled_data = labeled_data.join(ohlcv_source, how='left')
-                        except Exception as _e:
-                            self.logger.warning(f"Failed to re-add OHLCV columns to labeled data: {_e}")
-
-                        # Do NOT re-add raw OHLCV to labeled features to prevent leakage; only keep engineered features
-                        # Validator will operate on separate datasets where OHLCV is expected if needed
-                        
-                        # Ensure the result has a 'label' column
-                        if "label" not in labeled_data.columns:
-                            self.logger.warning(
-                                "No 'label' column found in orchestrator result, adding default labels"
-                            )
-                            labeled_data[
-                                "label"
-                            ] = -1  # Default to sell signal for binary classification
-                        
-                        result["data"] = labeled_data
-                        
-                        # Log feature engineering summary
-                        await self._log_feature_engineering_summary(labeled_data)
-                        
-                    else:
-                        msg = "Orchestrator returned invalid data"
-                        raise Exception(msg)
-
-                except Exception as e:
-                    self.logger.warning(
-                        f"Vectorized labeling orchestrator failed during execution: {e}, using fallback"
-                    )
-                    result = self._create_fallback_labeled_data(price_data)
-            else:
-                # Fallback: create simple labeled data
-                self.logger.warning(
-                    "Vectorized labeling orchestrator not initialized, using fallback labeling"
+                tb_config = self.config.get("vectorized_labelling_orchestrator", {})
+                labeler = OptimizedTripleBarrierLabeling(
+                    profit_take_multiplier=tb_config.get("profit_take_multiplier", 0.002),
+                    stop_loss_multiplier=tb_config.get("stop_loss_multiplier", 0.001),
+                    time_barrier_minutes=tb_config.get("time_barrier_minutes", 30),
+                    max_lookahead=tb_config.get("max_lookahead", 100),
                 )
-                result = self._create_fallback_labeled_data(price_data)
-            # Get the labeled data
-            labeled_data = result.get("data", price_data)
+                labeled_ohlcv = labeler.apply_triple_barrier_labeling_vectorized(
+                    price_data[["open", "high", "low", "close", "volume"]].copy()
+                )
+                # Align feature rows to labeled rows (binary classification removes HOLD rows)
+                combined_features = combined_features.loc[labeled_ohlcv.index]
+                labeled_data = pd.concat([combined_features, labeled_ohlcv[["label"]]], axis=1)
+            except Exception as e:
+                self.logger.warning(f"Triple barrier labeling failed, using fallback labels: {e}")
+                fallback = self._create_fallback_labeled_data(price_data)
+                labeled_data = fallback.get("data", price_data)
 
+            # Final feature sanity: drop raw OHLCV if somehow present
+            raw_cols = ["open", "high", "low", "close", "volume", "trade_volume", "trade_count", "avg_price", "min_price", "max_price"]
+            labeled_data = labeled_data.drop(columns=[c for c in raw_cols if c in labeled_data.columns], errors="ignore")
+
+            # Validate feature quality
+            labeled_data = await self._validate_and_enhance_features(labeled_data)
+
+            # Drop datetime/timestamp and metadata columns
+            try:
+                datetime_cols = [
+                    c for c in labeled_data.columns if str(labeled_data[c].dtype).startswith("datetime64") or "timestamp" in c.lower()
+                ]
+                if datetime_cols:
+                    self.logger.info(f"Removing datetime columns prior to saving/validation: {datetime_cols}")
+                    labeled_data = labeled_data.drop(columns=datetime_cols)
+            except Exception:
+                pass
+
+            meta_cols = [c for c in labeled_data.columns if c in [
+                'year','month','day','day_of_week','day_of_month','quarter','exchange','symbol','timeframe','split'
+            ]]
+            if meta_cols:
+                self.logger.info(f"Removing metadata columns from features: {meta_cols}")
+                labeled_data = labeled_data.drop(columns=meta_cols)
+ 
             # Final guard: drop metadata columns again prior to splitting/saving
             try:
                 drop_meta = [c for c in ['year','month','day','exchange','symbol','timeframe','split'] if c in labeled_data.columns]
@@ -839,8 +903,8 @@ class AnalystLabelingFeatureEngineeringStep:
             # Update pipeline state with results
             pipeline_state.update(
                 {
-                    "labeled_data": result.get("data", price_data),
-                    "feature_engineering_metadata": result.get("metadata", {}),
+                    "labeled_data": result.get("data", price_data) if 'result' in locals() else labeled_data,
+                    "feature_engineering_metadata": result.get("metadata", {}) if 'result' in locals() else {},
                     "feature_engineering_completed": True,
                     "labeling_completed": True,
                 },
@@ -850,7 +914,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 "✅ Analyst labeling and feature engineering completed successfully",
             )
             self.logger.info("Training specialist models for regime: combined (single unified feature set)")
-            return {"status": "SUCCESS", "data": result}
+            return {"status": "SUCCESS", "data": result if 'result' in locals() else {"data": labeled_data}}
 
         except Exception as e:
             self.logger.exception(

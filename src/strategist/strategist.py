@@ -335,10 +335,32 @@ class Strategist:
                 self.logger.error(f"Missing columns for regime classification: {missing}")
                 return None
 
+            # Resample to 1h timeframe for regime classification
+            df = market_data.copy()
+            if "timestamp" in df.columns:
+                if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+                    df["timestamp"] = pd.to_datetime(df["timestamp"]) 
+                df = df.sort_values("timestamp").reset_index(drop=True)
+                df_idx = df.set_index("timestamp")
+            elif isinstance(df.index, pd.DatetimeIndex):
+                df_idx = df.sort_index()
+            else:
+                self.logger.error("Market data lacks a datetime index or 'timestamp' column for resampling")
+                return None
+
+            df_1h = df_idx.resample("1h").agg({
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+            }).dropna()
+            df_1h = df_1h.reset_index().rename(columns={"index": "timestamp"})
+
             # Use same rules as training
             from src.analyst.simple_regime_rules import classify_last
-            regime, confidence = classify_last(market_data)
-            additional_info = {"method": "EMA21_EMA55_ADX"}
+            regime, confidence = classify_last(df_1h)
+            additional_info = {"method": "EMA21_EMA55_ADX", "timeframe": "1h"}
 
             regime_info = {
                 "regime": regime,

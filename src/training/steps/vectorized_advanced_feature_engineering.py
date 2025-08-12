@@ -839,10 +839,22 @@ class VectorizedAdvancedFeatureEngineering:
             features["order_flow_imbalance"] = self._calculate_order_flow_imbalance_vectorized(
                 price_data, volume_data, order_flow_data
             )
-            features["bid_ask_spread"] = self._calculate_bid_ask_spread_vectorized(price_data)
+            # Generate spread dynamics instead of raw spread
+            bas = self._calculate_bid_ask_spread_vectorized(price_data)
+            # Relative change (returns) and level as separate engineered metrics
+            features["bid_ask_spread_returns"] = bas.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0)
+            features["bid_ask_spread_level"] = bas  # bounded 0..0.05 already
 
             # Market depth features (vectorized per-row)
-            features["market_depth"] = self._calculate_market_depth_vectorized(price_data, volume_data)
+            md = self._calculate_market_depth_vectorized(price_data, volume_data)
+            # Depth dynamics
+            features["market_depth_change"] = md.diff().fillna(0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                features["market_depth_returns"] = (md.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+            # Depth imbalance proxy: short vs long window
+            short = volume_data["volume"].rolling(10, min_periods=1).mean()
+            long = volume_data["volume"].rolling(50, min_periods=1).mean().replace(0, np.nan)
+            features["market_depth_imbalance"] = ((short - long) / long).replace([np.inf, -np.inf], np.nan).fillna(0)
 
             return features
 

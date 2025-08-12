@@ -1261,20 +1261,7 @@ class AnalystEnhancementStep:
         X_train = X_train[allow_features]
         X_val = X_val[allow_features]
 
-        # Apply VIF loop with CPA clustering before any model-based selection
-        try:
-            X_train, X_val, vif_summary = self._vif_loop_reduce_features(X_train, X_val)
-            self.logger.info(
-                {
-                    "msg": "VIF loop completed",
-                    "train_shape": X_train.shape,
-                    "val_shape": X_val.shape,
-                    "removed": len(vif_summary.get("removed_features", [])),
-                    "cpa_clusters": vif_summary.get("cpa_count", 0),
-                }
-            )
-        except Exception as e:
-            self.logger.warning(f"VIF reduction skipped due to error: {e}")
+        # VIF/CPA handled in Step 4; no additional multicollinearity pruning here
 
         # --- 1. Hyperparameter Optimization with Pruning ---
         self.logger.info(f"🎯 Starting Hyperparameter Optimization for {model_name} in {regime_name}")
@@ -3005,162 +2992,13 @@ class AnalystEnhancementStep:
         )
         return student_model.eval()
 
-    def _compute_vif_scores(self, X: pd.DataFrame) -> dict[str, float]:
-        """Compute approximate VIF via linear regression R^2 for each feature."""
-        from sklearn.linear_model import LinearRegression
-        vif_scores: dict[str, float] = {}
-        cols = X.columns.tolist()
-        # Impute NaNs with median to stabilize
-        X_imputed = X.copy()
-        for c in cols:
-            med = X_imputed[c].median()
-            if pd.isna(med):
-                med = 0.0
-            X_imputed[c] = X_imputed[c].fillna(med)
-        for col in cols:
-            others = [c for c in cols if c != col]
-            if not others:
-                vif_scores[col] = 1.0
-                continue
-            reg = LinearRegression(n_jobs=-1) if hasattr(LinearRegression, "n_jobs") else LinearRegression()
-            try:
-                reg.fit(X_imputed[others], X_imputed[col])
-                y = X_imputed[col].values
-                y_pred = reg.predict(X_imputed[others])
-                ss_res = float(np.sum((y - y_pred) ** 2))
-                ss_tot = float(np.sum((y - np.mean(y)) ** 2))
-                r2 = 0.0 if ss_tot == 0 else 1.0 - (ss_res / ss_tot)
-                vif = float(np.inf) if r2 >= 0.999999 else (1.0 / max(1e-12, 1.0 - r2))
-            except Exception:
-                vif = 1.0
-            vif_scores[col] = vif
-        return vif_scores
+    # VIF/CPA utilities are handled in Step 4; removed from Step 6
 
-    def _build_cpa_transform(self, X: pd.DataFrame, cluster_cols: list[str], name_prefix: str) -> tuple[pd.Series, dict]:
-        """Create a simple CPA (first principal component) from a cluster of correlated features.
-        Returns the component series (aligned to X index) and a transform dict to apply on validation.
-        """
-        # Standardize using train stats
-        means = X[cluster_cols].mean()
-        stds = X[cluster_cols].std().replace(0, np.nan)
-        Z = (X[cluster_cols] - means) / stds
-        Z = Z.fillna(0.0)
-        try:
-            # SVD on standardized data
-            U, S, VT = np.linalg.svd(Z.values, full_matrices=False)
-            weights = VT[0, :]
-        except Exception:
-            # Fallback: equal weights
-            k = len(cluster_cols)
-            weights = np.ones(k) / max(1, k)
-        pc1 = pd.Series(np.dot(Z.values, weights), index=X.index, name=f"{name_prefix}_pc1")
-        transform = {
-            "name": pc1.name,
-            "cols": cluster_cols,
-            "means": means.to_dict(),
-            "stds": stds.to_dict(),
-            "weights": weights.tolist(),
-        }
-        return pc1.astype(np.float32), transform
+    # CPA utilities are handled in Step 4; removed from Step 6
 
-    def _apply_cpa_transforms(self, X: pd.DataFrame, transforms: list[dict]) -> pd.DataFrame:
-        """Apply stored CPA transforms to dataframe X, drop original cluster cols."""
-        X_new = X.copy()
-        for t in transforms:
-            cols = [c for c in t["cols"] if c in X_new.columns]
-            if len(cols) < 1:
-                continue
-            means = pd.Series(t["means"]).reindex(cols).fillna(0.0)
-            stds = pd.Series(t["stds"]).reindex(cols).replace(0, np.nan)
-            Z = (X_new[cols] - means) / stds
-            Z = Z.fillna(0.0)
-            w = np.array(t["weights"])[: len(cols)]
-            comp = pd.Series(np.dot(Z.values, w), index=X_new.index, name=t["name"]).astype(np.float32)
-            X_new[t["name"]] = comp
-            # Drop originals
-            X_new = X_new.drop(columns=cols, errors="ignore")
-        return X_new
+    # CPA utilities are handled in Step 4; removed from Step 6
 
-    def _vif_loop_reduce_features(self, X_train: pd.DataFrame, X_val: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
-        """Iteratively reduce multicollinearity using VIF thresholds with CPA for very high VIF clusters.
-        - If max VIF > 20: build CPA on correlated cluster (|corr|>=0.7), replace originals with PC1
-        - Else if max VIF > 10: remove that feature
-        Returns reduced X_train, X_val and a summary dict with removed features and CPA clusters.
-        """
-        removed: list[str] = []
-        cpa_transforms: list[dict] = []
-        cpa_clusters: list[list[str]] = []
-        X_tr = X_train.copy()
-        X_vl = X_val.copy()
-        # Remove zero-variance columns upfront
-        zero_var = [c for c in X_tr.columns if X_tr[c].nunique(dropna=True) <= 1]
-        if zero_var:
-            removed.extend(zero_var)
-            X_tr = X_tr.drop(columns=zero_var, errors="ignore")
-            X_vl = X_vl.drop(columns=zero_var, errors="ignore")
-        # Main loop
-        max_iters = 50
-        for _ in range(max_iters):
-            if X_tr.shape[1] <= 2:
-                break
-            vif = self._compute_vif_scores(X_tr)
-            if not vif:
-                break
-            worst_feature, worst_vif = max(vif.items(), key=lambda kv: (float("inf") if np.isinf(kv[1]) else kv[1]))
-            if worst_vif is None or (not np.isfinite(worst_vif)):
-                # Remove problematic feature
-                removed.append(worst_feature)
-                X_tr = X_tr.drop(columns=[worst_feature], errors="ignore")
-                X_vl = X_vl.drop(columns=[worst_feature], errors="ignore")
-                continue
-            if worst_vif > 20.0:
-                # Build cluster via correlation with threshold
-                try:
-                    corr = X_tr.corr().abs()
-                    candidates = corr.columns[(corr[worst_feature] >= 0.7)].tolist()
-                    # Ensure at least 2
-                    cluster = list(dict.fromkeys([worst_feature] + [c for c in candidates if c != worst_feature]))
-                    if len(cluster) >= 2:
-                        pc1, transform = self._build_cpa_transform(X_tr, cluster, name_prefix=f"cpa_{len(cpa_transforms)+1}")
-                        X_tr[pc1.name] = pc1
-                        cpa_transforms.append(transform)
-                        cpa_clusters.append(cluster)
-                        # Drop originals
-                        X_tr = X_tr.drop(columns=cluster, errors="ignore")
-                        X_vl = X_vl.drop(columns=cluster, errors="ignore")
-                        # Apply transform to validation
-                        X_vl = self._apply_cpa_transforms(X_vl, [transform])
-                        continue
-                    else:
-                        # Fall back to removal if cluster too small
-                        removed.append(worst_feature)
-                        X_tr = X_tr.drop(columns=[worst_feature], errors="ignore")
-                        X_vl = X_vl.drop(columns=[worst_feature], errors="ignore")
-                        continue
-                except Exception:
-                    # On failure, remove worst feature
-                    removed.append(worst_feature)
-                    X_tr = X_tr.drop(columns=[worst_feature], errors="ignore")
-                    X_vl = X_vl.drop(columns=[worst_feature], errors="ignore")
-                    continue
-            elif worst_vif > 10.0:
-                removed.append(worst_feature)
-                X_tr = X_tr.drop(columns=[worst_feature], errors="ignore")
-                X_vl = X_vl.drop(columns=[worst_feature], errors="ignore")
-                continue
-            else:
-                break
-        summary = {
-            "removed_features": removed,
-            "cpa_clusters": cpa_clusters,
-            "cpa_count": len(cpa_clusters),
-        }
-        # Log once
-        if removed:
-            self.logger.info(f"VIF reduction removed {len(removed)} features (threshold>10): {removed[:50]}{' ...' if len(removed)>50 else ''}")
-        if cpa_clusters:
-            self.logger.info(f"CPA created for {len(cpa_clusters)} clusters (threshold>20)")
-        return X_tr, X_vl, summary
+    # VIF/CPA utilities are handled in Step 4; removed from Step 6
 
 
 async def run_step(

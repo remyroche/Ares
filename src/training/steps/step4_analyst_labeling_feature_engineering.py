@@ -1385,6 +1385,29 @@ class AnalystLabelingFeatureEngineeringStep:
                             ae_features = ae_features.drop(columns=dup)
                         combined_features = pd.concat([combined_features, ae_features], axis=1)
                         self.logger.info(f"✅ Autoencoder features added (pre-labeling): {ae_features.shape[1]} columns")
+                        # Optionally replace original features with AE latents (config: ae_mode)
+                        ae_mode = str(self.config.get("ae_mode", "augment")).lower()
+                        # Derive additional AE-based signals: recon error z-score and spike flag
+                        try:
+                            if "autoencoder_recon_error" in ae_features.columns:
+                                re = ae_features["autoencoder_recon_error"].astype(float)
+                                re_roll = re.rolling(100, min_periods=20)
+                                re_z = (re - re_roll.mean()) / re_roll.std().replace(0, np.nan)
+                                ae_features["autoencoder_recon_error_z_100"] = re_z.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+                                ae_features["autoencoder_recon_error_spike"] = (ae_features["autoencoder_recon_error_z_100"] > 3.0).astype(int)
+                        except Exception as _e:
+                            self.logger.warning(f"AE recon-error derivatives failed: {_e}")
+                        if ae_mode == "replace":
+                            ae_cols = [c for c in ae_features.columns if c.startswith("autoencoder_")]
+                            if not ae_cols:
+                                self.logger.warning("AE mode 'replace' requested, but no AE columns found. Falling back to augment.")
+                                combined_features = pd.concat([combined_features, ae_features], axis=1)
+                            else:
+                                combined_features = ae_features[ae_cols].copy()
+                                self.logger.info(f"AE mode 'replace': using {len(ae_cols)} AE columns only")
+                        else:
+                            combined_features = pd.concat([combined_features, ae_features], axis=1)
+                            self.logger.info(f"✅ Autoencoder features added (pre-labeling): {ae_features.shape[1]} columns")
                     else:
                         self.logger.warning("AE generator returned empty DataFrame; skipping AE augmentation")
                 except Exception as e:
@@ -1625,6 +1648,50 @@ class AnalystLabelingFeatureEngineeringStep:
             train_data = labeled_data.iloc[:train_end]
             validation_data = labeled_data.iloc[train_end:val_end]
             test_data = labeled_data.iloc[val_end:]
+
+            # Optional: prune high correlation with AE latents to reduce redundancy
+            try:
+                ae_mode = str(self.config.get("ae_mode", "augment")).lower()
+                corr_thr = float(self.config.get("ae_correlation_prune_threshold", 0.98))
+                if ae_mode in ("augment", "replace"):
+                    def _prune(df_tr: pd.DataFrame, df_vl: pd.DataFrame, df_te: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+                        if df_tr.empty:
+                            return df_tr, df_vl, df_te
+                        all_cols = [c for c in df_tr.columns if c != "label"]
+                        ae_cols = [c for c in all_cols if c.startswith("autoencoder_")]
+                        if not ae_cols:
+                            return df_tr, df_vl, df_te
+                        keep_cols = set(all_cols)
+                        # Compute correlations on train only
+                        num_tr = df_tr[all_cols].select_dtypes(include=[np.number]).copy()
+                        # Drop columns with no variance to avoid NaNs
+                        nunique = num_tr.nunique(dropna=True)
+                        nz_cols = nunique[nunique > 1].index.tolist()
+                        num_tr = num_tr[nz_cols]
+                        ae_cols_eff = [c for c in ae_cols if c in num_tr.columns]
+                        other_cols = [c for c in num_tr.columns if c not in ae_cols_eff]
+                        drops: set[str] = set()
+                        if ae_cols_eff and other_cols:
+                            corr = num_tr[other_cols].corrwith(num_tr[ae_cols_eff].mean(axis=1)).abs()
+                            # Also check pairwise max corr vs any AE column for stricter prune
+                            max_corr = pd.Series(0.0, index=other_cols)
+                            for oc in other_cols:
+                                try:
+                                    max_corr[oc] = num_tr[ae_cols_eff].apply(lambda s: s.corr(num_tr[oc])).abs().max()
+                                except Exception:
+                                    max_corr[oc] = 0.0
+                            high = max_corr[max_corr >= corr_thr].index.tolist()
+                            drops.update(high)
+                        if drops:
+                            self.logger.info(f"AE prune: dropping {len(drops)} redundant non-AE features with |corr|>={corr_thr}")
+                            new_tr = df_tr.drop(columns=list(drops), errors="ignore")
+                            new_vl = df_vl.drop(columns=list(drops), errors="ignore") if not df_vl.empty else df_vl
+                            new_te = df_te.drop(columns=list(drops), errors="ignore") if not df_te.empty else df_te
+                            return new_tr, new_vl, new_te
+                        return df_tr, df_vl, df_te
+                    train_data, validation_data, test_data = _prune(train_data, validation_data, test_data)
+            except Exception as e:
+                self.logger.warning(f"AE correlation prune skipped: {e}")
 
             # Apply VIF loop with CPA on training split; transform val/test accordingly
             try:

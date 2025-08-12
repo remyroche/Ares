@@ -412,6 +412,93 @@ class MetaLabelingSystem:
             self.print(error("Error calculating momentum patterns: {e}"))
             return {}
 
+    def _detect_additional_analyst_patterns(
+        self,
+        data: pd.DataFrame,
+        features: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Detect additional analyst patterns requested by users.
+
+        Patterns added:
+        - LIQUIDITY_GRAB
+        - ABSORPTION_AT_LEVEL
+        - TRENDING_RANGE
+        - MOVING_AVERAGE_BOUNCE
+        - HEAD_AND_SHOULDERS (proxy)
+        - DOUBLE_TOP_BOTTOM (proxy)
+        - CLIMACTIC_REVERSAL
+        """
+        try:
+            patterns: dict[str, Any] = {}
+
+            close = data["close"].astype(float)
+            open_ = data.get("open", close).astype(float)
+            high = data.get("high", close).astype(float)
+            low = data.get("low", close).astype(float)
+
+            # Common helpers
+            bb_position = features.get("bb_position", 0.5)
+            bb_width = features.get("bb_width", 0.1)
+            volume_ratio = features.get("volume_ratio", 1.0)
+            vol_ratio_threshold = max(1.0, float(self.volume_threshold))
+            momentum_5 = features.get("price_momentum_5", 0.0)
+            momentum_10 = features.get("price_momentum_10", 0.0)
+
+            # LIQUIDITY_GRAB: strong volume spike at extremes with immediate mean-reversion signature
+            near_extreme = (bb_position <= 0.1) or (bb_position >= 0.9)
+            volume_extreme = volume_ratio >= (2.0 * vol_ratio_threshold)
+            mean_reversion_signal = abs(momentum_5) < self.momentum_threshold and bb_width <= 0.06
+            patterns["LIQUIDITY_GRAB"] = 1 if (near_extreme and volume_extreme and mean_reversion_signal) else 0
+
+            # ABSORPTION_AT_LEVEL: high volume with narrow range and small net change
+            true_range = float((high.iloc[-1] - low.iloc[-1]) / max(1e-12, close.iloc[-1])) if len(close) else 0.0
+            small_body = abs(float((close.iloc[-1] - open_.iloc[-1]) / max(1e-12, close.iloc[-1]))) < 0.002
+            narrow_range = (bb_width <= 0.03) or (true_range <= 0.002)
+            patterns["ABSORPTION_AT_LEVEL"] = 1 if (volume_ratio >= vol_ratio_threshold and narrow_range and small_body) else 0
+
+            # TRENDING_RANGE: low volatility range with directional drift present
+            low_vol_range = bb_width <= 0.05
+            mild_drift = 0.005 <= abs(momentum_10) <= 0.02
+            patterns["TRENDING_RANGE"] = 1 if (low_vol_range and mild_drift) else 0
+
+            # MOVING_AVERAGE_BOUNCE: price near SMA20
+            sma20 = close.rolling(20).mean().iloc[-1] if len(close) >= 20 else close.iloc[-1]
+            dist_ma = abs(float(close.iloc[-1] - sma20) / max(1e-12, close.iloc[-1])) if len(close) else 1.0
+            patterns["MOVING_AVERAGE_BOUNCE"] = 1 if (dist_ma <= 0.0015 and abs(momentum_5) <= 0.01) else 0
+
+            # HEAD_AND_SHOULDERS (proxy): price near recent high with weakening momentum and RSI < 50
+            recent_high = float(close.rolling(30, min_periods=1).max().iloc[-1]) if len(close) else float(close.iloc[-1] if len(close) else 0)
+            near_recent_high = abs(float(close.iloc[-1] - recent_high) / max(1e-12, recent_high)) <= 0.003 if recent_high else False
+            rsi = features.get("rsi", 50.0)
+            weakening = momentum_5 < 0 and (abs(momentum_5) < abs(momentum_10))
+            patterns["HEAD_AND_SHOULDERS"] = 1 if (near_recent_high and weakening and rsi < 50) else 0
+
+            # DOUBLE_TOP_BOTTOM (proxy): price near recent extrema with reversal momentum
+            recent_low = float(close.rolling(30, min_periods=1).min().iloc[-1]) if len(close) else float(close.iloc[-1] if len(close) else 0)
+            near_top = abs(float(close.iloc[-1] - recent_high) / max(1e-12, recent_high)) <= 0.002 if recent_high else False
+            near_bottom = abs(float(close.iloc[-1] - recent_low) / max(1e-12, recent_low)) <= 0.002 if recent_low else False
+            reversal = (near_top and momentum_5 < 0) or (near_bottom and momentum_5 > 0)
+            patterns["DOUBLE_TOP_BOTTOM"] = 1 if reversal else 0
+
+            # CLIMACTIC_REVERSAL: very high volume, large range candle, and momentum sign flip proxy
+            large_body = abs(float((close.iloc[-1] - open_.iloc[-1]) / max(1e-12, close.iloc[-1]))) >= 0.01 if len(close) else False
+            momentum_flip_proxy = abs(momentum_5) >= (self.momentum_threshold * 2)
+            patterns["CLIMACTIC_REVERSAL"] = 1 if (volume_extreme and large_body and momentum_flip_proxy) else 0
+
+            return patterns
+
+        except Exception as e:
+            self.print(error(f"Error detecting additional analyst patterns: {e}"))
+            return {
+                "LIQUIDITY_GRAB": 0,
+                "ABSORPTION_AT_LEVEL": 0,
+                "TRENDING_RANGE": 0,
+                "MOVING_AVERAGE_BOUNCE": 0,
+                "HEAD_AND_SHOULDERS": 0,
+                "DOUBLE_TOP_BOTTOM": 0,
+                "CLIMACTIC_REVERSAL": 0,
+            }
+
     # Analyst Label Detection Methods
 
     def _detect_strong_trend_continuation(
@@ -946,6 +1033,10 @@ class MetaLabelingSystem:
             # Momentum patterns
             momentum_patterns = self._detect_momentum_patterns(price_data, features)
             analyst_labels.update(momentum_patterns)
+
+            # Additional analyst patterns requested by user
+            additional_patterns = self._detect_additional_analyst_patterns(price_data, features)
+            analyst_labels.update(additional_patterns)
 
             # If no patterns detected, generate NO_SETUP label
             if not any(analyst_labels.values()):

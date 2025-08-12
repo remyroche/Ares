@@ -164,27 +164,28 @@ class MLConfidencePredictor:
 
         # Meta-labeling system integration
         self.meta_labeling_system: Any = None
+        # Align with labels actually produced by MetaLabelingSystem
         self.analyst_labels: list[str] = [
             "STRONG_TREND_CONTINUATION",
             "EXHAUSTION_REVERSAL",
             "RANGE_MEAN_REVERSION",
-            "BREAKOUT_FAILURE",
             "BREAKOUT_SUCCESS",
-            "NO_SETUP",
+            "BREAKOUT_FAILURE",
             "VOLATILITY_COMPRESSION",
-            "ABSORPTION_AT_LEVEL",
+            "VOLATILITY_EXPANSION",
             "FLAG_FORMATION",
+            "TRIANGLE_FORMATION",
+            "RECTANGLE_FORMATION",
+            "MOMENTUM_IGNITION",
+            "GRADUAL_MOMENTUM_FADE",
+            "LIQUIDITY_GRAB",
+            "ABSORPTION_AT_LEVEL",
             "TRENDING_RANGE",
             "MOVING_AVERAGE_BOUNCE",
             "HEAD_AND_SHOULDERS",
             "DOUBLE_TOP_BOTTOM",
             "CLIMACTIC_REVERSAL",
-            "VOLATILITY_EXPANSION",
-            "MOMENTUM_IGNITION",
-            "GRADUAL_MOMENTUM_FADE",
-            "TRIANGLE_FORMATION",
-            "RECTANGLE_FORMATION",
-            "LIQUIDITY_GRAB",
+            "NO_SETUP",
         ]
         self.tactician_labels: list[str] = [
             "LOWEST_PRICE_NEXT_1m",
@@ -586,7 +587,7 @@ class MLConfidencePredictor:
             )
 
             # Generate analyst labels
-            return await self.meta_labeling_system._generate_analyst_labels(
+            return await self.meta_labeling_system.generate_analyst_labels(
                 market_data,
                 volume_data,
                 None,
@@ -713,7 +714,7 @@ class MLConfidencePredictor:
             )
 
             # Generate tactician labels
-            return await self.meta_labeling_system._generate_tactician_labels(
+            return await self.meta_labeling_system.generate_tactician_labels(
                 market_data,
                 volume_data,
                 None,
@@ -2919,258 +2920,3 @@ async def setup_ml_confidence_predictor(
     except Exception as e:
         system_print(error("Error setting up ML Confidence Predictor: {e}"))
         return None
-                max_depth=6,
-                random_state=42,
-                verbose=-1,
-            )
-
-            # Use cross-validation for robust training
-            skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
-
-            for train_idx, val_idx in skf.split(X, y):
-                X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-                y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
-
-                model.fit(
-                    X_train,
-                    y_train,
-                    eval_set=[(X_val, y_val)],
-                    callbacks=[LGBMClassifier.early_stopping(10, verbose=False)],
-                )
-
-            return model
-
-        except Exception as e:
-            self.logger.exception(
-                f"Error training {model_type} model for level {target_level}: {str(e)}",
-            )
-            return None
-
-    def _create_mock_models_for_testing(self) -> None:
-        """Create mock models for testing when no real models are available."""
-        try:
-            self.logger.info("Creating mock models for testing...")
-
-            # Create mock price target models
-            for level in self.price_movement_levels:
-                target_key = f"price_target_{level:.1f}"
-                self.price_target_models[target_key] = self._create_mock_model(
-                    f"price_target_{level}",
-                )
-
-            # Create mock adversarial models
-            for level in self.adversarial_movement_levels:
-                adversarial_key = f"adversarial_{level:.1f}"
-                self.adversarial_models[adversarial_key] = self._create_mock_model(
-                    f"adversarial_{level}",
-                )
-
-            # Create mock ensemble models
-            ensemble_names = [
-                "analyst_ensemble",
-                "tactician_ensemble",
-                "combined_ensemble",
-            ]
-            for name in ensemble_names:
-                self.ensemble_models[name] = self._create_mock_ensemble(name)
-
-            # Create mock regime models
-            regime_names = ["trending", "ranging", "volatile", "stable"]
-            for name in regime_names:
-                self.regime_models[name] = self._create_mock_model(f"regime_{name}")
-
-            # Create mock multi-timeframe models
-            timeframe_names = ["30m", "15m", "5m", "1m"]
-            for timeframe in timeframe_names:
-                self.multi_timeframe_models[timeframe] = self._create_mock_model(
-                    f"timeframe_{timeframe}",
-                )
-
-            self.is_trained = True
-            self.last_training_time = datetime.now()
-            self.logger.info("✅ Mock models created successfully for testing")
-
-        except Exception as e:
-            self.print(error("Error creating mock models: {e}"))
-
-    def _create_mock_model(self, model_name: str) -> Any:
-        """Create a mock model for testing."""
-
-        class MockModel:
-            def __init__(self, name: str):
-                self.name = name
-                self.is_trained = True
-
-            def predict(self, X):
-                # Return random predictions between 0 and 1
-                import numpy as np
-
-                return np.random.random(len(X))
-
-            def predict_proba(self, X):
-                # Return random probabilities
-                import numpy as np
-
-                proba = np.random.random((len(X), 2))
-                # Normalize to sum to 1
-                return proba / proba.sum(axis=1, keepdims=True)
-
-        return MockModel(model_name)
-
-    def _create_mock_ensemble(self, ensemble_name: str) -> Any:
-        """Create a mock ensemble model for testing."""
-
-        class MockEnsemble:
-            def __init__(self, name: str):
-                self.name = name
-                self.is_trained = True
-                self.models = [
-                    self._create_mock_model(f"{name}_model_{i}") for i in range(3)
-                ]
-
-            def predict(self, X):
-                # Average predictions from all models
-                import numpy as np
-
-                predictions = [model.predict(X) for model in self.models]
-                return np.mean(predictions, axis=0)
-
-            def predict_proba(self, X):
-                # Average probabilities from all models
-                import numpy as np
-
-                probas = [model.predict_proba(X) for model in self.models]
-                return np.mean(probas, axis=0)
-
-            def _create_mock_model(self, name: str):
-                return self._create_mock_model(name)
-
-        return MockEnsemble(ensemble_name)
-
-    def is_enhanced_training_available(self) -> bool:
-        """Check if enhanced training manager is available and has models."""
-        try:
-            if not self.enhanced_training_manager:
-                return False
-
-            # Check if enhanced training manager is initialized
-            if not hasattr(
-                self.enhanced_training_manager,
-                "analyst_models",
-            ) or not hasattr(self.enhanced_training_manager, "tactician_models"):
-                return False
-
-            # Check if we have any models loaded
-            analyst_models = self.enhanced_training_manager.analyst_models
-            tactician_models = self.enhanced_training_manager.tactician_models
-
-            return len(analyst_models) > 0 or len(tactician_models) > 0
-
-        except Exception as e:
-            self.print(error("Error checking enhanced training availability: {e}"))
-            return False
-
-    def get_model_availability_status(self) -> dict[str, Any]:
-        """Get detailed status of model availability."""
-        try:
-            status = {
-                "enhanced_training_manager_available": self.enhanced_training_manager
-                is not None,
-                "enhanced_training_initialized": False,
-                "analyst_models_available": False,
-                "tactician_models_available": False,
-                "ensemble_models_available": False,
-                "calibrated_models_available": False,
-                "regime_models_available": False,
-                "multi_timeframe_models_available": False,
-                "total_models_loaded": 0,
-                "is_trained": self.is_trained,
-                "last_training_time": self.last_training_time.isoformat()
-                if self.last_training_time
-                else None,
-            }
-
-            if self.enhanced_training_manager:
-                status["enhanced_training_initialized"] = True
-
-                # Check analyst models
-                if hasattr(self.enhanced_training_manager, "analyst_models"):
-                    analyst_models = self.enhanced_training_manager.analyst_models
-                    status["analyst_models_available"] = len(analyst_models) > 0
-                    status["total_models_loaded"] += len(analyst_models)
-
-                # Check tactician models
-                if hasattr(self.enhanced_training_manager, "tactician_models"):
-                    tactician_models = self.enhanced_training_manager.tactician_models
-                    status["tactician_models_available"] = len(tactician_models) > 0
-                    status["total_models_loaded"] += len(tactician_models)
-
-                # Check ensemble models
-                if (
-                    hasattr(self.enhanced_training_manager, "ensemble_creator")
-                    and self.enhanced_training_manager.ensemble_creator
-                ):
-                    try:
-                        ensemble_models = self.enhanced_training_manager.ensemble_creator.get_ensembles()
-                        status["ensemble_models_available"] = (
-                            len(ensemble_models) > 0 if ensemble_models else False
-                        )
-                        status["total_models_loaded"] += (
-                            len(ensemble_models) if ensemble_models else 0
-                        )
-                    except Exception:
-                        status["ensemble_models_available"] = False
-
-                # Check calibrated models
-                if hasattr(self.enhanced_training_manager, "calibration_systems"):
-                    calibration_systems = (
-                        self.enhanced_training_manager.calibration_systems
-                    )
-                    status["calibrated_models_available"] = len(calibration_systems) > 0
-                    status["total_models_loaded"] += len(calibration_systems)
-
-                # Check regime models
-                if (
-                    hasattr(self.enhanced_training_manager, "regime_training_manager")
-                    and self.enhanced_training_manager.regime_training_manager
-                ):
-                    try:
-                        regime_models = self.enhanced_training_manager.regime_training_manager.get_regime_models()
-                        status["regime_models_available"] = (
-                            len(regime_models) > 0 if regime_models else False
-                        )
-                        status["total_models_loaded"] += (
-                            len(regime_models) if regime_models else 0
-                        )
-                    except Exception:
-                        status["regime_models_available"] = False
-
-                # Check multi-timeframe models
-                if (
-                    hasattr(self.enhanced_training_manager, "multi_timeframe_manager")
-                    and self.enhanced_training_manager.multi_timeframe_manager
-                ):
-                    try:
-                        multi_timeframe_models = self.enhanced_training_manager.multi_timeframe_manager.get_timeframe_models()
-                        status["multi_timeframe_models_available"] = (
-                            len(multi_timeframe_models) > 0
-                            if multi_timeframe_models
-                            else False
-                        )
-                        status["total_models_loaded"] += (
-                            len(multi_timeframe_models) if multi_timeframe_models else 0
-                        )
-                    except Exception:
-                        status["multi_timeframe_models_available"] = False
-
-            return status
-
-        except Exception as e:
-            self.print(error("Error getting model availability status: {e}"))
-            return {
-                "error": str(e),
-                "enhanced_training_manager_available": False,
-                "is_trained": False,
-            }
-
-    return None

@@ -185,7 +185,7 @@ class ConfidenceCalibrationStep:
             # Perform calibration
             calibration_results = {}
 
-            # 1. Calibrate individual analyst models
+            # 1. Calibrate individual analyst models (including SR regime separately)
             analyst_calibration = await self._calibrate_analyst_models(
                 analyst_models,
                 analyst_ensembles,
@@ -204,7 +204,7 @@ class ConfidenceCalibrationStep:
             )
             calibration_results["tactician_models"] = tactician_calibration
 
-            # 3. Calibrate analyst ensembles
+            # 3. Calibrate analyst ensembles (SR-aware)
             analyst_ensemble_calibration = await self._calibrate_analyst_ensembles(
                 analyst_ensembles,
                 generic_val,

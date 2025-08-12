@@ -724,8 +724,11 @@ class AnalystLabelingFeatureEngineeringStep:
             low = df["low"].astype(float)
             sup_center = df.get("nearest_support_center", pd.Series(np.nan, index=df.index)).astype(float)
             res_center = df.get("nearest_resistance_center", pd.Series(np.nan, index=df.index)).astype(float)
-
+ 
             labels = pd.Series(0, index=df.index, dtype=int)
+            # Initialize strength scores
+            breakout_score = pd.Series(0.0, index=df.index, dtype=float)
+            bounce_score = pd.Series(0.0, index=df.index, dtype=float)
             # Support touches
             sup_band = df.get("nearest_support_band_pct", pd.Series(0.0, index=df.index)).astype(float)
             res_band = df.get("nearest_resistance_band_pct", pd.Series(0.0, index=df.index)).astype(float)
@@ -739,7 +742,7 @@ class AnalystLabelingFeatureEngineeringStep:
             res_roll = touch_res.rolling(min_consecutive, min_periods=min_consecutive).sum().fillna(0) >= min_consecutive
             touch_sup = sup_roll
             touch_res = res_roll
-
+ 
             last_labeled = -dedup_window_bars - 1
             ambiguous_count = 0
             total_touches = len(touch_sup)
@@ -767,7 +770,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 window_low = low.iloc[i + 1 : end + 1]
                 if window_close.empty:
                     continue
-
+ 
                 breakout = False
                 bounce = False
                 if side == "support":
@@ -778,6 +781,13 @@ class AnalystLabelingFeatureEngineeringStep:
                     if away and breakout:
                         ambiguous_count += 1
                     bounce = (away and not breakout)
+                    # Strength scores
+                    if breakout:
+                        move = float(((level - window_low.min()) / max(1e-12, level))) if len(window_low) else 0.0
+                        breakout_score.iloc[i] = max(0.0, move)
+                    elif bounce:
+                        move = float(((window_high.max() - level) / max(1e-12, level))) if len(window_high) else 0.0
+                        bounce_score.iloc[i] = max(0.0, move)
                 else:
                     # Breakout up if closes above level by breakout_thresh
                     breakout = bool(((window_close - level) / level > breakout_thresh).any())
@@ -786,17 +796,27 @@ class AnalystLabelingFeatureEngineeringStep:
                     if away and breakout:
                         ambiguous_count += 1
                     bounce = (away and not breakout)
-
+                    # Strength scores
+                    if breakout:
+                        move = float(((window_high.max() - level) / max(1e-12, level))) if len(window_high) else 0.0
+                        breakout_score.iloc[i] = max(0.0, move)
+                    elif bounce:
+                        move = float(((level - window_low.min()) / max(1e-12, level))) if len(window_low) else 0.0
+                        bounce_score.iloc[i] = max(0.0, move)
+ 
                 labels.iloc[i] = -1 if breakout else (1 if bounce else 0)
                 if labels.iloc[i] != 0:
                     last_labeled = i
-
+ 
             try:
                 self.logger.info(
                     f"SR-event labeling diagnostics: touches={total_touches}, ambiguous={ambiguous_count}"
                 )
             except Exception:
                 pass
+            # Attach scores to df so caller can merge; return only labels here to preserve API
+            df["sr_breakout_score"] = breakout_score
+            df["sr_bounce_score"] = bounce_score
             return labels
         except Exception:
             return pd.Series(0, index=df.index, dtype=int)
@@ -1248,6 +1268,46 @@ class AnalystLabelingFeatureEngineeringStep:
             features_b = await self._build_pipeline_b_ohlcv(price_data_sanitized)
             combined_features = pd.concat([features_a, features_b], axis=1)
 
+            # Integrate explicit analyst meta-labels as auxiliary time-series
+            try:
+                from src.training.steps.vectorized_advanced_feature_engineering import (
+                    VectorizedAdvancedFeatureEngineering,
+                )
+                from src.analyst.meta_labeling_system import MetaLabelingSystem
+                vafe = VectorizedAdvancedFeatureEngineering(self.config)
+                await vafe.initialize()
+                explicit_meta = await vafe._generate_explicit_meta_labels_vectorized(
+                    price_data,
+                    price_data[["volume"]] if "volume" in price_data.columns else pd.DataFrame({"volume": pd.Series(1.0, index=price_data.index)}),
+                    timeframe=self.config.get("meta_label_timeframe", "30m"),
+                )
+                if explicit_meta:
+                    for name, arr in explicit_meta.items():
+                        try:
+                            ser = pd.Series(arr, index=price_data.index, name=name)
+                            combined_features[name] = ser
+                        except Exception:
+                            pass
+                    self.logger.info(f"Step4: merged explicit meta-labels: {list(explicit_meta.keys())}")
+
+                # Surface tactician meta labels as features
+                try:
+                    meta_sys = MetaLabelingSystem(self.config)
+                    await meta_sys.initialize()
+                    tact_labels = await meta_sys.generate_tactician_labels(
+                        price_data,
+                        price_data[["volume"]] if "volume" in price_data.columns else pd.DataFrame({"volume": pd.Series(1.0, index=price_data.index)}),
+                        timeframe="1m",
+                    )
+                    # Convert supported scalar labels to aligned series if possible
+                    for key, val in tact_labels.items():
+                        if isinstance(val, (int, float, np.integer, np.floating)):
+                            combined_features[key] = pd.Series(float(val), index=price_data.index)
+                except Exception as _et:
+                    self.logger.warning(f"Step4: tactician meta label surfacing skipped: {_et}")
+            except Exception as _e:
+                self.logger.warning(f"Step4: explicit meta-label integration skipped: {_e}")
+
             # Multi-timeframe: previous week's close merged to daily with forward-fill (group-aware)
             try:
                 def _weekly_prev_close(g: pd.DataFrame) -> pd.Series:
@@ -1373,8 +1433,15 @@ class AnalystLabelingFeatureEngineeringStep:
 
             # For features files, drop raw OHLCV/trade columns to avoid leakage
             raw_cols = list(set(self._RAW_CONTEXT_COLUMNS))
+            # Additionally drop potential leakage targets (computed with lookahead) from features artifacts
+            leakage_cols = [
+                "sr_event_label",
+                "sr_breakout_score",
+                "sr_bounce_score",
+            ]
             for file_path, data in feature_files:
                 features_df = data.drop(columns=[c for c in raw_cols if c in data.columns], errors="ignore")
+                features_df = features_df.drop(columns=[c for c in leakage_cols if c in features_df.columns], errors="ignore")
                 with open(file_path, "wb") as f:
                     pickle.dump(features_df, f)
             self.logger.info(f"✅ Saved feature data files")
@@ -1778,6 +1845,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 "✅ Analyst labeling and feature engineering completed successfully",
             )
             self.logger.info("Training specialist models for regime: combined (single unified feature set)")
+
             return {"status": "SUCCESS", "data": {"data": labeled_data}}
 
         except Exception as e:

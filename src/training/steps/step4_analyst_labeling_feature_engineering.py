@@ -9,8 +9,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.model_selection import KFold
 from sklearn.cluster import DBSCAN
@@ -20,20 +18,6 @@ from scipy.signal import find_peaks
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
 from src.training.steps.unified_data_loader import get_unified_data_loader
 
 # Optional stationarity test
@@ -177,6 +161,8 @@ class AnalystLabelingFeatureEngineeringStep:
                 s = df.groupby("symbol", group_keys=False).apply(_compute_sma_distance)
             else:
                 s = _compute_sma_distance(df)
+            s.name = name
+            return s
         return _impl
 
     def _feat_engulf_strength_z(self, kind: str):
@@ -719,107 +705,115 @@ class AnalystLabelingFeatureEngineeringStep:
     ) -> pd.Series:
         """Build SR-event labels using nearest centers and OHLC data.
         -1 breakout, +1 bounce, 0 none. Triggered only on touches at t.
+        Uses positional indexing to handle any index type safely.
         """
         try:
-            close = df["close"].astype(float)
-            high = df["high"].astype(float)
-            low = df["low"].astype(float)
-            sup_center = df.get("nearest_support_center", pd.Series(np.nan, index=df.index)).astype(float)
-            res_center = df.get("nearest_resistance_center", pd.Series(np.nan, index=df.index)).astype(float)
- 
-            labels = pd.Series(0, index=df.index, dtype=int)
-            # Initialize strength scores
-            breakout_score = pd.Series(0.0, index=df.index, dtype=float)
-            bounce_score = pd.Series(0.0, index=df.index, dtype=float)
-            # Support touches
-            sup_band = df.get("nearest_support_band_pct", pd.Series(0.0, index=df.index)).astype(float)
-            res_band = df.get("nearest_resistance_band_pct", pd.Series(0.0, index=df.index)).astype(float)
-            sup_tol = np.maximum(touch_tol_pct, 0.5 * sup_band).astype(float)
-            res_tol = np.maximum(touch_tol_pct, 0.5 * res_band).astype(float)
-            # Touch conditions
-            touch_sup = (sup_center.notna()) & (((low - sup_center).abs() / close) <= sup_tol)
-            touch_res = (res_center.notna()) & (((res_center - high).abs() / close) <= res_tol)
-            # Require min consecutive bars in-zone
-            sup_roll = touch_sup.rolling(min_consecutive, min_periods=min_consecutive).sum().fillna(0) >= min_consecutive
-            res_roll = touch_res.rolling(min_consecutive, min_periods=min_consecutive).sum().fillna(0) >= min_consecutive
-            touch_sup = sup_roll
-            touch_res = res_roll
- 
+            n = len(df)
+            if n == 0:
+                return pd.Series(0, index=df.index, dtype=int)
+
+            close = df["close"].astype(float).to_numpy()
+            high = df["high"].astype(float).to_numpy()
+            low = df["low"].astype(float).to_numpy()
+
+            sup_center = df.get("nearest_support_center", pd.Series(np.nan, index=df.index)).astype(float).to_numpy()
+            res_center = df.get("nearest_resistance_center", pd.Series(np.nan, index=df.index)).astype(float).to_numpy()
+            sup_score_arr = df.get("nearest_support_score", pd.Series(0.0, index=df.index)).astype(float).to_numpy()
+            res_score_arr = df.get("nearest_resistance_score", pd.Series(0.0, index=df.index)).astype(float).to_numpy()
+            sup_band = df.get("nearest_support_band_pct", pd.Series(0.0, index=df.index)).astype(float).to_numpy()
+            res_band = df.get("nearest_resistance_band_pct", pd.Series(0.0, index=df.index)).astype(float).to_numpy()
+
+            sup_tol = np.maximum(touch_tol_pct, 0.5 * sup_band)
+            res_tol = np.maximum(touch_tol_pct, 0.5 * res_band)
+
+            touch_sup_raw = (~np.isnan(sup_center)) & (np.abs(low - sup_center) / np.maximum(1e-12, close) <= sup_tol)
+            touch_res_raw = (~np.isnan(res_center)) & (np.abs(res_center - high) / np.maximum(1e-12, close) <= res_tol)
+
+            if min_consecutive > 1:
+                sup_roll = pd.Series(touch_sup_raw, index=df.index).rolling(min_consecutive, min_periods=min_consecutive).sum() >= min_consecutive
+                res_roll = pd.Series(touch_res_raw, index=df.index).rolling(min_consecutive, min_periods=min_consecutive).sum() >= min_consecutive
+                touch_sup = sup_roll.to_numpy()
+                touch_res = res_roll.to_numpy()
+            else:
+                touch_sup = touch_sup_raw
+                touch_res = touch_res_raw
+
+            labels = np.zeros(n, dtype=int)
+            breakout_score = np.zeros(n, dtype=float)
+            bounce_score = np.zeros(n, dtype=float)
+
             last_labeled = -dedup_window_bars - 1
             ambiguous_count = 0
-            total_touches = len(touch_sup)
-            for i in touch_sup.index:
+
+            for i in range(n):
                 if i - last_labeled < dedup_window_bars:
                     continue
-                end = min(len(df) - 1, i + horizon)
-                # Determine side
-                side = "support" if bool(touch_sup.iloc[i]) else "resistance"
-                level = float(sup_center.iloc[i] if side == "support" else res_center.iloc[i])
-                # Zone score curation
-                score = float(df.get("nearest_support_score", pd.Series(0.0, index=df.index)).iloc[i]) if side == "support" else float(df.get("nearest_resistance_score", pd.Series(0.0, index=df.index)).iloc[i])
-                if score < min_zone_score:
+                on_sup = bool(touch_sup[i])
+                on_res = bool(touch_res[i])
+                if not on_sup and not on_res:
                     continue
-                # Historical touches count
+
+                side = "support" if on_sup else "resistance"
+                level = sup_center[i] if side == "support" else res_center[i]
+                score = sup_score_arr[i] if side == "support" else res_score_arr[i]
+                if not np.isfinite(level) or score < min_zone_score:
+                    continue
+
                 start_hist = max(0, i - horizon)
-                past = close.iloc[start_hist:i]
-                if len(past) > 0:
-                    hist_touches = int(((past - level).abs() / np.maximum(1e-8, past)) <= (touch_tol_pct)).sum()
+                past_close = close[start_hist:i]
+                if past_close.size > 0:
+                    hist_touches = int((np.abs(past_close - level) / np.maximum(1e-12, past_close) <= touch_tol_pct).sum())
                     if hist_touches < min_hist_touches:
                         continue
-                # scan ahead
-                window_close = close.iloc[i + 1 : end + 1]
-                window_high = high.iloc[i + 1 : end + 1]
-                window_low = low.iloc[i + 1 : end + 1]
-                if window_close.empty:
+
+                end = min(n - 1, i + horizon)
+                if end <= i:
                     continue
- 
+                window_close = close[i + 1 : end + 1]
+                window_high = high[i + 1 : end + 1]
+                window_low = low[i + 1 : end + 1]
+
                 breakout = False
                 bounce = False
                 if side == "support":
-                    # Breakout down if closes below level by breakout_thresh
-                    breakout = bool(((window_close - level) / level < -breakout_thresh).any())
-                    # Bounce up if price moves away by bounce_thresh without breakout first
-                    away = bool(((window_high - level) / level > bounce_thresh).any())
+                    breakout = bool(((window_close - level) / np.maximum(1e-12, level) < -breakout_thresh).any())
+                    away = bool(((window_high - level) / np.maximum(1e-12, level) > bounce_thresh).any())
                     if away and breakout:
                         ambiguous_count += 1
-                    bounce = (away and not breakout)
-                    # Strength scores
-                    if breakout:
-                        move = float(((level - window_low.min()) / max(1e-12, level))) if len(window_low) else 0.0
-                        breakout_score.iloc[i] = max(0.0, move)
-                    elif bounce:
-                        move = float(((window_high.max() - level) / max(1e-12, level))) if len(window_high) else 0.0
-                        bounce_score.iloc[i] = max(0.0, move)
+                    bounce = away and not breakout
+                    if breakout and window_low.size:
+                        move = float((level - np.min(window_low)) / np.maximum(1e-12, level))
+                        breakout_score[i] = max(0.0, move)
+                    elif bounce and window_high.size:
+                        move = float((np.max(window_high) - level) / np.maximum(1e-12, level))
+                        bounce_score[i] = max(0.0, move)
                 else:
-                    # Breakout up if closes above level by breakout_thresh
-                    breakout = bool(((window_close - level) / level > breakout_thresh).any())
-                    # Bounce down if price moves away by bounce_thresh without breakout first
-                    away = bool(((level - window_low) / level > bounce_thresh).any())
+                    breakout = bool(((window_close - level) / np.maximum(1e-12, level) > breakout_thresh).any())
+                    away = bool(((level - window_low) / np.maximum(1e-12, level) > bounce_thresh).any())
                     if away and breakout:
                         ambiguous_count += 1
-                    bounce = (away and not breakout)
-                    # Strength scores
-                    if breakout:
-                        move = float(((window_high.max() - level) / max(1e-12, level))) if len(window_high) else 0.0
-                        breakout_score.iloc[i] = max(0.0, move)
-                    elif bounce:
-                        move = float(((level - window_low.min()) / max(1e-12, level))) if len(window_low) else 0.0
-                        bounce_score.iloc[i] = max(0.0, move)
- 
-                labels.iloc[i] = -1 if breakout else (1 if bounce else 0)
-                if labels.iloc[i] != 0:
+                    bounce = away and not breakout
+                    if breakout and window_high.size:
+                        move = float((np.max(window_high) - level) / np.maximum(1e-12, level))
+                        breakout_score[i] = max(0.0, move)
+                    elif bounce and window_low.size:
+                        move = float((level - np.min(window_low)) / np.maximum(1e-12, level))
+                        bounce_score[i] = max(0.0, move)
+
+                labels[i] = -1 if breakout else (1 if bounce else 0)
+                if labels[i] != 0:
                     last_labeled = i
- 
+
             try:
                 self.logger.info(
-                    f"SR-event labeling diagnostics: touches={total_touches}, ambiguous={ambiguous_count}"
+                    f"SR-event labeling diagnostics: touches={int(np.sum(touch_sup) + np.sum(touch_res))}, ambiguous={ambiguous_count}"
                 )
             except Exception:
                 pass
-            # Attach scores to df so caller can merge; return only labels here to preserve API
-            df["sr_breakout_score"] = breakout_score
-            df["sr_bounce_score"] = bounce_score
-            return labels
+
+            df["sr_breakout_score"] = pd.Series(breakout_score, index=df.index)
+            df["sr_bounce_score"] = pd.Series(bounce_score, index=df.index)
+            return pd.Series(labels, index=df.index, dtype=int)
         except Exception:
             return pd.Series(0, index=df.index, dtype=int)
 
@@ -1365,9 +1359,11 @@ class AnalystLabelingFeatureEngineeringStep:
                     labeled_data = labeled_data.drop(columns=leak_cols, errors="ignore")
                     self.logger.warning(f"🚩 Removed {len(leak_cols)} label-like columns to prevent leakage: {leak_cols[:50]}{' ...' if len(leak_cols)>50 else ''}")
             except Exception as e:
-                self.logger.warning(f"Triple barrier labeling failed, using fallback labels: {e}")
-                fallback = self._create_fallback_labeled_data(price_data)
-                labeled_data = fallback.get("data", price_data)
+                self.logger.error(f"Triple barrier labeling failed: {e}")
+                return {
+                    "status": "FAILED",
+                    "error": f"Triple barrier labeling failed: {e}",
+                }
 
             # Label leakage filter: remove meta-label/tactician-like columns if present
             def _is_label_like(col: str) -> bool:
@@ -1960,72 +1956,7 @@ class AnalystLabelingFeatureEngineeringStep:
             )
             return {"status": "FAILED", "error": str(e)}
 
-    def _create_fallback_labeled_data(self, price_data: pd.DataFrame) -> dict[str, Any]:
-        """Create fallback labeled data when orchestrator fails."""
-        try:
-            # Create simple labeled data with basic features
-            labeled_data = price_data.copy()
-
-            # Add basic features
-            if "close" in labeled_data.columns:
-                labeled_data["returns"] = labeled_data["close"].pct_change()
-                labeled_data["volatility"] = (
-                    labeled_data["returns"].rolling(window=20).std()
-                )
-                labeled_data["sma_20"] = labeled_data["close"].rolling(window=20).mean()
-                labeled_data["sma_50"] = labeled_data["close"].rolling(window=50).mean()
-
-            # Add simple labels (binary classification: -1 for sell, 1 for buy)
-            labeled_data["label"] = -1  # Default to sell signal
-
-            # Create simple buy/sell signals based on moving averages
-            if "sma_20" in labeled_data.columns and "sma_50" in labeled_data.columns:
-                # Use -1 for sell signal, 1 for buy signal (binary classification)
-                labeled_data.loc[
-                    labeled_data["sma_20"] > labeled_data["sma_50"],
-                    "label",
-                ] = 1  # Buy signal
-                # Keep -1 for when sma_20 <= sma_50 (sell signal)
-
-            # Remove raw OHLCV columns to prevent data leakage
-            raw_ohlcv_columns = [c for c in self._RAW_CONTEXT_COLUMNS if c in ["open","high","low","close","volume","avg_price","min_price","max_price"]]
-            columns_to_remove = [col for col in raw_ohlcv_columns if col in labeled_data.columns]
-            if columns_to_remove:
-                labeled_data = labeled_data.drop(columns=columns_to_remove)
-                self.logger.info(f"🗑️ Removed raw OHLCV columns to prevent data leakage: {columns_to_remove}")
-
-            # Remove NaN values
-            labeled_data = labeled_data.dropna()
-
-            return {
-                "data": labeled_data,
-                "metadata": {
-                    "labeling_method": "fallback_simple",
-                    "features_added": ["returns", "volatility", "sma_20", "sma_50"],
-                    "raw_ohlcv_removed": columns_to_remove,
-                    "label_distribution": labeled_data["label"]
-                    .value_counts()
-                    .to_dict(),
-                },
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error creating fallback labeled data: {e}")
-            # Return original data with basic label (binary classification)
-            price_data_copy = price_data.copy()
-            price_data_copy["label"] = -1  # Default to sell signal
-            
-            # Remove raw OHLCV columns even in error case
-            raw_ohlcv_columns = [c for c in self._RAW_CONTEXT_COLUMNS if c in ["open","high","low","close","volume","avg_price","min_price","max_price"]]
-            columns_to_remove = [col for col in raw_ohlcv_columns if col in price_data_copy.columns]
-            if columns_to_remove:
-                price_data_copy = price_data_copy.drop(columns=columns_to_remove)
-                self.logger.info(f"🗑️ Removed raw OHLCV columns in error case: {columns_to_remove}")
-            
-            return {
-                "data": price_data_copy,
-                "metadata": {"labeling_method": "fallback_basic", "error": str(e), "raw_ohlcv_removed": columns_to_remove},
-            }
+    # Removed fallback labeled data to avoid biased defaults; fail fast instead.
 
     def _run_post_merge_feature_checks(self, features_df: pd.DataFrame) -> None:
         """Run ADF stationarity and distribution/outlier sanity checks.
@@ -2630,42 +2561,18 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
                 "momentum_20",
             ]
 
-            # Add candlestick pattern features
-            # Legacy S/R/Candle code removed
-
-            # Combine all feature columns
-            # Legacy S/R/Candle code removed
-
-            # Filter available features
             available_features = [col for col in feature_columns if col in data.columns]
-
             if not available_features:
-                msg = f"No features available for regime {regime_name}"
-                raise ValueError(msg)
+                raise ValueError(f"No features available for regime {regime_name}")
 
-            # Create feature matrix
-            feature_data = data[available_features].copy()
-
-            # Remove rows with NaN values
-            feature_data = feature_data.dropna()
-
-            # Standardize features
-            scaler = StandardScaler()
-            feature_data_scaled = scaler.fit_transform(feature_data)
-            feature_data_scaled = pd.DataFrame(
-                feature_data_scaled,
-                columns=available_features,
-                index=feature_data.index,
-            )
-
-            # Add label column
-            feature_data_scaled["label"] = data.loc[feature_data.index, "label"]
+            feature_data = data[available_features].copy().dropna()
+            feature_data["label"] = data.loc[feature_data.index, "label"]
 
             self.logger.info(
-                f"Feature engineering completed for {regime_name}: {len(feature_data_scaled)} samples, {len(available_features)} features",
+                f"Feature engineering completed for {regime_name}: {len(feature_data)} samples, {len(available_features)} features",
             )
 
-            return feature_data_scaled
+            return feature_data
 
         except Exception as e:
             self.logger.exception(
@@ -2680,81 +2587,17 @@ class DeprecatedAnalystLabelingFeatureEngineeringStep:
     ) -> dict[str, Any]:
         """
         Train regime-specific encoders.
-
-        Args:
-            data: Feature-engineered data
-            regime_name: Name of the regime
-
-        Returns:
-            Dict containing trained encoders
+        NOTE: Legacy encoder training removed to reduce coupling and unused dependencies.
         """
-        try:
-            self.logger.info(f"Training encoders for regime: {regime_name}")
-
-            # Separate features and labels
-            feature_columns = [col for col in data.columns if col != "label"]
-            X = data[feature_columns]
-            y = data["label"]
-
-            # Train PCA encoder for dimensionality reduction
-            pca = PCA(n_components=min(10, len(feature_columns)))
-            pca.fit_transform(X)
-
-            # Train autoencoder for feature learning
-            from sklearn.neural_network import MLPRegressor
-
-            # Ensure we have enough data and features for autoencoder
-            if len(X) < 10 or len(feature_columns) < 2:
-                self.logger.warning(
-                    f"Insufficient data for autoencoder training: {len(X)} samples, {len(feature_columns)} features"
-                )
-                # Create a simple identity encoder as fallback
-                autoencoder = None
-            else:
-                try:
-                    # Use a simpler architecture for better convergence
-                    hidden_size = max(2, min(len(feature_columns) // 2, 10))
-                    autoencoder = MLPRegressor(
-                        hidden_layer_sizes=(hidden_size,),
-                        max_iter=500,  # Reduced for faster training
-                        random_state=42,
-                        alpha=0.01,  # L2 regularization
-                        learning_rate_init=0.001,
-                        early_stopping=True,
-                        validation_fraction=0.1,
-                        n_iter_no_change=10,
-                    )
-                    autoencoder.fit(X, X)
-                    self.logger.info(
-                        f"Autoencoder trained successfully with {hidden_size} hidden units"
-                    )
-                except Exception as e:
-                    self.logger.warning(
-                        f"Autoencoder training failed: {e}, using fallback"
-                    )
-                    autoencoder = None
-
-            # Store encoders
-            encoders = {
-                "pca": pca,
-                "autoencoder": autoencoder,
-                "feature_columns": feature_columns,
-                "n_features": len(feature_columns),
-                "n_samples": len(X),
-            }
-
-            # Log encoder information
-            pca_info = f"PCA components={pca.n_components_}"
-            autoencoder_info = f"Autoencoder layers={autoencoder.n_layers_ if autoencoder else 'None (fallback)'}"
-            self.logger.info(
-                f"Encoders trained for {regime_name}: {pca_info}, {autoencoder_info}",
-            )
-
-            return encoders
-
-        except Exception as e:
-            self.logger.error(f"Error training encoders for {regime_name}: {e}")
-            raise
+        self.logger.info(f"Skipping legacy encoder training for {regime_name}")
+        feature_columns = [col for col in data.columns if col != "label"]
+        return {
+            "pca": None,
+            "autoencoder": None,
+            "feature_columns": feature_columns,
+            "n_features": len(feature_columns),
+            "n_samples": len(data),
+        }
 
 
 # For backward compatibility with existing step structure

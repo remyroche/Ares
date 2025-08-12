@@ -111,15 +111,12 @@ class OptimizedTripleBarrierLabeling:
         required_columns = ["close", "high", "low"]
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
-            labeled_data = data.copy()
-            labeled_data["label"] = -1  # Default to sell signal for binary classification
+            msg = f"Missing required OHLC columns {missing_columns}; cannot perform labeling"
             try:
-                self.logger.warning(
-                    f"Missing required OHLC columns {missing_columns}; labeling skipped and labels set to -1 (sell)",
-                )
+                self.logger.error(msg)
             except Exception:
                 pass
-            return labeled_data
+            raise ValueError(msg)
 
         labeled_data = data.copy()
         n = len(labeled_data)
@@ -198,31 +195,28 @@ class OptimizedTripleBarrierLabeling:
         # Diagnostics: distribution and basic directional alignment with next-bar return
         distribution = dict(pd.Series(labeled_data["label"]).value_counts())
         # Next bar return sign as a simple proxy for direction sanity
-        # CRITICAL FIX: Use only the indices that exist in the filtered labeled_data
         next_returns = np.diff(close, append=close[-1])
-        next_sign = np.sign(next_returns)
+        next_sign_series = pd.Series(np.sign(next_returns), index=idx)
+        next_sign_filtered = next_sign_series.reindex(labeled_data.index).to_numpy()
 
-        # Only use the indices that exist in the filtered labeled_data
-        valid_indices = labeled_data.index
-        next_sign_filtered = next_sign[valid_indices]
-
-        long_mask = labeled_data["label"] == 1
-        short_mask = labeled_data["label"] == -1
+        labels_arr = labeled_data["label"].to_numpy()
+        long_mask = labels_arr == 1
+        short_mask = labels_arr == -1
         long_agree = (
-            float((next_sign_filtered[long_mask] > 0).mean())
+            float(np.mean(next_sign_filtered[long_mask] > 0))
             if long_mask.any()
             else float("nan")
         )
         short_agree = (
-            float((next_sign_filtered[short_mask] < 0).mean())
+            float(np.mean(next_sign_filtered[short_mask] < 0))
             if short_mask.any()
             else float("nan")
         )
         overall_agree = float(
-            (
+            np.mean(
                 ((next_sign_filtered > 0) & long_mask)
                 | ((next_sign_filtered < 0) & short_mask)
-            ).mean()
+            )
         )
         self.logger.info(
             {

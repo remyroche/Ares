@@ -3640,7 +3640,7 @@ class VectorizedWaveletTransformAnalyzer:
             return self._wavelet_obj_cache[wavelet_type]
         except Exception as e:
             self.logger.error(f"Error getting wavelet object for type {wavelet_type}: {e}")
-            return pywt.Wavelet(wavelet_type)
+            raise
 
     def _as_dtype_contiguous(self, arr: np.ndarray, dtype: np.dtype) -> np.ndarray:
         """Ensure array is contiguous and of specified dtype."""
@@ -3648,7 +3648,7 @@ class VectorizedWaveletTransformAnalyzer:
             if not arr.flags.c_contiguous:
                 arr = np.ascontiguousarray(arr)
             if arr.dtype != dtype:
-                arr = arr.astype(dtype)
+                arr = arr.astype(dtype, copy=False)
             return arr
         except Exception as e:
             self.logger.error(f"Error making array contiguous: {e}")

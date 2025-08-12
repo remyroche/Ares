@@ -30,6 +30,14 @@ from src.utils.warning_symbols import (
 )
 from src.training.steps.unified_data_loader import get_unified_data_loader
 
+# Optional stationarity test
+try:
+    from statsmodels.tsa.stattools import adfuller as _adfuller
+    _ADF_AVAILABLE = True
+except Exception:
+    _adfuller = None
+    _ADF_AVAILABLE = False
+
 
 class AnalystLabelingFeatureEngineeringStep:
     """Step 4: Analyst Labeling and Feature Engineering using Vectorized Orchestrator."""
@@ -80,6 +88,105 @@ class AnalystLabelingFeatureEngineeringStep:
             "split",
         ]
         self._LABEL_NAME = "label"
+
+    # -----------------
+    # Feature validators
+    # -----------------
+    def validate_feature_output(self, func):
+        def wrapper(df: pd.DataFrame, *args, **kwargs) -> pd.Series:
+            ref_index = df.index
+            out = func(df, *args, **kwargs)
+            if not isinstance(out, pd.Series):
+                raise TypeError(f"Feature function {func.__name__} must return pandas Series, got {type(out)}")
+            if not out.index.equals(ref_index):
+                raise ValueError(f"Feature {getattr(out,'name',func.__name__)} index misaligned with input index")
+            if not isinstance(getattr(out, "name", None), str):
+                raise ValueError(f"Feature from {func.__name__} must have a string name")
+            return out
+        return wrapper
+
+    # -----------------
+    # Decorated feature helpers
+    # -----------------
+    @property
+    def _feat_close_returns(self):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            s = df["close"].pct_change()
+            s.name = "close_returns"
+            return s
+        return _impl
+
+    def _feat_pct_change(self, col: str, name: str):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            s = df[col].pct_change()
+            s.name = name
+            return s
+        return _impl
+
+    def _feat_diff(self, col: str, name: str):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            s = df[col].diff()
+            s.name = name
+            return s
+        return _impl
+
+    @property
+    def _feat_gk_vol_returns(self):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            open_ = df["open"].astype(float)
+            high = df["high"].astype(float)
+            low = df["low"].astype(float)
+            close = df["close"].astype(float)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                log_hl = np.log(high / low)
+                log_co = np.log(close / open_)
+            gk_var = (log_hl ** 2) / (2 * np.log(2)) - (2 * np.log(2) - 1) * (log_co ** 2)
+            gk_vol = np.sqrt(gk_var.clip(lower=0))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                ret = (gk_vol / gk_vol.shift(1)) - 1.0
+            ret.name = "gk_vol_returns"
+            return ret
+        return _impl
+
+    def _feat_sma_distance(self, window: int, name: str):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            close = df["close"].astype(float)
+            sma = close.rolling(window, min_periods=1).mean()
+            with np.errstate(divide="ignore", invalid="ignore"):
+                s = (close / sma) - 1.0
+            s.name = name
+            return s
+        return _impl
+
+    def _feat_engulf_strength_z(self, kind: str):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            close = df["close"].astype(float)
+            open_ = df["open"].astype(float)
+            body = (close - open_).abs()
+            body_prev = body.shift(1)
+            if kind == "bull":
+                is_current_bullish = close > open_
+                is_previous_bearish = df["close"].shift(1) < df["open"].shift(1)
+                is_engulf = (open_ < df["close"].shift(1)) & (close > df["open"].shift(1))
+                cond = is_current_bullish & is_previous_bearish & is_engulf
+                name = "bullish_engulf_strength_z"
+            else:
+                is_current_bearish = close < open_
+                is_previous_bullish = df["close"].shift(1) > df["open"].shift(1)
+                is_engulf = (open_ > df["close"].shift(1)) & (close < df["open"].shift(1))
+                cond = is_current_bearish & is_previous_bullish & is_engulf
+                name = "bearish_engulf_strength_z"
+            strength = (body / (body_prev.replace(0, np.nan))).where(cond, 0.0)
+            z = self._zscore(strength, window=50).fillna(0)
+            z.name = name
+            return z
+        return _impl
 
     def _ensure_continuous_time_index(self, df: pd.DataFrame, freq: str = "1T") -> tuple[pd.DataFrame, int]:
         """Reindex to continuous time grid and return number of inserted rows."""
@@ -159,8 +266,7 @@ class AnalystLabelingFeatureEngineeringStep:
 
             # Core stationary transforms
             if "close" in df.columns:
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    features["close_returns"] = df["close"].pct_change()
+                features[self._feat_close_returns(df).name] = self._feat_close_returns(df)
 
             # Prefer trade_volume if present, else volume (readable control flow)
             if "trade_volume" in df.columns:
@@ -170,40 +276,41 @@ class AnalystLabelingFeatureEngineeringStep:
             else:
                 vol_col = None
             if vol_col is not None:
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    features["volume_returns"] = df[vol_col].pct_change()
+                vol_ret = self._feat_pct_change(vol_col, "volume_returns")(df)
+                features[vol_ret.name] = vol_ret
 
             # Funding rates dynamics
             if "funding_rate" in df.columns:
-                features["funding_rate_change"] = df["funding_rate"].diff()
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    features["funding_rate_returns"] = df["funding_rate"].pct_change()
+                fr_chg = self._feat_diff("funding_rate", "funding_rate_change")(df)
+                fr_ret = self._feat_pct_change("funding_rate", "funding_rate_returns")(df)
+                features[fr_chg.name] = fr_chg
+                features[fr_ret.name] = fr_ret
 
             # Volatility of stationary series
-            if "close_returns" in features.columns:
-                features["returns_volatility_20"] = features["close_returns"].rolling(20).std()
+            if self._feat_close_returns(df) is not None:
+                features["returns_volatility_20"] = self._feat_close_returns(df).rolling(20).std()
             if "volume_returns" in features.columns:
                 features["volume_returns_volatility_20"] = features["volume_returns"].rolling(20).std()
 
             # Simple interactive features
-            if "close_returns" in features.columns and "volume_returns" in features.columns:
+            if self._feat_close_returns(df) is not None and "volume_returns" in features.columns:
                 features["returns_x_volume_returns"] = (
-                    features["close_returns"] * features["volume_returns"]
+                    features[self._feat_close_returns(df).name] * features["volume_returns"]
                 )
 
             # Additional upstream standardization to returns/changes for available raw series
             if "trade_count" in df.columns:
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    features["trade_count_returns"] = df["trade_count"].pct_change()
+                tc_ret = self._feat_pct_change("trade_count", "trade_count_returns")(df)
+                features[tc_ret.name] = tc_ret
             if "trade_volume" in df.columns:
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    features["trade_volume_returns"] = df["trade_volume"].pct_change()
+                tv_ret = self._feat_pct_change("trade_volume", "trade_volume_returns")(df)
+                features[tv_ret.name] = tv_ret
             if "market_depth" in df.columns:
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    features["market_depth_returns"] = df["market_depth"].pct_change()
+                md_ret = self._feat_pct_change("market_depth", "market_depth_returns")(df)
+                features[md_ret.name] = md_ret
             if "bid_ask_spread" in df.columns:
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    features["bid_ask_spread_returns"] = df["bid_ask_spread"].pct_change()
+                bas_ret = self._feat_pct_change("bid_ask_spread", "bid_ask_spread_returns")(df)
+                features[bas_ret.name] = bas_ret
 
             # Cleanup
             num = features.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
@@ -233,38 +340,24 @@ class AnalystLabelingFeatureEngineeringStep:
             low = df["low"].astype(float)
 
             # SMA distances (stationary)
-            sma20 = close.rolling(20, min_periods=1).mean()
-            sma50 = close.rolling(50, min_periods=1).mean()
-            with np.errstate(divide="ignore", invalid="ignore"):
-                feats["sma20_distance"] = (close / sma20) - 1.0
-                feats["sma50_distance"] = (close / sma50) - 1.0
+            sma20d = self._feat_sma_distance(20, "sma20_distance")(df)
+            sma50d = self._feat_sma_distance(50, "sma50_distance")(df)
+            feats[sma20d.name] = sma20d
+            feats[sma50d.name] = sma50d
 
             # Garman–Klass volatility -> returns of vol
-            with np.errstate(divide="ignore", invalid="ignore"):
-                log_hl = np.log(high / low)
-                log_co = np.log(close / open_)
-            gk_var = (log_hl ** 2) / (2 * np.log(2)) - (2 * np.log(2) - 1) * (log_co ** 2)
-            gk_vol = np.sqrt(gk_var.clip(lower=0))
-            with np.errstate(divide="ignore", invalid="ignore"):
-                feats["gk_vol_returns"] = (gk_vol / gk_vol.shift(1)) - 1.0
+            gk = self._feat_gk_vol_returns(df)
+            feats[gk.name] = gk
 
             # Simple candlestick strength (engulfing bullish/bearish) -> z-scored
             body = (close - open_).abs()
             body_prev = body.shift(1)
             # Bullish engulfing
-            is_current_bullish = close > open_
-            is_previous_bearish = df["close"].shift(1) < df["open"].shift(1)
-            is_bull_engulf = (open_ < df["close"].shift(1)) & (close > df["open"].shift(1))
-            bull_cond = is_current_bullish & is_previous_bearish & is_bull_engulf
-            bull_strength = (body / (body_prev.replace(0, np.nan))).where(bull_cond, 0.0)
-            feats["bullish_engulf_strength_z"] = self._zscore(bull_strength, window=50)
+            bullz = self._feat_engulf_strength_z("bull")(df)
+            feats[bullz.name] = bullz
             # Bearish engulfing
-            is_current_bearish = close < open_
-            is_previous_bullish = df["close"].shift(1) > df["open"].shift(1)
-            is_bear_engulf = (open_ > df["close"].shift(1)) & (close < df["open"].shift(1))
-            bear_cond = is_current_bearish & is_previous_bullish & is_bear_engulf
-            bear_strength = (body / (body_prev.replace(0, np.nan))).where(bear_cond, 0.0)
-            feats["bearish_engulf_strength_z"] = self._zscore(bear_strength, window=50)
+            bearz = self._feat_engulf_strength_z("bear")(df)
+            feats[bearz.name] = bearz
 
             # Cleanup
             num = feats.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
@@ -1300,6 +1393,44 @@ class AnalystLabelingFeatureEngineeringStep:
                 "data": price_data_copy,
                 "metadata": {"labeling_method": "fallback_basic", "error": str(e), "raw_ohlcv_removed": columns_to_remove},
             }
+
+    def _run_post_merge_feature_checks(self, features_df: pd.DataFrame) -> None:
+        """Run ADF stationarity and distribution/outlier sanity checks.
+        Logs warnings for non-stationary and pathological distributions.
+        """
+        if features_df is None or features_df.empty:
+            return
+        cols = features_df.select_dtypes(include=[np.number]).columns.tolist()
+        if not cols:
+            return
+        # ADF tests
+        if _ADF_AVAILABLE:
+            for c in cols:
+                try:
+                    s = features_df[c].astype(float).replace([np.inf, -np.inf], np.nan).dropna()
+                    if len(s) < 30:
+                        continue
+                    pval = float(_adfuller(s, autolag='AIC')[1])
+                    if pval >= 0.05:
+                        self.logger.warning(f"WARNING: Feature '{c}' is not stationary (ADF p-value: {pval:.4f})!")
+                except Exception:
+                    continue
+        else:
+            self.logger.warning("ADF test not available; skipping stationarity checks")
+        # Distribution sanity checks
+        for c in cols:
+            try:
+                s = features_df[c].astype(float)
+                desc = s.describe()
+                skew = float(s.skew()) if np.isfinite(s.skew()) else 0.0
+                kurt = float(s.kurtosis()) if np.isfinite(s.kurtosis()) else 0.0
+                if abs(skew) > 100 or abs(kurt) > 100:
+                    self.logger.warning(f"Feature '{c}' has extreme skew/kurtosis (skew={skew:.2f}, kurt={kurt:.2f})")
+                std = float(desc.get('std', 0.0) or 0.0)
+                if std < 1e-12:
+                    self.logger.warning(f"Feature '{c}' has near-zero variance (std={std:.2e})")
+            except Exception:
+                continue
 
 
 class DeprecatedAnalystLabelingFeatureEngineeringStep:

@@ -361,6 +361,24 @@ class AnalystSpecialistTrainingStep:
                     "sr_breakout_score",
                     "sr_bounce_score",
                 ],
+                "sr_score_distribution": {
+                    "sr_breakout_score": {
+                        "count": int(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).count()) if isinstance(combined_data, pd.DataFrame) else 0,
+                        "mean": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).mean() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "std": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).std() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "p50": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).quantile(0.5) or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "p90": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).quantile(0.9) or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "max": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).max() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                    },
+                    "sr_bounce_score": {
+                        "count": int(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).count()) if isinstance(combined_data, pd.DataFrame) else 0,
+                        "mean": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).mean() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "std": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).std() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "p50": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).quantile(0.5) or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "p90": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).quantile(0.9) or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "max": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).max() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                    },
+                },
                 "training_metadata": {
                     "total_regimes": len(training_results),
                     "total_models": sum(

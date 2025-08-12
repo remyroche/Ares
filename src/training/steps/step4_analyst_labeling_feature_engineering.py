@@ -136,15 +136,11 @@ class AnalystLabelingFeatureEngineeringStep:
             
             # CRITICAL: If we have constant features, this indicates a serious issue
             if constant_features:
-                self.logger.error(f"🚨 CRITICAL ISSUE: Found {len(constant_features)} constant features!")
-                self.logger.error(f"🚨 This indicates a fundamental problem with feature engineering!")
-                self.logger.error(f"🚨 Constant features provide no predictive value and will break the model!")
-                
-                # Log all constant features for debugging
-                for i, feature in enumerate(constant_features[:20], 1):  # Show first 20
-                    self.logger.error(f"   {i:2d}. {feature}")
-                if len(constant_features) > 20:
-                    self.logger.error(f"   ... and {len(constant_features) - 20} more constant features")
+                self.logger.error(
+                    f"🚨 CRITICAL: {len(constant_features)} constant features: "
+                    + ", ".join([cf.split(" (" )[0] for cf in constant_features[:50]])
+                    + (" ..." if len(constant_features) > 50 else "")
+                )
                 
                 # Provide diagnostic information
                 self.logger.error(f"🚨 DIAGNOSTIC INFORMATION:")
@@ -166,9 +162,11 @@ class AnalystLabelingFeatureEngineeringStep:
             
             # Remove problematic features
             if problematic_features:
-                problematic_features_to_remove = [col.split(" (")[0] for col in problematic_features]
-                labeled_data = labeled_data.drop(columns=problematic_features_to_remove)
-                self.logger.warning(f"🗑️ Removed {len(problematic_features_to_remove)} problematic features")
+                names = [col.split(" (")[0] for col in problematic_features]
+                labeled_data = labeled_data.drop(columns=names)
+                self.logger.warning(
+                    f"🗑️ Removed {len(names)} problematic features: " + ", ".join(names[:50]) + (" ..." if len(names) > 50 else "")
+                )
             
             # Check for NaN values and handle them
             nan_counts = labeled_data.isnull().sum()

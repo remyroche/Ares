@@ -1406,8 +1406,8 @@ class AdvancedFeatureEngineering:
             )
             try:
                 self.logger.info(f"🧾 Feature list ({len(selected_features)}): {sorted(list(selected_features.keys()))}")
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"Failed to log feature list: {e}")
             return selected_features
 
         except Exception as e:
@@ -2152,7 +2152,8 @@ class AdvancedFeatureEngineering:
             weight = (1 / (1 + vol * 100)).clip(0, 1)
             smoothed = (weight * rsi.rolling(5, min_periods=1).mean() + (1 - weight) * rsi.rolling(20, min_periods=1).mean()).fillna(method="ffill").fillna(50)
             return {"adaptive_rsi": float(smoothed.iloc[-1])}
-        except Exception:
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate adaptive RSI: {e}")
             return {"adaptive_rsi": 50.0}
 
     def _calculate_adaptive_bollinger_bands(self, price_data: pd.DataFrame) -> dict[str, float]:
@@ -2174,7 +2175,8 @@ class AdvancedFeatureEngineering:
                 "adaptive_bb_lower": float(lower.iloc[-1] if not lower.empty else close.iloc[-1]),
                 "adaptive_bb_position": float(pos.iloc[-1] if not pos.empty else 0.5),
             }
-        except Exception:
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate adaptive Bollinger Bands: {e}")
             return {"adaptive_bb_upper": float("nan"), "adaptive_bb_lower": float("nan"), "adaptive_bb_position": 0.5}
 
     def _calculate_adaptive_macd(self, price_data: pd.DataFrame) -> dict[str, float]:
@@ -2202,7 +2204,8 @@ class AdvancedFeatureEngineering:
                 "adaptive_macd_signal": float(signal_adapt),
                 "adaptive_macd_histogram": float(hist_adapt),
             }
-        except Exception:
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate adaptive MACD: {e}")
             return {"adaptive_macd": 0.0, "adaptive_macd_signal": 0.0, "adaptive_macd_histogram": 0.0}
 
 

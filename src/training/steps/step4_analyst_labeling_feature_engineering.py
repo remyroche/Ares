@@ -13,6 +13,8 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.model_selection import KFold
+from sklearn.cluster import DBSCAN
+from scipy.signal import find_peaks
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
@@ -441,6 +443,11 @@ class AnalystLabelingFeatureEngineeringStep:
         is_at_support = (nearest_support <= near_thresh).astype(int).rename("is_at_support")
         is_at_resistance = (nearest_resistance <= near_thresh).astype(int).rename("is_at_resistance")
 
+        # Unified S/R zones (Phases 1.2–3): candidates, scoring, clustering
+        zones = self._unified_sr_zones(df)
+        # Final features (Phase 4): distances/position/breakout/bounce
+        final_loc = self._final_sr_location_features(df, zones)
+
         return {
             dist_s1.name: dist_s1.fillna(method="ffill").fillna(0),
             dist_s2.name: dist_s2.fillna(method="ffill").fillna(0),
@@ -450,7 +457,200 @@ class AnalystLabelingFeatureEngineeringStep:
             nearest_resistance.name: nearest_resistance.fillna(method="ffill").fillna(0),
             is_at_support.name: is_at_support.fillna(0),
             is_at_resistance.name: is_at_resistance.fillna(0),
+            **final_loc,
         }
+
+    def _unified_sr_zones(
+        self,
+        df: pd.DataFrame,
+        lookback_bars: int = 2000,
+        profile_bins: int = 50,
+        top_hvns: int = 10,
+        touch_tol_pct: float = 0.002,
+        recency_half_life_bars: int = 1000,
+        w_volume: float = 0.5,
+        w_recency: float = 0.3,
+        w_touches: float = 0.2,
+    ) -> dict[str, Any]:
+        """Detect pivot/HVN S/R candidates, score them, and cluster via DBSCAN into zones.
+
+        Returns dict with keys: 'levels' (pd.DataFrame of candidates with price, side, score), 'clusters' (list of dicts)
+        """
+        try:
+            if not {"open", "high", "low", "close"}.issubset(df.columns):
+                return {"levels": pd.DataFrame(), "clusters": []}
+            close = df["close"].astype(float)
+            high = df["high"].astype(float)
+            low = df["low"].astype(float)
+            volume = df.get("volume", pd.Series(1.0, index=df.index)).astype(float)
+
+            # Phase 1.1: Price pivots (use peaks on returns magnitude)
+            returns = close.pct_change().fillna(0).abs()
+            prominence = returns.rolling(20, min_periods=1).mean()
+            peaks, _ = find_peaks(high.values, prominence=prominence.values)
+            troughs, _ = find_peaks((-low).values, prominence=prominence.values)
+
+            pivot_levels = []  # (price, idx, side)
+            for i in peaks:
+                pivot_levels.append((float(high.iloc[i]), i, "resistance"))
+            for i in troughs:
+                pivot_levels.append((float(low.iloc[i]), i, "support"))
+
+            # Phase 1.2: HVNs using simple volume profile over recent window
+            recent_slice = df.tail(min(lookback_bars, len(df)))
+            ch = recent_slice["close"].astype(float)
+            vol = recent_slice.get("volume", pd.Series(1.0, index=recent_slice.index)).astype(float)
+            if len(recent_slice) > 5:
+                pr_min, pr_max = float(ch.min()), float(ch.max())
+                bins = np.linspace(pr_min, pr_max, num=profile_bins + 1)
+                # Assign each bar to bin of its close
+                bin_idx = np.digitize(ch.values, bins) - 1
+                vol_by_bin = {}
+                for bi, v in zip(bin_idx, vol.values):
+                    if 0 <= bi < profile_bins:
+                        vol_by_bin[bi] = vol_by_bin.get(bi, 0.0) + float(v)
+                # Top HVN bin centers
+                top_bins = sorted(vol_by_bin.items(), key=lambda x: x[1], reverse=True)[:top_hvns]
+                hvm_levels = [((bins[b] + bins[b + 1]) / 2.0, vol_by_bin[b]) for b, _ in top_bins]
+            else:
+                hvm_levels = []
+
+            # Phase 2: Multi-factor scoring for each candidate level
+            # Build dataframe of candidates
+            rows = []
+            # Average volume for normalization
+            avg_vol = float(volume.rolling(100, min_periods=1).mean().iloc[-1] or 1.0)
+            now_idx = np.arange(len(df))[-1] if len(df) > 0 else 0
+            lam = np.log(2) / max(1, recency_half_life_bars)
+
+            # Pivots
+            for price_level, i, side in pivot_levels:
+                # Volume confirmation at pivot
+                vol_conf = float(volume.iloc[i] / avg_vol) if avg_vol > 0 else 1.0
+                # Recency decay
+                recency = float(np.exp(-lam * max(0, now_idx - i)))
+                # Touches count within tolerance
+                tol = touch_tol_pct * float(close.iloc[i])
+                touches = int(((close - price_level).abs() <= tol).sum())
+                score = w_volume * vol_conf + w_recency * recency + w_touches * (touches / max(1, len(df) / 100))
+                rows.append({"price": price_level, "idx": i, "side": side, "score": score})
+
+            # HVNs
+            for price_level, bin_vol in hvm_levels:
+                vol_conf = float(bin_vol / (avg_vol * 10.0))  # scale: bins accumulate many bars
+                recency = 1.0  # HVN computed on recent window
+                tol = touch_tol_pct * price_level
+                touches = int(((close - price_level).abs() <= tol).sum())
+                score = w_volume * vol_conf + w_recency * recency + w_touches * (touches / max(1, len(df) / 100))
+                side = "support" if price_level <= float(close.median()) else "resistance"
+                rows.append({"price": price_level, "idx": now_idx, "side": side, "score": score})
+
+            levels_df = pd.DataFrame(rows)
+            if levels_df.empty:
+                return {"levels": levels_df, "clusters": []}
+
+            # Phase 3: DBSCAN clustering in price space
+            median_price = float(close.median() or 1.0)
+            eps = max(1e-8, 0.005 * median_price)  # 0.5%
+            db = DBSCAN(eps=eps, min_samples=1)
+            labels = db.fit_predict(levels_df[["price"]])
+            levels_df["cluster_id"] = labels
+
+            clusters = []
+            for cid, group in levels_df.groupby("cluster_id"):
+                cluster_score = float(group["score"].sum())
+                # Weighted center
+                w = group["score"].values
+                p = group["price"].values
+                center = float(np.average(p, weights=w)) if w.sum() > 0 else float(p.mean())
+                # Determine side by majority
+                side = group["side"].mode().iloc[0] if not group["side"].mode().empty else "support"
+                clusters.append({"cluster_id": int(cid), "center": center, "score": cluster_score, "side": side})
+
+            return {"levels": levels_df, "clusters": clusters}
+        except Exception as e:
+            self.logger.warning(f"Unified SR zones failed: {e}")
+            return {"levels": pd.DataFrame(), "clusters": []}
+
+    def _final_sr_location_features(self, df: pd.DataFrame, zones: dict[str, Any], top_n: int = 3) -> dict[str, pd.Series]:
+        """Compute final SR features from top-N support/resistance clusters.
+
+        Returns features: dist_to_support_pct, dist_to_resistance_pct, sr_zone_position,
+        sr_breakout_up, sr_breakout_down, sr_bounce_up, sr_bounce_down
+        """
+        try:
+            close = df["close"].astype(float)
+            clusters = zones.get("clusters", [])
+            if not clusters:
+                zeros = pd.Series(0, index=df.index)
+                return {
+                    "dist_to_support_pct": zeros.astype(float),
+                    "dist_to_resistance_pct": zeros.astype(float),
+                    "sr_zone_position": pd.Series(0.5, index=df.index).astype(float),
+                    "sr_breakout_up": zeros,
+                    "sr_breakout_down": zeros,
+                    "sr_bounce_up": zeros,
+                    "sr_bounce_down": zeros,
+                }
+
+            # Separate and pick top-N by score
+            sup = [c for c in clusters if c["side"] == "support"]
+            res = [c for c in clusters if c["side"] == "resistance"]
+            sup = sorted(sup, key=lambda x: x["score"], reverse=True)[:top_n]
+            res = sorted(res, key=lambda x: x["score"], reverse=True)[:top_n]
+            sup_levels = np.array([c["center"] for c in sup]) if sup else np.array([])
+            res_levels = np.array([c["center"] for c in res]) if res else np.array([])
+
+            # For each bar, nearest support below and resistance above
+            sup_arr = np.full(len(df), np.nan)
+            res_arr = np.full(len(df), np.nan)
+            for i, cp in enumerate(close.values):
+                if sup_levels.size:
+                    below = sup_levels[sup_levels <= cp]
+                    sup_arr[i] = below[np.argmin(cp - below)] if below.size else np.nan
+                if res_levels.size:
+                    above = res_levels[res_levels >= cp]
+                    res_arr[i] = above[np.argmin(above - cp)] if above.size else np.nan
+
+            sup_series = pd.Series(sup_arr, index=df.index)
+            res_series = pd.Series(res_arr, index=df.index)
+
+            with np.errstate(divide='ignore', invalid='ignore'):
+                dist_sup = ((close - sup_series) / close).clip(lower=0).fillna(1.0)
+                dist_res = ((res_series - close) / close).clip(lower=0).fillna(1.0)
+                pos = ((close - sup_series) / (res_series - sup_series)).clip(0, 1).fillna(0.5)
+
+            # Breakout/bounce detectors (simple):
+            # breakout_up: cross above resistance by > 0.1% from below
+            # bounce_up: touch support (within 0.1%) then next bar up move
+            tol = 0.001
+            prev_close = close.shift(1)
+            breakout_up = ((prev_close <= res_series * (1 + tol)) & (close > res_series * (1 + tol))).astype(int)
+            breakout_down = ((prev_close >= sup_series * (1 - tol)) & (close < sup_series * (1 - tol))).astype(int)
+            bounce_up = (((close - sup_series).abs() / close) <= tol) & (close.pct_change().fillna(0) > 0)
+            bounce_down = (((res_series - close).abs() / close) <= tol) & (close.pct_change().fillna(0) < 0)
+
+            return {
+                "dist_to_support_pct": dist_sup.astype(float),
+                "dist_to_resistance_pct": dist_res.astype(float),
+                "sr_zone_position": pos.astype(float),
+                "sr_breakout_up": breakout_up.astype(int),
+                "sr_breakout_down": breakout_down.astype(int),
+                "sr_bounce_up": bounce_up.astype(int),
+                "sr_bounce_down": bounce_down.astype(int),
+            }
+        except Exception as e:
+            self.logger.warning(f"Final SR location features failed: {e}")
+            zeros = pd.Series(0, index=df.index)
+            return {
+                "dist_to_support_pct": zeros.astype(float),
+                "dist_to_resistance_pct": zeros.astype(float),
+                "sr_zone_position": pd.Series(0.5, index=df.index).astype(float),
+                "sr_breakout_up": zeros,
+                "sr_breakout_down": zeros,
+                "sr_bounce_up": zeros,
+                "sr_bounce_down": zeros,
+            }
 
     def _compute_vif_scores(self, X: pd.DataFrame) -> dict[str, float]:
         from sklearn.linear_model import LinearRegression

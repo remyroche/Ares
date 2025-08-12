@@ -1360,6 +1360,36 @@ class AnalystLabelingFeatureEngineeringStep:
             features_b = await self._build_pipeline_b_ohlcv(price_data_sanitized)
             combined_features = pd.concat([features_a, features_b], axis=1)
 
+            # Optional: Autoencoder feature generation (pre-labeling)
+            try:
+                enable_ae = bool(self.config.get("enable_autoencoder_features", False))
+            except Exception:
+                enable_ae = False
+            if enable_ae:
+                try:
+                    from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
+                    self.logger.info("🤖 Autoencoder feature generation enabled (pre-labeling). Building AE features...")
+                    ae_gen = AutoencoderFeatureGenerator(self.config)
+                    ae_input = combined_features.copy()
+                    lbls = np.zeros(len(ae_input), dtype=int)
+                    ae_features = ae_gen.generate_features(
+                        ae_input,
+                        regime_name="step4",
+                        labels=lbls,
+                    )
+                    if isinstance(ae_features, pd.DataFrame) and not ae_features.empty:
+                        ae_features = ae_features.reindex(combined_features.index)
+                        dup = [c for c in ae_features.columns if c in combined_features.columns]
+                        if dup:
+                            self.logger.warning(f"Dropping duplicate AE columns already present: {dup[:30]}{' ...' if len(dup)>30 else ''}")
+                            ae_features = ae_features.drop(columns=dup)
+                        combined_features = pd.concat([combined_features, ae_features], axis=1)
+                        self.logger.info(f"✅ Autoencoder features added (pre-labeling): {ae_features.shape[1]} columns")
+                    else:
+                        self.logger.warning("AE generator returned empty DataFrame; skipping AE augmentation")
+                except Exception as e:
+                    self.logger.warning(f"Autoencoder feature generation failed or unavailable: {e}")
+
             # Integrate explicit analyst meta-labels as auxiliary time-series
             try:
                 from src.training.steps.vectorized_advanced_feature_engineering import (

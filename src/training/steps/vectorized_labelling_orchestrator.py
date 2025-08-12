@@ -297,8 +297,9 @@ class VectorizedLabellingOrchestrator:
                         preview_df[k] = v
                     elif isinstance(v, np.ndarray) and v.ndim==1 and len(v)==len(preview_df.index):
                         preview_df[k] = v
-                        self._log_feature_sample("EngineerFeatures", preview_df, "04_02")
-                        self._log_feature_errors("EngineerFeatures", preview_df)
+                # Log once for all collected preview columns
+                self._log_feature_sample("EngineerFeatures", preview_df, "04_02")
+                self._log_feature_errors("EngineerFeatures", preview_df)
             # Categorize and log feature creation summary using only array-like (Series/ndarray) features
                 array_like_only = {
                     k: v for k, v in advanced_features.items()
@@ -311,6 +312,11 @@ class VectorizedLabellingOrchestrator:
                 with open(os.path.join(cats_path, f"{ts}_04_02_EngineerFeatures_Categories.txt"), "w") as f:
                     for k, v in cats.items():
                         f.write(f"{k}: {v}\n")
+                    # Include a preview of 'other' names for debugging
+                    other_names = self._list_other_features(array_like_only)
+                    f.write("\nOther (sample up to 50):\n")
+                    for name in other_names[:50]:
+                        f.write(name + "\n")
                 self.logger.info(f"Feature categories: {cats}")
             except Exception:
                 pass
@@ -1713,14 +1719,15 @@ class VectorizedFeatureSelector:
             
             self.logger.info(f"🔍 VIF Analysis: Found {len(high_vif_features)} features with VIF > {self.pca_high_vif_threshold} for PCA combination")
             
-            # Log the highly collinear features
-            sorted_vif = sorted([(col, vif_scores[col]) for col in high_vif_features], 
-                              key=lambda x: x[1], reverse=True)
+            # Log the highly collinear features in a single consolidated line
+            sorted_vif = sorted([(col, vif_scores[col]) for col in high_vif_features], key=lambda x: x[1], reverse=True)
+            parts = []
             for col, vif in sorted_vif:
                 if vif == np.inf:
-                    self.logger.warning(f"⚠️ Feature '{col}' has infinite VIF (perfect multicollinearity)")
+                    parts.append(f"{col}=inf")
                 else:
-                    self.logger.info(f"📊 High VIF feature - {col}: {vif:.2f}")
+                    parts.append(f"{col}={vif:.2f}")
+            self.logger.info("📊 High VIF features: " + ", ".join(parts))
             
             # Create correlation matrix for high VIF features
             high_vif_data = data_imputed[high_vif_features]

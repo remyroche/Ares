@@ -698,7 +698,7 @@ class VectorizedAdvancedFeatureEngineering:
             features.update(ohlcv_price_features)
 
             # S/R distance features — infer levels if not provided
-            inferred_sr = sr_levels if sr_levels else self._infer_sr_levels(price_data)
+            inferred_sr = sr_levels if sr_levels else None
             if self.sr_distance_calculator and inferred_sr:
                 sr_distance_features = await self.sr_distance_calculator.calculate_sr_distances(
                     price_data,
@@ -741,6 +741,44 @@ class VectorizedAdvancedFeatureEngineering:
                     order_flow_data,
                 )
                 selected_features.update(meta_labels)
+
+            # Explicit analyst meta-labels at higher timeframe (e.g., 30m)
+            try:
+                timeframes = ["1m", "5m", "15m", "30m"]
+                added_tf: list[str] = []
+                explicit_by_tf: dict[str, dict[str, Any]] = {}
+                for tf in timeframes:
+                    explicit_meta = await self._generate_explicit_meta_labels_vectorized(
+                        price_data,
+                        volume_data,
+                        timeframe=tf,
+                    )
+                    if explicit_meta:
+                        selected_features.update(explicit_meta)
+                        explicit_by_tf[tf] = explicit_meta
+                        added_tf.append(tf)
+                        # Log label prevalence for diagnostics
+                        try:
+                            for k, v in explicit_meta.items():
+                                if isinstance(v, (pd.Series, np.ndarray, list)):
+                                    arr = np.asarray(v)
+                                    ones = int(np.nansum(arr == 1))
+                                    zeros = int(np.nansum(arr == 0))
+                                    self.logger.info(f"Meta-label '{k}': ones={ones}, zeros={zeros}, len={len(arr)}")
+                        except Exception:
+                            pass
+                if added_tf:
+                    self.logger.info(f"Added explicit meta-labels for timeframes: {added_tf}")
+                # Guardrail cross-check against MetaLabelingSystem if available
+                try:
+                    if getattr(self, "meta_labeling_system", None) is not None:
+                        await self._guardrail_validate_meta_labels(price_data, volume_data, explicit_by_tf)
+                    else:
+                        self.logger.info("Guardrail: MetaLabelingSystem not initialized; skipping cross-check")
+                except Exception as guard_e:
+                    self.logger.warning(f"Guardrail validation failed: {guard_e}")
+            except Exception as _e:
+                self.logger.warning(f"Explicit meta-label generation failed: {_e}")
 
             # Enforce generator contract: ensure all values are 1D arrays of length n
             n = len(price_data)
@@ -868,11 +906,11 @@ class VectorizedAdvancedFeatureEngineering:
         """Engineer market microstructure features using vectorized operations."""
         try:
             features = {}
-
+ 
             # Price impact features (vectorized per-row)
             features["price_impact"] = self._calculate_price_impact_vectorized(price_data, volume_data)
             features["volume_price_impact"] = self._calculate_volume_price_impact_vectorized(price_data, volume_data)
-
+ 
             # Order-flow related features (proxies if book data not available)
             features["order_flow_imbalance"] = self._calculate_order_flow_imbalance_vectorized(
                 price_data, volume_data, order_flow_data
@@ -882,23 +920,87 @@ class VectorizedAdvancedFeatureEngineering:
             # Relative change (returns) and level as separate engineered metrics
             features["bid_ask_spread_returns"] = bas.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0)
             features["bid_ask_spread_level"] = bas  # bounded 0..0.05 already
-
-            # Market depth features (vectorized per-row)
-            md = self._calculate_market_depth_vectorized(price_data, volume_data)
-            # Depth dynamics
-            features["market_depth_change"] = md.diff().fillna(0)
-            with np.errstate(divide='ignore', invalid='ignore'):
-                features["market_depth_returns"] = (md.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
-            # Depth imbalance proxy: short vs long window
-            short = volume_data["volume"].rolling(10, min_periods=1).mean()
-            long = volume_data["volume"].rolling(50, min_periods=1).mean().replace(0, np.nan)
-            features["market_depth_imbalance"] = ((short - long) / long).replace([np.inf, -np.inf], np.nan).fillna(0)
-
-            return features
-
-        except Exception as e:
-            self.logger.error(f"Error engineering microstructure features: {e}")
-            return {}
++
++            # Order book wall features (stationary): use returns/diffs
++            try:
++                if order_flow_data is not None:
++                    # Expect optional columns: bid_wall_price/size, ask_wall_price/size, mid
++                    df = order_flow_data
++                    if "mid" in df.columns:
++                        mid = pd.Series(df["mid"].values, index=df.index).reindex(price_data.index, method="ffill")
++                    else:
++                        mid = price_data["close"].astype(float)
++                    # Distances to nearest walls in pct
++                    for side in ["bid", "ask"]:
++                        pcol = f"{side}_wall_price"
++                        scol = f"{side}_wall_size"
++                        if pcol in df.columns:
++                            wall_p = pd.Series(df[pcol].values, index=df.index).reindex(price_data.index, method="ffill")
++                            with np.errstate(divide='ignore', invalid='ignore'):
++                                dist = ((mid - wall_p).abs() / mid).replace([np.inf, -np.inf], np.nan).fillna(method="ffill").fillna(1.0)
++                            features[f"nearest_{side}_wall_dist_pct"] = dist
++                        if scol in df.columns:
++                            wall_s = pd.Series(df[scol].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
++                            # Use diff/returns for stationarity
++                            features[f"nearest_{side}_wall_size_change"] = wall_s.diff().fillna(0)
++                            with np.errstate(divide='ignore', invalid='ignore'):
++                                features[f"nearest_{side}_wall_size_returns"] = (wall_s.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
++                    # Imbalance if total sizes available
++                    if "total_bid_size" in df.columns and "total_ask_size" in df.columns:
++                        tb = pd.Series(df["total_bid_size"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
++                        ta = pd.Series(df["total_ask_size"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
++                        denom = (tb + ta).replace(0, np.nan)
++                        imb = ((tb - ta) / denom).replace([np.inf, -np.inf], np.nan).fillna(0)
++                        features["orderbook_wall_imbalance"] = imb
++                    # Depth profile slope proxy: difference between near/far depth (if available)
++                    if "depth_near" in df.columns and "depth_far" in df.columns:
++                        near = pd.Series(df["depth_near"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
++                        far = pd.Series(df["depth_far"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
++                        slope = (near - far)
++                        features["depth_profile_slope_proxy"] = slope.diff().fillna(0)
++                    # Weighted mid-price (if bid/ask price/size available)
++                    if all(c in df.columns for c in ["best_bid", "best_ask", "best_bid_size", "best_ask_size"]):
++                        bb = pd.Series(df["best_bid"].values, index=df.index).reindex(price_data.index, method="ffill").astype(float)
++                        ba = pd.Series(df["best_ask"].values, index=df.index).reindex(price_data.index, method="ffill").astype(float)
++                        bbs = pd.Series(df["best_bid_size"].values, index=df.index).reindex(price_data.index, method="ffill").astype(float).replace(0, np.nan)
++                        bas = pd.Series(df["best_ask_size"].values, index=df.index).reindex(price_data.index, method="ffill").astype(float).replace(0, np.nan)
++                        wmp = (bb * bbs + ba * bas) / (bbs + bas)
++                        features["weighted_mid_price_change"] = wmp.diff().fillna(0)
++                        with np.errstate(divide='ignore', invalid='ignore'):
++                            features["weighted_mid_price_returns"] = (wmp.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
++                    # Aggregated orderbook pressure (if granular ladders available)
++                    if all(c in df.columns for c in ["sum_bid_size_5", "sum_ask_size_5"]):
++                        sb = pd.Series(df["sum_bid_size_5"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
++                        sa = pd.Series(df["sum_ask_size_5"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
++                        denom2 = (sb + sa).replace(0, np.nan)
++                        press = ((sb - sa) / denom2).replace([np.inf, -np.inf], np.nan).fillna(0)
++                        features["orderbook_pressure"] = press
++                    # Trade-to-order ratio (if trades and orders counts provided)
++                    if all(c in df.columns for c in ["trade_count", "order_count"]):
++                        tr = pd.Series(df["trade_count"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
++                        oc = pd.Series(df["order_count"].values, index=df.index).reindex(price_data.index, method="ffill").fillna(0)
++                        with np.errstate(divide='ignore', invalid='ignore'):
++                            tor = (tr / oc.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan).fillna(0)
++                        features["trade_to_order_ratio"] = tor.diff().fillna(0)
++            except Exception as _e:
++                self.logger.warning(f"Order book wall feature engineering failed: {_e}")
+ 
+             # Market depth features (vectorized per-row)
+             md = self._calculate_market_depth_vectorized(price_data, volume_data)
+             # Depth dynamics
+             features["market_depth_change"] = md.diff().fillna(0)
+             with np.errstate(divide='ignore', invalid='ignore'):
+                 features["market_depth_returns"] = (md.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+             # Depth imbalance proxy: short vs long window
+             short = volume_data["volume"].rolling(10, min_periods=1).mean()
+             long = volume_data["volume"].rolling(50, min_periods=1).mean().replace(0, np.nan)
+             features["market_depth_imbalance"] = ((short - long) / long).replace([np.inf, -np.inf], np.nan).fillna(0)
+ 
+             return features
+ 
+         except Exception as e:
+             self.logger.error(f"Error engineering microstructure features: {e}")
+             return {}
 
     def _calculate_price_impact_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> pd.Series:
         """Calculate per-row price impact using abs(close diff) normalized by rolling average volume."""
@@ -1502,25 +1604,6 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.error(f"Error generating meta labels: {e}")
             return {}
 
-    def _infer_sr_levels(self, price_data: pd.DataFrame) -> dict[str, Any]:
-        """Infer simple support/resistance levels from recent price distribution as a fallback.
-        Uses quantiles over a rolling window.
-        """
-        try:
-            close = price_data["close"].astype(float)
-            # Use last 2,000 points if available to infer static levels
-            recent = close.tail(min(len(close), 2000))
-            if recent.empty:
-                return {"support_levels": [], "resistance_levels": []}
-            q_support = np.quantile(recent.dropna(), [0.1, 0.2, 0.3])
-            q_resist = np.quantile(recent.dropna(), [0.7, 0.8, 0.9])
-            return {
-                "support_levels": [float(x) for x in q_support],
-                "resistance_levels": [float(x) for x in q_resist],
-            }
-        except Exception:
-            return {"support_levels": [], "resistance_levels": []}
-
     def _engineer_ohlcv_price_features_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """Compute OHLCV-based features that must use actual prices (not returns).
         Includes SMA/EMA and Garman–Klass volatility per bar.
@@ -1550,6 +1633,271 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.warning(f"OHLCV price feature engineering failed: {e}")
             return {}
+
+    async def _generate_explicit_meta_labels_vectorized(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        timeframe: str = "30m",
+    ) -> dict[str, Any]:
+        """Generate explicit analyst meta-labels vectorized over a higher timeframe and align back without lookahead.
+
+        Labels generated:
+        - STRONG_TREND_CONTINUATION
+        - RANGE_MEAN_REVERSION
+        - EXHAUSTION_REVERSAL
+        - BREAKOUT_SUCCESS
+        - BREAKOUT_FAILURE
+        - VOLATILITY_COMPRESSION
+        - VOLATILITY_EXPANSION
+        - FLAG_FORMATION
+        - TRIANGLE_FORMATION
+        - RECTANGLE_FORMATION
+        - MOMENTUM_IGNITION
+        - GRADUAL_MOMENTUM_FADE
+
+        Notes:
+        - Uses only past/current information (rolling stats) and aligns labels to the next base bar to avoid lookahead.
+        - Computes on OHLCV then maps to base index. Momentum/volatility rely on returns for stationarity.
+        """
+        try:
+            if price_data.empty or volume_data.empty:
+                return {}
+
+            # Resample to the requested timeframe
+            resampled_price = self._resample_data_vectorized(price_data, timeframe)
+            resampled_volume = self._resample_data_vectorized(volume_data, timeframe)
+            if resampled_price.empty or resampled_volume.empty:
+                return {}
+
+            # RSI on price diffs (stationary input)
+            delta = resampled_price["close"].diff()
+            gain = delta.where(delta > 0, 0.0).rolling(14, min_periods=1).mean()
+            loss = (-delta.where(delta < 0, 0.0)).rolling(14, min_periods=1).mean()
+            with np.errstate(divide='ignore', invalid='ignore'):
+                rs = gain / loss.replace(0, np.nan)
+                rsi = 100 - (100 / (1 + rs))
+            rsi = rsi.fillna(50)
+
+            # Bollinger Band position on price (label logic reference)
+            sma20 = resampled_price["close"].rolling(20, min_periods=1).mean()
+            std20 = resampled_price["close"].rolling(20, min_periods=1).std().replace(0, np.nan)
+            bb_upper = sma20 + 2 * std20
+            bb_lower = sma20 - 2 * std20
+            with np.errstate(divide='ignore', invalid='ignore'):
+                bb_pos = ((resampled_price["close"] - bb_lower) / (bb_upper - bb_lower)).clip(0, 1)
+            bb_pos = bb_pos.fillna(0.5)
+
+            # Momentum and volatility on returns (stationary)
+            close_ret = resampled_price["close"].pct_change()
+            momentum_5 = close_ret.rolling(5, min_periods=1).sum().fillna(0)
+            momentum_10 = close_ret.rolling(10, min_periods=1).sum().fillna(0)
+            vol_20 = close_ret.rolling(20, min_periods=1).std().fillna(0)
+            vol_10 = close_ret.rolling(10, min_periods=1).std().fillna(0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                volatility_ratio = (vol_10 / vol_20.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan).fillna(1.0)
+
+            # Volume ratio
+            vol_ma_10 = resampled_volume["volume"].rolling(10, min_periods=1).mean().replace(0, np.nan)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                volume_ratio = (resampled_volume["volume"] / vol_ma_10).replace([np.inf, -np.inf], np.nan).fillna(1.0)
+
+            # Recent highs/lows for breakout detection
+            recent_high = resampled_price["close"].rolling(20, min_periods=1).max()
+            recent_low = resampled_price["close"].rolling(20, min_periods=1).min()
+
+            # MACD (stationary source via EMA of returns proxy)
+            # For stability, compute EMAs on price but take differences for signal
+            ema12 = resampled_price["close"].ewm(span=12, adjust=False).mean()
+            ema26 = resampled_price["close"].ewm(span=26, adjust=False).mean()
+            macd = ema12 - ema26
+            macd_signal = macd.ewm(span=9, adjust=False).mean()
+            macd_hist = macd - macd_signal
+
+            # Thresholds (align with MetaLabelingSystem defaults)
+            volatility_threshold = 0.02
+            momentum_threshold = 0.01
+            volume_threshold = 1.5
+
+            # STRONG_TREND_CONTINUATION
+            is_uptrend = momentum_10 > 0.02
+            is_pullback = (bb_pos > 0.3) & (bb_pos < 0.7)
+            is_healthy_rsi = (rsi > 40) & (rsi < 70)
+            strong_trend = (is_uptrend & is_healthy_rsi & is_pullback).astype(int)
+
+            # EXHAUSTION_REVERSAL
+            is_overbought = (rsi > 70) | (bb_pos > 0.8)
+            is_weakening = momentum_5 < 0
+            is_high_volume = volume_ratio > volume_threshold
+            exhaustion = (is_overbought & is_weakening & is_high_volume).astype(int)
+
+            # RANGE_MEAN_REVERSION
+            is_at_edge = (bb_pos < 0.2) | (bb_pos > 0.8)
+            is_low_vol = vol_20 < volatility_threshold
+            is_sideways = abs(momentum_10) < 0.01
+            range_mr = (is_at_edge & is_low_vol & is_sideways).astype(int)
+
+            # BREAKOUT_SUCCESS and BREAKOUT_FAILURE
+            is_breakout_up = (resampled_price["close"] > recent_high.shift(1)) & (momentum_5 > 0.0)
+            is_breakout_down = (resampled_price["close"] < recent_low.shift(1)) & (momentum_5 < 0.0)
+            breakout_success = ((is_breakout_up | is_breakout_down) & (volume_ratio > volume_threshold)).astype(int)
+            breakout_failure = (((bb_pos > 0.8) | (bb_pos < 0.2)) & (abs(momentum_5) < 0.005)).astype(int)
+
+            # VOLATILITY patterns
+            vol_compression = ((bb_upper - bb_lower) / sma20.replace(0, np.nan) < 0.05) & (volatility_ratio < 0.8)
+            vol_expansion = (volatility_ratio > 1.5) & (volume_ratio > volume_threshold)
+            vol_compression = vol_compression.fillna(False).astype(int)
+            vol_expansion = vol_expansion.fillna(False).astype(int)
+
+            # CHART patterns
+            flag_formation = (abs(momentum_5) > 0.02) & (vol_10 < volatility_threshold)
+            triangle_formation = ((bb_upper - bb_lower) / sma20.replace(0, np.nan) < 0.03)
+            price_position = ((resampled_price["close"] - recent_low) / (recent_high - recent_low).replace(0, np.nan)).clip(0, 1).fillna(0.5)
+            rectangle_formation = (price_position.between(0.3, 0.7)) & (((bb_upper - bb_lower) / sma20.replace(0, np.nan)) < 0.05)
+            flag_formation = flag_formation.fillna(False).astype(int)
+            triangle_formation = triangle_formation.fillna(False).astype(int)
+            rectangle_formation = rectangle_formation.fillna(False).astype(int)
+
+            # MOMENTUM patterns
+            momentum_ignition = ((rsi > 60) | (rsi < 40)) & (abs(macd_hist) > 0.001) & (abs(momentum_5) > momentum_threshold)
+            gradual_fade = (abs(momentum_5) < abs(momentum_10)) & (abs(momentum_5) < momentum_threshold)
+            momentum_ignition = momentum_ignition.fillna(False).astype(int)
+            gradual_fade = gradual_fade.fillna(False).astype(int)
+
+            # Align back to base index without lookahead: shift by +1 base bar after reindex
+            base_index = price_data.index if isinstance(price_data.index, pd.DatetimeIndex) else pd.RangeIndex(start=0, stop=len(price_data))
+            def _align(series: pd.Series) -> np.ndarray:
+                aligned = series.reindex(base_index, method="ffill").shift(1).fillna(0)
+                return aligned.astype(int).values
+
+            labels: dict[str, Any] = {
+                f"{timeframe}_STRONG_TREND_CONTINUATION": _align(strong_trend),
+                f"{timeframe}_EXHAUSTION_REVERSAL": _align(exhaustion),
+                f"{timeframe}_RANGE_MEAN_REVERSION": _align(range_mr),
+                f"{timeframe}_BREAKOUT_SUCCESS": _align(breakout_success),
+                f"{timeframe}_BREAKOUT_FAILURE": _align(breakout_failure),
+                f"{timeframe}_VOLATILITY_COMPRESSION": _align(vol_compression),
+                f"{timeframe}_VOLATILITY_EXPANSION": _align(vol_expansion),
+                f"{timeframe}_FLAG_FORMATION": _align(flag_formation),
+                f"{timeframe}_TRIANGLE_FORMATION": _align(triangle_formation),
+                f"{timeframe}_RECTANGLE_FORMATION": _align(rectangle_formation),
+                f"{timeframe}_MOMENTUM_IGNITION": _align(momentum_ignition),
+                f"{timeframe}_GRADUAL_MOMENTUM_FADE": _align(gradual_fade),
+            }
+
+            self.logger.info(
+                f"Generated explicit meta-labels at {timeframe}: "
+                f"STC={(strong_trend==1).sum()}, ER={(exhaustion==1).sum()}, RMR={(range_mr==1).sum()}, "
+                f"BO_S={(breakout_success==1).sum()}, BO_F={(breakout_failure==1).sum()}, "
+                f"VOL_C={(vol_compression==1).sum()}, VOL_E={(vol_expansion==1).sum()}, "
+                f"FLAG={(flag_formation==1).sum()}, TRI={(triangle_formation==1).sum()}, REC={(rectangle_formation==1).sum()}, "
+                f"IGN={(momentum_ignition==1).sum()}, FADE={(gradual_fade==1).sum()}"
+            )
+            return labels
+
+        except Exception as e:
+            self.logger.error(f"Error generating explicit meta labels: {e}")
+            return {}
+
+    async def _guardrail_validate_meta_labels(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        explicit_by_tf: dict[str, dict[str, Any]],
+    ) -> None:
+        """Cross-check vectorized explicit meta-labels with MetaLabelingSystem outputs on sampled timestamps.
+
+        Writes a JSON report with mismatch rates per timeframe/label under log/meta_label_guardrail/.
+        """
+        try:
+            import os, json
+            from datetime import datetime
+            os.makedirs("log/meta_label_guardrail", exist_ok=True)
+
+            base_index = price_data.index
+            labels_to_check = [
+                "STRONG_TREND_CONTINUATION",
+                "EXHAUSTION_REVERSAL",
+                "RANGE_MEAN_REVERSION",
+                "BREAKOUT_SUCCESS",
+                "BREAKOUT_FAILURE",
+                "VOLATILITY_COMPRESSION",
+                "VOLATILITY_EXPANSION",
+                "FLAG_FORMATION",
+                "TRIANGLE_FORMATION",
+                "RECTANGLE_FORMATION",
+                "MOMENTUM_IGNITION",
+                "GRADUAL_MOMENTUM_FADE",
+            ]
+
+            # Sampling configuration
+            max_samples_per_tf = 200
+            stride_min = 20
+
+            report: dict[str, Any] = {"timeframes": {}}
+
+            for tf, explicit in explicit_by_tf.items():
+                res_price = self._resample_data_vectorized(price_data, tf)
+                res_vol = self._resample_data_vectorized(volume_data, tf)
+                if res_price.empty or res_vol.empty:
+                    continue
+
+                r_idx = res_price.index
+                if len(r_idx) < 5:
+                    continue
+                stride = max(1, min(stride_min, len(r_idx) // max(1, min(max_samples_per_tf, len(r_idx)))))
+                sample_points = r_idx[::stride]
+
+                # Build vectorized label series on resampled index via ffill from base index arrays
+                vec_series: dict[str, pd.Series] = {}
+                for name in labels_to_check:
+                    key = f"{tf}_{name}"
+                    if key in explicit:
+                        arr = np.asarray(explicit[key])
+                        vec = pd.Series(arr, index=base_index).reindex(r_idx, method="ffill").fillna(0).astype(int)
+                        vec_series[name] = vec
+
+                mismatches: dict[str, int] = {name: 0 for name in labels_to_check}
+                totals: dict[str, int] = {name: 0 for name in labels_to_check}
+
+                for t in sample_points:
+                    # Slice up to t to avoid lookahead for the reference
+                    p_slice = res_price.loc[:t]
+                    v_slice = res_vol.loc[:t]
+                    if len(p_slice) < 30:  # require minimal history for indicators
+                        continue
+                    ref = await self.meta_labeling_system.generate_analyst_labels(p_slice, v_slice, timeframe=tf)
+                    for name in labels_to_check:
+                        if name not in vec_series:
+                            continue
+                        ref_val = int(ref.get(name, 0)) if isinstance(ref.get(name, 0), (int, float)) else 0
+                        vec_val = int(vec_series[name].loc[t])
+                        totals[name] += 1
+                        if ref_val != vec_val:
+                            mismatches[name] += 1
+
+                # Summarize
+                summary = {}
+                for name in labels_to_check:
+                    total = totals.get(name, 0)
+                    if total == 0:
+                        continue
+                    mis = mismatches.get(name, 0)
+                    summary[name] = {
+                        "checked": int(total),
+                        "mismatches": int(mis),
+                        "mismatch_rate": float(mis / total),
+                    }
+                report["timeframes"][tf] = summary
+
+            # Log and persist
+            self.logger.info(f"Guardrail report (preview): {report}")
+            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            with open(f"log/meta_label_guardrail/{ts}_report.json", "w") as f:
+                json.dump(report, f, indent=2)
+
+        except Exception as e:
+            self.logger.warning(f"Guardrail encountered an error: {e}")
 
 
 class VectorizedVolatilityRegimeModel:

@@ -36,6 +36,7 @@ from lightgbm import LGBMClassifier
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
+from src.utils.purged_kfold import PurgedKFoldTime
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 warnings.filterwarnings("ignore", category=UserWarning, module="arch")
@@ -278,6 +279,19 @@ class BaseEnsemble:
             "momentum_20_acceleration",
             "momentum_50_z_score",
             "momentum_50_acceleration",
+            # Newly engineered order book features (stationary)
+            "nearest_bid_wall_dist_pct",
+            "nearest_ask_wall_dist_pct",
+            "nearest_bid_wall_size_change",
+            "nearest_ask_wall_size_change",
+            "nearest_bid_wall_size_returns",
+            "nearest_ask_wall_size_returns",
+            "orderbook_wall_imbalance",
+            "weighted_mid_price_returns",
+            "weighted_mid_price_change",
+            "depth_profile_slope_proxy",
+            "orderbook_pressure",
+            "trade_to_order_ratio",
         ]
         self.order_flow_features = [
             "volume",
@@ -343,6 +357,19 @@ class BaseEnsemble:
             "vwap_deviation_z_score",
             "large_order_ratio_bounded",
             "large_order_ratio_z_score",
+            # Newly engineered order book features (stationary) for order-flow models
+            "nearest_bid_wall_dist_pct",
+            "nearest_ask_wall_dist_pct",
+            "nearest_bid_wall_size_change",
+            "nearest_ask_wall_size_change",
+            "nearest_bid_wall_size_returns",
+            "nearest_ask_wall_size_returns",
+            "orderbook_wall_imbalance",
+            "weighted_mid_price_returns",
+            "weighted_mid_price_change",
+            "depth_profile_slope_proxy",
+            "orderbook_pressure",
+            "trade_to_order_ratio",
         ]
 
     @handle_errors(
@@ -362,9 +389,7 @@ class BaseEnsemble:
             )
             return
 
-        # Calculate SR context features (Phase 1 Enhancement)
-        sr_features = self._calculate_sr_context_features(historical_features)
-        historical_features = pd.concat([historical_features, sr_features], axis=1)
+        # SR context features are now provided upstream (step4 unified S/R system)
 
         # Apply comprehensive feature normalization (Step 4 Enhancement)
         self.logger.info("Applying comprehensive feature normalization...")
@@ -498,9 +523,7 @@ class BaseEnsemble:
             )
             return {"prediction": "HOLD", "confidence": 0.0}
 
-        # Calculate SR context features for prediction (Phase 1 Enhancement)
-        sr_features = self._calculate_sr_context_features(current_features)
-        current_features = pd.concat([current_features, sr_features], axis=1)
+        # SR context features are expected upstream (step4 unified S/R system)
 
         # Apply comprehensive feature normalization (Step 4 Enhancement)
         self.logger.info("Applying comprehensive feature normalization for prediction...")
@@ -577,9 +600,15 @@ class BaseEnsemble:
         def objective(trial):
             params = search_space_func(trial)
             model = model_class(**params, random_state=42, verbose=-1)
-            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+            # Prefer purged CV for time series with DatetimeIndex
+            if isinstance(X, pd.DataFrame) and isinstance(X.index, pd.DatetimeIndex):
+                cv = PurgedKFoldTime(n_splits=3)
+                splits = cv.split(X)
+            else:
+                cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+                splits = cv.split(X, y)
             scores = []
-            for train_idx, val_idx in cv.split(X, y):
+            for train_idx, val_idx in splits:
                 X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
                 y_train, y_val = y[train_idx], y[val_idx]
                 model.fit(X_train, y_train)
@@ -729,9 +758,7 @@ class BaseEnsemble:
                 self.logger.warning(f"{self.ensemble_name}: Empty historical features provided")
                 return pd.DataFrame()
                 
-            # Calculate SR context features
-            sr_features = self._calculate_sr_context_features(historical_features)
-            historical_features = pd.concat([historical_features, sr_features], axis=1)
+            # SR context features are expected upstream (step4 unified S/R system)
             
             # Apply feature normalization
             historical_features = self.normalize_non_price_features(historical_features)
@@ -932,194 +959,7 @@ class BaseEnsemble:
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
         raise NotImplementedError
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=pd.DataFrame(),
-        context="SR context features calculation",
-    )
-    def _calculate_sr_context_features(
-        self,
-        df: pd.DataFrame,
-        sr_analyzer=None,
-    ) -> pd.DataFrame:
-        """
-        Calculate SR context features using unified regime classifier's S/R levels.
-
-        Args:
-            df: DataFrame with OHLCV data
-            sr_analyzer: Optional SR analyzer instance (unified regime classifier)
-
-        Returns:
-            DataFrame with SR context features
-        """
-        try:
-            # Initialize SR features with defaults
-            sr_features = pd.DataFrame(index=df.index)
-            sr_features["distance_to_sr"] = 1.0  # Default: far from SR
-            sr_features["sr_strength"] = 0.0  # Default: no SR
-            sr_features["sr_type"] = 0.5  # Default: neutral
-
-            # New features for unified S/R levels
-            sr_features["distance_to_pivot_support"] = 1.0
-            sr_features["distance_to_pivot_resistance"] = 1.0
-            sr_features["distance_to_hvn_support"] = 1.0
-            sr_features["distance_to_hvn_resistance"] = 1.0
-            sr_features["is_pivot_support"] = 0.0
-            sr_features["is_pivot_resistance"] = 0.0
-            sr_features["is_hvn_support"] = 0.0
-            sr_features["is_hvn_resistance"] = 0.0
-            sr_features["is_confluence"] = 0.0
-            sr_features["is_open_range"] = 1.0
-
-            # Strength features for S/R levels
-            sr_features["nearest_pivot_strength"] = 0.0
-            sr_features["nearest_pivot_touches"] = 0.0
-            sr_features["nearest_pivot_volume"] = 0.0
-            sr_features["nearest_pivot_age"] = 0.0
-            sr_features["nearest_pivot_resistance_strength"] = 0.0
-            sr_features["nearest_pivot_resistance_touches"] = 0.0
-            sr_features["nearest_pivot_resistance_volume"] = 0.0
-            sr_features["nearest_pivot_resistance_age"] = 0.0
-            sr_features["nearest_hvn_strength"] = 0.0
-            sr_features["nearest_hvn_touches"] = 0.0
-            sr_features["nearest_hvn_volume"] = 0.0
-            sr_features["nearest_hvn_age"] = 0.0
-            sr_features["nearest_hvn_resistance_strength"] = 0.0
-            sr_features["nearest_hvn_resistance_touches"] = 0.0
-            sr_features["nearest_hvn_resistance_volume"] = 0.0
-            sr_features["nearest_hvn_resistance_age"] = 0.0
-
-            # Use unified regime classifier if available
-            if sr_analyzer and hasattr(sr_analyzer, "_calculate_features"):
-                try:
-                    # Calculate features using unified regime classifier
-                    features_df = sr_analyzer._calculate_features(df)
-                    if not features_df.empty:
-                        # Get location classification
-                        location_labels = sr_analyzer._classify_location(features_df)
-
-                        # Extract S/R levels
-                        pivot_levels = self._extract_pivot_levels(
-                            sr_analyzer,
-                            features_df,
-                        )
-                        hvn_levels = self._extract_hvn_levels(sr_analyzer, features_df)
-
-                        # Calculate S/R features for each row
-                        for i in range(len(df)):
-                            try:
-                                current_price = df.iloc[i]["close"]
-                                current_location = (
-                                    location_labels[i]
-                                    if i < len(location_labels)
-                                    else "OPEN_RANGE"
-                                )
-
-                                # Calculate distances to S/R levels
-                                self._calculate_sr_distances(
-                                    sr_features,
-                                    i,
-                                    current_price,
-                                    pivot_levels,
-                                    hvn_levels,
-                                    current_location,
-                                )
-
-                            except Exception as e:
-                                self.logger.warning(
-                                    f"Error calculating SR features for row {i}: {e}",
-                                )
-                                continue
-                except Exception:
-                    self.print(warning("Error using unified regime classifier: {e}"))
-                    # Fall back to simplified approach
-                    self._calculate_simplified_sr_features(sr_features, df)
-            else:
-                # Fall back to simplified approach
-                self._calculate_simplified_sr_features(sr_features, df)
-
-            # Calculate additional momentum and volatility features
-            if len(df) >= 5:
-                sr_features["momentum_5"] = df["close"].pct_change(5).fillna(0)
-            else:
-                sr_features["momentum_5"] = 0.0
-
-            if len(df) >= 10:
-                sr_features["momentum_10"] = df["close"].pct_change(10).fillna(0)
-            else:
-                sr_features["momentum_10"] = 0.0
-
-            # Volume ratio
-            if "volume" in df.columns:
-                volume_ma = df["volume"].rolling(window=20, min_periods=1).mean()
-                sr_features["volume_ratio"] = (df["volume"] / volume_ma).fillna(1.0)
-            else:
-                sr_features["volume_ratio"] = 1.0
-
-            # Volatility
-            if len(df) >= 20:
-                price_volatility = (
-                    df["close"].rolling(window=20).std()
-                    / df["close"].rolling(window=20).mean()
-                )
-                sr_features["volatility"] = price_volatility.fillna(0.0)
-            else:
-                sr_features["volatility"] = 0.0
-
-            # Price position within recent range
-            if len(df) >= 20:
-                high_20 = df["high"].rolling(window=20, min_periods=1).max()
-                low_20 = df["low"].rolling(window=20, min_periods=1).min()
-                sr_features["price_position"] = (
-                    (df["close"] - low_20) / (high_20 - low_20)
-                ).fillna(0.5)
-            else:
-                sr_features["price_position"] = 0.5
-
-            return sr_features
-
-        except Exception:
-            self.print(error("Error calculating SR context features: {e}"))
-            # Return default features
-            default_features = pd.DataFrame(index=df.index)
-            for feature in [
-                "distance_to_sr",
-                "sr_strength",
-                "sr_type",
-                "price_position",
-                "momentum_5",
-                "momentum_10",
-                "volume_ratio",
-                "volatility",
-                "distance_to_pivot_support",
-                "distance_to_pivot_resistance",
-                "distance_to_hvn_support",
-                "distance_to_hvn_resistance",
-                "is_pivot_support",
-                "is_pivot_resistance",
-                "is_hvn_support",
-                "is_hvn_resistance",
-                "is_confluence",
-                "is_open_range",
-                "nearest_pivot_strength",
-                "nearest_pivot_touches",
-                "nearest_pivot_volume",
-                "nearest_pivot_age",
-                "nearest_pivot_resistance_strength",
-                "nearest_pivot_resistance_touches",
-                "nearest_pivot_resistance_volume",
-                "nearest_pivot_resistance_age",
-                "nearest_hvn_strength",
-                "nearest_hvn_touches",
-                "nearest_hvn_volume",
-                "nearest_hvn_age",
-                "nearest_hvn_resistance_strength",
-                "nearest_hvn_resistance_touches",
-                "nearest_hvn_resistance_volume",
-                "nearest_hvn_resistance_age",
-            ]:
-                default_features[feature] = 0.0
-            return default_features
+    # SR context features were moved to step4 unified S/R system.
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),

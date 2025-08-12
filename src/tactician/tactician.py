@@ -405,6 +405,6 @@ async def setup_tactician(config: dict[str, Any] | None = None) -> Tactician | N
         if await tactician.initialize():
             return tactician
         return None
-    except Exception:
-        system_print(failed("Failed to setup tactician: {e}"))
+    except Exception as e:
+        system_logger.exception(f"Failed to setup tactician: {e}")
         return None

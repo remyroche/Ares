@@ -10,7 +10,6 @@ to participate in the dependency injection system.
 from abc import ABC
 from typing import Any
 
-from src.core.dependency_injection import Configurable, Injectable
 from src.interfaces.base_interfaces import (
     IEventBus,
     IExchangeClient,
@@ -24,7 +23,7 @@ from src.utils.warning_symbols import (
 )
 
 
-class InjectableBase(Injectable, Configurable, ABC):
+class InjectableBase(ABC):
     """
     Base class for all injectable trading components.
 
@@ -35,6 +34,14 @@ class InjectableBase(Injectable, Configurable, ABC):
         self.config = config or {}
         self.logger = system_logger.getChild(self.__class__.__name__)
         self._initialized = False
+        # Provide a safe print shim so subclasses can call self.print
+        if not hasattr(self, "print"):
+            def _shim_print(message: str) -> None:
+                try:
+                    self.logger.error(str(message))
+                except Exception:
+                    pass
+            self.print = _shim_print  # type: ignore[attr-defined]
 
     def configure(self, config: dict[str, Any]) -> None:
         """Configure the component with provided configuration."""

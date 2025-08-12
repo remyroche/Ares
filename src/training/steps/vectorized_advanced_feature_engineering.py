@@ -698,7 +698,7 @@ class VectorizedAdvancedFeatureEngineering:
             features.update(ohlcv_price_features)
 
             # S/R distance features — infer levels if not provided
-            inferred_sr = sr_levels if sr_levels else self._infer_sr_levels(price_data)
+            inferred_sr = sr_levels if sr_levels else None
             if self.sr_distance_calculator and inferred_sr:
                 sr_distance_features = await self.sr_distance_calculator.calculate_sr_distances(
                     price_data,
@@ -1539,25 +1539,6 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.error(f"Error generating meta labels: {e}")
             return {}
-
-    def _infer_sr_levels(self, price_data: pd.DataFrame) -> dict[str, Any]:
-        """Infer simple support/resistance levels from recent price distribution as a fallback.
-        Uses quantiles over a rolling window.
-        """
-        try:
-            close = price_data["close"].astype(float)
-            # Use last 2,000 points if available to infer static levels
-            recent = close.tail(min(len(close), 2000))
-            if recent.empty:
-                return {"support_levels": [], "resistance_levels": []}
-            q_support = np.quantile(recent.dropna(), [0.1, 0.2, 0.3])
-            q_resist = np.quantile(recent.dropna(), [0.7, 0.8, 0.9])
-            return {
-                "support_levels": [float(x) for x in q_support],
-                "resistance_levels": [float(x) for x in q_resist],
-            }
-        except Exception:
-            return {"support_levels": [], "resistance_levels": []}
 
     def _engineer_ohlcv_price_features_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """Compute OHLCV-based features that must use actual prices (not returns).

@@ -225,7 +225,7 @@ class TrackingSystem:
             return True
 
         except Exception:
-            self.print(failed("❌ Tracking System initialization failed: {e}"))
+            self.logger.exception(failed("❌ Tracking System initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -246,7 +246,7 @@ class TrackingSystem:
             self.logger.info("Tracking storage initialized")
 
         except Exception:
-            self.print(initialization_error("Error initializing tracking storage: {e}"))
+            self.logger.exception(initialization_error("Error initializing tracking storage: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -259,7 +259,7 @@ class TrackingSystem:
             self.logger.info("Ensemble tracking initialized")
 
         except Exception:
-            self.print(
+            self.logger.exception(
                 initialization_error("Error initializing ensemble tracking: {e}"),
             )
 
@@ -274,7 +274,7 @@ class TrackingSystem:
             self.logger.info("Regime tracking initialized")
 
         except Exception:
-            self.print(initialization_error("Error initializing regime tracking: {e}"))
+            self.logger.exception(initialization_error("Error initializing regime tracking: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -287,7 +287,7 @@ class TrackingSystem:
             self.logger.info("Feature tracking initialized")
 
         except Exception:
-            self.print(initialization_error("Error initializing feature tracking: {e}"))
+            self.logger.exception(initialization_error("Error initializing feature tracking: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -300,7 +300,7 @@ class TrackingSystem:
             self.logger.info("Decision tracking initialized")
 
         except Exception:
-            self.print(
+            self.logger.exception(
                 initialization_error("Error initializing decision tracking: {e}"),
             )
 
@@ -315,7 +315,7 @@ class TrackingSystem:
             self.logger.info("Behavior tracking initialized")
 
         except Exception:
-            self.print(
+            self.logger.exception(
                 initialization_error("Error initializing behavior tracking: {e}"),
             )
 
@@ -352,7 +352,7 @@ class TrackingSystem:
             return True
 
         except Exception:
-            self.print(error("Error starting tracking system: {e}"))
+            self.logger.exception(error("Error starting tracking system: {e}"))
             return False
 
     @handle_errors(
@@ -368,7 +368,7 @@ class TrackingSystem:
                 await asyncio.sleep(self.ensemble_tracking_interval)
 
         except Exception:
-            self.print(error("Error in ensemble tracking loop: {e}"))
+            self.logger.exception(error("Error in ensemble tracking loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -383,7 +383,7 @@ class TrackingSystem:
                 await asyncio.sleep(self.regime_tracking_interval)
 
         except Exception:
-            self.print(error("Error in regime tracking loop: {e}"))
+            self.logger.exception(error("Error in regime tracking loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -398,7 +398,7 @@ class TrackingSystem:
                 await asyncio.sleep(self.feature_tracking_interval)
 
         except Exception:
-            self.print(error("Error in feature tracking loop: {e}"))
+            self.logger.exception(error("Error in feature tracking loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -413,7 +413,7 @@ class TrackingSystem:
                 await asyncio.sleep(self.behavior_tracking_interval)
 
         except Exception:
-            self.print(error("Error in behavior tracking loop: {e}"))
+            self.logger.exception(error("Error in behavior tracking loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -451,7 +451,7 @@ class TrackingSystem:
             self.logger.debug(f"Tracked ensemble decision: {decision.decision_id}")
 
         except Exception:
-            self.print(error("Error tracking ensemble decisions: {e}"))
+            self.logger.exception(error("Error tracking ensemble decisions: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -489,7 +489,7 @@ class TrackingSystem:
             self.logger.debug(f"Tracked regime analysis: {analysis.analysis_id}")
 
         except Exception:
-            self.print(error("Error tracking regime analysis: {e}"))
+            self.logger.exception(error("Error tracking regime analysis: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -542,7 +542,7 @@ class TrackingSystem:
             self.logger.debug("Tracked feature importance")
 
         except Exception:
-            self.print(error("Error tracking feature importance: {e}"))
+            self.logger.exception(error("Error tracking feature importance: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -573,7 +573,7 @@ class TrackingSystem:
             self.logger.debug(f"Tracked decision path: {path.path_id}")
 
         except Exception:
-            self.print(error("Error tracking decision path: {e}"))
+            self.logger.exception(error("Error tracking decision path: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -611,7 +611,7 @@ class TrackingSystem:
             self.logger.debug("Tracked model behavior")
 
         except Exception:
-            self.print(error("Error tracking model behavior: {e}"))
+            self.logger.exception(error("Error tracking model behavior: {e}"))
 
     async def _analyze_correlation_patterns(self) -> None:
         """Analyze correlation patterns between different system components."""
@@ -738,7 +738,7 @@ class TrackingSystem:
                 )
 
         except Exception:
-            self.print(error("Error analyzing correlation patterns: {e}"))
+            self.logger.exception(error("Error analyzing correlation patterns: {e}"))
 
     def _calculate_correlation(
         self,
@@ -768,7 +768,7 @@ class TrackingSystem:
             return numerator / denominator
 
         except Exception:
-            self.print(error("Error calculating correlation: {e}"))
+            self.logger.exception(error("Error calculating correlation: {e}"))
             return 0.0
 
     def get_ensemble_decisions(
@@ -838,7 +838,7 @@ class TrackingSystem:
             }
 
         except Exception:
-            self.print(error("Error getting tracking summary: {e}"))
+            self.logger.exception(error("Error getting tracking summary: {e}"))
             return {}
 
     @handle_errors(
@@ -862,7 +862,7 @@ class TrackingSystem:
             self.logger.info("🛑 Tracking System stopped")
 
         except Exception:
-            self.print(error("Error stopping tracking system: {e}"))
+            self.logger.exception(error("Error stopping tracking system: {e}"))
 
 
 @handle_errors(
@@ -888,5 +888,5 @@ async def setup_tracking_system(config: dict[str, Any]) -> TrackingSystem | None
         return None
 
     except Exception:
-        system_print(error("Error setting up tracking system: {e}"))
+        system_logger.exception(failed("Error setting up tracking system: {e}"))
         return None

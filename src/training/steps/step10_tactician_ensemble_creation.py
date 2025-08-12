@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
+from sklearn.metrics import confusion_matrix, accuracy_score
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
@@ -390,6 +391,7 @@ if __name__ == "__main__":
         models_dir = os.path.join(test_data_dir, "tactician_models")
         os.makedirs(models_dir, exist_ok=True)
 
+        from sklearn.metrics import confusion_matrix, accuracy_score
         from sklearn.linear_model import LogisticRegression
 
         # Dummy Model A

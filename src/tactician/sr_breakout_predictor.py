@@ -1196,5 +1196,5 @@ async def setup_sr_breakout_predictor(
             return predictor
         return None
     except Exception:
-        system_print(failed("Failed to setup SR breakout predictor: {e}"))
+        system_logger.exception(failed("Failed to setup SR Breakout Predictor: {e}"))
         return None

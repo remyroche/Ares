@@ -522,9 +522,9 @@ class VectorizedLabellingOrchestrator:
                 if self.keep_close_returns and "close_returns" in getattr(self, "_debug_price_returns", pd.DataFrame()).columns:
                     if "close_returns" not in labeled_data.columns:
                         labeled_data["close_returns"] = self._debug_price_returns["close_returns"].values
-                # Volume context might be in volume_data; if missing and we logged raw, try to source from there later stages
-            except Exception:
-                pass
+                # TODO: Volume context might be in volume_data; if missing and we logged raw, try to source from there later stages
+            except Exception as e:
+                self.logger.warning(f"Failed to attach context columns: {e}")
             
             # If no advanced features, return labeled data as is
             if not advanced_features:

@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from sklearn.feature_selection import mutual_info_classif
+from sklearn.model_selection import KFold
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
@@ -30,6 +32,14 @@ from src.utils.warning_symbols import (
 )
 from src.training.steps.unified_data_loader import get_unified_data_loader
 
+# Optional stationarity test
+try:
+    from statsmodels.tsa.stattools import adfuller as _adfuller
+    _ADF_AVAILABLE = True
+except Exception:
+    _adfuller = None
+    _ADF_AVAILABLE = False
+
 
 class AnalystLabelingFeatureEngineeringStep:
     """Step 4: Analyst Labeling and Feature Engineering using Vectorized Orchestrator."""
@@ -38,6 +48,476 @@ class AnalystLabelingFeatureEngineeringStep:
         self.config = config
         self.logger = system_logger.getChild("AnalystLabelingFeatureEngineeringStep")
         self.orchestrator = None
+
+        # Standardized column groups
+        self._RAW_PRICE_COLUMNS = [
+            "open",
+            "high",
+            "low",
+            "close",
+            "avg_price",
+            "min_price",
+            "max_price",
+        ]
+        self._RAW_VOLUME_COLUMNS = [
+            "volume",
+            "trade_volume",
+            "trade_count",
+            "volume_ratio",
+        ]
+        self._RAW_MICROSTRUCTURE_COLUMNS = [
+            "market_depth",
+            "bid_ask_spread",
+        ]
+        # Any raw-like context that must never leak into features directly
+        self._RAW_CONTEXT_COLUMNS = (
+            self._RAW_PRICE_COLUMNS
+            + self._RAW_VOLUME_COLUMNS
+            + self._RAW_MICROSTRUCTURE_COLUMNS
+            + ["funding_rate"]
+        )
+        # Metadata/non-feature columns
+        self._METADATA_COLUMNS = [
+            "year",
+            "month",
+            "day",
+            "day_of_week",
+            "day_of_month",
+            "quarter",
+            "exchange",
+            "symbol",
+            "timeframe",
+            "split",
+        ]
+        self._LABEL_NAME = "label"
+
+    # -----------------
+    # Feature validators
+    # -----------------
+    def validate_feature_output(self, func):
+        def wrapper(df: pd.DataFrame, *args, **kwargs) -> pd.Series:
+            ref_index = df.index
+            out = func(df, *args, **kwargs)
+            if not isinstance(out, pd.Series):
+                raise TypeError(f"Feature function {func.__name__} must return pandas Series, got {type(out)}")
+            if not out.index.equals(ref_index):
+                raise ValueError(f"Feature {getattr(out,'name',func.__name__)} index misaligned with input index")
+            if not isinstance(getattr(out, "name", None), str):
+                raise ValueError(f"Feature from {func.__name__} must have a string name")
+            return out
+        return wrapper
+
+    # -----------------
+    # Decorated feature helpers
+    # -----------------
+    @property
+    def _feat_close_returns(self):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            s = df["close"].pct_change()
+            s.name = "close_returns"
+            return s
+        return _impl
+
+    def _feat_pct_change(self, col: str, name: str):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            s = df[col].pct_change()
+            s.name = name
+            return s
+        return _impl
+
+    def _feat_diff(self, col: str, name: str):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            s = df[col].diff()
+            s.name = name
+            return s
+        return _impl
+
+    @property
+    def _feat_gk_vol_returns(self):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            open_ = df["open"].astype(float)
+            high = df["high"].astype(float)
+            low = df["low"].astype(float)
+            close = df["close"].astype(float)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                log_hl = np.log(high / low)
+                log_co = np.log(close / open_)
+            gk_var = (log_hl ** 2) / (2 * np.log(2)) - (2 * np.log(2) - 1) * (log_co ** 2)
+            gk_vol = np.sqrt(gk_var.clip(lower=0))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                ret = (gk_vol / gk_vol.shift(1)) - 1.0
+            ret.name = "gk_vol_returns"
+            return ret
+        return _impl
+
+    def _feat_sma_distance(self, window: int, name: str):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            close = df["close"].astype(float)
+            sma = close.rolling(window, min_periods=1).mean()
+            with np.errstate(divide="ignore", invalid="ignore"):
+                s = (close / sma) - 1.0
+            s.name = name
+            return s
+        return _impl
+
+    def _feat_engulf_strength_z(self, kind: str):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            close = df["close"].astype(float)
+            open_ = df["open"].astype(float)
+            body = (close - open_).abs()
+            body_prev = body.shift(1)
+            if kind == "bull":
+                is_current_bullish = close > open_
+                is_previous_bearish = df["close"].shift(1) < df["open"].shift(1)
+                is_engulf = (open_ < df["close"].shift(1)) & (close > df["open"].shift(1))
+                cond = is_current_bullish & is_previous_bearish & is_engulf
+                name = "bullish_engulf_strength_z"
+            else:
+                is_current_bearish = close < open_
+                is_previous_bullish = df["close"].shift(1) > df["open"].shift(1)
+                is_engulf = (open_ > df["close"].shift(1)) & (close < df["open"].shift(1))
+                cond = is_current_bearish & is_previous_bullish & is_engulf
+                name = "bearish_engulf_strength_z"
+            strength = (body / (body_prev.replace(0, np.nan))).where(cond, 0.0)
+            z = self._zscore(strength, window=50).fillna(0)
+            z.name = name
+            return z
+        return _impl
+
+    def _ensure_continuous_time_index(self, df: pd.DataFrame, freq: str = "1T") -> tuple[pd.DataFrame, int]:
+        """Reindex to continuous time grid and return number of inserted rows."""
+        if not isinstance(df.index, pd.DatetimeIndex):
+            # Try to set from 'timestamp' if available
+            if "timestamp" in df.columns:
+                try:
+                    df = df.copy()
+                    df.index = pd.to_datetime(df["timestamp"], errors="coerce")
+                    df = df.sort_index()
+                    df = df.drop(columns=["timestamp"], errors="ignore")
+                except Exception:
+                    return df, 0
+            else:
+                return df, 0
+        if df.index.size == 0:
+            return df, 0
+        full_index = pd.date_range(start=df.index.min(), end=df.index.max(), freq=freq)
+        before = len(df)
+        df = df.reindex(full_index)
+        inserted = len(df) - before
+        return df, inserted
+
+    def _sanitize_raw_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Replace inf with NaN, forward-fill NaNs; log fill counts by column."""
+        df = df.replace([np.inf, -np.inf], np.nan)
+        # Count NaNs per column before
+        nan_before = df.isna().sum()
+        df = df.fillna(method="ffill")
+        # Log fills
+        try:
+            filled = nan_before - df.isna().sum()
+            filled = filled[filled > 0]
+            if not filled.empty:
+                self.logger.warning(f"Raw data forward-filled values: {filled.to_dict()}")
+        except Exception:
+            pass
+        return df
+
+    def _sanitize_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Post-merge engineered features sanitization: handle inf/NaNs.
+        Strategy: replace inf with NaN, then fill NaN with median per column; fallback to 0 if median is NaN.
+        """
+        df = df.replace([np.inf, -np.inf], np.nan)
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        medians: dict[str, float] = {}
+        for c in numeric_cols:
+            med = df[c].median()
+            if pd.isna(med):
+                med = 0.0
+            medians[c] = med
+        if medians:
+            df[numeric_cols] = df[numeric_cols].fillna(value=medians)
+        # Non-numeric: forward-fill if any (rare in features)
+        non_num = [c for c in df.columns if c not in numeric_cols and c != "label"]
+        if non_num:
+            df[non_num] = df[non_num].fillna(method="ffill")
+        # Log strategy summary
+        try:
+            total_inf = int(np.isinf(df.select_dtypes(include=[np.number])).sum().sum())
+            total_nan = int(df.isna().sum().sum())
+            self.logger.info(f"Feature sanitization completed: inf_residual={total_inf}, nan_residual={total_nan}")
+        except Exception:
+            pass
+        return df
+
+    def _zscore(self, series: pd.Series, window: int = 50) -> pd.Series:
+        roll = series.rolling(window=window, min_periods=max(5, window // 5))
+        z = (series - roll.mean()) / roll.std().replace(0, np.nan)
+        return z.replace([np.inf, -np.inf], np.nan)
+
+    async def _build_pipeline_a_stationary(self, price_data: pd.DataFrame) -> pd.DataFrame:
+        """Pipeline A: create stationary features directly from raw series made stationary."""
+        try:
+            df = price_data.copy()
+            features = pd.DataFrame(index=df.index)
+
+            # Core stationary transforms
+            if "close" in df.columns:
+                features[self._feat_close_returns(df).name] = self._feat_close_returns(df)
+
+            # Prefer trade_volume if present, else volume (readable control flow)
+            if "trade_volume" in df.columns:
+                vol_col = "trade_volume"
+            elif "volume" in df.columns:
+                vol_col = "volume"
+            else:
+                vol_col = None
+            if vol_col is not None:
+                vol_ret = self._feat_pct_change(vol_col, "volume_returns")(df)
+                features[vol_ret.name] = vol_ret
+
+            # Funding rates dynamics
+            if "funding_rate" in df.columns:
+                fr_chg = self._feat_diff("funding_rate", "funding_rate_change")(df)
+                fr_ret = self._feat_pct_change("funding_rate", "funding_rate_returns")(df)
+                features[fr_chg.name] = fr_chg
+                features[fr_ret.name] = fr_ret
+
+            # Volatility of stationary series
+            if self._feat_close_returns(df) is not None:
+                features["returns_volatility_20"] = self._feat_close_returns(df).rolling(20).std()
+            if "volume_returns" in features.columns:
+                features["volume_returns_volatility_20"] = features["volume_returns"].rolling(20).std()
+
+            # Simple interactive features
+            if self._feat_close_returns(df) is not None and "volume_returns" in features.columns:
+                features["returns_x_volume_returns"] = (
+                    features[self._feat_close_returns(df).name] * features["volume_returns"]
+                )
+
+            # Additional upstream standardization to returns/changes for available raw series
+            if "trade_count" in df.columns:
+                tc_ret = self._feat_pct_change("trade_count", "trade_count_returns")(df)
+                features[tc_ret.name] = tc_ret
+            if "trade_volume" in df.columns:
+                tv_ret = self._feat_pct_change("trade_volume", "trade_volume_returns")(df)
+                features[tv_ret.name] = tv_ret
+            if "market_depth" in df.columns:
+                md_ret = self._feat_pct_change("market_depth", "market_depth_returns")(df)
+                features[md_ret.name] = md_ret
+            if "bid_ask_spread" in df.columns:
+                bas_ret = self._feat_pct_change("bid_ask_spread", "bid_ask_spread_returns")(df)
+                features[bas_ret.name] = bas_ret
+
+            # Cleanup
+            num = features.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
+            features[num.columns] = num
+            features = features.fillna(0)
+            # Drop any all-NaN columns defensively
+            features = features.dropna(axis=1, how="all")
+            return features
+        except Exception as e:
+            self.logger.warning(f"Pipeline A failed: {e}")
+            return pd.DataFrame(index=price_data.index)
+
+    async def _build_pipeline_b_ohlcv(self, price_data: pd.DataFrame) -> pd.DataFrame:
+        """Pipeline B: compute raw OHLCV indicators then transform to stationary features."""
+        try:
+            required = ["open", "high", "low", "close"]
+            if not all(c in price_data.columns for c in required):
+                self.logger.warning("Pipeline B skipped due to missing OHLCV columns")
+                return pd.DataFrame(index=price_data.index)
+
+            df = price_data.copy()
+            feats = pd.DataFrame(index=df.index)
+
+            close = df["close"].astype(float)
+            open_ = df["open"].astype(float)
+            high = df["high"].astype(float)
+            low = df["low"].astype(float)
+
+            # SMA distances (stationary)
+            sma20d = self._feat_sma_distance(20, "sma20_distance")(df)
+            sma50d = self._feat_sma_distance(50, "sma50_distance")(df)
+            feats[sma20d.name] = sma20d
+            feats[sma50d.name] = sma50d
+
+            # Garman–Klass volatility -> returns of vol
+            gk = self._feat_gk_vol_returns(df)
+            feats[gk.name] = gk
+
+            # Simple candlestick strength (engulfing bullish/bearish) -> z-scored
+            body = (close - open_).abs()
+            body_prev = body.shift(1)
+            # Bullish engulfing
+            bullz = self._feat_engulf_strength_z("bull")(df)
+            feats[bullz.name] = bullz
+            # Bearish engulfing
+            bearz = self._feat_engulf_strength_z("bear")(df)
+            feats[bearz.name] = bearz
+
+            # Cleanup
+            num = feats.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
+            feats[num.columns] = num
+            feats = feats.fillna(0)
+            feats = feats.dropna(axis=1, how="all")
+            return feats
+        except Exception as e:
+            self.logger.warning(f"Pipeline B failed: {e}")
+            return pd.DataFrame(index=price_data.index)
+
+    def _compute_vif_scores(self, X: pd.DataFrame) -> dict[str, float]:
+        from sklearn.linear_model import LinearRegression
+        vif_scores: dict[str, float] = {}
+        cols = X.columns.tolist()
+        X_imputed = X.copy()
+        for c in cols:
+            med = X_imputed[c].median()
+            if pd.isna(med):
+                med = 0.0
+            X_imputed[c] = X_imputed[c].fillna(med)
+        for col in cols:
+            others = [c for c in cols if c != col]
+            if not others:
+                vif_scores[col] = 1.0
+                continue
+            reg = LinearRegression()
+            try:
+                reg.fit(X_imputed[others], X_imputed[col])
+                y = X_imputed[col].values
+                y_pred = reg.predict(X_imputed[others])
+                ss_res = float(np.sum((y - y_pred) ** 2))
+                ss_tot = float(np.sum((y - np.mean(y)) ** 2))
+                r2 = 0.0 if ss_tot == 0 else 1.0 - (ss_res / ss_tot)
+                vif = float(np.inf) if r2 >= 0.999999 else (1.0 / max(1e-12, 1.0 - r2))
+            except Exception:
+                vif = 1.0
+            vif_scores[col] = vif
+        return vif_scores
+
+    def _build_cpa_transform(self, X: pd.DataFrame, cluster_cols: list[str], name_prefix: str) -> tuple[pd.Series, dict]:
+        means = X[cluster_cols].mean()
+        stds = X[cluster_cols].std().replace(0, np.nan)
+        Z = (X[cluster_cols] - means) / stds
+        Z = Z.fillna(0.0)
+        try:
+            U, S, VT = np.linalg.svd(Z.values, full_matrices=False)
+            weights = VT[0, :]
+        except Exception:
+            k = len(cluster_cols)
+            weights = np.ones(k) / max(1, k)
+        pc1 = pd.Series(np.dot(Z.values, weights), index=X.index, name=f"cpa_{name_prefix}_pc1").astype(np.float32)
+        transform = {
+            "name": pc1.name,
+            "cols": cluster_cols,
+            "means": means.to_dict(),
+            "stds": stds.to_dict(),
+            "weights": weights.tolist(),
+        }
+        return pc1, transform
+
+    def _apply_cpa_transforms(self, X: pd.DataFrame, transforms: list[dict]) -> pd.DataFrame:
+        X_new = X.copy()
+        for t in transforms:
+            cols = [c for c in t["cols"] if c in X_new.columns]
+            if len(cols) < 1:
+                continue
+            means = pd.Series(t["means"]).reindex(cols).fillna(0.0)
+            stds = pd.Series(t["stds"]).reindex(cols).replace(0, np.nan)
+            Z = (X_new[cols] - means) / stds
+            Z = Z.fillna(0.0)
+            w = np.array(t["weights"])[: len(cols)]
+            comp = pd.Series(np.dot(Z.values, w), index=X_new.index, name=t["name"]).astype(np.float32)
+            X_new[t["name"]] = comp
+            X_new = X_new.drop(columns=cols, errors="ignore")
+        return X_new
+
+    def _vif_reduce_train_val_test(self, train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+        removed: list[str] = []
+        cpa_transforms: list[dict] = []
+        cpa_clusters: list[list[str]] = []
+        # Separate features and labels
+        feat_cols = [c for c in train_df.columns if c != self._LABEL_NAME]
+        X_tr = train_df[feat_cols].copy()
+        X_vl = val_df[feat_cols].copy() if not val_df.empty else val_df.copy()
+        X_te = test_df[feat_cols].copy() if not test_df.empty else test_df.copy()
+        # Remove zero-variance columns
+        zero_var = [c for c in X_tr.columns if X_tr[c].nunique(dropna=True) <= 1]
+        if zero_var:
+            removed.extend(zero_var)
+            X_tr = X_tr.drop(columns=zero_var, errors="ignore")
+            X_vl = X_vl.drop(columns=zero_var, errors="ignore") if not X_vl.empty else X_vl
+            X_te = X_te.drop(columns=zero_var, errors="ignore") if not X_te.empty else X_te
+        # Main VIF loop
+        max_iters = 50
+        for _ in range(max_iters):
+            if X_tr.shape[1] <= 2:
+                break
+            vif = self._compute_vif_scores(X_tr)
+            if not vif:
+                break
+            worst_feature, worst_vif = max(vif.items(), key=lambda kv: (float("inf") if np.isinf(kv[1]) else kv[1]))
+            if worst_vif is None or (not np.isfinite(worst_vif)):
+                removed.append(worst_feature)
+                X_tr = X_tr.drop(columns=[worst_feature], errors="ignore")
+                X_vl = X_vl.drop(columns=[worst_feature], errors="ignore") if not X_vl.empty else X_vl
+                X_te = X_te.drop(columns=[worst_feature], errors="ignore") if not X_te.empty else X_te
+                continue
+            if worst_vif > 20.0:
+                try:
+                    corr = X_tr.corr().abs()
+                    candidates = corr.columns[(corr[worst_feature] >= 0.7)].tolist()
+                    cluster = list(dict.fromkeys([worst_feature] + [c for c in candidates if c != worst_feature]))
+                    if len(cluster) >= 2:
+                        pc1, transform = self._build_cpa_transform(X_tr, cluster, name_prefix=str(len(cpa_transforms)+1))
+                        X_tr[pc1.name] = pc1
+                        cpa_transforms.append(transform)
+                        cpa_clusters.append(cluster)
+                        X_tr = X_tr.drop(columns=cluster, errors="ignore")
+                        if not X_vl.empty:
+                            X_vl = self._apply_cpa_transforms(X_vl.drop(columns=cluster, errors="ignore"), [transform])
+                        if not X_te.empty:
+                            X_te = self._apply_cpa_transforms(X_te.drop(columns=cluster, errors="ignore"), [transform])
+                        continue
+                    else:
+                        removed.append(worst_feature)
+                        X_tr = X_tr.drop(columns=[worst_feature], errors="ignore")
+                        X_vl = X_vl.drop(columns=[worst_feature], errors="ignore") if not X_vl.empty else X_vl
+                        X_te = X_te.drop(columns=[worst_feature], errors="ignore") if not X_te.empty else X_te
+                        continue
+                except Exception:
+                    removed.append(worst_feature)
+                    X_tr = X_tr.drop(columns=[worst_feature], errors="ignore")
+                    X_vl = X_vl.drop(columns=[worst_feature], errors="ignore") if not X_vl.empty else X_vl
+                    X_te = X_te.drop(columns=[worst_feature], errors="ignore") if not X_te.empty else X_te
+                    continue
+            elif worst_vif > 10.0:
+                removed.append(worst_feature)
+                X_tr = X_tr.drop(columns=[worst_feature], errors="ignore")
+                X_vl = X_vl.drop(columns=[worst_feature], errors="ignore") if not X_vl.empty else X_vl
+                X_te = X_te.drop(columns=[worst_feature], errors="ignore") if not X_te.empty else X_te
+                continue
+            else:
+                break
+        # Reassemble DataFrames with label column
+        out_train = pd.concat([X_tr, train_df[[self._LABEL_NAME]]], axis=1)
+        out_val = pd.concat([X_vl, val_df[[self._LABEL_NAME]]], axis=1) if not val_df.empty else val_df
+        out_test = pd.concat([X_te, test_df[[self._LABEL_NAME]]], axis=1) if not test_df.empty else test_df
+        summary = {
+            "removed_features": removed,
+            "cpa_clusters": cpa_clusters,
+            "cpa_count": len(cpa_clusters),
+        }
+        if removed:
+            self.logger.info(f"Step 4 VIF: removed {len(removed)} features (>10): {removed[:50]}{' ...' if len(removed)>50 else ''}")
+        if cpa_clusters:
+            self.logger.info(f"Step 4 VIF: created {len(cpa_clusters)} CPA components (>20)")
+        return out_train, out_val, out_test, summary
 
     @handle_errors(
         exceptions=(Exception,),
@@ -190,7 +670,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 self.logger.info("✅ Replaced infinite values with finite bounds")
             
             # Remove raw OHLCV columns to prevent data leakage
-            raw_ohlcv_columns = ["open", "high", "low", "close", "volume"]
+            raw_ohlcv_columns = [c for c in self._RAW_CONTEXT_COLUMNS if c in ["open","high","low","close","volume","avg_price","min_price","max_price"]]
             ohlcv_columns_found = [col for col in raw_ohlcv_columns if col in labeled_data.columns]
             if ohlcv_columns_found:
                 labeled_data = labeled_data.drop(columns=ohlcv_columns_found)
@@ -289,6 +769,21 @@ class AnalystLabelingFeatureEngineeringStep:
             if not isinstance(price_data, pd.DataFrame):
                 price_data = pd.DataFrame(price_data)
 
+            # Initial metadata separation for later rejoin
+            metadata_cols_present = [c for c in self._METADATA_COLUMNS if c in price_data.columns]
+            metadata_df = pd.DataFrame(index=None)
+            try:
+                # Prepare datetime index for integrity checks
+                if not isinstance(price_data.index, pd.DatetimeIndex) and "timestamp" in price_data.columns:
+                    price_data = price_data.copy()
+                    price_data.index = pd.to_datetime(price_data["timestamp"], errors="coerce")
+                    price_data = price_data.sort_index()
+                # Extract metadata aligned to index
+                if metadata_cols_present:
+                    metadata_df = price_data[metadata_cols_present].copy()
+            except Exception:
+                metadata_df = pd.DataFrame(index=price_data.index)
+
             # Validate that we have proper OHLCV data for triple barrier labeling
             required_ohlcv_columns = ["open", "high", "low", "close", "volume"]
             missing_ohlcv = [
@@ -308,111 +803,72 @@ class AnalystLabelingFeatureEngineeringStep:
 
             self.logger.info("✅ Validated OHLCV data")
 
-            # Create volume data if not available
-            volume_data = None
-            if "volume" in price_data.columns:
-                volume_data = price_data[["volume"]]
-            else:
-                # Create synthetic volume data
-                volume_data = pd.DataFrame(
-                    {"volume": np.random.uniform(1000, 10000, len(price_data))},
-                    index=price_data.index,
+            # Check 1: Missing timestamps -> reindex to continuous grid
+            price_data, inserted_rows = self._ensure_continuous_time_index(price_data, freq="1T")
+            if inserted_rows > 0:
+                self.logger.warning(f"Time index had gaps; inserted {inserted_rows} missing rows during reindex")
+
+            # Dual-pipeline feature engineering
+            self.logger.info("🔀 Building Pipeline A (Stationary) and Pipeline B (OHLCV->Stationary)...")
+            features_a = await self._build_pipeline_a_stationary(price_data)
+            # Check 2: Sanitize raw OHLCV before Pipeline B calculations
+            price_data_sanitized = self._sanitize_raw_data(price_data[[c for c in price_data.columns if c in set(self._RAW_PRICE_COLUMNS + ["volume"]) ]].join(
+                price_data[[c for c in price_data.columns if c not in set(self._RAW_PRICE_COLUMNS + ["volume"]) ]], how="left"
+            )) if isinstance(price_data.index, pd.DatetimeIndex) else self._sanitize_raw_data(price_data.copy())
+            features_b = await self._build_pipeline_b_ohlcv(price_data_sanitized)
+            combined_features = pd.concat([features_a, features_b], axis=1)
+
+            # Label using optimized triple barrier on raw OHLCV, then align features to labeled index
+            try:
+                from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+                    OptimizedTripleBarrierLabeling,
                 )
-                self.logger.warning("Created synthetic volume data")
-
-            # Check if orchestrator is initialized
-            if (
-                self.orchestrator
-                and hasattr(self.orchestrator, "is_initialized")
-                and self.orchestrator.is_initialized
-            ):
-                try:
-                    # Execute vectorized labeling and feature engineering
-                    result = await self.orchestrator.orchestrate_labeling_and_feature_engineering(
-                        price_data=price_data,
-                        volume_data=volume_data,
-                        order_flow_data=None,  # Not available in this context
-                        sr_levels=None,  # Not available in this context
-                    )
-
-                    # Enhanced feature validation and quality checks
-                    if result and isinstance(result.get("data"), pd.DataFrame):
-                        labeled_data = result.get("data")
-                        
-                        # Validate feature quality for 240+ feature set
-                        labeled_data = await self._validate_and_enhance_features(labeled_data)
-                        
-                        # Drop datetime/timestamp columns before any further processing
-                        try:
-                            datetime_cols = [
-                                c for c in labeled_data.columns
-                                if str(labeled_data[c].dtype).startswith("datetime64") or "timestamp" in c.lower()
-                            ]
-                            if datetime_cols:
-                                self.logger.info(f"Removing datetime columns prior to saving/validation: {datetime_cols}")
-                                labeled_data = labeled_data.drop(columns=datetime_cols)
-                        except Exception:
-                            pass
-
-                        # Remove metadata columns that should not be features
-                        meta_cols = [c for c in labeled_data.columns if c in [
-                            'year','month','day','day_of_week','day_of_month','quarter','exchange','symbol','timeframe','split'
-                        ]]
-                        if meta_cols:
-                            self.logger.info(f"Removing metadata columns from features: {meta_cols}")
-                            labeled_data = labeled_data.drop(columns=meta_cols)
-
-                        # Note: Keep OHLCV in labeled_data for labeling diagnostics; we'll drop OHLCV only for feature files
-
-                        # Ensure labeled_data contains OHLCV columns by merging from original price_data
-                        try:
-                            required_ohlcv = ['open','high','low','close','volume']
-                            missing_ohlcv = [c for c in required_ohlcv if c not in labeled_data.columns]
-                            if missing_ohlcv:
-                                self.logger.info(f"Re-adding missing OHLCV columns to labeled data: {missing_ohlcv}")
-                                ohlcv_source = price_data[[c for c in required_ohlcv if c in price_data.columns]].copy()
-                                labeled_data = labeled_data.join(ohlcv_source, how='left')
-                        except Exception as _e:
-                            self.logger.warning(f"Failed to re-add OHLCV columns to labeled data: {_e}")
-
-                        # Do NOT re-add raw OHLCV to labeled features to prevent leakage; only keep engineered features
-                        # Validator will operate on separate datasets where OHLCV is expected if needed
-                        
-                        # Ensure the result has a 'label' column
-                        if "label" not in labeled_data.columns:
-                            self.logger.warning(
-                                "No 'label' column found in orchestrator result, adding default labels"
-                            )
-                            labeled_data[
-                                "label"
-                            ] = -1  # Default to sell signal for binary classification
-                        
-                        result["data"] = labeled_data
-                        
-                        # Log feature engineering summary
-                        await self._log_feature_engineering_summary(labeled_data)
-                        
-                    else:
-                        msg = "Orchestrator returned invalid data"
-                        raise Exception(msg)
-
-                except Exception as e:
-                    self.logger.warning(
-                        f"Vectorized labeling orchestrator failed during execution: {e}, using fallback"
-                    )
-                    result = self._create_fallback_labeled_data(price_data)
-            else:
-                # Fallback: create simple labeled data
-                self.logger.warning(
-                    "Vectorized labeling orchestrator not initialized, using fallback labeling"
+                tb_config = self.config.get("vectorized_labelling_orchestrator", {})
+                labeler = OptimizedTripleBarrierLabeling(
+                    profit_take_multiplier=tb_config.get("profit_take_multiplier", 0.002),
+                    stop_loss_multiplier=tb_config.get("stop_loss_multiplier", 0.001),
+                    time_barrier_minutes=tb_config.get("time_barrier_minutes", 30),
+                    max_lookahead=tb_config.get("max_lookahead", 100),
                 )
-                result = self._create_fallback_labeled_data(price_data)
-            # Get the labeled data
-            labeled_data = result.get("data", price_data)
+                labeled_ohlcv = labeler.apply_triple_barrier_labeling_vectorized(
+                    price_data[["open", "high", "low", "close", "volume"]].copy()
+                )
+                # Align feature rows to labeled rows (binary classification removes HOLD rows)
+                combined_features = combined_features.loc[labeled_ohlcv.index]
+                labeled_data = pd.concat([combined_features, labeled_ohlcv[["label"]]], axis=1)
+            except Exception as e:
+                self.logger.warning(f"Triple barrier labeling failed, using fallback labels: {e}")
+                fallback = self._create_fallback_labeled_data(price_data)
+                labeled_data = fallback.get("data", price_data)
+
+            # Final feature sanity: drop raw OHLCV if somehow present
+            raw_cols = list(set(self._RAW_CONTEXT_COLUMNS))
+            labeled_data = labeled_data.drop(columns=[c for c in raw_cols if c in labeled_data.columns], errors="ignore")
+
+            # Check 5: Feature Matrix Sanitization (post-merge)
+            labeled_data = self._sanitize_features(labeled_data)
+
+            # Drop datetime/timestamp and metadata columns
+            try:
+                datetime_cols = [
+                    c for c in labeled_data.columns if str(labeled_data[c].dtype).startswith("datetime64") or "timestamp" in c.lower()
+                ]
+                if datetime_cols:
+                    self.logger.info(f"Removing datetime columns prior to saving/validation: {datetime_cols}")
+                    labeled_data = labeled_data.drop(columns=datetime_cols)
+            except Exception:
+                pass
+
+            # Keep metadata separate from features (explicit column management)
+            meta_cols = [c for c in self._METADATA_COLUMNS if c in labeled_data.columns]
+            if meta_cols:
+                self.logger.info(f"Separating metadata columns from features: {meta_cols}")
+                metadata_df = (metadata_df.join(labeled_data[meta_cols], how="left") if not metadata_df.empty else labeled_data[meta_cols].copy())
+                labeled_data = labeled_data.drop(columns=meta_cols)
 
             # Final guard: drop metadata columns again prior to splitting/saving
             try:
-                drop_meta = [c for c in ['year','month','day','exchange','symbol','timeframe','split'] if c in labeled_data.columns]
+                drop_meta = [c for c in self._METADATA_COLUMNS if c in labeled_data.columns]
                 if drop_meta:
                     labeled_data = labeled_data.drop(columns=drop_meta)
             except Exception:
@@ -426,6 +882,14 @@ class AnalystLabelingFeatureEngineeringStep:
             train_data = labeled_data.iloc[:train_end]
             validation_data = labeled_data.iloc[train_end:val_end]
             test_data = labeled_data.iloc[val_end:]
+
+            # Apply VIF loop with CPA on training split; transform val/test accordingly
+            try:
+                train_data, validation_data, test_data, vif_summary = self._vif_reduce_train_val_test(
+                    train_data, validation_data, test_data
+                )
+            except Exception as e:
+                self.logger.warning(f"Step 4 VIF reduction skipped due to error: {e}")
 
             # Persist and log selected feature lists per split (traceability)
             try:
@@ -451,9 +915,7 @@ class AnalystLabelingFeatureEngineeringStep:
             ]
 
             # For features files, drop raw OHLCV/trade columns to avoid leakage
-            raw_cols = [
-                'open','high','low','close','volume','trade_volume','trade_count','avg_price','min_price','max_price'
-            ]
+            raw_cols = list(set(self._RAW_CONTEXT_COLUMNS))
             for file_path, data in feature_files:
                 features_df = data.drop(columns=[c for c in raw_cols if c in data.columns], errors="ignore")
                 with open(file_path, "wb") as f:
@@ -514,7 +976,7 @@ class AnalystLabelingFeatureEngineeringStep:
                             )
                         df = table.to_pandas(types_mapper=pd.ArrowDtype)
                         # Drop raw OHLCV for feature parquet
-                        drop_cols = [c for c in ['open','high','low','close','volume','trade_volume','trade_count','avg_price','min_price','max_price'] if c in df.columns]
+                        drop_cols = [c for c in self._RAW_CONTEXT_COLUMNS if c in df.columns]
                         if drop_cols:
                             df = df.drop(columns=drop_cols)
                         ParquetDatasetManager(self.logger).write_flat_parquet(
@@ -566,7 +1028,7 @@ class AnalystLabelingFeatureEngineeringStep:
                         if "label" in feat_cols:
                             feat_cols.remove("label")
                         # Drop raw OHLCV for feature parquet (partitioned)
-                        drop_cols = [c for c in ['open','high','low','close','volume','trade_volume','trade_count','avg_price','min_price','max_price'] if c in df.columns]
+                        drop_cols = [c for c in self._RAW_CONTEXT_COLUMNS if c in df.columns]
                         if drop_cols:
                             df = df.drop(columns=drop_cols)
                         pdm.write_partitioned_dataset(
@@ -617,18 +1079,27 @@ class AnalystLabelingFeatureEngineeringStep:
 
             # Parquet for labeled data too
             try:
+                # Rejoin metadata for labeled parquet outputs
+                def _rejoin_metadata(df_part: pd.DataFrame) -> pd.DataFrame:
+                    if isinstance(metadata_df, pd.DataFrame) and not metadata_df.empty:
+                        # Align indices if needed
+                        aligned = metadata_df.reindex(df_part.index).copy()
+                        merged = df_part.join(aligned, how="left")
+                        return merged
+                    return df_part
+
                 parquet_labeled = [
                     (
                         f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet",
-                        mem_mgr.optimize_dataframe(train_data.copy()),
+                        mem_mgr.optimize_dataframe(_rejoin_metadata(train_data.copy())),
                     ),
                     (
                         f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
-                        mem_mgr.optimize_dataframe(validation_data.copy()),
+                        mem_mgr.optimize_dataframe(_rejoin_metadata(validation_data.copy())),
                     ),
                     (
                         f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet",
-                        mem_mgr.optimize_dataframe(test_data.copy()),
+                        mem_mgr.optimize_dataframe(_rejoin_metadata(test_data.copy())),
                     ),
                 ]
                 for file_path, df in parquet_labeled:
@@ -677,12 +1148,12 @@ class AnalystLabelingFeatureEngineeringStep:
                     pdm = ParquetDatasetManager(logger=self.logger)
                     base_dir = os.path.join(data_dir, "parquet", "labeled")
                     for split_name, df in (
-                        ("train", mem_mgr.optimize_dataframe(train_data.copy())),
+                        ("train", mem_mgr.optimize_dataframe(_rejoin_metadata(train_data.copy()))),
                         (
                             "validation",
-                            mem_mgr.optimize_dataframe(validation_data.copy()),
+                            mem_mgr.optimize_dataframe(_rejoin_metadata(validation_data.copy())),
                         ),
-                        ("test", mem_mgr.optimize_dataframe(test_data.copy())),
+                        ("test", mem_mgr.optimize_dataframe(_rejoin_metadata(test_data.copy()))),
                     ):
                         df = df.copy()
                         df["exchange"] = exchange
@@ -839,8 +1310,8 @@ class AnalystLabelingFeatureEngineeringStep:
             # Update pipeline state with results
             pipeline_state.update(
                 {
-                    "labeled_data": result.get("data", price_data),
-                    "feature_engineering_metadata": result.get("metadata", {}),
+                    "labeled_data": labeled_data,
+                    "feature_engineering_metadata": {},
                     "feature_engineering_completed": True,
                     "labeling_completed": True,
                 },
@@ -850,7 +1321,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 "✅ Analyst labeling and feature engineering completed successfully",
             )
             self.logger.info("Training specialist models for regime: combined (single unified feature set)")
-            return {"status": "SUCCESS", "data": result}
+            return {"status": "SUCCESS", "data": {"data": labeled_data}}
 
         except Exception as e:
             self.logger.exception(
@@ -886,7 +1357,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 # Keep -1 for when sma_20 <= sma_50 (sell signal)
 
             # Remove raw OHLCV columns to prevent data leakage
-            raw_ohlcv_columns = ["open", "high", "low", "close", "volume"]
+            raw_ohlcv_columns = [c for c in self._RAW_CONTEXT_COLUMNS if c in ["open","high","low","close","volume","avg_price","min_price","max_price"]]
             columns_to_remove = [col for col in raw_ohlcv_columns if col in labeled_data.columns]
             if columns_to_remove:
                 labeled_data = labeled_data.drop(columns=columns_to_remove)
@@ -914,7 +1385,7 @@ class AnalystLabelingFeatureEngineeringStep:
             price_data_copy["label"] = -1  # Default to sell signal
             
             # Remove raw OHLCV columns even in error case
-            raw_ohlcv_columns = ["open", "high", "low", "close", "volume"]
+            raw_ohlcv_columns = [c for c in self._RAW_CONTEXT_COLUMNS if c in ["open","high","low","close","volume","avg_price","min_price","max_price"]]
             columns_to_remove = [col for col in raw_ohlcv_columns if col in price_data_copy.columns]
             if columns_to_remove:
                 price_data_copy = price_data_copy.drop(columns=columns_to_remove)
@@ -924,6 +1395,107 @@ class AnalystLabelingFeatureEngineeringStep:
                 "data": price_data_copy,
                 "metadata": {"labeling_method": "fallback_basic", "error": str(e), "raw_ohlcv_removed": columns_to_remove},
             }
+
+    def _run_post_merge_feature_checks(self, features_df: pd.DataFrame) -> None:
+        """Run ADF stationarity and distribution/outlier sanity checks.
+        Logs warnings for non-stationary and pathological distributions.
+        """
+        if features_df is None or features_df.empty:
+            return
+        cols = features_df.select_dtypes(include=[np.number]).columns.tolist()
+        if not cols:
+            return
+        # ADF tests
+        if _ADF_AVAILABLE:
+            for c in cols:
+                try:
+                    s = features_df[c].astype(float).replace([np.inf, -np.inf], np.nan).dropna()
+                    if len(s) < 30:
+                        continue
+                    pval = float(_adfuller(s, autolag='AIC')[1])
+                    if pval >= 0.05:
+                        self.logger.warning(f"WARNING: Feature '{c}' is not stationary (ADF p-value: {pval:.4f})!")
+                except Exception:
+                    continue
+        else:
+            self.logger.warning("ADF test not available; skipping stationarity checks")
+        # Distribution sanity checks
+        for c in cols:
+            try:
+                s = features_df[c].astype(float)
+                desc = s.describe()
+                skew = float(s.skew()) if np.isfinite(s.skew()) else 0.0
+                kurt = float(s.kurtosis()) if np.isfinite(s.kurtosis()) else 0.0
+                if abs(skew) > 100 or abs(kurt) > 100:
+                    self.logger.warning(f"Feature '{c}' has extreme skew/kurtosis (skew={skew:.2f}, kurt={kurt:.2f})")
+                std = float(desc.get('std', 0.0) or 0.0)
+                if std < 1e-12:
+                    self.logger.warning(f"Feature '{c}' has near-zero variance (std={std:.2e})")
+            except Exception:
+                continue
+
+    def _log_mutual_information_warnings_step4(self, X: pd.DataFrame, y: pd.Series) -> None:
+        """Compute MI between each feature and label; warn on near-zero MI.
+        Blank mode (env BLANK_TRAINING_MODE=1): threshold 1e-5; Full: bottom 20% percentile.
+        """
+        if X is None or X.empty or y is None or y.empty:
+            return
+        numeric = X.select_dtypes(include=[np.number])
+        if numeric.empty:
+            return
+        # Blank mode detection
+        blank_mode = False
+        try:
+            blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
+        except Exception:
+            pass
+        mi = mutual_info_classif(numeric.values, y.values, discrete_features=False, random_state=42)
+        mi_series = pd.Series(mi, index=numeric.columns)
+        if blank_mode:
+            low = mi_series[mi_series <= 1e-5]
+            threshold_txt = "1e-5"
+        else:
+            thr = mi_series.quantile(0.20)
+            low = mi_series[mi_series <= thr]
+            threshold_txt = f"{thr:.4g}"
+        if not low.empty:
+            names = low.sort_values().index.tolist()
+            self.logger.warning(
+                f"MI (Step4): {len(names)} features show near-zero uni-variate predictive power (<= {threshold_txt}): {names[:50]}{' ...' if len(names)>50 else ''}"
+            )
+
+    def _log_feature_stability_warnings_step4(self, X: pd.DataFrame) -> None:
+        """4-fold CV stability check on features; warn if std of fold means exceeds 3x expected standard error."""
+        if X is None or X.empty:
+            return
+        numeric = X.select_dtypes(include=[np.number])
+        if numeric.empty:
+            return
+        kf = KFold(n_splits=4, shuffle=True, random_state=42)
+        unstable: list[str] = []
+        for col in numeric.columns:
+            try:
+                vals = numeric[col].astype(float).values
+                gstd = float(np.nanstd(vals))
+                if not np.isfinite(gstd) or gstd == 0.0:
+                    continue
+                fold_means = []
+                for train_idx, _ in kf.split(vals):
+                    fm = float(np.nanmean(vals[train_idx]))
+                    if np.isfinite(fm):
+                        fold_means.append(fm)
+                if len(fold_means) < 2:
+                    continue
+                std_of_means = float(np.nanstd(fold_means))
+                expected_se = gstd / np.sqrt(4)
+                if std_of_means > 3.0 * expected_se:
+                    unstable.append(col)
+            except Exception:
+                continue
+        if unstable:
+            self.logger.warning(
+                f"Stability (Step4): {len(unstable)} features are unstable across folds: {unstable[:50]}{' ...' if len(unstable)>50 else ''}"
+            )
 
 
 class DeprecatedAnalystLabelingFeatureEngineeringStep:

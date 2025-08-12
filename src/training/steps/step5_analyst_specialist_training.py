@@ -295,6 +295,42 @@ class AnalystSpecialistTrainingStep:
                             pickle.dump(model, f)
                     training_results["SR"] = sr_models
                     self.logger.info(f"✅ Trained and saved {len(sr_models)} S/R models")
+                    # Train SR score regressors if scores available
+                    try:
+                        have_scores = all(c in combined_data.columns for c in ["sr_breakout_score", "sr_bounce_score"])
+                        if have_scores:
+                            from sklearn.model_selection import train_test_split
+                            from sklearn.ensemble import RandomForestRegressor
+                            from sklearn.metrics import r2_score
+                            # Feature space mirrors SR models
+                            X_num = combined_data.select_dtypes(include=[np.number]).drop(columns=[c for c in ["label", "regime", "sr_event_label", "sr_breakout_score", "sr_bounce_score"] if c in combined_data.columns], errors="ignore")
+                            # Breakout strength regressor (train only where breakout happened)
+                            mask_bk = (combined_data.get("sr_event_label", 0) == -1)
+                            if mask_bk.any() and not X_num.empty:
+                                Xb = X_num.loc[mask_bk]
+                                yb = combined_data.loc[mask_bk, "sr_breakout_score"].astype(float)
+                                if len(Xb) >= 50 and yb.sum() > 0:
+                                    Xtr, Xte, ytr, yte = train_test_split(Xb, yb, test_size=0.2, random_state=42)
+                                    rf_reg_bk = RandomForestRegressor(n_estimators=300, max_depth=12, random_state=42, n_jobs=-1)
+                                    rf_reg_bk.fit(Xtr, ytr)
+                                    sr_models["sr_breakout_strength_rf"] = rf_reg_bk
+                                    with open(f"{sr_dir}/sr_breakout_strength_rf.pkl", "wb") as f:
+                                        pickle.dump(rf_reg_bk, f)
+                            # Bounce strength regressor (train only where bounce happened)
+                            mask_bo = (combined_data.get("sr_event_label", 0) == 1)
+                            if mask_bo.any() and not X_num.empty:
+                                Xo = X_num.loc[mask_bo]
+                                yo = combined_data.loc[mask_bo, "sr_bounce_score"].astype(float)
+                                if len(Xo) >= 50 and yo.sum() > 0:
+                                    Xtr, Xte, ytr, yte = train_test_split(Xo, yo, test_size=0.2, random_state=42)
+                                    rf_reg_bo = RandomForestRegressor(n_estimators=300, max_depth=12, random_state=42, n_jobs=-1)
+                                    rf_reg_bo.fit(Xtr, ytr)
+                                    sr_models["sr_bounce_strength_rf"] = rf_reg_bo
+                                    with open(f"{sr_dir}/sr_bounce_strength_rf.pkl", "wb") as f:
+                                        pickle.dump(rf_reg_bo, f)
+                            self.logger.info("✅ Trained SR strength regressors where data allowed")
+                    except Exception as _ers:
+                        self.logger.warning(f"SR strength regressors skipped: {_ers}")
             except Exception as _e:
                 self.logger.warning(f"S/R model training skipped due to error: {_e}")
 
@@ -307,6 +343,24 @@ class AnalystSpecialistTrainingStep:
             summary_data = {
                 "regimes_trained": list(training_results.keys()),
                 "models_per_regime": {},
+                "sr_features": [
+                    "dist_to_support_pct",
+                    "dist_to_resistance_pct",
+                    "sr_zone_position",
+                    "nearest_support_center",
+                    "nearest_resistance_center",
+                    "nearest_support_score",
+                    "nearest_resistance_score",
+                    "nearest_support_band_pct",
+                    "nearest_resistance_band_pct",
+                    "sr_breakout_up",
+                    "sr_breakout_down",
+                    "sr_bounce_up",
+                    "sr_bounce_down",
+                    "sr_touch",
+                    "sr_breakout_score",
+                    "sr_bounce_score",
+                ],
                 "training_metadata": {
                     "total_regimes": len(training_results),
                     "total_models": sum(

@@ -90,6 +90,7 @@ class ProximityWeightedEnsemble(DynamicWeightedEnsemble):
     def __init__(self, models, model_names, weights, cfg=None):
         super().__init__(models, model_names, weights)
         self.cfg = cfg or {}
+        self._prev_w: float | None = None
 
     def _compute_sr_weights(self, X: pd.DataFrame) -> np.ndarray:
         try:
@@ -139,10 +140,20 @@ class ProximityWeightedEnsemble(DynamicWeightedEnsemble):
         if other_avg is None:
             return sr_avg
 
-        # Blend per sample
+        # Blend per sample with simple hysteresis to reduce flip-flop
         out = np.empty_like(sr_avg)
+        alpha_up = float(self.cfg.get("hysteresis_alpha_up", 0.6))
+        alpha_down = float(self.cfg.get("hysteresis_alpha_down", 0.3))
         for i in range(len(X)):
-            w = float(sr_weight[i])
+            w_raw = float(sr_weight[i])
+            if self._prev_w is None:
+                w = w_raw
+            else:
+                if w_raw >= self._prev_w:
+                    w = alpha_up * w_raw + (1 - alpha_up) * self._prev_w
+                else:
+                    w = alpha_down * w_raw + (1 - alpha_down) * self._prev_w
+            self._prev_w = w
             out[i, :] = w * sr_avg[i, :] + (1.0 - w) * other_avg[i, :]
         return out
 

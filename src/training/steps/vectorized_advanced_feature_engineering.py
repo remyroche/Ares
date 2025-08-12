@@ -2420,6 +2420,8 @@ class VectorizedWaveletTransformAnalyzer:
         
         # Feature dimensionality management
         self.max_features_per_wavelet = self.wavelet_config.get("max_features_per_wavelet", 80)
+        # NEW: percentage of candidates to keep (0..1). If set, overrides max_features_per_wavelet
+        self.keep_percentage = self.wavelet_config.get("keep_percentage", None)
         self.feature_selection_method = self.wavelet_config.get("feature_selection_method", "variance")
         self.min_feature_variance = self.wavelet_config.get("min_feature_variance", 1e-6)
         
@@ -2428,7 +2430,8 @@ class VectorizedWaveletTransformAnalyzer:
         self.stationary_transforms = self.wavelet_config.get("stationary_transforms", ["returns", "log_returns"])
         
         # Computational cost management
-        self.max_wavelet_types = self.wavelet_config.get("max_wavelet_types", 3)
+        # NEW: configurable record cap in wavelet_transforms.max_records, fallback to legacy key wavelet_max_records
+        self.max_records_config = self.wavelet_config.get("max_records", None)
         self.enable_parallel_processing = self.wavelet_config.get("enable_parallel_processing", False)
         self.computation_timeout = self.wavelet_config.get("computation_timeout", 30)  # seconds
         
@@ -2538,7 +2541,9 @@ class VectorizedWaveletTransformAnalyzer:
             start_time = time.time()
 
             # OPTIMIZATION: Limit data size for wavelet analysis
-            max_records = self.config.get("wavelet_max_records", 50000)
+            # Prefer wavelet_transforms.max_records, fallback to legacy wavelet_max_records in root config
+            legacy_cap = self.config.get("wavelet_max_records", 50000)
+            max_records = self.max_records_config if self.max_records_config is not None else legacy_cap
             if len(price_data) > max_records:
                 self.logger.info(f"📊 Limiting wavelet analysis to {max_records} records (from {len(price_data)})")
                 # Take the most recent records for analysis
@@ -2994,11 +2999,16 @@ class VectorizedWaveletTransformAnalyzer:
 
             # Sort by score desc and take top-K
             scored.sort(key=lambda x: x[2], reverse=True)
-            selected_items = scored[: self.max_features_per_wavelet]
+            if isinstance(self.keep_percentage, (int, float)) and 0 < self.keep_percentage <= 1:
+                k = max(1, int(len(scored) * float(self.keep_percentage)))
+            else:
+                k = self.max_features_per_wavelet
+            k = min(k, len(scored))
+            selected_items = scored[: k]
             selected_features = {name: value for name, value, _ in selected_items}
 
             self.logger.info(
-                f"Selected {len(selected_features)} features from {len(features)} candidates using {method} method",
+                f"Selected {len(selected_features)} features from {len(features)} candidates using {method} method (k={k}, keep%={self.keep_percentage})"
             )
             return selected_features
 

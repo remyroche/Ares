@@ -189,8 +189,37 @@ class PriceReturnConverter:
             "🔄 Converting price features to returns for autoencoder training..."
         )
 
-        # Create a copy to avoid modifying the original
         converted_df = features_df.copy()
+
+        # Consider preserved context columns as primary signals if present
+        possible_price_cols = [
+            "close_returns",  # already returns-like
+            "close", "avg_price", "min_price", "max_price",
+        ]
+        possible_volume_cols = [
+            "volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume", "trade_volume"
+        ]
+        candidate_price = next((c for c in possible_price_cols if c in converted_df.columns), None)
+        candidate_volume = next((c for c in possible_volume_cols if c in converted_df.columns), None)
+        # If candidates exist, ensure they are return-like. If not, convert
+        converted_count = 0
+        try:
+            if candidate_price:
+                s = converted_df[candidate_price]
+                if not candidate_price.endswith(("_returns", "_diff", "_log_returns")):
+                    converted_df[candidate_price] = s.pct_change().fillna(0)
+                    converted_count += 1
+            if candidate_volume:
+                s = converted_df[candidate_volume]
+                if not candidate_volume.endswith(("_returns", "_diff", "_log_returns")):
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        converted_df[candidate_volume] = s.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0)
+                    converted_count += 1
+        except Exception as e:
+            self.logger.warning(f"Price/volume conversion warning: {e}")
+
+        # Proceed with standard selection pipeline (will no-op if not many raw cols remain)
+        # ... original logic continues ...
 
         # Drop non-feature calendar/metadata columns up-front
         drop_cols = [c for c in converted_df.columns if c in self.non_feature_columns]
@@ -593,6 +622,8 @@ class FeatureFilter:
             "funding_rate","volume_ratio",
             # Project-specific: treat this as non-feature for autoencoder filtering per user guidance
             "volume_price_impact",
+            # Exclude raw microstructure proxies; we keep engineered dynamics instead
+            "market_depth","bid_ask_spread",
         }
 
     def _exclude_raw_and_meta(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -615,9 +646,14 @@ class FeatureFilter:
             )
             self.logger.info(f"📊 Input data shape: {features_df.shape}")
             self.logger.info(f"🎯 Number of unique labels: {len(np.unique(labels))}")
-            self.logger.info(
-                f"📈 Label distribution: {dict(zip(*np.unique(labels, return_counts=True)))}"
-            )
+            # Human-readable class distribution
+            uniq, cnt = np.unique(labels, return_counts=True)
+            total = int(cnt.sum()) if len(cnt) else 0
+            parts = []
+            for u, c in zip(uniq, cnt):
+                pct = (c / total * 100.0) if total else 0.0
+                parts.append(f"{int(u)}: {int(c)} ({pct:.1f}%)")
+            self.logger.info(f"📈 Label distribution: {{ " + ", ".join(parts) + " }}")
 
             # CRITICAL: Filter out all raw/non-feature columns first
             features_df = self._exclude_raw_and_meta(features_df)

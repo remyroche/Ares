@@ -39,13 +39,51 @@ class AnalystLabelingFeatureEngineeringStep:
         self.logger = system_logger.getChild("AnalystLabelingFeatureEngineeringStep")
         self.orchestrator = None
 
+        # Standardized column groups
+        self._RAW_PRICE_COLUMNS = [
+            "open",
+            "high",
+            "low",
+            "close",
+            "avg_price",
+            "min_price",
+            "max_price",
+        ]
+        self._RAW_VOLUME_COLUMNS = [
+            "volume",
+            "trade_volume",
+            "trade_count",
+            "volume_ratio",
+        ]
+        self._RAW_MICROSTRUCTURE_COLUMNS = [
+            "market_depth",
+            "bid_ask_spread",
+        ]
+        # Any raw-like context that must never leak into features directly
+        self._RAW_CONTEXT_COLUMNS = (
+            self._RAW_PRICE_COLUMNS
+            + self._RAW_VOLUME_COLUMNS
+            + self._RAW_MICROSTRUCTURE_COLUMNS
+            + ["funding_rate"]
+        )
+        # Metadata/non-feature columns
+        self._METADATA_COLUMNS = [
+            "year",
+            "month",
+            "day",
+            "day_of_week",
+            "day_of_month",
+            "quarter",
+            "exchange",
+            "symbol",
+            "timeframe",
+            "split",
+        ]
+
     def _zscore(self, series: pd.Series, window: int = 50) -> pd.Series:
-        try:
-            roll = series.rolling(window=window, min_periods=max(5, window // 5))
-            z = (series - roll.mean()) / roll.std().replace(0, np.nan)
-            return z.replace([np.inf, -np.inf], np.nan)
-        except Exception:
-            return pd.Series(np.zeros(len(series), dtype=float), index=series.index)
+        roll = series.rolling(window=window, min_periods=max(5, window // 5))
+        z = (series - roll.mean()) / roll.std().replace(0, np.nan)
+        return z.replace([np.inf, -np.inf], np.nan)
 
     async def _build_pipeline_a_stationary(self, price_data: pd.DataFrame) -> pd.DataFrame:
         """Pipeline A: create stationary features directly from raw series made stationary."""
@@ -58,8 +96,13 @@ class AnalystLabelingFeatureEngineeringStep:
                 with np.errstate(divide="ignore", invalid="ignore"):
                     features["close_returns"] = df["close"].pct_change()
 
-            # Prefer trade_volume if present, else volume
-            vol_col = "trade_volume" if "trade_volume" in df.columns else ("volume" if "volume" in df.columns else None)
+            # Prefer trade_volume if present, else volume (readable control flow)
+            if "trade_volume" in df.columns:
+                vol_col = "trade_volume"
+            elif "volume" in df.columns:
+                vol_col = "volume"
+            else:
+                vol_col = None
             if vol_col is not None:
                 with np.errstate(divide="ignore", invalid="ignore"):
                     features["volume_returns"] = df[vol_col].pct_change()
@@ -67,6 +110,8 @@ class AnalystLabelingFeatureEngineeringStep:
             # Funding rates dynamics
             if "funding_rate" in df.columns:
                 features["funding_rate_change"] = df["funding_rate"].diff()
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    features["funding_rate_returns"] = df["funding_rate"].pct_change()
 
             # Volatility of stationary series
             if "close_returns" in features.columns:
@@ -79,6 +124,20 @@ class AnalystLabelingFeatureEngineeringStep:
                 features["returns_x_volume_returns"] = (
                     features["close_returns"] * features["volume_returns"]
                 )
+
+            # Additional upstream standardization to returns/changes for available raw series
+            if "trade_count" in df.columns:
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    features["trade_count_returns"] = df["trade_count"].pct_change()
+            if "trade_volume" in df.columns:
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    features["trade_volume_returns"] = df["trade_volume"].pct_change()
+            if "market_depth" in df.columns:
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    features["market_depth_returns"] = df["market_depth"].pct_change()
+            if "bid_ask_spread" in df.columns:
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    features["bid_ask_spread_returns"] = df["bid_ask_spread"].pct_change()
 
             # Cleanup
             num = features.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
@@ -127,17 +186,17 @@ class AnalystLabelingFeatureEngineeringStep:
             body = (close - open_).abs()
             body_prev = body.shift(1)
             # Bullish engulfing
-            bull_cond = (
-                (close > open_) & (df["close"].shift(1) < df["open"].shift(1))
-                & (open_ < df["close"].shift(1)) & (close > df["open"].shift(1))
-            )
+            is_current_bullish = close > open_
+            is_previous_bearish = df["close"].shift(1) < df["open"].shift(1)
+            is_bull_engulf = (open_ < df["close"].shift(1)) & (close > df["open"].shift(1))
+            bull_cond = is_current_bullish & is_previous_bearish & is_bull_engulf
             bull_strength = (body / (body_prev.replace(0, np.nan))).where(bull_cond, 0.0)
             feats["bullish_engulf_strength_z"] = self._zscore(bull_strength, window=50)
             # Bearish engulfing
-            bear_cond = (
-                (close < open_) & (df["close"].shift(1) > df["open"].shift(1))
-                & (open_ > df["close"].shift(1)) & (close < df["open"].shift(1))
-            )
+            is_current_bearish = close < open_
+            is_previous_bullish = df["close"].shift(1) > df["open"].shift(1)
+            is_bear_engulf = (open_ > df["close"].shift(1)) & (close < df["open"].shift(1))
+            bear_cond = is_current_bearish & is_previous_bullish & is_bear_engulf
             bear_strength = (body / (body_prev.replace(0, np.nan))).where(bear_cond, 0.0)
             feats["bearish_engulf_strength_z"] = self._zscore(bear_strength, window=50)
 
@@ -302,7 +361,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 self.logger.info("✅ Replaced infinite values with finite bounds")
             
             # Remove raw OHLCV columns to prevent data leakage
-            raw_ohlcv_columns = ["open", "high", "low", "close", "volume"]
+            raw_ohlcv_columns = [c for c in self._RAW_CONTEXT_COLUMNS if c in ["open","high","low","close","volume","avg_price","min_price","max_price"]]
             ohlcv_columns_found = [col for col in raw_ohlcv_columns if col in labeled_data.columns]
             if ohlcv_columns_found:
                 labeled_data = labeled_data.drop(columns=ohlcv_columns_found)
@@ -450,7 +509,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 labeled_data = fallback.get("data", price_data)
 
             # Final feature sanity: drop raw OHLCV if somehow present
-            raw_cols = ["open", "high", "low", "close", "volume", "trade_volume", "trade_count", "avg_price", "min_price", "max_price"]
+            raw_cols = list(set(self._RAW_CONTEXT_COLUMNS))
             labeled_data = labeled_data.drop(columns=[c for c in raw_cols if c in labeled_data.columns], errors="ignore")
 
             # Validate feature quality
@@ -467,16 +526,14 @@ class AnalystLabelingFeatureEngineeringStep:
             except Exception:
                 pass
 
-            meta_cols = [c for c in labeled_data.columns if c in [
-                'year','month','day','day_of_week','day_of_month','quarter','exchange','symbol','timeframe','split'
-            ]]
+            meta_cols = [c for c in labeled_data.columns if c in self._METADATA_COLUMNS]
             if meta_cols:
                 self.logger.info(f"Removing metadata columns from features: {meta_cols}")
                 labeled_data = labeled_data.drop(columns=meta_cols)
  
             # Final guard: drop metadata columns again prior to splitting/saving
             try:
-                drop_meta = [c for c in ['year','month','day','exchange','symbol','timeframe','split'] if c in labeled_data.columns]
+                drop_meta = [c for c in self._METADATA_COLUMNS if c in labeled_data.columns]
                 if drop_meta:
                     labeled_data = labeled_data.drop(columns=drop_meta)
             except Exception:
@@ -515,9 +572,7 @@ class AnalystLabelingFeatureEngineeringStep:
             ]
 
             # For features files, drop raw OHLCV/trade columns to avoid leakage
-            raw_cols = [
-                'open','high','low','close','volume','trade_volume','trade_count','avg_price','min_price','max_price'
-            ]
+            raw_cols = list(set(self._RAW_CONTEXT_COLUMNS))
             for file_path, data in feature_files:
                 features_df = data.drop(columns=[c for c in raw_cols if c in data.columns], errors="ignore")
                 with open(file_path, "wb") as f:
@@ -578,7 +633,7 @@ class AnalystLabelingFeatureEngineeringStep:
                             )
                         df = table.to_pandas(types_mapper=pd.ArrowDtype)
                         # Drop raw OHLCV for feature parquet
-                        drop_cols = [c for c in ['open','high','low','close','volume','trade_volume','trade_count','avg_price','min_price','max_price'] if c in df.columns]
+                        drop_cols = [c for c in self._RAW_CONTEXT_COLUMNS if c in df.columns]
                         if drop_cols:
                             df = df.drop(columns=drop_cols)
                         ParquetDatasetManager(self.logger).write_flat_parquet(
@@ -630,7 +685,7 @@ class AnalystLabelingFeatureEngineeringStep:
                         if "label" in feat_cols:
                             feat_cols.remove("label")
                         # Drop raw OHLCV for feature parquet (partitioned)
-                        drop_cols = [c for c in ['open','high','low','close','volume','trade_volume','trade_count','avg_price','min_price','max_price'] if c in df.columns]
+                        drop_cols = [c for c in self._RAW_CONTEXT_COLUMNS if c in df.columns]
                         if drop_cols:
                             df = df.drop(columns=drop_cols)
                         pdm.write_partitioned_dataset(
@@ -950,7 +1005,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 # Keep -1 for when sma_20 <= sma_50 (sell signal)
 
             # Remove raw OHLCV columns to prevent data leakage
-            raw_ohlcv_columns = ["open", "high", "low", "close", "volume"]
+            raw_ohlcv_columns = [c for c in self._RAW_CONTEXT_COLUMNS if c in ["open","high","low","close","volume","avg_price","min_price","max_price"]]
             columns_to_remove = [col for col in raw_ohlcv_columns if col in labeled_data.columns]
             if columns_to_remove:
                 labeled_data = labeled_data.drop(columns=columns_to_remove)
@@ -978,7 +1033,7 @@ class AnalystLabelingFeatureEngineeringStep:
             price_data_copy["label"] = -1  # Default to sell signal
             
             # Remove raw OHLCV columns even in error case
-            raw_ohlcv_columns = ["open", "high", "low", "close", "volume"]
+            raw_ohlcv_columns = [c for c in self._RAW_CONTEXT_COLUMNS if c in ["open","high","low","close","volume","avg_price","min_price","max_price"]]
             columns_to_remove = [col for col in raw_ohlcv_columns if col in price_data_copy.columns]
             if columns_to_remove:
                 price_data_copy = price_data_copy.drop(columns=columns_to_remove)

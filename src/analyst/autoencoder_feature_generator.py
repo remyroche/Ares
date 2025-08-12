@@ -593,6 +593,8 @@ class FeatureFilter:
             "funding_rate","volume_ratio",
             # Project-specific: treat this as non-feature for autoencoder filtering per user guidance
             "volume_price_impact",
+            # Exclude raw microstructure proxies; we keep engineered dynamics instead
+            "market_depth","bid_ask_spread",
         }
 
     def _exclude_raw_and_meta(self, df: pd.DataFrame) -> pd.DataFrame:

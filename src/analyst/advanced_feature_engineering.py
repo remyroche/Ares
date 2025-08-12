@@ -2195,7 +2195,7 @@ class AdvancedFeatureEngineering:
             macd_alt = ema_fast - ema_slow
             signal_alt = macd_alt.ewm(span=9, adjust=False).mean()
             vol = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
-            alpha = (1 / (1 + vol * 100)).clip(0, 1)  # more weight to slower during high vol
+            alpha = (1 / (1 + vol * 100)).clip(0, 1)  # high vol => smaller alpha; blend tilts toward alt MACD (8/34) with longer slow span (more conservative)
             macd_adapt = (alpha * macd + (1 - alpha) * macd_alt).iloc[-1]
             signal_adapt = (alpha * signal + (1 - alpha) * signal_alt).iloc[-1]
             hist_adapt = macd_adapt - signal_adapt

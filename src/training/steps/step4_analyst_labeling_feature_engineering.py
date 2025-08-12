@@ -389,8 +389,8 @@ class AnalystLabelingFeatureEngineeringStep:
                     s1 = features["close_returns"].astype(float)
                     s2 = features["volume_returns"].astype(float)
                     features["returns_volume_correlation_20"] = self._group_aware_rolling_corr(s1, s2, df, 20)
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.warning(f"Failed to compute feature 'returns_volume_correlation_20': {e}")
 
             # Simple interactive features
             if cr is not None and "volume_returns" in features.columns:
@@ -452,15 +452,15 @@ class AnalystLabelingFeatureEngineeringStep:
             try:
                 vwapd20 = self._feat_vwap_distance(20, "vwap_distance_20")(df)
                 feats[vwapd20.name] = vwapd20
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"Failed to compute feature 'vwap_distance_20': {e}")
 
             # Choppiness Index (stationary, bounded [0,100])
             try:
                 chop14 = self._feat_choppiness_index(14, "choppiness_index_14")(df)
                 feats[chop14.name] = chop14
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"Failed to compute feature 'choppiness_index_14': {e}")
 
             # Simple candlestick strength (engulfing bullish/bearish) -> z-scored
             body = (close - open_).abs()
@@ -2248,7 +2248,8 @@ class AnalystLabelingFeatureEngineeringStep:
                 mi = mutual_info_classif(X_cand.values, y.values, discrete_features=False, random_state=42)
                 order = np.argsort(mi)[::-1]
                 chosen = [candidates[i] for i in order[:need] if np.isfinite(mi[i])]
-            except Exception:
+            except Exception as e:
+                self.logger.warning(f"Failed to compute mutual information for category '{cat}', falling back to default selection: {e}")
                 chosen = candidates[:need]
             if not chosen:
                 continue

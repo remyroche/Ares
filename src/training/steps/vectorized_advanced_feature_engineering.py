@@ -327,24 +327,56 @@ class WaveletFeatureCache:
     def _features_to_dataframe(self, features: dict[str, Any]) -> pd.DataFrame:
         """Convert features dictionary to DataFrame for caching."""
         try:
-            # Convert features to DataFrame format
-            if features:
-                # Handle different feature types
-                feature_data = {}
-                for key, value in features.items():
-                    if isinstance(value, (int, float, np.number)):
-                        feature_data[key] = [value]
-                    elif isinstance(value, (list, np.ndarray)):
-                        feature_data[key] = value
+            # Convert features to DataFrame format with aligned lengths
+            if not features:
+                return pd.DataFrame()
+
+            # Determine candidate array lengths for vector features
+            lengths: list[int] = []
+            for key, value in features.items():
+                if isinstance(value, (list, np.ndarray)):
+                    try:
+                        arr = np.asarray(value)
+                        if arr.ndim >= 1:
+                            lengths.append(arr.shape[0])
+                    except Exception as e:
+                        self.logger.warning(f"Could not determine length for feature '{key}': {e}")
+                        continue
+                elif isinstance(value, pd.Series):
+                    lengths.append(len(value))
+            target_len = min(lengths) if lengths else 0
+
+            feature_data: dict[str, Any] = {}
+            for key, value in features.items():
+                # Skip non-informative scalars to avoid constant columns in cache
+                if isinstance(value, (int, float, np.number)):
+                    # Only include simple scalars in metadata, not in the features frame
+                    continue
+                if isinstance(value, pd.Series):
+                    series_vals = value.values
+                    if target_len and series_vals.shape[0] > target_len:
+                        series_vals = series_vals[-target_len:]
+                    feature_data[key] = series_vals
+                elif isinstance(value, (list, np.ndarray)):
+                    arr = np.asarray(value)
+                    if arr.ndim == 1:
+                        vals = arr
+                    elif arr.ndim == 2:
+                        vals = arr[:, 0]
                     else:
+                        vals = arr.reshape(arr.shape[0], -1)[:, 0]
+                    if target_len and vals.shape[0] > target_len:
+                        vals = vals[-target_len:]
+                    feature_data[key] = vals
+                else:
+                    # Fallback: store as string (single-row) only if no target_len is defined
+                    if target_len == 0:
                         feature_data[key] = [str(value)]
-                
-                df = pd.DataFrame(feature_data)
-            else:
-                df = pd.DataFrame()
-            
+                    # else skip
+            # Build DataFrame
+            df = pd.DataFrame(feature_data)
             return df
-            
+        
         except Exception as e:
             self.logger.error(f"Error converting features to DataFrame: {e}")
             return pd.DataFrame()
@@ -583,6 +615,40 @@ class VectorizedAdvancedFeatureEngineering:
             )
             features.update(microstructure_features)
 
+            # Context dynamics for raw contextual signals (avoid using raw magnitudes as features)
+            try:
+                idx = price_data.index
+                # funding_rate
+                if "funding_rate" in price_data.columns:
+                    fr = pd.Series(price_data["funding_rate"].values, index=idx)
+                    features["funding_rate_change"] = fr.diff().fillna(0)
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        features["funding_rate_returns"] = (fr.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+                    # z-score for stationarity
+                    fr_roll = fr.rolling(50, min_periods=5)
+                    fr_z = (fr - fr_roll.mean()) / fr_roll.std().replace(0, np.nan)
+                    features["funding_rate_zscore"] = fr_z.replace([np.inf, -np.inf], np.nan).fillna(0)
+                # volume_ratio
+                if "volume_ratio" in price_data.columns:
+                    vr = pd.Series(price_data["volume_ratio"].values, index=idx)
+                    features["volume_ratio_change"] = vr.diff().fillna(0)
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        features["volume_ratio_returns"] = (vr.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+                # trade_count
+                if "trade_count" in price_data.columns:
+                    tc = pd.Series(price_data["trade_count"].values, index=idx)
+                    features["trade_count_change"] = tc.diff().fillna(0)
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        features["trade_count_returns"] = (tc.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+                # trade_volume
+                if "trade_volume" in price_data.columns:
+                    tv = pd.Series(price_data["trade_volume"].values, index=idx)
+                    features["trade_volume_change"] = tv.diff().fillna(0)
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        features["trade_volume_returns"] = (tv.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+            except Exception as _e:
+                self.logger.warning(f"Context dynamics generation failed: {_e}")
+
             # Volatility regime features
             if self.volatility_model:
                 volatility_features = await self.volatility_model.model_volatility_vectorized(
@@ -625,6 +691,11 @@ class VectorizedAdvancedFeatureEngineering:
                     price_data,
                 )
                 features.update(candlestick_features)
+
+            # Immediately alongside candlestick/pattern features (requires OHLCV):
+            # Compute classic OHLCV-based indicators using actual prices
+            ohlcv_price_features = self._engineer_ohlcv_price_features_vectorized(price_data)
+            features.update(ohlcv_price_features)
 
             # S/R distance features — infer levels if not provided
             inferred_sr = sr_levels if sr_levels else self._infer_sr_levels(price_data)
@@ -806,10 +877,22 @@ class VectorizedAdvancedFeatureEngineering:
             features["order_flow_imbalance"] = self._calculate_order_flow_imbalance_vectorized(
                 price_data, volume_data, order_flow_data
             )
-            features["bid_ask_spread"] = self._calculate_bid_ask_spread_vectorized(price_data)
+            # Generate spread dynamics instead of raw spread
+            bas = self._calculate_bid_ask_spread_vectorized(price_data)
+            # Relative change (returns) and level as separate engineered metrics
+            features["bid_ask_spread_returns"] = bas.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0)
+            features["bid_ask_spread_level"] = bas  # bounded 0..0.05 already
 
             # Market depth features (vectorized per-row)
-            features["market_depth"] = self._calculate_market_depth_vectorized(price_data, volume_data)
+            md = self._calculate_market_depth_vectorized(price_data, volume_data)
+            # Depth dynamics
+            features["market_depth_change"] = md.diff().fillna(0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                features["market_depth_returns"] = (md.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+            # Depth imbalance proxy: short vs long window
+            short = volume_data["volume"].rolling(10, min_periods=1).mean()
+            long = volume_data["volume"].rolling(50, min_periods=1).mean().replace(0, np.nan)
+            features["market_depth_imbalance"] = ((short - long) / long).replace([np.inf, -np.inf], np.nan).fillna(0)
 
             return features
 
@@ -1437,6 +1520,36 @@ class VectorizedAdvancedFeatureEngineering:
             }
         except Exception:
             return {"support_levels": [], "resistance_levels": []}
+
+    def _engineer_ohlcv_price_features_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
+        """Compute OHLCV-based features that must use actual prices (not returns).
+        Includes SMA/EMA and Garman–Klass volatility per bar.
+        """
+        try:
+            feats: dict[str, Any] = {}
+            close = price_data["close"].astype(float)
+            open_ = price_data["open"].astype(float)
+            high = price_data["high"].astype(float)
+            low = price_data["low"].astype(float)
+
+            # Simple and exponential moving averages (actual price)
+            feats["sma_20"] = close.rolling(20, min_periods=1).mean().values
+            feats["sma_50"] = close.rolling(50, min_periods=1).mean().values
+            feats["ema_20"] = close.ewm(span=20, adjust=False).mean().values
+            feats["ema_50"] = close.ewm(span=50, adjust=False).mean().values
+
+            # Garman–Klass volatility per period (instantaneous estimator)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                log_hl = np.log(high / low).replace([np.inf, -np.inf], np.nan)
+                log_co = np.log(close / open_).replace([np.inf, -np.inf], np.nan)
+            gk_var = (log_hl ** 2) / (2 * np.log(2)) - (2 * np.log(2) - 1) * (log_co ** 2)
+            gk_vol = np.sqrt(gk_var.clip(lower=0)).fillna(0)
+            feats["garman_klass_volatility"] = gk_vol.values
+
+            return feats
+        except Exception as e:
+            self.logger.warning(f"OHLCV price feature engineering failed: {e}")
+            return {}
 
 
 class VectorizedVolatilityRegimeModel:
@@ -2342,6 +2455,8 @@ class VectorizedWaveletTransformAnalyzer:
         
         # Feature dimensionality management
         self.max_features_per_wavelet = self.wavelet_config.get("max_features_per_wavelet", 80)
+        # NEW: percentage of candidates to keep (0..1). If set, overrides max_features_per_wavelet
+        self.keep_percentage = self.wavelet_config.get("keep_percentage", None)
         self.feature_selection_method = self.wavelet_config.get("feature_selection_method", "variance")
         self.min_feature_variance = self.wavelet_config.get("min_feature_variance", 1e-6)
         
@@ -2350,7 +2465,8 @@ class VectorizedWaveletTransformAnalyzer:
         self.stationary_transforms = self.wavelet_config.get("stationary_transforms", ["returns", "log_returns"])
         
         # Computational cost management
-        self.max_wavelet_types = self.wavelet_config.get("max_wavelet_types", 3)
+        # NEW: configurable record cap in wavelet_transforms.max_records, fallback to legacy key wavelet_max_records
+        self.max_records_config = self.wavelet_config.get("max_records", None)
         self.enable_parallel_processing = self.wavelet_config.get("enable_parallel_processing", False)
         self.computation_timeout = self.wavelet_config.get("computation_timeout", 30)  # seconds
         
@@ -2460,7 +2576,9 @@ class VectorizedWaveletTransformAnalyzer:
             start_time = time.time()
 
             # OPTIMIZATION: Limit data size for wavelet analysis
-            max_records = self.config.get("wavelet_max_records", 50000)
+            # Prefer wavelet_transforms.max_records, fallback to legacy wavelet_max_records in root config
+            legacy_cap = self.config.get("wavelet_max_records", 50000)
+            max_records = self.max_records_config if self.max_records_config is not None else legacy_cap
             if len(price_data) > max_records:
                 self.logger.info(f"📊 Limiting wavelet analysis to {max_records} records (from {len(price_data)})")
                 # Take the most recent records for analysis
@@ -2816,52 +2934,13 @@ class VectorizedWaveletTransformAnalyzer:
         try:
             features = {}
             
-            # Energy features with boundary effect consideration
-            energy = np.sum(np.abs(coeffs) ** 2, axis=1)
-            
-            # Remove boundary effects from energy calculation
+            # Remove boundary effects as configured
             if self.boundary_handling == "truncate" and coeffs.shape[1] > 20:
                 truncate_size = max(1, coeffs.shape[1] // 10)
                 coeffs_clean = coeffs[:, truncate_size:-truncate_size]
-                energy_clean = np.sum(np.abs(coeffs_clean) ** 2, axis=1)
             else:
                 coeffs_clean = coeffs
-                energy_clean = energy
             
-            features[f"{wavelet_type}_{series_name}_total_energy"] = float(np.sum(energy_clean))
-            features[f"{wavelet_type}_{series_name}_max_energy"] = float(np.max(energy_clean))
-            features[f"{wavelet_type}_{series_name}_min_energy"] = float(np.min(energy_clean))
-            features[f"{wavelet_type}_{series_name}_energy_std"] = float(np.std(energy_clean))
-            
-            # Frequency features
-            if len(energy_clean) > 0:
-                features[f"{wavelet_type}_{series_name}_dominant_freq"] = float(freqs[np.argmax(energy_clean)])
-                features[f"{wavelet_type}_{series_name}_freq_range"] = float(np.max(freqs) - np.min(freqs))
-                # Energy spread across frequency band
-                mask = energy_clean > np.mean(energy_clean)
-                if np.any(mask):
-                    features[f"{wavelet_type}_{series_name}_energy_bandwidth"] = float(np.std(freqs[mask]))
-            
-            # Scale-specific features
-            features[f"{wavelet_type}_{series_name}_min_scale"] = float(np.min(scales))
-            features[f"{wavelet_type}_{series_name}_max_scale"] = float(np.max(scales))
-            features[f"{wavelet_type}_{series_name}_scale_range"] = float(np.max(scales) - np.min(scales))
-            
-            # Statistical features
-            abs_coeffs = np.abs(coeffs)
-            features[f"{wavelet_type}_{series_name}_coeff_mean"] = float(np.mean(abs_coeffs))
-            features[f"{wavelet_type}_{series_name}_coeff_std"] = float(np.std(abs_coeffs))
-            features[f"{wavelet_type}_{series_name}_coeff_max"] = float(np.max(abs_coeffs))
-            features[f"{wavelet_type}_{series_name}_coeff_min"] = float(np.min(abs_coeffs))
-            
-            # Entropy features
-            total_energy = np.sum(abs_coeffs ** 2)
-            if total_energy > 0:
-                p = (abs_coeffs ** 2) / total_energy
-                features[f"{wavelet_type}_{series_name}_entropy"] = float(
-                    -np.sum(p * np.log(p + 1e-12))
-                )
-
             # NEW: Time-series features aligned to signal length
             # Aggregate energy across scales per time step
             ts_energy = np.sum(np.abs(coeffs_clean) ** 2, axis=0)  # shape: (T' )
@@ -2955,11 +3034,16 @@ class VectorizedWaveletTransformAnalyzer:
 
             # Sort by score desc and take top-K
             scored.sort(key=lambda x: x[2], reverse=True)
-            selected_items = scored[: self.max_features_per_wavelet]
+            if isinstance(self.keep_percentage, (int, float)) and 0 < self.keep_percentage <= 1:
+                k = max(1, int(len(scored) * float(self.keep_percentage)))
+            else:
+                k = self.max_features_per_wavelet
+            k = min(k, len(scored))
+            selected_items = scored[: k]
             selected_features = {name: value for name, value, _ in selected_items}
 
             self.logger.info(
-                f"Selected {len(selected_features)} features from {len(features)} candidates using {method} method",
+                f"Selected {len(selected_features)} features from {len(features)} candidates using {method} method (k={k}, keep%={self.keep_percentage})"
             )
             return selected_features
 
@@ -3007,27 +3091,23 @@ class VectorizedWaveletTransformAnalyzer:
                     coeffs = pywt.wavedec(close_series, 'db4', level=1, mode='symmetric')
                     
                     if len(coeffs) >= 2:
-                        # Extract basic features from approximation and detail coefficients
+                        # Extract basic features from approximation and detail coefficients (arrays)
                         approx_coeffs = coeffs[0]
                         detail_coeffs = coeffs[1]
                         
-                        # Energy features
-                        features['wavelet_packet_approx_energy'] = np.sum(approx_coeffs ** 2)
-                        features['wavelet_packet_detail_energy'] = np.sum(detail_coeffs ** 2)
-                        
-                        # Statistical features
-                        features['wavelet_packet_approx_mean'] = np.mean(approx_coeffs)
-                        features['wavelet_packet_approx_std'] = np.std(approx_coeffs)
-                        features['wavelet_packet_detail_mean'] = np.mean(detail_coeffs)
-                        features['wavelet_packet_detail_std'] = np.std(detail_coeffs)
-                        
-                        # Energy ratio
-                        total_energy = features['wavelet_packet_approx_energy'] + features['wavelet_packet_detail_energy']
-                        if total_energy > 0:
-                            features['wavelet_packet_energy_ratio'] = features['wavelet_packet_detail_energy'] / total_energy
-                        else:
-                            features['wavelet_packet_energy_ratio'] = 0.0
-                            
+                        # Upsample coeff arrays to signal length by nearest repeat
+                        def _upsample(arr, target_len):
+                            if len(arr) == 0:
+                                return np.zeros(target_len)
+                            rep = max(1, target_len // len(arr))
+                            up = np.repeat(arr, rep)
+                            if len(up) < target_len:
+                                up = np.pad(up, (target_len - len(up), 0), mode='edge')
+                            return up[-target_len:]
+                        L = len(close_series)
+                        features['wavelet_packet_approx_ts'] = _upsample(np.abs(approx_coeffs), L)
+                        features['wavelet_packet_detail_ts'] = _upsample(np.abs(detail_coeffs), L)
+                
                 except Exception as e:
                     self.logger.warning(f"Error in simplified wavelet packet analysis: {e}")
                     
@@ -3070,27 +3150,13 @@ class VectorizedWaveletTransformAnalyzer:
                         
                         # Reconstruct denoised signal
                         denoised_signal = pywt.waverec(denoised_coeffs, 'db4', mode='symmetric')
+                        denoised_signal = denoised_signal[-len(close_series):]
+                        residual = close_series[-len(denoised_signal):] - denoised_signal
                         
-                        # Calculate denoising features
-                        if len(denoised_signal) == len(close_series):
-                            # Noise reduction ratio
-                            original_energy = np.sum(close_series ** 2)
-                            denoised_energy = np.sum(denoised_signal ** 2)
-                            
-                            if original_energy > 0:
-                                features['wavelet_denoising_noise_reduction'] = 1 - (denoised_energy / original_energy)
-                            else:
-                                features['wavelet_denoising_noise_reduction'] = 0.0
-                            
-                            # Signal quality improvement
-                            original_std = np.std(close_series)
-                            denoised_std = np.std(denoised_signal)
-                            
-                            if original_std > 0:
-                                features['wavelet_denoising_signal_quality'] = denoised_std / original_std
-                            else:
-                                features['wavelet_denoising_signal_quality'] = 1.0
-                                
+                        # Emit time-series outputs instead of scalars
+                        features['wavelet_denoised_signal_ts'] = denoised_signal.astype(float)
+                        features['wavelet_denoised_residual_ts'] = residual.astype(float)
+                        
                 except Exception as e:
                     self.logger.warning(f"Error in simplified wavelet denoising: {e}")
                     
@@ -3126,28 +3192,22 @@ class VectorizedWaveletTransformAnalyzer:
                             approx_coeffs = coeffs[0]
                             detail_coeffs = coeffs[1]
                             
-                            # Energy features for each wavelet type
-                            features[f'multi_wavelet_{wavelet_type}_approx_energy'] = np.sum(approx_coeffs ** 2)
-                            features[f'multi_wavelet_{wavelet_type}_detail_energy'] = np.sum(detail_coeffs ** 2)
-                            
-                            # Statistical features for each wavelet type
-                            features[f'multi_wavelet_{wavelet_type}_approx_std'] = np.std(approx_coeffs)
-                            features[f'multi_wavelet_{wavelet_type}_detail_std'] = np.std(detail_coeffs)
-                            
+                            # Upsample to signal length and expose as TS features
+                            def _upsample(arr, target_len):
+                                if len(arr) == 0:
+                                    return np.zeros(target_len)
+                                rep = max(1, target_len // len(arr))
+                                up = np.repeat(arr, rep)
+                                if len(up) < target_len:
+                                    up = np.pad(up, (target_len - len(up), 0), mode='edge')
+                                return up[-target_len:]
+                            L = len(close_series)
+                            features[f'multi_wavelet_{wavelet_type}_approx_ts'] = _upsample(np.abs(approx_coeffs), L)
+                            features[f'multi_wavelet_{wavelet_type}_detail_ts'] = _upsample(np.abs(detail_coeffs), L)
                     except Exception as e:
                         self.logger.warning(f"Error with wavelet type {wavelet_type}: {e}")
                         continue
-                
-                # Cross-wavelet comparison features
-                if 'multi_wavelet_db4_approx_energy' in features and 'multi_wavelet_haar_approx_energy' in features:
-                    db4_energy = features['multi_wavelet_db4_approx_energy']
-                    haar_energy = features['multi_wavelet_haar_approx_energy']
-                    
-                    if haar_energy > 0:
-                        features['multi_wavelet_db4_haar_energy_ratio'] = db4_energy / haar_energy
-                    else:
-                        features['multi_wavelet_db4_haar_energy_ratio'] = 1.0
-                        
+            
             return features
             
         except Exception as e:
@@ -3175,25 +3235,19 @@ class VectorizedWaveletTransformAnalyzer:
                         approx_coeffs = coeffs[0]
                         detail_coeffs = coeffs[1]
                         
-                        # Volume-specific wavelet features
-                        features['volume_wavelet_approx_energy'] = np.sum(approx_coeffs ** 2)
-                        features['volume_wavelet_detail_energy'] = np.sum(detail_coeffs ** 2)
+                        # Upsample to signal length and expose as TS features instead of scalars
+                        def _upsample(arr, target_len):
+                            if len(arr) == 0:
+                                return np.zeros(target_len)
+                            rep = max(1, target_len // len(arr))
+                            up = np.repeat(arr, rep)
+                            if len(up) < target_len:
+                                up = np.pad(up, (target_len - len(up), 0), mode='edge')
+                            return up[-target_len:]
+                        L = len(volume_series)
+                        features['volume_wavelet_approx_ts'] = _upsample(np.abs(approx_coeffs), L)
+                        features['volume_wavelet_detail_ts'] = _upsample(np.abs(detail_coeffs), L)
                         
-                        # Volume volatility features
-                        features['volume_wavelet_approx_volatility'] = np.std(approx_coeffs)
-                        features['volume_wavelet_detail_volatility'] = np.std(detail_coeffs)
-                        
-                        # Volume trend features
-                        features['volume_wavelet_approx_trend'] = np.mean(approx_coeffs)
-                        features['volume_wavelet_detail_trend'] = np.mean(detail_coeffs)
-                        
-                        # Energy ratio for volume
-                        total_volume_energy = features['volume_wavelet_approx_energy'] + features['volume_wavelet_detail_energy']
-                        if total_volume_energy > 0:
-                            features['volume_wavelet_energy_ratio'] = features['volume_wavelet_detail_energy'] / total_volume_energy
-                        else:
-                            features['volume_wavelet_energy_ratio'] = 0.0
-                            
                 except Exception as e:
                     self.logger.warning(f"Error in simplified volume wavelet analysis: {e}")
                     

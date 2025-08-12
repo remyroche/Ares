@@ -80,6 +80,71 @@ class AnalystLabelingFeatureEngineeringStep:
             "split",
         ]
 
+    def _ensure_continuous_time_index(self, df: pd.DataFrame, freq: str = "1T") -> tuple[pd.DataFrame, int]:
+        """Reindex to continuous time grid and return number of inserted rows."""
+        if not isinstance(df.index, pd.DatetimeIndex):
+            # Try to set from 'timestamp' if available
+            if "timestamp" in df.columns:
+                try:
+                    df = df.copy()
+                    df.index = pd.to_datetime(df["timestamp"], errors="coerce")
+                    df = df.sort_index()
+                    df = df.drop(columns=["timestamp"], errors="ignore")
+                except Exception:
+                    return df, 0
+            else:
+                return df, 0
+        if df.index.size == 0:
+            return df, 0
+        full_index = pd.date_range(start=df.index.min(), end=df.index.max(), freq=freq)
+        before = len(df)
+        df = df.reindex(full_index)
+        inserted = len(df) - before
+        return df, inserted
+
+    def _sanitize_raw_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Replace inf with NaN, forward-fill NaNs; log fill counts by column."""
+        df = df.replace([np.inf, -np.inf], np.nan)
+        # Count NaNs per column before
+        nan_before = df.isna().sum()
+        df = df.fillna(method="ffill")
+        # Log fills
+        try:
+            filled = nan_before - df.isna().sum()
+            filled = filled[filled > 0]
+            if not filled.empty:
+                self.logger.warning(f"Raw data forward-filled values: {filled.to_dict()}")
+        except Exception:
+            pass
+        return df
+
+    def _sanitize_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Post-merge engineered features sanitization: handle inf/NaNs.
+        Strategy: replace inf with NaN, then fill NaN with median per column; fallback to 0 if median is NaN.
+        """
+        df = df.replace([np.inf, -np.inf], np.nan)
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        medians: dict[str, float] = {}
+        for c in numeric_cols:
+            med = df[c].median()
+            if pd.isna(med):
+                med = 0.0
+            medians[c] = med
+        if medians:
+            df[numeric_cols] = df[numeric_cols].fillna(value=medians)
+        # Non-numeric: forward-fill if any (rare in features)
+        non_num = [c for c in df.columns if c not in numeric_cols and c != "label"]
+        if non_num:
+            df[non_num] = df[non_num].fillna(method="ffill")
+        # Log strategy summary
+        try:
+            total_inf = int(np.isinf(df.select_dtypes(include=[np.number])).sum().sum())
+            total_nan = int(df.isna().sum().sum())
+            self.logger.info(f"Feature sanitization completed: inf_residual={total_inf}, nan_residual={total_nan}")
+        except Exception:
+            pass
+        return df
+
     def _zscore(self, series: pd.Series, window: int = 50) -> pd.Series:
         roll = series.rolling(window=window, min_periods=max(5, window // 5))
         z = (series - roll.mean()) / roll.std().replace(0, np.nan)
@@ -460,6 +525,21 @@ class AnalystLabelingFeatureEngineeringStep:
             if not isinstance(price_data, pd.DataFrame):
                 price_data = pd.DataFrame(price_data)
 
+            # Initial metadata separation for later rejoin
+            metadata_cols_present = [c for c in self._METADATA_COLUMNS if c in price_data.columns]
+            metadata_df = pd.DataFrame(index=None)
+            try:
+                # Prepare datetime index for integrity checks
+                if not isinstance(price_data.index, pd.DatetimeIndex) and "timestamp" in price_data.columns:
+                    price_data = price_data.copy()
+                    price_data.index = pd.to_datetime(price_data["timestamp"], errors="coerce")
+                    price_data = price_data.sort_index()
+                # Extract metadata aligned to index
+                if metadata_cols_present:
+                    metadata_df = price_data[metadata_cols_present].copy()
+            except Exception:
+                metadata_df = pd.DataFrame(index=price_data.index)
+
             # Validate that we have proper OHLCV data for triple barrier labeling
             required_ohlcv_columns = ["open", "high", "low", "close", "volume"]
             missing_ohlcv = [
@@ -479,10 +559,19 @@ class AnalystLabelingFeatureEngineeringStep:
 
             self.logger.info("✅ Validated OHLCV data")
 
+            # Check 1: Missing timestamps -> reindex to continuous grid
+            price_data, inserted_rows = self._ensure_continuous_time_index(price_data, freq="1T")
+            if inserted_rows > 0:
+                self.logger.warning(f"Time index had gaps; inserted {inserted_rows} missing rows during reindex")
+
             # Dual-pipeline feature engineering
             self.logger.info("🔀 Building Pipeline A (Stationary) and Pipeline B (OHLCV->Stationary)...")
             features_a = await self._build_pipeline_a_stationary(price_data)
-            features_b = await self._build_pipeline_b_ohlcv(price_data)
+            # Check 2: Sanitize raw OHLCV before Pipeline B calculations
+            price_data_sanitized = self._sanitize_raw_data(price_data[[c for c in price_data.columns if c in set(self._RAW_PRICE_COLUMNS + ["volume"]) ]].join(
+                price_data[[c for c in price_data.columns if c not in set(self._RAW_PRICE_COLUMNS + ["volume"]) ]], how="left"
+            )) if isinstance(price_data.index, pd.DatetimeIndex) else self._sanitize_raw_data(price_data.copy())
+            features_b = await self._build_pipeline_b_ohlcv(price_data_sanitized)
             combined_features = pd.concat([features_a, features_b], axis=1)
 
             # Label using optimized triple barrier on raw OHLCV, then align features to labeled index
@@ -512,8 +601,8 @@ class AnalystLabelingFeatureEngineeringStep:
             raw_cols = list(set(self._RAW_CONTEXT_COLUMNS))
             labeled_data = labeled_data.drop(columns=[c for c in raw_cols if c in labeled_data.columns], errors="ignore")
 
-            # Validate feature quality
-            labeled_data = await self._validate_and_enhance_features(labeled_data)
+            # Check 5: Feature Matrix Sanitization (post-merge)
+            labeled_data = self._sanitize_features(labeled_data)
 
             # Drop datetime/timestamp and metadata columns
             try:
@@ -526,11 +615,13 @@ class AnalystLabelingFeatureEngineeringStep:
             except Exception:
                 pass
 
-            meta_cols = [c for c in labeled_data.columns if c in self._METADATA_COLUMNS]
+            # Keep metadata separate from features (explicit column management)
+            meta_cols = [c for c in self._METADATA_COLUMNS if c in labeled_data.columns]
             if meta_cols:
-                self.logger.info(f"Removing metadata columns from features: {meta_cols}")
+                self.logger.info(f"Separating metadata columns from features: {meta_cols}")
+                metadata_df = (metadata_df.join(labeled_data[meta_cols], how="left") if not metadata_df.empty else labeled_data[meta_cols].copy())
                 labeled_data = labeled_data.drop(columns=meta_cols)
- 
+
             # Final guard: drop metadata columns again prior to splitting/saving
             try:
                 drop_meta = [c for c in self._METADATA_COLUMNS if c in labeled_data.columns]
@@ -736,18 +827,27 @@ class AnalystLabelingFeatureEngineeringStep:
 
             # Parquet for labeled data too
             try:
+                # Rejoin metadata for labeled parquet outputs
+                def _rejoin_metadata(df_part: pd.DataFrame) -> pd.DataFrame:
+                    if isinstance(metadata_df, pd.DataFrame) and not metadata_df.empty:
+                        # Align indices if needed
+                        aligned = metadata_df.reindex(df_part.index).copy()
+                        merged = df_part.join(aligned, how="left")
+                        return merged
+                    return df_part
+
                 parquet_labeled = [
                     (
                         f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet",
-                        mem_mgr.optimize_dataframe(train_data.copy()),
+                        mem_mgr.optimize_dataframe(_rejoin_metadata(train_data.copy())),
                     ),
                     (
                         f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
-                        mem_mgr.optimize_dataframe(validation_data.copy()),
+                        mem_mgr.optimize_dataframe(_rejoin_metadata(validation_data.copy())),
                     ),
                     (
                         f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet",
-                        mem_mgr.optimize_dataframe(test_data.copy()),
+                        mem_mgr.optimize_dataframe(_rejoin_metadata(test_data.copy())),
                     ),
                 ]
                 for file_path, df in parquet_labeled:
@@ -796,12 +896,12 @@ class AnalystLabelingFeatureEngineeringStep:
                     pdm = ParquetDatasetManager(logger=self.logger)
                     base_dir = os.path.join(data_dir, "parquet", "labeled")
                     for split_name, df in (
-                        ("train", mem_mgr.optimize_dataframe(train_data.copy())),
+                        ("train", mem_mgr.optimize_dataframe(_rejoin_metadata(train_data.copy()))),
                         (
                             "validation",
-                            mem_mgr.optimize_dataframe(validation_data.copy()),
+                            mem_mgr.optimize_dataframe(_rejoin_metadata(validation_data.copy())),
                         ),
-                        ("test", mem_mgr.optimize_dataframe(test_data.copy())),
+                        ("test", mem_mgr.optimize_dataframe(_rejoin_metadata(test_data.copy()))),
                     ):
                         df = df.copy()
                         df["exchange"] = exchange

@@ -137,7 +137,7 @@ class BearTrendEnsemble(BaseEnsemble):
             for col in meta_label_cols:
                 try:
                     base_preds[col] = int(current_row[col].iloc[0])
-                except Exception:
+                except (KeyError, IndexError):
                     base_preds[col] = 0
             if meta_label_cols:
                 self.logger.info(f"BearTrendEnsemble meta-learner live features include meta-labels: {meta_label_cols}")

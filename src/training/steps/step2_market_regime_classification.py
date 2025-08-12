@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 import numpy as np
 
-from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
+from src.analyst.simple_regime_rules import classify_regime_series
 from src.utils.logger import system_logger
 from src.training.steps.unified_data_loader import get_unified_data_loader
 
@@ -75,7 +75,7 @@ class MarketRegimeClassificationStep:
         """Initialize the market regime classification step."""
         self.logger.info("Initializing Market Regime Classification Step...")
 
-        # Initialize the unified regime classifier (will be re-initialized with exchange/symbol in execute)
+        # No ML classifier; using deterministic EMA/ADX rules
         self.regime_classifier = None
 
         self.logger.info(
@@ -105,12 +105,7 @@ class MarketRegimeClassificationStep:
         data_dir = training_input.get("data_dir", "data/training")
         timeframe = training_input.get("timeframe", "1m")
 
-        # Initialize the unified regime classifier with exchange and symbol
-        if self.regime_classifier is None:
-            self.regime_classifier = UnifiedRegimeClassifier(
-                self.config, exchange, symbol
-            )
-            await self.regime_classifier.initialize()
+        # No ML classifier initialization required
 
         # Use unified data loader to get data
         self.logger.info("🔄 Loading data using unified data loader...")
@@ -318,64 +313,7 @@ class MarketRegimeClassificationStep:
                 data = data.sort_values("timestamp").reset_index(drop=True)
 
             df = data.copy()
-
-            # Compute EMAs on raw close price
-            df["ema_21"] = df["close"].ewm(span=21, adjust=False).mean()
-            df["ema_55"] = df["close"].ewm(span=55, adjust=False).mean()
-
-            # Compute ADX on raw OHLC
-            def _compute_adx(src: pd.DataFrame, period: int = 14) -> pd.Series:
-                high = src["high"]
-                low = src["low"]
-                close = src["close"]
-                tr1 = high - low
-                tr2 = (high - close.shift(1)).abs()
-                tr3 = (low - close.shift(1)).abs()
-                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                atr = tr.ewm(alpha=1 / period, adjust=False).mean()
-                move_up = high.diff()
-                move_down = low.diff()
-                plus_dm = ((move_up > move_down) & (move_up > 0)) * move_up
-                minus_dm = ((move_down > move_up) & (move_down > 0)) * move_down
-                plus_dm = plus_dm.ewm(alpha=1 / period, adjust=False).mean()
-                minus_dm = minus_dm.ewm(alpha=1 / period, adjust=False).mean()
-                plus_di = 100 * (plus_dm / atr)
-                minus_di = 100 * (minus_dm / atr)
-                dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di))
-                adx = dx.ewm(alpha=1 / period, adjust=False).mean()
-                return adx.fillna(25)
-
-            df["adx"] = _compute_adx(df, period=14)
-
-            # Apply rules
-            bull_cond = (df["ema_21"] > df["ema_55"]) & (df["adx"] > 25)
-            bear_cond = (df["ema_21"] < df["ema_55"]) & (df["adx"] > 25)
-            sideways_cond = (~bull_cond & ~bear_cond) | (df["adx"] < 20)
-
-            regimes = np.where(bull_cond, "BULL", np.where(bear_cond, "BEAR", "SIDEWAYS")).tolist()
-
-            # Confidence: scale by ADX strength and EMA separation
-            ema_sep = (df["ema_21"] - df["ema_55"]).abs()
-            ema_sep_norm = (ema_sep / df["close"].rolling(55).mean()).fillna(0.0)
-
-            def compute_conf(row) -> float:
-                adx_val = row["adx"]
-                # Normalize ADX to [0,1] around thresholds
-                if row["regime"] == "SIDEWAYS":
-                    # Higher confidence when ADX well below 20
-                    return float(np.clip((20 - adx_val) / 20, 0.2, 1.0))
-                # Directional confidence grows with ADX and EMA separation
-                adx_component = np.clip((adx_val - 20) / 30, 0.0, 1.0)
-                sep_component = np.clip(row["ema_sep_norm"] * 10, 0.0, 1.0)
-                conf = 0.5 * adx_component + 0.5 * sep_component
-                return float(np.clip(conf, 0.2, 1.0))
-
-            tmp = pd.DataFrame({
-                "regime": regimes,
-                "adx": df["adx"],
-                "ema_sep_norm": ema_sep_norm,
-            })
-            confidences = tmp.apply(compute_conf, axis=1).tolist()
+            regimes, confidences = classify_regime_series(df)
 
             # Build results
             from collections import Counter

@@ -15,18 +15,29 @@ try:
     import optuna
     import pandas as pd
     import shap
-    import tensorflow as tf
-    from optuna.integration import TFKerasPruningCallback
+    try:
+        import tensorflow as tf
+        from optuna.integration import TFKerasPruningCallback
+        from tensorflow.keras import Model, layers, regularizers
+        from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+        TF_AVAILABLE = True
+    except Exception as _tf_e:
+        TF_AVAILABLE = False
+        tf = None  # type: ignore
+        TFKerasPruningCallback = object  # type: ignore
+        Model = layers = regularizers = EarlyStopping = ReduceLROnPlateau = object  # type: ignore
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
-    from tensorflow.keras import Model, layers, regularizers
-    from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
     DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
     DEPENDENCIES_AVAILABLE = False
     MISSING_DEPENDENCY = str(e)
-    print(missing(" Missing dependency: {MISSING_DEPENDENCY}"))
+    try:
+        from src.utils.warning_symbols import missing as _missing
+        print(_missing(f" Missing dependency: {MISSING_DEPENDENCY}"))
+    except Exception:
+        print(f"Missing dependency: {MISSING_DEPENDENCY}")
     print("📦 Please install required packages:")
     print("   pip install numpy pandas scikit-learn tensorflow optuna shap pyyaml")
 

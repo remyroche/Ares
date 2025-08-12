@@ -122,17 +122,44 @@ class BullTrendEnsemble(BaseEnsemble):
         base_preds = self._get_base_model_predictions(df, is_live)
         raw_features_to_include = self.flat_features + ["oi_value", "funding_rate_ma"]
 
+        # Attach explicit meta-labels if present to make their influence explicit
+        meta_label_cols = [
+            c for c in df.columns if any(
+                c.startswith(prefix) and c.endswith(suffix)
+                for suffix in [
+                    "STRONG_TREND_CONTINUATION",
+                    "RANGE_MEAN_REVERSION",
+                    "EXHAUSTION_REVERSAL",
+                ]
+                for prefix in [
+                    "1m_", "5m_", "15m_", "30m_"
+                ]
+            )
+        ]
+
         if is_live:
             current_row = df.tail(1)
             for col in raw_features_to_include:
                 base_preds[col] = (
                     current_row[col].iloc[0] if col in current_row.columns else 0.0
                 )
+            # Live: attach meta-label flags (0/1)
+            for col in meta_label_cols:
+                try:
+                    base_preds[col] = int(current_row[col].iloc[0])
+                except Exception:
+                    base_preds[col] = 0
+            if meta_label_cols:
+                self.logger.info(f"BullTrendEnsemble meta-learner live features include meta-labels: {meta_label_cols}")
             return base_preds
         meta_df = base_preds
         for col in raw_features_to_include:
             if col in df.columns:
                 meta_df = meta_df.join(df[[col]])
+        # Train: join explicit meta-labels if present
+        if meta_label_cols:
+            meta_df = meta_df.join(df[meta_label_cols].astype(float))
+            self.logger.info(f"BullTrendEnsemble meta-learner train features include meta-labels: {meta_label_cols}")
         return meta_df.fillna(0)
 
     def _get_base_model_predictions(self, df: pd.DataFrame, is_live: bool):

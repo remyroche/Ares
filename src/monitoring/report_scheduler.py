@@ -656,5 +656,5 @@ async def setup_report_scheduler(config: dict[str, Any]) -> ReportScheduler | No
         return None
 
     except Exception:
-        system_print(error("Error setting up report scheduler: {e}"))
+        system_logger.exception(failed("Failed to setup Report Scheduler: {e}"))
         return None

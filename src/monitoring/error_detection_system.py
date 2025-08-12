@@ -353,7 +353,7 @@ class ErrorDetectionSystem:
             )
 
         except Exception:
-            self.print(failed("Failed to initialize storage: {e}"))
+            self.logger.exception(failed("Failed to initialize storage: {e}"))
             raise
 
     async def _create_error_detection_tables(self) -> None:
@@ -443,7 +443,7 @@ class ErrorDetectionSystem:
             self.logger.info("Error detection tables created successfully")
 
         except Exception:
-            self.print(failed("Failed to create error detection tables: {e}"))
+            self.logger.exception(failed("Failed to create error detection tables: {e}"))
             raise
 
     async def _load_alert_rules(self) -> None:
@@ -478,7 +478,7 @@ class ErrorDetectionSystem:
             self.logger.info(f"Loaded {len(self.alert_rules)} alert rules")
 
         except Exception:
-            self.print(failed("Failed to load alert rules: {e}"))
+            self.logger.exception(failed("Failed to load alert rules: {e}"))
             raise
 
     async def _add_default_critical_rules(self) -> None:
@@ -554,7 +554,7 @@ class ErrorDetectionSystem:
                 self.alert_rules[rule.rule_id] = rule
 
         except Exception:
-            self.print(failed("Failed to add default critical rules: {e}"))
+            self.logger.exception(failed("Failed to add default critical rules: {e}"))
 
     async def _initialize_anomaly_detection(self) -> None:
         """Initialize anomaly detection algorithms."""
@@ -568,7 +568,7 @@ class ErrorDetectionSystem:
             self.logger.info("Anomaly detection initialized")
 
         except Exception:
-            self.print(failed("Failed to initialize anomaly detection: {e}"))
+            self.logger.exception(failed("Failed to initialize anomaly detection: {e}"))
             raise
 
     async def _load_historical_metrics(self) -> None:
@@ -601,7 +601,7 @@ class ErrorDetectionSystem:
                 self.logger.info(f"Loaded historical metrics from {cutoff_date}")
 
         except Exception:
-            self.print(failed("Failed to load historical metrics: {e}"))
+            self.logger.exception(failed("Failed to load historical metrics: {e}"))
             # Non-critical error, continue
 
     async def _calculate_metric_baselines(self) -> None:
@@ -629,7 +629,7 @@ class ErrorDetectionSystem:
             )
 
         except Exception:
-            self.print(failed("Failed to calculate metric baselines: {e}"))
+            self.logger.exception(failed("Failed to calculate metric baselines: {e}"))
 
     async def _initialize_notifications(self) -> None:
         """Initialize notification systems."""
@@ -662,7 +662,7 @@ class ErrorDetectionSystem:
             self.logger.info("Notification systems initialized")
 
         except Exception:
-            self.print(failed("Failed to initialize notifications: {e}"))
+            self.logger.exception(failed("Failed to initialize notifications: {e}"))
 
     async def _start_background_monitoring(self) -> None:
         """Start background monitoring tasks."""
@@ -680,7 +680,7 @@ class ErrorDetectionSystem:
             self.logger.info("Background monitoring tasks started")
 
         except Exception:
-            self.print(failed("Failed to start background monitoring: {e}"))
+            self.logger.exception(failed("Failed to start background monitoring: {e}"))
             raise
 
     @handle_errors(
@@ -762,7 +762,7 @@ class ErrorDetectionSystem:
             return error_id
 
         except Exception:
-            self.print(failed("Failed to record error event: {e}"))
+            self.logger.exception(failed("Failed to record error event: {e}"))
             return ""
 
     async def _calculate_error_impact(
@@ -806,7 +806,7 @@ class ErrorDetectionSystem:
             return min(impact, 1.0)
 
         except Exception:
-            self.print(failed("Failed to calculate error impact: {e}"))
+            self.logger.exception(failed("Failed to calculate error impact: {e}"))
             return 0.5
 
     async def _store_error_event(self, error_event: ErrorEvent) -> None:
@@ -829,7 +829,7 @@ class ErrorDetectionSystem:
             await self.storage_manager.insert_data("error_events", data)
 
         except Exception:
-            self.print(failed("Failed to store error event: {e}"))
+            self.logger.exception(failed("Failed to store error event: {e}"))
             raise
 
     async def _check_error_alerts(self, error_event: ErrorEvent) -> None:
@@ -846,7 +846,7 @@ class ErrorDetectionSystem:
             await self._check_error_rate_spike(error_event)
 
         except Exception:
-            self.print(failed("Failed to check error alerts: {e}"))
+            self.logger.exception(failed("Failed to check error alerts: {e}"))
 
     async def _send_immediate_alert(self, error_event: ErrorEvent) -> None:
         """Send immediate alert for critical errors."""
@@ -875,7 +875,7 @@ Immediate attention required!
             self.detection_stats["alerts_sent"] += 1
 
         except Exception:
-            self.print(failed("Failed to send immediate alert: {e}"))
+            self.logger.exception(failed("Failed to send immediate alert: {e}"))
 
     async def _check_error_rate_spike(self, error_event: ErrorEvent) -> None:
         """Check for error rate spikes."""
@@ -896,7 +896,7 @@ Immediate attention required!
                 )
 
         except Exception:
-            self.print(failed("Failed to check error rate spike: {e}"))
+            self.logger.exception(failed("Failed to check error rate spike: {e}"))
 
     async def _trigger_error_rate_alert(
         self,
@@ -921,7 +921,7 @@ This indicates a potential system issue requiring investigation.
             self.detection_stats["alerts_sent"] += 1
 
         except Exception:
-            self.print(failed("Failed to trigger error rate alert: {e}"))
+            self.logger.exception(failed("Failed to trigger error rate alert: {e}"))
 
     async def detect_anomaly(
         self,
@@ -1029,7 +1029,7 @@ This indicates a potential system issue requiring investigation.
             return None
 
         except Exception:
-            self.print(failed("Failed to detect anomaly for {metric_name}: {e}"))
+            self.logger.exception(failed("Failed to detect anomaly for {metric_name}: {e}"))
             return None
 
     async def _classify_anomaly_type(
@@ -1068,7 +1068,7 @@ This indicates a potential system issue requiring investigation.
             return AnomalyType.PERFORMANCE_DEGRADATION
 
         except Exception:
-            self.print(failed("Failed to classify anomaly type: {e}"))
+            self.logger.exception(failed("Failed to classify anomaly type: {e}"))
             return AnomalyType.PERFORMANCE_DEGRADATION
 
     async def _identify_potential_causes(
@@ -1115,7 +1115,7 @@ This indicates a potential system issue requiring investigation.
             return causes
 
         except Exception:
-            self.print(failed("Failed to identify potential causes: {e}"))
+            self.logger.exception(failed("Failed to identify potential causes: {e}"))
             return ["Unknown cause"]
 
     async def _store_anomaly_detection(self, anomaly: AnomalyDetection) -> None:
@@ -1139,7 +1139,7 @@ This indicates a potential system issue requiring investigation.
             await self.storage_manager.insert_data("anomaly_detections", data)
 
         except Exception:
-            self.print(failed("Failed to store anomaly detection: {e}"))
+            self.logger.exception(failed("Failed to store anomaly detection: {e}"))
             raise
 
     async def _check_anomaly_alerts(self, anomaly: AnomalyDetection) -> None:
@@ -1150,7 +1150,7 @@ This indicates a potential system issue requiring investigation.
                 await self._send_anomaly_alert(anomaly)
 
         except Exception:
-            self.print(failed("Failed to check anomaly alerts: {e}"))
+            self.logger.exception(failed("Failed to check anomaly alerts: {e}"))
 
     async def _send_anomaly_alert(self, anomaly: AnomalyDetection) -> None:
         """Send anomaly alert."""
@@ -1177,7 +1177,7 @@ Potential Causes:
             self.detection_stats["alerts_sent"] += 1
 
         except Exception:
-            self.print(failed("Failed to send anomaly alert: {e}"))
+            self.logger.exception(failed("Failed to send anomaly alert: {e}"))
 
     async def collect_system_health_metrics(self) -> SystemHealthMetrics:
         """Collect current system health metrics."""
@@ -1211,7 +1211,7 @@ Potential Causes:
             )
 
         except Exception:
-            self.print(failed("Failed to collect system health metrics: {e}"))
+            self.logger.exception(failed("Failed to collect system health metrics: {e}"))
             # Return basic metrics
             return SystemHealthMetrics(
                 timestamp=datetime.now(),
@@ -1271,7 +1271,7 @@ Potential Causes:
         except asyncio.CancelledError:
             self.logger.info("System health monitoring task cancelled")
         except Exception:
-            self.print(error("Error in system health monitoring: {e}"))
+            self.logger.exception(error("Error in system health monitoring: {e}"))
 
     async def _store_health_metrics(self, metrics: SystemHealthMetrics) -> None:
         """Store health metrics in database."""
@@ -1292,7 +1292,7 @@ Potential Causes:
             await self.storage_manager.insert_data("system_health_metrics", data)
 
         except Exception:
-            self.print(failed("Failed to store health metrics: {e}"))
+            self.logger.exception(failed("Failed to store health metrics: {e}"))
 
     async def _monitor_anomalies(self) -> None:
         """Background task for anomaly detection."""
@@ -1307,7 +1307,7 @@ Potential Causes:
         except asyncio.CancelledError:
             self.logger.info("Anomaly monitoring task cancelled")
         except Exception:
-            self.print(error("Error in anomaly monitoring: {e}"))
+            self.logger.exception(error("Error in anomaly monitoring: {e}"))
 
     async def _update_metric_baselines(self) -> None:
         """Update metric baselines with recent data."""
@@ -1343,7 +1343,7 @@ Potential Causes:
                         self.metric_baselines[metric_name] = baseline
 
         except Exception:
-            self.print(failed("Failed to update metric baselines: {e}"))
+            self.logger.exception(failed("Failed to update metric baselines: {e}"))
 
     async def _evaluate_alert_rules(self) -> None:
         """Background task to evaluate alert rules."""
@@ -1363,7 +1363,7 @@ Potential Causes:
         except asyncio.CancelledError:
             self.logger.info("Alert rule evaluation task cancelled")
         except Exception:
-            self.print(error("Error in alert rule evaluation: {e}"))
+            self.logger.exception(error("Error in alert rule evaluation: {e}"))
 
     async def _evaluate_rule(
         self,
@@ -1391,7 +1391,7 @@ Potential Causes:
                 await self._handle_rule_trigger(rule, metric_value)
 
         except Exception:
-            self.print(failed("Failed to evaluate rule {rule.rule_id}: {e}"))
+            self.logger.exception(failed("Failed to evaluate rule {rule.rule_id}: {e}"))
 
     async def _handle_rule_trigger(self, rule: AlertRule, metric_value: float) -> None:
         """Handle alert rule trigger."""
@@ -1419,7 +1419,7 @@ Potential Causes:
             self.alert_counts[alert_count_key] = current_count + 1
 
         except Exception:
-            self.print(failed("Failed to handle rule trigger: {e}"))
+            self.logger.exception(failed("Failed to handle rule trigger: {e}"))
 
     async def _send_rule_alert(self, rule: AlertRule, metric_value: float) -> None:
         """Send alert for triggered rule."""
@@ -1450,7 +1450,7 @@ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             self.detection_stats["alerts_sent"] += 1
 
         except Exception:
-            self.print(failed("Failed to send rule alert: {e}"))
+            self.logger.exception(failed("Failed to send rule alert: {e}"))
 
     async def _send_email_alert(
         self,
@@ -1482,7 +1482,7 @@ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             self.logger.info(f"Email alert sent: {subject}")
 
         except Exception:
-            self.print(failed("Failed to send email alert: {e}"))
+            self.logger.exception(failed("Failed to send email alert: {e}"))
 
     async def _send_slack_alert(self, title: str, message: str) -> None:
         """Send Slack alert."""
@@ -1508,7 +1508,7 @@ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                         )
 
         except Exception:
-            self.print(failed("Failed to send Slack alert: {e}"))
+            self.logger.exception(failed("Failed to send Slack alert: {e}"))
 
     async def get_detection_statistics(self) -> dict[str, Any]:
         """Get comprehensive detection statistics."""
@@ -1558,7 +1558,7 @@ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             return stats
 
         except Exception:
-            self.print(failed("Failed to get detection statistics: {e}"))
+            self.logger.exception(failed("Failed to get detection statistics: {e}"))
             return {}
 
     async def cleanup(self) -> None:
@@ -1576,7 +1576,7 @@ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             self.logger.info("Error Detection System cleanup completed")
 
         except Exception:
-            self.print(failed("Failed to cleanup Error Detection System: {e}"))
+            self.logger.exception(failed("Failed to cleanup Error Detection System: {e}"))
 
 
 # Setup function for integration
@@ -1598,5 +1598,5 @@ async def setup_error_detection_system(
             return system
         return None
     except Exception:
-        system_print(failed("Failed to setup Error Detection System: {e}"))
+        system_logger.exception(failed("Failed to setup Error Detection System: {e}"))
         return None

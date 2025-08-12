@@ -224,7 +224,7 @@ class EnhancedModelMonitor:
             self.logger.info("📊 Reference data loaded for drift detection")
 
         except Exception:
-            self.print(error("Error loading reference data: {e}"))
+            self.logger.exception(error("Error loading reference data: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -245,7 +245,7 @@ class EnhancedModelMonitor:
             self.logger.info("🔍 Drift detection initialized")
 
         except Exception:
-            self.print(initialization_error("Error initializing drift detection: {e}"))
+            self.logger.exception(initialization_error("Error initializing drift detection: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -261,7 +261,7 @@ class EnhancedModelMonitor:
             self.logger.info("📈 Feature importance tracking initialized")
 
         except Exception:
-            self.print(initialization_error("Error initializing feature tracking: {e}"))
+            self.logger.exception(initialization_error("Error initializing feature tracking: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -277,9 +277,7 @@ class EnhancedModelMonitor:
             self.logger.info("🎯 Ensemble monitoring initialized")
 
         except Exception:
-            self.print(
-                initialization_error("Error initializing ensemble monitoring: {e}"),
-            )
+            self.logger.exception(initialization_error("Error initializing ensemble monitoring: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -306,7 +304,7 @@ class EnhancedModelMonitor:
             return True
 
         except Exception:
-            self.print(failed("❌ Failed to start Enhanced Model Monitor: {e}"))
+            self.logger.exception(failed("❌ Failed to start Enhanced Model Monitor: {e}"))
             return False
 
     @handle_errors(
@@ -321,7 +319,7 @@ class EnhancedModelMonitor:
                 await self._perform_drift_detection()
                 await asyncio.sleep(self.drift_check_interval)
             except Exception:
-                self.print(error("Error in drift detection loop: {e}"))
+                self.logger.exception(error("Error in drift detection loop: {e}"))
                 await asyncio.sleep(60)  # Wait before retrying
 
     @handle_errors(
@@ -336,7 +334,7 @@ class EnhancedModelMonitor:
                 await self._capture_performance_snapshots()
                 await asyncio.sleep(self.performance_snapshot_interval)
             except Exception:
-                self.print(error("Error in performance snapshot loop: {e}"))
+                self.logger.exception(error("Error in performance snapshot loop: {e}"))
                 await asyncio.sleep(60)  # Wait before retrying
 
     @handle_errors(
@@ -351,7 +349,7 @@ class EnhancedModelMonitor:
                 await self._analyze_feature_drift()
                 await asyncio.sleep(self.feature_analysis_interval)
             except Exception:
-                self.print(error("Error in feature analysis loop: {e}"))
+                self.logger.exception(error("Error in feature analysis loop: {e}"))
                 await asyncio.sleep(60)  # Wait before retrying
 
     @handle_errors(
@@ -366,7 +364,7 @@ class EnhancedModelMonitor:
                 await self._monitor_ensemble_performance()
                 await asyncio.sleep(self.performance_snapshot_interval)
             except Exception:
-                self.print(error("Error in ensemble monitoring loop: {e}"))
+                self.logger.exception(error("Error in ensemble monitoring loop: {e}"))
                 await asyncio.sleep(60)  # Wait before retrying
 
     @handle_errors(
@@ -412,7 +410,7 @@ class EnhancedModelMonitor:
             self.logger.debug("🔍 Drift detection completed")
 
         except Exception:
-            self.print(error("Error performing drift detection: {e}"))
+            self.logger.exception(error("Error performing drift detection: {e}"))
 
     def _calculate_concept_drift(
         self,
@@ -429,7 +427,7 @@ class EnhancedModelMonitor:
             return max(0, reference_acc - current_acc) / reference_acc
 
         except Exception:
-            self.print(error("Error calculating concept drift: {e}"))
+            self.logger.exception(error("Error calculating concept drift: {e}"))
             return 0.0
 
     def _calculate_data_drift(
@@ -444,7 +442,7 @@ class EnhancedModelMonitor:
             return 0.02  # Placeholder
 
         except Exception:
-            self.print(error("Error calculating data drift: {e}"))
+            self.logger.exception(error("Error calculating data drift: {e}"))
             return 0.0
 
     @handle_errors(
@@ -484,7 +482,7 @@ class EnhancedModelMonitor:
             )
 
         except Exception:
-            self.print(error("Error creating drift alert: {e}"))
+            self.logger.exception(error("Error creating drift alert: {e}"))
 
     def _determine_alert_severity(self, drift_score: float, threshold: float) -> str:
         """Determine alert severity based on drift score."""
@@ -545,7 +543,7 @@ class EnhancedModelMonitor:
             self.logger.debug("📊 Performance snapshots captured")
 
         except Exception:
-            self.print(error("Error capturing performance snapshots: {e}"))
+            self.logger.exception(error("Error capturing performance snapshots: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -597,7 +595,7 @@ class EnhancedModelMonitor:
             self.logger.debug("📈 Feature drift analysis completed")
 
         except Exception:
-            self.print(error("Error analyzing feature drift: {e}"))
+            self.logger.exception(error("Error analyzing feature drift: {e}"))
 
     def _calculate_feature_drift_score(
         self,
@@ -619,7 +617,7 @@ class EnhancedModelMonitor:
             return (mean_diff + std_diff) / 2
 
         except Exception:
-            self.print(error("Error calculating feature drift score: {e}"))
+            self.logger.exception(error("Error calculating feature drift score: {e}"))
             return 0.0
 
     @handle_errors(
@@ -667,7 +665,7 @@ class EnhancedModelMonitor:
             self.logger.debug("🎯 Ensemble performance monitored")
 
         except Exception:
-            self.print(error("Error monitoring ensemble performance: {e}"))
+            self.logger.exception(error("Error monitoring ensemble performance: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -692,7 +690,7 @@ class EnhancedModelMonitor:
             self.logger.info("✅ Enhanced Model Monitor stopped successfully")
 
         except Exception:
-            self.print(error("Error stopping model monitor: {e}"))
+            self.logger.exception(error("Error stopping model monitor: {e}"))
 
     def get_drift_alerts(self, severity: str | None = None) -> list[ModelDriftAlert]:
         """Get drift alerts, optionally filtered by severity."""
@@ -759,7 +757,7 @@ class EnhancedModelMonitor:
             return summary
 
         except Exception:
-            self.print(error("Error generating performance summary: {e}"))
+            self.logger.exception(error("Error generating performance summary: {e}"))
             return {}
 
     def _create_base_summary(self) -> dict[str, Any]:
@@ -889,7 +887,7 @@ class EnhancedModelMonitor:
             return filepath
 
         except Exception:
-            self.print(error("Error exporting monitoring data: {e}"))
+            self.logger.exception(error("Error exporting monitoring data: {e}"))
             return ""
 
 
@@ -922,5 +920,5 @@ async def setup_enhanced_model_monitor(
         return None
 
     except Exception:
-        system_print(error("Error setting up enhanced model monitor: {e}"))
+        system_logger.exception(error("Error setting up enhanced model monitor: {e}"))
         return None

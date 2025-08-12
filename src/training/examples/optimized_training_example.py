@@ -29,6 +29,7 @@ from src.utils.warning_symbols import (
     failed,
     warning,
 )
+from src.training.memory_profiler import profile_memory_usage, MemoryProfiler
 
 
 async def main():

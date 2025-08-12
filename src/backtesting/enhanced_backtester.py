@@ -856,5 +856,5 @@ async def setup_enhanced_backtester(
         return None
 
     except Exception as e:
-        system_print(error("Error setting up enhanced backtester: {e}"))
+        system_logger.exception(error("Error setting up enhanced backtester: {e}"))
         return None

@@ -393,5 +393,5 @@ async def setup_exchange_ab_tester(
         return None
 
     except Exception:
-        system_print(failed("Failed to setup exchange A/B tester: {e}"))
+        system_logger.exception(error("Error setting up exchange A/B tester: {e}"))
         return None

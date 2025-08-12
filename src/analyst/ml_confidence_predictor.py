@@ -2918,5 +2918,5 @@ async def setup_ml_confidence_predictor(
         return None
 
     except Exception as e:
-        system_print(error("Error setting up ML Confidence Predictor: {e}"))
+        system_logger.exception(failed("Failed to setup ML Confidence Predictor: {e}"))
         return None

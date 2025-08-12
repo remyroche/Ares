@@ -785,5 +785,5 @@ async def setup_ml_tactics_manager(
             return manager
         return None
     except Exception:
-        system_print(failed("Failed to setup ML tactics manager: {e}"))
+        system_logger.exception(failed("Failed to setup ML Tactics Manager: {e}"))
         return None

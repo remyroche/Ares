@@ -388,7 +388,7 @@ class RegimeSRTracker:
             )
 
         except Exception as e:
-            self.print(failed("Failed to initialize storage: {e}"))
+            self.logger.exception(failed("Failed to initialize storage: {e}"))
             raise
 
     async def _create_regime_sr_tables(self) -> None:
@@ -469,7 +469,7 @@ class RegimeSRTracker:
             self.logger.info("Regime/SR tracking tables created successfully")
 
         except Exception as e:
-            self.print(failed("Failed to create regime/SR tables: {e}"))
+            self.logger.exception(failed("Failed to create regime/SR tables: {e}"))
             raise
 
     async def _load_historical_data(self) -> None:
@@ -495,7 +495,7 @@ class RegimeSRTracker:
                 )
 
         except Exception as e:
-            self.print(failed("Failed to load historical data: {e}"))
+            self.logger.exception(failed("Failed to load historical data: {e}"))
             # Non-critical error, continue
 
     async def _initialize_detection_algorithms(self) -> None:
@@ -520,7 +520,7 @@ class RegimeSRTracker:
             self.logger.info("Detection algorithms initialized")
 
         except Exception as e:
-            self.print(failed("Failed to initialize detection algorithms: {e}"))
+            self.logger.exception(failed("Failed to initialize detection algorithms: {e}"))
             raise
 
     async def _start_background_tasks(self) -> None:
@@ -538,7 +538,7 @@ class RegimeSRTracker:
             self.logger.info("Background regime/SR tracking tasks started")
 
         except Exception as e:
-            self.print(failed("Failed to start background tasks: {e}"))
+            self.logger.exception(failed("Failed to start background tasks: {e}"))
             raise
 
     @handle_errors(
@@ -702,7 +702,7 @@ class RegimeSRTracker:
             return None
 
         except Exception as e:
-            self.print(failed("Failed to fetch market data: {e}"))
+            self.logger.exception(failed("Failed to fetch market data: {e}"))
             return None
 
     async def _calculate_regime_indicators(
@@ -805,7 +805,7 @@ class RegimeSRTracker:
             return indicators
 
         except Exception as e:
-            self.print(failed("Failed to calculate regime indicators: {e}"))
+            self.logger.exception(failed("Failed to calculate regime indicators: {e}"))
             return {}
 
     async def _classify_regime(
@@ -903,7 +903,7 @@ class RegimeSRTracker:
             return best_regime, confidence
 
         except Exception as e:
-            self.print(failed("Failed to classify regime: {e}"))
+            self.logger.exception(failed("Failed to classify regime: {e}"))
             return RegimeType.SIDEWAYS, 0.5
 
     async def _calculate_transition_probabilities(
@@ -942,7 +942,7 @@ class RegimeSRTracker:
             return probabilities
 
         except Exception as e:
-            self.print(failed("Failed to calculate transition probabilities: {e}"))
+            self.logger.exception(failed("Failed to calculate transition probabilities: {e}"))
             return {}
 
     async def _handle_regime_transition(
@@ -990,7 +990,7 @@ class RegimeSRTracker:
             )
 
         except Exception as e:
-            self.print(failed("Failed to handle regime transition: {e}"))
+            self.logger.exception(failed("Failed to handle regime transition: {e}"))
 
     async def _store_regime_detection(self, detection: RegimeDetection) -> None:
         """Store regime detection in database."""
@@ -1013,7 +1013,7 @@ class RegimeSRTracker:
             await self.storage_manager.insert_data("regime_detections", data)
 
         except Exception as e:
-            self.print(failed("Failed to store regime detection: {e}"))
+            self.logger.exception(failed("Failed to store regime detection: {e}"))
             raise
 
     async def _store_regime_transition(self, transition: RegimeTransition) -> None:
@@ -1036,7 +1036,7 @@ class RegimeSRTracker:
             await self.storage_manager.insert_data("regime_transitions", data)
 
         except Exception as e:
-            self.print(failed("Failed to store regime transition: {e}"))
+            self.logger.exception(failed("Failed to store regime transition: {e}"))
             raise
 
     @handle_errors(
@@ -1163,7 +1163,7 @@ class RegimeSRTracker:
             return levels
 
         except Exception as e:
-            self.print(failed("Failed to find pivot levels: {e}"))
+            self.logger.exception(failed("Failed to find pivot levels: {e}"))
             return []
 
     async def _find_volume_levels(
@@ -1197,7 +1197,7 @@ class RegimeSRTracker:
             return levels
 
         except Exception as e:
-            self.print(failed("Failed to find volume levels: {e}"))
+            self.logger.exception(failed("Failed to find volume levels: {e}"))
             return []
 
     async def _find_psychological_levels(
@@ -1233,7 +1233,7 @@ class RegimeSRTracker:
             return levels
 
         except Exception as e:
-            self.print(failed("Failed to find psychological levels: {e}"))
+            self.logger.exception(failed("Failed to find psychological levels: {e}"))
             return []
 
     async def _cluster_price_levels(
@@ -1275,7 +1275,7 @@ class RegimeSRTracker:
             return clusters
 
         except Exception as e:
-            self.print(failed("Failed to cluster price levels: {e}"))
+            self.logger.exception(failed("Failed to cluster price levels: {e}"))
             return []
 
     async def _create_sr_level(
@@ -1320,7 +1320,7 @@ class RegimeSRTracker:
             )
 
         except Exception as e:
-            self.print(failed("Failed to create S/R level: {e}"))
+            self.logger.exception(failed("Failed to create S/R level: {e}"))
             # Return a basic level
             return SupportResistanceLevel(
                 level_id="error",
@@ -1355,7 +1355,7 @@ class RegimeSRTracker:
             await self.storage_manager.insert_data("sr_levels", data)
 
         except Exception as e:
-            self.print(failed("Failed to store S/R level: {e}"))
+            self.logger.exception(failed("Failed to store S/R level: {e}"))
             raise
 
     async def _periodic_regime_detection(self) -> None:
@@ -1376,7 +1376,7 @@ class RegimeSRTracker:
         except asyncio.CancelledError:
             self.logger.info("Periodic regime detection task cancelled")
         except Exception as e:
-            self.print(error("Error in periodic regime detection: {e}"))
+            self.logger.exception(error("Error in periodic regime detection: {e}"))
 
     async def _periodic_sr_update(self) -> None:
         """Periodic S/R level update task."""
@@ -1395,7 +1395,7 @@ class RegimeSRTracker:
         except asyncio.CancelledError:
             self.logger.info("Periodic S/R update task cancelled")
         except Exception as e:
-            self.print(error("Error in periodic S/R update: {e}"))
+            self.logger.exception(error("Error in periodic S/R update: {e}"))
 
     async def _periodic_performance_analysis(self) -> None:
         """Periodic performance analysis task."""
@@ -1410,7 +1410,7 @@ class RegimeSRTracker:
         except asyncio.CancelledError:
             self.logger.info("Periodic performance analysis task cancelled")
         except Exception as e:
-            self.print(error("Error in periodic performance analysis: {e}"))
+            self.logger.exception(error("Error in periodic performance analysis: {e}"))
 
     async def analyze_regime_performance(
         self,
@@ -1517,7 +1517,7 @@ class RegimeSRTracker:
             return stats
 
         except Exception as e:
-            self.print(failed("Failed to get tracking statistics: {e}"))
+            self.logger.exception(failed("Failed to get tracking statistics: {e}"))
             return {}
 
     async def cleanup(self) -> None:
@@ -1536,7 +1536,7 @@ class RegimeSRTracker:
             self.logger.info("Regime and S/R Tracker cleanup completed")
 
         except Exception as e:
-            self.print(failed("Failed to cleanup Regime and S/R Tracker: {e}"))
+            self.logger.exception(failed("Failed to cleanup Regime and S/R Tracker: {e}"))
 
 
 # Setup function for integration
@@ -1555,6 +1555,6 @@ async def setup_regime_sr_tracker(config: dict[str, Any]) -> RegimeSRTracker | N
         if await tracker.initialize():
             return tracker
         return None
-    except Exception as e:
-        system_print(failed("Failed to setup Regime and S/R Tracker: {e}"))
+    except Exception:
+        system_logger.exception(failed("Failed to setup Regime SR Tracker: {e}"))
         return None

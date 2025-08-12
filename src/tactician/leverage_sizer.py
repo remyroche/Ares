@@ -713,5 +713,5 @@ async def setup_leverage_sizer(
         return None
 
     except Exception:
-        system_print(error("Error setting up leverage sizer: {e}"))
+        system_logger.exception(error("Failed to setup Leverage Sizer: {e}"))
         return None

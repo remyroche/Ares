@@ -282,26 +282,20 @@ class MarketRegimeClassificationStep:
         exchange: str,
     ) -> dict[str, Any]:
         """
-        Classify market regimes using the unified regime classifier.
+        Classify market regimes using simplified EMA/ADX rules on raw OHLCV.
 
-        Args:
-            data: Historical market data
-            symbol: Trading symbol
-            exchange: Exchange name
-
-        Returns:
-            Dict containing regime classification results
+        Rules (1h timeframe):
+        - Bull: EMA(21) > EMA(55) AND ADX > 25
+        - Bear: EMA(21) < EMA(55) AND ADX > 25
+        - Sideways: if neither Bull nor Bear OR ADX < 20
         """
         try:
             self.logger.info(
-                f"Classifying market regimes for {symbol} on {exchange}...",
+                f"Classifying market regimes (EMA/ADX) for {symbol} on {exchange}...",
             )
 
-            # Prepare data for regime classification
-            # The unified regime classifier expects specific column names
+            # Ensure required columns exist and are sorted by timestamp
             required_columns = ["open", "high", "low", "close", "volume", "timestamp"]
-
-            # Rename columns if needed
             column_mapping = {
                 "Open": "open",
                 "High": "high",
@@ -310,164 +304,114 @@ class MarketRegimeClassificationStep:
                 "Volume": "volume",
                 "Timestamp": "timestamp",
             }
-
             for old_col, new_col in column_mapping.items():
                 if old_col in data.columns and new_col not in data.columns:
                     data = data.rename(columns={old_col: new_col})
 
-            # Ensure we have the required columns
-            missing_columns = [
-                col for col in required_columns if col not in data.columns
-            ]
+            missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
                 raise ValueError(
                     f"Missing required columns for regime classification: {missing_columns}",
                 )
 
-            # Sort by timestamp
             if "timestamp" in data.columns:
-                data = data.sort_values("timestamp")
+                data = data.sort_values("timestamp").reset_index(drop=True)
 
-            # Perform regime classification
-            regime_results = await self.regime_classifier.classify_regimes(data)
+            df = data.copy()
 
-            # Process and format results
+            # Compute EMAs on raw close price
+            df["ema_21"] = df["close"].ewm(span=21, adjust=False).mean()
+            df["ema_55"] = df["close"].ewm(span=55, adjust=False).mean()
+
+            # Compute ADX on raw OHLC
+            def _compute_adx(src: pd.DataFrame, period: int = 14) -> pd.Series:
+                high = src["high"]
+                low = src["low"]
+                close = src["close"]
+                tr1 = high - low
+                tr2 = (high - close.shift(1)).abs()
+                tr3 = (low - close.shift(1)).abs()
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                atr = tr.ewm(alpha=1 / period, adjust=False).mean()
+                move_up = high.diff()
+                move_down = low.diff()
+                plus_dm = ((move_up > move_down) & (move_up > 0)) * move_up
+                minus_dm = ((move_down > move_up) & (move_down > 0)) * move_down
+                plus_dm = plus_dm.ewm(alpha=1 / period, adjust=False).mean()
+                minus_dm = minus_dm.ewm(alpha=1 / period, adjust=False).mean()
+                plus_di = 100 * (plus_dm / atr)
+                minus_di = 100 * (minus_dm / atr)
+                dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di))
+                adx = dx.ewm(alpha=1 / period, adjust=False).mean()
+                return adx.fillna(25)
+
+            df["adx"] = _compute_adx(df, period=14)
+
+            # Apply rules
+            bull_cond = (df["ema_21"] > df["ema_55"]) & (df["adx"] > 25)
+            bear_cond = (df["ema_21"] < df["ema_55"]) & (df["adx"] > 25)
+            sideways_cond = (~bull_cond & ~bear_cond) | (df["adx"] < 20)
+
+            regimes = np.where(bull_cond, "BULL", np.where(bear_cond, "BEAR", "SIDEWAYS")).tolist()
+
+            # Confidence: scale by ADX strength and EMA separation
+            ema_sep = (df["ema_21"] - df["ema_55"]).abs()
+            ema_sep_norm = (ema_sep / df["close"].rolling(55).mean()).fillna(0.0)
+
+            def compute_conf(row) -> float:
+                adx_val = row["adx"]
+                # Normalize ADX to [0,1] around thresholds
+                if row["regime"] == "SIDEWAYS":
+                    # Higher confidence when ADX well below 20
+                    return float(np.clip((20 - adx_val) / 20, 0.2, 1.0))
+                # Directional confidence grows with ADX and EMA separation
+                adx_component = np.clip((adx_val - 20) / 30, 0.0, 1.0)
+                sep_component = np.clip(row["ema_sep_norm"] * 10, 0.0, 1.0)
+                conf = 0.5 * adx_component + 0.5 * sep_component
+                return float(np.clip(conf, 0.2, 1.0))
+
+            tmp = pd.DataFrame({
+                "regime": regimes,
+                "adx": df["adx"],
+                "ema_sep_norm": ema_sep_norm,
+            })
+            confidences = tmp.apply(compute_conf, axis=1).tolist()
+
+            # Build results
+            from collections import Counter
+            regime_counts = Counter(regimes)
+
             formatted_results = {
                 "symbol": symbol,
                 "exchange": exchange,
                 "classification_date": datetime.now().isoformat(),
-                "total_records": len(data),
-                "regime_distribution": {},
-                "regime_sequence": [],
+                "total_records": len(df),
+                "regime_distribution": dict(regime_counts),
+                "regime_sequence": regimes,
                 "regime_transitions": [],
-                "confidence_scores": {},
+                "confidence_scores": confidences,
                 "metadata": {
-                    "classifier_version": "unified_regime_classifier",
-                    "classification_method": "HMM_ensemble",
+                    "classifier_version": "ema_adx_rules_v1",
+                    "classification_method": "EMA21_EMA55_ADX",
+                    "ema_periods": {"fast": 21, "slow": 55},
+                    "adx_thresholds": {"directional": 25, "sideways": 20},
+                    "timeframe": "1h",
                 },
             }
 
-            # Extract regime information from classifier results
-            if isinstance(regime_results, dict):
-                # If the classifier returns a dict with regime information
-                if "regimes" in regime_results:
-                    regimes = regime_results["regimes"]
-                    confidence_scores = regime_results.get("confidence_scores", [])
-
-                    if isinstance(regimes, list):
-                        # The regime sequence from the classifier may be shorter due to feature calculation
-                        # We need to map it back to the original data length
-                        original_data_length = len(data)
-                        regime_sequence_length = len(regimes)
-
-                        if regime_sequence_length < original_data_length:
-                            self.logger.info(
-                                f"Regime sequence length ({regime_sequence_length}) is shorter than original data length ({original_data_length}). "
-                                f"Mapping regimes to original data length..."
-                            )
-
-                            # DATA EXTENSION LOGIC:
-                            # The regime classifier processes data in chunks and may return fewer predictions than input rows.
-                            # This happens because:
-                            # 1. Feature calculation requires lookback periods (e.g., 20-period moving averages)
-                            # 2. Some initial rows are dropped due to NaN values from feature calculation
-                            # 3. The classifier may process data in batches
-                            #
-                            # SOLUTION: We map the shorter regime sequence back to the full data length using interpolation.
-                            # For each original data point, we find the closest regime prediction and use that.
-                            # This ensures we have regime classifications for all timestamps in the original dataset.
-
-                            # Create a regime sequence that matches the original data length
-                            # We'll use interpolation to map the regimes back to the full data
-                            if regime_sequence_length > 0:
-                                # Create indices for the regime sequence
-                                regime_indices = np.linspace(
-                                    0,
-                                    original_data_length - 1,
-                                    regime_sequence_length,
-                                    dtype=int,
-                                )
-
-                                # Create a full-length regime sequence
-                                full_regime_sequence = []
-                                full_confidence_sequence = []
-                                for i in range(original_data_length):
-                                    # Find the closest regime index
-                                    closest_idx = np.argmin(np.abs(regime_indices - i))
-                                    full_regime_sequence.append(regimes[closest_idx])
-                                    # Use corresponding confidence score or default
-                                    if closest_idx < len(confidence_scores):
-                                        full_confidence_sequence.append(
-                                            confidence_scores[closest_idx]
-                                        )
-                                    else:
-                                        full_confidence_sequence.append(
-                                            0.8
-                                        )  # Default confidence
-
-                                formatted_results["regime_sequence"] = (
-                                    full_regime_sequence
-                                )
-                                formatted_results["confidence_scores"] = (
-                                    full_confidence_sequence
-                                )
-                                self.logger.info(
-                                    f"Mapped regime sequence to original data length: {len(full_regime_sequence)}"
-                                )
-                            else:
-                                # Fallback: use default regime
-                                formatted_results["regime_sequence"] = [
-                                    "SIDEWAYS"
-                                ] * original_data_length
-                                formatted_results["confidence_scores"] = [
-                                    0.5
-                                ] * original_data_length
-                                self.logger.warning(
-                                    "No regimes available, using default SIDEWAYS regime"
-                                )
-                        else:
-                            # Regime sequence is long enough, truncate if needed
-                            formatted_results["regime_sequence"] = regimes[
-                                :original_data_length
-                            ]
-                            formatted_results["confidence_scores"] = confidence_scores[
-                                :original_data_length
-                            ]
-
-                        # Calculate regime distribution
-                        from collections import Counter
-
-                        regime_counts = Counter(formatted_results["regime_sequence"])
-                        formatted_results["regime_distribution"] = dict(regime_counts)
-
-                        # Calculate regime transitions
-                        transitions = []
-                        for i in range(1, len(formatted_results["regime_sequence"])):
-                            if (
-                                formatted_results["regime_sequence"][i]
-                                != formatted_results["regime_sequence"][i - 1]
-                            ):
-                                transitions.append(
-                                    {
-                                        "from_regime": formatted_results[
-                                            "regime_sequence"
-                                        ][i - 1],
-                                        "to_regime": formatted_results[
-                                            "regime_sequence"
-                                        ][i],
-                                        "transition_index": i,
-                                    },
-                                )
-                        formatted_results["regime_transitions"] = transitions
-
-                # Extract confidence scores if available
-                if "confidence_scores" in regime_results:
-                    formatted_results["confidence_scores"] = regime_results[
-                        "confidence_scores"
-                    ]
+            # Transitions
+            transitions = []
+            for i in range(1, len(regimes)):
+                if regimes[i] != regimes[i - 1]:
+                    transitions.append({
+                        "from_regime": regimes[i - 1],
+                        "to_regime": regimes[i],
+                        "transition_index": i,
+                    })
+            formatted_results["regime_transitions"] = transitions
 
             self.logger.info(
-                f"Regime classification completed. Found {len(formatted_results['regime_distribution'])} distinct regimes",
+                f"Regime classification (EMA/ADX) completed. Found {len(regime_counts)} distinct regimes",
             )
 
             return formatted_results

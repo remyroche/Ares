@@ -904,6 +904,17 @@ class AnalystLabelingFeatureEngineeringStep:
             raw_cols = list(set(self._RAW_CONTEXT_COLUMNS))
             labeled_data = labeled_data.drop(columns=[c for c in raw_cols if c in labeled_data.columns], errors="ignore")
 
+            # Stationarity enforcement (decide using training portion to avoid lookahead)
+            try:
+                total_rows_tmp = len(labeled_data)
+                train_end_tmp = int(total_rows_tmp * 0.8)
+                train_mask_tmp = pd.Series(False, index=labeled_data.index)
+                if train_end_tmp > 0:
+                    train_mask_tmp.iloc[:train_end_tmp] = True
+                labeled_data, _transformed_cols = self._enforce_stationarity(labeled_data, train_mask=train_mask_tmp)
+            except Exception as e:
+                self.logger.warning(f"Stationarity enforcement skipped due to error: {e}")
+
             # Check 5: Feature Matrix Sanitization (post-merge)
             labeled_data = self._sanitize_features(labeled_data)
 
@@ -1555,6 +1566,105 @@ class AnalystLabelingFeatureEngineeringStep:
             self.logger.warning(
                 f"Stability (Step4): {len(unstable)} features are unstable across folds: {unstable[:50]}{' ...' if len(unstable)>50 else ''}"
             )
+
+    def _adf_pvalue(self, series: pd.Series) -> float:
+        """Compute ADF p-value; return 1.0 on failure or insufficient data."""
+        try:
+            s = series.dropna().astype(float)
+            if len(s) < 30 or not _ADF_AVAILABLE:
+                return 1.0
+            result = _adfuller(s, autolag="AIC")
+            return float(result[1])
+        except Exception:
+            return 1.0
+
+    def _fracdiff_weights(self, d: float, size: int, cutoff: float = 1e-5) -> np.ndarray:
+        """Compute fractional differencing weights up to size with magnitude cutoff."""
+        w = [1.0]
+        for k in range(1, size):
+            w_k = -w[-1] * (d - (k - 1)) / k
+            if abs(w_k) < cutoff:
+                break
+            w.append(w_k)
+        return np.array(w, dtype=float)
+
+    def _fracdiff_series(self, s: pd.Series, d: float = 0.4, cutoff: float = 1e-5) -> pd.Series:
+        """Apply fractional differencing to a series with parameter d."""
+        try:
+            s = s.astype(float)
+            w = self._fracdiff_weights(d, len(s), cutoff)
+            if len(w) <= 1:
+                return s.diff()
+            # Convolution-like operation (finite weights)
+            vals = s.values
+            out = np.full_like(vals, fill_value=np.nan, dtype=float)
+            for i in range(len(w) - 1, len(vals)):
+                window = vals[i - (len(w) - 1) : i + 1]
+                if np.any(~np.isfinite(window)):
+                    continue
+                out[i] = np.dot(w[::-1], window)
+            return pd.Series(out, index=s.index)
+        except Exception:
+            return s.diff()
+
+    def _enforce_stationarity(self, df: pd.DataFrame, train_mask: pd.Series | None = None) -> tuple[pd.DataFrame, list[str]]:
+        """Enforce stationarity on non-stationary numeric features using training portion for detection.
+        Returns transformed DataFrame and list of transformed columns.
+        """
+        if df.empty:
+            return df, []
+        data = df.copy()
+        numeric_cols = [c for c in data.columns if c != self._LABEL_NAME and np.issubdtype(data[c].dtype, np.number)]
+        if not numeric_cols:
+            return data, []
+        # Heuristics: skip obviously stationary/bounded metrics
+        def is_likely_stationary_name(name: str) -> bool:
+            keywords = ["return", "z", "distance", "ratio", "imbalance", "volatility", "pattern", "ofi"]
+            name_l = name.lower()
+            return any(k in name_l for k in keywords)
+        transformed: list[str] = []
+        # Determine baseline for ADF from training mask
+        train_idx = data.index if train_mask is None else data.index[train_mask]
+        use_fracdiff = bool(self.config.get("stationarity", {}).get("use_fractional_diff", False))
+        d_param = float(self.config.get("stationarity", {}).get("d", 0.4))
+        # Group-aware transformation
+        has_symbol = "symbol" in data.columns and data["symbol"].nunique() > 1
+        for col in numeric_cols:
+            if is_likely_stationary_name(col):
+                continue
+            # ADF over training portion only
+            try:
+                train_series = data.loc[train_idx, col]
+                pval = self._adf_pvalue(train_series)
+            except Exception:
+                pval = 1.0
+            if pval > 0.05:
+                # Non-stationary: transform
+                try:
+                    if has_symbol:
+                        if use_fracdiff:
+                            data[col] = data.groupby("symbol", group_keys=False)[col].apply(lambda s: self._fracdiff_series(s, d=d_param))
+                        else:
+                            data[col] = data.groupby("symbol", group_keys=False)[col].pct_change()
+                    else:
+                        if use_fracdiff:
+                            data[col] = self._fracdiff_series(data[col], d=d_param)
+                        else:
+                            data[col] = data[col].pct_change()
+                    transformed.append(col)
+                except Exception:
+                    # Fallback to simple diff
+                    try:
+                        if has_symbol:
+                            data[col] = data.groupby("symbol", group_keys=False)[col].diff()
+                        else:
+                            data[col] = data[col].diff()
+                        transformed.append(col)
+                    except Exception:
+                        pass
+        if transformed:
+            self.logger.info(f"Stationarity enforcement applied to {len(transformed)} columns: {transformed[:30]}{' ...' if len(transformed)>30 else ''}")
+        return data, transformed
 
 
 class DeprecatedAnalystLabelingFeatureEngineeringStep:

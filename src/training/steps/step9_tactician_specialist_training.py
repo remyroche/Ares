@@ -319,11 +319,41 @@ class TacticianSpecialistTrainingStep:
             except Exception as _e:
                 self.logger.warning(f"Tactician SR signal augmentation failed: {_e}")
 
+            # Optionally drop raw S/R features to reduce redundancy (keep SR signals)
+            try:
+                drop_raw_sr = bool(self.config.get("tactician", {}).get("drop_raw_sr_features", False))
+                if drop_raw_sr:
+                    sr_raw_cols = [
+                        "dist_to_support_pct",
+                        "dist_to_resistance_pct",
+                        "sr_zone_position",
+                        "nearest_support_center",
+                        "nearest_resistance_center",
+                        "nearest_support_score",
+                        "nearest_resistance_score",
+                        "nearest_support_band_pct",
+                        "nearest_resistance_band_pct",
+                        "sr_breakout_up",
+                        "sr_breakout_down",
+                        "sr_bounce_up",
+                        "sr_bounce_down",
+                        "sr_touch",
+                        "sr_breakout_score",
+                        "sr_bounce_score",
+                    ]
+                    # Do not drop SR model signal columns prefixed with 'sr_sig_' or strength predictions 'sr_pred_'
+                    present = [c for c in sr_raw_cols if c in labeled_data.columns]
+                    if present:
+                        labeled_data = labeled_data.drop(columns=present)
+                        self.logger.info(f"🔧 Dropped raw SR features from tactician training: {present}")
+            except Exception as _ed:
+                self.logger.warning(f"Unable to drop raw SR features: {_ed}")
+
             # Train tactician specialist models
             training_results = await self._train_tactician_models(
                 labeled_data,
-                symbol,
-                exchange,
+                training_input,
+                pipeline_state,
             )
 
             # Save training results

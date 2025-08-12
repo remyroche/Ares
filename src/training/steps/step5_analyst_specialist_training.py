@@ -329,6 +329,35 @@ class AnalystSpecialistTrainingStep:
                                     with open(f"{sr_dir}/sr_bounce_strength_rf.pkl", "wb") as f:
                                         pickle.dump(rf_reg_bo, f)
                             self.logger.info("✅ Trained SR strength regressors where data allowed")
+                            # Generate OOF predictions for strength to support blending
+                            try:
+                                import numpy as _np
+                                from sklearn.model_selection import KFold
+                                kf = KFold(n_splits=3, shuffle=True, random_state=42)
+                                oof_bk = pd.Series(0.0, index=combined_data.index, name="sr_pred_breakout_strength")
+                                oof_bo = pd.Series(0.0, index=combined_data.index, name="sr_pred_bounce_strength")
+                                if mask_bk.any() and "sr_breakout_strength_rf" in sr_models:
+                                    model_bk = sr_models["sr_breakout_strength_rf"]
+                                    for tr_idx, te_idx in kf.split(Xb):
+                                        Xtr, Xte = Xb.iloc[tr_idx], Xb.iloc[te_idx]
+                                        ytr = yb.iloc[tr_idx]
+                                        m = RandomForestRegressor(n_estimators=model_bk.n_estimators, max_depth=model_bk.max_depth, random_state=42, n_jobs=-1)
+                                        m.fit(Xtr, ytr)
+                                        oof_bk.iloc[Xb.iloc[te_idx].index] = m.predict(Xte)
+                                if mask_bo.any() and "sr_bounce_strength_rf" in sr_models:
+                                    model_bo = sr_models["sr_bounce_strength_rf"]
+                                    for tr_idx, te_idx in kf.split(Xo):
+                                        Xtr, Xte = Xo.iloc[tr_idx], Xo.iloc[te_idx]
+                                        ytr = yo.iloc[tr_idx]
+                                        m = RandomForestRegressor(n_estimators=model_bo.n_estimators, max_depth=model_bo.max_depth, random_state=42, n_jobs=-1)
+                                        m.fit(Xtr, ytr)
+                                        oof_bo.iloc[Xo.iloc[te_idx].index] = m.predict(Xte)
+                                strength_oof = pd.DataFrame({"timestamp": combined_data.get("timestamp", pd.RangeIndex(len(combined_data))), oof_bk.name: oof_bk.values, oof_bo.name: oof_bo.values})
+                                out_path = f"{data_dir}/{exchange}_{symbol}_sr_strength_oof.parquet"
+                                strength_oof.to_parquet(out_path, index=False)
+                                self.logger.info(f"✅ Wrote SR strength OOF predictions for blending: {out_path}")
+                            except Exception as _oofe:
+                                self.logger.warning(f"SR strength OOF generation skipped: {_oofe}")
                     except Exception as _ers:
                         self.logger.warning(f"SR strength regressors skipped: {_ers}")
             except Exception as _e:

@@ -267,8 +267,8 @@ class ErrorRecoveryManager:
                             f"Recovery successful with {type(strategy).__name__}",
                         )
                         return result
-                except Exception:
-                    self.print(failed("Recovery strategy failed: {recovery_error}"))
+                except Exception as e:
+                    self.print(failed(f"Recovery strategy failed: {e}"))
                     continue
 
         self.print(failed("All recovery strategies failed for error: {error}"))
@@ -312,9 +312,9 @@ class EnhancedErrorHandler:
                                 step_name=context or func.__name__,
                                 error_type=type(e).__name__,
                             ).inc()
-                        except Exception as metrics_exc:
+                        except Exception as e:
                             self.logger.warning(
-                                f"Failed to increment Prometheus metrics: {metrics_exc}",
+                                f"Failed to increment Prometheus metrics: {e}",
                             )
 
                     if recovery_strategies:
@@ -331,9 +331,9 @@ class EnhancedErrorHandler:
                                     )
                                     if recovery_result is not None:
                                         return cast("T | None", recovery_result)
-                                except Exception as recovery_error:
+                                except Exception as e:
                                     self.logger.exception(
-                                        f"Recovery failed: {recovery_error}",
+                                        f"Recovery failed: {e}",
                                     )
 
                     if reraise:
@@ -357,9 +357,9 @@ class EnhancedErrorHandler:
                                 step_name=context or func.__name__,
                                 error_type=type(e).__name__,
                             ).inc()
-                        except Exception as metrics_exc:
+                        except Exception as e:
                             self.logger.warning(
-                                f"Failed to increment Prometheus metrics: {metrics_exc}",
+                                f"Failed to increment Prometheus metrics: {e}",
                             )
 
                     if recovery_strategies:
@@ -385,9 +385,9 @@ class EnhancedErrorHandler:
                                         )
                                         if recovery_result is not None:
                                             return cast("T | None", recovery_result)
-                                except Exception as recovery_error:
+                                except Exception as e:
                                     self.logger.exception(
-                                        f"Recovery failed: {recovery_error}",
+                                        f"Recovery failed: {e}",
                                     )
 
                     if reraise:

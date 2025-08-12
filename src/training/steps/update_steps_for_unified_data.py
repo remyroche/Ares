@@ -199,7 +199,7 @@ def generate_step_update_template(step_name: str) -> str:
 # - If the step needs tactician predictions, load them from step10 results
 
 ## 5. Example of loading additional data:
-# regime_file_path = f"{data_dir}/{exchange}_{symbol}_regime_classification.json"
+# regime_file_path = f"{guidance['data_dir']}/{guidance['exchange']}_{guidance['symbol']}_regime_classification.json"
 # if os.path.exists(regime_file_path):
 #     with open(regime_file_path, 'r') as f:
 #         regime_data = json.load(f)

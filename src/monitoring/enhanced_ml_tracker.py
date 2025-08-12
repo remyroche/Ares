@@ -336,7 +336,7 @@ class EnhancedMLTracker:
             return True
 
         except Exception as e:
-            self.print(failed("❌ Enhanced ML Tracker initialization failed: {e}"))
+            self.logger.exception(failed("❌ Enhanced ML Tracker initialization failed: {e}"))
             return False
 
     async def _initialize_storage(self) -> None:
@@ -360,7 +360,7 @@ class EnhancedMLTracker:
             )
 
         except Exception as e:
-            self.print(failed("Failed to initialize ML tracker storage: {e}"))
+            self.logger.exception(failed("Failed to initialize ML tracker storage: {e}"))
             raise
 
     async def _create_ml_tracking_tables(self) -> None:
@@ -435,7 +435,7 @@ class EnhancedMLTracker:
             self.logger.info("ML tracking tables created successfully")
 
         except Exception as e:
-            self.print(failed("Failed to create ML tracking tables: {e}"))
+            self.logger.exception(failed("Failed to create ML tracking tables: {e}"))
             raise
 
     async def _load_historical_data(self) -> None:
@@ -464,7 +464,7 @@ class EnhancedMLTracker:
             self.logger.info("Historical ML tracking data loaded")
 
         except Exception as e:
-            self.print(failed("Failed to load historical ML data: {e}"))
+            self.logger.exception(failed("Failed to load historical ML data: {e}"))
             # Non-critical error, continue
 
     async def _initialize_performance_analysis(self) -> None:
@@ -477,7 +477,7 @@ class EnhancedMLTracker:
             self.logger.info("Performance analysis components initialized")
 
         except Exception as e:
-            self.print(failed("Failed to initialize performance analysis: {e}"))
+            self.logger.exception(failed("Failed to initialize performance analysis: {e}"))
             raise
 
     async def _start_background_tasks(self) -> None:
@@ -494,7 +494,7 @@ class EnhancedMLTracker:
             self.logger.info("Background ML tracking tasks started")
 
         except Exception as e:
-            self.print(failed("Failed to start background tasks: {e}"))
+            self.logger.exception(failed("Failed to start background tasks: {e}"))
             raise
 
     @handle_errors(
@@ -577,7 +577,7 @@ class EnhancedMLTracker:
             return prediction_id
 
         except Exception as e:
-            self.print(failed("Failed to track model prediction: {e}"))
+            self.logger.exception(failed("Failed to track model prediction: {e}"))
             return ""
 
     async def _store_prediction_record(self, record: ModelPredictionRecord) -> None:
@@ -601,7 +601,7 @@ class EnhancedMLTracker:
             await self.storage_manager.insert_data("ml_predictions", data)
 
         except Exception as e:
-            self.print(failed("Failed to store prediction record: {e}"))
+            self.logger.exception(failed("Failed to store prediction record: {e}"))
             raise
 
     @handle_errors(
@@ -693,7 +693,7 @@ class EnhancedMLTracker:
             return ensemble_id
 
         except Exception as e:
-            self.print(failed("Failed to track ensemble performance: {e}"))
+            self.logger.exception(failed("Failed to track ensemble performance: {e}"))
             return ""
 
     async def _store_ensemble_record(self, record: EnsemblePerformanceRecord) -> None:
@@ -717,7 +717,7 @@ class EnhancedMLTracker:
             await self.storage_manager.insert_data("ensemble_performance", data)
 
         except Exception as e:
-            self.print(failed("Failed to store ensemble record: {e}"))
+            self.logger.exception(failed("Failed to store ensemble record: {e}"))
             raise
 
     @handle_errors(
@@ -779,7 +779,7 @@ class EnhancedMLTracker:
             return False
 
         except Exception as e:
-            self.print(failed("Failed to record actual outcome: {e}"))
+            self.logger.exception(failed("Failed to record actual outcome: {e}"))
             return False
 
     async def _update_prediction_outcome(self, record: ModelPredictionRecord) -> None:
@@ -969,7 +969,7 @@ class EnhancedMLTracker:
             return float(correlation) if not np.isnan(correlation) else 0.5
 
         except Exception as e:
-            self.print(failed("Failed to calculate confidence calibration: {e}"))
+            self.logger.exception(failed("Failed to calculate confidence calibration: {e}"))
             return 0.5
 
     async def _calculate_feature_stability(
@@ -1020,7 +1020,7 @@ class EnhancedMLTracker:
             return float(np.mean(stability_scores))
 
         except Exception as e:
-            self.print(failed("Failed to calculate feature stability: {e}"))
+            self.logger.exception(failed("Failed to calculate feature stability: {e}"))
             return 1.0
 
     async def _analyze_performance_trend(
@@ -1066,7 +1066,7 @@ class EnhancedMLTracker:
             return trend, float(recent_change)
 
         except Exception as e:
-            self.print(failed("Failed to analyze performance trend: {e}"))
+            self.logger.exception(failed("Failed to analyze performance trend: {e}"))
             return "stable", 0.0
 
     async def _get_most_important_features(
@@ -1102,7 +1102,7 @@ class EnhancedMLTracker:
             return [feature for feature, _ in sorted_features[:10]]
 
         except Exception as e:
-            self.print(failed("Failed to get most important features: {e}"))
+            self.logger.exception(failed("Failed to get most important features: {e}"))
             return []
 
     async def _store_performance_analysis(
@@ -1128,7 +1128,7 @@ class EnhancedMLTracker:
             await self.storage_manager.insert_data("model_performance_analysis", data)
 
         except Exception as e:
-            self.print(failed("Failed to store performance analysis: {e}"))
+            self.logger.exception(failed("Failed to store performance analysis: {e}"))
             raise
 
     async def _periodic_performance_analysis(self) -> None:
@@ -1150,7 +1150,7 @@ class EnhancedMLTracker:
         except asyncio.CancelledError:
             self.logger.info("Periodic performance analysis task cancelled")
         except Exception as e:
-            self.print(error("Error in periodic performance analysis: {e}"))
+            self.logger.exception(error("Error in periodic performance analysis: {e}"))
 
     async def _periodic_model_comparison(self) -> None:
         """Periodic model comparison task."""
@@ -1166,7 +1166,7 @@ class EnhancedMLTracker:
         except asyncio.CancelledError:
             self.logger.info("Periodic model comparison task cancelled")
         except Exception as e:
-            self.print(error("Error in periodic model comparison: {e}"))
+            self.logger.exception(error("Error in periodic model comparison: {e}"))
 
     async def generate_model_comparison_report(
         self,
@@ -1206,7 +1206,7 @@ class EnhancedMLTracker:
             }
 
             if len(qualified_models) < 2:
-                self.print(warning("Insufficient models for comparison"))
+                self.logger.warning(warning("Insufficient models for comparison"))
                 return None
 
             # Calculate metrics for each model
@@ -1297,7 +1297,7 @@ class EnhancedMLTracker:
             return report
 
         except Exception as e:
-            self.print(failed("Failed to generate model comparison report: {e}"))
+            self.logger.exception(failed("Failed to generate model comparison report: {e}"))
             return None
 
     async def _calculate_comparison_metrics(
@@ -1331,7 +1331,7 @@ class EnhancedMLTracker:
             return metrics
 
         except Exception as e:
-            self.print(failed("Failed to calculate comparison metrics: {e}"))
+            self.logger.exception(failed("Failed to calculate comparison metrics: {e}"))
             return {}
 
     async def _generate_model_recommendations(
@@ -1370,7 +1370,7 @@ class EnhancedMLTracker:
             return recommendations
 
         except Exception as e:
-            self.print(failed("Failed to generate model recommendations: {e}"))
+            self.logger.exception(failed("Failed to generate model recommendations: {e}"))
             return []
 
     async def _generate_retraining_recommendations(
@@ -1392,7 +1392,7 @@ class EnhancedMLTracker:
             return recommendations
 
         except Exception as e:
-            self.print(failed("Failed to generate retraining recommendations: {e}"))
+            self.logger.exception(failed("Failed to generate retraining recommendations: {e}"))
             return []
 
     async def _store_comparison_report(self, report: ModelComparisonReport) -> None:
@@ -1413,7 +1413,7 @@ class EnhancedMLTracker:
             await self.storage_manager.insert_data("model_comparisons", data)
 
         except Exception as e:
-            self.print(failed("Failed to store comparison report: {e}"))
+            self.logger.exception(failed("Failed to store comparison report: {e}"))
             raise
 
     async def get_tracking_statistics(self) -> dict[str, Any]:
@@ -1438,7 +1438,7 @@ class EnhancedMLTracker:
             return stats
 
         except Exception as e:
-            self.print(failed("Failed to get tracking statistics: {e}"))
+            self.logger.exception(failed("Failed to get tracking statistics: {e}"))
             return {}
 
     async def cleanup(self) -> None:
@@ -1457,7 +1457,7 @@ class EnhancedMLTracker:
             self.logger.info("Enhanced ML Tracker cleanup completed")
 
         except Exception as e:
-            self.print(failed("Failed to cleanup Enhanced ML Tracker: {e}"))
+            self.logger.exception(failed("Failed to cleanup Enhanced ML Tracker: {e}"))
 
 
 # Setup function for integration
@@ -1477,5 +1477,5 @@ async def setup_enhanced_ml_tracker(config: dict[str, Any]) -> EnhancedMLTracker
             return tracker
         return None
     except Exception as e:
-        system_print(failed("Failed to setup Enhanced ML Tracker: {e}"))
+        system_logger.exception(failed("Failed to setup Enhanced ML Tracker: {e}"))
         return None

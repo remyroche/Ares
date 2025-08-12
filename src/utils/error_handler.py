@@ -209,14 +209,14 @@ class CircuitBreaker:
 
             return result
 
-        except self.config.expected_exception:
+        except self.config.expected_exception as e:
             self.failure_count += 1
             self.last_failure_time = time.time()
 
             if self.failure_count >= self.config.failure_threshold:
                 self.state = CircuitState.OPEN
                 self.logger.exception(
-                    f"Circuit breaker opened after {self.failure_count} failures",
+                    f"Circuit breaker opened after {self.failure_count} failures: {e}",
                 )
 
             raise
@@ -378,9 +378,9 @@ class ErrorHandler:
                                     )
                                     if recovery_result is not None:
                                         return cast("T | None", recovery_result)
-                                except Exception as recovery_error:
+                                except Exception as e:
                                     self.logger.exception(
-                                        f"Recovery failed: {recovery_error}",
+                                        f"Recovery failed: {e}",
                                     )
 
                     return default_return

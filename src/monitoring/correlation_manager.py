@@ -101,7 +101,7 @@ class CorrelationManager:
             return True
 
         except Exception:
-            self.print(failed("❌ Correlation Manager initialization failed: {e}"))
+            self.logger.exception(failed("❌ Correlation Manager initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -140,7 +140,7 @@ class CorrelationManager:
             self.logger.debug(f"Tracking correlation request: {correlation_id}")
 
         except Exception:
-            self.print(error("Error tracking correlation request: {e}"))
+            self.logger.exception(error("Error tracking correlation request: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -163,7 +163,7 @@ class CorrelationManager:
         """
         try:
             if correlation_id not in self.correlation_requests:
-                self.print(missing("Correlation ID not found: {correlation_id}"))
+                self.logger.warning(missing("Correlation ID not found: {correlation_id}"))
                 return
 
             correlation_request = self.correlation_requests[correlation_id]
@@ -194,7 +194,7 @@ class CorrelationManager:
             self.logger.debug(f"Tracked correlation response: {correlation_id}")
 
         except Exception:
-            self.print(error("Error tracking correlation response: {e}"))
+            self.logger.exception(error("Error tracking correlation response: {e}"))
 
     def get_correlation_request(
         self,
@@ -255,7 +255,7 @@ class CorrelationManager:
             }
 
         except Exception:
-            self.print(error("Error getting correlation statistics: {e}"))
+            self.logger.exception(error("Error getting correlation statistics: {e}"))
             return {}
 
     def export_correlation_data(
@@ -284,7 +284,7 @@ class CorrelationManager:
             return str(all_correlations)
 
         except Exception:
-            self.print(error("Error exporting correlation data: {e}"))
+            self.logger.exception(error("Error exporting correlation data: {e}"))
             return ""
 
     @handle_specific_errors(
@@ -302,7 +302,7 @@ class CorrelationManager:
             return True
 
         except Exception:
-            self.print(error("Error starting correlation manager: {e}"))
+            self.logger.exception(error("Error starting correlation manager: {e}"))
             return False
 
     @handle_errors(
@@ -317,7 +317,7 @@ class CorrelationManager:
             self.logger.info("🛑 Correlation Manager stopped")
 
         except Exception:
-            self.print(error("Error stopping correlation manager: {e}"))
+            self.logger.exception(error("Error stopping correlation manager: {e}"))
 
 
 @handle_errors(
@@ -345,5 +345,5 @@ async def setup_correlation_manager(
         return None
 
     except Exception:
-        system_print(error("Error setting up correlation manager: {e}"))
+        system_logger.exception(error("Error setting up correlation manager: {e}"))
         return None

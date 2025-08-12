@@ -498,7 +498,7 @@ class AdvancedTracer:
             }
 
         except Exception:
-            self.print(error("Error getting trace statistics: {e}"))
+            self.logger.exception(error("Error getting trace statistics: {e}"))
             return {}
 
     def export_trace_data(
@@ -525,8 +525,8 @@ class AdvancedTracer:
                 return json.dumps(all_traces, indent=2, default=str)
             return str(all_traces)
 
-        except Exception:
-            self.print(error("Error exporting trace data: {e}"))
+        except Exception as e:
+            self.logger.exception(error(f"Error exporting trace data: {e}"))
             return ""
 
     @handle_specific_errors(
@@ -544,7 +544,7 @@ class AdvancedTracer:
             return True
 
         except Exception:
-            self.print(error("Error starting tracer: {e}"))
+            self.logger.exception(error("Error starting tracer: {e}"))
             return False
 
     @handle_errors(
@@ -565,7 +565,7 @@ class AdvancedTracer:
             self.logger.info("🛑 Advanced Tracer stopped")
 
         except Exception:
-            self.print(error("Error stopping tracer: {e}"))
+            self.logger.exception(error("Error stopping tracer: {e}"))
 
 
 @handle_errors(
@@ -591,5 +591,5 @@ async def setup_advanced_tracer(config: dict[str, Any]) -> AdvancedTracer | None
         return None
 
     except Exception:
-        system_print(error("Error setting up advanced tracer: {e}"))
+        system_logger.exception(error("Error setting up advanced tracer: {e}"))
         return None

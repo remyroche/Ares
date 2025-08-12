@@ -684,5 +684,5 @@ async def setup_tactics_orchestrator(
             return orchestrator
         return None
     except Exception:
-        system_print(failed("Failed to setup tactics orchestrator: {e}"))
+        system_logger.exception(failed("Failed to setup Tactics Orchestrator: {e}"))
         return None

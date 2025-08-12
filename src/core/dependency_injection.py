@@ -290,8 +290,8 @@ class DependencyContainer:
                 instance.config = config
             elif hasattr(instance, "_config"):
                 instance._config = config
-        except Exception:
-            self.print(failed("Failed to inject config into instance: {e}"))
+        except Exception as e:
+            self.logger.warning(f"Failed to inject config into instance: {e}")
 
     def register_config_service(self, config: dict[str, Any]) -> None:
         """Register configuration as a service."""

@@ -208,7 +208,7 @@ class MetricsDashboard:
             return True
 
         except Exception:
-            self.print(failed("❌ Metrics Dashboard initialization failed: {e}"))
+            self.logger.exception(failed("❌ Metrics Dashboard initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -226,7 +226,7 @@ class MetricsDashboard:
             self.logger.info("Metric storage initialized")
 
         except Exception:
-            self.print(initialization_error("Error initializing metric storage: {e}"))
+            self.logger.exception(initialization_error("Error initializing metric storage: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -240,7 +240,7 @@ class MetricsDashboard:
             self.logger.info("Real-time updates initialized")
 
         except Exception:
-            self.print(
+            self.logger.exception(
                 initialization_error("Error initializing real-time updates: {e}"),
             )
 
@@ -256,7 +256,7 @@ class MetricsDashboard:
             self.logger.info("WebSocket broadcasting initialized")
 
         except Exception:
-            self.print(
+            self.logger.exception(
                 initialization_error("Error initializing websocket broadcast: {e}"),
             )
 
@@ -274,7 +274,7 @@ class MetricsDashboard:
                 await asyncio.sleep(self.update_interval)
 
         except Exception:
-            self.print(error("Error in dashboard update loop: {e}"))
+            self.logger.exception(error("Error in dashboard update loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -300,7 +300,7 @@ class MetricsDashboard:
             await self._update_current_metrics()
 
         except Exception:
-            self.print(error("Error updating metrics: {e}"))
+            self.logger.exception(error("Error updating metrics: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -355,7 +355,7 @@ class MetricsDashboard:
             )
 
         except Exception:
-            self.print(error("Error updating performance metrics: {e}"))
+            self.logger.exception(error("Error updating performance metrics: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -399,7 +399,7 @@ class MetricsDashboard:
                 )
 
         except Exception:
-            self.print(error("Error updating model behavior metrics: {e}"))
+            self.logger.exception(error("Error updating model behavior metrics: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -432,7 +432,7 @@ class MetricsDashboard:
                     )
                     return
                 except Exception:
-                    self.print(warning("Falling back to default system metrics: {e}"))
+                    self.logger.warning(warning("Falling back to default system metrics: {e}"))
 
             # Fallback sample metrics
             self.system_health_metrics = SystemHealthMetrics(
@@ -446,7 +446,7 @@ class MetricsDashboard:
             )
 
         except Exception:
-            self.print(error("Error updating system health metrics: {e}"))
+            self.logger.exception(error("Error updating system health metrics: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -468,7 +468,7 @@ class MetricsDashboard:
             )
 
         except Exception:
-            self.print(error("Error updating trading analytics: {e}"))
+            self.logger.exception(error("Error updating trading analytics: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -538,7 +538,7 @@ class MetricsDashboard:
                 )
 
         except Exception:
-            self.print(error("Error updating current metrics: {e}"))
+            self.logger.exception(error("Error updating current metrics: {e}"))
 
     def _update_metric(
         self,
@@ -602,7 +602,7 @@ class MetricsDashboard:
             )
 
         except Exception:
-            self.print(error("Error updating metric {metric_name}: {e}"))
+            self.logger.exception(error("Error updating metric {metric_name}: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -622,12 +622,12 @@ class MetricsDashboard:
                 try:
                     await connection.send_text(json.dumps(dashboard_data))
                 except Exception:
-                    self.print(
+                    self.logger.exception(
                         connection_error("Error broadcasting to connection: {e}"),
                     )
 
         except Exception:
-            self.print(error("Error broadcasting metrics: {e}"))
+            self.logger.exception(error("Error broadcasting metrics: {e}"))
 
     def get_dashboard_data(self) -> dict[str, Any]:
         """Get current dashboard data."""
@@ -651,7 +651,7 @@ class MetricsDashboard:
                 },
             }
         except Exception:
-            self.print(error("Error getting dashboard data: {e}"))
+            self.logger.exception(error("Error getting dashboard data: {e}"))
             return {}
 
     def get_metric_history(
@@ -676,7 +676,7 @@ class MetricsDashboard:
             return sorted(history, key=lambda x: x["timestamp"])
 
         except Exception:
-            self.print(error("Error getting metric history: {e}"))
+            self.logger.exception(error("Error getting metric history: {e}"))
             return []
 
     @handle_specific_errors(
@@ -694,7 +694,7 @@ class MetricsDashboard:
             return True
 
         except Exception:
-            self.print(error("Error starting dashboard: {e}"))
+            self.logger.exception(error("Error starting dashboard: {e}"))
             return False
 
     @handle_errors(
@@ -715,7 +715,7 @@ class MetricsDashboard:
             self.logger.info("🛑 Metrics Dashboard stopped")
 
         except Exception:
-            self.print(error("Error stopping dashboard: {e}"))
+            self.logger.exception(error("Error stopping dashboard: {e}"))
 
 
 @handle_errors(
@@ -741,5 +741,5 @@ async def setup_metrics_dashboard(config: dict[str, Any]) -> MetricsDashboard | 
         return None
 
     except Exception:
-        system_print(error("Error setting up metrics dashboard: {e}"))
+        system_logger.exception(error("Error setting up metrics dashboard: {e}"))
         return None

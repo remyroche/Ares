@@ -867,16 +867,17 @@ class MetaLabelingSystem:
             signals = {}
 
             # VWAP reversion entry
-            features.get("vwap", data["close"].iloc[-1])
-            current_price = data["close"].iloc[-1]
-            price_vwap_ratio = features.get("price_vwap_ratio", 1.0)
+            features = {}
+            vwap = float(data["close"].iloc[-1])
+            current_price = float(data["close"].iloc[-1])
+            price_vwap_ratio = 1.0
 
             is_vwap_reversion = abs(price_vwap_ratio - 1.0) < 0.01
             signals["VWAP_REVERSION_ENTRY"] = 1 if is_vwap_reversion else 0
 
             # Market order now: aggressive momentum
-            momentum = features.get("price_momentum_5", 0)
-            volume_spike = features.get("volume_spike", 1.0)
+            momentum = 0.0
+            volume_spike = 1.0
 
             is_market_order = (
                 abs(momentum) > self.momentum_threshold * 2
@@ -885,13 +886,13 @@ class MetaLabelingSystem:
             signals["MARKET_ORDER_NOW"] = 1 if is_market_order else 0
 
             # Chase micro breakout
-            recent_high = features.get("recent_high", current_price)
-            is_micro_breakout = current_price > recent_high * 1.001  # Small breakout
+            recent_high = current_price
+            is_micro_breakout = False
             signals["CHASE_MICRO_BREAKOUT"] = 1 if is_micro_breakout else 0
 
             # Order book imbalance flip
-            order_imbalance = features.get("order_imbalance", 0)
-            is_imbalance_flip = abs(order_imbalance) > 0.3
+            order_imbalance = 0.0
+            is_imbalance_flip = False
             signals["ORDERBOOK_IMBALANCE_FLIP"] = 1 if is_imbalance_flip else 0
 
             # Aggressive taker spike

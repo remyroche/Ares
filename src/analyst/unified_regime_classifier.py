@@ -893,7 +893,7 @@ class UnifiedRegimeClassifier:
                 "strengths": strengths,
             }
 
-        except Exception:
+        except Exception as e:
             self.logger.error(f"Error calculating rolling pivots: {e}")
             return {
                 "s1": 0,
@@ -1607,7 +1607,7 @@ class UnifiedRegimeClassifier:
                     self.location_model_path.replace(".joblib", "_encoder.joblib"),
                 )
 
-        except Exception:
+        except Exception as e:
             self.logger.error(f"❌ Error saving models: {e}")
 
     def load_models(self) -> bool:
@@ -1705,7 +1705,7 @@ class UnifiedRegimeClassifier:
             self.trained = loaded_any
             return loaded_any
 
-        except Exception:
+        except Exception as e:
             self.logger.error(f"❌ Error loading models: {e}")
             return False
 

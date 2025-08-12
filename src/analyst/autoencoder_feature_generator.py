@@ -1970,7 +1970,6 @@ class AutoencoderFeatureAnalyzer:
             if raw_in_numeric:
                 self.logger.warning(f"🚨 Removing raw numeric columns from candidate features: {raw_in_numeric}")
                 X = X.drop(columns=raw_in_numeric)
-                features_df = features_df.drop(columns=raw_in_numeric)
             y = labels
 
             if len(np.unique(y)) < 2:

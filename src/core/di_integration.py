@@ -87,8 +87,8 @@ class DIIntegration:
             self.logger.info("Full DI integration demonstration completed")
             return complete_system
 
-        except Exception:
-            self.print(failed("DI integration demonstration failed: {e}"))
+        except Exception as e:
+            self.logger.exception(f"DI integration demonstration failed: {e}")
             raise
 
     async def _register_all_services(self) -> None:
@@ -251,8 +251,8 @@ class DIIntegration:
             self.logger.info("Scope management demonstration completed")
             return result
 
-        except Exception:
-            self.print(failed("Scope demonstration failed: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Scope demonstration failed: {e}")
             raise
 
     async def demonstrate_configuration_injection(self) -> dict[str, Any]:
@@ -283,8 +283,8 @@ class DIIntegration:
             self.logger.info("Configuration injection demonstration completed")
             return result
 
-        except Exception:
-            self.print(failed("Configuration injection demonstration failed: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Configuration injection demonstration failed: {e}")
             raise
 
     async def demonstrate_factory_patterns(self) -> dict[str, Any]:
@@ -309,8 +309,8 @@ class DIIntegration:
             self.logger.info("Factory patterns demonstration completed")
             return result
 
-        except Exception:
-            self.print(failed("Factory patterns demonstration failed: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Factory patterns demonstration failed: {e}")
             raise
 
     async def run_complete_demonstration(self) -> dict[str, Any]:
@@ -344,8 +344,8 @@ class DIIntegration:
             self.logger.info("Complete DI demonstration finished successfully")
             return results
 
-        except Exception:
-            self.print(failed("Complete DI demonstration failed: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Complete DI demonstration failed: {e}")
             raise
 
     def get_container_metrics(self) -> dict[str, Any]:

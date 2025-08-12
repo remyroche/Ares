@@ -1142,9 +1142,9 @@ async def setup_market_health_analyzer(
         if await health_analyzer.initialize():
             system_logger.info("✅ Market Health Analyzer setup completed successfully")
             return health_analyzer
-        system_print(failed("❌ Market Health Analyzer setup failed"))
+        system_logger.exception(failed("❌ Market Health Analyzer setup failed"))
         return None
 
-    except Exception as e:
-        system_print(error("❌ Error setting up Market Health Analyzer: {e}"))
+    except Exception:
+        system_logger.exception(failed("Failed to setup Market Health Analyzer: {e}"))
         return None

@@ -203,7 +203,7 @@ class PerformanceDashboard:
             )
 
         except Exception:
-            self.print(error("Error updating dashboard metrics"))
+            self.logger.exception(error("Error updating dashboard metrics"))
 
     async def _export_dashboard_data(self) -> None:
         """Export dashboard data."""
@@ -249,7 +249,7 @@ class PerformanceDashboard:
             self.logger.info(f"📊 Dashboard data exported to: {export_file}")
 
         except Exception:
-            self.print(error("Error exporting dashboard data"))
+            self.logger.exception(error("Error exporting dashboard data"))
 
     def get_dashboard_summary(self) -> dict[str, Any]:
         """Get dashboard summary."""
@@ -281,7 +281,7 @@ class PerformanceDashboard:
             }
 
         except Exception as e:
-            self.print(error("Error getting dashboard summary"))
+            self.logger.exception(error("Error getting dashboard summary"))
             return {"error": str(e)}
 
     def _calculate_trends(self) -> dict[str, Any]:
@@ -331,7 +331,7 @@ class PerformanceDashboard:
             return trends
 
         except Exception:
-            self.print(error("Error calculating trends"))
+            self.logger.exception(error("Error calculating trends"))
             return {}
 
     def _calculate_predictive_analytics(self) -> dict[str, Any]:
@@ -407,7 +407,7 @@ class PerformanceDashboard:
             return predictions
 
         except Exception as e:
-            self.print(error("Error calculating predictive analytics"))
+            self.logger.exception(error("Error calculating predictive analytics"))
             return {"error": f"Predictive analytics failed: {e}"}
 
     def _calculate_health_score(self) -> dict[str, Any]:
@@ -497,7 +497,7 @@ class PerformanceDashboard:
             }
 
         except Exception:
-            self.print(error("Error calculating health score"))
+            self.logger.exception(error("Error calculating health score"))
             return {"score": 0, "status": "error"}
 
     def get_alerts_summary(self) -> dict[str, Any]:
@@ -532,7 +532,7 @@ class PerformanceDashboard:
             }
 
         except Exception:
-            self.print(error("Error getting alerts summary"))
+            self.logger.exception(error("Error getting alerts summary"))
             return {"alerts": [], "summary": {}}
 
     def get_optimization_summary(self) -> dict[str, Any]:
@@ -567,7 +567,7 @@ class PerformanceDashboard:
             }
 
         except Exception:
-            self.print(error("Error getting optimization summary"))
+            self.logger.exception(error("Error getting optimization summary"))
             return {"opportunities": [], "summary": {}}
 
     def get_performance_chart_data(
@@ -601,7 +601,7 @@ class PerformanceDashboard:
             }
 
         except Exception as e:
-            self.print(error("Error getting performance chart data"))
+            self.logger.exception(error("Error getting performance chart data"))
             return {"error": str(e)}
 
     def _filter_metrics_by_time_range(self, time_range: str) -> list[DashboardMetrics]:
@@ -667,7 +667,7 @@ class PerformanceDashboard:
             self.logger.info("✅ Performance Dashboard stopped successfully")
 
         except Exception:
-            self.print(error("Error stopping performance dashboard"))
+            self.logger.exception(error("Error stopping performance dashboard"))
 
 
 @handle_errors(
@@ -699,5 +699,5 @@ async def setup_performance_dashboard(
         return None
 
     except Exception:
-        system_print(error("Error setting up Performance Dashboard: {e}"))
+        system_logger.exception(error("Error setting up Performance Dashboard: {e}"))
         return None

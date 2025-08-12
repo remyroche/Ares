@@ -759,8 +759,8 @@ class VectorizedAdvancedFeatureEngineering:
                                 ones = int(np.nansum(arr == 1))
                                 zeros = int(np.nansum(arr == 0))
                                 self.logger.info(f"Meta-label '{k}': ones={ones}, zeros={zeros}, len={len(arr)}")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self.logger.warning(f"Failed to log meta-label prevalence: {e}")
             except Exception as _e:
                 self.logger.warning(f"Explicit meta-label generation failed: {_e}")
 

@@ -787,6 +787,8 @@ class VectorizedLabellingOrchestrator:
                 # Treat these as context inputs; engineered variants should be used instead
                 "funding_rate",
                 "volume_ratio",
+                "trade_volume",
+                "trade_count",
                 # Exclude raw microstructure proxies; use engineered dynamics instead
                 "market_depth",
                 "bid_ask_spread",

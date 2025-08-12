@@ -1626,7 +1626,7 @@ class AnalystLabelingFeatureEngineeringStep:
                             df.to_parquet(file_path, compression="snappy", index=False)
                         try:
                             log_dataframe_overview(
-                                self.logger, df, name=f"features_{split_name}"
+                                self.logger, df, name="features"
                             )
                         except Exception:
                             pass

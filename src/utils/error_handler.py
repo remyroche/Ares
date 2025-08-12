@@ -378,9 +378,9 @@ class ErrorHandler:
                                     )
                                     if recovery_result is not None:
                                         return cast("T | None", recovery_result)
-                                except Exception as recovery_error:
+                                except Exception as e:
                                     self.logger.exception(
-                                        f"Recovery failed: {recovery_error}",
+                                        f"Recovery failed: {e}",
                                     )
 
                     return default_return

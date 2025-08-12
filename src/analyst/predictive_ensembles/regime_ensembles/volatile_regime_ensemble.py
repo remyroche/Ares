@@ -154,14 +154,14 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             input_shape = (X_seq.shape[1], X_seq.shape[2])
 
             if is_transformer:
-                return self._build_transformer_model(input_shape, num_classes)
-            return self._build_lstm_model(input_shape, num_classes)
+                return self._build_transformer_model(input_shape, num_classes, X_seq, y_seq_encoded)
+            return self._build_lstm_model(input_shape, num_classes, X_seq, y_seq_encoded)
 
         except Exception as e:
             self.print(error("Error training DL model: {e}"))
             return None
 
-    def _build_lstm_model(self, input_shape, num_classes):
+    def _build_lstm_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
         """Build LSTM model."""
         try:
             inputs = Input(shape=input_shape)
@@ -203,7 +203,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             self.print(error("Error building LSTM model: {e}"))
             return None
 
-    def _build_transformer_model(self, input_shape, num_classes):
+    def _build_transformer_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
         """Build Transformer model."""
         try:
             inputs = Input(shape=input_shape)

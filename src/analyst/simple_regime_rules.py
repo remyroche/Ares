@@ -31,7 +31,7 @@ def compute_adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
     plus_di = 100 * (plus_dm / atr)
     minus_di = 100 * (minus_dm / atr)
-    dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di))
+    dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di).replace(0, np.nan))
     adx = dx.ewm(alpha=1 / period, adjust=False).mean()
     return adx.fillna(25)
 

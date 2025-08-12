@@ -1433,8 +1433,15 @@ class AnalystLabelingFeatureEngineeringStep:
 
             # For features files, drop raw OHLCV/trade columns to avoid leakage
             raw_cols = list(set(self._RAW_CONTEXT_COLUMNS))
+            # Additionally drop potential leakage targets (computed with lookahead) from features artifacts
+            leakage_cols = [
+                "sr_event_label",
+                "sr_breakout_score",
+                "sr_bounce_score",
+            ]
             for file_path, data in feature_files:
                 features_df = data.drop(columns=[c for c in raw_cols if c in data.columns], errors="ignore")
+                features_df = features_df.drop(columns=[c for c in leakage_cols if c in features_df.columns], errors="ignore")
                 with open(file_path, "wb") as f:
                     pickle.dump(features_df, f)
             self.logger.info(f"✅ Saved feature data files")

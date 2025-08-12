@@ -120,6 +120,18 @@ class ProximityWeightedEnsemble(DynamicWeightedEnsemble):
 
         # Derive SR weight per sample
         sr_weight = self._compute_sr_weights(X)
+        # Optional: modulate weight by predicted SR strength if present
+        try:
+            # Expect columns like sr_pred_breakout_strength, sr_pred_bounce_strength
+            pred_bk = X.get("sr_pred_breakout_strength", pd.Series(0.0, index=X.index)).astype(float).values
+            pred_bo = X.get("sr_pred_bounce_strength", pd.Series(0.0, index=X.index)).astype(float).values
+            strength = np.maximum(pred_bk, pred_bo)
+            gain = float(self.cfg.get("sr_strength_gain", 0.5))
+            # Normalize strength to [0,1] by clipping with a reasonable scale (e.g., 1%)
+            norm = np.clip(strength / max(1e-6, float(self.cfg.get("sr_strength_scale", 0.01))), 0.0, 1.0)
+            sr_weight = np.clip(sr_weight * (1.0 + gain * norm), 0.0, float(self.cfg.get("sr_max_weight", 0.7)))
+        except Exception:
+            pass
         # Names that correspond to SR models
         sr_names = [n for n in self.model_names if n.upper().startswith("SR") or "/SR/" in n]
         other_names = [n for n in self.model_names if n not in sr_names]
@@ -1294,8 +1306,57 @@ class AnalystEnsembleCreationStep:
                     model_weights[name] = 1.0 / len(model_weights)
 
             # Use proximity-weighted ensemble if SR features available
-            if all(k in X_val.columns for k in ["dist_to_support_pct", "dist_to_resistance_pct"]) or "sr_touch" in X_val.columns:
-                ensemble = ProximityWeightedEnsemble(models, model_names, model_weights, cfg=self.config.get("sr_blending", {}))
+            use_sr_blend = all(k in X_val.columns for k in ["dist_to_support_pct", "dist_to_resistance_pct"]) or "sr_touch" in X_val.columns
+            if use_sr_blend:
+                cfg_base = self.config.get("sr_blending", {})
+                # Hyperparameter tuning: grid search over blending params with CV
+                grid = cfg_base.get("tuning_grid", {
+                    "sr_proximity_tau": [0.002, 0.003, 0.004, 0.006],
+                    "sr_touch_boost": [0.0, 0.1, 0.2, 0.3],
+                    "sr_max_weight": [0.5, 0.6, 0.7, 0.8],
+                    "hysteresis_alpha_up": [0.5, 0.6, 0.7],
+                    "hysteresis_alpha_down": [0.2, 0.3, 0.4],
+                })
+                from sklearn.model_selection import KFold
+                kf = KFold(n_splits=3, shuffle=True, random_state=42)
+                best_score = -np.inf
+                best_cfg = cfg_base.copy()
+                for tau in grid["sr_proximity_tau"]:
+                    for boost in grid["sr_touch_boost"]:
+                        for mmax in grid["sr_max_weight"]:
+                            for aup in grid["hysteresis_alpha_up"]:
+                                for adn in grid["hysteresis_alpha_down"]:
+                                    cfg = {
+                                        "sr_proximity_tau": tau,
+                                        "sr_touch_boost": boost,
+                                        "sr_max_weight": mmax,
+                                        "hysteresis_alpha_up": aup,
+                                        "hysteresis_alpha_down": adn,
+                                    }
+                                    cv_scores = []
+                                    try:
+                                        for tr_idx, te_idx in kf.split(X_val):
+                                            Xtr, Xte = X_val.iloc[tr_idx], X_val.iloc[te_idx]
+                                            ytr, yte = y_val.iloc[tr_idx], y_val.iloc[te_idx]
+                                            ens = ProximityWeightedEnsemble(models, model_names, model_weights, cfg=cfg)
+                                            # Fit-free ensemble; just evaluate predict_proba and accuracy
+                                            preds = np.argmax(ens.predict_proba(Xte), axis=1)
+                                            # Map to binary if labels not 0/1
+                                            try:
+                                                from sklearn.metrics import accuracy_score
+                                                score = accuracy_score(yte, preds)
+                                            except Exception:
+                                                score = (preds == yte.values).mean()
+                                            cv_scores.append(float(score))
+                                    except Exception:
+                                        continue
+                                    if cv_scores:
+                                        avg = float(np.mean(cv_scores))
+                                        if avg > best_score:
+                                            best_score = avg
+                                            best_cfg = cfg
+                self.logger.info(f"SR blending tuned best score={best_score:.4f} cfg={best_cfg}")
+                ensemble = ProximityWeightedEnsemble(models, model_names, model_weights, cfg=best_cfg)
             else:
                 ensemble = DynamicWeightedEnsemble(models, model_names, model_weights)
 

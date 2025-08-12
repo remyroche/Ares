@@ -692,6 +692,11 @@ class VectorizedAdvancedFeatureEngineering:
                 )
                 features.update(candlestick_features)
 
+            # Immediately alongside candlestick/pattern features (requires OHLCV):
+            # Compute classic OHLCV-based indicators using actual prices
+            ohlcv_price_features = self._engineer_ohlcv_price_features_vectorized(price_data)
+            features.update(ohlcv_price_features)
+
             # S/R distance features — infer levels if not provided
             inferred_sr = sr_levels if sr_levels else self._infer_sr_levels(price_data)
             if self.sr_distance_calculator and inferred_sr:
@@ -1515,6 +1520,36 @@ class VectorizedAdvancedFeatureEngineering:
             }
         except Exception:
             return {"support_levels": [], "resistance_levels": []}
+
+    def _engineer_ohlcv_price_features_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
+        """Compute OHLCV-based features that must use actual prices (not returns).
+        Includes SMA/EMA and Garman–Klass volatility per bar.
+        """
+        try:
+            feats: dict[str, Any] = {}
+            close = price_data["close"].astype(float)
+            open_ = price_data["open"].astype(float)
+            high = price_data["high"].astype(float)
+            low = price_data["low"].astype(float)
+
+            # Simple and exponential moving averages (actual price)
+            feats["sma_20"] = close.rolling(20, min_periods=1).mean().values
+            feats["sma_50"] = close.rolling(50, min_periods=1).mean().values
+            feats["ema_20"] = close.ewm(span=20, adjust=False).mean().values
+            feats["ema_50"] = close.ewm(span=50, adjust=False).mean().values
+
+            # Garman–Klass volatility per period (instantaneous estimator)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                log_hl = np.log(high / low).replace([np.inf, -np.inf], np.nan)
+                log_co = np.log(close / open_).replace([np.inf, -np.inf], np.nan)
+            gk_var = (log_hl ** 2) / (2 * np.log(2)) - (2 * np.log(2) - 1) * (log_co ** 2)
+            gk_vol = np.sqrt(gk_var.clip(lower=0)).fillna(0)
+            feats["garman_klass_volatility"] = gk_vol.values
+
+            return feats
+        except Exception as e:
+            self.logger.warning(f"OHLCV price feature engineering failed: {e}")
+            return {}
 
 
 class VectorizedVolatilityRegimeModel:

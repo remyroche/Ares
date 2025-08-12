@@ -55,6 +55,21 @@ class VectorizedLabellingOrchestrator:
             self.orchestrator_config.get("strict_feature_shapes", True)
             or os.getenv("CI") == "1"
         )
+        # NEW: Context/baseline column configuration
+        self.keep_close_returns = self.orchestrator_config.get("keep_only_close_returns_main", True)
+        # Options: 'returns' (volume_returns), 'log', 'detrended', 'normalized', or 'none'
+        self.volume_representation = str(self.orchestrator_config.get("volume_representation", "returns")).lower()
+        # Columns that should never be used as ML features (preserved as context)
+        self.context_non_feature_columns: set[str] = set(
+            self.orchestrator_config.get(
+                "context_non_feature_columns",
+                [
+                    "year", "month", "day", "exchange", "symbol", "timeframe", "timestamp",
+                    # Include selected raw info columns to carry as context (not features)
+                    "funding_rate", "trade_volume", "trade_count",
+                ],
+            )
+        )
 
         # Feature selection configuration
         self.feature_selection_config = self.orchestrator_config.get("feature_selection", {})
@@ -238,6 +253,17 @@ class VectorizedLabellingOrchestrator:
                 price_data = stationary_data.get("price_data", price_data)
                 volume_data = stationary_data.get("volume_data", volume_data)
                 order_flow_data = stationary_data.get("order_flow_data", order_flow_data)
+
+                # Determine baseline context columns to preserve
+                selected_volume_col = self._choose_volume_context_column(volume_data)
+                context_cols = []
+                if self.keep_close_returns and "close_returns" in price_data.columns:
+                    context_cols.append("close_returns")
+                if selected_volume_col in volume_data.columns:
+                    context_cols.append(selected_volume_col)
+                # Persist for later stages
+                self._context_columns = context_cols
+
                 # Capture raw and returns for logging
                 try:
                     self._debug_raw_ohlcv = price_data[["open","high","low","close","volume"]].copy()
@@ -316,21 +342,28 @@ class VectorizedLabellingOrchestrator:
             except Exception:
                 pass
 
-            # Drop stationarity helper columns prior to selection/normalization
+            # Drop stationarity helper columns prior to selection/normalization, but preserve context columns
             combined_data = self._remove_stationarity_transform_columns(combined_data)
 
             # 5. Feature selection
             if self.enable_feature_selection:
                 self.logger.info("🎯 Performing feature selection...")
+                # Exclude context columns from selection and add back later
+                context_cols = self._get_present_context_columns(combined_data)
+                selection_input = combined_data.drop(columns=[c for c in context_cols if c in combined_data.columns])
                 selected = await self.feature_selector.select_optimal_features(
-                    combined_data,
+                    selection_input,
                     labeled_data["label"] if "label" in labeled_data.columns else None,
                 )
                 if isinstance(selected, pd.DataFrame) and selected.shape[1] > 0:
-                    combined_data = selected
+                    # Reattach context columns (and label if present)
+                    preserved = combined_data[[c for c in context_cols if c in combined_data.columns]].copy()
+                    if "label" in combined_data.columns and "label" not in selected.columns:
+                        selected["label"] = combined_data["label"]
+                    combined_data = pd.concat([selected, preserved], axis=1)
                 else:
                     self.logger.warning("Feature selection returned 0 columns; keeping pre-selection data.")
-                
+
                 # Remove raw OHLCV columns after feature selection
                 combined_data = self._remove_raw_ohlcv_columns(combined_data)
                 self._log_feature_sample("FeatureSelection", combined_data, "04_04")
@@ -398,6 +431,12 @@ class VectorizedLabellingOrchestrator:
             final_data = self._remove_stationarity_transform_columns(final_data)
             # Also ensure datetime/timestamp columns are removed before returning
             final_data = self._remove_datetime_columns(final_data)
+            # Ensure context columns are present in final output (non-features)
+            context_cols = self._get_present_context_columns(final_data)
+            for c in context_cols:
+                if c not in final_data.columns and c in combined_data.columns:
+                    final_data[c] = combined_data[c]
+
             # Strictly ensure that any baseline raw columns are not present
             try:
                 baseline_raw = {"open","high","low","close","volume","trade_volume","trade_count","avg_price","min_price","max_price","funding_rate","volume_ratio"}
@@ -475,6 +514,17 @@ class VectorizedLabellingOrchestrator:
             
             # Remove datetime columns from labeled_data to prevent dtype conflicts
             labeled_data = self._remove_datetime_columns(labeled_data)
+
+            # Attach context columns from stationarity stage if missing
+            try:
+                context_cols = self._get_present_context_columns(labeled_data)
+                # Price returns may live in the same frame; ensure present if configured
+                if self.keep_close_returns and "close_returns" in getattr(self, "_debug_price_returns", pd.DataFrame()).columns:
+                    if "close_returns" not in labeled_data.columns:
+                        labeled_data["close_returns"] = self._debug_price_returns["close_returns"].values
+                # Volume context might be in volume_data; if missing and we logged raw, try to source from there later stages
+            except Exception:
+                pass
             
             # If no advanced features, return labeled data as is
             if not advanced_features:
@@ -757,9 +807,17 @@ class VectorizedLabellingOrchestrator:
     def _remove_stationarity_transform_columns(self, data: pd.DataFrame) -> pd.DataFrame:
         """Remove intermediate stationarity helper columns that are not final engineered features."""
         try:
+            # Preserve configured context columns (e.g., close_returns and selected volume rep)
+            preserve = set()
+            if self.keep_close_returns and "close_returns" in data.columns:
+                preserve.add("close_returns")
+            chosen_vol = self._choose_volume_context_column(data)
+            if chosen_vol in data.columns:
+                preserve.add(chosen_vol)
             to_drop = [
                 c for c in data.columns
-                if c.endswith("_log") or c.endswith("_returns") or c.endswith("_log_returns") or c.endswith("_diff") or c.endswith("_detrended")
+                if (c.endswith("_log") or c.endswith("_returns") or c.endswith("_log_returns") or c.endswith("_diff") or c.endswith("_detrended"))
+                and c not in preserve
             ]
             if to_drop:
                 self.logger.info(f"Removing stationarity helper columns: {to_drop[:20]}" + (" ..." if len(to_drop) > 20 else ""))
@@ -1029,6 +1087,50 @@ class VectorizedLabellingOrchestrator:
         except Exception as e:
             self.logger.warning(f"Failed to write feature format report: {e}")
 
+    def _choose_volume_context_column(self, volume_df: pd.DataFrame) -> str:
+        """Choose which volume representation to preserve as context based on configuration and availability."""
+        available = set(getattr(volume_df, 'columns', []))
+        if self.volume_representation == "returns":
+            # Prefer volume_returns; if missing, fall back to normalized -> log -> detrended -> raw volume
+            for c in ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"]:
+                if c in available:
+                    return c
+        elif self.volume_representation == "normalized":
+            for c in ["volume_normalized", "volume_returns", "volume_log", "volume_detrended", "volume"]:
+                if c in available:
+                    return c
+        elif self.volume_representation == "log":
+            for c in ["volume_log", "volume_returns", "volume_normalized", "volume_detrended", "volume"]:
+                if c in available:
+                    return c
+        elif self.volume_representation == "detrended":
+            for c in ["volume_detrended", "volume_returns", "volume_normalized", "volume_log", "volume"]:
+                if c in available:
+                    return c
+        # none or fallback
+        return next((c for c in ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"] if c in available), "volume")
+
+    def _get_present_context_columns(self, df: pd.DataFrame) -> list[str]:
+        """Return the list of context columns present in a given DataFrame, according to config."""
+        cols: list[str] = []
+        if self.keep_close_returns and "close_returns" in df.columns:
+            cols.append("close_returns")
+        # Volume selection
+        for c in ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"]:
+            if c in df.columns:
+                # Respect configured priority
+                chosen = self._choose_volume_context_column(df)
+                if c == chosen:
+                    cols.append(c)
+                    break
+        # Always exclude metadata/context specified in config from modeling
+        cols.extend([c for c in self.context_non_feature_columns if c in df.columns])
+        # Ensure label is not treated as feature
+        if "label" in df.columns:
+            cols.append("label")
+        # Deduplicate
+        return list(dict.fromkeys(cols))
+
 
 class VectorizedStationarityChecker:
     """Check and transform data for stationarity using vectorized operations."""
@@ -1202,6 +1304,10 @@ class VectorizedStationarityChecker:
             if "volume" not in transformed_data.columns:
                 self.logger.warning(f"Missing volume column. Available: {transformed_data.columns.tolist()}")
                 return volume_data
+            
+            # NEW: add volume returns as primary stationary representation
+            with np.errstate(divide='ignore', invalid='ignore'):
+                transformed_data["volume_returns"] = transformed_data["volume"].pct_change()
             
             # Log transformation - ADD to existing data, don't replace
             transformed_data["volume_log"] = np.log(transformed_data["volume"])
@@ -1905,6 +2011,16 @@ class VectorizedDataNormalizer:
         self.normalization_config = config.get("data_normalization", {})
         self.scaling_method = self.normalization_config.get("scaling_method", "robust")
         self.outlier_handling = self.normalization_config.get("outlier_handling", "clip")
+        # Access orchestrator settings to skip context columns
+        orch_cfg = config.get("vectorized_labelling_orchestrator", {})
+        self.keep_close_returns = orch_cfg.get("keep_only_close_returns_main", True)
+        self.volume_representation = str(orch_cfg.get("volume_representation", "returns")).lower()
+        self.context_non_feature_columns: set[str] = set(
+            orch_cfg.get(
+                "context_non_feature_columns",
+                ["year", "month", "day", "exchange", "symbol", "timeframe", "timestamp"],
+            )
+        )
 
     async def normalize_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Normalize data using vectorized operations."""
@@ -1917,7 +2033,7 @@ class VectorizedDataNormalizer:
             # Handle outliers
             data = self._clip_outliers_vectorized(data)
             
-            # Apply robust scaling
+            # Apply robust scaling (skip label and context columns)
             data = self._apply_robust_scaling_vectorized(data)
             
             self.logger.info("✅ Data normalization completed")
@@ -1999,19 +2115,29 @@ class VectorizedDataNormalizer:
             return data
 
     def _apply_robust_scaling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply robust scaling using vectorized operations."""
+        """Apply robust scaling using vectorized operations while excluding context columns."""
         try:
             from sklearn.preprocessing import RobustScaler
-            
             scaler = RobustScaler()
-            numeric_data = data.select_dtypes(include=[np.number])
-            
-            if len(numeric_data.columns) > 0:
-                scaled_data = scaler.fit_transform(numeric_data)
-                data[numeric_data.columns] = scaled_data
-            
+            numeric_cols = list(data.select_dtypes(include=[np.number]).columns)
+            # Exclusions: label, preserved context columns
+            exclude: set[str] = {"label"}
+            if self.keep_close_returns and "close_returns" in data.columns:
+                exclude.add("close_returns")
+            # Determine chosen volume column to exclude from scaling
+            for c in ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"]:
+                if c in data.columns:
+                    # honor configured priority
+                    chosen = self._choose_volume_context_column(data)
+                    if c == chosen:
+                        exclude.add(c)
+                        break
+            # Also exclude any configured non-feature context columns
+            exclude |= {c for c in self.context_non_feature_columns if c in data.columns}
+            scale_cols = [c for c in numeric_cols if c not in exclude]
+            if scale_cols:
+                data[scale_cols] = scaler.fit_transform(data[scale_cols])
             return data
-
         except Exception as e:
             self.logger.error(f"Error applying robust scaling: {e}")
             return data
@@ -2051,3 +2177,21 @@ class VectorizedDataNormalizer:
         except Exception as e:
             self.logger.error(f"Error applying min-max scaling: {e}")
             return data
+
+    def _choose_volume_context_column(self, df: pd.DataFrame) -> str:
+        """Local helper to choose volume context column in normalizer consistent with orchestrator settings."""
+        available = set(df.columns)
+        pref = self.volume_representation
+        order_map = {
+            "returns": ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"],
+            "normalized": ["volume_normalized", "volume_returns", "volume_log", "volume_detrended", "volume"],
+            "log": ["volume_log", "volume_returns", "volume_normalized", "volume_detrended", "volume"],
+            "detrended": ["volume_detrended", "volume_returns", "volume_normalized", "volume_log", "volume"],
+        }
+        for c in order_map.get(pref, []) or []:
+            if c in available:
+                return c
+        for c in ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"]:
+            if c in available:
+                return c
+        return "volume"

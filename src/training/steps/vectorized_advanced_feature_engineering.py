@@ -327,24 +327,57 @@ class WaveletFeatureCache:
     def _features_to_dataframe(self, features: dict[str, Any]) -> pd.DataFrame:
         """Convert features dictionary to DataFrame for caching."""
         try:
-            # Convert features to DataFrame format
-            if features:
-                # Handle different feature types
-                feature_data = {}
-                for key, value in features.items():
-                    if isinstance(value, (int, float, np.number)):
-                        feature_data[key] = [value]
-                    elif isinstance(value, (list, np.ndarray)):
-                        feature_data[key] = value
+            # Convert features to DataFrame format with aligned lengths
+            if not features:
+                return pd.DataFrame()
+
+            # Determine candidate array lengths for vector features
+            lengths: list[int] = []
+            for key, value in features.items():
+                if isinstance(value, (list, np.ndarray)):
+                    try:
+                        arr = np.asarray(value)
+                        if arr.ndim == 1:
+                            lengths.append(arr.shape[0])
+                        elif arr.ndim >= 2 and min(arr.shape[0], arr.shape[1]) > 1:
+                            lengths.append(arr.shape[0])
+                    except Exception:
+                        continue
+                elif isinstance(value, pd.Series):
+                    lengths.append(len(value))
+            target_len = min(lengths) if lengths else 0
+
+            feature_data: dict[str, Any] = {}
+            for key, value in features.items():
+                # Skip non-informative scalars to avoid constant columns in cache
+                if isinstance(value, (int, float, np.number)):
+                    # Only include simple scalars in metadata, not in the features frame
+                    continue
+                if isinstance(value, pd.Series):
+                    series_vals = value.values
+                    if target_len and series_vals.shape[0] > target_len:
+                        series_vals = series_vals[-target_len:]
+                    feature_data[key] = series_vals
+                elif isinstance(value, (list, np.ndarray)):
+                    arr = np.asarray(value)
+                    if arr.ndim == 1:
+                        vals = arr
+                    elif arr.ndim == 2:
+                        vals = arr[:, 0]
                     else:
+                        vals = arr.reshape(arr.shape[0], -1)[:, 0]
+                    if target_len and vals.shape[0] > target_len:
+                        vals = vals[-target_len:]
+                    feature_data[key] = vals
+                else:
+                    # Fallback: store as string (single-row) only if no target_len is defined
+                    if target_len == 0:
                         feature_data[key] = [str(value)]
-                
-                df = pd.DataFrame(feature_data)
-            else:
-                df = pd.DataFrame()
-            
+                    # else skip
+            # Build DataFrame
+            df = pd.DataFrame(feature_data)
             return df
-            
+        
         except Exception as e:
             self.logger.error(f"Error converting features to DataFrame: {e}")
             return pd.DataFrame()

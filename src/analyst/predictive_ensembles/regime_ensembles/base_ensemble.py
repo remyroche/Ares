@@ -524,7 +524,7 @@ class BaseEnsemble:
         # Create a DataFrame from the dictionary, then reindex
         meta_input_df = pd.DataFrame([meta_features])
         if hasattr(self.meta_feature_scaler, "feature_names_in_"):
-            missing_cols = [c for c in self.meta_feature_scaler.feature_names_in_ if c not in meta_input_df.columns]
+            missing_cols = list(set(self.meta_feature_scaler.feature_names_in_) - set(meta_input_df.columns))
             if missing_cols:
                 self.logger.warning(f"Missing meta features at inference: {missing_cols}")
             meta_input_df = meta_input_df.reindex(

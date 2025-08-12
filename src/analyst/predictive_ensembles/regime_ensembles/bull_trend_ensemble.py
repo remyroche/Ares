@@ -125,7 +125,7 @@ class BullTrendEnsemble(BaseEnsemble):
         # Attach explicit meta-labels if present to make their influence explicit
         meta_label_cols = [
             c for c in df.columns if any(
-                c.endswith(suffix) or c.startswith(prefix)
+                c.startswith(prefix) and c.endswith(suffix)
                 for suffix in [
                     "STRONG_TREND_CONTINUATION",
                     "RANGE_MEAN_REVERSION",

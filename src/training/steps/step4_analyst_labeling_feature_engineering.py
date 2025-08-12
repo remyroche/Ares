@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from sklearn.feature_selection import mutual_info_classif
+from sklearn.model_selection import KFold
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
@@ -1431,6 +1433,69 @@ class AnalystLabelingFeatureEngineeringStep:
                     self.logger.warning(f"Feature '{c}' has near-zero variance (std={std:.2e})")
             except Exception:
                 continue
+
+    def _log_mutual_information_warnings_step4(self, X: pd.DataFrame, y: pd.Series) -> None:
+        """Compute MI between each feature and label; warn on near-zero MI.
+        Blank mode (env BLANK_TRAINING_MODE=1): threshold 1e-5; Full: bottom 20% percentile.
+        """
+        if X is None or X.empty or y is None or y.empty:
+            return
+        numeric = X.select_dtypes(include=[np.number])
+        if numeric.empty:
+            return
+        # Blank mode detection
+        blank_mode = False
+        try:
+            blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
+        except Exception:
+            pass
+        mi = mutual_info_classif(numeric.values, y.values, discrete_features=False, random_state=42)
+        mi_series = pd.Series(mi, index=numeric.columns)
+        if blank_mode:
+            low = mi_series[mi_series <= 1e-5]
+            threshold_txt = "1e-5"
+        else:
+            thr = mi_series.quantile(0.20)
+            low = mi_series[mi_series <= thr]
+            threshold_txt = f"{thr:.4g}"
+        if not low.empty:
+            names = low.sort_values().index.tolist()
+            self.logger.warning(
+                f"MI (Step4): {len(names)} features show near-zero uni-variate predictive power (<= {threshold_txt}): {names[:50]}{' ...' if len(names)>50 else ''}"
+            )
+
+    def _log_feature_stability_warnings_step4(self, X: pd.DataFrame) -> None:
+        """4-fold CV stability check on features; warn if std of fold means exceeds 3x expected standard error."""
+        if X is None or X.empty:
+            return
+        numeric = X.select_dtypes(include=[np.number])
+        if numeric.empty:
+            return
+        kf = KFold(n_splits=4, shuffle=True, random_state=42)
+        unstable: list[str] = []
+        for col in numeric.columns:
+            try:
+                vals = numeric[col].astype(float).values
+                gstd = float(np.nanstd(vals))
+                if not np.isfinite(gstd) or gstd == 0.0:
+                    continue
+                fold_means = []
+                for train_idx, _ in kf.split(vals):
+                    fm = float(np.nanmean(vals[train_idx]))
+                    if np.isfinite(fm):
+                        fold_means.append(fm)
+                if len(fold_means) < 2:
+                    continue
+                std_of_means = float(np.nanstd(fold_means))
+                expected_se = gstd / np.sqrt(4)
+                if std_of_means > 3.0 * expected_se:
+                    unstable.append(col)
+            except Exception:
+                continue
+        if unstable:
+            self.logger.warning(
+                f"Stability (Step4): {len(unstable)} features are unstable across folds: {unstable[:50]}{' ...' if len(unstable)>50 else ''}"
+            )
 
 
 class DeprecatedAnalystLabelingFeatureEngineeringStep:

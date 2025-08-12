@@ -816,10 +816,10 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.info(
                 f"✅ Engineered {len(sanitized)} vectorized advanced features including wavelet transforms",
             )
-+            try:
-+                self.logger.info(f"🧾 Vectorized feature list ({len(sanitized)}): {sorted(list(sanitized.keys()))}")
-+            except Exception:
-+                pass
+            try:
+                self.logger.info(f"🧾 Vectorized feature list ({len(sanitized)}): {sorted(list(sanitized.keys()))}")
+            except Exception as e:
+                self.logger.warning(f"Failed to log vectorized feature list: {e}")
             return sanitized
 
         except Exception as e:

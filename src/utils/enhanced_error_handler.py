@@ -267,8 +267,8 @@ class ErrorRecoveryManager:
                             f"Recovery successful with {type(strategy).__name__}",
                         )
                         return result
-                except Exception:
-                    self.print(failed("Recovery strategy failed: {recovery_error}"))
+                except Exception as e:
+                    self.print(failed(f"Recovery strategy failed: {e}"))
                     continue
 
         self.print(failed("All recovery strategies failed for error: {error}"))

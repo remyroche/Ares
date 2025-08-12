@@ -312,9 +312,9 @@ class EnhancedErrorHandler:
                                 step_name=context or func.__name__,
                                 error_type=type(e).__name__,
                             ).inc()
-                        except Exception as metrics_exc:
+                        except Exception as e:
                             self.logger.warning(
-                                f"Failed to increment Prometheus metrics: {metrics_exc}",
+                                f"Failed to increment Prometheus metrics: {e}",
                             )
 
                     if recovery_strategies:
@@ -331,9 +331,9 @@ class EnhancedErrorHandler:
                                     )
                                     if recovery_result is not None:
                                         return cast("T | None", recovery_result)
-                                except Exception as recovery_error:
+                                except Exception as e:
                                     self.logger.exception(
-                                        f"Recovery failed: {recovery_error}",
+                                        f"Recovery failed: {e}",
                                     )
 
                     if reraise:
@@ -357,9 +357,9 @@ class EnhancedErrorHandler:
                                 step_name=context or func.__name__,
                                 error_type=type(e).__name__,
                             ).inc()
-                        except Exception as metrics_exc:
+                        except Exception as e:
                             self.logger.warning(
-                                f"Failed to increment Prometheus metrics: {metrics_exc}",
+                                f"Failed to increment Prometheus metrics: {e}",
                             )
 
                     if recovery_strategies:
@@ -385,9 +385,9 @@ class EnhancedErrorHandler:
                                         )
                                         if recovery_result is not None:
                                             return cast("T | None", recovery_result)
-                                except Exception as recovery_error:
+                                except Exception as e:
                                     self.logger.exception(
-                                        f"Recovery failed: {recovery_error}",
+                                        f"Recovery failed: {e}",
                                     )
 
                     if reraise:

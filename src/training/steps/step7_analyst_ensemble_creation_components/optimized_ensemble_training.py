@@ -271,7 +271,7 @@ if __name__ == "__main__":
         y.iloc[:1500],
         y.iloc[1500:],
     )
-    self.logger.info("✅ Example using chronological split (leak-proof)")
+    print("✅ Example using chronological split (leak-proof)")
 
     manager = HighPerformanceEnsembleManager()
 

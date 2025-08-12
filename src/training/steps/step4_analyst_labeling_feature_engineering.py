@@ -390,6 +390,13 @@ class AnalystLabelingFeatureEngineeringStep:
                 self.logger.info(
                     f"Step4 SR location features added: {list(sr_feats.keys())}"
                 )
+                # SR event labels for S/R model training (touch-only moments)
+                try:
+                    labels = self._build_sr_event_labels(pd.concat([df, pd.DataFrame(sr_feats, index=df.index)], axis=1))
+                    feats["sr_event_label"] = labels
+                    feats["sr_touch"] = (labels != 0).astype(int)
+                except Exception as _e:
+                    self.logger.warning(f"Failed to create SR event labels: {_e}")
             except Exception as _e:
                 self.logger.warning(f"Failed to add SR location features: {_e}")
 
@@ -591,6 +598,8 @@ class AnalystLabelingFeatureEngineeringStep:
                     "sr_breakout_down": zeros,
                     "sr_bounce_up": zeros,
                     "sr_bounce_down": zeros,
+                    "nearest_support_center": pd.Series(np.nan, index=df.index),
+                    "nearest_resistance_center": pd.Series(np.nan, index=df.index),
                 }
 
             # Separate and pick top-N by score
@@ -638,6 +647,8 @@ class AnalystLabelingFeatureEngineeringStep:
                 "sr_breakout_down": breakout_down.astype(int),
                 "sr_bounce_up": bounce_up.astype(int),
                 "sr_bounce_down": bounce_down.astype(int),
+                "nearest_support_center": sup_series,
+                "nearest_resistance_center": res_series,
             }
         except Exception as e:
             self.logger.warning(f"Final SR location features failed: {e}")
@@ -650,7 +661,67 @@ class AnalystLabelingFeatureEngineeringStep:
                 "sr_breakout_down": zeros,
                 "sr_bounce_up": zeros,
                 "sr_bounce_down": zeros,
+                "nearest_support_center": pd.Series(np.nan, index=df.index),
+                "nearest_resistance_center": pd.Series(np.nan, index=df.index),
             }
+
+    def _build_sr_event_labels(
+        self,
+        df: pd.DataFrame,
+        touch_tol_pct: float = 0.001,
+        breakout_thresh: float = 0.003,  # 0.3%
+        bounce_thresh: float = 0.005,    # 0.5%
+        horizon: int = 20,
+    ) -> pd.Series:
+        """Build SR-event labels using nearest centers and OHLC data.
+        -1 breakout, +1 bounce, 0 none. Triggered only on touches at t.
+        """
+        try:
+            close = df["close"].astype(float)
+            high = df["high"].astype(float)
+            low = df["low"].astype(float)
+            sup_center = df.get("nearest_support_center", pd.Series(np.nan, index=df.index)).astype(float)
+            res_center = df.get("nearest_resistance_center", pd.Series(np.nan, index=df.index)).astype(float)
+
+            labels = pd.Series(0, index=df.index, dtype=int)
+            # Support touches
+            touch_sup = (sup_center.notna()) & ((low - sup_center) / close <= touch_tol_pct)
+            # Resistance touches
+            touch_res = (res_center.notna()) & ((res_center - high) / close <= touch_tol_pct)
+            touch_idx = np.where((touch_sup | touch_res).values)[0]
+
+            for i in touch_idx:
+                end = min(len(df) - 1, i + horizon)
+                # Determine side
+                side = "support" if bool(touch_sup.iloc[i]) else "resistance"
+                level = float(sup_center.iloc[i] if side == "support" else res_center.iloc[i])
+                # scan ahead
+                window_close = close.iloc[i + 1 : end + 1]
+                window_high = high.iloc[i + 1 : end + 1]
+                window_low = low.iloc[i + 1 : end + 1]
+                if window_close.empty:
+                    continue
+
+                breakout = False
+                bounce = False
+                if side == "support":
+                    # Breakout down if closes below level by breakout_thresh
+                    breakout = bool(((window_close - level) / level < -breakout_thresh).any())
+                    # Bounce up if price moves away by bounce_thresh without breakout first
+                    away = bool(((window_high - level) / level > bounce_thresh).any())
+                    bounce = (away and not breakout)
+                else:
+                    # Breakout up if closes above level by breakout_thresh
+                    breakout = bool(((window_close - level) / level > breakout_thresh).any())
+                    # Bounce down if price moves away by bounce_thresh without breakout first
+                    away = bool(((level - window_low) / level > bounce_thresh).any())
+                    bounce = (away and not breakout)
+
+                labels.iloc[i] = -1 if breakout else (1 if bounce else 0)
+
+            return labels
+        except Exception:
+            return pd.Series(0, index=df.index, dtype=int)
 
     def _compute_vif_scores(self, X: pd.DataFrame) -> dict[str, float]:
         from sklearn.linear_model import LinearRegression

@@ -1001,7 +1001,7 @@ class VectorizedLabellingOrchestrator:
         }
         for name in features.keys():
             lname = name.lower()
-            if any(x in lname for x in ["db", "cmor", "morl", "wavelet", "cwt", "dwt"]):
+            if any(x in lname for x in ["db", "cmor", "morl", "wavelet", "cwt", "dwt", "energy_ts", "dominant_scale_ts", "dominant_freq_ts", "_ts"]):
                 categories["wavelet"] += 1
             elif any(x in lname for x in ["momentum", "roc"]):
                 categories["momentum"] += 1
@@ -1009,17 +1009,40 @@ class VectorizedLabellingOrchestrator:
                 categories["volatility"] += 1
             elif any(x in lname for x in ["corr", "correlation"]):
                 categories["correlation"] += 1
-            elif any(x in lname for x in ["liquidity", "depth", "spread"]):
+            elif any(x in lname for x in ["liquidity", "depth", "spread", "imbalance"]):
                 categories["liquidity"] += 1
             elif any(x in lname for x in ["engulf", "hammer", "doji", "marubozu", "tweezer", "spinning_top", "shooting_star"]):
                 categories["candlestick"] += 1
             elif any(x in lname for x in ["order_flow", "price_impact", "market_depth", "volume_price_impact"]):
                 categories["microstructure"] += 1
-            elif any(x in lname for x in ["sr_distance", "support_resistance"]):
+            elif any(x in lname for x in ["sr_distance", "support_resistance", "nearest_support", "nearest_resistance"]):
                 categories["sr_distance"] += 1
             else:
                 categories["other"] += 1
         return categories
+
+    def _list_other_features(self, features: dict[str, Any]) -> list[str]:
+        other: list[str] = []
+        for name in features.keys():
+            lname = name.lower()
+            if any(x in lname for x in ["db", "cmor", "morl", "wavelet", "cwt", "dwt", "energy_ts", "dominant_scale_ts", "dominant_freq_ts", "_ts"]):
+                continue
+            if any(x in lname for x in ["momentum", "roc"]):
+                continue
+            if "volatility" in lname:
+                continue
+            if any(x in lname for x in ["corr", "correlation"]):
+                continue
+            if any(x in lname for x in ["liquidity", "depth", "spread", "imbalance"]):
+                continue
+            if any(x in lname for x in ["engulf", "hammer", "doji", "marubozu", "tweezer", "spinning_top", "shooting_star"]):
+                continue
+            if any(x in lname for x in ["order_flow", "price_impact", "market_depth", "volume_price_impact"]):
+                continue
+            if any(x in lname for x in ["sr_distance", "support_resistance", "nearest_support", "nearest_resistance"]):
+                continue
+            other.append(name)
+        return other
 
     def _format_and_align_features(self, features: dict[str, Any], target_index: pd.Index) -> tuple[dict[str, pd.Series], dict[str, Any]]:
         """Ensure each feature is a well-formed pd.Series aligned to target_index.

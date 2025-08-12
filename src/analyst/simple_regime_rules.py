@@ -70,17 +70,18 @@ def classify_regime_series(df: pd.DataFrame) -> Tuple[List[str], List[float]]:
     ema_sep = (feats["ema_21"] - feats["ema_55"]).abs()
     ema_sep_norm = (ema_sep / feats["close"].rolling(55).mean()).fillna(0.0)
 
-    def conf_calc(r: str, adx_val: float, sep_norm: float) -> float:
-        if r == "SIDEWAYS":
-            return float(np.clip((20 - adx_val) / 20, 0.2, 1.0))
-        adx_component = np.clip((adx_val - 20) / 30, 0.0, 1.0)
-        sep_component = np.clip(sep_norm * 10, 0.0, 1.0)
-        return float(np.clip(0.5 * adx_component + 0.5 * sep_component, 0.2, 1.0))
+    sideways = ~(bull | bear)
 
-    confidences = [
-        conf_calc(r, float(a), float(s))
-        for r, a, s in zip(regimes, feats["adx"].tolist(), ema_sep_norm.tolist())
-    ]
+    # Vectorized confidence calculation
+    # Sideways confidence
+    conf_sideways = np.clip((20 - feats["adx"]) / 20, 0.2, 1.0)
+
+    # Trend confidence
+    adx_component = np.clip((feats["adx"] - 20) / 30, 0.0, 1.0)
+    sep_component = np.clip(ema_sep_norm * 10, 0.0, 1.0)
+    conf_trend = np.clip(0.5 * adx_component + 0.5 * sep_component, 0.2, 1.0)
+
+    confidences = np.where(sideways, conf_sideways, conf_trend).tolist()
     return regimes, confidences
 
 

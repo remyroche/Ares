@@ -1591,6 +1591,15 @@ class VectorizedAdvancedFeatureEngineering:
         - STRONG_TREND_CONTINUATION
         - RANGE_MEAN_REVERSION
         - EXHAUSTION_REVERSAL
+        - BREAKOUT_SUCCESS
+        - BREAKOUT_FAILURE
+        - VOLATILITY_COMPRESSION
+        - VOLATILITY_EXPANSION
+        - FLAG_FORMATION
+        - TRIANGLE_FORMATION
+        - RECTANGLE_FORMATION
+        - MOMENTUM_IGNITION
+        - GRADUAL_MOMENTUM_FADE
 
         Notes:
         - Uses only past/current information (rolling stats) and aligns labels to the next base bar to avoid lookahead.
@@ -1629,11 +1638,26 @@ class VectorizedAdvancedFeatureEngineering:
             momentum_5 = close_ret.rolling(5, min_periods=1).sum().fillna(0)
             momentum_10 = close_ret.rolling(10, min_periods=1).sum().fillna(0)
             vol_20 = close_ret.rolling(20, min_periods=1).std().fillna(0)
+            vol_10 = close_ret.rolling(10, min_periods=1).std().fillna(0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                volatility_ratio = (vol_10 / vol_20.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan).fillna(1.0)
 
             # Volume ratio
             vol_ma_10 = resampled_volume["volume"].rolling(10, min_periods=1).mean().replace(0, np.nan)
             with np.errstate(divide='ignore', invalid='ignore'):
                 volume_ratio = (resampled_volume["volume"] / vol_ma_10).replace([np.inf, -np.inf], np.nan).fillna(1.0)
+
+            # Recent highs/lows for breakout detection
+            recent_high = resampled_price["close"].rolling(20, min_periods=1).max()
+            recent_low = resampled_price["close"].rolling(20, min_periods=1).min()
+
+            # MACD (stationary source via EMA of returns proxy)
+            # For stability, compute EMAs on price but take differences for signal
+            ema12 = resampled_price["close"].ewm(span=12, adjust=False).mean()
+            ema26 = resampled_price["close"].ewm(span=26, adjust=False).mean()
+            macd = ema12 - ema26
+            macd_signal = macd.ewm(span=9, adjust=False).mean()
+            macd_hist = macd - macd_signal
 
             # Thresholds (align with MetaLabelingSystem defaults)
             volatility_threshold = 0.02
@@ -1658,6 +1682,33 @@ class VectorizedAdvancedFeatureEngineering:
             is_sideways = abs(momentum_10) < 0.01
             range_mr = (is_at_edge & is_low_vol & is_sideways).astype(int)
 
+            # BREAKOUT_SUCCESS and BREAKOUT_FAILURE
+            is_breakout_up = (resampled_price["close"] > recent_high.shift(1)) & (momentum_5 > 0.0)
+            is_breakout_down = (resampled_price["close"] < recent_low.shift(1)) & (momentum_5 < 0.0)
+            breakout_success = ((is_breakout_up | is_breakout_down) & (volume_ratio > volume_threshold)).astype(int)
+            breakout_failure = (((bb_pos > 0.8) | (bb_pos < 0.2)) & (abs(momentum_5) < 0.005)).astype(int)
+
+            # VOLATILITY patterns
+            vol_compression = ((bb_upper - bb_lower) / sma20.replace(0, np.nan) < 0.05) & (volatility_ratio < 0.8)
+            vol_expansion = (volatility_ratio > 1.5) & (volume_ratio > volume_threshold)
+            vol_compression = vol_compression.fillna(False).astype(int)
+            vol_expansion = vol_expansion.fillna(False).astype(int)
+
+            # CHART patterns
+            flag_formation = (abs(momentum_5) > 0.02) & (vol_10 < volatility_threshold)
+            triangle_formation = ((bb_upper - bb_lower) / sma20.replace(0, np.nan) < 0.03)
+            price_position = ((resampled_price["close"] - recent_low) / (recent_high - recent_low).replace(0, np.nan)).clip(0, 1).fillna(0.5)
+            rectangle_formation = (price_position.between(0.3, 0.7)) & (((bb_upper - bb_lower) / sma20.replace(0, np.nan)) < 0.05)
+            flag_formation = flag_formation.fillna(False).astype(int)
+            triangle_formation = triangle_formation.fillna(False).astype(int)
+            rectangle_formation = rectangle_formation.fillna(False).astype(int)
+
+            # MOMENTUM patterns
+            momentum_ignition = ((rsi > 60) | (rsi < 40)) & (abs(macd_hist) > 0.001) & (abs(momentum_5) > momentum_threshold)
+            gradual_fade = (abs(momentum_5) < abs(momentum_10)) & (abs(momentum_5) < momentum_threshold)
+            momentum_ignition = momentum_ignition.fillna(False).astype(int)
+            gradual_fade = gradual_fade.fillna(False).astype(int)
+
             # Align back to base index without lookahead: shift by +1 base bar after reindex
             base_index = price_data.index if isinstance(price_data.index, pd.DatetimeIndex) else pd.RangeIndex(start=0, stop=len(price_data))
             def _align(series: pd.Series) -> np.ndarray:
@@ -1668,11 +1719,24 @@ class VectorizedAdvancedFeatureEngineering:
                 f"{timeframe}_STRONG_TREND_CONTINUATION": _align(strong_trend),
                 f"{timeframe}_EXHAUSTION_REVERSAL": _align(exhaustion),
                 f"{timeframe}_RANGE_MEAN_REVERSION": _align(range_mr),
+                f"{timeframe}_BREAKOUT_SUCCESS": _align(breakout_success),
+                f"{timeframe}_BREAKOUT_FAILURE": _align(breakout_failure),
+                f"{timeframe}_VOLATILITY_COMPRESSION": _align(vol_compression),
+                f"{timeframe}_VOLATILITY_EXPANSION": _align(vol_expansion),
+                f"{timeframe}_FLAG_FORMATION": _align(flag_formation),
+                f"{timeframe}_TRIANGLE_FORMATION": _align(triangle_formation),
+                f"{timeframe}_RECTANGLE_FORMATION": _align(rectangle_formation),
+                f"{timeframe}_MOMENTUM_IGNITION": _align(momentum_ignition),
+                f"{timeframe}_GRADUAL_MOMENTUM_FADE": _align(gradual_fade),
             }
 
             self.logger.info(
                 f"Generated explicit meta-labels at {timeframe}: "
-                f"STC={(strong_trend==1).sum()}, ER={(exhaustion==1).sum()}, RMR={(range_mr==1).sum()}"
+                f"STC={(strong_trend==1).sum()}, ER={(exhaustion==1).sum()}, RMR={(range_mr==1).sum()}, "
+                f"BO_S={(breakout_success==1).sum()}, BO_F={(breakout_failure==1).sum()}, "
+                f"VOL_C={(vol_compression==1).sum()}, VOL_E={(vol_expansion==1).sum()}, "
+                f"FLAG={(flag_formation==1).sum()}, TRI={(triangle_formation==1).sum()}, REC={(rectangle_formation==1).sum()}, "
+                f"IGN={(momentum_ignition==1).sum()}, FADE={(gradual_fade==1).sum()}"
             )
             return labels
 

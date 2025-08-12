@@ -114,7 +114,7 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_close_returns(self):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            s = df["close"].pct_change()
+            s = self._get_series_for_calc(df, "close").pct_change()
             s.name = "close_returns"
             return s
         return _impl
@@ -122,7 +122,7 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_pct_change(self, col: str, name: str):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            s = df[col].pct_change()
+            s = self._get_series_for_calc(df, col).pct_change()
             s.name = name
             return s
         return _impl
@@ -130,7 +130,7 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_diff(self, col: str, name: str):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            s = df[col].diff()
+            s = self._get_series_for_calc(df, col).diff()
             s.name = name
             return s
         return _impl
@@ -139,17 +139,23 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_gk_vol_returns(self):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            open_ = df["open"].astype(float)
-            high = df["high"].astype(float)
-            low = df["low"].astype(float)
-            close = df["close"].astype(float)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                log_hl = np.log(high / low)
-                log_co = np.log(close / open_)
-            gk_var = (log_hl ** 2) / (2 * np.log(2)) - (2 * np.log(2) - 1) * (log_co ** 2)
-            gk_vol = np.sqrt(gk_var.clip(lower=0))
-            with np.errstate(divide="ignore", invalid="ignore"):
-                ret = (gk_vol / gk_vol.shift(1)) - 1.0
+            def _compute_group(g: pd.DataFrame) -> pd.Series:
+                open_ = g["open"].astype(float)
+                high = g["high"].astype(float)
+                low = g["low"].astype(float)
+                close = g["close"].astype(float)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    log_hl = np.log(high / low)
+                    log_co = np.log(close / open_)
+                gk_var = (log_hl ** 2) / (2 * np.log(2)) - (2 * np.log(2) - 1) * (log_co ** 2)
+                gk_vol = np.sqrt(gk_var.clip(lower=0))
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    ret = (gk_vol / gk_vol.shift(1)) - 1.0
+                return ret
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                ret = df.groupby("symbol", group_keys=False).apply(_compute_group)
+            else:
+                ret = _compute_group(df)
             ret.name = "gk_vol_returns"
             return ret
         return _impl
@@ -157,12 +163,16 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_sma_distance(self, window: int, name: str):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            close = df["close"].astype(float)
-            sma = close.rolling(window, min_periods=1).mean()
-            with np.errstate(divide="ignore", invalid="ignore"):
-                s = (close / sma) - 1.0
-            s.name = name
-            return s
+            def _compute_sma_distance(g: pd.DataFrame) -> pd.Series:
+                close = g["close"].astype(float)
+                sma = close.rolling(window, min_periods=1).mean()
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    s_local = (close / sma) - 1.0
+                return s_local
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                s = df.groupby("symbol", group_keys=False).apply(_compute_sma_distance)
+            else:
+                s = _compute_sma_distance(df)
         return _impl
 
     def _feat_engulf_strength_z(self, kind: str):
@@ -185,7 +195,15 @@ class AnalystLabelingFeatureEngineeringStep:
                 cond = is_current_bearish & is_previous_bullish & is_engulf
                 name = "bearish_engulf_strength_z"
             strength = (body / (body_prev.replace(0, np.nan))).where(cond, 0.0)
-            z = self._zscore(strength, window=50).fillna(0)
+            # Group-aware rolling z-score to prevent cross-asset leakage
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                def _z(g: pd.Series) -> pd.Series:
+                    r = g.rolling(50, min_periods=5)
+                    return ((g - r.mean()) / r.std().replace(0, np.nan))
+                z = strength.groupby(df["symbol"]).transform(_z)
+            else:
+                z = self._zscore(strength, window=50)
+            z = z.fillna(0)
             z.name = name
             return z
         return _impl
@@ -288,16 +306,18 @@ class AnalystLabelingFeatureEngineeringStep:
                 features[fr_chg.name] = fr_chg
                 features[fr_ret.name] = fr_ret
 
-            # Volatility of stationary series
-            if self._feat_close_returns(df) is not None:
-                features["returns_volatility_20"] = self._feat_close_returns(df).rolling(20).std()
+            # Volatility of stationary series (group-aware)
+            cr = self._feat_close_returns(df)
+            if cr is not None:
+                features["returns_volatility_20"] = self._group_aware_rolling_std(cr, df, 20)
             if "volume_returns" in features.columns:
-                features["volume_returns_volatility_20"] = features["volume_returns"].rolling(20).std()
+                vr = features["volume_returns"]
+                features["volume_returns_volatility_20"] = self._group_aware_rolling_std(vr, df, 20)
 
             # Simple interactive features
-            if self._feat_close_returns(df) is not None and "volume_returns" in features.columns:
+            if cr is not None and "volume_returns" in features.columns:
                 features["returns_x_volume_returns"] = (
-                    features[self._feat_close_returns(df).name] * features["volume_returns"]
+                    cr * features["volume_returns"]
                 )
 
             # Additional upstream standardization to returns/changes for available raw series
@@ -317,8 +337,7 @@ class AnalystLabelingFeatureEngineeringStep:
             # Cleanup
             num = features.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
             features[num.columns] = num
-            features = features.fillna(0)
-            # Drop any all-NaN columns defensively
+            # Do not fill with zeros here; allow NaN to surface for later imputation
             features = features.dropna(axis=1, how="all")
             return features
         except Exception as e:
@@ -364,7 +383,7 @@ class AnalystLabelingFeatureEngineeringStep:
             # Cleanup
             num = feats.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
             feats[num.columns] = num
-            feats = feats.fillna(0)
+            # Do not fill with zeros here; allow NaN to surface for later imputation
             feats = feats.dropna(axis=1, how="all")
             return feats
         except Exception as e:
@@ -818,6 +837,22 @@ class AnalystLabelingFeatureEngineeringStep:
             features_b = await self._build_pipeline_b_ohlcv(price_data_sanitized)
             combined_features = pd.concat([features_a, features_b], axis=1)
 
+            # Multi-timeframe: previous week's close merged to daily with forward-fill (group-aware)
+            try:
+                def _weekly_prev_close(g: pd.DataFrame) -> pd.Series:
+                    weekly = g["close"].resample("W").last().shift(1)
+                    aligned = weekly.reindex(g.index, method="ffill")
+                    return aligned
+                if isinstance(price_data.index, pd.DatetimeIndex):
+                    if "symbol" in price_data.columns and price_data["symbol"].nunique() > 1:
+                        wpc = price_data.groupby("symbol", group_keys=False).apply(_weekly_prev_close)
+                    else:
+                        wpc = _weekly_prev_close(price_data)
+                    wpc.name = "weekly_prev_close"
+                    combined_features[wpc.name] = wpc
+            except Exception as e:
+                self.logger.warning(f"Weekly prev close feature generation failed: {e}")
+
             # Label using optimized triple barrier on raw OHLCV, then align features to labeled index
             try:
                 from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
@@ -844,6 +879,17 @@ class AnalystLabelingFeatureEngineeringStep:
             # Final feature sanity: drop raw OHLCV if somehow present
             raw_cols = list(set(self._RAW_CONTEXT_COLUMNS))
             labeled_data = labeled_data.drop(columns=[c for c in raw_cols if c in labeled_data.columns], errors="ignore")
+
+            # Stationarity enforcement (decide using training portion to avoid lookahead)
+            try:
+                total_rows_tmp = len(labeled_data)
+                train_end_tmp = int(total_rows_tmp * 0.8)
+                train_mask_tmp = pd.Series(False, index=labeled_data.index)
+                if train_end_tmp > 0:
+                    train_mask_tmp.iloc[:train_end_tmp] = True
+                labeled_data, _transformed_cols = self._enforce_stationarity(labeled_data, train_mask=train_mask_tmp)
+            except Exception as e:
+                self.logger.warning(f"Stationarity enforcement skipped due to error: {e}")
 
             # Check 5: Feature Matrix Sanitization (post-merge)
             labeled_data = self._sanitize_features(labeled_data)
@@ -1496,6 +1542,114 @@ class AnalystLabelingFeatureEngineeringStep:
             self.logger.warning(
                 f"Stability (Step4): {len(unstable)} features are unstable across folds: {unstable[:50]}{' ...' if len(unstable)>50 else ''}"
             )
+
+    def _adf_pvalue(self, series: pd.Series) -> float:
+        """Compute ADF p-value; return 1.0 on failure or insufficient data."""
+        try:
+            s = series.dropna().astype(float)
+            if len(s) < 30 or not _ADF_AVAILABLE:
+                return 1.0
+            result = _adfuller(s, autolag="AIC")
+            return float(result[1])
+        except Exception:
+            return 1.0
+
+    def _fracdiff_weights(self, d: float, size: int, cutoff: float = 1e-5) -> np.ndarray:
+        """Compute fractional differencing weights up to size with magnitude cutoff."""
+        w = [1.0]
+        for k in range(1, size):
+            w_k = -w[-1] * (d - (k - 1)) / k
+            if abs(w_k) < cutoff:
+                break
+            w.append(w_k)
+        return np.array(w, dtype=float)
+
+    def _fracdiff_series(self, s: pd.Series, d: float = 0.4, cutoff: float = 1e-5) -> pd.Series:
+        """Apply fractional differencing to a series with parameter d."""
+        try:
+            s = s.astype(float)
+            w = self._fracdiff_weights(d, len(s), cutoff)
+            if len(w) <= 1:
+                return s.diff()
+            # Convolution-like operation (finite weights)
+            vals = s.values
+            out = np.full_like(vals, fill_value=np.nan, dtype=float)
+            for i in range(len(w) - 1, len(vals)):
+                window = vals[i - (len(w) - 1) : i + 1]
+                if np.any(~np.isfinite(window)):
+                    continue
+                out[i] = np.dot(w[::-1], window)
+            return pd.Series(out, index=s.index)
+        except Exception:
+            return s.diff()
+
+    def _enforce_stationarity(self, df: pd.DataFrame, train_mask: pd.Series | None = None) -> tuple[pd.DataFrame, list[str]]:
+        """Enforce stationarity on non-stationary numeric features using training portion for detection.
+        Uses percentage change only (group-aware). Returns transformed DataFrame and list of transformed columns.
+        """
+        if df.empty:
+            return df, []
+        data = df.copy()
+        numeric_cols = [c for c in data.columns if c != self._LABEL_NAME and np.issubdtype(data[c].dtype, np.number)]
+        if not numeric_cols:
+            return data, []
+        # Heuristics: skip obviously stationary/bounded metrics
+        def is_likely_stationary_name(name: str) -> bool:
+            keywords = ["return", "z", "distance", "ratio", "imbalance", "volatility", "pattern", "ofi"]
+            name_l = name.lower()
+            return any(k in name_l for k in keywords)
+        transformed: list[str] = []
+        # Determine baseline for ADF from training mask
+        train_idx = data.index if train_mask is None else data.index[train_mask]
+        # Group-aware transformation
+        has_symbol = "symbol" in data.columns and data["symbol"].nunique() > 1
+        for col in numeric_cols:
+            if is_likely_stationary_name(col):
+                continue
+            # ADF over training portion only
+            try:
+                train_series = data.loc[train_idx, col]
+                pval = self._adf_pvalue(train_series)
+            except Exception:
+                pval = 1.0
+            if pval > 0.05:
+                # Non-stationary: transform using pct_change (group-aware)
+                try:
+                    if has_symbol:
+                        data[col] = data.groupby("symbol", group_keys=False)[col].pct_change()
+                    else:
+                        data[col] = data[col].pct_change()
+                    transformed.append(col)
+                except Exception:
+                    # Fallback to simple diff
+                    try:
+                        if has_symbol:
+                            data[col] = data.groupby("symbol", group_keys=False)[col].diff()
+                        else:
+                            data[col] = data[col].diff()
+                        transformed.append(col)
+                    except Exception:
+                        pass
+        if transformed:
+            self.logger.info(f"Stationarity enforcement (pct_change) applied to {len(transformed)} columns: {transformed[:30]}{' ...' if len(transformed)>30 else ''}")
+        return data, transformed
+
+    # -----------------
+    # Group-aware helpers
+    # -----------------
+    def _get_series_for_calc(self, df: pd.DataFrame, col: str):
+        """Return a Series or grouped Series for group-aware calculations."""
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            return df.groupby("symbol")[col]
+        return df[col]
+
+    def _group_aware_rolling_std(self, series: pd.Series, df: pd.DataFrame, window: int) -> pd.Series:
+        """Compute rolling std per symbol group when applicable, preserving index."""
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            return (
+                series.groupby(df["symbol"]).rolling(window).std().reset_index(level=0, drop=True)
+            )
+        return series.rolling(window).std()
 
 
 class DeprecatedAnalystLabelingFeatureEngineeringStep:

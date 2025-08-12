@@ -428,7 +428,9 @@ class BaseEnsemble:
             )
             return
 
-        self.logger.info("Applying PCA to meta-features...")
+        # Fit scaler and PCA on training data only
+        self.logger.info("Scaling and applying PCA to meta-features (train-only fit)...")
+        self.meta_feature_scaler = StandardScaler()
         X_meta_scaled = self.meta_feature_scaler.fit_transform(X_meta_train)
         n_components = min(self.n_pca_components, X_meta_scaled.shape[1])
         self.pca = PCA(n_components=n_components)
@@ -522,10 +524,12 @@ class BaseEnsemble:
         # Create a DataFrame from the dictionary, then reindex
         meta_input_df = pd.DataFrame([meta_features])
         if hasattr(self.meta_feature_scaler, "feature_names_in_"):
+            missing_cols = list(set(self.meta_feature_scaler.feature_names_in_) - set(meta_input_df.columns))
+            if missing_cols:
+                self.logger.warning(f"Missing meta features at inference: {missing_cols}")
             meta_input_df = meta_input_df.reindex(
                 columns=self.meta_feature_scaler.feature_names_in_,
-                fill_value=0,
-            )
+            ).fillna(0)
         else:
             self.logger.error(
                 "Scaler not fitted with feature names. Cannot ensure correct feature order for prediction. Attempting with current columns.",
@@ -749,10 +753,12 @@ class BaseEnsemble:
                 
             # Ensure meta features have correct columns
             if hasattr(self.meta_feature_scaler, "feature_names_in_"):
+                missing_cols = list(set(self.meta_feature_scaler.feature_names_in_) - set(meta_features.columns))
+                if missing_cols:
+                    self.logger.warning(f"Missing meta features for historical prediction: {missing_cols}")
                 meta_features = meta_features.reindex(
                     columns=self.meta_feature_scaler.feature_names_in_,
-                    fill_value=0,
-                )
+                ).fillna(0)
                 
             # Transform and predict
             meta_input_scaled = self.meta_feature_scaler.transform(meta_features)

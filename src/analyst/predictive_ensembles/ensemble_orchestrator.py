@@ -7,6 +7,7 @@ from joblib import dump, load
 from lightgbm import LGBMClassifier
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.decomposition import PCA
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
@@ -356,27 +357,51 @@ class RegimePredictiveEnsembles:
         y_encoded = self.global_meta_label_encoder.fit_transform(y_meta)
 
         # Scale features
-        self.global_meta_scaler = StandardScaler()
-        X_scaled = self.global_meta_scaler.fit_transform(X_meta)
-        X_scaled_df = pd.DataFrame(X_scaled, index=X_meta.index, columns=X_meta.columns)
-
-        # Train the global meta-learner
-        self.global_meta_learner = LGBMClassifier(
-            **self.global_meta_config,
-            random_state=42,
-        )
-
-        # Use cross-validation for more robust training
+        # Train the global meta-learner with CV; fit scaler/PCA on train folds only to avoid lookahead
         skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
-        for train_index, val_index in skf.split(X_scaled_df, y_encoded):
-            X_train, X_val = X_scaled_df.iloc[train_index], X_scaled_df.iloc[val_index]
+        best_model = None
+        best_score = -np.inf
+        best_scaler = None
+        best_pca = None
+        for train_index, val_index in skf.split(X_meta, y_encoded):
+            X_train_raw, X_val_raw = X_meta.iloc[train_index], X_meta.iloc[val_index]
             y_train, y_val = y_encoded[train_index], y_encoded[val_index]
-            self.global_meta_learner.fit(
+
+            scaler = StandardScaler()
+            X_train = scaler.fit_transform(X_train_raw)
+            X_val = scaler.transform(X_val_raw)
+
+            # Optional PCA after scaling to reduce dimensionality (fit on train only)
+            if self.global_meta_config.get("use_pca", False):
+                n_components = min(self.global_meta_config.get("pca_components", 16), X_train.shape[1])
+                pca = PCA(n_components=n_components)
+                X_train = pca.fit_transform(X_train)
+                X_val = pca.transform(X_val)
+            else:
+                pca = None
+
+            model = LGBMClassifier(
+                **self.global_meta_config,
+                random_state=42,
+            )
+            model.fit(
                 X_train,
                 y_train,
                 eval_set=[(X_val, y_val)],
                 callbacks=[LGBMClassifier.early_stopping(10, verbose=False)],
-            )  # Early stopping
+            )
+            # Use model.score on validation data
+            score = model.score(X_val, y_val)
+            if score > best_score:
+                best_score = score
+                best_model = model
+                best_scaler = scaler
+                best_pca = pca
+
+        # Persist the best artifacts for inference
+        self.global_meta_learner = best_model
+        self.global_meta_scaler = best_scaler
+        self.global_meta_pca = best_pca
 
         self.logger.info("Global meta-learner trained successfully.")
         self._save_global_meta_learner()
@@ -434,11 +459,19 @@ class RegimePredictiveEnsembles:
             else []
         )
 
-        # Reindex to match the training columns, filling missing with 0
-        X_meta_live = meta_input_df.reindex(columns=trained_features, fill_value=0)
+        # Align to training columns without masking missing features silently
+        missing_cols = list(set(trained_features) - set(meta_input_df.columns))
+        if missing_cols:
+            self.logger.warning(f"Missing meta features at inference: {missing_cols}")
+        X_meta_live = meta_input_df.reindex(columns=trained_features)
+        # Impute remaining NaNs with 0 after logging (explicit)
+        X_meta_live = X_meta_live.fillna(0)
 
         # Scale the features
         X_meta_live_scaled = self.global_meta_scaler.transform(X_meta_live)
+        # Optional PCA at inference if trained
+        if hasattr(self, "global_meta_pca") and self.global_meta_pca is not None:
+            X_meta_live_scaled = self.global_meta_pca.transform(X_meta_live_scaled)
 
         # Make prediction
         proba = self.global_meta_learner.predict_proba(X_meta_live_scaled)[0]

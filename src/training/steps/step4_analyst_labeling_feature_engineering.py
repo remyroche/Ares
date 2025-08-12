@@ -903,8 +903,8 @@ class AnalystLabelingFeatureEngineeringStep:
             # Update pipeline state with results
             pipeline_state.update(
                 {
-                    "labeled_data": result.get("data", price_data) if 'result' in locals() else labeled_data,
-                    "feature_engineering_metadata": result.get("metadata", {}) if 'result' in locals() else {},
+                    "labeled_data": labeled_data,
+                    "feature_engineering_metadata": {},
                     "feature_engineering_completed": True,
                     "labeling_completed": True,
                 },
@@ -914,7 +914,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 "✅ Analyst labeling and feature engineering completed successfully",
             )
             self.logger.info("Training specialist models for regime: combined (single unified feature set)")
-            return {"status": "SUCCESS", "data": result if 'result' in locals() else {"data": labeled_data}}
+            return {"status": "SUCCESS", "data": {"data": labeled_data}}
 
         except Exception as e:
             self.logger.exception(

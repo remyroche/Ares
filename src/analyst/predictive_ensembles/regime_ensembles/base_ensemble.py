@@ -753,7 +753,7 @@ class BaseEnsemble:
                 
             # Ensure meta features have correct columns
             if hasattr(self.meta_feature_scaler, "feature_names_in_"):
-                missing_cols = [c for c in self.meta_feature_scaler.feature_names_in_ if c not in meta_features.columns]
+                missing_cols = list(set(self.meta_feature_scaler.feature_names_in_) - set(meta_features.columns))
                 if missing_cols:
                     self.logger.warning(f"Missing meta features for historical prediction: {missing_cols}")
                 meta_features = meta_features.reindex(

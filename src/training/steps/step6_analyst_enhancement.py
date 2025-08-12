@@ -19,6 +19,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import KFold
 from torch import nn, optim
 from torch.nn.utils import prune
 from torch.utils.data import DataLoader, TensorDataset
@@ -1857,6 +1858,18 @@ class AnalystEnhancementStep:
         X_train = X_train[feature_names]
         X_val = X_val[feature_names]
         total_features = len(feature_names)
+
+        # Check 4: Mutual Information warnings (uni-variate predictive power)
+        try:
+            self._log_mutual_information_warnings(X_train, y_train)
+        except Exception as e:
+            self.logger.warning(f"Mutual Information check failed: {e}")
+
+        # Check 5: Cross-Validation Stability warnings
+        try:
+            self._log_feature_stability_warnings(X_train)
+        except Exception as e:
+            self.logger.warning(f"Stability check failed: {e}")
         
         self.logger.info(f"📊 Total features available: {total_features}")
         
@@ -1876,6 +1889,71 @@ class AnalystEnhancementStep:
             f"✅ Selected {len(optimal_features)} optimal features from {total_features} total features",
         )
         return optimal_features, selection_summary
+
+    def _log_mutual_information_warnings(self, X: pd.DataFrame, y: pd.Series) -> None:
+        """Compute MI for each feature vs target and warn on near-zero scores.
+        Threshold: in blank mode -> absolute threshold 1e-5.
+        Full mode -> bottom 20% percentile flagged.
+        """
+        if X.empty or y is None or len(X.columns) == 0:
+            return
+        # Detect blank mode
+        try:
+            is_blank_env = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
+        except Exception:
+            is_blank_env = False
+        try:
+            is_blank_cfg = bool(CONFIG.get("BLANK_TRAINING_MODE", False))
+        except Exception:
+            is_blank_cfg = False
+        blank_mode = is_blank_env or is_blank_cfg
+        # Compute MI
+        mi = mutual_info_classif(X.values, y.values, discrete_features=False, random_state=42)
+        mi_series = pd.Series(mi, index=X.columns)
+        if blank_mode:
+            low = mi_series[mi_series <= 1e-5]
+        else:
+            threshold = mi_series.quantile(0.20)
+            low = mi_series[mi_series <= threshold]
+        if not low.empty:
+            names = low.sort_values().index.tolist()
+            self.logger.warning(
+                f"MI: {len(names)} features show near-zero uni-variate predictive power (<= {('1e-5' if blank_mode else f'{threshold:.4g}')}): {names[:50]}{' ...' if len(names)>50 else ''}"
+            )
+
+    def _log_feature_stability_warnings(self, X: pd.DataFrame) -> None:
+        """Check 4-fold CV stability: warn if std of fold means >> expected standard error.
+        Criterion: std_of_means > 3 * (global_std / sqrt(k)).
+        """
+        if X.empty:
+            return
+        kf = KFold(n_splits=4, shuffle=True, random_state=42)
+        unstable: list[str] = []
+        for col in X.columns:
+            try:
+                vals = X[col].astype(float).values
+                # Skip constant columns
+                gstd = float(np.nanstd(vals))
+                if not np.isfinite(gstd) or gstd == 0.0:
+                    continue
+                fold_means = []
+                for train_idx, _ in kf.split(vals):
+                    fold_vals = vals[train_idx]
+                    if fold_vals.size == 0:
+                        continue
+                    fold_means.append(float(np.nanmean(fold_vals)))
+                if len(fold_means) < 2:
+                    continue
+                std_of_means = float(np.nanstd(fold_means))
+                expected_se = gstd / np.sqrt(4)
+                if std_of_means > 3.0 * expected_se:
+                    unstable.append(col)
+            except Exception:
+                continue
+        if unstable:
+            self.logger.warning(
+                f"Stability: {len(unstable)} features are unstable across folds (std(mean) >> expected): {unstable[:50]}{' ...' if len(unstable)>50 else ''}"
+            )
 
     async def _execute_stable_tiered_feature_selection(
         self,

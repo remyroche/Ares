@@ -1609,7 +1609,7 @@ class AnalystLabelingFeatureEngineeringStep:
 
     def _enforce_stationarity(self, df: pd.DataFrame, train_mask: pd.Series | None = None) -> tuple[pd.DataFrame, list[str]]:
         """Enforce stationarity on non-stationary numeric features using training portion for detection.
-        Returns transformed DataFrame and list of transformed columns.
+        Uses percentage change only (group-aware). Returns transformed DataFrame and list of transformed columns.
         """
         if df.empty:
             return df, []
@@ -1625,8 +1625,6 @@ class AnalystLabelingFeatureEngineeringStep:
         transformed: list[str] = []
         # Determine baseline for ADF from training mask
         train_idx = data.index if train_mask is None else data.index[train_mask]
-        use_fracdiff = bool(self.config.get("stationarity", {}).get("use_fractional_diff", False))
-        d_param = float(self.config.get("stationarity", {}).get("d", 0.4))
         # Group-aware transformation
         has_symbol = "symbol" in data.columns and data["symbol"].nunique() > 1
         for col in numeric_cols:
@@ -1639,18 +1637,12 @@ class AnalystLabelingFeatureEngineeringStep:
             except Exception:
                 pval = 1.0
             if pval > 0.05:
-                # Non-stationary: transform
+                # Non-stationary: transform using pct_change (group-aware)
                 try:
                     if has_symbol:
-                        if use_fracdiff:
-                            data[col] = data.groupby("symbol", group_keys=False)[col].apply(lambda s: self._fracdiff_series(s, d=d_param))
-                        else:
-                            data[col] = data.groupby("symbol", group_keys=False)[col].pct_change()
+                        data[col] = data.groupby("symbol", group_keys=False)[col].pct_change()
                     else:
-                        if use_fracdiff:
-                            data[col] = self._fracdiff_series(data[col], d=d_param)
-                        else:
-                            data[col] = data[col].pct_change()
+                        data[col] = data[col].pct_change()
                     transformed.append(col)
                 except Exception:
                     # Fallback to simple diff
@@ -1663,7 +1655,7 @@ class AnalystLabelingFeatureEngineeringStep:
                     except Exception:
                         pass
         if transformed:
-            self.logger.info(f"Stationarity enforcement applied to {len(transformed)} columns: {transformed[:30]}{' ...' if len(transformed)>30 else ''}")
+            self.logger.info(f"Stationarity enforcement (pct_change) applied to {len(transformed)} columns: {transformed[:30]}{' ...' if len(transformed)>30 else ''}")
         return data, transformed
 
 

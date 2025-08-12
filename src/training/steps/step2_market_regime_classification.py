@@ -338,15 +338,15 @@ class MarketRegimeClassificationStep:
             }
 
             # Transitions
-            transitions = []
-            for i in range(1, len(regimes)):
-                if regimes[i] != regimes[i - 1]:
-                    transitions.append({
-                        "from_regime": regimes[i - 1],
-                        "to_regime": regimes[i],
-                        "transition_index": i,
-                    })
-            formatted_results["regime_transitions"] = transitions
+            s_regimes = pd.Series(regimes)
+            shifted = s_regimes.shift(1)
+            mask = s_regimes != shifted
+            transitions_df = pd.DataFrame({
+                'from_regime': shifted[mask],
+                'to_regime': s_regimes[mask],
+                'transition_index': s_regimes.index[mask]
+            })
+            formatted_results["regime_transitions"] = transitions_df.to_dict('records')
 
             self.logger.info(
                 f"Regime classification (EMA/ADX) completed. Found {len(regime_counts)} distinct regimes",

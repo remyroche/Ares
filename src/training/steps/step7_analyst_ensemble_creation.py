@@ -78,6 +78,98 @@ class DynamicWeightedEnsemble:
         return np.ones((len(X), 2)) * 0.5
 
 
+class ProximityWeightedEnsemble(DynamicWeightedEnsemble):
+    """Proximity-weighted ensemble that boosts S/R regime when near S/R levels.
+
+    Parameters (from config):
+    - sr_proximity_tau: decay constant for proximity weight (default 0.003)
+    - sr_touch_boost: additive boost if recent sr_touch (default 0.2)
+    - sr_max_weight: cap on SR weight (default 0.7)
+    """
+
+    def __init__(self, models, model_names, weights, cfg=None):
+        super().__init__(models, model_names, weights)
+        self.cfg = cfg or {}
+        self._prev_w: float | None = None
+
+    def _compute_sr_weights(self, X: pd.DataFrame) -> np.ndarray:
+        try:
+            tau = float(self.cfg.get("sr_proximity_tau", 0.003))
+            max_w = float(self.cfg.get("sr_max_weight", 0.7))
+            boost = float(self.cfg.get("sr_touch_boost", 0.2))
+            # Expect these columns in validation frame
+            d_sup = X.get("dist_to_support_pct", pd.Series(1.0, index=X.index)).astype(float)
+            d_res = X.get("dist_to_resistance_pct", pd.Series(1.0, index=X.index)).astype(float)
+            sr_touch = X.get("sr_touch", pd.Series(0, index=X.index)).astype(float)
+            prox = np.minimum(d_sup.values, d_res.values)
+            base = np.exp(-prox / max(1e-9, tau))  # in [0,1]
+            base = np.clip(base, 0.0, 1.0)
+            base = np.minimum(base + boost * sr_touch.values, 1.0)
+            return np.clip(base, 0.0, max_w)
+        except Exception:
+            return np.zeros(len(X))
+
+    def predict_proba(self, X):
+        # Compute base probs per model
+        probs_per_model = {}
+        for name, model in zip(self.model_names, self.models, strict=False):
+            try:
+                probs_per_model[name] = model.predict_proba(X)
+            except Exception:
+                continue
+
+        # Derive SR weight per sample
+        sr_weight = self._compute_sr_weights(X)
+        # Optional: modulate weight by predicted SR strength if present
+        try:
+            # Expect columns like sr_pred_breakout_strength, sr_pred_bounce_strength
+            pred_bk = X.get("sr_pred_breakout_strength", pd.Series(0.0, index=X.index)).astype(float).values
+            pred_bo = X.get("sr_pred_bounce_strength", pd.Series(0.0, index=X.index)).astype(float).values
+            strength = np.maximum(pred_bk, pred_bo)
+            gain = float(self.cfg.get("sr_strength_gain", 0.5))
+            # Normalize strength to [0,1] by clipping with a reasonable scale (e.g., 1%)
+            norm = np.clip(strength / max(1e-6, float(self.cfg.get("sr_strength_scale", 0.01))), 0.0, 1.0)
+            sr_weight = np.clip(sr_weight * (1.0 + gain * norm), 0.0, float(self.cfg.get("sr_max_weight", 0.7)))
+        except Exception:
+            pass
+        # Names that correspond to SR models
+        sr_names = [n for n in self.model_names if n.upper().startswith("SR") or "/SR/" in n]
+        other_names = [n for n in self.model_names if n not in sr_names]
+
+        # Aggregate SR and OTHER probabilities
+        def _avg(names):
+            arrs = [probs_per_model[n] for n in names if n in probs_per_model]
+            if not arrs:
+                return None
+            return np.mean(arrs, axis=0)
+
+        sr_avg = _avg(sr_names)
+        other_avg = _avg(other_names)
+        if sr_avg is None and other_avg is None:
+            return np.ones((len(X), 2)) * 0.5
+        if sr_avg is None:
+            return other_avg
+        if other_avg is None:
+            return sr_avg
+
+        # Blend per sample with simple hysteresis to reduce flip-flop
+        out = np.empty_like(sr_avg)
+        alpha_up = float(self.cfg.get("hysteresis_alpha_up", 0.6))
+        alpha_down = float(self.cfg.get("hysteresis_alpha_down", 0.3))
+        for i in range(len(X)):
+            w_raw = float(sr_weight[i])
+            if self._prev_w is None:
+                w = w_raw
+            else:
+                if w_raw >= self._prev_w:
+                    w = alpha_up * w_raw + (1 - alpha_up) * self._prev_w
+                else:
+                    w = alpha_down * w_raw + (1 - alpha_down) * self._prev_w
+            self._prev_w = w
+            out[i, :] = w * sr_avg[i, :] + (1.0 - w) * other_avg[i, :]
+        return out
+
+
 class AnalystEnsembleCreationStep:
     """Step 7: Analyst Ensemble Creation using StackingCV and Dynamic Weighting with caching and streaming."""
 
@@ -1213,8 +1305,60 @@ class AnalystEnsembleCreationStep:
                 for name in model_weights:
                     model_weights[name] = 1.0 / len(model_weights)
 
-            # Create ensemble object using the module-level class
-            ensemble = DynamicWeightedEnsemble(models, model_names, model_weights)
+            # Use proximity-weighted ensemble if SR features available
+            use_sr_blend = all(k in X_val.columns for k in ["dist_to_support_pct", "dist_to_resistance_pct"]) or "sr_touch" in X_val.columns
+            if use_sr_blend:
+                cfg_base = self.config.get("sr_blending", {})
+                # Hyperparameter tuning: grid search over blending params with CV
+                grid = cfg_base.get("tuning_grid", {
+                    "sr_proximity_tau": [0.002, 0.003, 0.004, 0.006],
+                    "sr_touch_boost": [0.0, 0.1, 0.2, 0.3],
+                    "sr_max_weight": [0.5, 0.6, 0.7, 0.8],
+                    "hysteresis_alpha_up": [0.5, 0.6, 0.7],
+                    "hysteresis_alpha_down": [0.2, 0.3, 0.4],
+                })
+                from sklearn.model_selection import KFold
+                kf = KFold(n_splits=3, shuffle=True, random_state=42)
+                best_score = -np.inf
+                best_cfg = cfg_base.copy()
+                for tau in grid["sr_proximity_tau"]:
+                    for boost in grid["sr_touch_boost"]:
+                        for mmax in grid["sr_max_weight"]:
+                            for aup in grid["hysteresis_alpha_up"]:
+                                for adn in grid["hysteresis_alpha_down"]:
+                                    cfg = {
+                                        "sr_proximity_tau": tau,
+                                        "sr_touch_boost": boost,
+                                        "sr_max_weight": mmax,
+                                        "hysteresis_alpha_up": aup,
+                                        "hysteresis_alpha_down": adn,
+                                    }
+                                    cv_scores = []
+                                    try:
+                                        for tr_idx, te_idx in kf.split(X_val):
+                                            Xtr, Xte = X_val.iloc[tr_idx], X_val.iloc[te_idx]
+                                            ytr, yte = y_val.iloc[tr_idx], y_val.iloc[te_idx]
+                                            ens = ProximityWeightedEnsemble(models, model_names, model_weights, cfg=cfg)
+                                            # Fit-free ensemble; just evaluate predict_proba and accuracy
+                                            preds = np.argmax(ens.predict_proba(Xte), axis=1)
+                                            # Map to binary if labels not 0/1
+                                            try:
+                                                from sklearn.metrics import accuracy_score
+                                                score = accuracy_score(yte, preds)
+                                            except Exception:
+                                                score = (preds == yte.values).mean()
+                                            cv_scores.append(float(score))
+                                    except Exception:
+                                        continue
+                                    if cv_scores:
+                                        avg = float(np.mean(cv_scores))
+                                        if avg > best_score:
+                                            best_score = avg
+                                            best_cfg = cfg
+                self.logger.info(f"SR blending tuned best score={best_score:.4f} cfg={best_cfg}")
+                ensemble = ProximityWeightedEnsemble(models, model_names, model_weights, cfg=best_cfg)
+            else:
+                ensemble = DynamicWeightedEnsemble(models, model_names, model_weights)
 
             # Evaluate ensemble performance
             ensemble_predictions = ensemble.predict(X_val)

@@ -2831,6 +2831,13 @@ class VectorizedWaveletTransformAnalyzer:
         self.computation_times = {}
         self.feature_counts = {}
         
+        # NEW: Optimization controls
+        self.float_precision = self.wavelet_config.get("float_precision", "float64")
+        self._np_dtype = np.float32 if str(self.float_precision).lower() == "float32" else np.float64
+        self.cwt_method_preference = self.wavelet_config.get("cwt_method", "auto")  # 'auto' | 'fft' | 'conv'
+        self.cwt_fft_threshold = int(self.wavelet_config.get("cwt_fft_threshold", 4096))
+        self._wavelet_obj_cache: dict[str, pywt.Wavelet] = {}
+        
         self.is_initialized = False
 
     @handle_errors(
@@ -2892,6 +2899,11 @@ class VectorizedWaveletTransformAnalyzer:
             if self.num_scales <= 0 or self.num_scales > 100:
                 self.logger.warning("Invalid num_scales, using default")
                 self.num_scales = 16
+                
+            # Validate CWT method preference
+            if self.cwt_method_preference not in ("auto", "fft", "conv"):
+                self.logger.warning(f"Invalid cwt_method '{self.cwt_method_preference}', using 'auto'")
+                self.cwt_method_preference = "auto"
                 
         except Exception as e:
             self.logger.error(f"Error validating wavelet configuration: {e}")
@@ -3096,17 +3108,23 @@ class VectorizedWaveletTransformAnalyzer:
             
             for wavelet_type in wavelet_types:
                 try:
+                    wavelet_obj = self._get_wavelet(wavelet_type)
+                    dec_len = wavelet_obj.dec_len
                     # Analyze each stationary series
                     for series_name, series_data in stationary_series.items():
-                        if len(series_data) < 2 ** self.decomposition_level:
+                        # Cast to configured dtype and ensure contiguity
+                        series_arr = self._as_dtype_contiguous(series_data, self._np_dtype)
+                        max_level = pywt.dwt_max_level(len(series_arr), dec_len)
+                        level = min(self.decomposition_level, max_level)
+                        if level <= 0:
                             self.logger.warning(f"Insufficient data for {series_name} with {wavelet_type}")
                             continue
                         
                         # Perform wavelet decomposition with boundary handling
                         coeffs = pywt.wavedec(
-                            series_data, 
-                            wavelet_type, 
-                            level=self.decomposition_level,
+                            series_arr,
+                            wavelet_obj,
+                            level=level,
                             mode=self.padding_mode
                         )
                         
@@ -3119,9 +3137,9 @@ class VectorizedWaveletTransformAnalyzer:
                 except Exception as e:
                     self.logger.warning(f"Error with wavelet type {wavelet_type}: {e}")
                     continue
-
+ 
             return features
-
+ 
         except Exception as e:
             self.logger.error(f"Error in enhanced discrete wavelet transform analysis: {e}")
             return {}
@@ -3203,12 +3221,17 @@ class VectorizedWaveletTransformAnalyzer:
                         if len(series_data) < 10:  # Minimum length for CWT
                             continue
                         
+                        # Cast to configured dtype and ensure contiguity
+                        series_arr = self._as_dtype_contiguous(series_data, self._np_dtype)
+                        # Choose method adaptively
+                        method = self._choose_cwt_method(len(series_arr))
+                        
                         # Perform continuous wavelet transform with boundary handling
                         coeffs, freqs = pywt.cwt(
-                            series_data, 
+                            series_arr, 
                             scales, 
                             wavelet_type,
-                            method='conv'
+                            method=method
                         )
                         
                         # Extract CWT features with scale information
@@ -3220,9 +3243,9 @@ class VectorizedWaveletTransformAnalyzer:
                 except Exception as e:
                     self.logger.warning(f"Error with CWT wavelet type {wavelet_type}: {e}")
                     continue
-
+ 
             return features
-
+ 
         except Exception as e:
             self.logger.error(f"Error in enhanced continuous wavelet transform analysis: {e}")
             return {}
@@ -3289,6 +3312,10 @@ class VectorizedWaveletTransformAnalyzer:
             else:
                 coeffs_clean = coeffs
             
+            # Ensure working dtype
+            if coeffs_clean.dtype != self._np_dtype:
+                coeffs_clean = coeffs_clean.astype(self._np_dtype, copy=False)
+            
             # NEW: Time-series features aligned to signal length
             # Aggregate energy across scales per time step
             ts_energy = np.sum(np.abs(coeffs_clean) ** 2, axis=0)  # shape: (T' )
@@ -3299,7 +3326,7 @@ class VectorizedWaveletTransformAnalyzer:
                 ts_energy_norm = ts_energy
             features[f"{wavelet_type}_{series_name}_energy_ts"] = ts_energy
             features[f"{wavelet_type}_{series_name}_energy_ts_norm"] = ts_energy_norm
-
+ 
             # Dominant scale per time step (as scale index) and as frequency if available
             power = np.abs(coeffs_clean) ** 2  # (scales, time)
             dom_idx_ts = np.argmax(power, axis=0).astype(float)
@@ -3310,9 +3337,9 @@ class VectorizedWaveletTransformAnalyzer:
                 features[f"{wavelet_type}_{series_name}_dominant_freq_ts"] = dom_freq_ts.astype(float)
             except Exception:
                 pass
-
+ 
             return features
-
+ 
         except Exception as e:
             self.logger.error(f"Error extracting enhanced CWT features: {e}")
             return {}
@@ -3604,3 +3631,41 @@ class VectorizedWaveletTransformAnalyzer:
         except Exception as e:
             self.logger.error(f"Error in enhanced volume wavelet transform analysis: {e}")
             return {}
+
+    def _get_wavelet(self, wavelet_type: str) -> pywt.Wavelet:
+        """Get wavelet object based on wavelet type."""
+        try:
+            if wavelet_type not in self._wavelet_obj_cache:
+                self._wavelet_obj_cache[wavelet_type] = pywt.Wavelet(wavelet_type)
+            return self._wavelet_obj_cache[wavelet_type]
+        except Exception as e:
+            self.logger.error(f"Error getting wavelet object for type {wavelet_type}: {e}")
+            raise
+
+    def _as_dtype_contiguous(self, arr: np.ndarray, dtype: np.dtype) -> np.ndarray:
+        """Ensure array is contiguous and of specified dtype."""
+        try:
+            if not arr.flags.c_contiguous:
+                arr = np.ascontiguousarray(arr)
+            if arr.dtype != dtype:
+                arr = arr.astype(dtype, copy=False)
+            return arr
+        except Exception as e:
+            self.logger.error(f"Error making array contiguous: {e}")
+            return arr
+
+    def _choose_cwt_method(self, signal_length: int) -> str:
+        """Choose CWT method ('conv' or 'fft') based on signal length and configured preference."""
+        try:
+            # Explicit user preference wins
+            if self.cwt_method_preference == "fft":
+                return "fft"
+            if self.cwt_method_preference == "conv":
+                return "conv"
+            # Auto selection: use FFT for longer signals, direct conv for small
+            if signal_length >= self.cwt_fft_threshold:
+                return "fft"
+            return "conv"
+        except Exception as e:
+            self.logger.error(f"Error choosing CWT method: {e}")
+            return "conv"

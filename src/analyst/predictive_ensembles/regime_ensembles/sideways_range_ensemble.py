@@ -69,7 +69,7 @@ class SidewaysRangeEnsemble(BaseEnsemble):
         X_of = df[self.order_flow_features].fillna(0)
         meta_label_cols = [
             c for c in df.columns if any(
-                c.endswith(suffix) or c.startswith(prefix)
+                c.startswith(prefix) and c.endswith(suffix)
                 for suffix in [
                     "STRONG_TREND_CONTINUATION",
                     "RANGE_MEAN_REVERSION",

@@ -175,7 +175,74 @@ class AnalystLabelingFeatureEngineeringStep:
                 s = df.groupby("symbol", group_keys=False).apply(_compute_sma_distance)
             else:
                 s = _compute_sma_distance(df)
+            s.name = name
+            return s
         return _impl
+
+    def _feat_vwap_distance(self, window: int, name: str):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            required = ["close", "volume"]
+            if not all(c in df.columns for c in required):
+                return pd.Series(np.nan, index=df.index, name=name)
+            def _compute_group(g: pd.DataFrame) -> pd.Series:
+                c = g["close"].astype(float)
+                v = g["volume"].astype(float).clip(lower=0)
+                num = (c * v).rolling(window, min_periods=max(2, window // 2)).sum()
+                den = v.rolling(window, min_periods=max(2, window // 2)).sum()
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    vwap = num / den.replace(0, np.nan)
+                    dist = (c / vwap) - 1.0
+                return dist
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                s = df.groupby("symbol", group_keys=False).apply(_compute_group)
+            else:
+                s = _compute_group(df)
+            s = s.replace([np.inf, -np.inf], np.nan)
+            s.name = name
+            return s
+        return _impl
+
+    def _feat_choppiness_index(self, period: int, name: str):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            required = ["high", "low", "close"]
+            if not all(c in df.columns for c in required):
+                return pd.Series(np.nan, index=df.index, name=name)
+            def _compute_group(g: pd.DataFrame) -> pd.Series:
+                high = g["high"].astype(float)
+                low = g["low"].astype(float)
+                close = g["close"].astype(float)
+                prev_close = close.shift(1)
+                tr = pd.concat([
+                    (high - low),
+                    (high - prev_close).abs(),
+                    (low - prev_close).abs(),
+                ], axis=1).max(axis=1)
+                atr_sum = tr.rolling(period, min_periods=max(3, period // 2)).sum()
+                hh = high.rolling(period, min_periods=max(3, period // 2)).max()
+                ll = low.rolling(period, min_periods=max(3, period // 2)).min()
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    denom = (hh - ll).replace(0, np.nan)
+                    chop = 100.0 * (np.log10(atr_sum / denom)) / np.log10(float(period))
+                return chop
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                s = df.groupby("symbol", group_keys=False).apply(_compute_group)
+            else:
+                s = _compute_group(df)
+            s = s.clip(lower=0.0, upper=100.0).replace([np.inf, -np.inf], np.nan)
+            s.name = name
+            return s
+        return _impl
+
+    def _group_aware_rolling_corr(self, s1: pd.Series, s2: pd.Series, df: pd.DataFrame, window: int) -> pd.Series:
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            def _corr_group(g: pd.DataFrame) -> pd.Series:
+                return g[s1.name].rolling(window, min_periods=max(5, window // 2)).corr(g[s2.name])
+            tmp = pd.concat({"sym": df["symbol"], s1.name: s1, s2.name: s2}, axis=1)
+            out = tmp.groupby("sym", group_keys=False).apply(_corr_group)
+            return out.reset_index(level=0, drop=True)
+        return s1.rolling(window, min_periods=max(5, window // 2)).corr(s2)
 
     def _feat_engulf_strength_z(self, kind: str):
         @self.validate_feature_output
@@ -316,6 +383,15 @@ class AnalystLabelingFeatureEngineeringStep:
                 vr = features["volume_returns"]
                 features["volume_returns_volatility_20"] = self._group_aware_rolling_std(vr, df, 20)
 
+            # Correlation between returns and volume changes (market microstructure/correlation)
+            if "close_returns" in features.columns and "volume_returns" in features.columns:
+                try:
+                    s1 = features["close_returns"].astype(float)
+                    s2 = features["volume_returns"].astype(float)
+                    features["returns_volume_correlation_20"] = self._group_aware_rolling_corr(s1, s2, df, 20)
+                except Exception:
+                    pass
+
             # Simple interactive features
             if cr is not None and "volume_returns" in features.columns:
                 features["returns_x_volume_returns"] = (
@@ -371,6 +447,20 @@ class AnalystLabelingFeatureEngineeringStep:
             # Garman–Klass volatility -> returns of vol
             gk = self._feat_gk_vol_returns(df)
             feats[gk.name] = gk
+
+            # Price distance from VWAP (stationary)
+            try:
+                vwapd20 = self._feat_vwap_distance(20, "vwap_distance_20")(df)
+                feats[vwapd20.name] = vwapd20
+            except Exception:
+                pass
+
+            # Choppiness Index (stationary, bounded [0,100])
+            try:
+                chop14 = self._feat_choppiness_index(14, "choppiness_index_14")(df)
+                feats[chop14.name] = chop14
+            except Exception:
+                pass
 
             # Simple candlestick strength (engulfing bullish/bearish) -> z-scored
             body = (close - open_).abs()
@@ -1348,6 +1438,16 @@ class AnalystLabelingFeatureEngineeringStep:
             except Exception as e:
                 self.logger.warning(f"Step 4 VIF reduction skipped due to error: {e}")
 
+            # Enforce minimum features per category before any global thresholding
+            try:
+                train_data, validation_data, test_data, cat_log = self._enforce_min_features_per_category(
+                    train_data, validation_data, test_data, labeled_data
+                )
+                if cat_log:
+                    self.logger.info(f"Category enforcement summary: {cat_log}")
+            except Exception as e:
+                self.logger.warning(f"Per-category minimum enforcement skipped: {e}")
+
             # Persist and log selected feature lists per split (traceability)
             try:
                 selected_features = {
@@ -1361,6 +1461,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 self.logger.info(f"🔎 Saved feature lists to {trace_path}")
             except Exception as e:
                 self.logger.warning(f"Could not persist selected feature lists: {e}")
+
             # Save feature files that the validator expects
             feature_files = [
                 (f"{data_dir}/{exchange}_{symbol}_features_train.pkl", train_data),
@@ -2061,6 +2162,97 @@ class AnalystLabelingFeatureEngineeringStep:
                 series.groupby(df["symbol"]).rolling(window).std().reset_index(level=0, drop=True)
             )
         return series.rolling(window).std()
+
+    # --------------
+    # Category utils
+    # --------------
+    def _feature_category(self, name: str) -> str | None:
+        n = name.lower()
+        if any(k in n for k in ["wavelet", "cwt_", "dwt_", "wl_"]):
+            return "wavelet"
+        if any(k in n for k in ["market_depth", "bid_ask_spread", "ofi", "imbalance", "liquidity", "spread", "queue", "slippage"]):
+            return "microstructure"
+        if any(k in n for k in ["engulf", "doji", "hammer", "marubozu", "tweezer", "shooting", "candle", "pattern"]):
+            return "candlestick"
+        if any(k in n for k in ["return", "momentum", "roc", "sma", "ema", "vwap_distance", "distance"]):
+            return "momentum"
+        if any(k in n for k in ["volatility", "atr", "gk_vol", "bb_width", "variance"]):
+            return "volatility"
+        if any(k in n for k in ["corr", "correlation", "cov", "beta"]):
+            return "correlation"
+        if any(k in n for k in ["support", "resistance", "sr_", "pivot"]):
+            return "sr"
+        return None
+
+    def _enforce_min_features_per_category(
+        self,
+        train_df: pd.DataFrame,
+        val_df: pd.DataFrame,
+        test_df: pd.DataFrame,
+        original_labeled_df: pd.DataFrame,
+        min_per_category: dict[str, int] | None = None,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, dict[str, int]]]:
+        """Ensure at least N features per category by re-adding top-MI candidates from the original set.
+
+        Returns updated (train, val, test) and a log dict with counts added per category.
+        """
+        if min_per_category is None:
+            min_per_category = {
+                "wavelet": 2,
+                "microstructure": 2,
+                "candlestick": 2,
+                "momentum": 3,
+                "volatility": 3,
+                "correlation": 2,
+                "sr": 3,
+            }
+        # Current features
+        current_cols = [c for c in train_df.columns if c != self._LABEL_NAME]
+        cat_to_cols: dict[str, list[str]] = {}
+        for c in current_cols:
+            cat = self._feature_category(c)
+            if cat:
+                cat_to_cols.setdefault(cat, []).append(c)
+        y = train_df[self._LABEL_NAME].astype(int)
+        added_counts: dict[str, dict[str, int]] = {}
+        # Candidate pool from original labeled features
+        original_pool = [
+            c for c in original_labeled_df.columns
+            if c != self._LABEL_NAME and c not in self._RAW_CONTEXT_COLUMNS
+        ]
+        for cat, min_n in min_per_category.items():
+            have = len(cat_to_cols.get(cat, []))
+            need = max(0, min_n - have)
+            if need <= 0:
+                continue
+            # Candidates for this category not currently included
+            candidates = [
+                c for c in original_pool
+                if c not in current_cols and self._feature_category(c) == cat and np.issubdtype(original_labeled_df[c].dtype, np.number)
+            ]
+            if not candidates:
+                # No available candidates; skip gracefully
+                continue
+            # Compute MI on training split for candidates
+            try:
+                X_cand = original_labeled_df.loc[train_df.index, candidates].copy()
+                X_cand = X_cand.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+                mi = mutual_info_classif(X_cand.values, y.values, discrete_features=False, random_state=42)
+                order = np.argsort(mi)[::-1]
+                chosen = [candidates[i] for i in order[:need] if np.isfinite(mi[i])]
+            except Exception:
+                chosen = candidates[:need]
+            if not chosen:
+                continue
+            # Add back to all splits from original_labeled_df
+            for col in chosen:
+                train_df[col] = original_labeled_df.loc[train_df.index, col]
+                if not val_df.empty:
+                    val_df[col] = original_labeled_df.loc[val_df.index, col]
+                if not test_df.empty:
+                    test_df[col] = original_labeled_df.loc[test_df.index, col]
+            added_counts[cat] = {"needed": need, "added": len(chosen)}
+        return train_df, val_df, test_df, added_counts
 
 
 class DeprecatedAnalystLabelingFeatureEngineeringStep:

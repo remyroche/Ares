@@ -533,9 +533,9 @@ async def setup_liquidation_risk_model(
         if await risk_model.initialize():
             system_logger.info("✅ Liquidation Risk Model setup completed successfully")
             return risk_model
-        system_print(failed("❌ Liquidation Risk Model setup failed"))
+        system_logger.exception(failed("❌ Liquidation Risk Model setup failed"))
         return None
 
     except Exception:
-        system_print(error("❌ Error setting up Liquidation Risk Model: {e}"))
+        system_logger.exception(error("❌ Error setting up Liquidation Risk Model: {e}"))
         return None

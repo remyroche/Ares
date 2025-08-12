@@ -72,8 +72,8 @@ class DILauncher:
 
             return self.system_components
 
-        except Exception:
-            self.print(failed("Failed to launch paper trading: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Failed to launch paper trading: {e}")
             raise
 
     async def launch_live_trading(self, symbol: str, exchange: str) -> dict[str, Any]:
@@ -106,8 +106,8 @@ class DILauncher:
 
             return self.system_components
 
-        except Exception:
-            self.print(failed("Failed to launch live trading: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Failed to launch live trading: {e}")
             raise
 
     async def launch_backtesting(self, symbol: str, exchange: str) -> dict[str, Any]:
@@ -139,8 +139,8 @@ class DILauncher:
 
             return self.system_components
 
-        except Exception:
-            self.print(failed("Failed to launch backtesting: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Failed to launch backtesting: {e}")
             raise
 
     async def launch_training(self, symbol: str, exchange: str) -> dict[str, Any]:
@@ -167,8 +167,8 @@ class DILauncher:
 
             return self.system_components
 
-        except Exception:
-            self.print(failed("Failed to launch training: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Failed to launch training: {e}")
             raise
 
     def _create_paper_trading_config(
@@ -285,8 +285,8 @@ class DILauncher:
 
             self.logger.info("All components started successfully")
 
-        except Exception:
-            self.print(failed("Failed to start components: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Failed to start components: {e}")
             raise
 
     async def _initialize_all_components(self) -> None:
@@ -308,8 +308,8 @@ class DILauncher:
 
             self.logger.info("All components initialized successfully")
 
-        except Exception:
-            self.print(failed("Failed to initialize components: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Failed to initialize components: {e}")
             raise
 
     async def stop_system(self) -> None:
@@ -333,8 +333,8 @@ class DILauncher:
             self.is_running = False
             self.logger.info("Trading system stopped successfully")
 
-        except Exception:
-            self.print(failed("Failed to stop system: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Failed to stop system: {e}")
             raise
 
     def get_system_info(self) -> dict[str, Any]:

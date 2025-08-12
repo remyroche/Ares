@@ -104,6 +104,7 @@ class FirestoreManager:
         """Synchronous part of the initialization. Runs in a thread pool."""
         if not firebase_admin._apps:
             cred = credentials.ApplicationDefault()
+            env_settings = get_environment_settings()
             firebase_admin.initialize_app(
                 cred,
                 {"projectId": env_settings.firestore_project_id},

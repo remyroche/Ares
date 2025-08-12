@@ -1224,7 +1224,7 @@ class MLConfidencePredictor:
         self.predictor_config.setdefault("min_samples_for_training", 500)
         self.predictor_config.setdefault(
             "confidence_threshold",
-            get_parameter_value("confidence_thresholds.base_entry_threshold", 0.6),
+            0.6,
         )
         self.predictor_config.setdefault("max_prediction_horizon", 1)  # hours
         self.predictor_config.setdefault("enhanced_training_integration", True)
@@ -2918,5 +2918,5 @@ async def setup_ml_confidence_predictor(
         return None
 
     except Exception as e:
-        system_print(error("Error setting up ML Confidence Predictor: {e}"))
+        system_logger.exception(failed("Failed to setup ML Confidence Predictor: {e}"))
         return None

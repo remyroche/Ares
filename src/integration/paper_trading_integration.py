@@ -453,5 +453,5 @@ async def setup_paper_trading_integration(
         return None
 
     except Exception:
-        system_print(error("Error setting up paper trading integration: {e}"))
+        system_logger.exception(error("Error setting up paper trading integration: {e}"))
         return None

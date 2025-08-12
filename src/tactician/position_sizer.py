@@ -594,5 +594,5 @@ async def setup_position_sizer(
         return None
 
     except Exception:
-        system_print(error("Error setting up position sizer: {e}"))
+        system_logger.exception(error("Error setting up position sizer: {e}"))
         return None

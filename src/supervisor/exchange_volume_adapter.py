@@ -473,5 +473,5 @@ async def setup_exchange_volume_adapter(
         return None
 
     except Exception:
-        system_print(failed("Failed to setup exchange volume adapter: {e}"))
+        system_logger.exception(error("Error setting up exchange volume adapter: {e}"))
         return None

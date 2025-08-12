@@ -566,7 +566,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=model,
+        default_return=None,
         context="SMOTE training",
     )
     def _train_with_smote(self, model, X, y):
@@ -1354,7 +1354,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=df,
+        default_return=None,
         context="feature normalization",
     )
     def normalize_non_price_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1521,7 +1521,7 @@ class BaseEnsemble:
     
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=pd.Series(0.0, index=series.index),
+        default_return=pd.Series(dtype=float),
         context="rolling z-score calculation",
     )
     def _calculate_rolling_z_score(self, series: pd.Series, window: int = 60) -> pd.Series:

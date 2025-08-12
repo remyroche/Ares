@@ -603,5 +603,5 @@ def setup_rollback_manager(
         return manager
 
     except Exception:
-        system_print(error("Error setting up rollback manager: {e}"))
+        system_logger.exception(failed("Failed to setup rollback manager: {e}"))
         return None

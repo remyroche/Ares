@@ -2176,20 +2176,30 @@ class AnalystLabelingFeatureEngineeringStep:
     # --------------
     def _feature_category(self, name: str) -> str | None:
         n = name.lower()
-        if any(k in n for k in ["wavelet", "cwt_", "dwt_", "wl_"]):
-            return "wavelet"
-        if any(k in n for k in ["market_depth", "bid_ask_spread", "ofi", "imbalance", "liquidity", "spread", "queue", "slippage"]):
-            return "microstructure"
-        if any(k in n for k in ["engulf", "doji", "hammer", "marubozu", "tweezer", "shooting", "candle", "pattern"]):
-            return "candlestick"
-        if any(k in n for k in ["return", "momentum", "roc", "sma", "ema", "vwap_distance", "distance"]):
-            return "momentum"
-        if any(k in n for k in ["volatility", "atr", "gk_vol", "bb_width", "variance"]):
-            return "volatility"
-        if any(k in n for k in ["corr", "correlation", "cov", "beta"]):
-            return "correlation"
-        if any(k in n for k in ["support", "resistance", "sr_", "pivot"]):
-            return "sr"
+        categories = {
+            "wavelet": ["wavelet", "cwt_", "dwt_", "wl_"],
+            "microstructure": [
+                "market_depth", "bid_ask_spread", "ofi", "imbalance", "liquidity", "spread", "queue", "slippage"
+            ],
+            "candlestick": [
+                "engulf", "doji", "hammer", "marubozu", "tweezer", "shooting", "candle", "pattern"
+            ],
+            "momentum": [
+                "return", "momentum", "roc", "sma", "ema", "vwap_distance", "distance"
+            ],
+            "volatility": [
+                "volatility", "atr", "gk_vol", "bb_width", "variance"
+            ],
+            "correlation": [
+                "corr", "correlation", "cov", "beta"
+            ],
+            "sr": [
+                "support", "resistance", "sr_", "pivot"
+            ],
+        }
+        for category, keywords in categories.items():
+            if any(k in n for k in keywords):
+                return category
         return None
 
     def _enforce_min_features_per_category(

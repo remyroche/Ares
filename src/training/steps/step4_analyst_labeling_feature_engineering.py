@@ -114,10 +114,7 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_close_returns(self):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            if "symbol" in df.columns and df["symbol"].nunique() > 1:
-                s = df.groupby("symbol")["close"].pct_change()
-            else:
-                s = df["close"].pct_change()
+            s = self._get_series_for_calc(df, "close").pct_change()
             s.name = "close_returns"
             return s
         return _impl
@@ -125,10 +122,7 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_pct_change(self, col: str, name: str):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            if "symbol" in df.columns and df["symbol"].nunique() > 1:
-                s = df.groupby("symbol")[col].pct_change()
-            else:
-                s = df[col].pct_change()
+            s = self._get_series_for_calc(df, col).pct_change()
             s.name = name
             return s
         return _impl
@@ -136,10 +130,7 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_diff(self, col: str, name: str):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            if "symbol" in df.columns and df["symbol"].nunique() > 1:
-                s = df.groupby("symbol")[col].diff()
-            else:
-                s = df[col].diff()
+            s = self._get_series_for_calc(df, col).diff()
             s.name = name
             return s
         return _impl
@@ -176,9 +167,8 @@ class AnalystLabelingFeatureEngineeringStep:
                 close = g["close"].astype(float)
                 sma = close.rolling(window, min_periods=1).mean()
                 with np.errstate(divide="ignore", invalid="ignore"):
-                    s = (close / sma) - 1.0
-                return s
-
+                    s_local = (close / sma) - 1.0
+                return s_local
             if "symbol" in df.columns and df["symbol"].nunique() > 1:
                 s = df.groupby("symbol", group_keys=False).apply(_compute_sma_distance)
             else:
@@ -319,20 +309,10 @@ class AnalystLabelingFeatureEngineeringStep:
             # Volatility of stationary series (group-aware)
             cr = self._feat_close_returns(df)
             if cr is not None:
-                if "symbol" in df.columns and df["symbol"].nunique() > 1:
-                    features["returns_volatility_20"] = (
-                        cr.groupby(df["symbol"]).rolling(20).std().reset_index(level=0, drop=True)
-                    )
-                else:
-                    features["returns_volatility_20"] = cr.rolling(20).std()
+                features["returns_volatility_20"] = self._group_aware_rolling_std(cr, df, 20)
             if "volume_returns" in features.columns:
-                if "symbol" in df.columns and df["symbol"].nunique() > 1:
-                    vr = features["volume_returns"]
-                    features["volume_returns_volatility_20"] = (
-                        vr.groupby(df["symbol"]).rolling(20).std().reset_index(level=0, drop=True)
-                    )
-                else:
-                    features["volume_returns_volatility_20"] = features["volume_returns"].rolling(20).std()
+                vr = features["volume_returns"]
+                features["volume_returns_volatility_20"] = self._group_aware_rolling_std(vr, df, 20)
 
             # Simple interactive features
             if cr is not None and "volume_returns" in features.columns:
@@ -1653,6 +1633,23 @@ class AnalystLabelingFeatureEngineeringStep:
         if transformed:
             self.logger.info(f"Stationarity enforcement (pct_change) applied to {len(transformed)} columns: {transformed[:30]}{' ...' if len(transformed)>30 else ''}")
         return data, transformed
+
+    # -----------------
+    # Group-aware helpers
+    # -----------------
+    def _get_series_for_calc(self, df: pd.DataFrame, col: str):
+        """Return a Series or grouped Series for group-aware calculations."""
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            return df.groupby("symbol")[col]
+        return df[col]
+
+    def _group_aware_rolling_std(self, series: pd.Series, df: pd.DataFrame, window: int) -> pd.Series:
+        """Compute rolling std per symbol group when applicable, preserving index."""
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            return (
+                series.groupby(df["symbol"]).rolling(window).std().reset_index(level=0, drop=True)
+            )
+        return series.rolling(window).std()
 
 
 class DeprecatedAnalystLabelingFeatureEngineeringStep:

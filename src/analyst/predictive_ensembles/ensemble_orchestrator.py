@@ -460,7 +460,7 @@ class RegimePredictiveEnsembles:
         )
 
         # Align to training columns without masking missing features silently
-        missing_cols = [c for c in trained_features if c not in meta_input_df.columns]
+        missing_cols = list(set(trained_features) - set(meta_input_df.columns))
         if missing_cols:
             self.logger.warning(f"Missing meta features at inference: {missing_cols}")
         X_meta_live = meta_input_df.reindex(columns=trained_features)

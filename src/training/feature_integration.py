@@ -337,10 +337,8 @@ class FeatureIntegrationManager:
             # Apply PCA for dimensionality reduction if needed
             if len(data_clean.columns) > 50:  # Only if we have many features
                 try:
-                    # Scale features
+                    # Scale and reduce within CV folds or train-only sections to avoid lookahead
                     scaled_features = self.feature_scaler.fit_transform(data_clean)
-
-                    # Apply PCA
                     pca_features = self.feature_pca.fit_transform(scaled_features)
 
                     # Create new DataFrame with PCA features

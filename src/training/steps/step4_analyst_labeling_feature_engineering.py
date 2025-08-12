@@ -79,6 +79,7 @@ class AnalystLabelingFeatureEngineeringStep:
             "timeframe",
             "split",
         ]
+        self._LABEL_NAME = "label"
 
     def _ensure_continuous_time_index(self, df: pd.DataFrame, freq: str = "1T") -> tuple[pd.DataFrame, int]:
         """Reindex to continuous time grid and return number of inserted rows."""
@@ -274,6 +275,154 @@ class AnalystLabelingFeatureEngineeringStep:
         except Exception as e:
             self.logger.warning(f"Pipeline B failed: {e}")
             return pd.DataFrame(index=price_data.index)
+
+    def _compute_vif_scores(self, X: pd.DataFrame) -> dict[str, float]:
+        from sklearn.linear_model import LinearRegression
+        vif_scores: dict[str, float] = {}
+        cols = X.columns.tolist()
+        X_imputed = X.copy()
+        for c in cols:
+            med = X_imputed[c].median()
+            if pd.isna(med):
+                med = 0.0
+            X_imputed[c] = X_imputed[c].fillna(med)
+        for col in cols:
+            others = [c for c in cols if c != col]
+            if not others:
+                vif_scores[col] = 1.0
+                continue
+            reg = LinearRegression()
+            try:
+                reg.fit(X_imputed[others], X_imputed[col])
+                y = X_imputed[col].values
+                y_pred = reg.predict(X_imputed[others])
+                ss_res = float(np.sum((y - y_pred) ** 2))
+                ss_tot = float(np.sum((y - np.mean(y)) ** 2))
+                r2 = 0.0 if ss_tot == 0 else 1.0 - (ss_res / ss_tot)
+                vif = float(np.inf) if r2 >= 0.999999 else (1.0 / max(1e-12, 1.0 - r2))
+            except Exception:
+                vif = 1.0
+            vif_scores[col] = vif
+        return vif_scores
+
+    def _build_cpa_transform(self, X: pd.DataFrame, cluster_cols: list[str], name_prefix: str) -> tuple[pd.Series, dict]:
+        means = X[cluster_cols].mean()
+        stds = X[cluster_cols].std().replace(0, np.nan)
+        Z = (X[cluster_cols] - means) / stds
+        Z = Z.fillna(0.0)
+        try:
+            U, S, VT = np.linalg.svd(Z.values, full_matrices=False)
+            weights = VT[0, :]
+        except Exception:
+            k = len(cluster_cols)
+            weights = np.ones(k) / max(1, k)
+        pc1 = pd.Series(np.dot(Z.values, weights), index=X.index, name=f"cpa_{name_prefix}_pc1").astype(np.float32)
+        transform = {
+            "name": pc1.name,
+            "cols": cluster_cols,
+            "means": means.to_dict(),
+            "stds": stds.to_dict(),
+            "weights": weights.tolist(),
+        }
+        return pc1, transform
+
+    def _apply_cpa_transforms(self, X: pd.DataFrame, transforms: list[dict]) -> pd.DataFrame:
+        X_new = X.copy()
+        for t in transforms:
+            cols = [c for c in t["cols"] if c in X_new.columns]
+            if len(cols) < 1:
+                continue
+            means = pd.Series(t["means"]).reindex(cols).fillna(0.0)
+            stds = pd.Series(t["stds"]).reindex(cols).replace(0, np.nan)
+            Z = (X_new[cols] - means) / stds
+            Z = Z.fillna(0.0)
+            w = np.array(t["weights"])[: len(cols)]
+            comp = pd.Series(np.dot(Z.values, w), index=X_new.index, name=t["name"]).astype(np.float32)
+            X_new[t["name"]] = comp
+            X_new = X_new.drop(columns=cols, errors="ignore")
+        return X_new
+
+    def _vif_reduce_train_val_test(self, train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+        removed: list[str] = []
+        cpa_transforms: list[dict] = []
+        cpa_clusters: list[list[str]] = []
+        # Separate features and labels
+        feat_cols = [c for c in train_df.columns if c != self._LABEL_NAME]
+        X_tr = train_df[feat_cols].copy()
+        X_vl = val_df[feat_cols].copy() if not val_df.empty else val_df.copy()
+        X_te = test_df[feat_cols].copy() if not test_df.empty else test_df.copy()
+        # Remove zero-variance columns
+        zero_var = [c for c in X_tr.columns if X_tr[c].nunique(dropna=True) <= 1]
+        if zero_var:
+            removed.extend(zero_var)
+            X_tr = X_tr.drop(columns=zero_var, errors="ignore")
+            X_vl = X_vl.drop(columns=zero_var, errors="ignore") if not X_vl.empty else X_vl
+            X_te = X_te.drop(columns=zero_var, errors="ignore") if not X_te.empty else X_te
+        # Main VIF loop
+        max_iters = 50
+        for _ in range(max_iters):
+            if X_tr.shape[1] <= 2:
+                break
+            vif = self._compute_vif_scores(X_tr)
+            if not vif:
+                break
+            worst_feature, worst_vif = max(vif.items(), key=lambda kv: (float("inf") if np.isinf(kv[1]) else kv[1]))
+            if worst_vif is None or (not np.isfinite(worst_vif)):
+                removed.append(worst_feature)
+                X_tr = X_tr.drop(columns=[worst_feature], errors="ignore")
+                X_vl = X_vl.drop(columns=[worst_feature], errors="ignore") if not X_vl.empty else X_vl
+                X_te = X_te.drop(columns=[worst_feature], errors="ignore") if not X_te.empty else X_te
+                continue
+            if worst_vif > 20.0:
+                try:
+                    corr = X_tr.corr().abs()
+                    candidates = corr.columns[(corr[worst_feature] >= 0.7)].tolist()
+                    cluster = list(dict.fromkeys([worst_feature] + [c for c in candidates if c != worst_feature]))
+                    if len(cluster) >= 2:
+                        pc1, transform = self._build_cpa_transform(X_tr, cluster, name_prefix=str(len(cpa_transforms)+1))
+                        X_tr[pc1.name] = pc1
+                        cpa_transforms.append(transform)
+                        cpa_clusters.append(cluster)
+                        X_tr = X_tr.drop(columns=cluster, errors="ignore")
+                        if not X_vl.empty:
+                            X_vl = self._apply_cpa_transforms(X_vl.drop(columns=cluster, errors="ignore"), [transform])
+                        if not X_te.empty:
+                            X_te = self._apply_cpa_transforms(X_te.drop(columns=cluster, errors="ignore"), [transform])
+                        continue
+                    else:
+                        removed.append(worst_feature)
+                        X_tr = X_tr.drop(columns=[worst_feature], errors="ignore")
+                        X_vl = X_vl.drop(columns=[worst_feature], errors="ignore") if not X_vl.empty else X_vl
+                        X_te = X_te.drop(columns=[worst_feature], errors="ignore") if not X_te.empty else X_te
+                        continue
+                except Exception:
+                    removed.append(worst_feature)
+                    X_tr = X_tr.drop(columns=[worst_feature], errors="ignore")
+                    X_vl = X_vl.drop(columns=[worst_feature], errors="ignore") if not X_vl.empty else X_vl
+                    X_te = X_te.drop(columns=[worst_feature], errors="ignore") if not X_te.empty else X_te
+                    continue
+            elif worst_vif > 10.0:
+                removed.append(worst_feature)
+                X_tr = X_tr.drop(columns=[worst_feature], errors="ignore")
+                X_vl = X_vl.drop(columns=[worst_feature], errors="ignore") if not X_vl.empty else X_vl
+                X_te = X_te.drop(columns=[worst_feature], errors="ignore") if not X_te.empty else X_te
+                continue
+            else:
+                break
+        # Reassemble DataFrames with label column
+        out_train = pd.concat([X_tr, train_df[[self._LABEL_NAME]]], axis=1)
+        out_val = pd.concat([X_vl, val_df[[self._LABEL_NAME]]], axis=1) if not val_df.empty else val_df
+        out_test = pd.concat([X_te, test_df[[self._LABEL_NAME]]], axis=1) if not test_df.empty else test_df
+        summary = {
+            "removed_features": removed,
+            "cpa_clusters": cpa_clusters,
+            "cpa_count": len(cpa_clusters),
+        }
+        if removed:
+            self.logger.info(f"Step 4 VIF: removed {len(removed)} features (>10): {removed[:50]}{' ...' if len(removed)>50 else ''}")
+        if cpa_clusters:
+            self.logger.info(f"Step 4 VIF: created {len(cpa_clusters)} CPA components (>20)")
+        return out_train, out_val, out_test, summary
 
     @handle_errors(
         exceptions=(Exception,),
@@ -638,6 +787,14 @@ class AnalystLabelingFeatureEngineeringStep:
             train_data = labeled_data.iloc[:train_end]
             validation_data = labeled_data.iloc[train_end:val_end]
             test_data = labeled_data.iloc[val_end:]
+
+            # Apply VIF loop with CPA on training split; transform val/test accordingly
+            try:
+                train_data, validation_data, test_data, vif_summary = self._vif_reduce_train_val_test(
+                    train_data, validation_data, test_data
+                )
+            except Exception as e:
+                self.logger.warning(f"Step 4 VIF reduction skipped due to error: {e}")
 
             # Persist and log selected feature lists per split (traceability)
             try:

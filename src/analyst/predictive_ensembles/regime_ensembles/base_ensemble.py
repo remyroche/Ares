@@ -522,10 +522,12 @@ class BaseEnsemble:
         # Create a DataFrame from the dictionary, then reindex
         meta_input_df = pd.DataFrame([meta_features])
         if hasattr(self.meta_feature_scaler, "feature_names_in_"):
+            missing_cols = [c for c in self.meta_feature_scaler.feature_names_in_ if c not in meta_input_df.columns]
+            if missing_cols:
+                self.logger.warning(f"Missing meta features at inference: {missing_cols}")
             meta_input_df = meta_input_df.reindex(
                 columns=self.meta_feature_scaler.feature_names_in_,
-                fill_value=0,
-            )
+            ).fillna(0)
         else:
             self.logger.error(
                 "Scaler not fitted with feature names. Cannot ensure correct feature order for prediction. Attempting with current columns.",
@@ -749,10 +751,12 @@ class BaseEnsemble:
                 
             # Ensure meta features have correct columns
             if hasattr(self.meta_feature_scaler, "feature_names_in_"):
+                missing_cols = [c for c in self.meta_feature_scaler.feature_names_in_ if c not in meta_features.columns]
+                if missing_cols:
+                    self.logger.warning(f"Missing meta features for historical prediction: {missing_cols}")
                 meta_features = meta_features.reindex(
                     columns=self.meta_feature_scaler.feature_names_in_,
-                    fill_value=0,
-                )
+                ).fillna(0)
                 
             # Transform and predict
             meta_input_scaled = self.meta_feature_scaler.transform(meta_features)

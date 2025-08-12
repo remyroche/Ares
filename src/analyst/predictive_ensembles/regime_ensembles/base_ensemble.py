@@ -428,7 +428,9 @@ class BaseEnsemble:
             )
             return
 
-        self.logger.info("Applying PCA to meta-features...")
+        # Fit scaler and PCA on training data only
+        self.logger.info("Scaling and applying PCA to meta-features (train-only fit)...")
+        self.meta_feature_scaler = StandardScaler()
         X_meta_scaled = self.meta_feature_scaler.fit_transform(X_meta_train)
         n_components = min(self.n_pca_components, X_meta_scaled.shape[1])
         self.pca = PCA(n_components=n_components)

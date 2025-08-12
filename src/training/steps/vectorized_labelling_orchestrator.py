@@ -15,10 +15,30 @@ import pywt
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import timedelta
 import warnings
-warnings.filterwarnings('ignore')
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+
+warnings.simplefilter('default')
+_warning_logger = logging.getLogger("Ares.Warnings")
+if not _warning_logger.handlers:
+    try:
+        fh = logging.FileHandler("log/python_warnings.log")
+        fh.setLevel(logging.WARNING)
+        fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+        fh.setFormatter(fmt)
+        _warning_logger.addHandler(fh)
+        _warning_logger.propagate = False
+    except Exception:
+        pass
+
+def _showwarning(message, category, filename, lineno, file=None, line=None):
+    try:
+        _warning_logger.warning(f"{category.__name__}: {message} ({filename}:{lineno})")
+    except Exception:
+        pass
+
+warnings.showwarning = _showwarning
 
 
 class VectorizedLabellingOrchestrator:

@@ -1,0 +1,82 @@
+2025-08-12 12:04:49,513 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-12 12:04:49,905 INFO AresTradingSystem.System.AutoencoderConfig 📋 Configuration loaded successfully from src/analyst/autoencoder_config.yaml - -
+2025-08-12 12:04:49,905 INFO AresTradingSystem.System.AutoencoderConfig 📊 Configuration sections: ['preprocessing', 'sequence', 'autoencoder', 'training', 'feature_filtering', 'feature_analysis', 'output', 'feature_interactions'] - -
+2025-08-12 12:04:49,905 INFO AresTradingSystem.System.FeatureFilter 🔍 Starting feature filtering with Random Forest + SHAP... - -
+2025-08-12 12:04:49,905 INFO AresTradingSystem.System.FeatureFilter 📊 Input data shape: (100000, 100) - -
+2025-08-12 12:04:49,905 INFO AresTradingSystem.System.FeatureFilter 🎯 Number of unique labels: 3 - -
+2025-08-12 12:04:49,905 INFO AresTradingSystem.System.FeatureFilter 📈 Label distribution: { -1: 30000 (30.0%), 0: 40000 (40.0%), 1: 30000 (30.0%) }} - -
+2025-08-12 12:04:50,073 INFO AresTradingSystem.System.FeatureFilter 🔢 Numeric features selected: 100 - -
+2025-08-12 12:04:50,073 INFO AresTradingSystem.System.FeatureFilter 📏 Feature names: ['important_feature_0', 'important_feature_1', 'important_feature_2', 'important_feature_3', 'important_feature_4', 'important_feature_5', 'important_feature_6', 'important_feature_7', 'important_feature_8', 'important_feature_9', 'important_feature_10', 'important_feature_11', 'important_feature_12', 'important_feature_13', 'important_feature_14', 'important_feature_15', 'important_feature_16', 'important_feature_17', 'important_feature_18', 'important_feature_19', 'noise_feature_20', 'noise_feature_21', 'noise_feature_22', 'noise_feature_23', 'noise_feature_24', 'noise_feature_25', 'noise_feature_26', 'noise_feature_27', 'noise_feature_28', 'noise_feature_29', 'noise_feature_30', 'noise_feature_31', 'noise_feature_32', 'noise_feature_33', 'noise_feature_34', 'noise_feature_35', 'noise_feature_36', 'noise_feature_37', 'noise_feature_38', 'noise_feature_39', 'noise_feature_40', 'noise_feature_41', 'noise_feature_42', 'noise_feature_43', 'noise_feature_44', 'noise_feature_45', 'noise_feature_46', 'noise_feature_47', 'noise_feature_48', 'noise_feature_49', 'noise_feature_50', 'noise_feature_51', 'noise_feature_52', 'noise_feature_53', 'noise_feature_54', 'noise_feature_55', 'noise_feature_56', 'noise_feature_57', 'noise_feature_58', 'noise_feature_59', 'noise_feature_60', 'noise_feature_61', 'noise_feature_62', 'noise_feature_63', 'noise_feature_64', 'noise_feature_65', 'noise_feature_66', 'noise_feature_67', 'noise_feature_68', 'noise_feature_69', 'noise_feature_70', 'noise_feature_71', 'noise_feature_72', 'noise_feature_73', 'noise_feature_74', 'noise_feature_75', 'noise_feature_76', 'noise_feature_77', 'noise_feature_78', 'noise_feature_79', 'noise_feature_80', 'noise_feature_81', 'noise_feature_82', 'noise_feature_83', 'noise_feature_84', 'noise_feature_85', 'noise_feature_86', 'noise_feature_87', 'noise_feature_88', 'noise_feature_89', 'noise_feature_90', 'noise_feature_91', 'noise_feature_92', 'noise_feature_93', 'noise_feature_94', 'noise_feature_95', 'noise_feature_96', 'noise_feature_97', 'noise_feature_98', 'noise_feature_99'] - -
+2025-08-12 12:04:50,073 INFO AresTradingSystem.System.FeatureFilter 🌲 Training Random Forest model for feature importance... - -
+2025-08-12 12:04:50,073 INFO AresTradingSystem.System.FeatureFilter 🌲 RF Parameters: n_estimators=100, max_depth=10, random_state=42 - -
+2025-08-12 12:05:10,493 INFO AresTradingSystem.System.FeatureFilter ✅ Random Forest training completed in 20.42 seconds - -
+2025-08-12 12:05:10,761 INFO AresTradingSystem.System.FeatureFilter 🎯 RF training score: 0.8379 - -
+2025-08-12 12:05:10,761 INFO AresTradingSystem.System.FeatureFilter 🔍 Computing SHAP values with enhanced efficiency... - -
+2025-08-12 12:05:10,761 INFO AresTradingSystem.System.FeatureFilter 📦 Using SHAP TreeExplainer from shap.explainers - -
+2025-08-12 12:05:10,761 INFO AresTradingSystem.System.FeatureFilter 📊 Dataset size: 100000 rows - -
+2025-08-12 12:05:10,761 INFO AresTradingSystem.System.FeatureFilter 📊 Sample percentage: 10.0% - -
+2025-08-12 12:05:10,761 INFO AresTradingSystem.System.FeatureFilter 📊 Calculated sample size: 10000 rows - -
+2025-08-12 12:05:10,761 INFO AresTradingSystem.System.FeatureFilter 🔄 Applying stratified sampling to maintain class balance... - -
+2025-08-12 12:05:10,761 INFO AresTradingSystem.System.FeatureFilter 📊 Label distribution analysis: - -
+2025-08-12 12:05:10,762 INFO AresTradingSystem.System.FeatureFilter    Unique labels: [-1  0  1] - -
+2025-08-12 12:05:10,762 INFO AresTradingSystem.System.FeatureFilter    Label counts: [30000 40000 30000] - -
+2025-08-12 12:05:10,762 INFO AresTradingSystem.System.FeatureFilter    Min class count: 30000 - -
+2025-08-12 12:05:10,762 INFO AresTradingSystem.System.FeatureFilter    Imbalance ratio: 1.3 - -
+2025-08-12 12:05:10,836 INFO AresTradingSystem.System.FeatureFilter ✅ Stratified sampling successful! - -
+2025-08-12 12:05:10,836 INFO AresTradingSystem.System.FeatureFilter 📊 Original class distribution: {np.int64(-1): np.int64(30000), np.int64(0): np.int64(40000), np.int64(1): np.int64(30000)} - -
+2025-08-12 12:05:10,836 INFO AresTradingSystem.System.FeatureFilter 📊 Sample class distribution: {np.int64(-1): np.int64(3000), np.int64(0): np.int64(4000), np.int64(1): np.int64(3000)} - -
+2025-08-12 12:05:10,836 INFO AresTradingSystem.System.FeatureFilter 📊 Sample size: 10000 rows (10.0%) - -
+2025-08-12 12:05:10,836 INFO AresTradingSystem.System.FeatureFilter 📊 High feature count (100), applying pre-filtering - -
+2025-08-12 12:05:10,836 INFO AresTradingSystem.System.FeatureFilter 📊 Target feature count: 50 - -
+2025-08-12 12:05:11,634 INFO AresTradingSystem.System.FeatureFilter 📊 Pre-filtered to top 50 features - -
+2025-08-12 12:05:11,634 INFO AresTradingSystem.System.FeatureFilter 📊 Selected features: ['noise_feature_58', 'noise_feature_50', 'noise_feature_41', 'noise_feature_48', 'noise_feature_45', 'noise_feature_46', 'noise_feature_84', 'noise_feature_79', 'noise_feature_60', 'noise_feature_55', 'noise_feature_80', 'noise_feature_62', 'noise_feature_87', 'noise_feature_35', 'noise_feature_86', 'noise_feature_61', 'noise_feature_67', 'noise_feature_70', 'noise_feature_47', 'noise_feature_66', 'noise_feature_42', 'noise_feature_59', 'noise_feature_39', 'noise_feature_43', 'noise_feature_89', 'noise_feature_23', 'noise_feature_24', 'noise_feature_31', 'noise_feature_69', 'noise_feature_44', 'important_feature_16', 'important_feature_8', 'important_feature_15', 'important_feature_19', 'important_feature_3', 'important_feature_2', 'important_feature_5', 'important_feature_14', 'important_feature_10', 'important_feature_17', 'important_feature_4', 'important_feature_11', 'important_feature_7', 'important_feature_12', 'important_feature_18', 'important_feature_1', 'important_feature_0', 'important_feature_13', 'important_feature_9', 'important_feature_6'] - -
+2025-08-12 12:05:11,634 INFO AresTradingSystem.System.FeatureFilter 🌲 SHAP RF Parameters: n_estimators=50, max_depth=8 - -
+2025-08-12 12:05:11,634 INFO AresTradingSystem.System.FeatureFilter 🌲 Training optimized Random Forest for SHAP... - -
+2025-08-12 12:05:12,196 INFO AresTradingSystem.System.FeatureFilter ✅ Optimized RF training completed (score: 0.8912) - -
+2025-08-12 12:05:12,199 INFO AresTradingSystem.System.FeatureFilter 🔧 Optimized SHAP explainer created successfully - -
+2025-08-12 12:05:12,199 INFO AresTradingSystem.System.FeatureFilter ⏱️ Flexible timeout calculation: - -
+2025-08-12 12:05:12,199 INFO AresTradingSystem.System.FeatureFilter    📊 Sample size: 10000 rows - -
+2025-08-12 12:05:12,199 INFO AresTradingSystem.System.FeatureFilter    📊 Base rate: 60s per 5000 samples - -
+2025-08-12 12:05:12,199 INFO AresTradingSystem.System.FeatureFilter    📊 Calculated timeout: 120s - -
+2025-08-12 12:05:12,199 INFO AresTradingSystem.System.FeatureFilter    ⏱️ Final timeout: 120s (bounded: 30s-900s) - -
+2025-08-12 12:05:12,200 INFO AresTradingSystem.System.FeatureFilter 📊 Computing SHAP values with background set of 100 samples... - -
+2025-08-12 12:05:28,881 INFO AresTradingSystem.System.FeatureFilter ✅ SHAP values computed successfully with optimizations - -
+2025-08-12 12:05:28,882 INFO AresTradingSystem.System.FeatureFilter ✅ SHAP values computed in 18.12 seconds - -
+2025-08-12 12:05:28,882 INFO AresTradingSystem.System.FeatureFilter 📊 Computing feature importance from SHAP values... - -
+2025-08-12 12:05:28,882 INFO AresTradingSystem.System.FeatureFilter 📦 SHAP values format: numpy array - -
+2025-08-12 12:05:28,882 INFO AresTradingSystem.System.FeatureFilter 📐 SHAP array shape: (10000, 50, 3) - -
+2025-08-12 12:05:28,882 INFO AresTradingSystem.System.FeatureFilter 📊 Computing mean absolute SHAP importance per feature... - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter ✅ Feature importance computed in 0.02 seconds - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter 📈 Sorting features by importance... - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter 📊 Total importance: 0.019089 - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter 🏆 Top features by importance: - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter    1. important_feature_0: 0.008371 (cumulative: 0.008371) - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter    2. important_feature_2: 0.008142 (cumulative: 0.016513) - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter    3. important_feature_1: 0.002575 (cumulative: 0.019089) - -
+2025-08-12 12:05:28,907 WARNING AresTradingSystem.System.FeatureFilter ⚠️ Suspicious dominance: top features ['important_feature_0', 'important_feature_2'] account for top1=43.9%, top2=86.5% of total importance - -
+2025-08-12 12:05:28,907 WARNING AresTradingSystem.System.FeatureFilter ⚠️ Importance highly concentrated: effective_features≈2.5 - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter 🎯 Feature selection parameters: - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter    📊 Importance threshold: 0.990 (99.0%) - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter    📊 Min features to keep: 15 - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter    📊 Max features to keep: 80 - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter    📊 Min importance per feature: 0.001000 - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter    📊 Importance cutoff: 0.018898 - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter 📊 Enhanced selection analysis: - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter    📊 Threshold cutoff: 3 features - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter    📊 Min importance cutoff: 3 features - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter    📊 Min features requirement: 15 features - -
+2025-08-12 12:05:28,907 INFO AresTradingSystem.System.FeatureFilter    📊 Final cutoff: 15 features - -
+2025-08-12 12:05:28,908 INFO AresTradingSystem.System.FeatureFilter 📊 Initial selection results: - -
+2025-08-12 12:05:28,908 INFO AresTradingSystem.System.FeatureFilter    📊 Features selected: 15 - -
+2025-08-12 12:05:28,908 INFO AresTradingSystem.System.FeatureFilter    📊 Cumulative importance at cutoff: 0.019089 - -
+2025-08-12 12:05:28,908 INFO AresTradingSystem.System.FeatureFilter    📊 Actual importance captured: 100.0% - -
+2025-08-12 12:05:28,908 WARNING AresTradingSystem.System.FeatureFilter ⚠️ Selected features (3) below minimum (15) - -
+2025-08-12 12:05:28,908 INFO AresTradingSystem.System.FeatureFilter 🔄 Expanding selection to meet minimum requirement... - -
+2025-08-12 12:05:28,908 INFO AresTradingSystem.System.FeatureFilter 📊 Expanded to 3 features (importance: 100.0%) - -
+2025-08-12 12:05:28,908 INFO AresTradingSystem.System.FeatureFilter ✅ Final feature selection: - -
+2025-08-12 12:05:28,908 INFO AresTradingSystem.System.FeatureFilter    📊 Features selected: 3 out of 100 - -
+2025-08-12 12:05:28,908 INFO AresTradingSystem.System.FeatureFilter    📊 Importance captured: 100.0% - -
+2025-08-12 12:05:28,908 INFO AresTradingSystem.System.FeatureFilter    📊 Selected features: ['important_feature_0', 'important_feature_2', 'important_feature_1'] - -
+2025-08-12 12:05:28,908 INFO AresTradingSystem.System.FeatureFilter 🎉 Feature filtering completed successfully! - -
+2025-08-12 12:05:28,908 INFO AresTradingSystem.System.FeatureFilter 📊 Final feature count: 3 - -
+2025-08-12 12:05:28,908 INFO AresTradingSystem.System.FeatureFilter 📊 Final features: ['important_feature_0', 'important_feature_2', 'important_feature_1'] - -

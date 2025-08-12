@@ -481,10 +481,10 @@ class Strategist:
                         "take_profit_multiplier": 0.9,
                     },
                 )
-            elif regime == "SIDEWAYS":
+            elif regime == "BEAR_SIDEWAYS":
                 base_params.update(
                     {
-                        "confidence_threshold": 0.8,  # Very high threshold for sideways regimes
+                        "confidence_threshold": 0.8,  # Very high threshold for sideways-like adverse regimes
                         "risk_adjustment": 0.6,
                         "position_size_multiplier": 0.5,
                         "stop_loss_multiplier": 0.7,

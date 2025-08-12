@@ -988,23 +988,23 @@ class VectorizedAdvancedFeatureEngineering:
                         features["trade_to_order_ratio"] = tor.diff().fillna(0)
             except Exception as _e:
                 self.logger.warning(f"Order book wall feature engineering failed: {_e}")
- 
-             # Market depth features (vectorized per-row)
-             md = self._calculate_market_depth_vectorized(price_data, volume_data)
-             # Depth dynamics
-             features["market_depth_change"] = md.diff().fillna(0)
-             with np.errstate(divide='ignore', invalid='ignore'):
-                 features["market_depth_returns"] = (md.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
-             # Depth imbalance proxy: short vs long window
-             short = volume_data["volume"].rolling(10, min_periods=1).mean()
-             long = volume_data["volume"].rolling(50, min_periods=1).mean().replace(0, np.nan)
-             features["market_depth_imbalance"] = ((short - long) / long).replace([np.inf, -np.inf], np.nan).fillna(0)
- 
-             return features
- 
-         except Exception as e:
-             self.logger.error(f"Error engineering microstructure features: {e}")
-             return {}
+
+            # Market depth features (vectorized per-row)
+            md = self._calculate_market_depth_vectorized(price_data, volume_data)
+            # Depth dynamics
+            features["market_depth_change"] = md.diff().fillna(0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                features["market_depth_returns"] = (md.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+            # Depth imbalance proxy: short vs long window
+            short = volume_data["volume"].rolling(10, min_periods=1).mean()
+            long = volume_data["volume"].rolling(50, min_periods=1).mean().replace(0, np.nan)
+            features["market_depth_imbalance"] = ((short - long) / long).replace([np.inf, -np.inf], np.nan).fillna(0)
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error engineering microstructure features: {e}")
+            return {}
 
     def _calculate_price_impact_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> pd.Series:
         """Calculate per-row price impact using abs(close diff) normalized by rolling average volume."""

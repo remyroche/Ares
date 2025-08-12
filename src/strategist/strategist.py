@@ -76,7 +76,7 @@ class Strategist:
             "max_drawdown": 0.0,
         }
 
-        # ML Regime Classifier integration
+        # Regime classification uses deterministic EMA/ADX rules
         self.regime_classifier = None
         self.enable_regime_classification: bool = get_parameter_value(
             "strategist_parameters.enable_regime_classification",
@@ -121,9 +121,7 @@ class Strategist:
         # Initialize risk management
         await self._initialize_risk_management()
 
-        # Initialize ML Regime Classifier
-        if self.enable_regime_classification:
-            await self._initialize_regime_classifier()
+        # No ML regime classifier to initialize; using EMA/ADX rules
 
         # Initialize ML Confidence Predictor
         if self.enable_ml_predictions:
@@ -156,26 +154,7 @@ class Strategist:
 
         self.logger.info("Strategy configuration loaded successfully")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="ML regime classifier initialization",
-    )
-    async def _initialize_regime_classifier(self) -> None:
-        """Initialize ML Regime Classifier for market regime determination."""
-        from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
-
-        self.regime_classifier = UnifiedRegimeClassifier(
-            self.config,
-            "UNKNOWN",
-            "UNKNOWN",
-        )
-        if not self.regime_classifier.load_models():
-            self.logger.info(
-                "No existing regime classifier models found. Will train when needed.",
-            )
-        else:
-            self.logger.info("✅ ML Regime Classifier initialized successfully")
+    # Removed ML regime classifier initialization; using EMA/ADX rules
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -347,49 +326,55 @@ class Strategist:
         self,
         market_data: pd.DataFrame,
     ) -> dict[str, Any] | None:
-        """
-        Classify the current market regime using ML regime classifier.
-
-        Args:
-            market_data: Market data DataFrame
-
-        Returns:
-            Optional[Dict[str, Any]]: Regime classification results
-        """
+        """Classify the current market regime using EMA/ADX rules (same as training)."""
         try:
-            if not self.regime_classifier:
-                self.logger.error("Regime classifier not initialized")
+            # Ensure required columns
+            required = {"open","high","low","close","volume"}
+            missing = [c for c in required if c not in market_data.columns]
+            if missing:
+                self.logger.error(f"Missing columns for regime classification: {missing}")
                 return None
 
-            # Check if regime classifier is trained
-            if not self.regime_classifier.trained:
-                self.logger.info("Regime classifier not trained. Training now...")
-                success = await self.regime_classifier.train_complete_system(
-                    market_data,
-                )
-                if not success:
-                    self.logger.error("Failed to train regime classifier")
-                    return None
+            # Resample to 1h timeframe for regime classification
+            df = market_data.copy()
+            if "timestamp" in df.columns:
+                if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+                    df["timestamp"] = pd.to_datetime(df["timestamp"]) 
+                df = df.sort_values("timestamp").reset_index(drop=True)
+                df_idx = df.set_index("timestamp")
+            elif isinstance(df.index, pd.DatetimeIndex):
+                df_idx = df.sort_index()
+            else:
+                self.logger.error("Market data lacks a datetime index or 'timestamp' column for resampling")
+                return None
 
-            # Predict regime
-            regime, confidence, additional_info = self.regime_classifier.predict_regime(
-                market_data,
-            )
+            df_1h = df_idx.resample("1h").agg({
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+            }).dropna()
+            df_1h = df_1h.reset_index().rename(columns={"index": "timestamp"})
+
+            # Use same rules as training
+            from src.analyst.simple_regime_rules import classify_last
+            regime, confidence = classify_last(df_1h)
+            additional_info = {"method": "EMA21_EMA55_ADX", "timeframe": "1h"}
 
             regime_info = {
                 "regime": regime,
                 "confidence": confidence,
+                "system_status": {"classifier_version": "ema_adx_rules_v1"},
+                "timestamp": datetime.utcnow().isoformat(),
                 "additional_info": additional_info,
-                "classification_time": datetime.now(),
-                "system_status": self.regime_classifier.get_system_status(),
             }
-
             self.logger.info(
                 f"🎯 Market regime classified as: {regime} (confidence: {confidence:.2f})",
             )
             return regime_info
-        except (KeyError, RuntimeError):
-            self.print(error("Error classifying market regime: {e}"))
+        except Exception as e:
+            self.print(error(f"Error classifying market regime: {e}"))
             return None
 
     @handle_errors(

@@ -14,6 +14,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.model_selection import KFold
 from sklearn.cluster import DBSCAN
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.inspection import permutation_importance
 from scipy.signal import find_peaks
 
 from src.utils.logger import system_logger
@@ -814,8 +816,11 @@ class AnalystLabelingFeatureEngineeringStep:
             low = df["low"].astype(float)
             sup_center = df.get("nearest_support_center", pd.Series(np.nan, index=df.index)).astype(float)
             res_center = df.get("nearest_resistance_center", pd.Series(np.nan, index=df.index)).astype(float)
-
+ 
             labels = pd.Series(0, index=df.index, dtype=int)
+            # Initialize strength scores
+            breakout_score = pd.Series(0.0, index=df.index, dtype=float)
+            bounce_score = pd.Series(0.0, index=df.index, dtype=float)
             # Support touches
             sup_band = df.get("nearest_support_band_pct", pd.Series(0.0, index=df.index)).astype(float)
             res_band = df.get("nearest_resistance_band_pct", pd.Series(0.0, index=df.index)).astype(float)
@@ -829,7 +834,7 @@ class AnalystLabelingFeatureEngineeringStep:
             res_roll = touch_res.rolling(min_consecutive, min_periods=min_consecutive).sum().fillna(0) >= min_consecutive
             touch_sup = sup_roll
             touch_res = res_roll
-
+ 
             last_labeled = -dedup_window_bars - 1
             ambiguous_count = 0
             total_touches = len(touch_sup)
@@ -857,7 +862,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 window_low = low.iloc[i + 1 : end + 1]
                 if window_close.empty:
                     continue
-
+ 
                 breakout = False
                 bounce = False
                 if side == "support":
@@ -868,6 +873,13 @@ class AnalystLabelingFeatureEngineeringStep:
                     if away and breakout:
                         ambiguous_count += 1
                     bounce = (away and not breakout)
+                    # Strength scores
+                    if breakout:
+                        move = float(((level - window_low.min()) / max(1e-12, level))) if len(window_low) else 0.0
+                        breakout_score.iloc[i] = max(0.0, move)
+                    elif bounce:
+                        move = float(((window_high.max() - level) / max(1e-12, level))) if len(window_high) else 0.0
+                        bounce_score.iloc[i] = max(0.0, move)
                 else:
                     # Breakout up if closes above level by breakout_thresh
                     breakout = bool(((window_close - level) / level > breakout_thresh).any())
@@ -876,17 +888,27 @@ class AnalystLabelingFeatureEngineeringStep:
                     if away and breakout:
                         ambiguous_count += 1
                     bounce = (away and not breakout)
-
+                    # Strength scores
+                    if breakout:
+                        move = float(((window_high.max() - level) / max(1e-12, level))) if len(window_high) else 0.0
+                        breakout_score.iloc[i] = max(0.0, move)
+                    elif bounce:
+                        move = float(((level - window_low.min()) / max(1e-12, level))) if len(window_low) else 0.0
+                        bounce_score.iloc[i] = max(0.0, move)
+ 
                 labels.iloc[i] = -1 if breakout else (1 if bounce else 0)
                 if labels.iloc[i] != 0:
                     last_labeled = i
-
+ 
             try:
                 self.logger.info(
                     f"SR-event labeling diagnostics: touches={total_touches}, ambiguous={ambiguous_count}"
                 )
             except Exception:
                 pass
+            # Attach scores to df so caller can merge; return only labels here to preserve API
+            df["sr_breakout_score"] = breakout_score
+            df["sr_bounce_score"] = bounce_score
             return labels
         except Exception:
             return pd.Series(0, index=df.index, dtype=int)
@@ -1338,13 +1360,45 @@ class AnalystLabelingFeatureEngineeringStep:
             features_b = await self._build_pipeline_b_ohlcv(price_data_sanitized)
             combined_features = pd.concat([features_a, features_b], axis=1)
 
-            # Add correlation features (multi-window, cross-timeframe) using raw df context
+            # Integrate explicit analyst meta-labels as auxiliary time-series
             try:
-                corr_feats = self._build_correlation_features(price_data_sanitized, combined_features)
-                if not corr_feats.empty:
-                    combined_features = pd.concat([combined_features, corr_feats], axis=1)
-            except Exception as e:
-                self.logger.warning(f"Correlation features block failed: {e}")
+                from src.training.steps.vectorized_advanced_feature_engineering import (
+                    VectorizedAdvancedFeatureEngineering,
+                )
+                from src.analyst.meta_labeling_system import MetaLabelingSystem
+                vafe = VectorizedAdvancedFeatureEngineering(self.config)
+                await vafe.initialize()
+                explicit_meta = await vafe._generate_explicit_meta_labels_vectorized(
+                    price_data,
+                    price_data[["volume"]] if "volume" in price_data.columns else pd.DataFrame({"volume": pd.Series(1.0, index=price_data.index)}),
+                    timeframe=self.config.get("meta_label_timeframe", "30m"),
+                )
+                if explicit_meta:
+                    for name, arr in explicit_meta.items():
+                        try:
+                            ser = pd.Series(arr, index=price_data.index, name=name)
+                            combined_features[name] = ser
+                        except Exception:
+                            pass
+                    self.logger.info(f"Step4: merged explicit meta-labels: {list(explicit_meta.keys())}")
+
+                # Surface tactician meta labels as features
+                try:
+                    meta_sys = MetaLabelingSystem(self.config)
+                    await meta_sys.initialize()
+                    tact_labels = await meta_sys.generate_tactician_labels(
+                        price_data,
+                        price_data[["volume"]] if "volume" in price_data.columns else pd.DataFrame({"volume": pd.Series(1.0, index=price_data.index)}),
+                        timeframe="1m",
+                    )
+                    # Convert supported scalar labels to aligned series if possible
+                    for key, val in tact_labels.items():
+                        if isinstance(val, (int, float, np.integer, np.floating)):
+                            combined_features[key] = pd.Series(float(val), index=price_data.index)
+                except Exception as _et:
+                    self.logger.warning(f"Step4: tactician meta label surfacing skipped: {_et}")
+            except Exception as _e:
+                self.logger.warning(f"Step4: explicit meta-label integration skipped: {_e}")
 
             # Multi-timeframe: previous week's close merged to daily with forward-fill (group-aware)
             try:
@@ -1380,10 +1434,52 @@ class AnalystLabelingFeatureEngineeringStep:
                 # Align feature rows to labeled rows (binary classification removes HOLD rows)
                 combined_features = combined_features.loc[labeled_ohlcv.index]
                 labeled_data = pd.concat([combined_features, labeled_ohlcv[["label"]]], axis=1)
+                # Label leakage filter: remove meta-label/tactician-like columns if present
+                def _is_label_like(col: str) -> bool:
+                    name = col.upper()
+                    leak_substrings = [
+                        "_NEXT_", "BREAKOUT", "EXHAUSTION", "RANGE_MEAN_REVERSION",
+                        "MOMENTUM_IGNITION", "GRADUAL_MOMENTUM_FADE", "VOLATILITY_COMPRESSION",
+                        "VOLATILITY_EXPANSION", "FLAG_FORMATION", "TRIANGLE_FORMATION",
+                        "RECTANGLE_FORMATION", "ABSORPTION", "LIQUIDITY_GRAB",
+                        "LOWEST_PRICE_NEXT", "HIGHEST_PRICE_NEXT", "LIMIT_ORDER_RETURN",
+                        "VWAP_REVERSION_ENTRY", "MARKET_ORDER_NOW", "CHASE_MICRO_BREAKOUT",
+                        "MAX_ADVERSE_EXCURSION_RETURN", "ORDERBOOK_IMBALANCE_FLIP",
+                        "AGGRESSIVE_TAKER_SPIKE", "ABORT_ENTRY_SIGNAL",
+                    ]
+                    if name == "LABEL":
+                        return False
+                    return any(s in name for s in leak_substrings)
+                leak_cols = [c for c in labeled_data.columns if _is_label_like(c)]
+                if leak_cols:
+                    labeled_data = labeled_data.drop(columns=leak_cols, errors="ignore")
+                    self.logger.warning(f"🚩 Removed {len(leak_cols)} label-like columns to prevent leakage: {leak_cols[:50]}{' ...' if len(leak_cols)>50 else ''}")
             except Exception as e:
                 self.logger.warning(f"Triple barrier labeling failed, using fallback labels: {e}")
                 fallback = self._create_fallback_labeled_data(price_data)
                 labeled_data = fallback.get("data", price_data)
+
+            # Label leakage filter: remove meta-label/tactician-like columns if present
+            def _is_label_like(col: str) -> bool:
+                name = col.upper()
+                leak_substrings = [
+                    "_NEXT_", "BREAKOUT", "EXHAUSTION", "RANGE_MEAN_REVERSION",
+                    "MOMENTUM_IGNITION", "GRADUAL_MOMENTUM_FADE", "VOLATILITY_COMPRESSION",
+                    "VOLATILITY_EXPANSION", "FLAG_FORMATION", "TRIANGLE_FORMATION",
+                    "RECTANGLE_FORMATION", "ABSORPTION", "LIQUIDITY_GRAB",
+                    "LOWEST_PRICE_NEXT", "HIGHEST_PRICE_NEXT", "LIMIT_ORDER_RETURN",
+                    "VWAP_REVERSION_ENTRY", "MARKET_ORDER_NOW", "CHASE_MICRO_BREAKOUT",
+                    "MAX_ADVERSE_EXCURSION_RETURN", "ORDERBOOK_IMBALANCE_FLIP",
+                    "AGGRESSIVE_TAKER_SPIKE", "ABORT_ENTRY_SIGNAL",
+                ]
+                if name == "LABEL":
+                    return False
+                return any(s in name for s in leak_substrings)
+
+            leak_cols = [c for c in labeled_data.columns if _is_label_like(c)]
+            if leak_cols:
+                labeled_data = labeled_data.drop(columns=leak_cols, errors="ignore")
+                self.logger.warning(f"🚩 Removed {len(leak_cols)} label-like columns to prevent leakage: {leak_cols[:50]}{' ...' if len(leak_cols)>50 else ''}")
 
             # Final feature sanity: drop raw OHLCV if somehow present
             raw_cols = list(set(self._RAW_CONTEXT_COLUMNS))
@@ -1402,6 +1498,68 @@ class AnalystLabelingFeatureEngineeringStep:
 
             # Check 5: Feature Matrix Sanitization (post-merge)
             labeled_data = self._sanitize_features(labeled_data)
+
+            # Standardized Feature Selection Pipeline (Step 4)
+            try:
+                feats = [c for c in labeled_data.columns if c != "label"]
+                X = labeled_data[feats].copy()
+                y = labeled_data["label"].copy()
+
+                # 1) Remove constant/near-constant
+                nunique = X.nunique(dropna=True)
+                low_var_cols = nunique[nunique <= 1].index.tolist()
+                if low_var_cols:
+                    X = X.drop(columns=low_var_cols, errors="ignore")
+                    self.logger.info(f"FS: removed {len(low_var_cols)} constant features")
+
+                # 2) Correlation clustering (|rho| >= 0.95)
+                corr = X.corr().abs()
+                upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+                to_drop = [column for column in upper.columns if any(upper[column] >= 0.95)]
+                if to_drop:
+                    X = X.drop(columns=to_drop, errors="ignore")
+                    self.logger.info(f"FS: dropped {len(to_drop)} highly correlated features (|rho|>=0.95)")
+
+                # 3) Mutual Information screen (bottom 20%)
+                numX = X.select_dtypes(include=[np.number])
+                keep_cols = set(numX.columns)
+                if not numX.empty and y.nunique() > 1:
+                    mi = mutual_info_classif(numX.values, y.values, discrete_features=False, random_state=42)
+                    mi_s = pd.Series(mi, index=numX.columns)
+                    thr = mi_s.quantile(0.20)
+                    weak = mi_s[mi_s <= thr].index.tolist()
+                    if weak:
+                        keep_cols = keep_cols.difference(weak)
+                        self.logger.info(f"FS: MI dropped {len(weak)} weak features (<= {thr:.4g})")
+                    X = X[list(keep_cols)]
+
+                # 4) RandomForest importance + Permutation importance (time-aware split)
+                if not X.empty and y.nunique() > 1:
+                    rf = RandomForestClassifier(n_estimators=200, max_depth=6, n_jobs=-1, random_state=42)
+                    # time split 80/20
+                    n = len(X)
+                    cut = max(1, int(0.8 * n))
+                    X_tr, y_tr = X.iloc[:cut], y.iloc[:cut]
+                    X_vl, y_vl = X.iloc[cut:], y.iloc[cut:]
+                    rf.fit(X_tr, y_tr)
+                    imp = pd.Series(rf.feature_importances_, index=X_tr.columns)
+                    try:
+                        pi = permutation_importance(rf, X_vl, y_vl, n_repeats=5, random_state=42, n_jobs=-1)
+                        pi_s = pd.Series(pi.importances_mean, index=X_vl.columns).fillna(0)
+                        # Combine scores
+                        comb = (imp.reindex(X.columns).fillna(0) + pi_s.reindex(X.columns).fillna(0))
+                    except Exception:
+                        comb = imp.reindex(X.columns).fillna(0)
+                    # Keep top-K by combined importance
+                    K = int(self.config.get("feature_selection", {}).get("top_k_step4", 120))
+                    topk = comb.sort_values(ascending=False).head(max(10, K)).index.tolist()
+                    X = X[topk]
+                    self.logger.info(f"FS: selected top-{len(topk)} features by RF+PI")
+
+                # Persist the selected set back to labeled_data
+                labeled_data = pd.concat([X, y], axis=1)
+            except Exception as fs_e:
+                self.logger.warning(f"Feature selection pipeline skipped due to error: {fs_e}")
 
             # Drop datetime/timestamp and metadata columns
             try:
@@ -1482,8 +1640,15 @@ class AnalystLabelingFeatureEngineeringStep:
 
             # For features files, drop raw OHLCV/trade columns to avoid leakage
             raw_cols = list(set(self._RAW_CONTEXT_COLUMNS))
+            # Additionally drop potential leakage targets (computed with lookahead) from features artifacts
+            leakage_cols = [
+                "sr_event_label",
+                "sr_breakout_score",
+                "sr_bounce_score",
+            ]
             for file_path, data in feature_files:
                 features_df = data.drop(columns=[c for c in raw_cols if c in data.columns], errors="ignore")
+                features_df = features_df.drop(columns=[c for c in leakage_cols if c in features_df.columns], errors="ignore")
                 with open(file_path, "wb") as f:
                     pickle.dump(features_df, f)
             self.logger.info(f"✅ Saved feature data files")
@@ -1887,6 +2052,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 "✅ Analyst labeling and feature engineering completed successfully",
             )
             self.logger.info("Training specialist models for regime: combined (single unified feature set)")
+
             return {"status": "SUCCESS", "data": {"data": labeled_data}}
 
         except Exception as e:

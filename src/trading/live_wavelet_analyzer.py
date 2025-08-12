@@ -146,13 +146,15 @@ class LiveWaveletAnalyzer:
         """Pre-compute wavelet coefficients for efficiency."""
         try:
             # Create a dummy signal for coefficient computation
-            dummy_signal = np.random.randn(self.sliding_window_size)
+            dummy_signal = np.random.randn(self.sliding_window_size).astype(np.float32, copy=False)
 
             # Pre-compute DWT coefficients structure
+            self.wavelet_obj = pywt.Wavelet(self.wavelet_type)
+            level = self._get_decomposition_level(len(dummy_signal))
             self.dwt_coeffs_structure = pywt.wavedec(
                 dummy_signal,
-                self.wavelet_type,
-                level=self.decomposition_level,
+                self.wavelet_obj,
+                level=level,
                 mode=self.padding_mode,
             )
 
@@ -160,6 +162,15 @@ class LiveWaveletAnalyzer:
 
         except Exception as e:
             self.print(error("Error pre-computing wavelet coefficients: {e}"))
+
+    def _get_decomposition_level(self, data_len: int) -> int:
+        try:
+            if not hasattr(self, "wavelet_obj"):
+                self.wavelet_obj = pywt.Wavelet(self.wavelet_type)
+            max_level = pywt.dwt_max_level(data_len, self.wavelet_obj.dec_len)
+            return max(1, min(self.decomposition_level, max_level))
+        except Exception:
+            return max(1, self.decomposition_level)
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -289,12 +300,20 @@ class LiveWaveletAnalyzer:
             target_length = 2 ** int(np.log2(len(price_array)))
             if len(price_array) != target_length:
                 price_array = price_array[-target_length:]
+            # Use float32 contiguous for speed
+            if not price_array.flags.c_contiguous:
+                price_array = np.ascontiguousarray(price_array)
+            if price_array.dtype != np.float32:
+                price_array = price_array.astype(np.float32, copy=False)
 
             # Compute DWT (fastest wavelet transform)
+            if not hasattr(self, "wavelet_obj"):
+                self.wavelet_obj = pywt.Wavelet(self.wavelet_type)
+            level = self._get_decomposition_level(len(price_array))
             coeffs = pywt.wavedec(
                 price_array,
-                self.wavelet_type,
-                level=self.decomposition_level,
+                self.wavelet_obj,
+                level=level,
                 mode=self.padding_mode,
             )
 

@@ -172,21 +172,17 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_sma_distance(self, window: int, name: str):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            if "symbol" in df.columns and df["symbol"].nunique() > 1:
-                def _group_sma(g: pd.DataFrame) -> pd.Series:
-                    close = g["close"].astype(float)
-                    sma = close.rolling(window, min_periods=1).mean()
-                    with np.errstate(divide="ignore", invalid="ignore"):
-                        s = (close / sma) - 1.0
-                    return s
-                s = df.groupby("symbol", group_keys=False).apply(_group_sma)
-            else:
-                close = df["close"].astype(float)
+            def _compute_sma_distance(g: pd.DataFrame) -> pd.Series:
+                close = g["close"].astype(float)
                 sma = close.rolling(window, min_periods=1).mean()
                 with np.errstate(divide="ignore", invalid="ignore"):
                     s = (close / sma) - 1.0
-            s.name = name
-            return s
+                return s
+
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                s = df.groupby("symbol", group_keys=False).apply(_compute_sma_distance)
+            else:
+                s = _compute_sma_distance(df)
         return _impl
 
     def _feat_engulf_strength_z(self, kind: str):

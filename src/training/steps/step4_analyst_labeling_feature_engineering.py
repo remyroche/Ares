@@ -1253,6 +1253,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 from src.training.steps.vectorized_advanced_feature_engineering import (
                     VectorizedAdvancedFeatureEngineering,
                 )
+                from src.analyst.meta_labeling_system import MetaLabelingSystem
                 vafe = VectorizedAdvancedFeatureEngineering(self.config)
                 await vafe.initialize()
                 explicit_meta = await vafe._generate_explicit_meta_labels_vectorized(
@@ -1268,6 +1269,22 @@ class AnalystLabelingFeatureEngineeringStep:
                         except Exception:
                             pass
                     self.logger.info(f"Step4: merged explicit meta-labels: {list(explicit_meta.keys())}")
+
+                # Surface tactician meta labels as features
+                try:
+                    meta_sys = MetaLabelingSystem(self.config)
+                    await meta_sys.initialize()
+                    tact_labels = await meta_sys.generate_tactician_labels(
+                        price_data,
+                        price_data[["volume"]] if "volume" in price_data.columns else pd.DataFrame({"volume": pd.Series(1.0, index=price_data.index)}),
+                        timeframe="1m",
+                    )
+                    # Convert supported scalar labels to aligned series if possible
+                    for key, val in tact_labels.items():
+                        if isinstance(val, (int, float, np.integer, np.floating)):
+                            combined_features[key] = pd.Series(float(val), index=price_data.index)
+                except Exception as _et:
+                    self.logger.warning(f"Step4: tactician meta label surfacing skipped: {_et}")
             except Exception as _e:
                 self.logger.warning(f"Step4: explicit meta-label integration skipped: {_e}")
 

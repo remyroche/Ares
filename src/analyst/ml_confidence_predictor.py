@@ -178,6 +178,13 @@ class MLConfidencePredictor:
             "RECTANGLE_FORMATION",
             "MOMENTUM_IGNITION",
             "GRADUAL_MOMENTUM_FADE",
+            "LIQUIDITY_GRAB",
+            "ABSORPTION_AT_LEVEL",
+            "TRENDING_RANGE",
+            "MOVING_AVERAGE_BOUNCE",
+            "HEAD_AND_SHOULDERS",
+            "DOUBLE_TOP_BOTTOM",
+            "CLIMACTIC_REVERSAL",
             "NO_SETUP",
         ]
         self.tactician_labels: list[str] = [

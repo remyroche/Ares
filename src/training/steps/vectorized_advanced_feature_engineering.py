@@ -337,11 +337,10 @@ class WaveletFeatureCache:
                 if isinstance(value, (list, np.ndarray)):
                     try:
                         arr = np.asarray(value)
-                        if arr.ndim == 1:
+                        if arr.ndim >= 1:
                             lengths.append(arr.shape[0])
-                        elif arr.ndim >= 2 and min(arr.shape[0], arr.shape[1]) > 1:
-                            lengths.append(arr.shape[0])
-                    except Exception:
+                    except Exception as e:
+                        self.logger.warning(f"Could not determine length for feature '{key}': {e}")
                         continue
                 elif isinstance(value, pd.Series):
                     lengths.append(len(value))

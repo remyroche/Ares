@@ -604,6 +604,6 @@ async def setup_csv_exporter(config: dict[str, Any]) -> CSVExporter | None:
         exporter = CSVExporter(config)
         await exporter.initialize()
         return exporter
-    except Exception as e:
-        system_print(failed("Failed to setup CSV exporter: {e}"))
+    except Exception:
+        system_logger.exception(error("Error setting up CSV exporter: {e}"))
         return None

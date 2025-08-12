@@ -196,7 +196,7 @@ class MLMonitor:
             return True
 
         except Exception:
-            self.print(failed("❌ ML Monitor initialization failed: {e}"))
+            self.logger.exception(failed("❌ ML Monitor initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -227,7 +227,7 @@ class MLMonitor:
             self.logger.info("Reference data loaded")
 
         except Exception:
-            self.print(error("Error loading reference data: {e}"))
+            self.logger.exception(error("Error loading reference data: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -243,7 +243,7 @@ class MLMonitor:
             self.logger.info("Drift detection initialized")
 
         except Exception:
-            self.print(initialization_error("Error initializing drift detection: {e}"))
+            self.logger.exception(initialization_error("Error initializing drift detection: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -259,7 +259,7 @@ class MLMonitor:
             self.logger.info("Feature importance tracking initialized")
 
         except Exception:
-            self.print(initialization_error("Error initializing feature tracking: {e}"))
+            self.logger.exception(initialization_error("Error initializing feature tracking: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -275,7 +275,7 @@ class MLMonitor:
             self.logger.info("Online learning monitoring initialized")
 
         except Exception:
-            self.print(initialization_error("Error initializing online learning: {e}"))
+            self.logger.exception(initialization_error("Error initializing online learning: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -309,7 +309,7 @@ class MLMonitor:
             return True
 
         except Exception:
-            self.print(error("Error starting ML monitoring: {e}"))
+            self.logger.exception(error("Error starting ML monitoring: {e}"))
             return False
 
     @handle_errors(
@@ -325,7 +325,7 @@ class MLMonitor:
                 await asyncio.sleep(self.drift_check_interval)
 
         except Exception:
-            self.print(error("Error in drift detection loop: {e}"))
+            self.logger.exception(error("Error in drift detection loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -340,7 +340,7 @@ class MLMonitor:
                 await asyncio.sleep(self.performance_check_interval)
 
         except Exception:
-            self.print(error("Error in performance monitoring loop: {e}"))
+            self.logger.exception(error("Error in performance monitoring loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -355,7 +355,7 @@ class MLMonitor:
                 await asyncio.sleep(self.feature_analysis_interval)
 
         except Exception:
-            self.print(error("Error in feature analysis loop: {e}"))
+            self.logger.exception(error("Error in feature analysis loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -370,7 +370,7 @@ class MLMonitor:
                 await asyncio.sleep(self.performance_check_interval)
 
         except Exception:
-            self.print(error("Error in online learning loop: {e}"))
+            self.logger.exception(error("Error in online learning loop: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -415,7 +415,7 @@ class MLMonitor:
                     )
 
         except Exception:
-            self.print(error("Error performing drift detection: {e}"))
+            self.logger.exception(error("Error performing drift detection: {e}"))
 
     def _calculate_concept_drift(self, model_id: str) -> float:
         """Calculate concept drift score for a model."""
@@ -444,7 +444,7 @@ class MLMonitor:
             return min(drift_score, 1.0)
 
         except Exception:
-            self.print(error("Error calculating concept drift: {e}"))
+            self.logger.exception(error("Error calculating concept drift: {e}"))
             return 0.0
 
     def _calculate_data_drift(self, model_id: str) -> float:
@@ -455,7 +455,7 @@ class MLMonitor:
             return np.random.uniform(0.0, 0.2)
 
         except Exception:
-            self.print(error("Error calculating data drift: {e}"))
+            self.logger.exception(error("Error calculating data drift: {e}"))
             return 0.0
 
     def _calculate_feature_drift(self, model_id: str) -> float:
@@ -489,7 +489,7 @@ class MLMonitor:
             return 0.0
 
         except Exception:
-            self.print(error("Error calculating feature drift: {e}"))
+            self.logger.exception(error("Error calculating feature drift: {e}"))
             return 0.0
 
     @handle_errors(
@@ -532,7 +532,7 @@ class MLMonitor:
             )
 
         except Exception:
-            self.print(error("Error creating drift alert: {e}"))
+            self.logger.exception(error("Error creating drift alert: {e}"))
 
     def _determine_alert_severity(self, drift_score: float, threshold: float) -> str:
         """Determine alert severity based on drift score."""
@@ -562,7 +562,7 @@ class MLMonitor:
             # For now, just log the action
 
         except Exception:
-            self.print(error("Error triggering auto-retraining: {e}"))
+            self.logger.exception(error("Error triggering auto-retraining: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -598,7 +598,7 @@ class MLMonitor:
                     )
 
         except Exception:
-            self.print(error("Error capturing performance snapshots: {e}"))
+            self.logger.exception(error("Error capturing performance snapshots: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -635,7 +635,7 @@ class MLMonitor:
                         )
 
         except Exception:
-            self.print(error("Error analyzing feature importance: {e}"))
+            self.logger.exception(error("Error analyzing feature importance: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -661,7 +661,7 @@ class MLMonitor:
                 self.online_learning_metrics[model_id] = metrics
 
         except Exception:
-            self.print(error("Error monitoring online learning: {e}"))
+            self.logger.exception(error("Error monitoring online learning: {e}"))
 
     def get_drift_alerts(self, severity: str | None = None) -> list[ModelDriftAlert]:
         """Get drift alerts, optionally filtered by severity."""
@@ -730,7 +730,7 @@ class MLMonitor:
             }
 
         except Exception:
-            self.print(error("Error getting ML monitoring summary: {e}"))
+            self.logger.exception(error("Error getting ML monitoring summary: {e}"))
             return {}
 
     @handle_errors(
@@ -754,7 +754,7 @@ class MLMonitor:
             self.logger.info("🛑 ML Monitor stopped")
 
         except Exception:
-            self.print(error("Error stopping ML monitoring: {e}"))
+            self.logger.exception(error("Error stopping ML monitoring: {e}"))
 
 
 @handle_errors(
@@ -780,5 +780,5 @@ async def setup_ml_monitor(config: dict[str, Any]) -> MLMonitor | None:
         return None
 
     except Exception:
-        system_print(error("Error setting up ML monitor: {e}"))
+        system_logger.exception(error("Error setting up ML monitor: {e}"))
         return None

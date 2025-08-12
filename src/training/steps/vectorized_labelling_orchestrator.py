@@ -2276,7 +2276,8 @@ class VectorizedDataNormalizer:
                 try:
                     disc = KBinsDiscretizer(n_bins=bins, encode="ordinal", strategy="quantile")
                     return disc.fit_transform(X)
-                except Exception:
+                except Exception as e:
+                    self.logger.warning(f"Failed to discretize features with {bins} bins, using original data. Error: {e}")
                     return X
 
             # 1) Meta-Label Validation: mutual_info_classif for each meta-label

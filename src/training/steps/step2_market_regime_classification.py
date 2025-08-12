@@ -322,7 +322,7 @@ class MarketRegimeClassificationStep:
             formatted_results = {
                 "symbol": symbol,
                 "exchange": exchange,
-                "classification_date": datetime.now().isoformat(),
+                "classification_date": datetime.utcnow().isoformat(),
                 "total_records": len(df),
                 "regime_distribution": dict(regime_counts),
                 "regime_sequence": regimes,

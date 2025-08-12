@@ -125,7 +125,7 @@ class HighImpactCandleEnsemble(BaseEnsemble):
             for col in meta_label_cols:
                 try:
                     meta[col] = int(df[col].iloc[-1])
-                except Exception:
+                except (KeyError, IndexError):
                     meta[col] = 0
             if meta_label_cols:
                 self.logger.info(f"HighImpactCandleEnsemble meta-learner live features include meta-labels: {meta_label_cols}")

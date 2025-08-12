@@ -2361,7 +2361,7 @@ class AnalystLabelingFeatureEngineeringStep:
         ret_1m = close.pct_change().rename("returns_1m")
         out[ret_1m.name] = ret_1m
         # Higher TF returns using last price in bucket, then align with ffill (no lookahead)
-        for tf_label, rule in [("5m", "5T"), ("15m", "15T")]:
+        for tf_label, rule in [("5m", "5T"), ("15m", "15T"), ("30m", "30T")]:
             res = close.resample(rule).last()
             ret = res.pct_change().rename(f"returns_{tf_label}")
             ret_aligned = ret.reindex(base_idx, method="ffill")
@@ -2415,7 +2415,7 @@ class AnalystLabelingFeatureEngineeringStep:
             add_corr(mom50, rv20, w, "momentum50_realized_volatility20")
         # Cross-Timeframe Correlation (returns_1m vs returns_5m/15m)
         r1 = tf_returns.get("returns_1m")
-        for tf in ("returns_5m", "returns_15m"):
+        for tf in ("returns_5m", "returns_15m", "returns_30m"):
             rt = tf_returns.get(tf)
             if r1 is not None and rt is not None:
                 for w in windows:

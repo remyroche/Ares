@@ -615,6 +615,40 @@ class VectorizedAdvancedFeatureEngineering:
             )
             features.update(microstructure_features)
 
+            # Context dynamics for raw contextual signals (avoid using raw magnitudes as features)
+            try:
+                idx = price_data.index
+                # funding_rate
+                if "funding_rate" in price_data.columns:
+                    fr = pd.Series(price_data["funding_rate"].values, index=idx)
+                    features["funding_rate_change"] = fr.diff().fillna(0)
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        features["funding_rate_returns"] = (fr.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+                    # z-score for stationarity
+                    fr_roll = fr.rolling(50, min_periods=5)
+                    fr_z = (fr - fr_roll.mean()) / fr_roll.std().replace(0, np.nan)
+                    features["funding_rate_zscore"] = fr_z.replace([np.inf, -np.inf], np.nan).fillna(0)
+                # volume_ratio
+                if "volume_ratio" in price_data.columns:
+                    vr = pd.Series(price_data["volume_ratio"].values, index=idx)
+                    features["volume_ratio_change"] = vr.diff().fillna(0)
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        features["volume_ratio_returns"] = (vr.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+                # trade_count
+                if "trade_count" in price_data.columns:
+                    tc = pd.Series(price_data["trade_count"].values, index=idx)
+                    features["trade_count_change"] = tc.diff().fillna(0)
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        features["trade_count_returns"] = (tc.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+                # trade_volume
+                if "trade_volume" in price_data.columns:
+                    tv = pd.Series(price_data["trade_volume"].values, index=idx)
+                    features["trade_volume_change"] = tv.diff().fillna(0)
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        features["trade_volume_returns"] = (tv.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
+            except Exception as _e:
+                self.logger.warning(f"Context dynamics generation failed: {_e}")
+
             # Volatility regime features
             if self.volatility_model:
                 volatility_features = await self.volatility_model.model_volatility_vectorized(

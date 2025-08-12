@@ -380,6 +380,17 @@ class AnalystLabelingFeatureEngineeringStep:
             bearz = self._feat_engulf_strength_z("bear")(df)
             feats[bearz.name] = bearz
 
+            # SR location features (pivot-based), computed without lookahead
+            try:
+                sr_feats = self._build_sr_location_features(df)
+                for name, series in sr_feats.items():
+                    feats[name] = series
+                self.logger.info(
+                    f"Step4 SR location features added: {list(sr_feats.keys())}"
+                )
+            except Exception as _e:
+                self.logger.warning(f"Failed to add SR location features: {_e}")
+
             # Cleanup
             num = feats.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
             feats[num.columns] = num
@@ -389,6 +400,57 @@ class AnalystLabelingFeatureEngineeringStep:
         except Exception as e:
             self.logger.warning(f"Pipeline B failed: {e}")
             return pd.DataFrame(index=price_data.index)
+
+    def _build_sr_location_features(self, df: pd.DataFrame) -> dict[str, pd.Series]:
+        """Construct SR 'location' features using classic floor pivots and nearest S/R distances.
+
+        - Uses previous bar pivots (shifted) to avoid lookahead.
+        - Returns stationary relative distances (distance normalized by close).
+        """
+        required = ["open", "high", "low", "close"]
+        for c in required:
+            if c not in df.columns:
+                return {}
+        high = df["high"].astype(float)
+        low = df["low"].astype(float)
+        close = df["close"].astype(float)
+        # Classic floor pivots from prior bar
+        pivot = ((high.shift(1) + low.shift(1) + close.shift(1)) / 3.0)
+        r1 = 2 * pivot - low.shift(1)
+        s1 = 2 * pivot - high.shift(1)
+        r2 = pivot + (high.shift(1) - low.shift(1))
+        s2 = pivot - (high.shift(1) - low.shift(1))
+
+        # Relative distances (stationary)
+        def _reldist(level: pd.Series) -> pd.Series:
+            with np.errstate(divide='ignore', invalid='ignore'):
+                d = (close - level).abs() / close.replace(0, np.nan)
+            return d.replace([np.inf, -np.inf], np.nan)
+
+        dist_s1 = _reldist(s1).rename("distance_to_pivot_support_s1")
+        dist_s2 = _reldist(s2).rename("distance_to_pivot_support_s2")
+        dist_r1 = _reldist(r1).rename("distance_to_pivot_resistance_r1")
+        dist_r2 = _reldist(r2).rename("distance_to_pivot_resistance_r2")
+
+        # Nearest support/resistance among available pivot levels
+        nearest_support = pd.concat([dist_s1, dist_s2], axis=1).min(axis=1).rename("nearest_support_distance")
+        nearest_resistance = pd.concat([dist_r1, dist_r2], axis=1).min(axis=1).rename("nearest_resistance_distance")
+
+        # Binary flags: at/near support or resistance (within 0.2%)
+        near_thresh = 0.002
+        is_at_support = (nearest_support <= near_thresh).astype(int).rename("is_at_support")
+        is_at_resistance = (nearest_resistance <= near_thresh).astype(int).rename("is_at_resistance")
+
+        return {
+            dist_s1.name: dist_s1.fillna(method="ffill").fillna(0),
+            dist_s2.name: dist_s2.fillna(method="ffill").fillna(0),
+            dist_r1.name: dist_r1.fillna(method="ffill").fillna(0),
+            dist_r2.name: dist_r2.fillna(method="ffill").fillna(0),
+            nearest_support.name: nearest_support.fillna(method="ffill").fillna(0),
+            nearest_resistance.name: nearest_resistance.fillna(method="ffill").fillna(0),
+            is_at_support.name: is_at_support.fillna(0),
+            is_at_resistance.name: is_at_resistance.fillna(0),
+        }
 
     def _compute_vif_scores(self, X: pd.DataFrame) -> dict[str, float]:
         from sklearn.linear_model import LinearRegression

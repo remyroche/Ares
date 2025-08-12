@@ -434,8 +434,13 @@ class RegimePredictiveEnsembles:
             else []
         )
 
-        # Reindex to match the training columns, filling missing with 0
-        X_meta_live = meta_input_df.reindex(columns=trained_features, fill_value=0)
+        # Align to training columns without masking missing features silently
+        missing_cols = [c for c in trained_features if c not in meta_input_df.columns]
+        if missing_cols:
+            self.logger.warning(f"Missing meta features at inference: {missing_cols}")
+        X_meta_live = meta_input_df.reindex(columns=trained_features)
+        # Impute remaining NaNs with 0 after logging (explicit)
+        X_meta_live = X_meta_live.fillna(0)
 
         # Scale the features
         X_meta_live_scaled = self.global_meta_scaler.transform(X_meta_live)

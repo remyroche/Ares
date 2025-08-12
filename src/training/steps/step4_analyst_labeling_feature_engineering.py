@@ -114,7 +114,10 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_close_returns(self):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            s = df["close"].pct_change()
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                s = df.groupby("symbol")["close"].pct_change()
+            else:
+                s = df["close"].pct_change()
             s.name = "close_returns"
             return s
         return _impl
@@ -122,7 +125,10 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_pct_change(self, col: str, name: str):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            s = df[col].pct_change()
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                s = df.groupby("symbol")[col].pct_change()
+            else:
+                s = df[col].pct_change()
             s.name = name
             return s
         return _impl
@@ -130,7 +136,10 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_diff(self, col: str, name: str):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            s = df[col].diff()
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                s = df.groupby("symbol")[col].diff()
+            else:
+                s = df[col].diff()
             s.name = name
             return s
         return _impl
@@ -139,17 +148,23 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_gk_vol_returns(self):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            open_ = df["open"].astype(float)
-            high = df["high"].astype(float)
-            low = df["low"].astype(float)
-            close = df["close"].astype(float)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                log_hl = np.log(high / low)
-                log_co = np.log(close / open_)
-            gk_var = (log_hl ** 2) / (2 * np.log(2)) - (2 * np.log(2) - 1) * (log_co ** 2)
-            gk_vol = np.sqrt(gk_var.clip(lower=0))
-            with np.errstate(divide="ignore", invalid="ignore"):
-                ret = (gk_vol / gk_vol.shift(1)) - 1.0
+            def _compute_group(g: pd.DataFrame) -> pd.Series:
+                open_ = g["open"].astype(float)
+                high = g["high"].astype(float)
+                low = g["low"].astype(float)
+                close = g["close"].astype(float)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    log_hl = np.log(high / low)
+                    log_co = np.log(close / open_)
+                gk_var = (log_hl ** 2) / (2 * np.log(2)) - (2 * np.log(2) - 1) * (log_co ** 2)
+                gk_vol = np.sqrt(gk_var.clip(lower=0))
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    ret = (gk_vol / gk_vol.shift(1)) - 1.0
+                return ret
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                ret = df.groupby("symbol", group_keys=False).apply(_compute_group)
+            else:
+                ret = _compute_group(df)
             ret.name = "gk_vol_returns"
             return ret
         return _impl
@@ -157,10 +172,19 @@ class AnalystLabelingFeatureEngineeringStep:
     def _feat_sma_distance(self, window: int, name: str):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
-            close = df["close"].astype(float)
-            sma = close.rolling(window, min_periods=1).mean()
-            with np.errstate(divide="ignore", invalid="ignore"):
-                s = (close / sma) - 1.0
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                def _group_sma(g: pd.DataFrame) -> pd.Series:
+                    close = g["close"].astype(float)
+                    sma = close.rolling(window, min_periods=1).mean()
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        s = (close / sma) - 1.0
+                    return s
+                s = df.groupby("symbol", group_keys=False).apply(_group_sma)
+            else:
+                close = df["close"].astype(float)
+                sma = close.rolling(window, min_periods=1).mean()
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    s = (close / sma) - 1.0
             s.name = name
             return s
         return _impl
@@ -185,7 +209,15 @@ class AnalystLabelingFeatureEngineeringStep:
                 cond = is_current_bearish & is_previous_bullish & is_engulf
                 name = "bearish_engulf_strength_z"
             strength = (body / (body_prev.replace(0, np.nan))).where(cond, 0.0)
-            z = self._zscore(strength, window=50).fillna(0)
+            # Group-aware rolling z-score to prevent cross-asset leakage
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                def _z(g: pd.Series) -> pd.Series:
+                    r = g.rolling(50, min_periods=5)
+                    return ((g - r.mean()) / r.std().replace(0, np.nan))
+                z = strength.groupby(df["symbol"]).transform(_z)
+            else:
+                z = self._zscore(strength, window=50)
+            z = z.fillna(0)
             z.name = name
             return z
         return _impl
@@ -288,16 +320,28 @@ class AnalystLabelingFeatureEngineeringStep:
                 features[fr_chg.name] = fr_chg
                 features[fr_ret.name] = fr_ret
 
-            # Volatility of stationary series
-            if self._feat_close_returns(df) is not None:
-                features["returns_volatility_20"] = self._feat_close_returns(df).rolling(20).std()
+            # Volatility of stationary series (group-aware)
+            cr = self._feat_close_returns(df)
+            if cr is not None:
+                if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                    features["returns_volatility_20"] = (
+                        cr.groupby(df["symbol"]).rolling(20).std().reset_index(level=0, drop=True)
+                    )
+                else:
+                    features["returns_volatility_20"] = cr.rolling(20).std()
             if "volume_returns" in features.columns:
-                features["volume_returns_volatility_20"] = features["volume_returns"].rolling(20).std()
+                if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                    vr = features["volume_returns"]
+                    features["volume_returns_volatility_20"] = (
+                        vr.groupby(df["symbol"]).rolling(20).std().reset_index(level=0, drop=True)
+                    )
+                else:
+                    features["volume_returns_volatility_20"] = features["volume_returns"].rolling(20).std()
 
             # Simple interactive features
-            if self._feat_close_returns(df) is not None and "volume_returns" in features.columns:
+            if cr is not None and "volume_returns" in features.columns:
                 features["returns_x_volume_returns"] = (
-                    features[self._feat_close_returns(df).name] * features["volume_returns"]
+                    cr * features["volume_returns"]
                 )
 
             # Additional upstream standardization to returns/changes for available raw series
@@ -317,8 +361,7 @@ class AnalystLabelingFeatureEngineeringStep:
             # Cleanup
             num = features.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
             features[num.columns] = num
-            features = features.fillna(0)
-            # Drop any all-NaN columns defensively
+            # Do not fill with zeros here; allow NaN to surface for later imputation
             features = features.dropna(axis=1, how="all")
             return features
         except Exception as e:
@@ -364,7 +407,7 @@ class AnalystLabelingFeatureEngineeringStep:
             # Cleanup
             num = feats.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
             feats[num.columns] = num
-            feats = feats.fillna(0)
+            # Do not fill with zeros here; allow NaN to surface for later imputation
             feats = feats.dropna(axis=1, how="all")
             return feats
         except Exception as e:
@@ -817,6 +860,22 @@ class AnalystLabelingFeatureEngineeringStep:
             )) if isinstance(price_data.index, pd.DatetimeIndex) else self._sanitize_raw_data(price_data.copy())
             features_b = await self._build_pipeline_b_ohlcv(price_data_sanitized)
             combined_features = pd.concat([features_a, features_b], axis=1)
+
+            # Multi-timeframe: previous week's close merged to daily with forward-fill (group-aware)
+            try:
+                def _weekly_prev_close(g: pd.DataFrame) -> pd.Series:
+                    weekly = g["close"].resample("W").last().shift(1)
+                    aligned = weekly.reindex(g.index, method="ffill")
+                    return aligned
+                if isinstance(price_data.index, pd.DatetimeIndex):
+                    if "symbol" in price_data.columns and price_data["symbol"].nunique() > 1:
+                        wpc = price_data.groupby("symbol", group_keys=False).apply(_weekly_prev_close)
+                    else:
+                        wpc = _weekly_prev_close(price_data)
+                    wpc.name = "weekly_prev_close"
+                    combined_features[wpc.name] = wpc
+            except Exception as e:
+                self.logger.warning(f"Weekly prev close feature generation failed: {e}")
 
             # Label using optimized triple barrier on raw OHLCV, then align features to labeled index
             try:

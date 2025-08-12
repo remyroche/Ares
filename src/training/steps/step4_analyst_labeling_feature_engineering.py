@@ -1338,6 +1338,14 @@ class AnalystLabelingFeatureEngineeringStep:
             features_b = await self._build_pipeline_b_ohlcv(price_data_sanitized)
             combined_features = pd.concat([features_a, features_b], axis=1)
 
+            # Add correlation features (multi-window, cross-timeframe) using raw df context
+            try:
+                corr_feats = self._build_correlation_features(price_data_sanitized, combined_features)
+                if not corr_feats.empty:
+                    combined_features = pd.concat([combined_features, corr_feats], axis=1)
+            except Exception as e:
+                self.logger.warning(f"Correlation features block failed: {e}")
+
             # Multi-timeframe: previous week's close merged to daily with forward-fill (group-aware)
             try:
                 def _weekly_prev_close(g: pd.DataFrame) -> pd.Series:
@@ -2253,6 +2261,175 @@ class AnalystLabelingFeatureEngineeringStep:
                     test_df[col] = original_labeled_df.loc[test_df.index, col]
             added_counts[cat] = {"needed": need, "added": len(chosen)}
         return train_df, val_df, test_df, added_counts
+
+    # -----------------------------
+    # Correlation feature utilities
+    # -----------------------------
+    def _compute_simple_ofi(self, df: pd.DataFrame, window: int = 20) -> pd.Series:
+        """Simple Order Flow Imbalance proxy using tick rule and volume normalization.
+        OFI ≈ sum(sign(Δclose) * volume) / sum(volume) over a rolling window.
+        """
+        required = ["close", "volume"]
+        name = f"order_flow_imbalance_{window}"
+        if not all(c in df.columns for c in required):
+            return pd.Series(np.nan, index=df.index, name=name)
+        def _impl_group(g: pd.DataFrame) -> pd.Series:
+            c = g["close"].astype(float)
+            v = g.get("volume", pd.Series(0, index=g.index)).astype(float).clip(lower=0)
+            sign = np.sign(c.diff().fillna(0.0))
+            num = (sign * v).rolling(window, min_periods=max(3, window // 3)).sum()
+            den = v.rolling(window, min_periods=max(3, window // 3)).sum()
+            with np.errstate(divide="ignore", invalid="ignore"):
+                ofi = (num / den.replace(0, np.nan)).clip(-1, 1)
+            return ofi
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            s = df.groupby("symbol", group_keys=False).apply(_impl_group)
+        else:
+            s = _impl_group(df)
+        return s.replace([np.inf, -np.inf], np.nan).rename(name)
+
+    def _compute_realized_volatility(self, df: pd.DataFrame, window: int = 20) -> pd.Series:
+        name = f"realized_volatility_{window}"
+        if "close" not in df.columns:
+            return pd.Series(np.nan, index=df.index, name=name)
+        def _impl_group(g: pd.DataFrame) -> pd.Series:
+            r = g["close"].astype(float).pct_change()
+            return r.rolling(window, min_periods=max(5, window // 2)).std()
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            s = df.groupby("symbol", group_keys=False).apply(_impl_group)
+        else:
+            s = _impl_group(df)
+        return s.rename(name)
+
+    def _compute_momentum(self, df: pd.DataFrame, lookback: int) -> pd.Series:
+        name = f"momentum_{lookback}"
+        if "close" not in df.columns:
+            return pd.Series(np.nan, index=df.index, name=name)
+        def _impl_group(g: pd.DataFrame) -> pd.Series:
+            c = g["close"].astype(float)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                m = (c / c.shift(lookback)) - 1.0
+            return m
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            s = df.groupby("symbol", group_keys=False).apply(_impl_group)
+        else:
+            s = _impl_group(df)
+        return s.replace([np.inf, -np.inf], np.nan).rename(name)
+
+    def _compute_avg_trade_size(self, df: pd.DataFrame, window: int = 20) -> pd.Series:
+        name = f"average_trade_size_{window}"
+        if not {"trade_volume", "trade_count"}.issubset(df.columns):
+            return pd.Series(np.nan, index=df.index, name=name)
+        def _impl_group(g: pd.DataFrame) -> pd.Series:
+            tv = g["trade_volume"].astype(float)
+            tc = g["trade_count"].astype(float).replace(0, np.nan)
+            ats = (tv / tc).rolling(window, min_periods=max(3, window // 3)).mean()
+            return ats
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            s = df.groupby("symbol", group_keys=False).apply(_impl_group)
+        else:
+            s = _impl_group(df)
+        return s.rename(name)
+
+    def _compute_price_minus_vwap(self, df: pd.DataFrame, window: int = 20) -> pd.Series:
+        name = f"price_minus_vwap_{window}"
+        if not {"close", "volume"}.issubset(df.columns):
+            return pd.Series(np.nan, index=df.index, name=name)
+        def _impl_group(g: pd.DataFrame) -> pd.Series:
+            c = g["close"].astype(float)
+            v = g["volume"].astype(float).clip(lower=0)
+            num = (c * v).rolling(window, min_periods=max(2, window // 2)).sum()
+            den = v.rolling(window, min_periods=max(2, window // 2)).sum()
+            with np.errstate(divide="ignore", invalid="ignore"):
+                vwap = num / den.replace(0, np.nan)
+                diff = c - vwap
+            return diff
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            s = df.groupby("symbol", group_keys=False).apply(_impl_group)
+        else:
+            s = _impl_group(df)
+        return s.replace([np.inf, -np.inf], np.nan).rename(name)
+
+    def _build_cross_timeframe_returns(self, df: pd.DataFrame) -> dict[str, pd.Series]:
+        """Build cross-timeframe returns (1m base; 5m and 15m resampled) aligned to base index."""
+        if not isinstance(df.index, pd.DatetimeIndex) or "close" not in df.columns:
+            return {}
+        out: dict[str, pd.Series] = {}
+        base_idx = df.index
+        close = df["close"].astype(float)
+        # 1m returns
+        ret_1m = close.pct_change().rename("returns_1m")
+        out[ret_1m.name] = ret_1m
+        # Higher TF returns using last price in bucket, then align with ffill (no lookahead)
+        for tf_label, rule in [("5m", "5T"), ("15m", "15T")]:
+            res = close.resample(rule).last()
+            ret = res.pct_change().rename(f"returns_{tf_label}")
+            ret_aligned = ret.reindex(base_idx, method="ffill")
+            out[ret_aligned.name] = ret_aligned
+        return out
+
+    def _build_correlation_features(self, df: pd.DataFrame, base_features: pd.DataFrame) -> pd.DataFrame:
+        """Construct requested rolling correlation features with multi-window support."""
+        out = pd.DataFrame(index=df.index)
+        windows = [30, 60, 120]
+        # Prepare prerequisite series
+        mom20 = self._compute_momentum(df, 20)
+        mom50 = self._compute_momentum(df, 50)
+        ofi20 = self._compute_simple_ofi(df, 20)
+        rv20 = self._compute_realized_volatility(df, 20)
+        # Prefer realized_volatility_20 existing column if present
+        if "realized_volatility_20" in base_features.columns:
+            rv20 = base_features["realized_volatility_20"].astype(float)
+            rv20.name = "realized_volatility_20"
+        # Volume
+        vol = df.get("volume", pd.Series(np.nan, index=df.index)).astype(float).rename("volume")
+        # Price returns (1m)
+        ret_1m = base_features.get("close_returns", self._feat_close_returns(df)).astype(float).rename("price_returns")
+        # VWAP deviation
+        pmvwap20 = self._compute_price_minus_vwap(df, 20)
+        # Average trade size
+        ats20 = self._compute_avg_trade_size(df, 20)
+        # Cross-timeframe returns
+        tf_returns = self._build_cross_timeframe_returns(df)
+        # Correlation builders
+        def add_corr(a: pd.Series, b: pd.Series, w: int, key: str):
+            try:
+                a_local = a.astype(float)
+                b_local = b.astype(float)
+                a_local.name = "a"; b_local.name = "b"
+                s = self._group_aware_rolling_corr(a_local, b_local, df, w)
+                out[f"{key}_corr_{w}"] = s
+            except Exception:
+                pass
+        # Momentum vs OFI
+        for w in windows:
+            add_corr(mom20, ofi20, w, "momentum20_ofi20")
+        # Volatility vs Volume
+        for w in windows:
+            add_corr(rv20, vol, w, "realized_volatility20_volume")
+        # Price vs Microstructure (price returns vs OFI)
+        for w in windows:
+            add_corr(ret_1m, ofi20.rename("order_flow_imbalance"), w, "price_returns_ofi")
+        # Momentum vs Volatility
+        for w in windows:
+            add_corr(mom50, rv20, w, "momentum50_realized_volatility20")
+        # Cross-Timeframe Correlation (returns_1m vs returns_5m/15m)
+        r1 = tf_returns.get("returns_1m")
+        for tf in ("returns_5m", "returns_15m"):
+            rt = tf_returns.get(tf)
+            if r1 is not None and rt is not None:
+                for w in windows:
+                    add_corr(r1, rt, w, f"returns1m_{tf}")
+        # VWAP deviation vs Volume
+        for w in windows:
+            add_corr(pmvwap20, vol, w, "price_minus_vwap20_volume")
+        # Trade size vs momentum
+        for w in windows:
+            add_corr(ats20, mom20, w, "avg_trade_size20_momentum20")
+        # Cleanup
+        if not out.empty:
+            out = out.replace([np.inf, -np.inf], np.nan)
+        return out
 
 
 class DeprecatedAnalystLabelingFeatureEngineeringStep:

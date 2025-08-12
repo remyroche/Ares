@@ -1248,6 +1248,29 @@ class AnalystLabelingFeatureEngineeringStep:
             features_b = await self._build_pipeline_b_ohlcv(price_data_sanitized)
             combined_features = pd.concat([features_a, features_b], axis=1)
 
+            # Integrate explicit analyst meta-labels as auxiliary time-series
+            try:
+                from src.training.steps.vectorized_advanced_feature_engineering import (
+                    VectorizedAdvancedFeatureEngineering,
+                )
+                vafe = VectorizedAdvancedFeatureEngineering(self.config)
+                await vafe.initialize()
+                explicit_meta = await vafe._generate_explicit_meta_labels_vectorized(
+                    price_data,
+                    price_data[["volume"]] if "volume" in price_data.columns else pd.DataFrame({"volume": pd.Series(1.0, index=price_data.index)}),
+                    timeframe=self.config.get("meta_label_timeframe", "30m"),
+                )
+                if explicit_meta:
+                    for name, arr in explicit_meta.items():
+                        try:
+                            ser = pd.Series(arr, index=price_data.index, name=name)
+                            combined_features[name] = ser
+                        except Exception:
+                            pass
+                    self.logger.info(f"Step4: merged explicit meta-labels: {list(explicit_meta.keys())}")
+            except Exception as _e:
+                self.logger.warning(f"Step4: explicit meta-label integration skipped: {_e}")
+
             # Multi-timeframe: previous week's close merged to daily with forward-fill (group-aware)
             try:
                 def _weekly_prev_close(g: pd.DataFrame) -> pd.Series:
@@ -1778,6 +1801,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 "✅ Analyst labeling and feature engineering completed successfully",
             )
             self.logger.info("Training specialist models for regime: combined (single unified feature set)")
+
             return {"status": "SUCCESS", "data": {"data": labeled_data}}
 
         except Exception as e:

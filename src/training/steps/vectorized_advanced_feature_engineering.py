@@ -744,23 +744,29 @@ class VectorizedAdvancedFeatureEngineering:
 
             # Explicit analyst meta-labels at higher timeframe (e.g., 30m)
             try:
-                explicit_meta = await self._generate_explicit_meta_labels_vectorized(
-                    price_data,
-                    volume_data,
-                    timeframe="30m",
-                )
-                if explicit_meta:
-                    selected_features.update(explicit_meta)
-                    # Log label prevalence for diagnostics
-                    try:
-                        for k, v in explicit_meta.items():
-                            if isinstance(v, (pd.Series, np.ndarray, list)):
-                                arr = np.asarray(v)
-                                ones = int(np.nansum(arr == 1))
-                                zeros = int(np.nansum(arr == 0))
-                                self.logger.info(f"Meta-label '{k}': ones={ones}, zeros={zeros}, len={len(arr)}")
-                    except Exception as e:
-                        self.logger.warning(f"Failed to log meta-label prevalence: {e}")
+                timeframes = ["1m", "5m", "15m", "30m"]
+                added_tf: list[str] = []
+                for tf in timeframes:
+                    explicit_meta = await self._generate_explicit_meta_labels_vectorized(
+                        price_data,
+                        volume_data,
+                        timeframe=tf,
+                    )
+                    if explicit_meta:
+                        selected_features.update(explicit_meta)
+                        added_tf.append(tf)
+                        # Log label prevalence for diagnostics
+                        try:
+                            for k, v in explicit_meta.items():
+                                if isinstance(v, (pd.Series, np.ndarray, list)):
+                                    arr = np.asarray(v)
+                                    ones = int(np.nansum(arr == 1))
+                                    zeros = int(np.nansum(arr == 0))
+                                    self.logger.info(f"Meta-label '{k}': ones={ones}, zeros={zeros}, len={len(arr)}")
+                        except Exception:
+                            pass
+                if added_tf:
+                    self.logger.info(f"Added explicit meta-labels for timeframes: {added_tf}")
             except Exception as _e:
                 self.logger.warning(f"Explicit meta-label generation failed: {_e}")
 

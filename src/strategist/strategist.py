@@ -373,8 +373,8 @@ class Strategist:
                 f"🎯 Market regime classified as: {regime} (confidence: {confidence:.2f})",
             )
             return regime_info
-        except Exception:
-            self.print(error("Error classifying market regime: {e}"))
+        except Exception as e:
+            self.print(error(f"Error classifying market regime: {e}"))
             return None
 
     @handle_errors(

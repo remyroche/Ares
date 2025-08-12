@@ -165,6 +165,71 @@ class AnalystLabelingFeatureEngineeringStep:
             return s
         return _impl
 
+    def _feat_vwap_distance(self, window: int, name: str):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            required = ["close", "volume"]
+            if not all(c in df.columns for c in required):
+                return pd.Series(np.nan, index=df.index, name=name)
+            def _compute_group(g: pd.DataFrame) -> pd.Series:
+                c = g["close"].astype(float)
+                v = g["volume"].astype(float).clip(lower=0)
+                num = (c * v).rolling(window, min_periods=max(2, window // 2)).sum()
+                den = v.rolling(window, min_periods=max(2, window // 2)).sum()
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    vwap = num / den.replace(0, np.nan)
+                    dist = (c / vwap) - 1.0
+                return dist
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                s = df.groupby("symbol", group_keys=False).apply(_compute_group)
+            else:
+                s = _compute_group(df)
+            s = s.replace([np.inf, -np.inf], np.nan)
+            s.name = name
+            return s
+        return _impl
+
+    def _feat_choppiness_index(self, period: int, name: str):
+        @self.validate_feature_output
+        def _impl(df: pd.DataFrame) -> pd.Series:
+            required = ["high", "low", "close"]
+            if not all(c in df.columns for c in required):
+                return pd.Series(np.nan, index=df.index, name=name)
+            def _compute_group(g: pd.DataFrame) -> pd.Series:
+                high = g["high"].astype(float)
+                low = g["low"].astype(float)
+                close = g["close"].astype(float)
+                prev_close = close.shift(1)
+                tr = pd.concat([
+                    (high - low),
+                    (high - prev_close).abs(),
+                    (low - prev_close).abs(),
+                ], axis=1).max(axis=1)
+                atr_sum = tr.rolling(period, min_periods=max(3, period // 2)).sum()
+                hh = high.rolling(period, min_periods=max(3, period // 2)).max()
+                ll = low.rolling(period, min_periods=max(3, period // 2)).min()
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    denom = (hh - ll).replace(0, np.nan)
+                    chop = 100.0 * (np.log10(atr_sum / denom)) / np.log10(float(period))
+                return chop
+            if "symbol" in df.columns and df["symbol"].nunique() > 1:
+                s = df.groupby("symbol", group_keys=False).apply(_compute_group)
+            else:
+                s = _compute_group(df)
+            s = s.clip(lower=0.0, upper=100.0).replace([np.inf, -np.inf], np.nan)
+            s.name = name
+            return s
+        return _impl
+
+    def _group_aware_rolling_corr(self, s1: pd.Series, s2: pd.Series, df: pd.DataFrame, window: int) -> pd.Series:
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            def _corr_group(g: pd.DataFrame) -> pd.Series:
+                return g[s1.name].rolling(window, min_periods=max(5, window // 2)).corr(g[s2.name])
+            tmp = pd.concat({"sym": df["symbol"], s1.name: s1, s2.name: s2}, axis=1)
+            out = tmp.groupby("sym", group_keys=False).apply(_corr_group)
+            return out.reset_index(level=0, drop=True)
+        return s1.rolling(window, min_periods=max(5, window // 2)).corr(s2)
+
     def _feat_engulf_strength_z(self, kind: str):
         @self.validate_feature_output
         def _impl(df: pd.DataFrame) -> pd.Series:
@@ -304,6 +369,15 @@ class AnalystLabelingFeatureEngineeringStep:
                 vr = features["volume_returns"]
                 features["volume_returns_volatility_20"] = self._group_aware_rolling_std(vr, df, 20)
 
+            # Correlation between returns and volume changes (market microstructure/correlation)
+            if "close_returns" in features.columns and "volume_returns" in features.columns:
+                try:
+                    s1 = features["close_returns"].astype(float)
+                    s2 = features["volume_returns"].astype(float)
+                    features["returns_volume_correlation_20"] = self._group_aware_rolling_corr(s1, s2, df, 20)
+                except Exception as e:
+                    self.logger.warning(f"Failed to compute feature 'returns_volume_correlation_20': {e}")
+
             # Simple interactive features
             if cr is not None and "volume_returns" in features.columns:
                 features["returns_x_volume_returns"] = (
@@ -359,6 +433,20 @@ class AnalystLabelingFeatureEngineeringStep:
             # Garman–Klass volatility -> returns of vol
             gk = self._feat_gk_vol_returns(df)
             feats[gk.name] = gk
+
+            # Price distance from VWAP (stationary)
+            try:
+                vwapd20 = self._feat_vwap_distance(20, "vwap_distance_20")(df)
+                feats[vwapd20.name] = vwapd20
+            except Exception as e:
+                self.logger.warning(f"Failed to compute feature 'vwap_distance_20': {e}")
+
+            # Choppiness Index (stationary, bounded [0,100])
+            try:
+                chop14 = self._feat_choppiness_index(14, "choppiness_index_14")(df)
+                feats[chop14.name] = chop14
+            except Exception as e:
+                self.logger.warning(f"Failed to compute feature 'choppiness_index_14': {e}")
 
             # Simple candlestick strength (engulfing bullish/bearish) -> z-scored
             body = (close - open_).abs()
@@ -1264,6 +1352,59 @@ class AnalystLabelingFeatureEngineeringStep:
             features_b = await self._build_pipeline_b_ohlcv(price_data_sanitized)
             combined_features = pd.concat([features_a, features_b], axis=1)
 
+            # Optional: Autoencoder feature generation (pre-labeling)
+            try:
+                enable_ae = bool(self.config.get("enable_autoencoder_features", False))
+            except Exception:
+                enable_ae = False
+            if enable_ae:
+                try:
+                    from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
+                    self.logger.info("🤖 Autoencoder feature generation enabled (pre-labeling). Building AE features...")
+                    ae_gen = AutoencoderFeatureGenerator(self.config)
+                    ae_input = combined_features.copy()
+                    lbls = np.zeros(len(ae_input), dtype=int)
+                    ae_features = ae_gen.generate_features(
+                        ae_input,
+                        regime_name="step4",
+                        labels=lbls,
+                    )
+                    if isinstance(ae_features, pd.DataFrame) and not ae_features.empty:
+                        ae_features = ae_features.reindex(combined_features.index)
+                        dup = [c for c in ae_features.columns if c in combined_features.columns]
+                        if dup:
+                            self.logger.warning(f"Dropping duplicate AE columns already present: {dup[:30]}{' ...' if len(dup)>30 else ''}")
+                            ae_features = ae_features.drop(columns=dup)
+                        combined_features = pd.concat([combined_features, ae_features], axis=1)
+                        self.logger.info(f"✅ Autoencoder features added (pre-labeling): {ae_features.shape[1]} columns")
+                        # Optionally replace original features with AE latents (config: ae_mode)
+                        ae_mode = str(self.config.get("ae_mode", "augment")).lower()
+                        # Derive additional AE-based signals: recon error z-score and spike flag
+                        try:
+                            if "autoencoder_recon_error" in ae_features.columns:
+                                re = ae_features["autoencoder_recon_error"].astype(float)
+                                re_roll = re.rolling(100, min_periods=20)
+                                re_z = (re - re_roll.mean()) / re_roll.std().replace(0, np.nan)
+                                ae_features["autoencoder_recon_error_z_100"] = re_z.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+                                ae_features["autoencoder_recon_error_spike"] = (ae_features["autoencoder_recon_error_z_100"] > 3.0).astype(int)
+                        except Exception as _e:
+                            self.logger.warning(f"AE recon-error derivatives failed: {_e}")
+                        if ae_mode == "replace":
+                            ae_cols = [c for c in ae_features.columns if c.startswith("autoencoder_")]
+                            if not ae_cols:
+                                self.logger.warning("AE mode 'replace' requested, but no AE columns found. Falling back to augment.")
+                                combined_features = pd.concat([combined_features, ae_features], axis=1)
+                            else:
+                                combined_features = ae_features[ae_cols].copy()
+                                self.logger.info(f"AE mode 'replace': using {len(ae_cols)} AE columns only")
+                        else:
+                            combined_features = pd.concat([combined_features, ae_features], axis=1)
+                            self.logger.info(f"✅ Autoencoder features added (pre-labeling): {ae_features.shape[1]} columns")
+                    else:
+                        self.logger.warning("AE generator returned empty DataFrame; skipping AE augmentation")
+                except Exception as e:
+                    self.logger.warning(f"Autoencoder feature generation failed or unavailable: {e}")
+
             # Integrate explicit analyst meta-labels as auxiliary time-series
             try:
                 from src.training.steps.vectorized_advanced_feature_engineering import (
@@ -1502,6 +1643,50 @@ class AnalystLabelingFeatureEngineeringStep:
             validation_data = labeled_data.iloc[train_end:val_end]
             test_data = labeled_data.iloc[val_end:]
 
+            # Optional: prune high correlation with AE latents to reduce redundancy
+            try:
+                ae_mode = str(self.config.get("ae_mode", "augment")).lower()
+                corr_thr = float(self.config.get("ae_correlation_prune_threshold", 0.98))
+                if ae_mode in ("augment", "replace"):
+                    def _prune(df_tr: pd.DataFrame, df_vl: pd.DataFrame, df_te: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+                        if df_tr.empty:
+                            return df_tr, df_vl, df_te
+                        all_cols = [c for c in df_tr.columns if c != "label"]
+                        ae_cols = [c for c in all_cols if c.startswith("autoencoder_")]
+                        if not ae_cols:
+                            return df_tr, df_vl, df_te
+                        keep_cols = set(all_cols)
+                        # Compute correlations on train only
+                        num_tr = df_tr[all_cols].select_dtypes(include=[np.number]).copy()
+                        # Drop columns with no variance to avoid NaNs
+                        nunique = num_tr.nunique(dropna=True)
+                        nz_cols = nunique[nunique > 1].index.tolist()
+                        num_tr = num_tr[nz_cols]
+                        ae_cols_eff = [c for c in ae_cols if c in num_tr.columns]
+                        other_cols = [c for c in num_tr.columns if c not in ae_cols_eff]
+                        drops: set[str] = set()
+                        if ae_cols_eff and other_cols:
+                            corr = num_tr[other_cols].corrwith(num_tr[ae_cols_eff].mean(axis=1)).abs()
+                            # Also check pairwise max corr vs any AE column for stricter prune
+                            max_corr = pd.Series(0.0, index=other_cols)
+                            for oc in other_cols:
+                                try:
+                                    max_corr[oc] = num_tr[ae_cols_eff].apply(lambda s: s.corr(num_tr[oc])).abs().max()
+                                except Exception:
+                                    max_corr[oc] = 0.0
+                            high = max_corr[max_corr >= corr_thr].index.tolist()
+                            drops.update(high)
+                        if drops:
+                            self.logger.info(f"AE prune: dropping {len(drops)} redundant non-AE features with |corr|>={corr_thr}")
+                            new_tr = df_tr.drop(columns=list(drops), errors="ignore")
+                            new_vl = df_vl.drop(columns=list(drops), errors="ignore") if not df_vl.empty else df_vl
+                            new_te = df_te.drop(columns=list(drops), errors="ignore") if not df_te.empty else df_te
+                            return new_tr, new_vl, new_te
+                        return df_tr, df_vl, df_te
+                    train_data, validation_data, test_data = _prune(train_data, validation_data, test_data)
+            except Exception as e:
+                self.logger.warning(f"AE correlation prune skipped: {e}")
+
             # Apply VIF loop with CPA on training split; transform val/test accordingly
             try:
                 train_data, validation_data, test_data, vif_summary = self._vif_reduce_train_val_test(
@@ -1509,6 +1694,16 @@ class AnalystLabelingFeatureEngineeringStep:
                 )
             except Exception as e:
                 self.logger.warning(f"Step 4 VIF reduction skipped due to error: {e}")
+
+            # Enforce minimum features per category before any global thresholding
+            try:
+                train_data, validation_data, test_data, cat_log = self._enforce_min_features_per_category(
+                    train_data, validation_data, test_data, labeled_data
+                )
+                if cat_log:
+                    self.logger.info(f"Category enforcement summary: {cat_log}")
+            except Exception as e:
+                self.logger.warning(f"Per-category minimum enforcement skipped: {e}")
 
             # Persist and log selected feature lists per split (traceability)
             try:
@@ -1523,6 +1718,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 self.logger.info(f"🔎 Saved feature lists to {trace_path}")
             except Exception as e:
                 self.logger.warning(f"Could not persist selected feature lists: {e}")
+
             # Save feature files that the validator expects
             feature_files = [
                 (f"{data_dir}/{exchange}_{symbol}_features_train.pkl", train_data),
@@ -2166,6 +2362,277 @@ class AnalystLabelingFeatureEngineeringStep:
                 series.groupby(df["symbol"]).rolling(window).std().reset_index(level=0, drop=True)
             )
         return series.rolling(window).std()
+
+    # --------------
+    # Category utils
+    # --------------
+    def _feature_category(self, name: str) -> str | None:
+        n = name.lower()
+        categories = {
+            "wavelet": ["wavelet", "cwt_", "dwt_", "wl_"],
+            "microstructure": [
+                "market_depth", "bid_ask_spread", "ofi", "imbalance", "liquidity", "spread", "queue", "slippage"
+            ],
+            "candlestick": [
+                "engulf", "doji", "hammer", "marubozu", "tweezer", "shooting", "candle", "pattern"
+            ],
+            "momentum": [
+                "return", "momentum", "roc", "sma", "ema", "vwap_distance", "distance"
+            ],
+            "volatility": [
+                "volatility", "atr", "gk_vol", "bb_width", "variance"
+            ],
+            "correlation": [
+                "corr", "correlation", "cov", "beta"
+            ],
+            "sr": [
+                "support", "resistance", "sr_", "pivot"
+            ],
+        }
+        for category, keywords in categories.items():
+            if any(k in n for k in keywords):
+                return category
+        return None
+
+    def _enforce_min_features_per_category(
+        self,
+        train_df: pd.DataFrame,
+        val_df: pd.DataFrame,
+        test_df: pd.DataFrame,
+        original_labeled_df: pd.DataFrame,
+        min_per_category: dict[str, int] | None = None,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, dict[str, int]]]:
+        """Ensure at least N features per category by re-adding top-MI candidates from the original set.
+
+        Returns updated (train, val, test) and a log dict with counts added per category.
+        """
+        if min_per_category is None:
+            min_per_category = {
+                "wavelet": 2,
+                "microstructure": 2,
+                "candlestick": 2,
+                "momentum": 3,
+                "volatility": 3,
+                "correlation": 2,
+                "sr": 3,
+            }
+        # Current features
+        current_cols = [c for c in train_df.columns if c != self._LABEL_NAME]
+        cat_to_cols: dict[str, list[str]] = {}
+        for c in current_cols:
+            cat = self._feature_category(c)
+            if cat:
+                cat_to_cols.setdefault(cat, []).append(c)
+        y = train_df[self._LABEL_NAME].astype(int)
+        added_counts: dict[str, dict[str, int]] = {}
+        # Candidate pool from original labeled features
+        original_pool = [
+            c for c in original_labeled_df.columns
+            if c != self._LABEL_NAME and c not in self._RAW_CONTEXT_COLUMNS
+        ]
+        for cat, min_n in min_per_category.items():
+            have = len(cat_to_cols.get(cat, []))
+            need = max(0, min_n - have)
+            if need <= 0:
+                continue
+            # Candidates for this category not currently included
+            candidates = [
+                c for c in original_pool
+                if c not in current_cols and self._feature_category(c) == cat and np.issubdtype(original_labeled_df[c].dtype, np.number)
+            ]
+            if not candidates:
+                # No available candidates; skip gracefully
+                continue
+            # Compute MI on training split for candidates
+            try:
+                X_cand = original_labeled_df.loc[train_df.index, candidates].copy()
+                X_cand = X_cand.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+                mi = mutual_info_classif(X_cand.values, y.values, discrete_features=False, random_state=42)
+                order = np.argsort(mi)[::-1]
+                chosen = [candidates[i] for i in order[:need] if np.isfinite(mi[i])]
+            except Exception as e:
+                self.logger.warning(f"Failed to compute mutual information for category '{cat}', falling back to default selection: {e}")
+                chosen = candidates[:need]
+            if not chosen:
+                continue
+            # Add back to all splits from original_labeled_df
+            for col in chosen:
+                train_df[col] = original_labeled_df.loc[train_df.index, col]
+                if not val_df.empty:
+                    val_df[col] = original_labeled_df.loc[val_df.index, col]
+                if not test_df.empty:
+                    test_df[col] = original_labeled_df.loc[test_df.index, col]
+            added_counts[cat] = {"needed": need, "added": len(chosen)}
+        return train_df, val_df, test_df, added_counts
+
+    # -----------------------------
+    # Correlation feature utilities
+    # -----------------------------
+    def _compute_simple_ofi(self, df: pd.DataFrame, window: int = 20) -> pd.Series:
+        """Simple Order Flow Imbalance proxy using tick rule and volume normalization.
+        OFI ≈ sum(sign(Δclose) * volume) / sum(volume) over a rolling window.
+        """
+        required = ["close", "volume"]
+        name = f"order_flow_imbalance_{window}"
+        if not all(c in df.columns for c in required):
+            return pd.Series(np.nan, index=df.index, name=name)
+        def _impl_group(g: pd.DataFrame) -> pd.Series:
+            c = g["close"].astype(float)
+            v = g.get("volume", pd.Series(0, index=g.index)).astype(float).clip(lower=0)
+            sign = np.sign(c.diff().fillna(0.0))
+            num = (sign * v).rolling(window, min_periods=max(3, window // 3)).sum()
+            den = v.rolling(window, min_periods=max(3, window // 3)).sum()
+            with np.errstate(divide="ignore", invalid="ignore"):
+                ofi = (num / den.replace(0, np.nan)).clip(-1, 1)
+            return ofi
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            s = df.groupby("symbol", group_keys=False).apply(_impl_group)
+        else:
+            s = _impl_group(df)
+        return s.replace([np.inf, -np.inf], np.nan).rename(name)
+
+    def _compute_realized_volatility(self, df: pd.DataFrame, window: int = 20) -> pd.Series:
+        name = f"realized_volatility_{window}"
+        if "close" not in df.columns:
+            return pd.Series(np.nan, index=df.index, name=name)
+        def _impl_group(g: pd.DataFrame) -> pd.Series:
+            r = g["close"].astype(float).pct_change()
+            return r.rolling(window, min_periods=max(5, window // 2)).std()
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            s = df.groupby("symbol", group_keys=False).apply(_impl_group)
+        else:
+            s = _impl_group(df)
+        return s.rename(name)
+
+    def _compute_momentum(self, df: pd.DataFrame, lookback: int) -> pd.Series:
+        name = f"momentum_{lookback}"
+        if "close" not in df.columns:
+            return pd.Series(np.nan, index=df.index, name=name)
+        def _impl_group(g: pd.DataFrame) -> pd.Series:
+            c = g["close"].astype(float)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                m = (c / c.shift(lookback)) - 1.0
+            return m
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            s = df.groupby("symbol", group_keys=False).apply(_impl_group)
+        else:
+            s = _impl_group(df)
+        return s.replace([np.inf, -np.inf], np.nan).rename(name)
+
+    def _compute_avg_trade_size(self, df: pd.DataFrame, window: int = 20) -> pd.Series:
+        name = f"average_trade_size_{window}"
+        if not {"trade_volume", "trade_count"}.issubset(df.columns):
+            return pd.Series(np.nan, index=df.index, name=name)
+        def _impl_group(g: pd.DataFrame) -> pd.Series:
+            tv = g["trade_volume"].astype(float)
+            tc = g["trade_count"].astype(float).replace(0, np.nan)
+            ats = (tv / tc).rolling(window, min_periods=max(3, window // 3)).mean()
+            return ats
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            s = df.groupby("symbol", group_keys=False).apply(_impl_group)
+        else:
+            s = _impl_group(df)
+        return s.rename(name)
+
+    def _compute_price_minus_vwap(self, df: pd.DataFrame, window: int = 20) -> pd.Series:
+        name = f"price_minus_vwap_{window}"
+        if not {"close", "volume"}.issubset(df.columns):
+            return pd.Series(np.nan, index=df.index, name=name)
+        def _impl_group(g: pd.DataFrame) -> pd.Series:
+            c = g["close"].astype(float)
+            v = g["volume"].astype(float).clip(lower=0)
+            num = (c * v).rolling(window, min_periods=max(2, window // 2)).sum()
+            den = v.rolling(window, min_periods=max(2, window // 2)).sum()
+            with np.errstate(divide="ignore", invalid="ignore"):
+                vwap = num / den.replace(0, np.nan)
+                diff = c - vwap
+            return diff
+        if "symbol" in df.columns and df["symbol"].nunique() > 1:
+            s = df.groupby("symbol", group_keys=False).apply(_impl_group)
+        else:
+            s = _impl_group(df)
+        return s.replace([np.inf, -np.inf], np.nan).rename(name)
+
+    def _build_cross_timeframe_returns(self, df: pd.DataFrame) -> dict[str, pd.Series]:
+        """Build cross-timeframe returns (1m base; 5m and 15m resampled) aligned to base index."""
+        if not isinstance(df.index, pd.DatetimeIndex) or "close" not in df.columns:
+            return {}
+        out: dict[str, pd.Series] = {}
+        base_idx = df.index
+        close = df["close"].astype(float)
+        # 1m returns
+        ret_1m = close.pct_change().rename("returns_1m")
+        out[ret_1m.name] = ret_1m
+        # Higher TF returns using last price in bucket, then align with ffill (no lookahead)
+        for tf_label, rule in [("5m", "5T"), ("15m", "15T"), ("30m", "30T")]:
+            res = close.resample(rule).last()
+            ret = res.pct_change().rename(f"returns_{tf_label}")
+            ret_aligned = ret.reindex(base_idx, method="ffill")
+            out[ret_aligned.name] = ret_aligned
+        return out
+
+    def _build_correlation_features(self, df: pd.DataFrame, base_features: pd.DataFrame) -> pd.DataFrame:
+        """Construct requested rolling correlation features with multi-window support."""
+        out = pd.DataFrame(index=df.index)
+        windows = [30, 60, 120]
+        # Prepare prerequisite series
+        mom20 = self._compute_momentum(df, 20)
+        mom50 = self._compute_momentum(df, 50)
+        ofi20 = self._compute_simple_ofi(df, 20)
+        rv20 = self._compute_realized_volatility(df, 20)
+        # Prefer realized_volatility_20 existing column if present
+        if "realized_volatility_20" in base_features.columns:
+            rv20 = base_features["realized_volatility_20"].astype(float)
+            rv20.name = "realized_volatility_20"
+        # Volume
+        vol = df.get("volume", pd.Series(np.nan, index=df.index)).astype(float).rename("volume")
+        # Price returns (1m)
+        ret_1m = base_features.get("close_returns", self._feat_close_returns(df)).astype(float).rename("price_returns")
+        # VWAP deviation
+        pmvwap20 = self._compute_price_minus_vwap(df, 20)
+        # Average trade size
+        ats20 = self._compute_avg_trade_size(df, 20)
+        # Cross-timeframe returns
+        tf_returns = self._build_cross_timeframe_returns(df)
+        # Correlation builders
+        def add_corr(a: pd.Series, b: pd.Series, w: int, key: str):
+            try:
+                a_local = a.astype(float)
+                b_local = b.astype(float)
+                a_local.name = "a"; b_local.name = "b"
+                s = self._group_aware_rolling_corr(a_local, b_local, df, w)
+                out[f"{key}_corr_{w}"] = s
+            except Exception:
+                pass
+        # Momentum vs OFI
+        for w in windows:
+            add_corr(mom20, ofi20, w, "momentum20_ofi20")
+        # Volatility vs Volume
+        for w in windows:
+            add_corr(rv20, vol, w, "realized_volatility20_volume")
+        # Price vs Microstructure (price returns vs OFI)
+        for w in windows:
+            add_corr(ret_1m, ofi20.rename("order_flow_imbalance"), w, "price_returns_ofi")
+        # Momentum vs Volatility
+        for w in windows:
+            add_corr(mom50, rv20, w, "momentum50_realized_volatility20")
+        # Cross-Timeframe Correlation (returns_1m vs returns_5m/15m)
+        r1 = tf_returns.get("returns_1m")
+        for tf in ("returns_5m", "returns_15m", "returns_30m"):
+            rt = tf_returns.get(tf)
+            if r1 is not None and rt is not None:
+                for w in windows:
+                    add_corr(r1, rt, w, f"returns1m_{tf}")
+        # VWAP deviation vs Volume
+        for w in windows:
+            add_corr(pmvwap20, vol, w, "price_minus_vwap20_volume")
+        # Trade size vs momentum
+        for w in windows:
+            add_corr(ats20, mom20, w, "avg_trade_size20_momentum20")
+        # Cleanup
+        if not out.empty:
+            out = out.replace([np.inf, -np.inf], np.nan)
+        return out
 
 
 class DeprecatedAnalystLabelingFeatureEngineeringStep:

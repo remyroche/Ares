@@ -284,6 +284,20 @@ class AnalystSpecialistTrainingStep:
                     with open(model_file, "wb") as f:
                         pickle.dump(model_data, f)
 
+            # Train and save S/R models
+            try:
+                sr_models = await self._train_sr_models(combined_data)
+                if sr_models:
+                    sr_dir = f"{models_dir}/SR"
+                    os.makedirs(sr_dir, exist_ok=True)
+                    for name, model in sr_models.items():
+                        with open(f"{sr_dir}/{name}.pkl", "wb") as f:
+                            pickle.dump(model, f)
+                    training_results["SR"] = sr_models
+                    self.logger.info(f"✅ Trained and saved {len(sr_models)} S/R models")
+            except Exception as _e:
+                self.logger.warning(f"S/R model training skipped due to error: {_e}")
+
             # Save training summary
             summary_file = (
                 f"{data_dir}/{exchange}_{symbol}_analyst_training_summary.json"
@@ -494,6 +508,93 @@ class AnalystSpecialistTrainingStep:
 
         except Exception as e:
             self.logger.error(f"❌ Error training regime models: {e}")
+            return {}
+
+    async def _train_sr_models(self, data: pd.DataFrame) -> dict[str, Any]:
+        """Train S/R specialist models: breakout and bounce binary classifiers.
+
+        - Targets derived from sr_event_label: breakout_target = 1 if -1 else 0; bounce_target = 1 if +1 else 0
+        - Features: include ALL numeric features except label targets and metadata
+        - Save models under analyst_models/SR/
+        """
+        try:
+            required_cols = ["sr_event_label"]
+            if not all(c in data.columns for c in required_cols):
+                self.logger.warning("S/R training skipped: missing sr_event_label in data")
+                return {}
+
+            # Build binary targets
+            y_breakout = (data["sr_event_label"] == -1).astype(int)
+            y_bounce = (data["sr_event_label"] == 1).astype(int)
+
+            # Feature set: all numeric except targets/labels/metadata
+            exclude_cols = set([
+                "label",
+                "regime",
+                "sr_event_label",
+            ])
+            X_all = data.select_dtypes(include=[np.number]).drop(columns=[c for c in exclude_cols if c in data.columns], errors="ignore")
+            if X_all.empty:
+                self.logger.warning("S/R training skipped: no numeric features available")
+                return {}
+
+            from sklearn.model_selection import train_test_split
+            Xb_tr, Xb_te, yb_tr, yb_te = train_test_split(X_all, y_breakout, test_size=0.2, random_state=42, stratify=y_breakout if y_breakout.sum() > 0 else None)
+            Xo_tr, Xo_te, yo_tr, yo_te = train_test_split(X_all, y_bounce, test_size=0.2, random_state=42, stratify=y_bounce if y_bounce.sum() > 0 else None)
+
+            models: dict[str, Any] = {}
+
+            # Helper to train a small suite
+            async def _train_suite(Xtr, Xte, ytr, yte, name_prefix: str) -> dict[str, Any]:
+                out = {}
+                try:
+                    from sklearn.ensemble import RandomForestClassifier
+                    rf = RandomForestClassifier(n_estimators=200, max_depth=12, random_state=42, n_jobs=-1)
+                    rf.fit(Xtr, ytr)
+                    out[f"{name_prefix}_rf"] = rf
+                except Exception as e:
+                    self.logger.warning(f"RF training failed for {name_prefix}: {e}")
+                try:
+                    import lightgbm as lgb
+                    lgbm = lgb.LGBMClassifier(
+                        n_estimators=400,
+                        learning_rate=0.03,
+                        max_depth=-1,
+                        num_leaves=64,
+                        subsample=0.8,
+                        colsample_bytree=0.8,
+                        random_state=42,
+                        n_jobs=-1,
+                    )
+                    lgbm.fit(Xtr, ytr, eval_set=[(Xte, yte)], eval_metric="auc", verbose=False)
+                    out[f"{name_prefix}_lgbm"] = lgbm
+                except Exception as e:
+                    self.logger.warning(f"LightGBM training failed for {name_prefix}: {e}")
+                try:
+                    import xgboost as xgb
+                    xgbm = xgb.XGBClassifier(
+                        n_estimators=400,
+                        learning_rate=0.05,
+                        max_depth=6,
+                        subsample=0.8,
+                        colsample_bytree=0.8,
+                        reg_lambda=1.0,
+                        random_state=42,
+                        n_jobs=-1,
+                        tree_method="hist",
+                    )
+                    xgbm.fit(Xtr, ytr, eval_set=[(Xte, yte)], verbose=False)
+                    out[f"{name_prefix}_xgb"] = xgbm
+                except Exception as e:
+                    self.logger.warning(f"XGBoost training failed for {name_prefix}: {e}")
+                return out
+
+            models.update(await _train_suite(Xb_tr, Xb_te, yb_tr, yb_te, "sr_breakout"))
+            models.update(await _train_suite(Xo_tr, Xo_te, yo_tr, yo_te, "sr_bounce"))
+
+            return models
+        except Exception as e:
+            self.logger.error(f"❌ Error training SR models: {e}")
             return {}
 
     async def _apply_pre_feature_selection(self, data: pd.DataFrame, feature_columns: list, regime_name: str) -> list:

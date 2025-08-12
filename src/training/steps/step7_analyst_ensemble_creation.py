@@ -78,6 +78,75 @@ class DynamicWeightedEnsemble:
         return np.ones((len(X), 2)) * 0.5
 
 
+class ProximityWeightedEnsemble(DynamicWeightedEnsemble):
+    """Proximity-weighted ensemble that boosts S/R regime when near S/R levels.
+
+    Parameters (from config):
+    - sr_proximity_tau: decay constant for proximity weight (default 0.003)
+    - sr_touch_boost: additive boost if recent sr_touch (default 0.2)
+    - sr_max_weight: cap on SR weight (default 0.7)
+    """
+
+    def __init__(self, models, model_names, weights, cfg=None):
+        super().__init__(models, model_names, weights)
+        self.cfg = cfg or {}
+
+    def _compute_sr_weights(self, X: pd.DataFrame) -> np.ndarray:
+        try:
+            tau = float(self.cfg.get("sr_proximity_tau", 0.003))
+            max_w = float(self.cfg.get("sr_max_weight", 0.7))
+            boost = float(self.cfg.get("sr_touch_boost", 0.2))
+            # Expect these columns in validation frame
+            d_sup = X.get("dist_to_support_pct", pd.Series(1.0, index=X.index)).astype(float)
+            d_res = X.get("dist_to_resistance_pct", pd.Series(1.0, index=X.index)).astype(float)
+            sr_touch = X.get("sr_touch", pd.Series(0, index=X.index)).astype(float)
+            prox = np.minimum(d_sup.values, d_res.values)
+            base = np.exp(-prox / max(1e-9, tau))  # in [0,1]
+            base = np.clip(base, 0.0, 1.0)
+            base = np.minimum(base + boost * sr_touch.values, 1.0)
+            return np.clip(base, 0.0, max_w)
+        except Exception:
+            return np.zeros(len(X))
+
+    def predict_proba(self, X):
+        # Compute base probs per model
+        probs_per_model = {}
+        for name, model in zip(self.model_names, self.models, strict=False):
+            try:
+                probs_per_model[name] = model.predict_proba(X)
+            except Exception:
+                continue
+
+        # Derive SR weight per sample
+        sr_weight = self._compute_sr_weights(X)
+        # Names that correspond to SR models
+        sr_names = [n for n in self.model_names if n.upper().startswith("SR") or "/SR/" in n]
+        other_names = [n for n in self.model_names if n not in sr_names]
+
+        # Aggregate SR and OTHER probabilities
+        def _avg(names):
+            arrs = [probs_per_model[n] for n in names if n in probs_per_model]
+            if not arrs:
+                return None
+            return np.mean(arrs, axis=0)
+
+        sr_avg = _avg(sr_names)
+        other_avg = _avg(other_names)
+        if sr_avg is None and other_avg is None:
+            return np.ones((len(X), 2)) * 0.5
+        if sr_avg is None:
+            return other_avg
+        if other_avg is None:
+            return sr_avg
+
+        # Blend per sample
+        out = np.empty_like(sr_avg)
+        for i in range(len(X)):
+            w = float(sr_weight[i])
+            out[i, :] = w * sr_avg[i, :] + (1.0 - w) * other_avg[i, :]
+        return out
+
+
 class AnalystEnsembleCreationStep:
     """Step 7: Analyst Ensemble Creation using StackingCV and Dynamic Weighting with caching and streaming."""
 
@@ -1213,8 +1282,11 @@ class AnalystEnsembleCreationStep:
                 for name in model_weights:
                     model_weights[name] = 1.0 / len(model_weights)
 
-            # Create ensemble object using the module-level class
-            ensemble = DynamicWeightedEnsemble(models, model_names, model_weights)
+            # Use proximity-weighted ensemble if SR features available
+            if all(k in X_val.columns for k in ["dist_to_support_pct", "dist_to_resistance_pct"]) or "sr_touch" in X_val.columns:
+                ensemble = ProximityWeightedEnsemble(models, model_names, model_weights, cfg=self.config.get("sr_blending", {}))
+            else:
+                ensemble = DynamicWeightedEnsemble(models, model_names, model_weights)
 
             # Evaluate ensemble performance
             ensemble_predictions = ensemble.predict(X_val)

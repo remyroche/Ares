@@ -36,6 +36,7 @@ from lightgbm import LGBMClassifier
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
+from src.utils.purged_kfold import PurgedKFoldTime
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 warnings.filterwarnings("ignore", category=UserWarning, module="arch")
@@ -577,9 +578,15 @@ class BaseEnsemble:
         def objective(trial):
             params = search_space_func(trial)
             model = model_class(**params, random_state=42, verbose=-1)
-            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+            # Prefer purged CV for time series with DatetimeIndex
+            if isinstance(X, pd.DataFrame) and isinstance(X.index, pd.DatetimeIndex):
+                cv = PurgedKFoldTime(n_splits=3)
+                splits = cv.split(X)
+            else:
+                cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+                splits = cv.split(X, y)
             scores = []
-            for train_idx, val_idx in cv.split(X, y):
+            for train_idx, val_idx in splits:
                 X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
                 y_train, y_val = y[train_idx], y[val_idx]
                 model.fit(X_train, y_train)

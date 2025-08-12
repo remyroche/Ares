@@ -149,12 +149,11 @@ class LiveWaveletAnalyzer:
             dummy_signal = np.random.randn(self.sliding_window_size).astype(np.float32, copy=False)
 
             # Pre-compute DWT coefficients structure
-            wavelet_obj = pywt.Wavelet(self.wavelet_type)
-            max_level = pywt.dwt_max_level(len(dummy_signal), wavelet_obj.dec_len)
-            level = min(self.decomposition_level, max_level)
+            self.wavelet_obj = pywt.Wavelet(self.wavelet_type)
+            level = self._get_decomposition_level(len(dummy_signal))
             self.dwt_coeffs_structure = pywt.wavedec(
                 dummy_signal,
-                wavelet_obj,
+                self.wavelet_obj,
                 level=level,
                 mode=self.padding_mode,
             )
@@ -163,6 +162,15 @@ class LiveWaveletAnalyzer:
 
         except Exception as e:
             self.print(error("Error pre-computing wavelet coefficients: {e}"))
+
+    def _get_decomposition_level(self, data_len: int) -> int:
+        try:
+            if not hasattr(self, "wavelet_obj"):
+                self.wavelet_obj = pywt.Wavelet(self.wavelet_type)
+            max_level = pywt.dwt_max_level(data_len, self.wavelet_obj.dec_len)
+            return max(1, min(self.decomposition_level, max_level))
+        except Exception:
+            return max(1, self.decomposition_level)
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -299,12 +307,12 @@ class LiveWaveletAnalyzer:
                 price_array = price_array.astype(np.float32, copy=False)
 
             # Compute DWT (fastest wavelet transform)
-            wavelet_obj = pywt.Wavelet(self.wavelet_type)
-            max_level = pywt.dwt_max_level(len(price_array), wavelet_obj.dec_len)
-            level = min(self.decomposition_level, max_level)
+            if not hasattr(self, "wavelet_obj"):
+                self.wavelet_obj = pywt.Wavelet(self.wavelet_type)
+            level = self._get_decomposition_level(len(price_array))
             coeffs = pywt.wavedec(
                 price_array,
-                wavelet_obj,
+                self.wavelet_obj,
                 level=level,
                 mode=self.padding_mode,
             )

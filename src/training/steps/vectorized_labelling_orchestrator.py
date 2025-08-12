@@ -397,6 +397,12 @@ class VectorizedLabellingOrchestrator:
                 except Exception:
                     pass
 
+            # 6b. Mutual Information analysis for meta-label validation and final feature selection diagnostics
+            try:
+                self._run_mutual_information_analysis(combined_data)
+            except Exception as e:
+                self.logger.warning(f"MI analysis failed: {e}")
+
             # 7. Autoencoder feature generation
             self.logger.info("🤖 Generating autoencoder features...")
             if self.autoencoder_generator is not None:
@@ -2221,3 +2227,121 @@ class VectorizedDataNormalizer:
             if c in available:
                 return c
         return "volume"
+
+    def _run_mutual_information_analysis(self, df: pd.DataFrame) -> None:
+        """Compute mutual information for meta-labels (classification) and returns (regression), across multiple discretizations.
+
+        - Classification: y is each explicit meta-label column; X is all numeric technical indicators (excluding context/label/meta-label itself).
+        - Regression: y is close_returns if present else label as numeric fallback; X as above.
+        - Discretization: test multiple bin counts (5, 10, 20) via KBinsDiscretizer for continuous variables.
+        - Logging: write per-target MI scores to files under log/mi/ with timestamps, and brief console summaries.
+        - Lookahead: shift y by +1 to ensure features at t do not use target at t.
+        """
+        try:
+            import os
+            from datetime import datetime
+            from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
+            from sklearn.preprocessing import KBinsDiscretizer
+            import json as _json
+
+            if df is None or df.empty:
+                return
+
+            os.makedirs("log/mi", exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            # Identify explicit meta-labels
+            meta_label_cols: list[str] = [
+                c for c in df.columns if any(
+                    key in c for key in [
+                        "STRONG_TREND_CONTINUATION",
+                        "RANGE_MEAN_REVERSION",
+                        "EXHAUSTION_REVERSAL",
+                    ]
+                )
+            ]
+
+            # Build feature matrix candidates (numeric only, exclude context/labels/meta-label targets)
+            exclude_cols = set(self._get_present_context_columns(df))
+            exclude_cols |= set(["label"]) | set(meta_label_cols)
+            X_full = df.select_dtypes(include=[np.number]).drop(columns=[c for c in exclude_cols if c in df.columns], errors="ignore")
+            X_full = X_full.replace([np.inf, -np.inf], np.nan).fillna(0)
+            feature_names = X_full.columns.tolist()
+            if len(feature_names) == 0:
+                self.logger.warning("MI: no numeric features available after exclusions")
+                return
+
+            # Helper: discretize features with k bins for MI stability testing
+            def discretize_features(X: np.ndarray, bins: int) -> np.ndarray:
+                try:
+                    disc = KBinsDiscretizer(n_bins=bins, encode="ordinal", strategy="quantile")
+                    return disc.fit_transform(X)
+                except Exception:
+                    return X
+
+            # 1) Meta-Label Validation: mutual_info_classif for each meta-label
+            classif_reports: dict[str, dict] = {}
+            for meta_col in meta_label_cols:
+                try:
+                    y = df[meta_col].shift(1).fillna(0).astype(int).values  # shift to avoid lookahead
+                    if np.unique(y).size < 2:
+                        self.logger.info(f"MI(classif): skip {meta_col} (single class)")
+                        continue
+                    per_bins: dict[str, list[float]] = {}
+                    for bins in [5, 10, 20]:
+                        Xd = discretize_features(X_full.values, bins)
+                        mi = mutual_info_classif(Xd, y, discrete_features=True, random_state=42)
+                        per_bins[str(bins)] = [float(v) for v in mi]
+                    # Aggregate by mean across bin settings
+                    agg = np.mean(np.vstack([per_bins[b] for b in per_bins.keys()]), axis=0)
+                    ranking = sorted(zip(feature_names, agg), key=lambda t: t[1], reverse=True)
+                    top10 = ranking[:10]
+                    self.logger.info(f"MI(classif) {meta_col}: top5={[n for n,_ in top10[:5]]}")
+                    classif_reports[meta_col] = {
+                        "feature_names": feature_names,
+                        "per_bins": per_bins,
+                        "agg_mean": [float(v) for v in agg],
+                        "top10": [(n, float(s)) for n, s in top10],
+                    }
+                except Exception as e:
+                    self.logger.warning(f"MI(classif) failed for {meta_col}: {e}")
+
+            if classif_reports:
+                with open(f"log/mi/{ts}_mi_classif_meta_labels.json", "w") as f:
+                    f.write(_json.dumps(classif_reports, indent=2))
+
+            # 2) Final Feature Selection: mutual_info_regression for returns
+            regression_reports: dict[str, dict] = {}
+            # Preferred target: close_returns if present
+            y_name = next((c for c in df.columns if c == "close_returns"), None)
+            if y_name is None:
+                # fallback: use label numeric if available
+                if "label" in df.columns and df["label"].nunique() > 1:
+                    y_name = "label"
+            if y_name is not None:
+                try:
+                    y = df[y_name].shift(1).replace([np.inf, -np.inf], np.nan).fillna(0).values
+                    per_bins_r: dict[str, list[float]] = {}
+                    for bins in [5, 10, 20]:
+                        Xd = discretize_features(X_full.values, bins)
+                        mi_r = mutual_info_regression(Xd, y, random_state=42)
+                        per_bins_r[str(bins)] = [float(v) for v in mi_r]
+                    agg_r = np.mean(np.vstack([per_bins_r[b] for b in per_bins_r.keys()]), axis=0)
+                    ranking_r = sorted(zip(feature_names, agg_r), key=lambda t: t[1], reverse=True)
+                    top10_r = ranking_r[:10]
+                    self.logger.info(f"MI(regress) {y_name}: top5={[n for n,_ in top10_r[:5]]}")
+                    regression_reports[y_name] = {
+                        "feature_names": feature_names,
+                        "per_bins": per_bins_r,
+                        "agg_mean": [float(v) for v in agg_r],
+                        "top10": [(n, float(s)) for n, s in top10_r],
+                    }
+                except Exception as e:
+                    self.logger.warning(f"MI(regress) failed for {y_name}: {e}")
+
+            if regression_reports:
+                with open(f"log/mi/{ts}_mi_regression.json", "w") as f:
+                    f.write(_json.dumps(regression_reports, indent=2))
+
+        except Exception as e:
+            self.logger.warning(f"MI analysis internal error: {e}")

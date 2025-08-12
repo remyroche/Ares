@@ -82,6 +82,17 @@ class SRZoneActionEnsemble(BaseEnsemble):
 
         X_flat = df[self.flat_features].fillna(0)
         X_of = df[self.order_flow_features].fillna(0)
+        meta_label_cols = [
+            c for c in df.columns if any(
+                c.endswith(suffix) or c.startswith(prefix)
+                for suffix in [
+                    "STRONG_TREND_CONTINUATION",
+                    "RANGE_MEAN_REVERSION",
+                    "EXHAUSTION_REVERSAL",
+                ]
+                for prefix in ["1m_", "5m_", "15m_", "30m_"]
+            )
+        ]
 
         if is_live:
             meta_features = {}
@@ -103,6 +114,13 @@ class SRZoneActionEnsemble(BaseEnsemble):
 
             # Add all raw features for the meta-learner to consider
             meta_features.update(current_row_flat.iloc[0].to_dict())
+            for col in meta_label_cols:
+                try:
+                    meta_features[col] = int(df[col].iloc[-1])
+                except Exception:
+                    meta_features[col] = 0
+            if meta_label_cols:
+                self.logger.info(f"SRZoneActionEnsemble meta-learner live features include meta-labels: {meta_label_cols}")
             return meta_features
         meta_df = pd.DataFrame(index=df.index)
         if self.models.get("sr_lgbm"):
@@ -123,4 +141,7 @@ class SRZoneActionEnsemble(BaseEnsemble):
 
         # Join all raw features
         meta_df = meta_df.join(X_flat)
+        if meta_label_cols:
+            meta_df = meta_df.join(df[meta_label_cols].astype(float))
+            self.logger.info(f"SRZoneActionEnsemble meta-learner train features include meta-labels: {meta_label_cols}")
         return meta_df.fillna(0)

@@ -742,6 +742,28 @@ class VectorizedAdvancedFeatureEngineering:
                 )
                 selected_features.update(meta_labels)
 
+            # Explicit analyst meta-labels at higher timeframe (e.g., 30m)
+            try:
+                explicit_meta = await self._generate_explicit_meta_labels_vectorized(
+                    price_data,
+                    volume_data,
+                    timeframe="30m",
+                )
+                if explicit_meta:
+                    selected_features.update(explicit_meta)
+                    # Log label prevalence for diagnostics
+                    try:
+                        for k, v in explicit_meta.items():
+                            if isinstance(v, (pd.Series, np.ndarray, list)):
+                                arr = np.asarray(v)
+                                ones = int(np.nansum(arr == 1))
+                                zeros = int(np.nansum(arr == 0))
+                                self.logger.info(f"Meta-label '{k}': ones={ones}, zeros={zeros}, len={len(arr)}")
+                    except Exception:
+                        pass
+            except Exception as _e:
+                self.logger.warning(f"Explicit meta-label generation failed: {_e}")
+
             # Enforce generator contract: ensure all values are 1D arrays of length n
             n = len(price_data)
             sanitized: dict[str, Any] = {}
@@ -1549,6 +1571,107 @@ class VectorizedAdvancedFeatureEngineering:
             return feats
         except Exception as e:
             self.logger.warning(f"OHLCV price feature engineering failed: {e}")
+            return {}
+
+    async def _generate_explicit_meta_labels_vectorized(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        timeframe: str = "30m",
+    ) -> dict[str, Any]:
+        """Generate explicit analyst meta-labels vectorized over a higher timeframe and align back without lookahead.
+
+        Labels generated:
+        - STRONG_TREND_CONTINUATION
+        - RANGE_MEAN_REVERSION
+        - EXHAUSTION_REVERSAL
+
+        Notes:
+        - Uses only past/current information (rolling stats) and aligns labels to the next base bar to avoid lookahead.
+        - Computes on OHLCV then maps to base index. Momentum/volatility rely on returns for stationarity.
+        """
+        try:
+            if price_data.empty or volume_data.empty:
+                return {}
+
+            # Resample to the requested timeframe
+            resampled_price = self._resample_data_vectorized(price_data, timeframe)
+            resampled_volume = self._resample_data_vectorized(volume_data, timeframe)
+            if resampled_price.empty or resampled_volume.empty:
+                return {}
+
+            # RSI on price diffs (stationary input)
+            delta = resampled_price["close"].diff()
+            gain = delta.where(delta > 0, 0.0).rolling(14, min_periods=1).mean()
+            loss = (-delta.where(delta < 0, 0.0)).rolling(14, min_periods=1).mean()
+            with np.errstate(divide='ignore', invalid='ignore'):
+                rs = gain / loss.replace(0, np.nan)
+                rsi = 100 - (100 / (1 + rs))
+            rsi = rsi.fillna(50)
+
+            # Bollinger Band position on price (label logic reference)
+            sma20 = resampled_price["close"].rolling(20, min_periods=1).mean()
+            std20 = resampled_price["close"].rolling(20, min_periods=1).std().replace(0, np.nan)
+            bb_upper = sma20 + 2 * std20
+            bb_lower = sma20 - 2 * std20
+            with np.errstate(divide='ignore', invalid='ignore'):
+                bb_pos = ((resampled_price["close"] - bb_lower) / (bb_upper - bb_lower)).clip(0, 1)
+            bb_pos = bb_pos.fillna(0.5)
+
+            # Momentum and volatility on returns (stationary)
+            close_ret = resampled_price["close"].pct_change()
+            momentum_5 = close_ret.rolling(5, min_periods=1).sum().fillna(0)
+            momentum_10 = close_ret.rolling(10, min_periods=1).sum().fillna(0)
+            vol_20 = close_ret.rolling(20, min_periods=1).std().fillna(0)
+
+            # Volume ratio
+            vol_ma_10 = resampled_volume["volume"].rolling(10, min_periods=1).mean().replace(0, np.nan)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                volume_ratio = (resampled_volume["volume"] / vol_ma_10).replace([np.inf, -np.inf], np.nan).fillna(1.0)
+
+            # Thresholds (align with MetaLabelingSystem defaults)
+            volatility_threshold = 0.02
+            momentum_threshold = 0.01
+            volume_threshold = 1.5
+
+            # STRONG_TREND_CONTINUATION
+            is_uptrend = momentum_10 > 0.02
+            is_pullback = (bb_pos > 0.3) & (bb_pos < 0.7)
+            is_healthy_rsi = (rsi > 40) & (rsi < 70)
+            strong_trend = (is_uptrend & is_healthy_rsi & is_pullback).astype(int)
+
+            # EXHAUSTION_REVERSAL
+            is_overbought = (rsi > 70) | (bb_pos > 0.8)
+            is_weakening = momentum_5 < 0
+            is_high_volume = volume_ratio > volume_threshold
+            exhaustion = (is_overbought & is_weakening & is_high_volume).astype(int)
+
+            # RANGE_MEAN_REVERSION
+            is_at_edge = (bb_pos < 0.2) | (bb_pos > 0.8)
+            is_low_vol = vol_20 < volatility_threshold
+            is_sideways = abs(momentum_10) < 0.01
+            range_mr = (is_at_edge & is_low_vol & is_sideways).astype(int)
+
+            # Align back to base index without lookahead: shift by +1 base bar after reindex
+            base_index = price_data.index if isinstance(price_data.index, pd.DatetimeIndex) else pd.RangeIndex(start=0, stop=len(price_data))
+            def _align(series: pd.Series) -> np.ndarray:
+                aligned = series.reindex(base_index, method="ffill").shift(1).fillna(0)
+                return aligned.astype(int).values
+
+            labels: dict[str, Any] = {
+                f"{timeframe}_STRONG_TREND_CONTINUATION": _align(strong_trend),
+                f"{timeframe}_EXHAUSTION_REVERSAL": _align(exhaustion),
+                f"{timeframe}_RANGE_MEAN_REVERSION": _align(range_mr),
+            }
+
+            self.logger.info(
+                f"Generated explicit meta-labels at {timeframe}: "
+                f"STC={(strong_trend==1).sum()}, ER={(exhaustion==1).sum()}, RMR={(range_mr==1).sum()}"
+            )
+            return labels
+
+        except Exception as e:
+            self.logger.error(f"Error generating explicit meta labels: {e}")
             return {}
 
 

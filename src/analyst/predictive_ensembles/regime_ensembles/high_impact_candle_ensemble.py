@@ -89,6 +89,17 @@ class HighImpactCandleEnsemble(BaseEnsemble):
         """Generates meta-features from all base models for the high-impact candle meta-learner."""
         X_flat = df[self.flat_features].fillna(0)
         X_of = df[self.order_flow_features].fillna(0)
+        meta_label_cols = [
+            c for c in df.columns if any(
+                c.endswith(suffix) or c.startswith(prefix)
+                for suffix in [
+                    "STRONG_TREND_CONTINUATION",
+                    "RANGE_MEAN_REVERSION",
+                    "EXHAUSTION_REVERSAL",
+                ]
+                for prefix in ["1m_", "5m_", "15m_", "30m_"]
+            )
+        ]
 
         if is_live:
             meta = {}
@@ -111,6 +122,13 @@ class HighImpactCandleEnsemble(BaseEnsemble):
                     self.models["naive_bayes"].predict_proba(current_row_flat),
                 )
             meta.update(current_row_flat.iloc[0].to_dict())
+            for col in meta_label_cols:
+                try:
+                    meta[col] = int(df[col].iloc[-1])
+                except Exception:
+                    meta[col] = 0
+            if meta_label_cols:
+                self.logger.info(f"HighImpactCandleEnsemble meta-learner live features include meta-labels: {meta_label_cols}")
             return meta
         meta_df = pd.DataFrame(index=df.index)
         if self.models.get("tabnet"):
@@ -134,4 +152,7 @@ class HighImpactCandleEnsemble(BaseEnsemble):
                 axis=1,
             )
         meta_df = meta_df.join(X_flat)
+        if meta_label_cols:
+            meta_df = meta_df.join(df[meta_label_cols].astype(float))
+            self.logger.info(f"HighImpactCandleEnsemble meta-learner train features include meta-labels: {meta_label_cols}")
         return meta_df.fillna(0)

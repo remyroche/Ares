@@ -279,6 +279,19 @@ class BaseEnsemble:
             "momentum_20_acceleration",
             "momentum_50_z_score",
             "momentum_50_acceleration",
+            # Newly engineered order book features (stationary)
+            "nearest_bid_wall_dist_pct",
+            "nearest_ask_wall_dist_pct",
+            "nearest_bid_wall_size_change",
+            "nearest_ask_wall_size_change",
+            "nearest_bid_wall_size_returns",
+            "nearest_ask_wall_size_returns",
+            "orderbook_wall_imbalance",
+            "weighted_mid_price_returns",
+            "weighted_mid_price_change",
+            "depth_profile_slope_proxy",
+            "orderbook_pressure",
+            "trade_to_order_ratio",
         ]
         self.order_flow_features = [
             "volume",
@@ -344,6 +357,19 @@ class BaseEnsemble:
             "vwap_deviation_z_score",
             "large_order_ratio_bounded",
             "large_order_ratio_z_score",
+            # Newly engineered order book features (stationary) for order-flow models
+            "nearest_bid_wall_dist_pct",
+            "nearest_ask_wall_dist_pct",
+            "nearest_bid_wall_size_change",
+            "nearest_ask_wall_size_change",
+            "nearest_bid_wall_size_returns",
+            "nearest_ask_wall_size_returns",
+            "orderbook_wall_imbalance",
+            "weighted_mid_price_returns",
+            "weighted_mid_price_change",
+            "depth_profile_slope_proxy",
+            "orderbook_pressure",
+            "trade_to_order_ratio",
         ]
 
     @handle_errors(

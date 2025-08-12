@@ -146,13 +146,16 @@ class LiveWaveletAnalyzer:
         """Pre-compute wavelet coefficients for efficiency."""
         try:
             # Create a dummy signal for coefficient computation
-            dummy_signal = np.random.randn(self.sliding_window_size)
+            dummy_signal = np.random.randn(self.sliding_window_size).astype(np.float32, copy=False)
 
             # Pre-compute DWT coefficients structure
+            wavelet_obj = pywt.Wavelet(self.wavelet_type)
+            max_level = pywt.dwt_max_level(len(dummy_signal), wavelet_obj.dec_len)
+            level = min(self.decomposition_level, max_level)
             self.dwt_coeffs_structure = pywt.wavedec(
                 dummy_signal,
-                self.wavelet_type,
-                level=self.decomposition_level,
+                wavelet_obj,
+                level=level,
                 mode=self.padding_mode,
             )
 
@@ -289,12 +292,20 @@ class LiveWaveletAnalyzer:
             target_length = 2 ** int(np.log2(len(price_array)))
             if len(price_array) != target_length:
                 price_array = price_array[-target_length:]
+            # Use float32 contiguous for speed
+            if not price_array.flags.c_contiguous:
+                price_array = np.ascontiguousarray(price_array)
+            if price_array.dtype != np.float32:
+                price_array = price_array.astype(np.float32, copy=False)
 
             # Compute DWT (fastest wavelet transform)
+            wavelet_obj = pywt.Wavelet(self.wavelet_type)
+            max_level = pywt.dwt_max_level(len(price_array), wavelet_obj.dec_len)
+            level = min(self.decomposition_level, max_level)
             coeffs = pywt.wavedec(
                 price_array,
-                self.wavelet_type,
-                level=self.decomposition_level,
+                wavelet_obj,
+                level=level,
                 mode=self.padding_mode,
             )
 

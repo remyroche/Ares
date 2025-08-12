@@ -746,6 +746,7 @@ class VectorizedAdvancedFeatureEngineering:
             try:
                 timeframes = ["1m", "5m", "15m", "30m"]
                 added_tf: list[str] = []
+                explicit_by_tf: dict[str, dict[str, Any]] = {}
                 for tf in timeframes:
                     explicit_meta = await self._generate_explicit_meta_labels_vectorized(
                         price_data,
@@ -754,6 +755,7 @@ class VectorizedAdvancedFeatureEngineering:
                     )
                     if explicit_meta:
                         selected_features.update(explicit_meta)
+                        explicit_by_tf[tf] = explicit_meta
                         added_tf.append(tf)
                         # Log label prevalence for diagnostics
                         try:
@@ -767,6 +769,14 @@ class VectorizedAdvancedFeatureEngineering:
                             pass
                 if added_tf:
                     self.logger.info(f"Added explicit meta-labels for timeframes: {added_tf}")
+                # Guardrail cross-check against MetaLabelingSystem if available
+                try:
+                    if getattr(self, "meta_labeling_system", None) is not None:
+                        await self._guardrail_validate_meta_labels(price_data, volume_data, explicit_by_tf)
+                    else:
+                        self.logger.info("Guardrail: MetaLabelingSystem not initialized; skipping cross-check")
+                except Exception as guard_e:
+                    self.logger.warning(f"Guardrail validation failed: {guard_e}")
             except Exception as _e:
                 self.logger.warning(f"Explicit meta-label generation failed: {_e}")
 
@@ -1743,6 +1753,106 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.error(f"Error generating explicit meta labels: {e}")
             return {}
+
+    async def _guardrail_validate_meta_labels(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        explicit_by_tf: dict[str, dict[str, Any]],
+    ) -> None:
+        """Cross-check vectorized explicit meta-labels with MetaLabelingSystem outputs on sampled timestamps.
+
+        Writes a JSON report with mismatch rates per timeframe/label under log/meta_label_guardrail/.
+        """
+        try:
+            import os, json
+            from datetime import datetime
+            os.makedirs("log/meta_label_guardrail", exist_ok=True)
+
+            base_index = price_data.index
+            labels_to_check = [
+                "STRONG_TREND_CONTINUATION",
+                "EXHAUSTION_REVERSAL",
+                "RANGE_MEAN_REVERSION",
+                "BREAKOUT_SUCCESS",
+                "BREAKOUT_FAILURE",
+                "VOLATILITY_COMPRESSION",
+                "VOLATILITY_EXPANSION",
+                "FLAG_FORMATION",
+                "TRIANGLE_FORMATION",
+                "RECTANGLE_FORMATION",
+                "MOMENTUM_IGNITION",
+                "GRADUAL_MOMENTUM_FADE",
+            ]
+
+            # Sampling configuration
+            max_samples_per_tf = 200
+            stride_min = 20
+
+            report: dict[str, Any] = {"timeframes": {}}
+
+            for tf, explicit in explicit_by_tf.items():
+                res_price = self._resample_data_vectorized(price_data, tf)
+                res_vol = self._resample_data_vectorized(volume_data, tf)
+                if res_price.empty or res_vol.empty:
+                    continue
+
+                r_idx = res_price.index
+                if len(r_idx) < 5:
+                    continue
+                stride = max(1, min(stride_min, len(r_idx) // max(1, min(max_samples_per_tf, len(r_idx)))))
+                sample_points = r_idx[::stride]
+
+                # Build vectorized label series on resampled index via ffill from base index arrays
+                vec_series: dict[str, pd.Series] = {}
+                for name in labels_to_check:
+                    key = f"{tf}_{name}"
+                    if key in explicit:
+                        arr = np.asarray(explicit[key])
+                        vec = pd.Series(arr, index=base_index).reindex(r_idx, method="ffill").fillna(0).astype(int)
+                        vec_series[name] = vec
+
+                mismatches: dict[str, int] = {name: 0 for name in labels_to_check}
+                totals: dict[str, int] = {name: 0 for name in labels_to_check}
+
+                for t in sample_points:
+                    # Slice up to t to avoid lookahead for the reference
+                    p_slice = res_price.loc[:t]
+                    v_slice = res_vol.loc[:t]
+                    if len(p_slice) < 30:  # require minimal history for indicators
+                        continue
+                    ref = await self.meta_labeling_system.generate_analyst_labels(p_slice, v_slice, timeframe=tf)
+                    for name in labels_to_check:
+                        if name not in vec_series:
+                            continue
+                        ref_val = int(ref.get(name, 0)) if isinstance(ref.get(name, 0), (int, float)) else 0
+                        vec_val = int(vec_series[name].loc[t])
+                        totals[name] += 1
+                        if ref_val != vec_val:
+                            mismatches[name] += 1
+
+                # Summarize
+                summary = {}
+                for name in labels_to_check:
+                    total = totals.get(name, 0)
+                    if total == 0:
+                        continue
+                    mis = mismatches.get(name, 0)
+                    summary[name] = {
+                        "checked": int(total),
+                        "mismatches": int(mis),
+                        "mismatch_rate": float(mis / total),
+                    }
+                report["timeframes"][tf] = summary
+
+            # Log and persist
+            self.logger.info(f"Guardrail report (preview): {report}")
+            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            with open(f"log/meta_label_guardrail/{ts}_report.json", "w") as f:
+                json.dump(report, f, indent=2)
+
+        except Exception as e:
+            self.logger.warning(f"Guardrail encountered an error: {e}")
 
 
 class VectorizedVolatilityRegimeModel:

@@ -2894,52 +2894,13 @@ class VectorizedWaveletTransformAnalyzer:
         try:
             features = {}
             
-            # Energy features with boundary effect consideration
-            energy = np.sum(np.abs(coeffs) ** 2, axis=1)
-            
-            # Remove boundary effects from energy calculation
+            # Remove boundary effects as configured
             if self.boundary_handling == "truncate" and coeffs.shape[1] > 20:
                 truncate_size = max(1, coeffs.shape[1] // 10)
                 coeffs_clean = coeffs[:, truncate_size:-truncate_size]
-                energy_clean = np.sum(np.abs(coeffs_clean) ** 2, axis=1)
             else:
                 coeffs_clean = coeffs
-                energy_clean = energy
             
-            features[f"{wavelet_type}_{series_name}_total_energy"] = float(np.sum(energy_clean))
-            features[f"{wavelet_type}_{series_name}_max_energy"] = float(np.max(energy_clean))
-            features[f"{wavelet_type}_{series_name}_min_energy"] = float(np.min(energy_clean))
-            features[f"{wavelet_type}_{series_name}_energy_std"] = float(np.std(energy_clean))
-            
-            # Frequency features
-            if len(energy_clean) > 0:
-                features[f"{wavelet_type}_{series_name}_dominant_freq"] = float(freqs[np.argmax(energy_clean)])
-                features[f"{wavelet_type}_{series_name}_freq_range"] = float(np.max(freqs) - np.min(freqs))
-                # Energy spread across frequency band
-                mask = energy_clean > np.mean(energy_clean)
-                if np.any(mask):
-                    features[f"{wavelet_type}_{series_name}_energy_bandwidth"] = float(np.std(freqs[mask]))
-            
-            # Scale-specific features
-            features[f"{wavelet_type}_{series_name}_min_scale"] = float(np.min(scales))
-            features[f"{wavelet_type}_{series_name}_max_scale"] = float(np.max(scales))
-            features[f"{wavelet_type}_{series_name}_scale_range"] = float(np.max(scales) - np.min(scales))
-            
-            # Statistical features
-            abs_coeffs = np.abs(coeffs)
-            features[f"{wavelet_type}_{series_name}_coeff_mean"] = float(np.mean(abs_coeffs))
-            features[f"{wavelet_type}_{series_name}_coeff_std"] = float(np.std(abs_coeffs))
-            features[f"{wavelet_type}_{series_name}_coeff_max"] = float(np.max(abs_coeffs))
-            features[f"{wavelet_type}_{series_name}_coeff_min"] = float(np.min(abs_coeffs))
-            
-            # Entropy features
-            total_energy = np.sum(abs_coeffs ** 2)
-            if total_energy > 0:
-                p = (abs_coeffs ** 2) / total_energy
-                features[f"{wavelet_type}_{series_name}_entropy"] = float(
-                    -np.sum(p * np.log(p + 1e-12))
-                )
-
             # NEW: Time-series features aligned to signal length
             # Aggregate energy across scales per time step
             ts_energy = np.sum(np.abs(coeffs_clean) ** 2, axis=0)  # shape: (T' )
@@ -3085,27 +3046,23 @@ class VectorizedWaveletTransformAnalyzer:
                     coeffs = pywt.wavedec(close_series, 'db4', level=1, mode='symmetric')
                     
                     if len(coeffs) >= 2:
-                        # Extract basic features from approximation and detail coefficients
+                        # Extract basic features from approximation and detail coefficients (arrays)
                         approx_coeffs = coeffs[0]
                         detail_coeffs = coeffs[1]
                         
-                        # Energy features
-                        features['wavelet_packet_approx_energy'] = np.sum(approx_coeffs ** 2)
-                        features['wavelet_packet_detail_energy'] = np.sum(detail_coeffs ** 2)
-                        
-                        # Statistical features
-                        features['wavelet_packet_approx_mean'] = np.mean(approx_coeffs)
-                        features['wavelet_packet_approx_std'] = np.std(approx_coeffs)
-                        features['wavelet_packet_detail_mean'] = np.mean(detail_coeffs)
-                        features['wavelet_packet_detail_std'] = np.std(detail_coeffs)
-                        
-                        # Energy ratio
-                        total_energy = features['wavelet_packet_approx_energy'] + features['wavelet_packet_detail_energy']
-                        if total_energy > 0:
-                            features['wavelet_packet_energy_ratio'] = features['wavelet_packet_detail_energy'] / total_energy
-                        else:
-                            features['wavelet_packet_energy_ratio'] = 0.0
-                            
+                        # Upsample coeff arrays to signal length by nearest repeat
+                        def _upsample(arr, target_len):
+                            if len(arr) == 0:
+                                return np.zeros(target_len)
+                            rep = max(1, target_len // len(arr))
+                            up = np.repeat(arr, rep)
+                            if len(up) < target_len:
+                                up = np.pad(up, (target_len - len(up), 0), mode='edge')
+                            return up[-target_len:]
+                        L = len(close_series)
+                        features['wavelet_packet_approx_ts'] = _upsample(np.abs(approx_coeffs), L)
+                        features['wavelet_packet_detail_ts'] = _upsample(np.abs(detail_coeffs), L)
+                
                 except Exception as e:
                     self.logger.warning(f"Error in simplified wavelet packet analysis: {e}")
                     
@@ -3148,27 +3105,13 @@ class VectorizedWaveletTransformAnalyzer:
                         
                         # Reconstruct denoised signal
                         denoised_signal = pywt.waverec(denoised_coeffs, 'db4', mode='symmetric')
+                        denoised_signal = denoised_signal[-len(close_series):]
+                        residual = close_series[-len(denoised_signal):] - denoised_signal
                         
-                        # Calculate denoising features
-                        if len(denoised_signal) == len(close_series):
-                            # Noise reduction ratio
-                            original_energy = np.sum(close_series ** 2)
-                            denoised_energy = np.sum(denoised_signal ** 2)
-                            
-                            if original_energy > 0:
-                                features['wavelet_denoising_noise_reduction'] = 1 - (denoised_energy / original_energy)
-                            else:
-                                features['wavelet_denoising_noise_reduction'] = 0.0
-                            
-                            # Signal quality improvement
-                            original_std = np.std(close_series)
-                            denoised_std = np.std(denoised_signal)
-                            
-                            if original_std > 0:
-                                features['wavelet_denoising_signal_quality'] = denoised_std / original_std
-                            else:
-                                features['wavelet_denoising_signal_quality'] = 1.0
-                                
+                        # Emit time-series outputs instead of scalars
+                        features['wavelet_denoised_signal_ts'] = denoised_signal.astype(float)
+                        features['wavelet_denoised_residual_ts'] = residual.astype(float)
+                        
                 except Exception as e:
                     self.logger.warning(f"Error in simplified wavelet denoising: {e}")
                     
@@ -3204,28 +3147,22 @@ class VectorizedWaveletTransformAnalyzer:
                             approx_coeffs = coeffs[0]
                             detail_coeffs = coeffs[1]
                             
-                            # Energy features for each wavelet type
-                            features[f'multi_wavelet_{wavelet_type}_approx_energy'] = np.sum(approx_coeffs ** 2)
-                            features[f'multi_wavelet_{wavelet_type}_detail_energy'] = np.sum(detail_coeffs ** 2)
-                            
-                            # Statistical features for each wavelet type
-                            features[f'multi_wavelet_{wavelet_type}_approx_std'] = np.std(approx_coeffs)
-                            features[f'multi_wavelet_{wavelet_type}_detail_std'] = np.std(detail_coeffs)
-                            
+                            # Upsample to signal length and expose as TS features
+                            def _upsample(arr, target_len):
+                                if len(arr) == 0:
+                                    return np.zeros(target_len)
+                                rep = max(1, target_len // len(arr))
+                                up = np.repeat(arr, rep)
+                                if len(up) < target_len:
+                                    up = np.pad(up, (target_len - len(up), 0), mode='edge')
+                                return up[-target_len:]
+                            L = len(close_series)
+                            features[f'multi_wavelet_{wavelet_type}_approx_ts'] = _upsample(np.abs(approx_coeffs), L)
+                            features[f'multi_wavelet_{wavelet_type}_detail_ts'] = _upsample(np.abs(detail_coeffs), L)
                     except Exception as e:
                         self.logger.warning(f"Error with wavelet type {wavelet_type}: {e}")
                         continue
-                
-                # Cross-wavelet comparison features
-                if 'multi_wavelet_db4_approx_energy' in features and 'multi_wavelet_haar_approx_energy' in features:
-                    db4_energy = features['multi_wavelet_db4_approx_energy']
-                    haar_energy = features['multi_wavelet_haar_approx_energy']
-                    
-                    if haar_energy > 0:
-                        features['multi_wavelet_db4_haar_energy_ratio'] = db4_energy / haar_energy
-                    else:
-                        features['multi_wavelet_db4_haar_energy_ratio'] = 1.0
-                        
+            
             return features
             
         except Exception as e:
@@ -3253,25 +3190,19 @@ class VectorizedWaveletTransformAnalyzer:
                         approx_coeffs = coeffs[0]
                         detail_coeffs = coeffs[1]
                         
-                        # Volume-specific wavelet features
-                        features['volume_wavelet_approx_energy'] = np.sum(approx_coeffs ** 2)
-                        features['volume_wavelet_detail_energy'] = np.sum(detail_coeffs ** 2)
+                        # Upsample to signal length and expose as TS features instead of scalars
+                        def _upsample(arr, target_len):
+                            if len(arr) == 0:
+                                return np.zeros(target_len)
+                            rep = max(1, target_len // len(arr))
+                            up = np.repeat(arr, rep)
+                            if len(up) < target_len:
+                                up = np.pad(up, (target_len - len(up), 0), mode='edge')
+                            return up[-target_len:]
+                        L = len(volume_series)
+                        features['volume_wavelet_approx_ts'] = _upsample(np.abs(approx_coeffs), L)
+                        features['volume_wavelet_detail_ts'] = _upsample(np.abs(detail_coeffs), L)
                         
-                        # Volume volatility features
-                        features['volume_wavelet_approx_volatility'] = np.std(approx_coeffs)
-                        features['volume_wavelet_detail_volatility'] = np.std(detail_coeffs)
-                        
-                        # Volume trend features
-                        features['volume_wavelet_approx_trend'] = np.mean(approx_coeffs)
-                        features['volume_wavelet_detail_trend'] = np.mean(detail_coeffs)
-                        
-                        # Energy ratio for volume
-                        total_volume_energy = features['volume_wavelet_approx_energy'] + features['volume_wavelet_detail_energy']
-                        if total_volume_energy > 0:
-                            features['volume_wavelet_energy_ratio'] = features['volume_wavelet_detail_energy'] / total_volume_energy
-                        else:
-                            features['volume_wavelet_energy_ratio'] = 0.0
-                            
                 except Exception as e:
                     self.logger.warning(f"Error in simplified volume wavelet analysis: {e}")
                     

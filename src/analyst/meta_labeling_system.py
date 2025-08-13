@@ -957,8 +957,8 @@ class MetaLabelingSystem:
             signals["MARKET_ORDER_NOW"] = 1 if is_market_order else 0
 
             # Chase micro breakout: break last 2 bars' high/low
-            prev_high = float(data["high"].rolling(3, min_periods=2).max().shift(1).iloc[-1]) if len(data) >= 2 else current_price
-            prev_low = float(data["low"].rolling(3, min_periods=2).min().shift(1).iloc[-1]) if len(data) >= 2 else current_price
+            prev_high = float(data["high"].rolling(2, min_periods=1).max().shift(1).iloc[-1]) if len(data) >= 2 else current_price
+            prev_low = float(data["low"].rolling(2, min_periods=1).min().shift(1).iloc[-1]) if len(data) >= 2 else current_price
             is_micro_breakout = (current_price > prev_high) or (current_price < prev_low)
             signals["CHASE_MICRO_BREAKOUT"] = 1 if is_micro_breakout else 0
 

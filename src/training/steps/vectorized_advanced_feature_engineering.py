@@ -1658,7 +1658,6 @@ class VectorizedAdvancedFeatureEngineering:
         - TRIANGLE_FORMATION
         - RECTANGLE_FORMATION
         - MOMENTUM_IGNITION
-        - GRADUAL_MOMENTUM_FADE
 
         Notes:
         - Uses only past/current information (rolling stats) and aligns labels to the next base bar to avoid lookahead.
@@ -1775,9 +1774,7 @@ class VectorizedAdvancedFeatureEngineering:
 
             # MOMENTUM patterns
             momentum_ignition = ((rsi > 60) | (rsi < 40)) & (abs(macd_hist) > 0.001) & (abs(momentum_5) > momentum_threshold)
-            gradual_fade = (abs(momentum_5) < abs(momentum_10)) & (abs(momentum_5) < momentum_threshold)
             momentum_ignition = momentum_ignition.fillna(False).astype(int)
-            gradual_fade = gradual_fade.fillna(False).astype(int)
 
             # Align back to base index without lookahead: shift by +1 base bar after reindex
             base_index = price_data.index if isinstance(price_data.index, pd.DatetimeIndex) else pd.RangeIndex(start=0, stop=len(price_data))
@@ -1797,7 +1794,6 @@ class VectorizedAdvancedFeatureEngineering:
                 f"{timeframe}_TRIANGLE_FORMATION": _align(triangle_formation),
                 f"{timeframe}_RECTANGLE_FORMATION": _align(rectangle_formation),
                 f"{timeframe}_MOMENTUM_IGNITION": _align(momentum_ignition),
-                f"{timeframe}_GRADUAL_MOMENTUM_FADE": _align(gradual_fade),
             }
 
             self.logger.info(
@@ -1806,7 +1802,7 @@ class VectorizedAdvancedFeatureEngineering:
                 f"BO_S={(breakout_success==1).sum()}, BO_F={(breakout_failure==1).sum()}, "
                 f"VOL_C={(vol_compression==1).sum()}, VOL_E={(vol_expansion==1).sum()}, "
                 f"FLAG={(flag_formation==1).sum()}, TRI={(triangle_formation==1).sum()}, REC={(rectangle_formation==1).sum()}, "
-                f"IGN={(momentum_ignition==1).sum()}, FADE={(gradual_fade==1).sum()}"
+                f"IGN={(momentum_ignition==1).sum()}"
             )
             return labels
 
@@ -1842,7 +1838,6 @@ class VectorizedAdvancedFeatureEngineering:
                 "TRIANGLE_FORMATION",
                 "RECTANGLE_FORMATION",
                 "MOMENTUM_IGNITION",
-                "GRADUAL_MOMENTUM_FADE",
             ]
 
             # Sampling configuration

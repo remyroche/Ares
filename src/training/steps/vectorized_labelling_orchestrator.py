@@ -361,6 +361,46 @@ class VectorizedLabellingOrchestrator:
                 labeled_data,
                 advanced_features,
             )
+
+            # 4b. Fit activation thresholds for meta-labels using triple-barrier outcomes
+            try:
+                from src.analyst.meta_labeling_system import MetaLabelingSystem
+                from src.training.enhanced_training_manager import EnhancedTrainingManager
+                meta = MetaLabelingSystem(self.config)
+                await meta.initialize()
+                # Build minimal OHLCV frames for intensity calculation
+                price_min = price_data[[c for c in ["open","high","low","close"] if c in price_data.columns]].copy()
+                vol_min = volume_data[[c for c in ["volume"] if c in volume_data.columns]].copy() if volume_data is not None and hasattr(volume_data, 'columns') else pd.DataFrame(index=price_data.index)
+                # Identify candidate labels from explicit vectorized features
+                label_names = [
+                    name for name in combined_data.columns
+                    if any(name.endswith(sfx) for sfx in [
+                        "STRONG_TREND_CONTINUATION","EXHAUSTION_REVERSAL","RANGE_MEAN_REVERSION","BREAKOUT_SUCCESS","BREAKOUT_FAILURE",
+                        "VOLATILITY_COMPRESSION","VOLATILITY_EXPANSION","FLAG_FORMATION","TRIANGLE_FORMATION","RECTANGLE_FORMATION",
+                        "MOMENTUM_IGNITION","FAILED_RETEST","ICE_BERG_ORDERS","MOMENTUM_ACCELERATION","MOMENTUM_DECELERATION",
+                        "CAPITULATION_SELLING","EUPHORIC_BUYING","DULL_MARKET","FLASH_CRASH_PATTERN","CHOP_WARNING","FAKE_OUT_RISK_HIGH",
+                        "LOW_CONVICTION_SETUP","HIGH_CONVICTION_SETUP"
+                    ])
+                ]
+                # Map to base label names (strip timeframe prefix like "30m_")
+                base_label_names = sorted({name.split("_",1)[1] if "_" in name else name for name in label_names})
+                # Fit thresholds
+                fit_report = meta.fit_activation_thresholds(price_min, vol_min, labeled_data, base_label_names)
+                # Persist thresholds for reuse
+                try:
+                    etm = EnhancedTrainingManager(self.config)
+                    etm.save_activation_thresholds(fit_report)
+                except Exception:
+                    pass
+                # Persist a report for audit
+                os.makedirs("log/meta_label_thresholds", exist_ok=True)
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                with open(os.path.join("log/meta_label_thresholds", f"{ts}_thresholds.json"), "w") as f:
+                    import json as _json
+                    f.write(_json.dumps(fit_report, indent=2))
+                self.logger.info({"msg": "Fitted activation thresholds for meta-labels", "labels": list(fit_report.keys())})
+            except Exception as e:
+                self.logger.warning(f"Threshold fitting skipped due to error: {e}")
             self._log_feature_sample("Combine", combined_data, "04_03")
             self._log_feature_errors("Combine", combined_data)
             try:
@@ -420,8 +460,51 @@ class VectorizedLabellingOrchestrator:
             # 6b. Mutual Information analysis for meta-label validation and final feature selection diagnostics
             try:
                 self._run_mutual_information_analysis(combined_data)
+            except Exception:
+                pass
+
+            # 6c. Integrate MoE confidences and pre-compute weights
+            try:
+                from src.analyst.meta_labeling_system import MetaLabelingSystem
+                from src.training.enhanced_training_manager import EnhancedTrainingManager
+                meta = MetaLabelingSystem(self.config)
+                await meta.initialize()
+                # Load reliability scores if available and set them in MetaLabelingSystem
+                try:
+                    etm = EnhancedTrainingManager(self.config)
+                    reliability = etm.get_label_reliability()
+                    for k, v in reliability.items():
+                        meta.set_reliability_score(k, float(v))
+                except Exception:
+                    pass
+                # Determine base label names (strip timeframe prefixes)
+                label_cols = [
+                    c for c in combined_data.columns if any(
+                        key in c for key in [
+                            "STRONG_TREND_CONTINUATION","EXHAUSTION_REVERSAL","RANGE_MEAN_REVERSION","BREAKOUT_SUCCESS","BREAKOUT_FAILURE",
+                            "VOLATILITY_COMPRESSION","VOLATILITY_EXPANSION","FLAG_FORMATION","TRIANGLE_FORMATION","RECTANGLE_FORMATION",
+                            "MOMENTUM_IGNITION","FAILED_RETEST","ICE_BERG_ORDERS","MOMENTUM_ACCELERATION","MOMENTUM_DECELERATION",
+                            "CAPITULATION_SELLING","EUPHORIC_BUYING","DULL_MARKET","FLASH_CRASH_PATTERN","CHOP_WARNING","FAKE_OUT_RISK_HIGH",
+                            "LOW_CONVICTION_SETUP","HIGH_CONVICTION_SETUP"
+                        ]
+                    )
+                ]
+                base_names = sorted({name.split("_",1)[1] if "_" in name else name for name in label_cols})
+                # Derive MoE confidences from MLConfidencePredictor if available
+                try:
+                    from src.analyst.ml_confidence_predictor import MLConfidencePredictor
+                    mlcp = MLConfidencePredictor(self.config)
+                    # Use price_data tail as market_data input
+                    market_tail = price_data.copy()
+                    moe_conf = await mlcp.predict_label_confidences(market_tail, timeframe=self.orchestrator_config.get("analyst_timeframe", "30m"))
+                except Exception:
+                    moe_conf = {name: 0.5 for name in base_names}
+                # Compute intensities per label on last bar for audit
+                intensities = {name: float(0.0) for name in base_names}
+                weights = meta.compute_label_weights(intensities, moe_conf)
+                self.logger.info({"msg": "Computed MoE weights", "weights": weights})
             except Exception as e:
-                self.logger.warning(f"MI analysis failed: {e}")
+                self.logger.warning(f"MoE confidence integration skipped: {e}")
 
             # 7. Autoencoder feature generation
             self.logger.info("🤖 Generating autoencoder features...")

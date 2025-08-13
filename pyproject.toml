@@ -60,7 +60,6 @@ websockets = "^12.0"
 yarl = "^1.17.0"
 aiosignal = "^1.4.0"
 frozenlist = "^1.4.0"
-multidict = "^6.0.0"
 aiofiles = "^24.1.0"
 aiosqlite = "^0.21.0"
 aiodns = "^3.5.0"
@@ -117,9 +116,9 @@ cachetools = "^5.3.0"  # For advanced caching
 fastapi = "^0.115.0"
 uvicorn = "^0.32.0"
 apscheduler = "^3.10.4"
-# Make heavy HPO libraries optional by default; enable via [tool.poetry.extras]
+# Ensure core tree-based libs are included (non-optional)
 xgboost = "^3.0.3"
-catboost = {version = "^1.2.8", optional = true}
+catboost = "^1.2.8"
 
 # Advanced model dependencies
 optuna-integration = {extras = ["tfkeras"], version = "^4.4.0"}

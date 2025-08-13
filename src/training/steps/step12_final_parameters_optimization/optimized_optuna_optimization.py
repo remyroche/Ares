@@ -9,6 +9,7 @@ import numpy as np
 import optuna
 import pandas as pd
 import xgboost as xgb
+from catboost import CatBoostClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 
@@ -67,6 +68,7 @@ class AdvancedOptunaManager:
             },
             "lightgbm": {"model": lgb.LGBMClassifier, "space": self._get_lgbm_space},
             "xgboost": {"model": xgb.XGBClassifier, "space": self._get_xgb_space},
+            "catboost": {"model": CatBoostClassifier, "space": self._get_cb_space},
         }
 
     # --- Hyperparameter Space Definitions ---
@@ -105,6 +107,16 @@ class AdvancedOptunaManager:
             "random_state": 42,
             "verbosity": 0,
             "n_jobs": 1,
+        }
+
+    def _get_cb_space(self, trial: optuna.Trial) -> dict[str, Any]:
+        return {
+            "iterations": trial.suggest_int("iterations", 200, 2000, step=100),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+            "depth": trial.suggest_int("depth", 4, 10),
+            "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0),
+            "random_seed": 42,
+            "verbose": False,
         }
 
     def _summarize_study(self, study: optuna.Study) -> dict[str, Any]:

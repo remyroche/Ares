@@ -4,6 +4,8 @@ import asyncio
 import os
 import json
 from typing import Any
+import os
+import pandas as pd
 
 import pandas as pd
 
@@ -14,6 +16,11 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.op
 )
 from src.training.steps.vectorized_labelling_orchestrator import (
     VectorizedLabellingOrchestrator,
+from src.training.steps.vectorized_advanced_feature_engineering import (
+    VectorizedAdvancedFeatureEngineering,
+)
+from src.training.enhanced_training_manager_optimized import (
+    MemoryEfficientDataManager,
 )
 
 
@@ -147,6 +154,7 @@ async def run_step(
         except Exception as e:
             _logger.warning(f"Label reliability persistence skipped: {e}")
 
+ 
         return True
 
     except Exception as e:

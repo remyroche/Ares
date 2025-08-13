@@ -1579,6 +1579,12 @@ class AnalystEnhancementStep:
                     "objective": "binary:logistic",
                     "eval_metric": "logloss",
                     "verbosity": 0,
+                }
+                try:
+                    self.logger.info({"msg": "xgboost_trial_param_space", "trial": trial_count})
+                except Exception:
+                    pass
+                params.update({
                     "n_estimators": trial.suggest_int("n_estimators", 100, 2000),
                     "learning_rate": trial.suggest_float(
                         "learning_rate",
@@ -1595,7 +1601,7 @@ class AnalystEnhancementStep:
                     ),
                     # Add base_score to prevent the error when all targets are the same
                     "base_score": 0.5,
-                }
+                })
             elif model_name == "svm":
                 # SVM doesn't support iterative pruning
                 params = {
@@ -1609,6 +1615,10 @@ class AnalystEnhancementStep:
                 self.logger.info(
                     f"🔧 SVM Trial {trial_count}: C={params['C']:.3f}, kernel={params['kernel']}, gamma={params['gamma']}"
                 )
+                try:
+                    self.logger.info({"msg": "svm_trial_params", "trial": trial_count, "params": {"C": float(params["C"]), "kernel": params["kernel"], "gamma": params["gamma"]}})
+                except Exception:
+                    pass
             elif model_name == "neural_network":
                 # Neural network doesn't support iterative pruning
                 params = {
@@ -1646,6 +1656,11 @@ class AnalystEnhancementStep:
                 import warnings
                 import signal
                 import os
+                # Log the selected parameters for visibility/troubleshooting
+                try:
+                    self.logger.info({"msg": "lightgbm_trial_params", "trial": trial_count, "params": params})
+                except Exception:
+                    pass
                 
                 def timeout_handler(signum, frame):
                     raise TimeoutError("LightGBM training timed out")
@@ -1701,6 +1716,11 @@ class AnalystEnhancementStep:
                     print(
                         f"[HPO] SVM trial {trial_count} accuracy={float(accuracy):.4f}"
                     )
+                except Exception:
+                    pass
+            else:
+                try:
+                    self.logger.info({"msg": "HPO_trial_result", "model": model_name, "trial": trial_count, "metric": float(accuracy)})
                 except Exception:
                     pass
             if model_name == "lightgbm":
@@ -2548,7 +2568,13 @@ class AnalystEnhancementStep:
         self.logger.info(f"      Selected: {len(stable_features)} stable features")
         self.logger.info(f"      Average stability: {np.mean([feature_stability[f] for f in stable_features]):.3f}")
         self.logger.info(f"      Validation samples used: {validation_sample_size}")
-        
+        # Log top-10 features by stability (if available)
+        try:
+            top_by_stability = sorted(feature_stability.items(), key=lambda x: x[1], reverse=True)[:10]
+            self.logger.info({"msg": "stable_shap_top_features", "top": [(f, float(s)) for f, s in top_by_stability]})
+        except Exception:
+            pass
+
         return stable_features, {
             "method": "stable_shap",
             "stability_scores": feature_stability,
@@ -2999,6 +3025,13 @@ class AnalystEnhancementStep:
                 )
                 # Make pruning permanent
                 prune.remove(module, "weight")
+                try:
+                    total = W.numel()
+                    nonzero = int(torch.count_nonzero(W).item())
+                    sparsity_actual = 1.0 - (nonzero / max(1, total))
+                    self.logger.info({"msg": "wanda_layer_sparsity", "layer": name, "sparsity": float(sparsity_actual)})
+                except Exception:
+                    pass
 
         self.logger.info("WANDA-style pruning complete.")
         return model

@@ -135,14 +135,6 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.8,
                 "frequency_score": 85.0,
             },
-            "SR_BOUNCE": {
-                "target_pct": 0.4,
-                "stop_pct": 0.2,
-                "risk_reward_ratio": 2.0,
-                "avg_duration_minutes": 40.0,
-                "success_rate": 6.8,
-                "frequency_score": 85.0,
-            },
             "SR_BREAK": {
                 "target_pct": 0.5,
                 "stop_pct": 0.2,
@@ -212,6 +204,9 @@ class RegimeSpecificTPSLOptimizer:
 
         # Model storage
         self.model_dir = os.path.join(CONFIG["CHECKPOINT_DIR"], "regime_tpsl_models")
+        # De-duplicate S/R variants
+        if "SR_TOUCH" in self.regime_parameters:
+            self.regime_parameters["SR_BOUNCE"] = self.regime_parameters["SR_TOUCH"]
         os.makedirs(self.model_dir, exist_ok=True)
 
         # Optimization results cache
@@ -445,7 +440,7 @@ class RegimeSpecificTPSLOptimizer:
             return optimized_params
 
         except Exception:
-            self.print(error("Error optimizing TP/SL for regime {regime}: {e}"))
+            self.print(error(f"Error optimizing TP/SL for regime {regime}: {e}"))
             return self.regime_parameters.get(
                 regime,
                 self.regime_parameters["SIDEWAYS_RANGE"],
@@ -517,7 +512,7 @@ class RegimeSpecificTPSLOptimizer:
             return score
 
         except Exception:
-            self.print(error("Error in parameter evaluation: {e}"))
+            self.print(error(f"Error in parameter evaluation: {e}"))
             return -1.0
 
     def _simulate_trades(
@@ -639,7 +634,7 @@ class RegimeSpecificTPSLOptimizer:
             }
 
         except Exception as e:
-            self.print(error("Error getting optimized TP/SL: {e}"))
+            self.print(error(f"Error getting optimized TP/SL: {e}"))
             # Return default parameters
             return {
                 **self.regime_parameters["SIDEWAYS_RANGE"],

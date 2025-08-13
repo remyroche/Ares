@@ -17,6 +17,7 @@ from src.utils.warning_symbols import (
     failed,
 )
 from src.training.steps.unified_data_loader import get_unified_data_loader
+from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 
 
 class AnalystSpecialistTrainingStep:
@@ -1261,6 +1262,8 @@ class AnalystSpecialistTrainingStep:
         
         return categories
 
+    @with_tracing_span("Step5._select_tier_1_features_pre_training", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _select_tier_1_features_pre_training(self, data: pd.DataFrame, tier_1_features: list, count: int) -> list:
         """Select core features based on variance and correlation."""
         if not tier_1_features:
@@ -1277,6 +1280,8 @@ class AnalystSpecialistTrainingStep:
         
         return top_features
 
+    @with_tracing_span("Step5._select_tier_2_features_pre_training", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _select_tier_2_features_pre_training(self, data: pd.DataFrame, tier_2_features: list, count: int) -> list:
         """Select normalized features based on stability."""
         if not tier_2_features:
@@ -1292,6 +1297,8 @@ class AnalystSpecialistTrainingStep:
         
         return stable_features
 
+    @with_tracing_span("Step5._select_tier_3_features_pre_training", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _select_tier_3_features_pre_training(self, data: pd.DataFrame, tier_3_features: list, count: int) -> list:
         """Select interaction features based on significance."""
         if not tier_3_features:
@@ -1307,6 +1314,8 @@ class AnalystSpecialistTrainingStep:
         
         return significant_features
 
+    @with_tracing_span("Step5._select_tier_4_features_pre_training", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _select_tier_4_features_pre_training(self, data: pd.DataFrame, tier_4_features: list, count: int) -> list:
         """Select lagged features based on temporal significance."""
         if not tier_4_features:
@@ -1322,6 +1331,8 @@ class AnalystSpecialistTrainingStep:
         
         return temporal_features
 
+    @with_tracing_span("Step5._select_tier_5_features_pre_training", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _select_tier_5_features_pre_training(self, data: pd.DataFrame, tier_5_features: list, count: int) -> list:
         """Select causality features based on market logic significance."""
         if not tier_5_features:
@@ -1337,6 +1348,8 @@ class AnalystSpecialistTrainingStep:
         
         return causality_features
 
+    @with_tracing_span("Step5._apply_final_pruning_pre_training", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _apply_final_pruning_pre_training(self, data: pd.DataFrame, selected_features: list, max_features: int) -> list:
         """Apply final pruning to meet maximum feature count."""
         if len(selected_features) <= max_features:

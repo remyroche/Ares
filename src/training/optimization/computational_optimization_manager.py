@@ -38,6 +38,7 @@ from src.utils.warning_symbols import (
     initialization_error,
     execution_error,
 )
+from src.utils.decorators import enforce_ndarray, guard_array_nan_inf, with_tracing_span, guard_dataframe_nulls
 
 
 @dataclass
@@ -625,6 +626,9 @@ class PrecomputedFeatureEngine:
         ema26 = close.ewm(span=26).mean()
         return ema12 - ema26
 
+    @enforce_ndarray(arg_index=1, forbid_lists=True, require_vector=True)
+    @guard_array_nan_inf(mode="warn", arg_indices=(1,))
+    @with_tracing_span("FeatureCache.get_features", log_args=False)
     def get_features(self, feature_selection: list[str]) -> np.ndarray:
         """Get selected features from cache."""
         selected_features = []
@@ -831,6 +835,7 @@ class MemoryEfficientData:
         self.logger = system_logger.getChild("MemoryEfficientData")
         self.data = self._optimize_dataframe(market_data)
 
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for memory usage."""
 

@@ -1298,7 +1298,7 @@ class MLConfidencePredictor:
                         model = pickle.load(f)
                     # expected filename pattern: <LABEL>_<model>.pkl
                     base = fname[:-4]
-                    label = base.split("_")[0].upper()
+                    label = base.rsplit("_", 1)[0].upper()
                     self.label_expert_models.setdefault(label, {})[tf] = model
                 except Exception:
                     continue

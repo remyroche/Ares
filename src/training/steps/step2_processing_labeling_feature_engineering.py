@@ -5,9 +5,10 @@ from typing import Any
 
 from src.utils.logger import system_logger as _logger
 
-# Reuse the established implementation under a numerically correct step name
+# TEMPORARY during refactor: import implementation to avoid duplication.
+# All orchestrations now reference this Step 2 file; the original Step 4 file will be removed.
 from src.training.steps.step4_analyst_labeling_feature_engineering import (
-    AnalystLabelingFeatureEngineeringStep,
+    AnalystLabelingFeatureEngineeringStep as _AnalystLabelingFeatureEngineeringStep,
 )
 
 
@@ -20,19 +21,11 @@ async def run_step(
     force_rerun: bool = False,
     pipeline_config: dict[str, Any] | None = None,
 ) -> bool:
-    """
-    Step 2: Processing, labeling, meta-labeling, and initial feature engineering.
-
-    This step intentionally mirrors the behavior of the prior Step 4 implementation,
-    but is exposed under Step 2 to preserve numerical ordering and orchestration clarity.
-    """
     _logger.info("🚀 Running Step 2: Processing, labeling, meta-labeling & feature engineering...")
 
-    # Use exchange parameter if provided, otherwise use exchange_name for backward compatibility
     actual_exchange = exchange if exchange != "BINANCE" else exchange_name
 
     try:
-        # Build configuration for the step
         config: dict[str, Any] = {
             "symbol": symbol,
             "exchange": actual_exchange,
@@ -40,12 +33,10 @@ async def run_step(
             "timeframe": timeframe,
         }
         if pipeline_config:
-            # Pass through relevant pipeline keys (e.g., TB params)
-            for k in ("vectorized_labelling_orchestrator",):
-                if k in pipeline_config:
-                    config[k] = pipeline_config[k]
+            if "vectorized_labelling_orchestrator" in pipeline_config:
+                config["vectorized_labelling_orchestrator"] = pipeline_config["vectorized_labelling_orchestrator"]
 
-        step = AnalystLabelingFeatureEngineeringStep(config)
+        step = _AnalystLabelingFeatureEngineeringStep(config)
         await step.initialize()
 
         training_input = {

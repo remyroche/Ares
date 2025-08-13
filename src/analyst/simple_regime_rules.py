@@ -47,8 +47,8 @@ def compute_ema_adx_features(
     Expects columns: 'open','high','low','close','volume'.
     """
     out = df.copy()
-    out["ema_21"] = out["close"].ewm(span=ema_fast, adjust=False).mean()
-    out["ema_55"] = out["close"].ewm(span=ema_slow, adjust=False).mean()
+    out[f"ema_{ema_fast}"] = out["close"].ewm(span=ema_fast, adjust=False).mean()
+    out[f"ema_{ema_slow}"] = out["close"].ewm(span=ema_slow, adjust=False).mean()
     out["adx"] = compute_adx(out, period=adx_period)
     return out
 

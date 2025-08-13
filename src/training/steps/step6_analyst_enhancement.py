@@ -18,7 +18,7 @@ import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from sklearn.inspection import permutation_importance
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import KFold
 from torch import nn, optim
 from torch.nn.utils import prune
@@ -1538,6 +1538,7 @@ class AnalystEnhancementStep:
                 )
                 return 0.0
 
+            # Build model params for this trial
             if model_name == "lightgbm":
                 # Align pruning metric and study direction for LightGBM using logloss (minimize)
                 # Determine binary vs multiclass
@@ -1602,7 +1603,6 @@ class AnalystEnhancementStep:
                         0.6,
                         1.0,
                     ),
-                    # Add base_score to prevent the error when all targets are the same
                     "base_score": 0.5,
                 })
             elif model_name == "svm":
@@ -1623,7 +1623,6 @@ class AnalystEnhancementStep:
                 except Exception:
                     pass
             elif model_name == "neural_network":
-                # Neural network doesn't support iterative pruning
                 params = {
                     "hidden_layer_sizes": trial.suggest_categorical(
                         "hidden_layer_sizes",
@@ -1638,7 +1637,7 @@ class AnalystEnhancementStep:
                     ),
                     "max_iter": trial.suggest_int("max_iter", 200, 1000),
                 }
-            else:  # RandomForest doesn't support iterative pruning.
+            else:
                 params = {
                     "n_estimators": trial.suggest_int("n_estimators", 50, 500),
                     "max_depth": trial.suggest_int("max_depth", 5, 50),
@@ -1742,7 +1741,7 @@ class AnalystEnhancementStep:
             return float(accuracy)
 
         # Align study direction with the objective metric
-        study_direction = "minimize" if model_name == "lightgbm" else "maximize"
+        study_direction = "maximize"
         study = optuna.create_study(
             direction=study_direction,
             pruner=optuna.pruners.MedianPruner(n_warmup_steps=5),

@@ -109,6 +109,7 @@ class AresLauncher:
 
         self.logger = self.comprehensive_logger.get_component_logger("AresLauncher")
         self.global_logger = self.comprehensive_logger.get_global_logger()
+        self.full_log_path = getattr(self.comprehensive_logger, "get_full_log_path", lambda: None)()
         self.processes = []  # Track subprocesses for cleanup
         self.gui_process = None
         self.portfolio_process = None
@@ -136,6 +137,8 @@ class AresLauncher:
             self.logger.info(
                 f"Global log file: ares_global_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
             )
+        if self.full_log_path:
+            self.logger.info(f"Full run log: {self.full_log_path}")
         self.logger.info("=" * 80)
 
     @handle_errors(

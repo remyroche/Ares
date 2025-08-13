@@ -12,8 +12,9 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from contextlib import contextmanager
+import threading
 
 from .structured_logging import CorrelationIdFilter, get_json_formatter  # added
 from .warning_symbols import (
@@ -749,3 +750,76 @@ def log_dataframe_overview(
     except Exception:
         # Never fail due to logging
         pass
+
+
+# -------- Progress heartbeat helpers --------
+
+
+@contextmanager
+def heartbeat(
+    logger: logging.Logger,
+    name: str,
+    interval_seconds: float = 15.0,
+    details_provider: Callable[[], str] | None = None,
+):
+    """
+    Periodically log a short progress message while a long-running block executes.
+
+    - Thread-based, safe for both sync and async code paths
+    - Emits start, periodic "still running" with elapsed time, and end (with total duration)
+    - Never raises; logging failures are swallowed
+    """
+    start_time = time.perf_counter()
+    stop_event = threading.Event()
+    exited_with_error = False
+
+    def _runner() -> None:
+        tick = 0
+        # Wait first interval to avoid spam, then heartbeat
+        while not stop_event.wait(interval_seconds):
+            tick += 1
+            try:
+                elapsed = time.perf_counter() - start_time
+                extra = ""
+                if details_provider is not None:
+                    try:
+                        details_text = details_provider()
+                        if details_text:
+                            extra = f" details={details_text}"
+                    except Exception:
+                        # Ignore detail provider errors
+                        pass
+                logger.info(f"⏳ {name} still running... elapsed={elapsed:.1f}s{extra}")
+            except Exception:
+                # Never crash on logging
+                pass
+
+    # Start heartbeating thread
+    try:
+        try:
+            logger.info(f"▶️ {name} start")
+        except Exception:
+            pass
+        t = threading.Thread(target=_runner, name=f"heartbeat:{name}", daemon=True)
+        t.start()
+        yield
+    except Exception as e:
+        exited_with_error = True
+        try:
+            elapsed = time.perf_counter() - start_time
+            logger.exception(f"❌ {name} failed after {elapsed:.1f}s: {e}")
+        except Exception:
+            pass
+        raise
+    finally:
+        stop_event.set()
+        try:
+            t.join(timeout=1.0)
+        except Exception:
+            pass
+        try:
+            elapsed = time.perf_counter() - start_time
+            if not exited_with_error:
+                logger.info(f"✅ {name} done elapsed={elapsed:.1f}s")
+        except Exception:
+            pass

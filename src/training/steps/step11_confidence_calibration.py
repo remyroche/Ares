@@ -78,35 +78,41 @@ class ConfidenceCalibrationStep:
             # Load analyst models
             analyst_models_dir = f"{data_dir}/enhanced_analyst_models"
             if os.path.exists(analyst_models_dir):
-                for regime_dir in os.listdir(analyst_models_dir):
-                    regime_path = os.path.join(analyst_models_dir, regime_dir)
-                    if os.path.isdir(regime_path):
-                        regime_models = {}
-                        for model_file in os.listdir(regime_path):
-                            if model_file.endswith((".pkl", ".joblib")):
-                                model_name = model_file.replace(".pkl", "").replace(
-                                    ".joblib",
-                                    "",
-                                )
-                                model_path = os.path.join(regime_path, model_file)
-                                try:
-                                    if model_file.endswith(".joblib"):
-                                        import joblib
-
-                                        regime_models[model_name] = joblib.load(
-                                            model_path,
-                                        )
-                                    else:
-                                        with open(model_path, "rb") as f:
-                                            regime_models[model_name] = pickle.load(f)
-                                except Exception as e:
-                                    self.logger.warning(
-                                        f"Failed to load model {model_file}: {e}",
+                from src.utils.logger import heartbeat
+                with heartbeat(self.logger, name="Step11 load_analyst_models", interval_seconds=60.0):
+                    for regime_dir in os.listdir(analyst_models_dir):
+                        regime_path = os.path.join(analyst_models_dir, regime_dir)
+                        if os.path.isdir(regime_path):
+                            regime_models = {}
+                            for model_file in os.listdir(regime_path):
+                                if model_file.endswith((".pkl", ".joblib")):
+                                    model_name = model_file.replace(".pkl", "").replace(
+                                        ".joblib",
+                                        "",
                                     )
-                        analyst_models[regime_dir] = regime_models
+                                    model_path = os.path.join(regime_path, model_file)
+                                    try:
+                                        if model_file.endswith(".joblib"):
+                                            import joblib
+
+                                            regime_models[model_name] = joblib.load(
+                                                model_path,
+                                            )
+                                        else:
+                                            with open(model_path, "rb") as f:
+                                                regime_models[model_name] = pickle.load(f)
+                                    except Exception as e:
+                                        self.logger.warning(
+                                            f"Failed to load model {model_file}: {e}",
+                                        )
+                            analyst_models[regime_dir] = regime_models
             try:
                 self.logger.info(
                     f"Analyst models loaded: regimes={len(analyst_models)}",
+                )
+                print(
+                    f"Step11Monitor ▶ Analyst regimes loaded: {len(analyst_models)}",
+                    flush=True,
                 )
             except Exception:
                 pass
@@ -114,16 +120,22 @@ class ConfidenceCalibrationStep:
             # Load tactician models
             tactician_models_dir = f"{data_dir}/tactician_models"
             if os.path.exists(tactician_models_dir):
-                for model_file in os.listdir(tactician_models_dir):
-                    if model_file.endswith(".pkl"):
-                        model_name = model_file.replace(".pkl", "")
-                        model_path = os.path.join(tactician_models_dir, model_file)
+                from src.utils.logger import heartbeat
+                with heartbeat(self.logger, name="Step11 load_tactician_models", interval_seconds=60.0):
+                    for model_file in os.listdir(tactician_models_dir):
+                        if model_file.endswith(".pkl"):
+                            model_name = model_file.replace(".pkl", "")
+                            model_path = os.path.join(tactician_models_dir, model_file)
 
-                        with open(model_path, "rb") as f:
-                            tactician_models[model_name] = pickle.load(f)
+                            with open(model_path, "rb") as f:
+                                tactician_models[model_name] = pickle.load(f)
             try:
                 self.logger.info(
                     f"Tactician models loaded: count={len(tactician_models)}",
+                )
+                print(
+                    f"Step11Monitor ▶ Tactician models loaded: {len(tactician_models)}",
+                    flush=True,
                 )
             except Exception:
                 pass
@@ -135,57 +147,79 @@ class ConfidenceCalibrationStep:
             # Load analyst ensembles
             analyst_ensembles_dir = f"{data_dir}/analyst_ensembles"
             if os.path.exists(analyst_ensembles_dir):
-                for ensemble_file in os.listdir(analyst_ensembles_dir):
-                    if ensemble_file.endswith("_ensemble.pkl"):
-                        regime_name = ensemble_file.replace("_ensemble.pkl", "")
-                        ensemble_path = os.path.join(
-                            analyst_ensembles_dir,
-                            ensemble_file,
-                        )
+                from src.utils.logger import heartbeat
+                with heartbeat(self.logger, name="Step11 load_analyst_ensembles", interval_seconds=60.0):
+                    for ensemble_file in os.listdir(analyst_ensembles_dir):
+                        if ensemble_file.endswith("_ensemble.pkl"):
+                            regime_name = ensemble_file.replace("_ensemble.pkl", "")
+                            ensemble_path = os.path.join(
+                                analyst_ensembles_dir,
+                                ensemble_file,
+                            )
 
-                        with open(ensemble_path, "rb") as f:
-                            analyst_ensembles[regime_name] = pickle.load(f)
+                            with open(ensemble_path, "rb") as f:
+                                analyst_ensembles[regime_name] = pickle.load(f)
 
             # Load tactician ensembles
             tactician_ensembles_dir = f"{data_dir}/tactician_ensembles"
             if os.path.exists(tactician_ensembles_dir):
                 # New format: single model pickle per symbol/exchange
-                model_path = os.path.join(
-                    tactician_ensembles_dir,
-                    f"{exchange}_{symbol}_tactician_ensemble.pkl",
-                )
-                if os.path.exists(model_path):
-                    with open(model_path, "rb") as f:
-                        # Store under a default key for downstream usage
-                        tactician_ensembles["blended"] = {"ensemble": pickle.load(f)}
-                # Also support any additional ensembles present (e.g., experimental)
-                for ensemble_file in os.listdir(tactician_ensembles_dir):
-                    if (
-                        ensemble_file.endswith("_tactician_ensemble.pkl")
-                        and os.path.join(tactician_ensembles_dir, ensemble_file)
-                        != model_path
-                    ):
-                        ensemble_path = os.path.join(
-                            tactician_ensembles_dir,
-                            ensemble_file,
-                        )
-                        try:
-                            with open(ensemble_path, "rb") as f:
-                                tactician_ensembles[ensemble_file] = {
-                                    "ensemble": pickle.load(f),
-                                }
-                        except Exception as e:
-                            self.logger.warning(
-                                f"Failed to load tactician ensemble {ensemble_file}: {e}",
+                from src.utils.logger import heartbeat
+                with heartbeat(self.logger, name="Step11 load_tactician_ensembles", interval_seconds=60.0):
+                    model_path = os.path.join(
+                        tactician_ensembles_dir,
+                        f"{exchange}_{symbol}_tactician_ensemble.pkl",
+                    )
+                    if os.path.exists(model_path):
+                        with open(model_path, "rb") as f:
+                            # Store under a default key for downstream usage
+                            tactician_ensembles["blended"] = {"ensemble": pickle.load(f)}
+                    # Also support any additional ensembles present (e.g., experimental)
+                    for ensemble_file in os.listdir(tactician_ensembles_dir):
+                        if (
+                            ensemble_file.endswith("_tactician_ensemble.pkl")
+                            and os.path.join(tactician_ensembles_dir, ensemble_file)
+                            != model_path
+                        ):
+                            ensemble_path = os.path.join(
+                                tactician_ensembles_dir,
+                                ensemble_file,
                             )
+                            try:
+                                with open(ensemble_path, "rb") as f:
+                                    tactician_ensembles[ensemble_file] = {
+                                        "ensemble": pickle.load(f),
+                                    }
+                            except Exception as e:
+                                self.logger.warning(
+                                    f"Failed to load tactician ensemble {ensemble_file}: {e}",
+                                )
+            try:
+                print(
+                    f"Step11Monitor ▶ Ensembles loaded: analyst={len(analyst_ensembles)} tactician={len(tactician_ensembles)}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Load a generic validation frame for calibration fallback
             generic_val = self._load_validation_frame(data_dir, exchange, symbol)
+            try:
+                self.logger.info(
+                    f"Validation frame loaded: shape={getattr(generic_val, 'shape', None)}",
+                )
+                print(
+                    f"Step11Monitor ▶ Validation frame shape={getattr(generic_val, 'shape', None)}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Perform calibration
             calibration_results = {}
 
             # 1. Calibrate individual analyst models (including SR regime separately)
+            self.logger.info("Step11: Calibrating analyst models...")
             analyst_calibration = await self._calibrate_analyst_models(
                 analyst_models,
                 analyst_ensembles,
@@ -195,16 +229,32 @@ class ConfidenceCalibrationStep:
                 symbol,
             )
             calibration_results["analyst_models"] = analyst_calibration
+            try:
+                print(
+                    f"Step11Monitor ▶ Calibrated analyst models: regimes={len(analyst_calibration)}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # 2. Calibrate individual tactician models
+            self.logger.info("Step11: Calibrating tactician models...")
             tactician_calibration = await self._calibrate_tactician_models(
                 tactician_models,
                 tactician_ensembles,
                 generic_val,
             )
             calibration_results["tactician_models"] = tactician_calibration
+            try:
+                print(
+                    f"Step11Monitor ▶ Calibrated tactician models: {len(tactician_calibration)}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # 3. Calibrate analyst ensembles (SR-aware)
+            self.logger.info("Step11: Calibrating analyst ensembles...")
             analyst_ensemble_calibration = await self._calibrate_analyst_ensembles(
                 analyst_ensembles,
                 generic_val,
@@ -213,13 +263,28 @@ class ConfidenceCalibrationStep:
                 symbol,
             )
             calibration_results["analyst_ensembles"] = analyst_ensemble_calibration
+            try:
+                print(
+                    f"Step11Monitor ▶ Calibrated analyst ensembles: {len(analyst_ensemble_calibration)}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # 4. Calibrate tactician ensembles
+            self.logger.info("Step11: Calibrating tactician ensembles...")
             tactician_ensemble_calibration = await self._calibrate_tactician_ensembles(
                 tactician_ensembles,
                 generic_val,
             )
             calibration_results["tactician_ensembles"] = tactician_ensemble_calibration
+            try:
+                print(
+                    f"Step11Monitor ▶ Calibrated tactician ensembles: {len(tactician_ensemble_calibration)}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Save calibration results
             calibration_dir = f"{data_dir}/calibration_results"
@@ -230,6 +295,14 @@ class ConfidenceCalibrationStep:
             )
             with open(calibration_file, "wb") as f:
                 pickle.dump(calibration_results, f)
+            try:
+                self.logger.info(f"Saved calibration results: {calibration_file}")
+                print(
+                    f"Step11Monitor ▶ Saved calibration: {os.path.basename(calibration_file)}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Save calibration summary
             summary_file = f"{data_dir}/{exchange}_{symbol}_calibration_summary.json"
@@ -239,6 +312,13 @@ class ConfidenceCalibrationStep:
             self.logger.info(
                 f"✅ Confidence calibration completed. Results saved to {calibration_dir}",
             )
+            try:
+                print(
+                    f"Step11Monitor ▶ Calibration complete. Results in {calibration_dir}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Update pipeline state
             pipeline_state["calibration_results"] = calibration_results

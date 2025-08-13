@@ -127,11 +127,27 @@ class AnalystSpecialistTrainingStep:
                 f"{data_dir}/{exchange}_{symbol}_features_validation.pkl",
                 f"{data_dir}/{exchange}_{symbol}_features_test.pkl",
             ]
+            try:
+                self.logger.info(f"Step5: expecting feature files: {feature_files}")
+                print(
+                    f"Step5Monitor ▶ Expecting features: {[os.path.basename(p) for p in feature_files]}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Check if feature files exist
             missing_files = [f for f in feature_files if not os.path.exists(f)]
             if missing_files:
                 msg = f"Missing feature files: {missing_files}. Step 5 requires features from Step 4."
+                try:
+                    self.logger.error(msg)
+                    print(
+                        f"Step5Monitor ▶ Missing features: {[os.path.basename(p) for p in missing_files]}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
                 raise ValueError(msg)
 
             # Load and combine all feature data
@@ -144,12 +160,23 @@ class AnalystSpecialistTrainingStep:
                         self.logger.info(
                             f"Loaded features file {file_path}: type={type(data).__name__}, shape={getattr(data, 'shape', None)}",
                         )
+                        print(
+                            f"Step5Monitor ▶ Loaded {os.path.basename(file_path)} shape={getattr(data, 'shape', None)}",
+                            flush=True,
+                        )
                     except Exception:
                         pass
 
             # Combine all data
             combined_data = pd.concat(all_data, ignore_index=True)
             self.logger.info(f"✅ Loaded combined feature data: {combined_data.shape}")
+            try:
+                print(
+                    f"Step5Monitor ▶ Combined data shape={combined_data.shape}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Use combined data as the main dataset for training
             labeled_data = {"combined": combined_data}
@@ -163,6 +190,13 @@ class AnalystSpecialistTrainingStep:
                 self.logger.info(
                     f"Training specialist models for regime: {regime_name}",
                 )
+                try:
+                    print(
+                        f"Step5Monitor ▶ Training start for regime={regime_name} rows={len(regime_data)} cols={regime_data.shape[1]}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
 
                 # Memory cleanup before training
                 gc.collect()
@@ -173,6 +207,13 @@ class AnalystSpecialistTrainingStep:
                     regime_name,
                 )
                 training_results[regime_name] = regime_models
+                try:
+                    print(
+                        f"Step5Monitor ▶ Training done for regime={regime_name} models={len(regime_models)}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
 
                 # Memory cleanup after training
                 gc.collect()
@@ -198,6 +239,14 @@ class AnalystSpecialistTrainingStep:
                 with open(main_model_file, "wb") as f:
                     pickle.dump(main_estimator, f)
                 self.logger.info(f"✅ Saved main analyst model to {main_model_file}")
+                try:
+                    size_mb = os.path.getsize(main_model_file) / (1024 * 1024)
+                    print(
+                        f"Step5Monitor ▶ Saved main model: {os.path.basename(main_model_file)} size={size_mb:.2f}MB",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
 
                 # Create model metadata
                 model_metadata = {
@@ -246,6 +295,13 @@ class AnalystSpecialistTrainingStep:
                 with open(metadata_file, "w") as f:
                     json.dump(model_metadata, f, indent=2)
                 self.logger.info(f"✅ Saved model metadata to {metadata_file}")
+                try:
+                    print(
+                        f"Step5Monitor ▶ Saved model metadata: {os.path.basename(metadata_file)}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
 
                 # Create training history
                 training_history = {
@@ -283,6 +339,14 @@ class AnalystSpecialistTrainingStep:
                     model_file = f"{regime_models_dir}/{model_name}.pkl"
                     with open(model_file, "wb") as f:
                         pickle.dump(model_data, f)
+                    try:
+                        self.logger.info(f"Saved regime model: {model_file}")
+                        print(
+                            f"Step5Monitor ▶ Saved regime model: {regime_name}/{model_name}.pkl",
+                            flush=True,
+                        )
+                    except Exception:
+                        pass
 
             # Train and save S/R models
             try:
@@ -295,6 +359,13 @@ class AnalystSpecialistTrainingStep:
                             pickle.dump(model, f)
                     training_results["SR"] = sr_models
                     self.logger.info(f"✅ Trained and saved {len(sr_models)} S/R models")
+                    try:
+                        print(
+                            f"Step5Monitor ▶ Saved {len(sr_models)} SR models",
+                            flush=True,
+                        )
+                    except Exception:
+                        pass
                     # Train SR score regressors if scores available
                     try:
                         have_scores = all(c in combined_data.columns for c in ["sr_breakout_score", "sr_bounce_score"])
@@ -356,6 +427,13 @@ class AnalystSpecialistTrainingStep:
                                 out_path = f"{data_dir}/{exchange}_{symbol}_sr_strength_oof.parquet"
                                 strength_oof.to_parquet(out_path, index=False)
                                 self.logger.info(f"✅ Wrote SR strength OOF predictions for blending: {out_path}")
+                                try:
+                                    print(
+                                        f"Step5Monitor ▶ Wrote SR OOF: {os.path.basename(out_path)}",
+                                        flush=True,
+                                    )
+                                except Exception:
+                                    pass
                             except Exception as _oofe:
                                 self.logger.warning(f"SR strength OOF generation skipped: {_oofe}")
                     except Exception as _ers:
@@ -441,6 +519,13 @@ class AnalystSpecialistTrainingStep:
             self.logger.info(
                 f"✅ Analyst specialist training completed. Results saved to {models_dir}",
             )
+            try:
+                print(
+                    f"Step5Monitor ▶ Training complete. Models saved to {models_dir}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Update pipeline state
             pipeline_state["analyst_models"] = training_results
@@ -522,6 +607,19 @@ class AnalystSpecialistTrainingStep:
             feature_columns = [
                 col for col in data.columns if col not in excluded_columns
             ]
+            # Remove timestamp-like columns from features to avoid leakage and instability
+            feature_columns = [c for c in feature_columns if "timestamp" not in c.lower()]
+
+            # Preserve a DatetimeIndex for leak-proof CV if available
+            time_index: pd.Series | None = None
+            try:
+                if "timestamp" in data.columns:
+                    time_index = pd.to_datetime(data["timestamp"], errors="coerce")
+                elif isinstance(data.index, pd.DatetimeIndex):
+                    # If index already carries datetime, reuse it
+                    time_index = pd.Series(data.index, index=data.index)
+            except Exception:
+                time_index = None
 
             # Enhanced feature selection for large feature sets
             if len(feature_columns) > 200:
@@ -532,61 +630,190 @@ class AnalystSpecialistTrainingStep:
             # Prepare features and target
             X = data[feature_columns]
             y = y.astype(int)  # Ensure labels are integers
+            # Align to DatetimeIndex for time-aware CV
+            if isinstance(time_index, (pd.Series, pd.Index)):
+                # Drop rows with invalid timestamps
+                if isinstance(time_index, pd.Series):
+                    valid_mask = ~time_index.isna()
+                    X = X.loc[valid_mask]
+                    y = y.loc[valid_mask]
+                    X.index = time_index.loc[valid_mask]
+                else:  # Index
+                    X.index = time_index
 
             # Log feature information
             self.logger.info(f"📊 Training data shape: {X.shape}")
             self.logger.info(f"📊 Feature count: {len(feature_columns)}")
+            try:
+                preview_cols = feature_columns[:200]
+                self.logger.info(f"📋 Feature names: {preview_cols}")
+                print(f"Step5Monitor ▶ Features ({len(feature_columns)}): {preview_cols}", flush=True)
+            except Exception:
+                pass
             self.logger.info(f"📊 Class distribution: {y.value_counts().to_dict()}")
+
+            # Additional diagnostics just after basic stats
+            try:
+                positive_class_count = int((y == 1).sum())
+                negative_class_count = int((y == -1).sum())
+                total_samples = int(len(y))
+                positive_ratio = (y == 1).mean() if total_samples else 0.0
+                negative_ratio = (y == -1).mean() if total_samples else 0.0
+                self.logger.info(
+                    f"📊 Class ratios: -1={negative_ratio:.2%}, 1={positive_ratio:.2%} "
+                    f"(counts: -1={negative_class_count}, 1={positive_class_count}, total={total_samples})"
+                )
+
+                dtype_counts = X.dtypes.value_counts().to_dict()
+                self.logger.info(f"🔢 Feature dtypes: {dtype_counts}")
+
+                num_nan_per_col = X.isna().sum()
+                num_nan_columns = int((num_nan_per_col > 0).sum())
+                total_nan_values = int(num_nan_per_col.sum())
+                if num_nan_columns > 0:
+                    nan_columns_preview = (
+                        num_nan_per_col[num_nan_per_col > 0]
+                        .sort_values(ascending=False)
+                        .head(10)
+                        .to_dict()
+                    )
+                    self.logger.warning(
+                        f"⚠️ NaNs detected in features: {total_nan_values} across {num_nan_columns} columns "
+                        f"(top 10: {nan_columns_preview})"
+                    )
+                else:
+                    self.logger.info("🧪 No NaNs detected in feature matrix")
+
+                zero_variance_columns = [
+                    column_name for column_name in feature_columns
+                    if X[column_name].nunique(dropna=True) <= 1
+                ]
+                if zero_variance_columns:
+                    preview_zero_var = zero_variance_columns[:10]
+                    self.logger.warning(
+                        f"⚠️ Zero-variance features: {len(zero_variance_columns)} "
+                        f"(first 10: {preview_zero_var})"
+                    )
+
+                memory_megabytes = (
+                    float(X.memory_usage(index=True, deep=True).sum()) / 1_000_000.0
+                )
+                self.logger.info(f"🧠 Feature matrix memory: {memory_megabytes:.2f} MB")
+
+                feature_preview = feature_columns[: min(15, len(feature_columns))]
+                self.logger.info(f"🧾 Feature columns (first {len(feature_preview)}): {feature_preview}")
+
+            except Exception as diagnostic_error:
+                self.logger.warning(f"Diagnostics logging failed: {diagnostic_error}")
 
             # Split data into train and test sets
             from sklearn.model_selection import train_test_split
+            from src.utils.logger import heartbeat
 
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42, stratify=y
-            )
+            with heartbeat(self.logger, name="Step5 train_test_split", interval_seconds=60.0):
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42, stratify=y
+                )
 
             self.logger.info(f"📊 Train set: {X_train.shape}")
             self.logger.info(f"📊 Test set: {X_test.shape}")
+
+            # Post-split diagnostics
+            try:
+                self.logger.info(
+                    f"📊 Train class distribution: {y_train.value_counts().to_dict()}"
+                )
+                self.logger.info(
+                    f"📊 Test class distribution: {y_test.value_counts().to_dict()}"
+                )
+
+                train_positive_ratio = (y_train == 1).mean()
+                train_negative_ratio = (y_train == -1).mean()
+                test_positive_ratio = (y_test == 1).mean()
+                test_negative_ratio = (y_test == -1).mean()
+                self.logger.info(
+                    f"📊 Train class ratios: -1={train_negative_ratio:.2%}, 1={train_positive_ratio:.2%}"
+                )
+                self.logger.info(
+                    f"📊 Test class ratios: -1={test_negative_ratio:.2%}, 1={test_positive_ratio:.2%}"
+                )
+
+                train_nan_values = int(X_train.isna().sum().sum())
+                test_nan_values = int(X_test.isna().sum().sum())
+                if train_nan_values or test_nan_values:
+                    self.logger.warning(
+                        f"⚠️ NaNs post-split - train: {train_nan_values}, test: {test_nan_values}"
+                    )
+
+                if (len(X_train) + len(X_test)) != len(X):
+                    self.logger.warning(
+                        f"⚠️ Split size mismatch: train({len(X_train)}) + test({len(X_test)}) != total({len(X)})"
+                    )
+            except Exception as split_diag_error:
+                self.logger.warning(f"Split diagnostics logging failed: {split_diag_error}")
 
             # Train multiple models for ensemble
             models = {}
 
             # Train Random Forest
             try:
-                rf_model = await self._train_random_forest(
-                    X_train, X_test, y_train, y_test, regime_name
-                )
+                self.logger.info("Step5: RandomForest training start")
+                from src.utils.logger import heartbeat
+                with heartbeat(self.logger, name="Step5 RandomForest training", interval_seconds=60.0):
+                    rf_model = await self._train_random_forest(
+                        X_train, X_test, y_train, y_test, regime_name
+                    )
                 if rf_model:
                     models["random_forest"] = rf_model
+                    try:
+                        print("Step5Monitor ▶ RF: done", flush=True)
+                    except Exception:
+                        pass
             except Exception as e:
                 self.logger.warning(f"Random Forest training failed: {e}")
 
             # Train LightGBM
             try:
-                lgb_model = await self._train_lightgbm(
-                    X_train, X_test, y_train, y_test, regime_name
-                )
+                self.logger.info("Step5: LightGBM training start")
+                from src.utils.logger import heartbeat
+                with heartbeat(self.logger, name="Step5 LightGBM training", interval_seconds=60.0):
+                    lgb_model = await self._train_lightgbm(
+                        X_train, X_test, y_train, y_test, regime_name
+                    )
                 if lgb_model:
                     models["lightgbm"] = lgb_model
+                    try:
+                        print("Step5Monitor ▶ LGBM: done", flush=True)
+                    except Exception:
+                        pass
             except Exception as e:
                 self.logger.warning(f"LightGBM training failed: {e}")
 
             # Train XGBoost
             try:
-                xgb_model = await self._train_xgboost(
-                    X_train, X_test, y_train, y_test, regime_name
-                )
+                self.logger.info("Step5: XGBoost training start")
+                from src.utils.logger import heartbeat
+                with heartbeat(self.logger, name="Step5 XGBoost training", interval_seconds=60.0):
+                    xgb_model = await self._train_xgboost(
+                        X_train, X_test, y_train, y_test, regime_name
+                    )
                 if xgb_model:
                     models["xgboost"] = xgb_model
+                    try:
+                        print("Step5Monitor ▶ XGB: done", flush=True)
+                    except Exception:
+                        pass
             except Exception as e:
                 self.logger.warning(f"XGBoost training failed: {e}")
 
             # Train Neural Network (if features are not too many)
             if len(feature_columns) <= 100:  # Limit NN to reasonable feature count
                 try:
-                    nn_model = await self._train_neural_network(
-                        X_train, X_test, y_train, y_test, regime_name
-                    )
+                    from src.utils.logger import heartbeat
+                    with heartbeat(self.logger, name="Step5 NeuralNet training", interval_seconds=60.0):
+                        nn_model = await self._train_neural_network(
+                            X_train, X_test, y_train, y_test, regime_name
+                        )
                     if nn_model:
                         models["neural_network"] = nn_model
                 except Exception as e:
@@ -595,9 +822,11 @@ class AnalystSpecialistTrainingStep:
             # Train SVM (if features are not too many)
             if len(feature_columns) <= 50:  # Limit SVM to smaller feature count
                 try:
-                    svm_model = await self._train_svm(
-                        X_train, X_test, y_train, y_test, regime_name
-                    )
+                    from src.utils.logger import heartbeat
+                    with heartbeat(self.logger, name="Step5 SVM training", interval_seconds=60.0):
+                        svm_model = await self._train_svm(
+                            X_train, X_test, y_train, y_test, regime_name
+                        )
                     if svm_model:
                         models["svm"] = svm_model
                 except Exception as e:
@@ -1213,7 +1442,10 @@ class AnalystSpecialistTrainingStep:
         """Train Support Vector Machine model."""
         try:
             from sklearn.metrics import accuracy_score
-            from sklearn.svm import SVC
+            from sklearn.pipeline import make_pipeline
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.kernel_approximation import RBFSampler
+            from sklearn.svm import LinearSVC
 
             # CRITICAL FIX: Ensure consistent label encoding for SVM
             # Map labels to contiguous 0..K-1 to prevent any label issues
@@ -1235,8 +1467,99 @@ class AnalystSpecialistTrainingStep:
                     f"Encountered unknown labels for SVM mapping. Mapping: {svm_label_mapping}"
                 )
 
-            # Train model
-            model = SVC(kernel="rbf", C=1.0, random_state=42, probability=True)
+            # Cast features to float32 to reduce memory footprint
+            X_train = X_train.astype(np.float32)
+            X_test = X_test.astype(np.float32)
+
+            # Lightweight hyperparameter tuning for RBFSampler + LinearSVC
+            # Tune: gamma (RBF width), n_components (approximation granularity), C (margin strength)
+            from sklearn.model_selection import (
+                StratifiedShuffleSplit,
+                StratifiedKFold,
+                cross_val_score,
+            )
+            from src.utils.purged_kfold import PurgedKFoldTime
+            from src.utils.logger import heartbeat
+
+            # Build a stratified tuning subset to keep the search fast
+            max_tune_rows = 50000
+            if len(X_train) > max_tune_rows:
+                frac = max_tune_rows / float(len(X_train))
+                self.logger.info(
+                    f"RBFApprox tuning on stratified subset: {max_tune_rows} of {len(X_train)} rows (frac={frac:.3f})",
+                )
+                sss = StratifiedShuffleSplit(n_splits=1, train_size=max_tune_rows, random_state=42)
+                idx = next(sss.split(X_train, y_train_enc))[0]
+                X_tune = X_train.iloc[idx]
+                y_tune = y_train_enc.iloc[idx]
+            else:
+                X_tune, y_tune = X_train, y_train_enc
+
+            # Choose rigorous CV: time-aware PurgedKFoldTime (with purge/embargo) if DatetimeIndex, else StratifiedKFold
+            if isinstance(X_tune.index, pd.DatetimeIndex):
+                # Set purge and embargo windows based on typical label horizon (~15m) and safety buffer
+                cv = PurgedKFoldTime(n_splits=3, purge=pd.Timedelta(minutes=15), embargo=pd.Timedelta(minutes=10))
+                self.logger.info("Using PurgedKFoldTime(n_splits=3, purge=15m, embargo=10m) for time-series CV")
+                cv_splits = cv.split(X_tune)
+            else:
+                cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+                self.logger.info("Using StratifiedKFold(n_splits=3, shuffle=True) for CV")
+                cv_splits = cv
+
+            # Derive a sensible gamma scale based on feature dimensionality after StandardScaler (~unit variance)
+            n_feat = X_tune.shape[1] if X_tune.shape[1] > 0 else 1
+            gamma_scale = 1.0 / float(n_feat)
+            gamma_candidates = [gamma_scale * 0.1, gamma_scale, gamma_scale * 10.0, 1e-3, 1e-2]
+            n_component_candidates = [1500, 3000, 4500]
+            C_candidates = [0.5, 1.0, 2.0]
+
+            best_score = -np.inf
+            best_params = {"gamma": gamma_scale, "n_components": 3000, "C": 1.0}
+
+            with heartbeat(self.logger, name="Step5 RBFApprox CV tuning", interval_seconds=60.0):
+                tried = 0
+                for gamma_val in gamma_candidates:
+                    for n_comp in n_component_candidates:
+                        for C_val in C_candidates:
+                            tried += 1
+                            pipe = make_pipeline(
+                                StandardScaler(),
+                                RBFSampler(gamma=float(gamma_val), n_components=int(n_comp), random_state=42),
+                                LinearSVC(C=float(C_val), tol=1e-3, random_state=42),
+                            )
+                            try:
+                                # Mean CV accuracy with parallelism
+                                scores = cross_val_score(
+                                    pipe,
+                                    X_tune,
+                                    y_tune,
+                                    cv=cv_splits,
+                                    scoring="accuracy",
+                                    n_jobs=-1,
+                                )
+                                mean_score = float(np.mean(scores))
+                                if mean_score > best_score:
+                                    best_score = mean_score
+                                    best_params = {
+                                        "gamma": float(gamma_val),
+                                        "n_components": int(n_comp),
+                                        "C": float(C_val),
+                                    }
+                            except Exception as _tune_err:
+                                # Skip configs that fail numerically
+                                self.logger.warning(f"Tuning candidate failed (gamma={gamma_val}, n_comp={n_comp}, C={C_val}): {_tune_err}")
+                                continue
+
+            self.logger.info(
+                f"RBFApprox best params: gamma={best_params['gamma']}, n_components={best_params['n_components']}, C={best_params['C']} (cv_acc={best_score:.4f})",
+            )
+
+            # Train final model on full training set with best params
+            model = make_pipeline(
+                StandardScaler(),
+                RBFSampler(gamma=best_params["gamma"], n_components=best_params["n_components"], random_state=42),
+                LinearSVC(C=best_params["C"], tol=1e-3, random_state=42),
+            )
             model.fit(X_train, y_train_enc)
 
             # Evaluate model
@@ -1248,7 +1571,7 @@ class AnalystSpecialistTrainingStep:
                 "model": model,
                 "accuracy": accuracy,
                 "feature_importance": {},  # SVMs don't have direct feature importance
-                "model_type": "SVM",
+                "model_type": "RBFApproxLinear",
                 "regime": regime_name,
                 "training_date": datetime.now().isoformat(),
                 # Persist explicit mapping for downstream consumers

@@ -65,12 +65,14 @@ class TacticianEnsembleCreationStep:
             # Load tactician models
             models_dir = os.path.join(data_dir, "tactician_models")
             tactician_models = {}
-            for model_file in os.listdir(models_dir):
-                if model_file.endswith(".pkl"):
-                    model_name = os.path.splitext(model_file)[0]
-                    model_path = os.path.join(models_dir, model_file)
-                    with open(model_path, "rb") as f:
-                        tactician_models[model_name] = pickle.load(f)
+            from src.utils.logger import heartbeat
+            with heartbeat(self.logger, name="Step10 load_tactician_models", interval_seconds=60.0):
+                for model_file in os.listdir(models_dir):
+                    if model_file.endswith(".pkl"):
+                        model_name = os.path.splitext(model_file)[0]
+                        model_path = os.path.join(models_dir, model_file)
+                        with open(model_path, "rb") as f:
+                            tactician_models[model_name] = pickle.load(f)
             try:
                 self.logger.info(
                     f"Loaded tactician models: names={list(tactician_models.keys())}",
@@ -85,10 +87,11 @@ class TacticianEnsembleCreationStep:
                 )
 
             # Create an optimized blended ensemble
-            ensemble_details = await self._create_tactician_ensemble(
-                tactician_models,
-                data_dir,
-            )
+            with heartbeat(self.logger, name="Step10 create_tactician_ensemble", interval_seconds=60.0):
+                ensemble_details = await self._create_tactician_ensemble(
+                    tactician_models,
+                    data_dir,
+                )
 
             # Separate the model object from its serializable details
             ensemble_model = ensemble_details.pop("ensemble")

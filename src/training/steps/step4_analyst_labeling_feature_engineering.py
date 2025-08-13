@@ -648,9 +648,15 @@ class AnalystLabelingFeatureEngineeringStep:
                 center = float(np.average(p, weights=w)) if w.sum() > 0 else float(p.mean())
                 # Determine side by majority
                 side = group["side"].mode().iloc[0] if not group["side"].mode().empty else "support"
-                # Cluster width as price range
+                # Cluster width as price range (used to compute band pct)
                 width = float(np.max(p) - np.min(p)) if p.size else 0.0
-                clusters.append({"cluster_id": int(cid), "center": center, "score": cluster_score, "side": side})
+                clusters.append({
+                    "cluster_id": int(cid),
+                    "center": center,
+                    "score": cluster_score,
+                    "side": side,
+                    "width": width,
+                })
 
             return {"levels": levels_df, "clusters": clusters}
         except Exception as e:
@@ -735,15 +741,40 @@ class AnalystLabelingFeatureEngineeringStep:
                 dist_res = ((res_series - close) / close).clip(lower=0).fillna(1.0)
                 pos = ((close - sup_series) / (res_series - sup_series)).clip(0, 1).fillna(0.5)
 
-            # Breakout/bounce detectors (simple):
-            # breakout_up: cross above resistance by > 0.1% from below
-            # bounce_up: touch support (within 0.1%) then next bar up move
+            # Breakout/bounce detectors (signal-style, no lookahead):
+            # Use dynamic tolerance derived from zone band width when available.
             tol = 0.001
             prev_close = close.shift(1)
-            breakout_up = ((prev_close <= res_series * (1 + tol)) & (close > res_series * (1 + tol))).astype(int)
-            breakout_down = ((prev_close >= sup_series * (1 - tol)) & (close < sup_series * (1 - tol))).astype(int)
-            bounce_up = (((close - sup_series).abs() / close) <= tol) & (close.pct_change().fillna(0) > 0)
-            bounce_down = (((res_series - close).abs() / close) <= tol) & (close.pct_change().fillna(0) < 0)
+            sup_tol_series = pd.Series(np.maximum(tol, 0.5 * sup_band_pct_series.fillna(0.0)), index=df.index)
+            res_tol_series = pd.Series(np.maximum(tol, 0.5 * res_band_pct_series.fillna(0.0)), index=df.index)
+            has_sup_zone = sup_series.notna() & (sup_score_series > 0)
+            has_res_zone = res_series.notna() & (res_score_series > 0)
+
+            breakout_up = (
+                has_res_zone
+                & (prev_close <= res_series * (1 + res_tol_series))
+                & (close > res_series * (1 + res_tol_series))
+            ).astype(int)
+            breakout_down = (
+                has_sup_zone
+                & (prev_close >= sup_series * (1 - sup_tol_series))
+                & (close < sup_series * (1 - sup_tol_series))
+            ).astype(int)
+            bounce_up = (
+                has_sup_zone
+                & (((close - sup_series).abs() / close) <= sup_tol_series)
+                & (close.pct_change().fillna(0) > 0)
+            )
+            bounce_down = (
+                has_res_zone
+                & (((res_series - close).abs() / close) <= res_tol_series)
+                & (close.pct_change().fillna(0) < 0)
+            )
+
+            # Non-leaky touch flag (strictly proximity-based, no horizon)
+            touch_sup_now = has_sup_zone & (((close - sup_series).abs() / close) <= sup_tol_series)
+            touch_res_now = has_res_zone & (((res_series - close).abs() / close) <= res_tol_series)
+            sr_touch_now = (touch_sup_now | touch_res_now).astype(int)
 
             return {
                 "dist_to_support_pct": dist_sup.astype(float),
@@ -753,6 +784,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 "sr_breakout_down": breakout_down.astype(int),
                 "sr_bounce_up": bounce_up.astype(int),
                 "sr_bounce_down": bounce_down.astype(int),
+                "sr_touch": sr_touch_now,
                 "nearest_support_center": sup_series,
                 "nearest_resistance_center": res_series,
                 "nearest_support_score": sup_score_series,
@@ -1280,13 +1312,15 @@ class AnalystLabelingFeatureEngineeringStep:
 
             # Load unified data with optimizations for ML training (use configured lookback)
             lookback_days = self.config.get("lookback_days", 180)
-            price_data = await data_loader.load_unified_data(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                lookback_days=lookback_days,
-                use_streaming=True,  # Enable streaming for large datasets
-            )
+            from src.utils.logger import heartbeat
+            with heartbeat(self.logger, name="Step4 load_unified_data", interval_seconds=60.0):
+                price_data = await data_loader.load_unified_data(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    lookback_days=lookback_days,
+                    use_streaming=True,  # Enable streaming for large datasets
+                )
 
             if price_data is None or price_data.empty:
                 self.logger.error(f"No unified data found for {symbol} on {exchange}")
@@ -1344,13 +1378,19 @@ class AnalystLabelingFeatureEngineeringStep:
 
             # Dual-pipeline feature engineering
             self.logger.info("🔀 Building Pipeline A (Stationary) and Pipeline B (OHLCV->Stationary)...")
-            features_a = await self._build_pipeline_a_stationary(price_data)
+            from src.utils.logger import heartbeat
+            with heartbeat(self.logger, name="Step4 build_pipeline_a", interval_seconds=60.0):
+                features_a = await self._build_pipeline_a_stationary(price_data)
             # Check 2: Sanitize raw OHLCV before Pipeline B calculations
             price_data_sanitized = self._sanitize_raw_data(price_data[[c for c in price_data.columns if c in set(self._RAW_PRICE_COLUMNS + ["volume"]) ]].join(
                 price_data[[c for c in price_data.columns if c not in set(self._RAW_PRICE_COLUMNS + ["volume"]) ]], how="left"
             )) if isinstance(price_data.index, pd.DatetimeIndex) else self._sanitize_raw_data(price_data.copy())
-            features_b = await self._build_pipeline_b_ohlcv(price_data_sanitized)
-            combined_features = pd.concat([features_a, features_b], axis=1)
+            from src.utils.logger import heartbeat
+            with heartbeat(self.logger, name="Step4 build_pipeline_b", interval_seconds=60.0):
+                features_b = await self._build_pipeline_b_ohlcv(price_data_sanitized)
+            from src.utils.logger import heartbeat as _hb
+            with _hb(self.logger, name="Step4 concat_features", interval_seconds=60.0):
+                combined_features = pd.concat([features_a, features_b], axis=1)
 
             # Optional: Autoencoder feature generation (pre-labeling)
             try:
@@ -1360,25 +1400,35 @@ class AnalystLabelingFeatureEngineeringStep:
             if enable_ae:
                 try:
                     from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
+                except Exception as e:
+                    self.logger.warning(f"Autoencoder feature generation failed or unavailable: {e}")
+                else:
                     self.logger.info("🤖 Autoencoder feature generation enabled (pre-labeling). Building AE features...")
+                    try:
+                        print("Step4Monitor ▶ AE: start", flush=True)
+                    except Exception:
+                        pass
+
                     ae_gen = AutoencoderFeatureGenerator(self.config)
                     ae_input = combined_features.copy()
                     lbls = np.zeros(len(ae_input), dtype=int)
-                    ae_features = ae_gen.generate_features(
-                        ae_input,
-                        regime_name="step4",
-                        labels=lbls,
-                    )
+                    from src.utils.logger import heartbeat
+                    with heartbeat(self.logger, name="Step4 autoencoder_features", interval_seconds=60.0):
+                        ae_features = ae_gen.generate_features(
+                            ae_input,
+                            regime_name="step4",
+                            labels=lbls,
+                        )
+
                     if isinstance(ae_features, pd.DataFrame) and not ae_features.empty:
                         ae_features = ae_features.reindex(combined_features.index)
                         dup = [c for c in ae_features.columns if c in combined_features.columns]
                         if dup:
                             self.logger.warning(f"Dropping duplicate AE columns already present: {dup[:30]}{' ...' if len(dup)>30 else ''}")
                             ae_features = ae_features.drop(columns=dup)
-                        combined_features = pd.concat([combined_features, ae_features], axis=1)
-                        self.logger.info(f"✅ Autoencoder features added (pre-labeling): {ae_features.shape[1]} columns")
-                        # Optionally replace original features with AE latents (config: ae_mode)
+
                         ae_mode = str(self.config.get("ae_mode", "augment")).lower()
+
                         # Derive additional AE-based signals: recon error z-score and spike flag
                         try:
                             if "autoencoder_recon_error" in ae_features.columns:
@@ -1389,6 +1439,7 @@ class AnalystLabelingFeatureEngineeringStep:
                                 ae_features["autoencoder_recon_error_spike"] = (ae_features["autoencoder_recon_error_z_100"] > 3.0).astype(int)
                         except Exception as _e:
                             self.logger.warning(f"AE recon-error derivatives failed: {_e}")
+
                         if ae_mode == "replace":
                             ae_cols = [c for c in ae_features.columns if c.startswith("autoencoder_")]
                             if not ae_cols:
@@ -1402,8 +1453,14 @@ class AnalystLabelingFeatureEngineeringStep:
                             self.logger.info(f"✅ Autoencoder features added (pre-labeling): {ae_features.shape[1]} columns")
                     else:
                         self.logger.warning("AE generator returned empty DataFrame; skipping AE augmentation")
-                except Exception as e:
-                    self.logger.warning(f"Autoencoder feature generation failed or unavailable: {e}")
+
+                    try:
+                        print(
+                            f"Step4Monitor ▶ AE: done, added={(0 if not isinstance(ae_features, pd.DataFrame) else ae_features.shape[1])}",
+                            flush=True,
+                        )
+                    except Exception:
+                        pass
 
             # Integrate explicit analyst meta-labels as auxiliary time-series
             try:
@@ -1427,7 +1484,7 @@ class AnalystLabelingFeatureEngineeringStep:
                             pass
                     self.logger.info(f"Step4: merged explicit meta-labels: {list(explicit_meta.keys())}")
 
-                # Surface tactician meta labels as features
+                # Surface tactician meta labels as features (only aligned series/arrays; skip scalars to avoid constant features)
                 try:
                     meta_sys = MetaLabelingSystem(self.config)
                     await meta_sys.initialize()
@@ -1436,10 +1493,15 @@ class AnalystLabelingFeatureEngineeringStep:
                         price_data[["volume"]] if "volume" in price_data.columns else pd.DataFrame({"volume": pd.Series(1.0, index=price_data.index)}),
                         timeframe="1m",
                     )
-                    # Convert supported scalar labels to aligned series if possible
                     for key, val in tact_labels.items():
-                        if isinstance(val, (int, float, np.integer, np.floating)):
-                            combined_features[key] = pd.Series(float(val), index=price_data.index)
+                        try:
+                            if isinstance(val, pd.Series):
+                                combined_features[key] = val.reindex(price_data.index)
+                            elif isinstance(val, np.ndarray) and len(val) == len(price_data.index):
+                                combined_features[key] = pd.Series(val, index=price_data.index)
+                            # Skip scalars and mismatched shapes
+                        except Exception:
+                            continue
                 except Exception as _et:
                     self.logger.warning(f"Step4: tactician meta label surfacing skipped: {_et}")
             except Exception as _e:
@@ -1473,9 +1535,22 @@ class AnalystLabelingFeatureEngineeringStep:
                     time_barrier_minutes=tb_config.get("time_barrier_minutes", 30),
                     max_lookahead=tb_config.get("max_lookahead", 100),
                 )
-                labeled_ohlcv = labeler.apply_triple_barrier_labeling_vectorized(
-                    price_data[["open", "high", "low", "close", "volume"]].copy()
-                )
+                try:
+                    print("Step4Monitor ▶ TB: start", flush=True)
+                except Exception:
+                    pass
+                from src.utils.logger import heartbeat
+                with heartbeat(self.logger, name="Step4 triple_barrier_labeling", interval_seconds=60.0):
+                    labeled_ohlcv = labeler.apply_triple_barrier_labeling_vectorized(
+                        price_data[["open", "high", "low", "close", "volume"]].copy()
+                    )
+                try:
+                    print(
+                        f"Step4Monitor ▶ TB: done, labels={labeled_ohlcv['label'].value_counts().to_dict() if 'label' in labeled_ohlcv.columns else 'n/a'}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
                 # Align feature rows to labeled rows (binary classification removes HOLD rows)
                 combined_features = combined_features.loc[labeled_ohlcv.index]
                 labeled_data = pd.concat([combined_features, labeled_ohlcv[["label"]]], axis=1)
@@ -1527,10 +1602,33 @@ class AnalystLabelingFeatureEngineeringStep:
             if leak_cols:
                 labeled_data = labeled_data.drop(columns=leak_cols, errors="ignore")
                 self.logger.warning(f"🚩 Removed {len(leak_cols)} label-like columns to prevent leakage: {leak_cols[:50]}{' ...' if len(leak_cols)>50 else ''}")
+            # Monitor state after leakage filter
+            try:
+                self.logger.info(
+                    f"Post-leakage filter: shape={labeled_data.shape}, feature_cols={len([c for c in labeled_data.columns if c != 'label'])}"
+                )
+                print(
+                    f"Step4Monitor ▶ Post-leakage: rows={len(labeled_data)}, cols={labeled_data.shape[1]}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Final feature sanity: drop raw OHLCV if somehow present
             raw_cols = list(set(self._RAW_CONTEXT_COLUMNS))
-            labeled_data = labeled_data.drop(columns=[c for c in raw_cols if c in labeled_data.columns], errors="ignore")
+            present_raw = [c for c in raw_cols if c in labeled_data.columns]
+            if present_raw:
+                labeled_data = labeled_data.drop(columns=present_raw, errors="ignore")
+            try:
+                self.logger.info(
+                    f"Post-raw-context drop: dropped={len(present_raw)} -> shape={labeled_data.shape}"
+                )
+                print(
+                    f"Step4Monitor ▶ Raw-drop: dropped={len(present_raw)} cols, now rows={len(labeled_data)}, cols={labeled_data.shape[1]}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Stationarity enforcement (decide using training portion to avoid lookahead)
             try:
@@ -1539,18 +1637,103 @@ class AnalystLabelingFeatureEngineeringStep:
                 train_mask_tmp = pd.Series(False, index=labeled_data.index)
                 if train_end_tmp > 0:
                     train_mask_tmp.iloc[:train_end_tmp] = True
+                try:
+                    self.logger.info(
+                        f"Stationarity: starting with train_rows={train_end_tmp}, total_rows={total_rows_tmp}"
+                    )
+                    print(
+                        f"Step4Monitor ▶ Stationarity start: train={train_end_tmp}, total={total_rows_tmp}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
                 labeled_data, _transformed_cols = self._enforce_stationarity(labeled_data, train_mask=train_mask_tmp)
+                try:
+                    self.logger.info(
+                        f"Stationarity: transformed_cols={len(_transformed_cols)} -> shape={labeled_data.shape}"
+                    )
+                    print(
+                        f"Step4Monitor ▶ Stationarity done: transformed={len(_transformed_cols)}, rows={len(labeled_data)}, cols={labeled_data.shape[1]}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
             except Exception as e:
                 self.logger.warning(f"Stationarity enforcement skipped due to error: {e}")
 
             # Check 5: Feature Matrix Sanitization (post-merge)
             labeled_data = self._sanitize_features(labeled_data)
+            try:
+                self.logger.info(f"Sanitize: shape={labeled_data.shape}")
+                print(
+                    f"Step4Monitor ▶ Sanitize: rows={len(labeled_data)}, cols={labeled_data.shape[1]}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Standardized Feature Selection Pipeline (Step 4)
             try:
-                feats = [c for c in labeled_data.columns if c != "label"]
+                # Exclude raw/context/meta and known label-like columns from feature selection
+                def _is_non_feature(col: str) -> bool:
+                    name = col
+                    lname = name.lower()
+                    uname = name.upper()
+                    if name == "label":
+                        return True
+                    if name in self._METADATA_COLUMNS:
+                        return True
+                    # Raw context columns
+                    if name in set(self._RAW_CONTEXT_COLUMNS):
+                        return True
+                    # Known label-like or event columns
+                    if any(s in uname for s in [
+                        "_NEXT_", "BREAKOUT", "EXHAUSTION", "RANGE_MEAN_REVERSION", "STRONG_TREND_CONTINUATION",
+                        "MOMENTUM_IGNITION", "GRADUAL_MOMENTUM_FADE", "VOLATILITY_COMPRESSION", "VOLATILITY_EXPANSION",
+                        "FLAG_FORMATION", "TRIANGLE_FORMATION", "RECTANGLE_FORMATION", "ABSORPTION", "LIQUIDITY_GRAB",
+                        "LOWEST_PRICE_NEXT", "HIGHEST_PRICE_NEXT", "LIMIT_ORDER_RETURN", "ORDERBOOK_IMBALANCE_FLIP",
+                        "VWAP_REVERSION_ENTRY", "MARKET_ORDER_NOW", "CHASE_MICRO_BREAKOUT", "ABORT_ENTRY_SIGNAL", "BOUNCE",
+                        "SR_EVENT_LABEL", "SR_TOUCH"
+                    ]):
+                        return True
+                    # Support/Resistance structural helpers not for model ingestion
+                    if (
+                        lname.startswith("distance_to_pivot_")
+                        or "nearest_support_center" in lname
+                        or "nearest_resistance_center" in lname
+                        or "nearest_support_score" in lname
+                        or "nearest_resistance_score" in lname
+                        or "nearest_support_band_pct" in lname
+                        or "nearest_resistance_band_pct" in lname
+                    ):
+                        return True
+                    # Skip scalar meta summaries inadvertently surfaced
+                    if lname in {
+                        "signal_count",
+                        "price_extreme_confidence",
+                        "limit_order_confidence",
+                        "adverse_excursion_confidence",
+                        "abort_confidence",
+                    }:
+                        return True
+                    # Treat some raw-like deltas as context (user preference)
+                    if lname in {"funding_rate_change", "trade_count_returns", "trade_volume_returns"}:
+                        return True
+                    return False
+
+                feats = [c for c in labeled_data.columns if not _is_non_feature(c)]
                 X = labeled_data[feats].copy()
                 y = labeled_data["label"].copy()
+                try:
+                    self.logger.info(
+                        f"FS start: rows={len(X)}, features={X.shape[1]} (before selection)"
+                    )
+                    print(
+                        f"Step4Monitor ▶ FS start: rows={len(X)}, feats={X.shape[1]}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
 
                 # 1) Remove constant/near-constant
                 nunique = X.nunique(dropna=True)
@@ -1558,6 +1741,12 @@ class AnalystLabelingFeatureEngineeringStep:
                 if low_var_cols:
                     X = X.drop(columns=low_var_cols, errors="ignore")
                     self.logger.info(f"FS: removed {len(low_var_cols)} constant features")
+                    try:
+                        names_preview = low_var_cols[:100]
+                        self.logger.info(f"FS: constant feature names: {names_preview}")
+                        print(f"Step4Monitor ▶ FS constants: {names_preview}", flush=True)
+                    except Exception:
+                        pass
 
                 # 2) Correlation clustering (|rho| >= 0.95)
                 corr = X.corr().abs()
@@ -1566,6 +1755,12 @@ class AnalystLabelingFeatureEngineeringStep:
                 if to_drop:
                     X = X.drop(columns=to_drop, errors="ignore")
                     self.logger.info(f"FS: dropped {len(to_drop)} highly correlated features (|rho|>=0.95)")
+                    try:
+                        names_preview = to_drop[:100]
+                        self.logger.info(f"FS: high-corr feature names: {names_preview}")
+                        print(f"Step4Monitor ▶ FS corr>0.95 drop: {names_preview}", flush=True)
+                    except Exception:
+                        pass
 
                 # 3) Mutual Information screen (bottom 20%)
                 numX = X.select_dtypes(include=[np.number])
@@ -1578,6 +1773,12 @@ class AnalystLabelingFeatureEngineeringStep:
                     if weak:
                         keep_cols = keep_cols.difference(weak)
                         self.logger.info(f"FS: MI dropped {len(weak)} weak features (<= {thr:.4g})")
+                        try:
+                            names_preview = weak[:100]
+                            self.logger.info(f"FS: MI-weak feature names: {names_preview}")
+                            print(f"Step4Monitor ▶ FS MI weak: {names_preview}", flush=True)
+                        except Exception:
+                            pass
                     X = X[list(keep_cols)]
 
                 # 4) RandomForest importance + Permutation importance (time-aware split)
@@ -1600,11 +1801,26 @@ class AnalystLabelingFeatureEngineeringStep:
                     # Keep top-K by combined importance
                     K = int(self.config.get("feature_selection", {}).get("top_k_step4", 120))
                     topk = comb.sort_values(ascending=False).head(max(10, K)).index.tolist()
+                    # Prefer feature-only subset, deprioritizing known signal-like columns (prefixed 'sr_')
+                    feature_only = [c for c in topk if not c.lower().startswith("sr_")]
+                    if len(feature_only) >= max(10, int(0.5 * len(topk))):
+                        remainder = [c for c in topk if c not in feature_only]
+                        topk = feature_only + remainder[: max(0, K - len(feature_only))]
                     X = X[topk]
-                    self.logger.info(f"FS: selected top-{len(topk)} features by RF+PI")
+                    self.logger.info(f"FS: selected top-{len(topk)} features by RF+PI: {topk[:100]}")
 
                 # Persist the selected set back to labeled_data
                 labeled_data = pd.concat([X, y], axis=1)
+                try:
+                    self.logger.info(
+                        f"FS end: selected_features={X.shape[1]} -> labeled_data shape={labeled_data.shape}"
+                    )
+                    print(
+                        f"Step4Monitor ▶ FS end: feats={X.shape[1]}, rows={len(labeled_data)}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
             except Exception as fs_e:
                 self.logger.warning(f"Feature selection pipeline skipped due to error: {fs_e}")
 
@@ -1616,6 +1832,13 @@ class AnalystLabelingFeatureEngineeringStep:
                 if datetime_cols:
                     self.logger.info(f"Removing datetime columns prior to saving/validation: {datetime_cols}")
                     labeled_data = labeled_data.drop(columns=datetime_cols)
+                    try:
+                        print(
+                            f"Step4Monitor ▶ Dropped datetime cols: {len(datetime_cols)}",
+                            flush=True,
+                        )
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
@@ -1639,9 +1862,21 @@ class AnalystLabelingFeatureEngineeringStep:
             train_end = int(total_rows * 0.8)
             val_end = int(total_rows * 0.9)
 
-            train_data = labeled_data.iloc[:train_end]
-            validation_data = labeled_data.iloc[train_end:val_end]
-            test_data = labeled_data.iloc[val_end:]
+            from src.utils.logger import heartbeat
+            with heartbeat(self.logger, name="Step4 temporal_split", interval_seconds=60.0):
+                train_data = labeled_data.iloc[:train_end]
+                validation_data = labeled_data.iloc[train_end:val_end]
+                test_data = labeled_data.iloc[val_end:]
+            try:
+                self.logger.info(
+                    f"Split sizes: train={len(train_data)}, val={len(validation_data)}, test={len(test_data)}"
+                )
+                print(
+                    f"Step4Monitor ▶ Split: train={len(train_data)}, val={len(validation_data)}, test={len(test_data)}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Optional: prune high correlation with AE latents to reduce redundancy
             try:
@@ -1678,6 +1913,13 @@ class AnalystLabelingFeatureEngineeringStep:
                             drops.update(high)
                         if drops:
                             self.logger.info(f"AE prune: dropping {len(drops)} redundant non-AE features with |corr|>={corr_thr}")
+                            try:
+                                print(
+                                    f"Step4Monitor ▶ AE prune: dropped={len(drops)}",
+                                    flush=True,
+                                )
+                            except Exception:
+                                pass
                             new_tr = df_tr.drop(columns=list(drops), errors="ignore")
                             new_vl = df_vl.drop(columns=list(drops), errors="ignore") if not df_vl.empty else df_vl
                             new_te = df_te.drop(columns=list(drops), errors="ignore") if not df_te.empty else df_te
@@ -1689,9 +1931,26 @@ class AnalystLabelingFeatureEngineeringStep:
 
             # Apply VIF loop with CPA on training split; transform val/test accordingly
             try:
-                train_data, validation_data, test_data, vif_summary = self._vif_reduce_train_val_test(
-                    train_data, validation_data, test_data
-                )
+                self.logger.info("Step4: VIF reduction starting...")
+                try:
+                    print("Step4Monitor ▶ VIF: start", flush=True)
+                except Exception:
+                    pass
+                from src.utils.logger import heartbeat
+                with heartbeat(self.logger, name="Step4 VIF_reduction", interval_seconds=60.0):
+                    train_data, validation_data, test_data, vif_summary = self._vif_reduce_train_val_test(
+                        train_data, validation_data, test_data
+                    )
+                try:
+                    removed = len(vif_summary.get("removed_features", []))
+                    cpa = int(vif_summary.get("cpa_count", 0))
+                    self.logger.info(f"Step4: VIF reduction done. removed={removed}, cpa_components={cpa}")
+                    print(
+                        f"Step4Monitor ▶ VIF: done removed={removed} cpa={cpa}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
             except Exception as e:
                 self.logger.warning(f"Step 4 VIF reduction skipped due to error: {e}")
 
@@ -1740,8 +1999,20 @@ class AnalystLabelingFeatureEngineeringStep:
             for file_path, data in feature_files:
                 features_df = data.drop(columns=[c for c in raw_cols if c in data.columns], errors="ignore")
                 features_df = features_df.drop(columns=[c for c in leakage_cols if c in features_df.columns], errors="ignore")
-                with open(file_path, "wb") as f:
-                    pickle.dump(features_df, f)
+                from src.utils.logger import log_io_operation
+                with log_io_operation(self.logger, "pickle_dump", file_path):
+                    with open(file_path, "wb") as f:
+                        pickle.dump(features_df, f)
+                try:
+                    self.logger.info(
+                        f"Saved features: {file_path} shape={features_df.shape}"
+                    )
+                    print(
+                        f"Step4Monitor ▶ Saved: {os.path.basename(file_path)} rows={len(features_df)}, cols={features_df.shape[1]}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
             self.logger.info(f"✅ Saved feature data files")
 
             # Also save Parquet versions with downcasting for efficiency
@@ -1894,9 +2165,22 @@ class AnalystLabelingFeatureEngineeringStep:
                 (f"{data_dir}/{exchange}_{symbol}_labeled_test.pkl", test_data),
             ]
 
+            # Rejoin OHLCV to labeled outputs for downstream analysis/validation
+            try:
+                ohlcv_cols = [c for c in ["open", "high", "low", "close", "volume"] if c in price_data.columns]
+            except Exception:
+                ohlcv_cols = []
+
             for file_path, data in labeled_files:
+                to_save = data
+                if ohlcv_cols:
+                    try:
+                        ohlcv_aligned = price_data[ohlcv_cols].reindex(data.index)
+                        to_save = data.join(ohlcv_aligned, how="left")
+                    except Exception:
+                        to_save = data
                 with open(file_path, "wb") as f:
-                    pickle.dump(data, f)
+                    pickle.dump(to_save, f)
             self.logger.info(f"✅ Saved labeled data files")
 
             # Parquet for labeled data too
@@ -2136,6 +2420,12 @@ class AnalystLabelingFeatureEngineeringStep:
                     "feature_engineering_metadata": {},
                     "feature_engineering_completed": True,
                     "labeling_completed": True,
+                    # Provide a consolidated step result for validators
+                    "analyst_labeling_feature_engineering": {
+                        "status": "SUCCESS",
+                        "success": True,
+                        "completed": True,
+                    },
                 },
             )
 

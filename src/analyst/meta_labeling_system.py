@@ -84,8 +84,8 @@ class MetaLabelingSystem:
             self.logger.info("✅ Meta-labeling system initialized successfully")
             return True
         except Exception as e:
-            self.print(
-                initialization_error("❌ Error initializing meta-labeling system: {e}")
+            self.logger.exception(
+                f"Error initializing meta-labeling system: {e}",
             )
             return False
 
@@ -140,31 +140,31 @@ class MetaLabelingSystem:
             try:
                 features.update(self._calculate_technical_indicators(price_data))
             except Exception as e:
-                self.print(error("Error calculating technical indicators: {e}"))
+                self.logger.exception(f"Error calculating technical indicators: {e}")
 
             # Volume analysis with error handling
             try:
                 features.update(self._calculate_volume_features(volume_data))
             except Exception as e:
-                self.print(error("Error calculating volume features: {e}"))
+                self.logger.exception(f"Error calculating volume features: {e}")
 
             # Price action patterns with error handling
             try:
                 features.update(self._calculate_price_action_patterns(price_data))
             except Exception as e:
-                self.print(error("Error calculating price action patterns: {e}"))
+                self.logger.exception(f"Error calculating price action patterns: {e}")
 
             # Volatility patterns with error handling
             try:
                 features.update(self._calculate_volatility_patterns(price_data))
             except Exception as e:
-                self.print(error("Error calculating volatility patterns: {e}"))
+                self.logger.exception(f"Error calculating volatility patterns: {e}")
 
             # Momentum patterns with error handling
             try:
                 features.update(self._calculate_momentum_patterns(price_data))
             except Exception as e:
-                self.print(error("Error calculating momentum patterns: {e}"))
+                self.logger.exception(f"Error calculating momentum patterns: {e}")
 
             return features
 
@@ -197,8 +197,13 @@ class MetaLabelingSystem:
             delta = data["close"].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rs = gain / loss
-            features["rsi"] = (100 - (100 / (1 + rs))).iloc[-1] if not rs.empty else 50
+            # Handle division by zero in RSI: if loss==0, set rs to a large finite value
+            rs = gain / loss.replace(0, np.nan)
+            rsi_series = 100 - (100 / (1 + rs))
+            if rsi_series.replace([np.inf, -np.inf], np.nan).notna().any():
+                features["rsi"] = float(rsi_series.replace([np.inf, -np.inf], np.nan).fillna(100).iloc[-1])
+            else:
+                features["rsi"] = 50
 
             # MACD
             ema12 = data["close"].ewm(span=12).mean()
@@ -247,7 +252,7 @@ class MetaLabelingSystem:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error calculating technical indicators: {e}")
+            self.logger.exception(f"Error calculating technical indicators: {e}")
             return {}
 
     def _calculate_volume_features(self, data: pd.DataFrame) -> dict[str, float]:
@@ -288,7 +293,7 @@ class MetaLabelingSystem:
             return features
 
         except Exception as e:
-            self.logger.error(f"Error calculating volume features: {e}")
+            self.logger.exception(f"Error calculating volume features: {e}")
             return {}
 
     def _calculate_price_action_patterns(self, data: pd.DataFrame) -> dict[str, float]:
@@ -342,7 +347,7 @@ class MetaLabelingSystem:
             return features
 
         except Exception as e:
-            self.print(error("Error calculating price action patterns: {e}"))
+            self.logger.exception(f"Error calculating price action patterns: {e}")
             return {}
 
     def _calculate_volatility_patterns(self, data: pd.DataFrame) -> dict[str, float]:
@@ -382,7 +387,7 @@ class MetaLabelingSystem:
             return features
 
         except Exception as e:
-            self.print(error("Error calculating volatility patterns: {e}"))
+            self.logger.exception(f"Error calculating volatility patterns: {e}")
             return {}
 
     def _calculate_momentum_patterns(self, data: pd.DataFrame) -> dict[str, float]:
@@ -409,94 +414,140 @@ class MetaLabelingSystem:
             return features
 
         except Exception as e:
-            self.print(error("Error calculating momentum patterns: {e}"))
-            return {}
+            self.logger.exception(f"Error calculating momentum patterns: {e}")
+            return {"MOMENTUM_IGNITION": 0, "GRADUAL_MOMENTUM_FADE": 0}
 
     def _detect_additional_analyst_patterns(
         self,
         data: pd.DataFrame,
         features: dict[str, Any],
     ) -> dict[str, Any]:
-        """Detect additional analyst patterns requested by users.
+        """Detect additional analyst patterns requested by user.
 
-        Patterns added:
-        - LIQUIDITY_GRAB
-        - ABSORPTION_AT_LEVEL
-        - TRENDING_RANGE
-        - MOVING_AVERAGE_BOUNCE
-        - HEAD_AND_SHOULDERS (proxy)
-        - DOUBLE_TOP_BOTTOM (proxy)
-        - CLIMACTIC_REVERSAL
+        Uses the centralized 'features' dict; no re-computation.
         """
         try:
-            patterns: dict[str, Any] = {}
+            patterns: dict[str, int] = {}
 
-            close = data["close"].astype(float)
-            open_ = data.get("open", close).astype(float)
-            high = data.get("high", close).astype(float)
-            low = data.get("low", close).astype(float)
+            # Aliases
+            close = data["close"]
+            high = data["high"]
+            low = data["low"]
+            open_ = data["open"]
+            vol = data.get("volume", pd.Series(index=data.index, dtype=float))
 
-            # Common helpers
-            bb_position = features.get("bb_position", 0.5)
-            bb_width = features.get("bb_width", 0.1)
-            volume_ratio = features.get("volume_ratio", 1.0)
-            vol_ratio_threshold = max(1.0, float(self.volume_threshold))
-            momentum_5 = features.get("price_momentum_5", 0.0)
-            momentum_10 = features.get("price_momentum_10", 0.0)
+            # Derived helpers from features
+            bb_pos = float(features.get("bb_position", 0.5))
+            vol_ratio = float(features.get("volume_ratio", 1.0))
+            vol_20 = float(features.get("volatility_20", 0.0))
+            rng10 = float((high.tail(10).max() - low.tail(10).min()) / max(1e-12, close.iloc[-1])) if len(close) >= 10 else 0.0
+            momentum_5 = float(features.get("price_momentum_5", 0.0))
+            momentum_10 = float(features.get("price_momentum_10", 0.0))
 
-            # LIQUIDITY_GRAB: strong volume spike at extremes with immediate mean-reversion signature
-            near_extreme = (bb_position <= 0.1) or (bb_position >= 0.9)
-            volume_extreme = volume_ratio >= (2.0 * vol_ratio_threshold)
-            mean_reversion_signal = abs(momentum_5) < self.momentum_threshold and bb_width <= 0.06
-            patterns["LIQUIDITY_GRAB"] = 1 if (near_extreme and volume_extreme and mean_reversion_signal) else 0
+            # 1) ORDERBOOK_IMBALANCE_STRONG_* (requires order_flow_data; fallback heuristics set 0)
+            patterns["ORDERBOOK_IMBALANCE_STRONG_BID"] = 0
+            patterns["ORDERBOOK_IMBALANCE_STRONG_ASK"] = 0
 
-            # ABSORPTION_AT_LEVEL: high volume with narrow range and small net change
-            true_range = float((high.iloc[-1] - low.iloc[-1]) / max(1e-12, close.iloc[-1])) if len(close) else 0.0
-            small_body = abs(float((close.iloc[-1] - open_.iloc[-1]) / max(1e-12, close.iloc[-1]))) < 0.002
-            narrow_range = (bb_width <= 0.03) or (true_range <= 0.002)
-            patterns["ABSORPTION_AT_LEVEL"] = 1 if (volume_ratio >= vol_ratio_threshold and narrow_range and small_body) else 0
+            # 2) PASSIVE_ABSORPTION_* (proxy: large volume delta with small progress)
+            try:
+                # Price progress proxy over last N bars
+                N = 5
+                progress = abs(float(close.iloc[-1] - close.iloc[-N])) / max(1e-12, float(close.iloc[-N])) if len(close) >= N else 0.0
+                vol_spike = vol_ratio > max(1.5, self.volume_threshold)
+                patterns["PASSIVE_ABSORPTION_BID"] = 1 if (vol_spike and progress < 0.001 and momentum_5 > 0) else 0
+                patterns["PASSIVE_ABSORPTION_ASK"] = 1 if (vol_spike and progress < 0.001 and momentum_5 < 0) else 0
+            except Exception:
+                patterns["PASSIVE_ABSORPTION_BID"] = 0
+                patterns["PASSIVE_ABSORPTION_ASK"] = 0
 
-            # TRENDING_RANGE: low volatility range with directional drift present
-            low_vol_range = bb_width <= 0.05
-            mild_drift = 0.005 <= abs(momentum_10) <= 0.02
-            patterns["TRENDING_RANGE"] = 1 if (low_vol_range and mild_drift) else 0
+            # 3) STOP_HUNT_* (poke beyond recent extreme and close back)
+            try:
+                M = 15
+                recent_low = float(low.tail(M).min()) if len(low) >= M else float(low.iloc[-1])
+                recent_high = float(high.tail(M).max()) if len(high) >= M else float(high.iloc[-1])
+                broke_low = float(low.iloc[-1]) < recent_low and float(close.iloc[-1]) > recent_low
+                broke_high = float(high.iloc[-1]) > recent_high and float(close.iloc[-1]) < recent_high
+                vol_spike2 = vol_ratio > 2.0
+                patterns["STOP_HUNT_BELOW_LOW"] = 1 if (broke_low and vol_spike2) else 0
+                patterns["STOP_HUNT_ABOVE_HIGH"] = 1 if (broke_high and vol_spike2) else 0
+            except Exception:
+                patterns["STOP_HUNT_BELOW_LOW"] = 0
+                patterns["STOP_HUNT_ABOVE_HIGH"] = 0
 
-            # MOVING_AVERAGE_BOUNCE: price near SMA20
-            sma20 = close.rolling(20).mean().iloc[-1] if len(close) >= 20 else close.iloc[-1]
-            dist_ma = abs(float(close.iloc[-1] - sma20) / max(1e-12, close.iloc[-1])) if len(close) else 1.0
-            patterns["MOVING_AVERAGE_BOUNCE"] = 1 if (dist_ma <= 0.0015 and abs(momentum_5) <= 0.01) else 0
+            # 4) PRICE_AT_POC / REJECTING_VAH/VAL / LVN_TRANSIT (session profile proxy)
+            # Simple proxy without full profile: use rolling POC as 20-bin histogram on last 1d
+            try:
+                window = min(1440, len(close))
+                if window >= 50:
+                    segment = close.tail(window).values
+                    bins = 20
+                    hist, edges = np.histogram(segment, bins=bins)
+                    poc_idx = int(np.argmax(hist))
+                    poc = float((edges[poc_idx] + edges[poc_idx + 1]) / 2.0)
+                    current = float(close.iloc[-1])
+                    within = abs(current - poc) / max(1e-12, current) <= 0.0005
+                    patterns["PRICE_AT_POC"] = 1 if within else 0
+                    # Define VA as central 70% of mass
+                    cdf = np.cumsum(hist) / max(1, np.sum(hist))
+                    vah_idx = int(np.searchsorted(cdf, 0.85))
+                    val_idx = int(np.searchsorted(cdf, 0.15))
+                    vah = float(edges[min(vah_idx, bins - 1)])
+                    val = float(edges[max(val_idx, 0)])
+                    rejecting_vah = current > vah and float(close.iloc[-1]) < vah
+                    rejecting_val = current < val and float(close.iloc[-1]) > val
+                    patterns["PRICE_REJECTING_VAH"] = 1 if rejecting_vah else 0
+                    patterns["PRICE_REJECTING_VAL"] = 1 if rejecting_val else 0
+                    # LVN transit: current in low histogram bin region
+                    lvn_threshold = np.percentile(hist, 20)
+                    current_bin = int(np.searchsorted(edges, current) - 1)
+                    patterns["LVN_TRANSIT"] = 1 if (0 <= current_bin < len(hist) and hist[current_bin] <= lvn_threshold) else 0
+                else:
+                    patterns["PRICE_AT_POC"] = 0
+                    patterns["PRICE_REJECTING_VAH"] = 0
+                    patterns["PRICE_REJECTING_VAL"] = 0
+                    patterns["LVN_TRANSIT"] = 0
+            except Exception:
+                patterns["PRICE_AT_POC"] = 0
+                patterns["PRICE_REJECTING_VAH"] = 0
+                patterns["PRICE_REJECTING_VAL"] = 0
+                patterns["LVN_TRANSIT"] = 0
 
-            # HEAD_AND_SHOULDERS (proxy): price near recent high with weakening momentum and RSI < 50
-            recent_high = float(close.rolling(30, min_periods=1).max().iloc[-1]) if len(close) else float(close.iloc[-1] if len(close) else 0)
-            near_recent_high = abs(float(close.iloc[-1] - recent_high) / max(1e-12, recent_high)) <= 0.003 if recent_high else False
-            rsi = features.get("rsi", 50.0)
-            weakening = momentum_5 < 0 and (abs(momentum_5) < abs(momentum_10))
-            patterns["HEAD_AND_SHOULDERS"] = 1 if (near_recent_high and weakening and rsi < 50) else 0
+            # 5) IGNITION_BAR
+            try:
+                rng = float((high.iloc[-1] - low.iloc[-1]) / max(1e-12, close.iloc[-1])) if len(close) else 0.0
+                avg_rng = float((high - low).tail(20).mean() / max(1e-12, close.iloc[-1])) if len(close) >= 20 else rng
+                vol_spike3 = vol_ratio > 3.0
+                patterns["IGNITION_BAR"] = 1 if (vol_spike3 and rng > 2 * avg_rng and rng10 < 0.02) else 0
+            except Exception:
+                patterns["IGNITION_BAR"] = 0
 
-            # DOUBLE_TOP_BOTTOM (proxy): price near recent extrema with reversal momentum
-            recent_low = float(close.rolling(30, min_periods=1).min().iloc[-1]) if len(close) else float(close.iloc[-1] if len(close) else 0)
-            near_top = abs(float(close.iloc[-1] - recent_high) / max(1e-12, recent_high)) <= 0.002 if recent_high else False
-            near_bottom = abs(float(close.iloc[-1] - recent_low) / max(1e-12, recent_low)) <= 0.002 if recent_low else False
-            reversal = (near_top and momentum_5 < 0) or (near_bottom and momentum_5 > 0)
-            patterns["DOUBLE_TOP_BOTTOM"] = 1 if reversal else 0
-
-            # CLIMACTIC_REVERSAL: very high volume, large range candle, and momentum sign flip proxy
-            large_body = abs(float((close.iloc[-1] - open_.iloc[-1]) / max(1e-12, close.iloc[-1]))) >= 0.01 if len(close) else False
-            momentum_flip_proxy = abs(momentum_5) >= (self.momentum_threshold * 2)
-            patterns["CLIMACTIC_REVERSAL"] = 1 if (volume_extreme and large_body and momentum_flip_proxy) else 0
+            # 6) MICRO_MOMENTUM_DIVERGENCE
+            try:
+                made_higher_high = len(high) >= 10 and float(high.iloc[-1]) > float(high.iloc[-10:-1].max())
+                rsi_short = float(features.get("rsi", 50))  # reuse RSI; for true 5-period RSI, optionally compute separately
+                # Simple divergence proxy: price higher high while RSI lower than its 10-bar max
+                rsi_window_max = float(pd.Series([features.get("rsi", 50)] + [50]).max())  # placeholder safe default
+                patterns["MICRO_MOMENTUM_DIVERGENCE"] = 1 if (made_higher_high and rsi_short < rsi_window_max) else 0
+            except Exception:
+                patterns["MICRO_MOMENTUM_DIVERGENCE"] = 0
 
             return patterns
 
         except Exception as e:
-            self.print(error(f"Error detecting additional analyst patterns: {e}"))
+            self.logger.exception(f"Error detecting additional analyst patterns: {e}")
             return {
-                "LIQUIDITY_GRAB": 0,
-                "ABSORPTION_AT_LEVEL": 0,
-                "TRENDING_RANGE": 0,
-                "MOVING_AVERAGE_BOUNCE": 0,
-                "HEAD_AND_SHOULDERS": 0,
-                "DOUBLE_TOP_BOTTOM": 0,
-                "CLIMACTIC_REVERSAL": 0,
+                "ORDERBOOK_IMBALANCE_STRONG_BID": 0,
+                "ORDERBOOK_IMBALANCE_STRONG_ASK": 0,
+                "PASSIVE_ABSORPTION_BID": 0,
+                "PASSIVE_ABSORPTION_ASK": 0,
+                "STOP_HUNT_BELOW_LOW": 0,
+                "STOP_HUNT_ABOVE_HIGH": 0,
+                "PRICE_AT_POC": 0,
+                "PRICE_REJECTING_VAH": 0,
+                "PRICE_REJECTING_VAL": 0,
+                "LVN_TRANSIT": 0,
+                "IGNITION_BAR": 0,
+                "MICRO_MOMENTUM_DIVERGENCE": 0,
             }
 
     # Analyst Label Detection Methods
@@ -528,7 +579,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.print(error("Error detecting strong trend continuation: {e}"))
+            self.logger.exception(f"Error detecting strong trend continuation: {e}")
             return {"STRONG_TREND_CONTINUATION": 0, "strong_trend_confidence": 0}
 
     def _detect_exhaustion_reversal(
@@ -559,7 +610,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.print(error("Error detecting exhaustion reversal: {e}"))
+            self.logger.exception(f"Error detecting exhaustion reversal: {e}")
             return {"EXHAUSTION_REVERSAL": 0, "exhaustion_confidence": 0}
 
     def _detect_range_mean_reversion(
@@ -589,7 +640,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.print(error("Error detecting range mean reversion: {e}"))
+            self.logger.exception(f"Error detecting range mean reversion: {e}")
             return {"RANGE_MEAN_REVERSION": 0, "range_reversion_confidence": 0}
 
     def _detect_breakout_patterns(
@@ -627,7 +678,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.print(error("Error detecting breakout patterns: {e}"))
+            self.logger.exception(f"Error detecting breakout patterns: {e}")
             return {
                 "BREAKOUT_SUCCESS": 0,
                 "BREAKOUT_FAILURE": 0,
@@ -660,7 +711,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.print(error("Error detecting volatility patterns: {e}"))
+            self.logger.exception(f"Error detecting volatility patterns: {e}")
             return {
                 "VOLATILITY_COMPRESSION": 0,
                 "VOLATILITY_EXPANSION": 0,
@@ -695,7 +746,7 @@ class MetaLabelingSystem:
             return patterns
 
         except Exception as e:
-            self.print(error("Error detecting chart patterns: {e}"))
+            self.logger.exception(f"Error detecting chart patterns: {e}")
             return {
                 "FLAG_FORMATION": 0,
                 "TRIANGLE_FORMATION": 0,
@@ -734,7 +785,7 @@ class MetaLabelingSystem:
             return patterns
 
         except Exception as e:
-            self.print(error("Error detecting momentum patterns: {e}"))
+            self.logger.exception(f"Error detecting momentum patterns: {e}")
             return {"MOMENTUM_IGNITION": 0, "GRADUAL_MOMENTUM_FADE": 0}
 
     # Tactician Label Detection Methods
@@ -779,7 +830,7 @@ class MetaLabelingSystem:
             return features
 
         except Exception as e:
-            self.print(error("Error calculating entry features: {e}"))
+            self.logger.exception(f"Error calculating entry features: {e}")
             return {}
 
     def _calculate_order_imbalance(self, order_flow_data: pd.DataFrame) -> float:
@@ -795,7 +846,7 @@ class MetaLabelingSystem:
                 return (bid_vol - ask_vol) / total_vol if total_vol > 0 else 0
             return 0
         except Exception as e:
-            self.print(error("Error calculating order imbalance: {e}"))
+            self.logger.exception(f"Error calculating order imbalance: {e}")
             return 0
 
     def _predict_price_extremes(
@@ -823,7 +874,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.print(error("Error predicting price extremes: {e}"))
+            self.logger.exception(f"Error predicting price extremes: {e}")
             return {
                 "LOWEST_PRICE_NEXT_1m": data["close"].iloc[-1],
                 "HIGHEST_PRICE_NEXT_1m": data["close"].iloc[-1],
@@ -853,7 +904,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.print(error("Error predicting order returns: {e}"))
+            self.logger.exception(f"Error predicting order returns: {e}")
             return {"LIMIT_ORDER_RETURN": 0.001, "limit_order_confidence": 0}
 
     def _detect_entry_signals(
@@ -903,7 +954,7 @@ class MetaLabelingSystem:
             return signals
 
         except Exception as e:
-            self.print(error("Error detecting entry signals: {e}"))
+            self.logger.exception(f"Error detecting entry signals: {e}")
             return {
                 "VWAP_REVERSION_ENTRY": 0,
                 "MARKET_ORDER_NOW": 0,
@@ -937,7 +988,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.print(error("Error predicting adverse excursion: {e}"))
+            self.logger.exception(f"Error predicting adverse excursion: {e}")
             return {
                 "MAX_ADVERSE_EXCURSION_RETURN": 0.01,
                 "adverse_excursion_confidence": 0,
@@ -968,7 +1019,7 @@ class MetaLabelingSystem:
             }
 
         except Exception as e:
-            self.print(error("Error generating abort signal: {e}"))
+            self.logger.exception(f"Error generating abort signal: {e}")
             return {"ABORT_ENTRY_SIGNAL": 0, "abort_confidence": 0}
 
     @handle_errors(
@@ -995,7 +1046,7 @@ class MetaLabelingSystem:
         """
         try:
             if not self.is_initialized:
-                self.print(initialization_error("Meta-labeling system not initialized"))
+                self.logger.error("Meta-labeling system not initialized")
                 return {}
 
             # Calculate pattern features
@@ -1066,7 +1117,7 @@ class MetaLabelingSystem:
             return analyst_labels
 
         except Exception as e:
-            self.print(error("Error generating analyst labels: {e}"))
+            self.logger.exception(f"Error generating analyst labels: {e}")
             return {}
 
     @handle_errors(
@@ -1095,7 +1146,7 @@ class MetaLabelingSystem:
         """
         try:
             if not self.is_initialized:
-                self.print(initialization_error("Meta-labeling system not initialized"))
+                self.logger.error("Meta-labeling system not initialized")
                 return {}
 
             # Calculate entry features
@@ -1181,7 +1232,7 @@ class MetaLabelingSystem:
             return tactician_labels
 
         except Exception as e:
-            self.print(error("Error generating tactician labels: {e}"))
+            self.logger.exception(f"Error generating tactician labels: {e}")
             return {}
 
     @handle_errors(
@@ -1243,7 +1294,7 @@ class MetaLabelingSystem:
             return combined_labels
 
         except Exception as e:
-            self.print(error("Error generating combined labels: {e}"))
+            self.logger.exception(f"Error generating combined labels: {e}")
             return {}
 
     def get_system_info(self) -> dict[str, Any]:
@@ -1272,4 +1323,4 @@ class MetaLabelingSystem:
             self.is_initialized = False
             self.logger.info("✅ Meta-Labeling System stopped successfully")
         except Exception as e:
-            self.print(error("Error stopping meta-labeling system: {e}"))
+            self.logger.exception(f"Error stopping meta-labeling system: {e}")

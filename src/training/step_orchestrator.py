@@ -35,9 +35,9 @@ class StepOrchestrator:
         self.available_steps = [
             "step1_data_collection",
             "step1_5_data_converter",  # NEW STEP
-            "step2_market_regime_classification",
+            "step2_processing_labeling_feature_engineering",
             "step3_regime_data_splitting",
-            "step4_analyst_labeling_feature_engineering",
+            "step4_model_training_ready",
             "step5_analyst_specialist_training",
             "step6_analyst_enhancement",
             "step7_analyst_ensemble_creation",

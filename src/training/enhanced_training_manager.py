@@ -1062,9 +1062,9 @@ class EnhancedTrainingManager:
                 method_a_cfg = pipeline_cfg.get("method_a", {})
                 use_alt_step2 = bool(method_a_cfg.get("step2_is_leveling", False))
                 if use_alt_step2:
-                    # Run Step4 early to materialize L0/L1/L2/L3 before regime split
-                    from src.training.steps import step4_analyst_labeling_feature_engineering
-                    step2_success = await step4_analyst_labeling_feature_engineering.run_step(
+                    # Run Step 2 (processing/labeling/feature engineering)
+                    from src.training.steps import step2_processing_labeling_feature_engineering
+                    step2_success = await step2_processing_labeling_feature_engineering.run_step(
                         symbol=symbol,
                         data_dir=data_dir,
                         pipeline_config=self.config,

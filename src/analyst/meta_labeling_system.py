@@ -1465,6 +1465,15 @@ class MetaLabelingSystem:
                 },
             )
 
+            # Compute intensities and activations
+            label_keys = [k for k, v in analyst_labels.items() if isinstance(v, (int, float)) and k.isupper() and k not in ("label_count",)]
+            intensities = self.compute_intensity_scores(price_data, volume_data, features, label_keys)
+            if not hasattr(self, "activation_thresholds"):
+                self._init_thresholds_and_reliability()
+            activations = {k: 1 if intensities.get(k, 0.0) >= self.activation_thresholds.get(k, self.default_activation_threshold) else 0 for k in label_keys}
+            analyst_labels.update({f"intensity_{k}": float(intensities.get(k, 0.0)) for k in label_keys})
+            analyst_labels.update({f"active_{k}": int(activations.get(k, 0)) for k in label_keys})
+
             self.logger.info(
                 f"Generated {analyst_labels.get('label_count', 0)} analyst labels for {timeframe}",
             )
@@ -1631,10 +1640,17 @@ class MetaLabelingSystem:
                 tactician_timeframe,
             )
 
-            # Combine labels
+            # Combine labels and compute MoE-based weights placeholder
+            label_keys = [k for k, v in analyst_labels.items() if k.isupper() and isinstance(v, (int, float))]
+            intensities = {k: analyst_labels.get(f"intensity_{k}", 0.0) for k in label_keys}
+            moe_confidences: dict[str, float] = {k: 0.5 for k in label_keys}  # placeholder; replace with real MoE output
+            weights = self.compute_label_weights(intensities, moe_confidences)
+
             combined_labels = {
                 "analyst_labels": analyst_labels,
                 "tactician_labels": tactician_labels,
+                "weights": weights,
+                "combined_confidence": float(np.clip(sum(weights.values()), 0.0, 1.0)),
                 "combined_timestamp": pd.Timestamp.now().isoformat(),
                 "total_labels": (
                     analyst_labels.get("label_count", 0)
@@ -1678,3 +1694,254 @@ class MetaLabelingSystem:
             self.logger.info("✅ Meta-Labeling System stopped successfully")
         except Exception as e:
             self.logger.exception(f"Error stopping meta-labeling system: {e}")
+
+    # ===== Intensity Scoring and Thresholding Utilities =====
+
+    def _linear_scale(self, value: float, vmin: float, vmax: float) -> float:
+        if vmax == vmin:
+            return 0.0
+        return float(np.clip((value - vmin) / (vmax - vmin), 0.0, 1.0))
+
+    def _percentile_rank(self, series: pd.Series, value: float) -> float:
+        try:
+            s = series.replace([np.inf, -np.inf], np.nan).dropna()
+            if s.empty:
+                return 0.0
+            prc = float((s <= value).mean())
+            return float(np.clip(prc, 0.0, 1.0))
+        except Exception:
+            return 0.0
+
+    def _compute_label_intensity(
+        self,
+        label_name: str,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        features: dict[str, Any],
+    ) -> float:
+        """Compute a 0-1 intensity score per label using bounded linear scaling and percentile ranking for unbounded metrics."""
+        try:
+            close = price_data["close"]
+            volume = volume_data["volume"] if "volume" in volume_data.columns else pd.Series(index=close.index, dtype=float)
+            # Common series
+            vol_ratio_series = (volume / volume.rolling(20, min_periods=5).mean()).replace([np.inf, -np.inf], np.nan)
+            momentum5_series = close.pct_change(5).rolling(5, min_periods=1).sum()
+
+            if label_name == "STRONG_TREND_CONTINUATION":
+                trend = float(features.get("price_momentum_10", 0.0))
+                bb_pos = float(features.get("bb_position", 0.5))
+                rsi = float(features.get("rsi", 50.0))
+                part_trend = self._percentile_rank(close.pct_change(10), trend)
+                part_bb = 1.0 - abs(bb_pos - 0.5) / 0.5
+                part_rsi = 1.0 - abs((rsi - (self.rsi_oversold + self.rsi_overbought) / 2) / 50.0)
+                return float(np.clip((part_trend + part_bb + part_rsi) / 3.0, 0.0, 1.0))
+
+            if label_name == "EXHAUSTION_REVERSAL":
+                rsi = float(features.get("rsi", 50.0))
+                bb_pos = float(features.get("bb_position", 0.5))
+                momentum = float(features.get("price_momentum_5", 0.0))
+                vol_ratio = float(features.get("volume_ratio", 1.0))
+                part_rsi = self._linear_scale(rsi, self.rsi_overbought, 100.0)
+                part_bb = self._linear_scale(bb_pos, self.bb_edge_high, 1.0)
+                part_mom = self._percentile_rank(-momentum5_series, -momentum)
+                part_vol = self._percentile_rank(vol_ratio_series, vol_ratio)
+                return float(np.clip((part_rsi + part_bb + part_mom + part_vol) / 4.0, 0.0, 1.0))
+
+            if label_name == "RANGE_MEAN_REVERSION":
+                bb_pos = float(features.get("bb_position", 0.5))
+                vol20 = float(features.get("volatility_20", 0.0))
+                mom10 = float(features.get("price_momentum_10", 0.0))
+                part_edge = max(self._linear_scale(self.bb_edge_low - bb_pos, 0.0, self.bb_edge_low), self._linear_scale(bb_pos - self.bb_edge_high, 0.0, 1.0 - self.bb_edge_high))
+                part_vol = 1.0 - self._percentile_rank(close.pct_change().rolling(20).std(), vol20)
+                part_sideways = 1.0 - self._percentile_rank(abs(close.pct_change(10)), abs(mom10))
+                return float(np.clip((part_edge + part_vol + part_sideways) / 3.0, 0.0, 1.0))
+
+            if label_name in ("BREAKOUT_SUCCESS", "BREAKOUT_FAILURE"):
+                momentum = float(features.get("price_momentum_5", 0.0))
+                vol_ratio = float(features.get("volume_ratio", 1.0))
+                part_mom = self._percentile_rank(abs(momentum5_series), abs(momentum))
+                part_vol = self._percentile_rank(vol_ratio_series, vol_ratio)
+                base = float(np.clip((part_mom + part_vol) / 2.0, 0.0, 1.0))
+                return base
+
+            if label_name in ("VOLATILITY_COMPRESSION", "VOLATILITY_EXPANSION"):
+                bb_width = float(features.get("bb_width", 0.0))
+                vol_ratio = float(features.get("volatility_ratio", 1.0))
+                if label_name == "VOLATILITY_COMPRESSION":
+                    part_width = 1.0 - self._percentile_rank(price_data["close"].rolling(20).std(), bb_width)
+                    part_vr = 1.0 - self._linear_scale(vol_ratio, 1.0, 2.0)
+                else:
+                    part_width = self._percentile_rank(price_data["close"].rolling(20).std(), bb_width)
+                    part_vr = self._linear_scale(vol_ratio, 1.0, 2.0)
+                return float(np.clip((part_width + part_vr) / 2.0, 0.0, 1.0))
+
+            if label_name == "MOMENTUM_IGNITION":
+                rsi = float(features.get("rsi", 50.0))
+                macd_hist = float(features.get("macd_histogram", 0.0))
+                momentum = float(features.get("price_momentum_5", 0.0))
+                part_rsi = max(self._linear_scale(rsi, self.rsi_momentum_hi, 100.0), self._linear_scale(100.0 - rsi, self.rsi_momentum_lo, 100.0))
+                part_macd = self._percentile_rank(price_data["close"].ewm(span=12).mean() - price_data["close"].ewm(span=26).mean(), macd_hist)
+                part_mom = self._percentile_rank(abs(momentum5_series), abs(momentum))
+                return float(np.clip((part_rsi + part_macd + part_mom) / 3.0, 0.0, 1.0))
+
+            if label_name == "CAPITULATION_SELLING":
+                p1 = float(close.pct_change(1).iloc[-1]) if len(close) >= 2 else 0.0
+                p3 = float(close.pct_change(3).iloc[-1]) if len(close) >= 4 else 0.0
+                rsi = float(features.get("rsi", 50.0))
+                volr = float(features.get("volume_ratio", 1.0))
+                part_drop = max(self._linear_scale(-p1, 0.0, 0.03), self._linear_scale(-p3, 0.0, 0.05))
+                part_vol = self._percentile_rank(vol_ratio_series, volr)
+                part_rsi = self._linear_scale(30.0 - rsi, 0.0, 30.0)
+                return float(np.clip((part_drop + part_vol + part_rsi) / 3.0, 0.0, 1.0))
+
+            if label_name == "EUPHORIC_BUYING":
+                p1 = float(close.pct_change(1).iloc[-1]) if len(close) >= 2 else 0.0
+                p3 = float(close.pct_change(3).iloc[-1]) if len(close) >= 4 else 0.0
+                rsi = float(features.get("rsi", 50.0))
+                volr = float(features.get("volume_ratio", 1.0))
+                part_up = max(self._linear_scale(p1, 0.0, 0.03), self._linear_scale(p3, 0.0, 0.05))
+                part_vol = self._percentile_rank(vol_ratio_series, volr)
+                part_rsi = self._linear_scale(rsi - 70.0, 0.0, 30.0)
+                return float(np.clip((part_up + part_vol + part_rsi) / 3.0, 0.0, 1.0))
+
+            if label_name == "DULL_MARKET":
+                atr20 = float(features.get("atr_20", features.get("atr", 0.0)))
+                atr100 = float(features.get("atr_100", max(atr20, 1e-12)))
+                ratio = atr20 / max(atr100, 1e-12)
+                return float(np.clip(1.0 - ratio, 0.0, 1.0))
+
+            if label_name == "FAILED_RETEST":
+                # Use proximity to prior extremes and reversal size
+                h = price_data["high"].rolling(50, min_periods=5).max().shift(1)
+                l = price_data["low"].rolling(50, min_periods=5).min().shift(1)
+                cp = float(close.iloc[-1])
+                ph = float(h.iloc[-1]) if not h.empty else cp
+                pl = float(l.iloc[-1]) if not l.empty else cp
+                prox_up = 1.0 - min(abs(cp - ph) / max(ph, 1e-12) / 0.0015, 1.0)
+                prox_dn = 1.0 - min(abs(cp - pl) / max(pl, 1e-12) / 0.0015, 1.0)
+                return float(np.clip(max(prox_up, prox_dn), 0.0, 1.0))
+
+            # Fallback: 1.0 if label present else 0.0
+            return 1.0 if features.get(label_name, 0) else 0.0
+        except Exception:
+            return 0.0
+
+    def compute_intensity_scores(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        features: dict[str, Any],
+        label_names: list[str],
+    ) -> dict[str, float]:
+        scores: dict[str, float] = {}
+        for name in label_names:
+            scores[name] = self._compute_label_intensity(name, price_data, volume_data, features)
+        return scores
+
+    # Activation thresholds and reliability
+    def _init_thresholds_and_reliability(self) -> None:
+        self.activation_thresholds: dict[str, float] = {}
+        self.reliability_scores: dict[str, float] = {}
+        self.default_activation_threshold: float = float(self.pattern_config.get("default_activation_threshold", 0.5))
+
+    def set_activation_threshold(self, label: str, threshold: float) -> None:
+        if not hasattr(self, "activation_thresholds"):
+            self._init_thresholds_and_reliability()
+        self.activation_thresholds[label] = float(np.clip(threshold, 0.0, 1.0))
+
+    def set_reliability_score(self, label: str, reliability: float) -> None:
+        if not hasattr(self, "reliability_scores"):
+            self._init_thresholds_and_reliability()
+        self.reliability_scores[label] = float(np.clip(reliability, 0.0, 1.0))
+
+    def compute_label_weights(
+        self,
+        intensity_scores: dict[str, float],
+        moe_confidences: dict[str, float] | None = None,
+    ) -> dict[str, float]:
+        if not hasattr(self, "reliability_scores"):
+            self._init_thresholds_and_reliability()
+        weights: dict[str, float] = {}
+        for label, intensity in intensity_scores.items():
+            conf = float(np.clip((moe_confidences or {}).get(label, 0.5), 0.0, 1.0))
+            rel = float(np.clip(self.reliability_scores.get(label, 1.0), 0.0, 1.0))
+            weights[label] = float(np.clip(intensity * conf * rel, 0.0, 1.0))
+        return weights
+
+    def fit_activation_thresholds(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        triple_barrier_df: pd.DataFrame,
+        label_names: list[str],
+        thresholds_grid: list[float] | None = None,
+    ) -> dict[str, dict[str, float]]:
+        """Derive activation thresholds per label using triple-barrier outcomes.
+
+        Returns a dict per label with stats: threshold, hit_rate, frequency, profit_factor, avg_return.
+        """
+        try:
+            if thresholds_grid is None:
+                thresholds_grid = [round(x, 2) for x in np.linspace(0.1, 0.9, 9)]
+            # Prepare outcomes and proxy returns if needed
+            labels_series = triple_barrier_df.get("label", pd.Series(index=price_data.index, dtype=float)).reindex(price_data.index).fillna(0).astype(int)
+            # If available, use realized return; else next-bar return as proxy
+            if "tb_return" in triple_barrier_df.columns:
+                ret_series = triple_barrier_df["tb_return"].reindex(price_data.index).fillna(0.0)
+            else:
+                ret_series = price_data["close"].pct_change().shift(-1).reindex(price_data.index).fillna(0.0)
+
+            best: dict[str, dict[str, float]] = {}
+            # Iterate bars to compute intensities
+            for label in label_names:
+                # Score per bar
+                scores: list[float] = []
+                for i in range(len(price_data)):
+                    p_slice = price_data.iloc[: i + 1]
+                    v_slice = volume_data.iloc[: i + 1]
+                    feats = {}
+                    try:
+                        feats.update(self._calculate_technical_indicators(p_slice))
+                        feats.update(self._calculate_volume_features(v_slice))
+                        feats.update(self._calculate_price_action_patterns(p_slice))
+                        feats.update(self._calculate_volatility_patterns(p_slice))
+                        feats.update(self._calculate_momentum_patterns(p_slice))
+                    except Exception:
+                        pass
+                    scores.append(self._compute_label_intensity(label, p_slice, v_slice, feats))
+                scores_series = pd.Series(scores, index=price_data.index)
+
+                # Evaluate thresholds
+                best_threshold = self.default_activation_threshold
+                best_pf = -np.inf
+                best_stats = {"threshold": best_threshold, "hit_rate": 0.0, "frequency": 0.0, "profit_factor": 0.0, "avg_return": 0.0}
+                for thr in thresholds_grid:
+                    triggers = scores_series >= thr
+                    freq = float(triggers.mean())
+                    if freq <= 0:
+                        continue
+                    y = labels_series[triggers]
+                    r = ret_series[triggers]
+                    wins = r[y == 1]
+                    losses = r[y == -1]
+                    hit_rate = float((y == 1).mean()) if len(y) else 0.0
+                    gross = float(wins.clip(lower=0).sum())
+                    loss = float(-losses.clip(upper=0).sum())
+                    profit_factor = (gross / loss) if loss > 0 else (gross if gross > 0 else 0.0)
+                    avg_return = float(r.mean()) if len(r) else 0.0
+                    if profit_factor > best_pf and freq > 0.001:
+                        best_pf = profit_factor
+                        best_threshold = float(thr)
+                        best_stats = {
+                            "threshold": best_threshold,
+                            "hit_rate": float(hit_rate),
+                            "frequency": float(freq),
+                            "profit_factor": float(profit_factor),
+                            "avg_return": float(avg_return),
+                        }
+                self.set_activation_threshold(label, best_threshold)
+                best[label] = best_stats
+            return best
+        except Exception as e:
+            self.logger.warning(f"Activation threshold fitting failed: {e}")
+            return {}

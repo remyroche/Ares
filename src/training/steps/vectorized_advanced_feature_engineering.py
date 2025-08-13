@@ -744,7 +744,7 @@ class VectorizedAdvancedFeatureEngineering:
 
             # Explicit analyst meta-labels at higher timeframe (e.g., 30m)
             try:
-                timeframes = ["1m", "5m", "15m", "30m"]
+                timeframes = ["5m", "15m", "30m"]
                 added_tf: list[str] = []
                 explicit_by_tf: dict[str, dict[str, Any]] = {}
                 for tf in timeframes:

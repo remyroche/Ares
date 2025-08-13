@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
 from sklearn.model_selection import StratifiedKFold
+import pickle
 
 # Import enhanced order manager for tactician order management
 from src.tactician.enhanced_order_manager import (
@@ -1235,6 +1236,8 @@ class MLConfidencePredictor:
         try:
             etm = self.enhanced_training_manager
             if etm is None:
+                # attempt to load from disk if ETM is not provided
+                self._load_label_experts_from_disk()
                 return
             # Models
             if hasattr(etm, "label_expert_models") and isinstance(etm.label_expert_models, dict):
@@ -1260,9 +1263,11 @@ class MLConfidencePredictor:
                     self.label_reliability = etm.get_label_reliability() or {}
                 except Exception:
                     self.label_reliability = {}
-            # Feature specs
-            if hasattr(etm, "label_expert_feature_specs") and isinstance(etm.label_expert_feature_specs, dict):
-                self.label_expert_feature_specs = etm.label_expert_feature_specs
+
+            # Fallback to disk if ETM had nothing
+            if not self.label_expert_models:
+                self._load_label_experts_from_disk()
+
             self.logger.info(
                 {
                     "msg": "Loaded label expert artifacts",
@@ -1271,6 +1276,32 @@ class MLConfidencePredictor:
             )
         except Exception as e:
             self.logger.warning(f"Could not load label expert models: {e}")
+
+    def _load_label_experts_from_disk(self) -> None:
+        """Load label expert models from data_dir/label_experts if present."""
+        import os
+        import pickle
+        base_dir = self.config.get("data_dir", "data/training")
+        experts_dir = os.path.join(base_dir, "label_experts")
+        if not os.path.isdir(experts_dir):
+            return
+        for tf in os.listdir(experts_dir):
+            tf_dir = os.path.join(experts_dir, tf)
+            if not os.path.isdir(tf_dir):
+                continue
+            for fname in os.listdir(tf_dir):
+                if not fname.endswith(".pkl"):
+                    continue
+                path = os.path.join(tf_dir, fname)
+                try:
+                    with open(path, "rb") as f:
+                        model = pickle.load(f)
+                    # expected filename pattern: <LABEL>_<model>.pkl
+                    base = fname[:-4]
+                    label = base.split("_")[0].upper()
+                    self.label_expert_models.setdefault(label, {})[tf] = model
+                except Exception:
+                    continue
 
     def _log_model_loading_summary(self) -> None:
         """Log a summary of all loaded models."""

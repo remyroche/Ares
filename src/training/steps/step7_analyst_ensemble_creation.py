@@ -23,6 +23,7 @@ from src.utils.warning_symbols import (
     missing,
 )
 from src.training.steps.unified_data_loader import get_unified_data_loader
+from src.utils.decorators import guard_dataframe_nulls, enforce_ndarray, guard_array_nan_inf, with_tracing_span
 
 try:
     import joblib  # Optional; used for .joblib artifacts
@@ -92,6 +93,8 @@ class ProximityWeightedEnsemble(DynamicWeightedEnsemble):
         self.cfg = cfg or {}
         self._prev_w: float | None = None
 
+    @with_tracing_span("Step7._compute_sr_weights", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _compute_sr_weights(self, X: pd.DataFrame) -> np.ndarray:
         try:
             tau = float(self.cfg.get("sr_proximity_tau", 0.003))
@@ -109,6 +112,7 @@ class ProximityWeightedEnsemble(DynamicWeightedEnsemble):
         except Exception:
             return np.zeros(len(X))
 
+    @with_tracing_span("Step7.predict_proba", log_args=False)
     def predict_proba(self, X):
         # Compute base probs per model
         probs_per_model = {}

@@ -12,6 +12,7 @@ import numpy as np
 from src.analyst.simple_regime_rules import classify_regime_series
 from src.utils.logger import system_logger
 from src.training.steps.unified_data_loader import get_unified_data_loader
+from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 
 
 def convert_trade_data_to_ohlcv(
@@ -223,6 +224,8 @@ class MarketRegimeClassificationStep:
             "status": "SUCCESS",
         }
 
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @with_tracing_span("MarketRegime._resample_to_timeframe", log_args=False)
     def _resample_to_timeframe(
         self, df: pd.DataFrame, target_timeframe: str
     ) -> pd.DataFrame:

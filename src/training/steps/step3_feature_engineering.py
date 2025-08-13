@@ -9,6 +9,7 @@ import pandas as pd
 from datetime import datetime
 from src.utils.logger import system_logger
 import pickle
+from src.utils.decorators import with_tracing_span, guard_dataframe_nulls
 
 
 async def run_step(
@@ -42,6 +43,8 @@ async def run_step(
             logger.info(f"Loaded labeled {split}: {len(df)} rows")
 
         # 2) Extract OHLCV inputs
+        @with_tracing_span("Step3._extract_inputs", log_args=False)
+        @guard_dataframe_nulls(mode="warn", arg_index=0)
         def _extract_inputs(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             price_cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
             if len(price_cols) < 4:  # expect at least open/high/low/close
@@ -68,6 +71,8 @@ async def run_step(
         X_te = pd.DataFrame(feats_te).reindex(price_te.index)
 
         # 4b) Optionally augment with Autoencoder features
+        @with_tracing_span("Step3._augment_with_autoencoder", log_args=False)
+        @guard_dataframe_nulls(mode="warn", arg_index=0)
         def _augment_with_autoencoder(features_df: pd.DataFrame, split: str) -> pd.DataFrame:
             try:
                 from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
@@ -99,6 +104,8 @@ async def run_step(
             X_te = _augment_with_autoencoder(X_te, "test")
 
         # 5) Basic sanitization: drop constant columns, handle inf/nan
+        @with_tracing_span("Step3._sanitize", log_args=False)
+        @guard_dataframe_nulls(mode="warn", arg_index=0)
         def _sanitize(df: pd.DataFrame) -> pd.DataFrame:
             df = df.replace([np.inf, -np.inf], np.nan)
             nunique = df.nunique(dropna=True)
@@ -113,6 +120,7 @@ async def run_step(
         X_te = _sanitize(X_te)
 
         # 6) Correlation pruning (|rho| >= 0.95) on train; apply to val/test
+        @with_tracing_span("Step3._corr_prune", log_args=False)
         def _corr_prune(train_df: pd.DataFrame, thr: float = 0.95) -> list[str]:
             if train_df.empty:
                 return []
@@ -193,6 +201,7 @@ async def run_step(
         os.makedirs(data_dir, exist_ok=True)
         mem_mgr = MemoryEfficientDataManager()
 
+        @with_tracing_span("Step3._attach_timestamp", log_args=False)
         def _attach_timestamp(df_features: pd.DataFrame, labeled_df: pd.DataFrame) -> pd.DataFrame:
             try:
                 if "timestamp" in labeled_df.columns and "timestamp" not in df_features.columns:
@@ -202,6 +211,8 @@ async def run_step(
                 pass
             return df_features
 
+        @with_tracing_span("Step3._save", log_args=False)
+        @guard_dataframe_nulls(mode="warn", arg_index=1)
         def _save(name: str, df: pd.DataFrame, labeled_df: pd.DataFrame):
             df_out = _attach_timestamp(df, labeled_df)
             path_parquet = f"{data_dir}/{exchange}_{symbol}_features_{name}.parquet"

@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 from src.utils.logger import get_logger
 from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
+from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 
 
 class OptimizedTripleBarrierLabeling:
@@ -67,6 +69,8 @@ class OptimizedTripleBarrierLabeling:
         default_return=pd.DataFrame(),
         context="optimized_triple_barrier_labeling.vectorized",
     )
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @with_tracing_span("TripleBarrier.apply_vectorized", log_args=False)
     def apply_triple_barrier_labeling_vectorized(
         self,
         data: pd.DataFrame,

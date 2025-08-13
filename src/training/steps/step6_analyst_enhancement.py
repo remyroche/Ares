@@ -47,6 +47,7 @@ from src.utils.warning_symbols import (
     initialization_error,
     execution_error,
 )
+from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 from src.training.steps.unified_data_loader import get_unified_data_loader
 
 # Suppress Optuna's verbose logging to keep the output clean
@@ -1115,6 +1116,8 @@ class AnalystEnhancementStep:
             )
             raise
 
+    @with_tracing_span("Step6._create_target_from_data", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _create_target_from_data(self, data: pd.DataFrame, regime_name: str) -> bool:
         """
         Attempts to create a meaningful target column from available data.

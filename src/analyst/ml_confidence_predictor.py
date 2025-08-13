@@ -526,7 +526,7 @@ class MLConfidencePredictor:
                     try:
                         if float(meta_labels.get(k, 0) or 0) > 0:
                             active_meta += 1
-                    except Exception:
+                    except (ValueError, TypeError):
                         continue
             routing = {
                 "route": "generalist" if active_meta == 0 else "experts",

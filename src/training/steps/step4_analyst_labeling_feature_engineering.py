@@ -68,6 +68,7 @@ class AnalystLabelingFeatureEngineeringStep:
         self._PROCESSED_CONTEXT_COLUMNS = [
             "volume_returns",
             "weekly_prev_close",
+            "close_returns",
         ]
         # Metadata/non-feature columns
         self._METADATA_COLUMNS = [
@@ -546,6 +547,13 @@ class AnalystLabelingFeatureEngineeringStep:
             is_at_support.name: is_at_support.fillna(0),
             is_at_resistance.name: is_at_resistance.fillna(0),
             **final_loc,
+            # SR zone-strength meta score (0..1): combine normalized score and band_pct proximity
+            # Not intended as a feature; excluded by _is_non_feature
+            "sr_zone_strength": (
+                0.5 * (pd.Series(final_loc.get("nearest_support_score", pd.Series(0.0, index=df.index))).abs() \
+                       + pd.Series(final_loc.get("nearest_resistance_score", pd.Series(0.0, index=df.index))).abs())
+                .astype(float)
+            ).clip(0, None).fillna(0.0),
         }
 
     def _unified_sr_zones(

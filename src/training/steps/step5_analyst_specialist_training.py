@@ -250,6 +250,10 @@ class AnalystSpecialistTrainingStep:
                             df_meta = df_meta[cols].dropna(subset=["label"]) if "label" in cols else df_meta[cols]
                             if len(df_meta) >= min_rows_per_expert:
                                 expert_datasets[meta] = df_meta.copy()
+                        # Default SR strength source if available
+                        if "sr_zone_strength" in labeled_all.columns:
+                            for k in expert_datasets.keys():
+                                strength_columns.setdefault(k, "sr_zone_strength")
                         dispatcher_manifest["gating"] = {
                             "type": "meta_labels",
                             "weights": strength_columns,  # optional per-meta strength source

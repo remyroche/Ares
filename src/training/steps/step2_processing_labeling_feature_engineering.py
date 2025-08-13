@@ -144,8 +144,8 @@ async def run_step(
             reliability = etm.get_label_reliability()
             with open(f"{data_dir}/{actual_exchange}_{symbol}_label_reliability.json", "w") as f:
                 json.dump(reliability, f, indent=2)
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.warning(f"Label reliability persistence skipped: {e}")
 
         return True
 

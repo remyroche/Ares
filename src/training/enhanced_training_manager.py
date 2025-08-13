@@ -1239,23 +1239,26 @@ class EnhancedTrainingManager:
 
             # Step 6: Analyst Enhancement
             with self._timed_step("Step 6: Analyst Enhancement", step_times):
-                self.logger.info("🔧 STEP 6: Analyst Enhancement...")
+                self.logger.info("🔧 STEP 6: Analyst Enhancement (multi-timeframe)...")
 
                 from src.training.steps import step6_analyst_enhancement
 
-                step6_success = await step6_analyst_enhancement.run_step(
-                    symbol=symbol,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    exchange=exchange,
-                )
-                if not step6_success:
-                    return False
+                analyst_timeframes = ["30m", "15m", "5m"]
+                for tf in analyst_timeframes:
+                    self.logger.info(f"🔧 STEP 6: Analyst Enhancement @ {tf}")
+                    step6_success = await step6_analyst_enhancement.run_step(
+                        symbol=symbol,
+                        data_dir=data_dir,
+                        timeframe=tf,
+                        exchange=exchange,
+                    )
+                    if not step6_success:
+                        return False
 
-                # Run validator for Step 6
-                await self._run_step_validator(
-                    "step6_analyst_enhancement", training_input, pipeline_state
-                )
+                    # Run validator for Step 6 (per timeframe)
+                    await self._run_step_validator(
+                        "step6_analyst_enhancement", {**training_input, "timeframe": tf}, pipeline_state
+                    )
 
             # Step 7: (Obsolete) Analyst Ensemble Creation skipped
 
@@ -1267,7 +1270,7 @@ class EnhancedTrainingManager:
                 step8_success = await step8_tactician_labeling.run_step(
                     symbol=symbol,
                     data_dir=data_dir,
-                    timeframe=timeframe,
+                    timeframe="1m",
                     exchange=exchange,
                 )
                 if not step8_success:
@@ -1275,112 +1278,18 @@ class EnhancedTrainingManager:
 
                 # Run validator for Step 8
                 await self._run_step_validator(
-                    "step8_tactician_labeling", training_input, pipeline_state
+                    "step8_tactician_labeling", {**training_input, "timeframe": "1m"}, pipeline_state
                 )
-
-            # New: Model Training using RayModelTrainer with labeled data from previous steps
-            if self.enable_model_training:
-                with self._timed_step("Model Training (Ray)", step_times):
-                    try:
-                        self.logger.info(
-                            "🧠 MODEL TRAINING (Ray) using labeled data from previous steps..."
-                        )
-                        # Build input for trainer ensuring it has data_dir and required fields
-                        trainer_input = {
-                            "symbol": symbol,
-                            "exchange": exchange,
-                            "timeframe": timeframe,
-                            "lookback_days": self.lookback_days,
-                            "data_dir": data_dir,
-                        }
-
-                        # Config-driven HPO parameters (optional)
-                        model_trainer_cfg = self.config.get("model_trainer", {})
-                        use_hpo_val = model_trainer_cfg.get("use_hpo", True)
-                        use_hpo: bool = (
-                            str(use_hpo_val).lower() in ("true", "1", "yes")
-                            if isinstance(use_hpo_val, str)
-                            else bool(use_hpo_val)
-                        )
-                        hpo_trials: int = int(model_trainer_cfg.get("hpo_trials", 25))
-                        hpo_model_type: str = str(
-                            model_trainer_cfg.get("hpo_model_type", "random_forest")
-                        )
-
-                        # Initialize trainer
-                        trainer = None
-                        try:
-                            trainer = setup_model_trainer(self.config)
-                            if trainer is None:
-                                self.logger.error(
-                                    "❌ Failed to setup Ray model trainer"
-                                )
-                                return False
-
-                            # Run training in a worker thread to avoid blocking the event loop
-                            training_results = await asyncio.to_thread(
-                                trainer.train_models,
-                                trainer_input,
-                                use_hpo,
-                                hpo_trials,
-                                hpo_model_type,
-                            )
-
-                            if not training_results:
-                                self.logger.error(
-                                    "❌ Ray model training returned no results"
-                                )
-                                return False
-                        finally:
-                            # Ensure cleanup of Ray regardless of success
-                            if trainer is not None:
-                                try:
-                                    trainer.stop()
-                                except Exception as e:
-                                    self.logger.warning(f"Trainer cleanup warning: {e}")
-
-                        # Store results in pipeline state and manager results
-                        pipeline_state["ray_model_training"] = {
-                            "status": "SUCCESS",
-                            "results_summary": {
-                                "tactician_models_trained": len(
-                                    training_results.get("tactician_models", {})
-                                ),
-                                "timestamp": training_results.get("training_timestamp"),
-                            },
-                        }
-                        # Merge into enhanced training results
-                        self.enhanced_training_results.setdefault("model_training", {})
-                        self.enhanced_training_results["model_training"].update(
-                            training_results
-                        )
-
-                        # Save checkpoint after model training
-                        self._save_checkpoint("model_training_ray", pipeline_state)
-                        self.logger.info(
-                            "✅ Model training (Ray) completed and checkpoint saved"
-                        )
-                    except Exception as e:
-                        self.logger.error(f"❌ Model training (Ray) failed: {e}")
-                        return False
-            else:
-                self.logger.info(
-                    "⏭️  Skipping Model Training (Ray) — disabled via configuration"
-                )
-                pipeline_state["ray_model_training"] = {
-                    "status": "SKIPPED",
-                    "reason": "enable_model_training is False",
-                }
 
             # Step 9: Tactician Specialist Training
             with self._timed_step("Step 9: Tactician Specialist Training", step_times):
-                self.logger.info("🧠 STEP 9: Tactician Specialist Training...")
+                self.logger.info("🎯 STEP 9: Tactician Specialist Training...")
                 from src.training.steps import step9_tactician_specialist_training
 
                 step9_success = await step9_tactician_specialist_training.run_step(
                     symbol=symbol,
                     data_dir=data_dir,
-                    timeframe=timeframe,
+                    timeframe="1m",
                     exchange=exchange,
                 )
                 if not step9_success:
@@ -1388,9 +1297,7 @@ class EnhancedTrainingManager:
 
                 # Run validator for Step 9
                 await self._run_step_validator(
-                    "step9_tactician_specialist_training",
-                    training_input,
-                    pipeline_state,
+                    "step9_tactician_specialist_training", {**training_input, "timeframe": "1m"}, pipeline_state
                 )
 
             # Step 10: (Obsolete) Tactician Ensemble Creation skipped

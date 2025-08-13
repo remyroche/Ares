@@ -17,6 +17,7 @@ from src.utils.warning_symbols import (
     failed,
 )
 from src.training.steps.unified_data_loader import get_unified_data_loader
+from src.utils.decorators import guard_dataframe_nulls
 
 
 class TacticianSpecialistTrainingStep:
@@ -346,6 +347,8 @@ class TacticianSpecialistTrainingStep:
                         if dt_cols:
                             df = df.drop(columns=dt_cols)
                         return df
+                    # Decorate post-definition to preserve closure
+                    _ensure_numeric = guard_dataframe_nulls(mode="warn", arg_index=0)(_ensure_numeric)
                     X_all = _ensure_numeric(labeled_data.drop(columns=[c for c in ["label"] if c in labeled_data.columns], errors="ignore")).select_dtypes(include=[np.number])
                     for name, model in sr_models.items():
                         try:

@@ -731,6 +731,8 @@ class TacticianSpecialistTrainingStep:
             # Lightweight HPO for XGBoost (subsampled)
             try:
                 import optuna
+                from src.utils.purged_kfold import PurgedKFoldTime
+                from sklearn.metrics import f1_score
 
                 def _objective(trial: optuna.Trial) -> float:
                     params = dict(
@@ -749,16 +751,18 @@ class TacticianSpecialistTrainingStep:
                         tree_method="hist",
                         verbosity=0,
                     )
-                    # Subsample for speed
-                    frac = min(1.0, 20000 / max(1, len(X_train)))
-                    Xs = X_train.sample(frac=frac, random_state=42) if frac < 1.0 else X_train
-                    ys = y_train.loc[Xs.index]
-                    model.fit(Xs, ys)
-                    # Use holdout for eval
-                    pred = model.predict(X_test)
-                    return float((pred == y_test).mean())
+                    # Time-aware CV with purged/embargoed folds and financial surrogate
+                    cv = PurgedKFoldTime(n_splits=3, purge=pd.Timedelta(minutes=15), embargo=pd.Timedelta(minutes=10))
+                    scores = []
+                    for tr_idx, va_idx in cv.split(X_train):
+                        Xs, Xv = X_train.iloc[tr_idx], X_train.iloc[va_idx]
+                        ys, yv = y_train.iloc[tr_idx], y_train.iloc[va_idx]
+                        model.fit(Xs, ys)
+                        pred = model.predict(Xv)
+                        scores.append(f1_score(yv, pred, average="binary", pos_label=1))
+                    return float(np.mean(scores))
 
-                study = optuna.create_study(direction="maximize", pruner=optuna.pruners.MedianPruner(n_warmup_steps=5))
+                study = optuna.create_study(direction="maximize")
                 study.optimize(_objective, n_trials=15)
                 best_params = study.best_params
             except Exception:
@@ -850,6 +854,8 @@ class TacticianSpecialistTrainingStep:
             from catboost import CatBoostClassifier
             import optuna
             from sklearn.metrics import accuracy_score
+            from src.utils.purged_kfold import PurgedKFoldTime
+            from sklearn.metrics import f1_score
 
             def _objective(trial: optuna.Trial) -> float:
                 params = dict(
@@ -861,13 +867,15 @@ class TacticianSpecialistTrainingStep:
                     verbose=False,
                 )
                 model = CatBoostClassifier(**params)
-                # Subsample for speed
-                frac = min(1.0, 20000 / max(1, len(X_train)))
-                Xs = X_train.sample(frac=frac, random_state=42) if frac < 1.0 else X_train
-                ys = y_train.loc[Xs.index]
-                model.fit(Xs, ys)
-                pred = model.predict(X_test)
-                return float((pred == y_test).mean())
+                cv = PurgedKFoldTime(n_splits=3, purge=pd.Timedelta(minutes=15), embargo=pd.Timedelta(minutes=10))
+                scores = []
+                for tr_idx, va_idx in cv.split(X_train):
+                    Xs, Xv = X_train.iloc[tr_idx], X_train.iloc[va_idx]
+                    ys, yv = y_train.iloc[tr_idx], y_train.iloc[va_idx]
+                    model.fit(Xs, ys)
+                    pred = model.predict(Xv)
+                    scores.append(f1_score(yv, pred, average="binary", pos_label=1))
+                return float(np.mean(scores))
 
             study = optuna.create_study(direction="maximize")
             study.optimize(_objective, n_trials=15)

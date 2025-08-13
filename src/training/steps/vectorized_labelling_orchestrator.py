@@ -98,6 +98,7 @@ class VectorizedLabellingOrchestrator:
         self.lightgbm_importance_threshold = self.feature_selection_config.get("lightgbm_importance_threshold", 0.01)
 
         # Multi-timeframe configuration
+        # Limit explicit meta-label timeframes at source; full feature MTF can keep 1m
         self.timeframes = ["1m", "5m", "15m", "30m"]
 
         # Initialize components

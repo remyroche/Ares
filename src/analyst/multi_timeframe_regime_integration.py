@@ -3,16 +3,13 @@
 """
 Multi-Timeframe Regime Integration
 
-This module integrates the HMM regime classifier (which operates only on 1h timeframe)
+This module integrates the Meta-Labeling System for regime context (dominant meta-label)
 with the multi-timeframe system. It ensures that:
 
-1. Regime classification is done ONLY on 1h timeframe (strategic level)
-2. The regime information is propagated to all other timeframes
-3. Each timeframe can use the regime information for its specific predictions
-4. The regime information is consistent across all timeframes
-
-This follows the principle that there should be only ONE regime classification
-based on the 1-hour timeframe, which represents the macro trend.
+1. Regime context selection is performed on the strategic timeframe (default 1h)
+2. The selected label context is propagated to other timeframes
+3. Each timeframe can access consistent regime context for its specific predictions
+4. The regime context is consistent across all timeframes
 """
 
 import os
@@ -27,7 +24,7 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
+from src.analyst.meta_labeling_system import MetaLabelingSystem
 from src.config import CONFIG
 from src.training.steps.analyst_training_components.regime_specific_tpsl_optimizer import (
     RegimeSpecificTPSLOptimizer,
@@ -44,12 +41,12 @@ from src.utils.warning_symbols import (
 
 class MultiTimeframeRegimeIntegration:
     """
-    Integrates HMM regime classification with multi-timeframe system.
+    Integrates meta-label regime context with multi-timeframe system.
 
     This class ensures that:
-    - Regime classification is done only on 1h timeframe
-    - Regime information is propagated to all timeframes
-    - Each timeframe can access consistent regime information
+    - Regime context selection is done on the strategic timeframe (default 1h)
+    - Context is propagated to all timeframes
+    - Each timeframe can access consistent context information
     - Regime-specific optimizations are available across timeframes
     """
 
@@ -62,9 +59,10 @@ class MultiTimeframeRegimeIntegration:
         """
         self.config = config
         self.logger = system_logger.getChild("MultiTimeframeRegimeIntegration")
+        self.print = self.logger.info
 
-        # Initialize Unified regime classifier (1h only)
-        self.regime_classifier = UnifiedRegimeClassifier(config)
+        # Initialize Meta-Labeling system (strategic level)
+        self.meta_labeling_system = MetaLabelingSystem(config)
 
         # Initialize regime-specific TP/SL optimizer
         self.regime_tpsl_optimizer = RegimeSpecificTPSLOptimizer(config)
@@ -77,6 +75,33 @@ class MultiTimeframeRegimeIntegration:
             [],
         )
 
+        # Regime context selection settings
+        self.regime_propagation_config = config.get(
+            "multi_timeframe_regime_integration",
+            {},
+        )
+        self.analysis_timeframe: str = self.regime_propagation_config.get(
+            "analysis_timeframe",
+            "1h",
+        )
+        self.candidate_labels: list[str] = self.regime_propagation_config.get(
+            "candidate_labels",
+            [
+                "STRONG_TREND_CONTINUATION",
+                "EXHAUSTION_REVERSAL",
+                "RANGE_MEAN_REVERSION",
+                "BREAKOUT_SUCCESS",
+                "BREAKOUT_FAILURE",
+                "MOMENTUM_IGNITION",
+                "VOLATILITY_COMPRESSION",
+                "VOLATILITY_EXPANSION",
+                "SR_TOUCH",
+                "SR_BOUNCE",
+                "SR_BREAK",
+                "IGNITION_BAR",
+            ],
+        )
+
         # Regime cache
         self.current_regime: str | None = None
         self.regime_confidence: float = 0.0
@@ -87,10 +112,6 @@ class MultiTimeframeRegimeIntegration:
         )  # Cache regime for 15 minutes
 
         # Regime propagation settings
-        self.regime_propagation_config = config.get(
-            "multi_timeframe_regime_integration",
-            {},
-        )
         self.enable_regime_propagation = self.regime_propagation_config.get(
             "enable_propagation",
             True,
@@ -102,7 +123,7 @@ class MultiTimeframeRegimeIntegration:
 
         self.logger.info("🚀 Initialized MultiTimeframeRegimeIntegration")
         self.logger.info(f"📊 Active timeframes: {self.active_timeframes}")
-        self.logger.info("⏰ Strategic timeframe: 1h (regime classification only)")
+        self.logger.info(f"⏰ Strategic timeframe: {self.analysis_timeframe} (regime context)")
 
     @handle_specific_errors(
         error_handlers={
@@ -125,9 +146,9 @@ class MultiTimeframeRegimeIntegration:
         try:
             self.logger.info("Initializing Multi-Timeframe Regime Integration...")
 
-            # Initialize HMM classifier
-            if not await self._initialize_regime_classifier():
-                self.print(failed("Failed to initialize HMM classifier"))
+            # Initialize Meta-Labeling system
+            if not await self._initialize_meta_label_system():
+                self.print(failed("Failed to initialize Meta-Labeling system"))
                 return False
 
             # Initialize regime-specific TP/SL optimizer
@@ -148,34 +169,22 @@ class MultiTimeframeRegimeIntegration:
             )
             return False
 
-    async def _initialize_regime_classifier(self) -> bool:
+    async def _initialize_meta_label_system(self) -> bool:
         """
-        Initialize the HMM regime classifier.
+        Initialize the MetaLabelingSystem.
 
         Returns:
             bool: True if initialization successful, False otherwise
         """
         try:
-            # Try to load existing HMM model
-            model_path = os.path.join(
-                CONFIG["CHECKPOINT_DIR"],
-                "analyst_models",
-                "hmm_regime_classifier_1h.joblib",
-            )
-
-            if os.path.exists(model_path):
-                if self.regime_classifier.load_models():
-                    self.logger.info("✅ Loaded existing HMM regime classifier")
-                    return True
-                self.print(failed("Failed to load existing HMM model"))
-
-            self.logger.info(
-                "HMM classifier not trained yet, will be trained when 1h data is available",
-            )
-            return True
-
+            ok = await self.meta_labeling_system.initialize()
+            if ok:
+                self.logger.info("✅ Meta-Labeling system initialized for regime context")
+                return True
+            self.print(failed("Meta-Labeling system failed to initialize"))
+            return False
         except Exception:
-            self.print(initialization_error("Error initializing HMM classifier: {e}"))
+            self.print(initialization_error("Error initializing Meta-Labeling system: {e}"))
             return False
 
     @handle_errors(
@@ -188,16 +197,16 @@ class MultiTimeframeRegimeIntegration:
         data_1h: pd.DataFrame,
     ) -> tuple[str, float, dict[str, Any]]:
         """
-        Classify market regime using 1h timeframe data only.
+        Select dominant meta-label regime context using strategic timeframe data.
 
         Args:
-            data_1h: 1-hour timeframe data
+            data_1h: 1-hour timeframe data (used as strategic timeframe by default)
 
         Returns:
-            Tuple of (regime, confidence, additional_info)
+            Tuple of (regime_label, confidence, additional_info)
         """
         try:
-            # Validate that we have 1h data
+            # Validate that we have 1h-like data
             if not self._validate_1h_data(data_1h):
                 self.logger.warning(
                     "Invalid 1h data provided for regime classification",
@@ -210,18 +219,38 @@ class MultiTimeframeRegimeIntegration:
 
             # Check if we need to update regime (cache management)
             if self._should_update_regime():
-                regime, confidence, info = self.regime_classifier.predict_regime(
-                    data_1h,
+                labels = await self.meta_labeling_system.generate_analyst_labels(
+                    price_data=data_1h,
+                    volume_data=data_1h,
+                    timeframe=self.analysis_timeframe,
                 )
+                intensities: dict[str, float] = {}
+                actives: dict[str, int] = {}
+                for label in self.candidate_labels:
+                    intensities[label] = float(labels.get(f"intensity_{label}", 0.0))
+                    actives[label] = int(labels.get(f"active_{label}", labels.get(label, 0)))
+                best_label = max(
+                    self.candidate_labels,
+                    key=lambda k: (intensities.get(k, 0.0), actives.get(k, 0)),
+                    default="SIDEWAYS_RANGE",
+                )
+                confidence = float(intensities.get(best_label, 0.0))
+                top3 = sorted(((k, intensities.get(k, 0.0)) for k in self.candidate_labels), key=lambda x: x[1], reverse=True)[:3]
+                info = {
+                    "method": "meta_labeling",
+                    "timeframe": self.analysis_timeframe,
+                    "top3": top3,
+                    "actives": {k: actives.get(k, 0) for k in self.candidate_labels},
+                }
 
                 # Update cache
-                self.current_regime = regime
+                self.current_regime = best_label
                 self.regime_confidence = confidence
                 self.regime_info = info
                 self.last_regime_update = datetime.now()
 
                 self.logger.info(
-                    f"🔄 Updated regime classification: {regime} (confidence: {confidence:.2f})",
+                    f"🔄 Updated regime context: {best_label} (confidence: {confidence:.2f})",
                 )
             else:
                 self.logger.info(
@@ -287,19 +316,19 @@ class MultiTimeframeRegimeIntegration:
         """
         Get regime information for a specific timeframe.
 
-        This ensures that all timeframes use the same regime classification
-        (from 1h) but can access it in a timeframe-specific context.
+        This ensures that all timeframes use the same regime context
+        (selected from strategic timeframe) but can access it in a timeframe-specific context.
 
         Args:
             timeframe: Target timeframe (1m, 5m, 15m, 1h)
             current_data: Current data for the target timeframe
-            data_1h: 1-hour data for regime classification
+            data_1h: 1-hour data for regime context selection
 
         Returns:
             Dictionary with regime information for the timeframe
         """
         try:
-            # Get regime classification from 1h data
+            # Get regime classification from strategic timeframe data
             regime, confidence, regime_info = await self.classify_regime_1h(data_1h)
 
             # Create timeframe-specific regime information
@@ -308,20 +337,20 @@ class MultiTimeframeRegimeIntegration:
                 "confidence": confidence,
                 "regime_info": regime_info,
                 "timeframe": timeframe,
-                "strategic_timeframe": "1h",
-                "regime_source": "1h_unified_classifier",
+                "strategic_timeframe": self.analysis_timeframe,
+                "regime_source": "meta_labeling_system",
                 "timestamp": datetime.now().isoformat(),
             }
 
             # Add timeframe-specific adjustments if needed
-            if timeframe != "1h":
+            if timeframe != self.analysis_timeframe:
                 timeframe_regime_info.update(
                     {
                         "timeframe_adjustment": self._get_timeframe_adjustment(
                             timeframe,
                             regime,
                         ),
-                        "propagation_method": "cached_from_1h",
+                        "propagation_method": "cached_from_strategic",
                     },
                 )
 
@@ -339,7 +368,7 @@ class MultiTimeframeRegimeIntegration:
                 "confidence": 0.5,
                 "regime_info": {"method": "fallback", "error": str(e)},
                 "timeframe": timeframe,
-                "strategic_timeframe": "1h",
+                "strategic_timeframe": self.analysis_timeframe,
                 "regime_source": "fallback",
             }
 
@@ -349,60 +378,54 @@ class MultiTimeframeRegimeIntegration:
 
         Args:
             timeframe: Target timeframe
-            regime: Current regime
+            regime: Current regime (dominant meta-label)
 
         Returns:
             Dictionary with timeframe-specific adjustments
         """
-        # Define timeframe-specific adjustments based on regime
+        # Define timeframe-specific adjustments based on meta-label regime
         adjustments = {
             "1m": {
-                "BULL_TREND": {"volatility_multiplier": 1.5, "momentum_threshold": 0.8},
-                "BEAR_TREND": {"volatility_multiplier": 1.5, "momentum_threshold": 0.8},
-                "SIDEWAYS_RANGE": {
-                    "volatility_multiplier": 1.0,
-                    "momentum_threshold": 0.5,
-                },
-                "SR_ZONE_ACTION": {
-                    "volatility_multiplier": 1.2,
-                    "momentum_threshold": 0.7,
-                },
-                "HIGH_IMPACT_CANDLE": {
-                    "volatility_multiplier": 2.0,
-                    "momentum_threshold": 0.9,
-                },
+                "STRONG_TREND_CONTINUATION": {"volatility_multiplier": 1.5, "momentum_threshold": 0.85},
+                "EXHAUSTION_REVERSAL": {"volatility_multiplier": 1.4, "momentum_threshold": 0.6},
+                "RANGE_MEAN_REVERSION": {"volatility_multiplier": 0.9, "momentum_threshold": 0.45},
+                "BREAKOUT_SUCCESS": {"volatility_multiplier": 1.6, "momentum_threshold": 0.9},
+                "BREAKOUT_FAILURE": {"volatility_multiplier": 1.2, "momentum_threshold": 0.55},
+                "MOMENTUM_IGNITION": {"volatility_multiplier": 1.8, "momentum_threshold": 0.95},
+                "VOLATILITY_COMPRESSION": {"volatility_multiplier": 0.8, "momentum_threshold": 0.4},
+                "VOLATILITY_EXPANSION": {"volatility_multiplier": 1.7, "momentum_threshold": 0.85},
+                "SR_TOUCH": {"volatility_multiplier": 1.1, "momentum_threshold": 0.6},
+                "SR_BOUNCE": {"volatility_multiplier": 1.2, "momentum_threshold": 0.65},
+                "SR_BREAK": {"volatility_multiplier": 1.4, "momentum_threshold": 0.8},
+                "IGNITION_BAR": {"volatility_multiplier": 2.0, "momentum_threshold": 0.95},
             },
             "5m": {
-                "BULL_TREND": {"volatility_multiplier": 1.3, "momentum_threshold": 0.7},
-                "BEAR_TREND": {"volatility_multiplier": 1.3, "momentum_threshold": 0.7},
-                "SIDEWAYS_RANGE": {
-                    "volatility_multiplier": 1.0,
-                    "momentum_threshold": 0.5,
-                },
-                "SR_ZONE_ACTION": {
-                    "volatility_multiplier": 1.1,
-                    "momentum_threshold": 0.6,
-                },
-                "HIGH_IMPACT_CANDLE": {
-                    "volatility_multiplier": 1.8,
-                    "momentum_threshold": 0.8,
-                },
+                "STRONG_TREND_CONTINUATION": {"volatility_multiplier": 1.3, "momentum_threshold": 0.75},
+                "EXHAUSTION_REVERSAL": {"volatility_multiplier": 1.25, "momentum_threshold": 0.55},
+                "RANGE_MEAN_REVERSION": {"volatility_multiplier": 0.95, "momentum_threshold": 0.5},
+                "BREAKOUT_SUCCESS": {"volatility_multiplier": 1.4, "momentum_threshold": 0.8},
+                "BREAKOUT_FAILURE": {"volatility_multiplier": 1.15, "momentum_threshold": 0.5},
+                "MOMENTUM_IGNITION": {"volatility_multiplier": 1.6, "momentum_threshold": 0.9},
+                "VOLATILITY_COMPRESSION": {"volatility_multiplier": 0.85, "momentum_threshold": 0.45},
+                "VOLATILITY_EXPANSION": {"volatility_multiplier": 1.5, "momentum_threshold": 0.8},
+                "SR_TOUCH": {"volatility_multiplier": 1.05, "momentum_threshold": 0.55},
+                "SR_BOUNCE": {"volatility_multiplier": 1.1, "momentum_threshold": 0.6},
+                "SR_BREAK": {"volatility_multiplier": 1.3, "momentum_threshold": 0.75},
+                "IGNITION_BAR": {"volatility_multiplier": 1.8, "momentum_threshold": 0.9},
             },
             "15m": {
-                "BULL_TREND": {"volatility_multiplier": 1.1, "momentum_threshold": 0.6},
-                "BEAR_TREND": {"volatility_multiplier": 1.1, "momentum_threshold": 0.6},
-                "SIDEWAYS_RANGE": {
-                    "volatility_multiplier": 1.0,
-                    "momentum_threshold": 0.5,
-                },
-                "SR_ZONE_ACTION": {
-                    "volatility_multiplier": 1.05,
-                    "momentum_threshold": 0.55,
-                },
-                "HIGH_IMPACT_CANDLE": {
-                    "volatility_multiplier": 1.5,
-                    "momentum_threshold": 0.7,
-                },
+                "STRONG_TREND_CONTINUATION": {"volatility_multiplier": 1.15, "momentum_threshold": 0.65},
+                "EXHAUSTION_REVERSAL": {"volatility_multiplier": 1.1, "momentum_threshold": 0.5},
+                "RANGE_MEAN_REVERSION": {"volatility_multiplier": 1.0, "momentum_threshold": 0.5},
+                "BREAKOUT_SUCCESS": {"volatility_multiplier": 1.25, "momentum_threshold": 0.7},
+                "BREAKOUT_FAILURE": {"volatility_multiplier": 1.05, "momentum_threshold": 0.5},
+                "MOMENTUM_IGNITION": {"volatility_multiplier": 1.5, "momentum_threshold": 0.85},
+                "VOLATILITY_COMPRESSION": {"volatility_multiplier": 0.9, "momentum_threshold": 0.5},
+                "VOLATILITY_EXPANSION": {"volatility_multiplier": 1.35, "momentum_threshold": 0.7},
+                "SR_TOUCH": {"volatility_multiplier": 1.0, "momentum_threshold": 0.55},
+                "SR_BOUNCE": {"volatility_multiplier": 1.05, "momentum_threshold": 0.6},
+                "SR_BREAK": {"volatility_multiplier": 1.2, "momentum_threshold": 0.7},
+                "IGNITION_BAR": {"volatility_multiplier": 1.6, "momentum_threshold": 0.85},
             },
         }
 
@@ -429,7 +452,7 @@ class MultiTimeframeRegimeIntegration:
         Args:
             timeframe: Target timeframe
             current_data: Current data for the timeframe
-            data_1h: 1-hour data for regime classification
+            data_1h: 1-hour data for regime context selection
             historical_data: Historical data for optimization
 
         Returns:
@@ -479,35 +502,16 @@ class MultiTimeframeRegimeIntegration:
 
     async def train_regime_classifier(self, historical_data_1h: pd.DataFrame) -> bool:
         """
-        Train the HMM classifier using 1h historical data.
-
-        Args:
-            historical_data_1h: Historical 1h data for training
-
-        Returns:
-            bool: True if training successful, False otherwise
+        Deprecated: HMM regime classifier training.
+        The meta-labeling system does not require training here.
         """
         try:
-            self.logger.info("🎓 Training HMM regime classifier with 1h data...")
-
-            if not self._validate_1h_data(historical_data_1h):
-                self.print(invalid("Invalid 1h data provided for training"))
-                return False
-
-            success = await self.regime_classifier.train_complete_system(
-                historical_data_1h,
+            self.logger.info(
+                "HMM regime classifier is deprecated; using Meta-Labeling system for regime context",
             )
-
-            if success:
-                self.logger.info("✅ HMM regime classifier trained successfully")
-                # Save the model
-                # Model saving is handled automatically by UnifiedRegimeClassifier
-                return True
-            self.print(failed("❌ Failed to train HMM regime classifier"))
-            return False
-
+            return True
         except Exception:
-            self.print(error("Error training HMM classifier: {e}"))
+            self.print(error("Error in deprecated training stub: {e}"))
             return False
 
     def get_integration_statistics(self) -> dict[str, Any]:
@@ -521,10 +525,9 @@ class MultiTimeframeRegimeIntegration:
             "current_regime": self.current_regime,
             "regime_confidence": self.regime_confidence,
             "last_regime_update": self.last_regime_update,
-            "regime_trained": self.regime_classifier.trained,
-            "active_timeframes": self.active_timeframes,
-            "strategic_timeframe": "1h",
-            "regime_cache_duration_minutes": self.regime_cache_duration.total_seconds()
-            / 60,
+            "meta_label_system_initialized": getattr(self.meta_labeling_system, "is_initialized", False),
+            "candidate_labels": self.candidate_labels,
+            "strategic_timeframe": self.analysis_timeframe,
+            "regime_cache_duration_minutes": self.regime_cache_duration.total_seconds() / 60,
             "regime_tpsl_optimizer_stats": self.regime_tpsl_optimizer.get_regime_statistics(),
         }

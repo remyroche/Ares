@@ -129,6 +129,23 @@ class TacticianSpecialistTrainingStep:
                                     snapshot_version="v1",
                                     ttl_seconds=3600,
                                     batch_size=131072,
+                                    arrow_transform=lambda tbl: (
+                                        (lambda _pa, pc: (
+                                            tbl.set_column(
+                                                tbl.schema.get_field_index("timestamp"),
+                                                "timestamp",
+                                                pc.cast(tbl.column("timestamp"), _pa.int64()),
+                                            )
+                                            if (
+                                                "timestamp" in tbl.schema.names
+                                                and not _pa.types.is_int64(tbl.schema.field("timestamp").type)
+                                            )
+                                            else tbl
+                                        ))(
+                                            __import__("pyarrow"),
+                                            __import__("pyarrow.compute"),
+                                        )
+                                    ),
                                 )
                             else:
                                 cache_key = f"labeled_{exchange}_{symbol}_{training_input.get('timeframe','1m')}_train"
@@ -144,39 +161,23 @@ class TacticianSpecialistTrainingStep:
                                         ttl_seconds=3600,
                                         batch_size=131072,
                                         arrow_transform=lambda tbl: (
-                                            (lambda _t: _t)(
-                                                (
-                                                    _t := tbl,
-                                                    (
-                                                        _t := _t.set_column(
-                                                            _t.schema.get_field_index(
-                                                                "timestamp"
-                                                            ),
-                                                            "timestamp",
-                                                            pc.cast(
-                                                                _t.column("timestamp"),
-                                                                _pa.int64(),
-                                                            ),
-                                                        )
-                                                    )
-                                                    if (
-                                                        "timestamp" in _t.schema.names
-                                                        and not _pa.types.is_int64(
-                                                            _t.schema.field(
-                                                                "timestamp"
-                                                            ).type
-                                                        )
-                                                    )
-                                                    else None,
-                                                    _t,
+                                            (lambda _pa, pc: (
+                                                tbl.set_column(
+                                                    tbl.schema.get_field_index("timestamp"),
+                                                    "timestamp",
+                                                    pc.cast(tbl.column("timestamp"), _pa.int64()),
                                                 )
-                                            )(
+                                                if (
+                                                    "timestamp" in tbl.schema.names
+                                                    and not _pa.types.is_int64(tbl.schema.field("timestamp").type)
+                                                )
+                                                else tbl
+                                            ))(
                                                 __import__("pyarrow"),
                                                 __import__("pyarrow.compute"),
                                             )
-                                        )
-                                    ),
-                                )
+                                        ),
+                                    )
                         else:
                             try:
                                 feat_cols = training_input.get(

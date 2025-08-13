@@ -1845,25 +1845,20 @@ class AnalystLabelingFeatureEngineeringStep:
             try:
                 # Column-level hierarchy classification and meta-label MI diagnostics
                 try:
-                    def _column_level(name: str) -> str:
+                    def _get_column_level(name: str) -> str:
                         n = name.lower()
                         if name in self._RAW_CONTEXT_COLUMNS:
                             return "L0_raw"
                         if name in getattr(self, "_PROCESSED_CONTEXT_COLUMNS", []):
                             return "L1_processed"
-                        if (
-                            n.startswith("sr_")
-                            or "support" in n
-                            or "resistance" in n
-                            or "pivot" in n
-                        ):
+                        if n.startswith("sr_") or "support" in n or "resistance" in n or "pivot" in n:
                             return "L2_meta"
                         if name == self._LABEL_NAME or name in self._METADATA_COLUMNS:
                             return "metadata_or_label"
                         return "L3_engineered"
                     levels = {"L0_raw": [], "L1_processed": [], "L2_meta": [], "L3_engineered": [], "metadata_or_label": []}
                     for col in labeled_data.columns:
-                        lvl = _column_level(col)
+                        lvl = _get_column_level(col)
                         levels.setdefault(lvl, []).append(col)
                     # Persist classification for traceability
                     try:
@@ -1871,8 +1866,8 @@ class AnalystLabelingFeatureEngineeringStep:
                         with open(f"{data_dir}/{exchange}_{symbol}_column_levels.json", "w") as jf:
                             json.dump(levels, jf, indent=2)
                         self.logger.info(f"Saved column level classification to {data_dir}/{exchange}_{symbol}_column_levels.json")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self.logger.warning(f"Could not persist column level classification: {e}")
                     # Meta-label MI diagnostics (L2_meta vs. target label)
                     try:
                         meta_cols = [c for c in levels.get("L2_meta", []) if c in labeled_data.columns]
@@ -1891,8 +1886,8 @@ class AnalystLabelingFeatureEngineeringStep:
                                 json.dump({"mi": meta_mi.to_dict()}, jf, indent=2)
                     except Exception as _emi:
                         self.logger.warning(f"Meta-label MI diagnostics failed: {_emi}")
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.warning(f"Column-level hierarchy classification and MI diagnostics failed: {e}")
 
                 # Exclude raw/context/meta and known label-like columns from feature selection
                 def _is_non_feature(col: str) -> bool:
@@ -2207,19 +2202,8 @@ class AnalystLabelingFeatureEngineeringStep:
                     def _classify_levels(cols: list[str]) -> dict[str, list[str]]:
                         levels: dict[str, list[str]] = {"L0_raw": [], "L1_processed": [], "L2_meta": [], "L3_engineered": [], "metadata_or_label": []}
                         for name in cols:
-                            n = name.lower()
-                            if name in self._RAW_CONTEXT_COLUMNS:
-                                levels["L0_raw"].append(name)
-                            elif name in getattr(self, "_PROCESSED_CONTEXT_COLUMNS", []):
-                                levels["L1_processed"].append(name)
-                            elif (
-                                n.startswith("sr_") or "support" in n or "resistance" in n or "pivot" in n
-                            ):
-                                levels["L2_meta"].append(name)
-                            elif name == self._LABEL_NAME or name in self._METADATA_COLUMNS:
-                                levels["metadata_or_label"].append(name)
-                            else:
-                                levels["L3_engineered"].append(name)
+                            lvl = _get_column_level(name)
+                            levels.setdefault(lvl, []).append(name)
                         return levels
                     for split_name, cols in selected_features.items():
                         lvl_path = f"{data_dir}/{exchange}_{symbol}_{split_name}_column_levels.json"

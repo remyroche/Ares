@@ -211,7 +211,7 @@ async def run_step(
                 "train_hash": _hash_cols(feature_lists["train"]),
                 "validation_hash": _hash_cols(feature_lists["validation"]),
                 "test_hash": _hash_cols(feature_lists["test"]),
-                "generated_at": datetime.now().isoformat(),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
             }
             with open(f"{data_dir}/{exchange}_{symbol}_feature_hash.json", "w") as f:
                 json.dump(hash_info, f, indent=2)

@@ -1006,7 +1006,7 @@ class AresPipeline:
                     "2.0%": (1.0 - tactician_confidence) * 0.7,
                 },
                 "directional_analysis": {
-                    "primary_direction": dual_model_decision.get("action", "HOLD"),
+                    "primary_direction": dual_model_decision.get("direction", "HOLD"),
                     "primary_confidence": final_confidence,
                     "magnitude_levels": [0.5, 1.0, 1.5, 2.0],
                 },

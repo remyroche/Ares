@@ -20,6 +20,7 @@ from src.utils.warning_symbols import (
     initialization_error,
     invalid,
 )
+from src.utils.confidence import aggregate_directional_confidences
 
 
 class DualModelSystem:
@@ -521,10 +522,12 @@ class DualModelSystem:
             )
 
             # Calculate final confidence using the specified formula
-            final_confidence = self._calculate_final_confidence(
-                analyst_decision["confidence"],
-                tactician_decision["confidence"],
-            )
+            final_conf_agg = aggregate_directional_confidences([
+                {"direction": analyst_decision.get("direction", "HOLD"), "confidence": float(analyst_decision.get("confidence", 0.0))},
+                {"direction": (analyst_decision.get("direction", "HOLD") if tactician_decision.get("should_execute") else "HOLD"), "confidence": float(tactician_decision.get("confidence", 0.0))},
+            ])
+            final_confidence = float(final_conf_agg.get("confidence", 0.0))
+            final_direction = final_conf_agg.get("direction", analyst_decision.get("direction", "HOLD"))
 
             # Determine if we should execute the trade
             should_execute = final_confidence > 0.216  # Minimum threshold
@@ -536,7 +539,7 @@ class DualModelSystem:
                     "analyst_confidence": analyst_decision["confidence"],
                     "tactician_confidence": tactician_decision["confidence"],
                     "final_confidence": final_confidence,
-                    "direction": analyst_decision["direction"],
+                    "direction": final_direction,
                     "strategy": analyst_decision["strategy"],
                 }
 
@@ -544,7 +547,7 @@ class DualModelSystem:
                 final_decision = {
                     "action": "ENTRY",
                     "signal": "ENTER",
-                    "direction": analyst_decision["direction"],
+                    "direction": final_direction,
                     "strategy": analyst_decision["strategy"],
                     "analyst_confidence": analyst_decision["confidence"],
                     "tactician_confidence": tactician_decision["confidence"],

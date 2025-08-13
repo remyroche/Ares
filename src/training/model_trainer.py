@@ -22,6 +22,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from src.training.data_cleaning import handle_missing_data
 from src.training.feature_engineering import FeatureGenerator
 from typing import TYPE_CHECKING
+from src.utils.decorators import with_tracing_span, guard_dataframe_nulls, validate_call_or_runtime_types
 
 # Avoid importing heavy optional dependencies (e.g., xgboost) at module import time.
 # Import HPO manager lazily inside the method when HPO is actually used.
@@ -397,6 +398,8 @@ class RayModelTrainer:
             self.print(failed("Training input validation failed: {e}"))
             return False
 
+    @guard_dataframe_nulls(mode="warn", arg_index=2)
+    @with_tracing_span("RayModelTrainer._prepare_training_data", log_args=False)
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -539,6 +542,8 @@ class RayModelTrainer:
             self.print(failed("❌ Ray-based model training failed: {e}"))
             return {}
 
+    @guard_dataframe_nulls(mode="warn", arg_index=2)
+    @with_tracing_span("RayModelTrainer._train_single_model_remote", log_args=False)
     def _train_single_model_remote(
         self,
         model_config: ModelConfig,
@@ -790,6 +795,8 @@ class RayModelTrainer:
             self.print(failed("❌ Failed to stop Ray Model Trainer: {e}"))
 
 
+@validate_call_or_runtime_types
+@with_tracing_span("setup_model_trainer", log_args=False)
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,

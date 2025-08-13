@@ -23,6 +23,7 @@ except ImportError:
     PYARROW_AVAILABLE = False
 
 from src.utils.logger import system_logger
+from src.utils.decorators import with_tracing_span, guard_dataframe_nulls
 
 
 class PartitionedDataLoader:
@@ -31,6 +32,7 @@ class PartitionedDataLoader:
     def __init__(self, logger: Optional[logging.Logger] = None):
         self.logger = logger or system_logger
 
+    @with_tracing_span("PartitionedDataLoader.load_partitioned_data", log_args=False)
     def load_partitioned_data(
         self,
         base_dir: str,
@@ -106,6 +108,7 @@ class PartitionedDataLoader:
             self.logger.error(f"Error loading partitioned data: {e}")
             raise
 
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _load_with_pyarrow_streaming(
         self,
         dataset_path: str,
@@ -161,6 +164,7 @@ class PartitionedDataLoader:
             )
             return self._load_with_pyarrow(dataset_path, filters, columns, max_rows)
 
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _load_with_pyarrow(
         self,
         dataset_path: str,
@@ -190,6 +194,7 @@ class PartitionedDataLoader:
             self.logger.warning(f"PyArrow loading failed: {e}, falling back to pandas")
             return self._load_with_pandas(dataset_path, filters, columns, max_rows)
 
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _load_with_pandas(
         self,
         dataset_path: str,

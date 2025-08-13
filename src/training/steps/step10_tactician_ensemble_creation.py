@@ -8,10 +8,12 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
+import pandas as pd
 from sklearn.metrics import confusion_matrix, accuracy_score
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
+from src.utils.decorators import enforce_ndarray, guard_array_nan_inf, with_tracing_span
 from src.training.steps.unified_data_loader import get_unified_data_loader
 
 # NOTE: Keeping the optimized TacticianEnsembleCreationStep definition below; removing earlier duplicate to avoid conflicts
@@ -229,6 +231,9 @@ class TacticianEnsembleCreationStep:
         msg = f"Validation data not found in {part_base}. Step 10 requires labeled data from Step 8."
         raise FileNotFoundError(msg)
 
+    @enforce_ndarray(arg_index=2, forbid_lists=True, require_vector=True)
+    @guard_array_nan_inf(mode="warn", arg_indices=(2,))
+    @with_tracing_span("EnsembleCreation._get_model_predictions", log_args=False)
     def _get_model_predictions(self, model: Any, X: np.ndarray) -> np.ndarray:
         """Helper to get probability predictions, with a fallback for classifiers without `predict_proba`."""
         if hasattr(model, "predict_proba"):

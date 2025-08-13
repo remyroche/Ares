@@ -333,6 +333,57 @@ class AnalystSpecialistTrainingStep:
                     from sklearn.model_selection import train_test_split
                     return train_test_split(X, y, test_size=test_frac, random_state=42, stratify=y)
 
+            # Place just above the per-regime loop: compact helper to reduce duplication
+            async def _train_and_optionally_refit(
+                model_key: str,
+                train_coro,
+                X_train: pd.DataFrame,
+                X_test: pd.DataFrame,
+                y_train: pd.Series,
+                y_test: pd.Series,
+                regime_name: str,
+                sample_weight: pd.Series | None,
+            ) -> tuple[str, dict[str, Any] | None]:
+                """Train a model using provided coroutine, then optionally refit with sample weights.
+                Returns (model_key, model_package_or_None)."""
+                try:
+                    pkg = await train_coro(X_train, X_test, y_train, y_test, regime_name)
+                    if not pkg:
+                        return model_key, None
+                    # Optional sample-weighted refit where supported
+                    if sample_weight is not None:
+                        try:
+                            estimator = pkg.get("model") if isinstance(pkg, dict) else None
+                            if estimator is not None and hasattr(estimator, "fit"):
+                                # Try to find a label mapping from the package; fallback to identity
+                                label_mapping = None
+                                for k in (
+                                    "xgb_label_mapping",
+                                    "lgb_label_mapping",
+                                    "rf_label_mapping",
+                                    "nn_label_mapping",
+                                    "svm_label_mapping",
+                                ):
+                                    if isinstance(pkg, dict) and k in pkg and isinstance(pkg[k], dict):
+                                        label_mapping = pkg[k]
+                                        break
+                                y_fit = y_train
+                                if label_mapping is not None:
+                                    y_fit = y_train.map(label_mapping).astype(int)
+                                # Align and apply sample weights if estimator supports it
+                                sw_aligned = sample_weight.reindex(X_train.index).fillna(0.0)
+                                try:
+                                    estimator.fit(X_train, y_fit, sample_weight=sw_aligned)
+                                except TypeError:
+                                    # Estimator may not support sample_weight; ignore
+                                    pass
+                        except Exception as refit_e:
+                            self.logger.debug(f"Sample-weighted refit skipped for {model_key}: {refit_e}")
+                    return model_key, pkg
+                except Exception as e:
+                    self.logger.warning(f"{model_key} training failed for {regime_name}: {e}")
+                    return model_key, None
+            
             for regime_name, regime_data in labeled_data.items():
                 self.logger.info(
                     f"Training specialist models for regime: {regime_name}",
@@ -375,64 +426,75 @@ class AnalystSpecialistTrainingStep:
                 # Sample weights
                 sw = _derive_sample_weight(data.reset_index().reindex(X_train.index), regime_name)
 
-                # Train models for this regime (pass sample_weight where supported)
                 regime_models = {}
-                # Random Forest
-                try:
-                    rf = await self._train_random_forest(X_train, X_test, y_train, y_test, regime_name)
-                    if rf:
-                        # Refit with sample_weight when available
-                        try:
-                            if sw is not None:
-                                model = rf["model"]
-                                model.fit(X_train, y_train.map({-1: 0, 1: 1}), sample_weight=sw.reindex(X_train.index).fillna(0.0))
-                        except Exception:
-                            pass
-                        regime_models["random_forest"] = rf
-                except Exception as e:
-                    self.logger.warning(f"RF training failed for {regime_name}: {e}")
-                # LightGBM
-                try:
-                    lgbm = await self._train_lightgbm(X_train, X_test, y_train, y_test, regime_name)
-                    if lgbm:
-                        try:
-                            if sw is not None:
-                                m = lgbm["model"]
-                                m.fit(X_train, y_train.map({-1: 0, 1: 1}), sample_weight=sw.reindex(X_train.index).fillna(0.0))
-                        except Exception:
-                            pass
-                        regime_models["lightgbm"] = lgbm
-                except Exception as e:
-                    self.logger.warning(f"LGBM training failed for {regime_name}: {e}")
-                # XGBoost
-                try:
-                    xgbm = await self._train_xgboost(X_train, X_test, y_train, y_test, regime_name)
-                    if xgbm:
-                        try:
-                            if sw is not None:
-                                m = xgbm["model"]
-                                m.fit(X_train, y_train.map(xgbm.get("xgb_label_mapping", {-1: 0, 1: 1})))
-                        except Exception:
-                            pass
-                        regime_models["xgboost"] = xgbm
-                except Exception as e:
-                    self.logger.warning(f"XGB training failed for {regime_name}: {e}")
-                # Neural net
-                try:
-                    if len(feature_columns) <= 100:
-                        nnm = await self._train_neural_network(X_train, X_test, y_train, y_test, regime_name)
-                        if nnm:
-                            regime_models["neural_network"] = nnm
-                except Exception as e:
-                    self.logger.warning(f"NN training failed for {regime_name}: {e}")
-                # SVM
-                try:
-                    if len(feature_columns) <= 50:
-                        svmm = await self._train_svm(X_train, X_test, y_train, y_test, regime_name)
-                        if svmm:
-                            regime_models["svm"] = svmm
-                except Exception as e:
-                    self.logger.warning(f"SVM training failed for {regime_name}: {e}")
+
+                # Use the helper for each model to avoid duplication
+                key, pkg = await _train_and_optionally_refit(
+                    "random_forest",
+                    self._train_random_forest,
+                    X_train,
+                    X_test,
+                    y_train,
+                    y_test,
+                    regime_name,
+                    sw,
+                )
+                if pkg:
+                    regime_models[key] = pkg
+
+                key, pkg = await _train_and_optionally_refit(
+                    "lightgbm",
+                    self._train_lightgbm,
+                    X_train,
+                    X_test,
+                    y_train,
+                    y_test,
+                    regime_name,
+                    sw,
+                )
+                if pkg:
+                    regime_models[key] = pkg
+
+                key, pkg = await _train_and_optionally_refit(
+                    "xgboost",
+                    self._train_xgboost,
+                    X_train,
+                    X_test,
+                    y_train,
+                    y_test,
+                    regime_name,
+                    sw,
+                )
+                if pkg:
+                    regime_models[key] = pkg
+
+                # Neural network (skip refit if sample_weight unsupported)
+                key, pkg = await _train_and_optionally_refit(
+                    "neural_network",
+                    self._train_neural_network,
+                    X_train,
+                    X_test,
+                    y_train,
+                    y_test,
+                    regime_name,
+                    sw,
+                )
+                if pkg and len(feature_columns) <= 100:
+                    regime_models[key] = pkg
+
+                # SVM (only when feature count is small)
+                key, pkg = await _train_and_optionally_refit(
+                    "svm",
+                    self._train_svm,
+                    X_train,
+                    X_test,
+                    y_train,
+                    y_test,
+                    regime_name,
+                    sw,
+                )
+                if pkg and len(feature_columns) <= 50:
+                    regime_models[key] = pkg
 
                 training_results[regime_name] = regime_models
                 try:

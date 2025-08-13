@@ -1566,10 +1566,29 @@ class RegimeSRTracker:
             Combined prediction value.
         """
         try:
-            if not expert_predictions:
-                return 0.0
+            weights = None
             if strengths and len(strengths) == len(expert_predictions):
                 weights = {k: max(0.0, float(strengths.get(k, 0.0))) for k in expert_predictions}
+            # Blend in expert predictive power if available in dispatcher
+            try:
+                power = {}
+                if self.dispatcher_manifest and "expert_power" in self.dispatcher_manifest:
+                    power = {k: float(self.dispatcher_manifest["expert_power"].get(k, 0.0)) for k in expert_predictions}
+                if power:
+                    # Normalize both to [0,1] and multiply
+                    def _norm(d: dict[str, float]) -> dict[str, float]:
+                        vals = list(d.values())
+                        mx = max(vals) if vals else 0.0
+                        return {k: (v / mx if mx > 0 else 0.0) for k, v in d.items()}
+                    p_norm = _norm(power)
+                    if weights is None:
+                        weights = p_norm
+                    else:
+                        w_norm = _norm(weights)
+                        weights = {k: w_norm.get(k, 0.0) * p_norm.get(k, 0.0) for k in expert_predictions}
+            except Exception:
+                pass
+            if weights:
                 total = sum(weights.values())
                 if total <= 0:
                     # fallback to simple average

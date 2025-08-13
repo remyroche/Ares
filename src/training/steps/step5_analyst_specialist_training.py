@@ -652,6 +652,7 @@ class AnalystSpecialistTrainingStep:
                     manifest = {
                         "experts": list(training_results.keys()),
                         "gating": dispatcher_manifest.get("gating", {}),
+                        "expert_power": dispatcher_manifest.get("expert_power", {}),
                         "regime_source": regime_source,
                         "min_rows_per_expert": min_rows_per_expert,
                         "use_strength_weighting": use_strength_weighting,
@@ -890,6 +891,7 @@ class AnalystSpecialistTrainingStep:
 
             # Train multiple models for ensemble
             models = {}
+            expert_power_score: float = 0.0
 
             # Train Random Forest
             try:
@@ -901,6 +903,10 @@ class AnalystSpecialistTrainingStep:
                     )
                 if rf_model:
                     models["random_forest"] = rf_model
+                    try:
+                        expert_power_score = max(expert_power_score, float(rf_model.get("accuracy", 0.0)))
+                    except Exception:
+                        pass
                     try:
                         print("Step5Monitor ▶ RF: done", flush=True)
                     except Exception:
@@ -919,6 +925,10 @@ class AnalystSpecialistTrainingStep:
                 if lgb_model:
                     models["lightgbm"] = lgb_model
                     try:
+                        expert_power_score = max(expert_power_score, float(lgb_model.get("accuracy", 0.0)))
+                    except Exception:
+                        pass
+                    try:
                         print("Step5Monitor ▶ LGBM: done", flush=True)
                     except Exception:
                         pass
@@ -936,6 +946,10 @@ class AnalystSpecialistTrainingStep:
                 if xgb_model:
                     models["xgboost"] = xgb_model
                     try:
+                        expert_power_score = max(expert_power_score, float(xgb_model.get("accuracy", 0.0)))
+                    except Exception:
+                        pass
+                    try:
                         print("Step5Monitor ▶ XGB: done", flush=True)
                     except Exception:
                         pass
@@ -952,6 +966,10 @@ class AnalystSpecialistTrainingStep:
                         )
                     if nn_model:
                         models["neural_network"] = nn_model
+                        try:
+                            expert_power_score = max(expert_power_score, float(nn_model.get("accuracy", 0.0)))
+                        except Exception:
+                            pass
                 except Exception as e:
                     self.logger.warning(f"Neural Network training failed: {e}")
 
@@ -965,11 +983,17 @@ class AnalystSpecialistTrainingStep:
                         )
                     if svm_model:
                         models["svm"] = svm_model
+                        try:
+                            expert_power_score = max(expert_power_score, float(svm_model.get("accuracy", 0.0)))
+                        except Exception:
+                            pass
                 except Exception as e:
                     self.logger.warning(f"SVM training failed: {e}")
 
             self.logger.info(f"✅ Trained {len(models)} models for regime: {regime_name}")
 
+            # Attach aggregate predictive power score for this expert (held-out accuracy proxy)
+            models["_expert_power_score"] = expert_power_score
             return models
 
         except Exception as e:

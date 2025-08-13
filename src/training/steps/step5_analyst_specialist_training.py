@@ -318,7 +318,8 @@ class AnalystSpecialistTrainingStep:
                         tmp = df[["timestamp"]].copy()
                         swm = tmp.merge(sample_weights_ts, on="timestamp", how="left").get("sample_weight", pd.Series(index=df.index, dtype=float))
                         return swm.fillna(0.0)
-                except Exception:
+                except Exception as e:
+                    self.logger.warning(f"Failed to derive sample weight: {e}")
                     return None
                 return None
 

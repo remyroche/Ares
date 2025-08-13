@@ -273,6 +273,7 @@ class TacticianEnsembleCreationStep:
 
         best_accuracy = -1.0
         optimal_weight = 0.5  # Default to a simple average
+        acc_by_w: list[tuple[float, float]] = []
 
         # Grid search for the best weight `w`
         for w in np.arange(0, 1.01, 0.01):
@@ -281,10 +282,18 @@ class TacticianEnsembleCreationStep:
                 np.argmax(blended_proba, axis=1) - 1
             )  # Convert back to [-1, 0, 1]
             accuracy = accuracy_score(y_val, blended_labels)
+            acc_by_w.append((float(w), float(accuracy)))
 
             if accuracy > best_accuracy:
                 best_accuracy = accuracy
                 optimal_weight = w
+
+        # Log top-5 candidate weights by accuracy
+        try:
+            top5 = sorted(acc_by_w, key=lambda x: x[1], reverse=True)[:5]
+            self.logger.info({"msg": "tactician_weight_search_top5", "candidates": top5})
+        except Exception:
+            pass
 
         self.logger.info(
             f"Optimal weight found: {optimal_weight:.2f} (for model 1) with validation accuracy: {best_accuracy:.4f}",
@@ -342,6 +351,13 @@ class TacticianEnsembleCreationStep:
         ensemble = OptimalBlendedEnsemble(base_models[0], base_models[1], optimal_w)
 
         # 4. Prepare the final dictionary with the model and its metadata
+        try:
+            self.logger.info({
+                "msg": "tactician_optimal_weights",
+                "weights": {model_names[0]: float(optimal_w), model_names[1]: float(1.0 - optimal_w)}
+            })
+        except Exception:
+            pass
         return {
             "ensemble": ensemble,
             "ensemble_type": "OptimalBlended",

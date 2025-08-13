@@ -590,14 +590,80 @@ class VectorizedLabellingOrchestrator:
             self.logger.info(
                 f"🎉 Vectorized labeling and feature engineering completed! Final shape: {final_data.shape}",
             )
+            # Summarize score-like columns
+            try:
+                cols = [
+                    c for c in final_data.columns
+                    if any(k in c.lower() for k in ("confidence", "intensity", "score", "weight"))
+                ]
+                if cols:
+                    summary = {}
+                    for c in cols[:50]:  # cap to avoid oversized logs
+                        s = pd.to_numeric(final_data[c], errors="coerce")
+                        if s.notna().any():
+                            summary[c] = {
+                                "mean": float(s.mean()),
+                                "min": float(s.min()),
+                                "p50": float(s.quantile(0.5)),
+                                "p90": float(s.quantile(0.9)),
+                                "max": float(s.max()),
+                            }
+                    self.logger.info({"msg": "score_like_columns_summary", "columns": list(summary.keys()), "stats": summary})
+            except Exception:
+                pass
+
+            # Safe metadata derivations to avoid NameError/AttributeError
+            try:
+                engineered_shape = (
+                    advanced_features.shape
+                    if 'advanced_features' in locals() and hasattr(advanced_features, 'shape')
+                    else None
+                )
+            except Exception:
+                engineered_shape = None
+            try:
+                autoencoder_shape = (
+                    autoencoder_features.shape
+                    if 'autoencoder_features' in locals() and hasattr(autoencoder_features, 'shape')
+                    else None
+                )
+            except Exception:
+                autoencoder_shape = None
+            try:
+                selected_shape = (
+                    selected.shape
+                    if 'selected' in locals() and hasattr(selected, 'shape')
+                    else None
+                )
+            except Exception:
+                selected_shape = None
+            try:
+                normalized_shape = (
+                    combined_data.shape if self.enable_data_normalization and 'combined_data' in locals() and hasattr(combined_data, 'shape') else None
+                )
+            except Exception:
+                normalized_shape = None
+            try:
+                ctx_cols = locals().get('context_cols')
+                if not ctx_cols:
+                    ctx_cols = self._get_present_context_columns(final_data)
+                context_stats = {c: int(final_data[c].nunique()) for c in ctx_cols if c in final_data.columns}
+            except Exception:
+                context_stats = {}
 
             return {
                 "data": final_data,
                 "metadata": {
-                    "total_features": len(final_data.columns),
-                    "total_samples": len(final_data),
-                    "feature_engineering_completed": self.advanced_feature_engineer is not None,
                     "labeling_completed": True,
+                    "shapes": {
+                        "final": final_data.shape,
+                        "engineered": engineered_shape,
+                        "autoencoder": autoencoder_shape,
+                        "normalized": normalized_shape,
+                        "selected": selected_shape,
+                        "context": context_stats,
+                    },
+                    "feature_engineering_completed": self.advanced_feature_engineer is not None,
                     "autoencoder_features_generated": self.autoencoder_generator is not None,
                     "stationary_checks_performed": self.enable_stationary_checks,
                     "data_normalized": self.enable_data_normalization,

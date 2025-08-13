@@ -139,11 +139,19 @@ class CachedBacktester:
         cache_key = self._generate_cache_key(params)
 
         if cache_key in self.cache:
+            try:
+                self.logger.info(f"Backtest cache hit: score={float(self.cache[cache_key]):.4f}")
+            except Exception as e:
+                self.logger.warning(f"Failed to log cache hit info: {e}")
             return self.cache[cache_key]
 
         # Run simplified backtest using precomputed indicators
         result = self._run_simplified_backtest(params)
         self.cache[cache_key] = result
+        try:
+            self.logger.info(f"Backtest cache miss: computed score={float(result):.4f}")
+        except Exception as e:
+            self.logger.warning(f"Failed to log cache miss info: {e}")
         return result
 
     def _generate_cache_key(self, params: Dict[str, Any]) -> str:
@@ -171,25 +179,48 @@ class ProgressiveEvaluator:
 
     def evaluate_progressively(self, params: Dict[str, Any], evaluator_func) -> float:
         """Evaluate parameters progressively across data subsets."""
-        total_score = 0
-        total_weight = 0
+        total_score = 0.0
+        total_weight = 0.0
 
         for data_ratio, weight in self.evaluation_stages:
             subset_size = int(len(self.full_data) * data_ratio)
             subset_data = self.full_data.iloc[:subset_size]
 
-            score = evaluator_func(subset_data, params)
+            score = float(evaluator_func(subset_data, params))
             total_score += score * weight
             total_weight += weight
+            try:
+                self.logger.info(
+                    {
+                        "msg": "progressive_stage",
+                        "data_ratio": float(data_ratio),
+                        "subset_size": int(subset_size),
+                        "weight": float(weight),
+                        "stage_score": float(score),
+                    }
+                )
+            except Exception as e:
+                self.logger.warning(f"Failed to log progressive stage info: {e}")
 
             # Early stopping if performance is poor
             if data_ratio < 1.0 and score < -0.5:
                 self.logger.info(
-                    f"Early stopping at {data_ratio*100}% data due to poor performance"
+                    f"Early stopping at {data_ratio*100:.0f}% data due to poor performance (score={score:.4f})"
                 )
                 return -1.0  # Stop evaluation
 
-        return total_score / total_weight
+        final_score = (total_score / total_weight) if total_weight else 0.0
+        try:
+            self.logger.info(
+                {
+                    "msg": "progressive_evaluation_complete",
+                    "total_weight": float(total_weight),
+                    "final_score": float(final_score),
+                }
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to log progressive evaluation complete: {e}")
+        return final_score
 
 
 class ParallelBacktester:
@@ -230,6 +261,20 @@ class ParallelBacktester:
 
         # Collect results
         results = [future.result() for future in futures]
+        try:
+            if results:
+                self.logger.info(
+                    {
+                        "msg": "parallel_batch_scores",
+                        "count": len(results),
+                        "mean": float(np.mean(results)),
+                        "min": float(np.min(results)),
+                        "p90": float(np.percentile(results, 90)),
+                        "max": float(np.max(results)),
+                    }
+                )
+        except Exception:
+            pass
         self.logger.info(f"Evaluated {len(results)} parameter sets in parallel")
         return results
 
@@ -400,16 +445,44 @@ class AdaptiveSampler:
     ) -> Dict[str, Any]:
         """Suggest parameters based on promising regions."""
 
-        if len(self.trial_history) < self.initial_samples:
-            # Random sampling for initial exploration
-            return self._random_sampling(parameter_bounds)
-        else:
-            # Focus on promising regions
-            return self._adaptive_sampling(parameter_bounds)
+        use_random = len(self.trial_history) < self.initial_samples
+        try:
+            self.logger.info(
+                {
+                    "msg": "sampler_suggest",
+                    "mode": "random" if use_random else "adaptive",
+                    "history_len": len(self.trial_history),
+                }
+            )
+        except Exception:
+            pass
+
+        params = (
+            self._random_sampling(parameter_bounds)
+            if use_random
+            else self._adaptive_sampling(parameter_bounds)
+        )
+        try:
+            self.logger.info({"msg": "sampler_suggest_result", "params": params})
+        except Exception:
+            pass
+        return params
 
     def update_trial_history(self, params: Dict[str, Any], score: float):
         """Update trial history with new result."""
         self.trial_history.append({"params": params, "score": score})
+        try:
+            best = max(self.trial_history, key=lambda x: x.get("score", float("-inf"))).get("score", None)
+            self.logger.info(
+                {
+                    "msg": "sampler_update",
+                    "score": float(score),
+                    "best_so_far": float(best) if best is not None else None,
+                    "history_len": len(self.trial_history),
+                }
+            )
+        except Exception:
+            pass
 
     def _adaptive_sampling(
         self, parameter_bounds: Dict[str, Tuple[float, float]]

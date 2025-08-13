@@ -1060,15 +1060,16 @@ class EnhancedTrainingManager:
                 step_times["step1_data_collection"] = time.time() - step_start
 
                 # Optionally run validator for Step 1
+                # Optionally run validator for Step 1
                 try:
                     await self._run_step_validator(
                         "step1_data_collection",
                         training_input,
                         pipeline_state,
                     )
-                except Exception:
-                    # Non-fatal if validator is missing
-                    pass
+                except Exception as e:
+                    # Non-fatal if validator is missing, but log for debugging.
+                    self.logger.warning(f"Validator for step1_data_collection failed but is non-fatal: {e}")
             else:
                 self.logger.info(
                     "⏭️  Skipping Step 1: Data Collection (using pre-consolidated data)"

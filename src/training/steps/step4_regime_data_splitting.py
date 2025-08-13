@@ -90,6 +90,31 @@ class RegimeDataSplittingStep:
                         regime_splits[meta] = active
                 self.logger.info(f"✅ Built {len(regime_splits)} meta-label regime splits")
                 print(f"Step4Split ▶ meta_label_splits={len(regime_splits)}")
+
+                # NEW: Emit gating matrix from meta label strengths if available
+                try:
+                    strengths_path = os.path.join(self.config.get("data_dir", "data/training"), f"{self.config['exchange']}_{self.config['symbol']}_meta_strengths.parquet")
+                    gating_dir = os.path.join(self.config.get("data_dir", "data/training"), "gating")
+                    os.makedirs(gating_dir, exist_ok=True)
+                    if os.path.exists(strengths_path):
+                        strengths_df = pd.read_parquet(strengths_path)
+                        if "timestamp" in strengths_df.columns:
+                            gmat = strengths_df.copy()
+                            gmat = gmat.set_index("timestamp").sort_index()
+                            # Normalize columns to [0,1] per timestamp row-wise
+                            S = gmat.abs()
+                            row_sum = S.sum(axis=1).replace(0, 1.0)
+                            gnorm = (S.T / row_sum).T
+                            gnorm = gnorm.clip(0.0, 1.0)
+                            gnorm = gnorm.reset_index()
+                            gm_path = os.path.join(
+                                gating_dir,
+                                f"{self.config['exchange']}_{self.config['symbol']}_gating.parquet",
+                            )
+                            gnorm.to_parquet(gm_path, index=False)
+                            self.logger.info(f"✅ Wrote gating matrix to {gm_path}")
+                except Exception as ge:
+                    self.logger.warning(f"Gating matrix write skipped: {ge}")
             else:
                 # Load regime classification results (bull/bear/sideways)
                 regime_file = f"data/training/{self.config['exchange']}_{self.config['symbol']}_regime_classification.parquet"
@@ -103,6 +128,20 @@ class RegimeDataSplittingStep:
                 self.logger.info(f"✅ Loaded regime classification data: {len(regime_data)} rows")
                 self.logger.info(f"   Regimes found: {regime_data['regime'].unique().tolist()}")
                 regime_splits = self._split_data_by_regimes(unified_data, regime_data)
+
+                # NEW: Emit regime weights parquet derived from confidence
+                try:
+                    weights = regime_data.copy()
+                    weights["timestamp"] = pd.to_datetime(weights["timestamp"]).dt.floor("1H")
+                    weights = weights.rename(columns={"confidence": "sample_weight"})
+                    weights_path = os.path.join(
+                        self.config.get("data_dir", "data/training"),
+                        f"{self.config['exchange']}_{self.config['symbol']}_regime_weights.parquet",
+                    )
+                    weights.to_parquet(weights_path, index=False)
+                    self.logger.info(f"✅ Wrote regime weights to {weights_path}")
+                except Exception as we:
+                    self.logger.warning(f"Regime weights write skipped: {we}")
 
             # Save regime splits & summary
             self._save_regime_splits(regime_splits)

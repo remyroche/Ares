@@ -612,17 +612,56 @@ class VectorizedLabellingOrchestrator:
             except Exception:
                 pass
 
+            # Safe metadata derivations to avoid NameError/AttributeError
+            try:
+                engineered_shape = (
+                    advanced_features.shape
+                    if 'advanced_features' in locals() and hasattr(advanced_features, 'shape')
+                    else None
+                )
+            except Exception:
+                engineered_shape = None
+            try:
+                autoencoder_shape = (
+                    autoencoder_features.shape
+                    if 'autoencoder_features' in locals() and hasattr(autoencoder_features, 'shape')
+                    else None
+                )
+            except Exception:
+                autoencoder_shape = None
+            try:
+                selected_shape = (
+                    selected.shape
+                    if 'selected' in locals() and hasattr(selected, 'shape')
+                    else None
+                )
+            except Exception:
+                selected_shape = None
+            try:
+                normalized_shape = (
+                    combined_data.shape if self.enable_data_normalization and 'combined_data' in locals() and hasattr(combined_data, 'shape') else None
+                )
+            except Exception:
+                normalized_shape = None
+            try:
+                ctx_cols = locals().get('context_cols')
+                if not ctx_cols:
+                    ctx_cols = self._get_present_context_columns(final_data)
+                context_stats = {c: int(final_data[c].nunique()) for c in ctx_cols if c in final_data.columns}
+            except Exception:
+                context_stats = {}
+
             return {
                 "data": final_data,
                 "metadata": {
                     "labeling_completed": True,
                     "shapes": {
                         "final": final_data.shape,
-                        "engineered": advanced_features.shape if self.advanced_feature_engineer is not None else None,
-                        "autoencoder": autoencoder_features.shape if self.autoencoder_generator is not None else None,
-                        "normalized": combined_data.shape if self.enable_data_normalization else None,
-                        "selected": selected.shape if self.enable_feature_selection else None,
-                        "context": {c: final_data[c].nunique() for c in context_cols},
+                        "engineered": engineered_shape,
+                        "autoencoder": autoencoder_shape,
+                        "normalized": normalized_shape,
+                        "selected": selected_shape,
+                        "context": context_stats,
                     },
                     "feature_engineering_completed": self.advanced_feature_engineer is not None,
                     "autoencoder_features_generated": self.autoencoder_generator is not None,

@@ -118,7 +118,7 @@ fastapi = "^0.115.0"
 uvicorn = "^0.32.0"
 apscheduler = "^3.10.4"
 # Make heavy HPO libraries optional by default; enable via [tool.poetry.extras]
-xgboost = {version = "^3.0.3", optional = true}
+xgboost = "^3.0.3"
 catboost = {version = "^1.2.8", optional = true}
 
 # Advanced model dependencies
@@ -127,7 +127,7 @@ vulture = "^2.14"
 
 [tool.poetry.extras]
 # Install with: `poetry install --extras "hpo"`
-hpo = ["xgboost", "catboost"]
+hpo = ["catboost"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

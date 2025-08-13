@@ -530,6 +530,7 @@ class AnalystSpecialistTrainingStep:
             # Update pipeline state
             pipeline_state["analyst_models"] = training_results
 
+
             return {
                 "analyst_models": training_results,
                 "models_dir": models_dir,
@@ -1309,7 +1310,7 @@ class AnalystSpecialistTrainingStep:
                 raise ValueError("No valid classes present in y for XGBoost training")
             xgb_label_mapping = {cls: idx for idx, cls in enumerate(present_classes)}
             xgb_inverse_label_mapping = {v: k for k, v in xgb_label_mapping.items()}
-
+ 
             # Encode labels
             y_train_enc = y_train.map(xgb_label_mapping).astype(int)
             y_test_enc = y_test.map(xgb_label_mapping).astype(int)
@@ -1317,17 +1318,20 @@ class AnalystSpecialistTrainingStep:
                 raise ValueError(
                     f"Encountered unknown labels for XGBoost mapping. Mapping: {xgb_label_mapping}"
                 )
-
+ 
+            # Use multiclass only when we truly have >2 classes
+            use_multiclass = len(present_classes) > 2
             model = xgb.XGBClassifier(
-                n_estimators=1000,  # Increased for early stopping
+                n_estimators=600,
                 max_depth=6,
                 learning_rate=0.1,
+                subsample=0.9,
+                colsample_bytree=0.9,
                 random_state=42,
-                eval_metric="logloss",
-                num_class=len(present_classes) if len(present_classes) > 2 else None,
-                early_stopping_rounds=50,  # Stop if no improvement for 50 rounds
-                verbose=0,  # Reduce verbose output during training
-                silent=True,  # Additional silence parameter
+                eval_metric="mlogloss" if use_multiclass else "logloss",
+                num_class=len(present_classes) if use_multiclass else None,
+                early_stopping_rounds=50,
+                verbosity=0,
             )
             
             # Suppress XGBoost output during training

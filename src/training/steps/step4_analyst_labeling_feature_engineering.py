@@ -704,6 +704,61 @@ class AnalystLabelingFeatureEngineeringStep:
             sup_width_map = {c["center"]: abs(c.get("width", 0.0)) for c in sup}
             res_width_map = {c["center"]: abs(c.get("width", 0.0)) for c in res}
 
+            # Compute extended band widths per level using strength and nearby weaker/smaller levels
+            def _compute_extended_band_map(levels: np.ndarray, score_map: dict[float, float], width_map: dict[float, float]) -> dict[float, float]:
+                if levels.size == 0:
+                    return {}
+                # Normalize strengths for scaling (avoid reliance on absolute score scale)
+                scores = np.array([score_map.get(float(l), 0.0) for l in levels], dtype=float)
+                s_ref = np.nanpercentile(scores[scores > 0], 95) if np.any(scores > 0) else 1.0
+                s_ref = s_ref if np.isfinite(s_ref) and s_ref > 0 else 1.0
+                gamma = 1.0  # scaling factor for strength influence
+                ext_map: dict[float, float] = {}
+                # Precompute initial half-widths per level
+                half_map: dict[float, float] = {}
+                for l in levels:
+                    w = float(width_map.get(float(l), 0.0))
+                    s = float(score_map.get(float(l), 0.0))
+                    norm = max(0.0, min(1.0, s / s_ref))
+                    half_map[float(l)] = 0.5 * w * (1.0 + gamma * norm)
+
+                # Extend each level's band to include close, weaker, smaller neighbors
+                for l in levels:
+                    lc = float(l)
+                    base_half = half_map.get(lc, 0.0)
+                    low = lc - base_half
+                    high = lc + base_half
+                    base_w = float(width_map.get(lc, 0.0))
+                    base_s = float(score_map.get(lc, 0.0))
+                    changed = True
+                    visited: set[float] = set([lc])
+                    while changed:
+                        changed = False
+                        for c in levels:
+                            cc = float(c)
+                            if cc in visited:
+                                continue
+                            cw = float(width_map.get(cc, 0.0))
+                            cs = float(score_map.get(cc, 0.0))
+                            # Only extend to weaker (<=) and smaller (<=) levels
+                            if cs > base_s or cw > base_w:
+                                continue
+                            ch = half_map.get(cc, 0.0)
+                            # Overlap or near-overlap criteria based on widths (no fixed % thresholds)
+                            c_low, c_high = cc - ch, cc + ch
+                            # If intervals overlap or touch within a gap <= min(base_half, ch), merge
+                            gap = max(0.0, max(c_low - high, low - c_high))
+                            if gap <= max(1e-12, min(base_half, ch)):
+                                low = min(low, c_low)
+                                high = max(high, c_high)
+                                visited.add(cc)
+                                changed = True
+                    ext_map[lc] = max(0.0, high - low)  # full width
+                return ext_map
+
+            sup_ext_width_map = _compute_extended_band_map(sup_levels, sup_score_map, sup_width_map)
+            res_ext_width_map = _compute_extended_band_map(res_levels, res_score_map, res_width_map)
+
             # For each bar, nearest support below and resistance above
             sup_arr = np.full(len(df), np.nan)
             res_arr = np.full(len(df), np.nan)
@@ -718,16 +773,18 @@ class AnalystLabelingFeatureEngineeringStep:
                         sel = below[np.argmin(cp - below)]
                         sup_arr[i] = sel
                         sup_score_arr[i] = float(sup_score_map.get(sel, 0.0))
-                        width = float(sup_width_map.get(sel, 0.0))
-                        sup_band_pct_arr[i] = float(width / max(1e-8, cp))
+                        base_w = float(sup_width_map.get(sel, 0.0))
+                        ext_w = float(sup_ext_width_map.get(sel, base_w))
+                        sup_band_pct_arr[i] = float(ext_w / max(1e-8, cp))
                 if res_levels.size:
                     above = res_levels[res_levels >= cp]
                     if above.size:
                         sel = above[np.argmin(above - cp)]
                         res_arr[i] = sel
                         res_score_arr[i] = float(res_score_map.get(sel, 0.0))
-                        width = float(res_width_map.get(sel, 0.0))
-                        res_band_pct_arr[i] = float(width / max(1e-8, cp))
+                        base_w = float(res_width_map.get(sel, 0.0))
+                        ext_w = float(res_ext_width_map.get(sel, base_w))
+                        res_band_pct_arr[i] = float(ext_w / max(1e-8, cp))
 
             sup_series = pd.Series(sup_arr, index=df.index)
             res_series = pd.Series(res_arr, index=df.index)
@@ -846,8 +903,25 @@ class AnalystLabelingFeatureEngineeringStep:
             sup_tol = np.maximum(touch_tol_pct, 0.5 * sup_band)
             res_tol = np.maximum(touch_tol_pct, 0.5 * res_band)
 
-            touch_sup_raw = (~np.isnan(sup_center)) & (np.abs(low - sup_center) / np.maximum(1e-12, close) <= sup_tol)
-            touch_res_raw = (~np.isnan(res_center)) & (np.abs(res_center - high) / np.maximum(1e-12, close) <= res_tol)
+            # Treat S/R as bands when widths are available; fallback to point tolerance otherwise
+            sup_band_half = np.maximum(touch_tol_pct * close, 0.5 * sup_band * close)
+            res_band_half = np.maximum(touch_tol_pct * close, 0.5 * res_band * close)
+            # Band-based proximity (price touching within the band around the center)
+            touch_sup_band = (
+                (~np.isnan(sup_center))
+                & (low >= (sup_center - sup_band_half))
+                & (low <= (sup_center + sup_band_half))
+            )
+            touch_res_band = (
+                (~np.isnan(res_center))
+                & (high >= (res_center - res_band_half))
+                & (high <= (res_center + res_band_half))
+            )
+            # Point-based proximity as a fallback/augmenter
+            touch_sup_point = (~np.isnan(sup_center)) & (np.abs(low - sup_center) / np.maximum(1e-12, close) <= sup_tol)
+            touch_res_point = (~np.isnan(res_center)) & (np.abs(res_center - high) / np.maximum(1e-12, close) <= res_tol)
+            touch_sup_raw = touch_sup_band | touch_sup_point
+            touch_res_raw = touch_res_band | touch_res_point
 
             if min_consecutive > 1:
                 sup_roll = pd.Series(touch_sup_raw, index=df.index).rolling(min_consecutive, min_periods=min_consecutive).sum() >= min_consecutive
@@ -928,12 +1002,40 @@ class AnalystLabelingFeatureEngineeringStep:
                 self.logger.info(
                     f"SR-event labeling diagnostics: touches={int(np.sum(touch_sup) + np.sum(touch_res))}, ambiguous={ambiguous_count}"
                 )
+                # Additional diagnostics for ambiguous cases and touch density
+                total_bars = n
+                touch_total = int(np.sum(touch_sup) + np.sum(touch_res))
+                touch_rate = (touch_total / max(1, total_bars))
+                sup_touch = int(np.sum(touch_sup))
+                res_touch = int(np.sum(touch_res))
+                self.logger.info(
+                    f"SR-event details: touch_rate={touch_rate:.4f} (sup={sup_touch}, res={res_touch}), "
+                    f"min_hist_touches={min_hist_touches}, dedup_window_bars={dedup_window_bars}, horizon={horizon}"
+                )
+                if touch_rate > 0.05:
+                    self.logger.info(
+                        "High touch density detected (>5%). Common causes: tight touch tolerance, narrow band widths, or prolonged consolidation."
+                    )
+                if ambiguous_count > 0:
+                    self.logger.info(
+                        f"SR-event ambiguous cases likely due to simultaneous away+breakout signals within horizon; "
+                        f"consider increasing horizon or tightening bounce/breakout thresholds."
+                    )
+                # Band-aware debug snapshot
+                try:
+                    avg_sup_band_bp = float(np.nanmean(sup_band) * 1e4)
+                    avg_res_band_bp = float(np.nanmean(res_band) * 1e4)
+                except Exception:
+                    avg_sup_band_bp = avg_res_band_bp = float("nan")
+                self.logger.info(
+                    f"SR bands avg width (bp): support={avg_sup_band_bp:.1f}, resistance={avg_res_band_bp:.1f}"
+                )
             except Exception:
                 pass
-
-            df["sr_breakout_score"] = pd.Series(breakout_score, index=df.index)
-            df["sr_bounce_score"] = pd.Series(bounce_score, index=df.index)
-            return pd.Series(labels, index=df.index, dtype=int)
+ 
+             df["sr_breakout_score"] = pd.Series(breakout_score, index=df.index)
+             df["sr_bounce_score"] = pd.Series(bounce_score, index=df.index)
+             return pd.Series(labels, index=df.index, dtype=int)
         except Exception:
             return pd.Series(0, index=df.index, dtype=int)
 
@@ -1376,6 +1478,32 @@ class AnalystLabelingFeatureEngineeringStep:
             if inserted_rows > 0:
                 self.logger.warning(f"Time index had gaps; inserted {inserted_rows} missing rows during reindex")
 
+            # Skip edge days with excessive missing data (>1%) on first/second or last/second-last day
+            try:
+                if isinstance(price_data.index, pd.DatetimeIndex) and not price_data.empty:
+                    # Compute missing fraction per day based on NaNs in a key column (e.g., 'close') after reindex
+                    key_col = "close" if "close" in price_data.columns else price_data.columns[0]
+                    day_key = price_data.index.to_series().dt.floor("D")
+                    expected_per_day = 24 * 60  # approximation; acceptable for skip heuristic
+                    present_per_day = (~price_data[key_col].isna()).groupby(day_key).sum().sort_index()
+                    missing_pct_by_day = 1.0 - (present_per_day / max(1, expected_per_day))
+                    if len(missing_pct_by_day) >= 2:
+                        day_index = missing_pct_by_day.index
+                        edge_days = [day_index.min(), (day_index.sort_values()[1] if len(day_index) > 1 else None), day_index.max(), (day_index.sort_values()[-2] if len(day_index) > 1 else None)]
+                        edge_days = [d for d in edge_days if d is not None]
+                        excessive_edges = [d for d in edge_days if missing_pct_by_day.get(d, 0.0) > 0.01]
+                        if excessive_edges:
+                            before_rows = len(price_data)
+                            mask_keep = ~price_data.index.floor("D").isin(excessive_edges)
+                            price_data = price_data.loc[mask_keep]
+                            after_rows = len(price_data)
+                            self.logger.warning(
+                                f"Edge-day skip: removed {len(excessive_edges)} day(s) with >1% missing among first/second/last/prev-last; "
+                                f"days={[str(d.date()) for d in excessive_edges]} | rows {before_rows}->{after_rows}"
+                            )
+            except Exception as _ed:
+                self.logger.warning(f"Edge-day skip heuristic failed (non-fatal): {_ed}")
+
             # Dual-pipeline feature engineering
             self.logger.info("🔀 Building Pipeline A (Stationary) and Pipeline B (OHLCV->Stationary)...")
             from src.utils.logger import heartbeat
@@ -1484,6 +1612,28 @@ class AnalystLabelingFeatureEngineeringStep:
                             pass
                     self.logger.info(f"Step4: merged explicit meta-labels: {list(explicit_meta.keys())}")
 
+                # Also generate additional analyst meta-labels for 15m and 5m timeframes
+                try:
+                    extra_tfs = ["15m", "5m"]
+                    extra_explicit = {}
+                    for tf in extra_tfs:
+                        lab = await vafe._generate_explicit_meta_labels_vectorized(
+                            price_data,
+                            price_data[["volume"]] if "volume" in price_data.columns else pd.DataFrame({"volume": pd.Series(1.0, index=price_data.index)}),
+                            timeframe=tf,
+                        )
+                        if lab:
+                            extra_explicit[tf] = list(lab.keys())
+                            for name, arr in lab.items():
+                                try:
+                                    combined_features[name] = pd.Series(arr, index=price_data.index, name=name)
+                                except Exception:
+                                    continue
+                    if extra_explicit:
+                        self.logger.info(f"Step4: merged extra analyst meta-labels: {extra_explicit}")
+                except Exception as _ee:
+                    self.logger.warning(f"Step4: extra analyst meta-label generation skipped: {_ee}")
+
                 # Surface tactician meta labels as features (only aligned series/arrays; skip scalars to avoid constant features)
                 try:
                     meta_sys = MetaLabelingSystem(self.config)
@@ -1502,6 +1652,12 @@ class AnalystLabelingFeatureEngineeringStep:
                             # Skip scalars and mismatched shapes
                         except Exception:
                             continue
+                    # Log individual tactician label entries (names only to avoid huge logs)
+                    try:
+                        keys_to_log = [k for k, v in tact_labels.items() if not isinstance(v, (str, int, float))]
+                        self.logger.info(f"Tactician labels materialized on 1m: count={len(keys_to_log)} | names={keys_to_log}")
+                    except Exception:
+                        pass
                 except Exception as _et:
                     self.logger.warning(f"Step4: tactician meta label surfacing skipped: {_et}")
             except Exception as _e:
@@ -1573,7 +1729,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 leak_cols = [c for c in labeled_data.columns if _is_label_like(c)]
                 if leak_cols:
                     labeled_data = labeled_data.drop(columns=leak_cols, errors="ignore")
-                    self.logger.warning(f"🚩 Removed {len(leak_cols)} label-like columns to prevent leakage: {leak_cols[:50]}{' ...' if len(leak_cols)>50 else ''}")
+                    self.logger.info(f"🚩 Removed {len(leak_cols)} label-like columns to prevent leakage: {leak_cols[:50]}{' ...' if len(leak_cols)>50 else ''}")
             except Exception as e:
                 self.logger.error(f"Triple barrier labeling failed: {e}")
                 return {
@@ -1601,7 +1757,7 @@ class AnalystLabelingFeatureEngineeringStep:
             leak_cols = [c for c in labeled_data.columns if _is_label_like(c)]
             if leak_cols:
                 labeled_data = labeled_data.drop(columns=leak_cols, errors="ignore")
-                self.logger.warning(f"🚩 Removed {len(leak_cols)} label-like columns to prevent leakage: {leak_cols[:50]}{' ...' if len(leak_cols)>50 else ''}")
+                self.logger.info(f"🚩 Removed {len(leak_cols)} label-like columns to prevent leakage: {leak_cols[:50]}{' ...' if len(leak_cols)>50 else ''}")
             # Monitor state after leakage filter
             try:
                 self.logger.info(

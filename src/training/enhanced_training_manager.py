@@ -1055,8 +1055,8 @@ class EnhancedTrainingManager:
                     "result": {"message": "Using pre-consolidated data"},
                 }
 
-            # Step 2: Market Regime Classification or L0/L1/L2/L3 (toggle)
-            self._heartbeat("Step 2: Market Regime Classification")
+            # Step 2: Processing, meta-labeling, feature engineering (or legacy regime classification)
+            self._heartbeat("Step 2: Processing & Labeling")
             try:
                 pipeline_cfg = self.config.get("pipeline", {})
                 method_a_cfg = pipeline_cfg.get("method_a", {})
@@ -1081,7 +1081,7 @@ class EnhancedTrainingManager:
 
             if not step2_success:
                 self._log_step_completion(
-                    "Step 2: Market Regime Classification",
+                    "Step 2: Processing & Labeling",
                     step_start,
                     step_times,
                     success=False,
@@ -1089,25 +1089,25 @@ class EnhancedTrainingManager:
                 return False
 
             # Update pipeline state
-            pipeline_state["regime_classification"] = {
+            pipeline_state["processing_labeling"] = {
                 "status": "SUCCESS",
                 "success": step2_success,
             }
 
             # Run validator for Step 2
             validation_result = await self._run_step_validator(
-                "step2_market_regime_classification", training_input, pipeline_state
+                "step2_processing_labeling", training_input, pipeline_state
             )
 
             self._log_step_completion(
-                "Step 2: Market Regime Classification", step_start, step_times
+                "Step 2: Processing & Labeling", step_start, step_times
             )
 
             # Save checkpoint after step 2
-            self._save_checkpoint("step2_market_regime_classification", pipeline_state)
+            self._save_checkpoint("step2_processing_labeling", pipeline_state)
 
-            # Step 3: Regime Data Splitting (allow meta-label regimes)
-            self._heartbeat("Step 3: Regime Data Splitting")
+            # Step 3: Data Splitting for training (regimes or meta-labels)
+            self._heartbeat("Step 3: Data Splitting for Training")
             try:
                 from src.training.steps import step3_regime_data_splitting
                 step3_kwargs = {}
@@ -1126,7 +1126,7 @@ class EnhancedTrainingManager:
 
             if not step3_success:
                 self._log_step_completion(
-                    "Step 3: Regime Data Splitting",
+                    "Step 3: Data Splitting for Training",
                     step_start,
                     step_times,
                     success=False,
@@ -1145,36 +1145,27 @@ class EnhancedTrainingManager:
             )
 
             self._log_step_completion(
-                "Step 3: Regime Data Splitting", step_start, step_times
+                "Step 3: Data Splitting for Training", step_start, step_times
             )
 
             # Save checkpoint after step 3
-            self._save_checkpoint("step3_regime_data_splitting", pipeline_state)
+            self._save_checkpoint("step3_data_splitting", pipeline_state)
 
-            # Step 4: Analyst Labeling & Feature Engineering (skip if already run as Step2 alt)
-            self._heartbeat("Step 4: Analyst Labeling & Feature Engineering")
+            # Step 4: Model Training (features are already engineered in Step 2)
+            self._heartbeat("Step 4: Model Training")
             try:
                 pipeline_cfg = self.config.get("pipeline", {})
                 method_a_cfg = pipeline_cfg.get("method_a", {})
                 use_alt_step2 = bool(method_a_cfg.get("step2_is_leveling", False))
-                if not use_alt_step2:
-                    from src.training.steps import step4_analyst_labeling_feature_engineering
-                    step4_success = (
-                        await step4_analyst_labeling_feature_engineering.run_step(
-                            symbol=symbol,
-                            data_dir=data_dir,
-                            pipeline_config=self.config,
-                        )
-                    )
-                else:
-                    step4_success = True
+                # If Step 2 already performed processing/labeling/feature-engineering, we skip
+                step4_success = True
             except Exception as e:
                 self.logger.error(f"❌ Error in Step 4: {e}")
                 step4_success = False
 
             if not step4_success:
                 self._log_step_completion(
-                    "Step 4: Analyst Labeling & Feature Engineering",
+                    "Step 4: Model Training",
                     step_start,
                     step_times,
                     success=False,
@@ -1182,19 +1173,19 @@ class EnhancedTrainingManager:
                 return False
 
             # Provide explicit success indicators for validators
-            pipeline_state["analyst_labeling_feature_engineering"] = {
+            pipeline_state["model_training_ready"] = {
                 "status": "SUCCESS" if step4_success else "FAILED",
                 "success": bool(step4_success),
                 "completed": bool(step4_success),
             }
             self._save_checkpoint(
-                "step4_analyst_labeling_feature_engineering", pipeline_state
+                "step4_model_training_ready", pipeline_state
             )
             self._optimize_memory_usage()
 
             # Run validator for Step 4
             await self._run_step_validator(
-                "step4_analyst_labeling_feature_engineering",
+                "step4_model_training_ready",
                 training_input,
                 pipeline_state,
             )

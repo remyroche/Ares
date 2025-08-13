@@ -129,9 +129,7 @@ def pa_check_io(
     """
 
     def decorator(func: F) -> F:  # type: ignore[override]
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any):
-            # Resolve target dataframe argument
+        def _resolve_df(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any | None:
             df_value: Any | None = None
             if df_arg_name is not None and df_arg_name in kwargs:
                 df_value = kwargs.get(df_arg_name)
@@ -143,46 +141,68 @@ def pa_check_io(
                     df_value = bound.arguments[df_arg_name]
             elif len(args) > df_arg_index:
                 df_value = args[df_arg_index]
+            return df_value
 
-            # Input validation
-            if input_schema is not None:
-                if pa is not None and hasattr(input_schema, "validate"):
-                    try:
-                        input_schema.validate(df_value, lazy=not strict)
-                    except Exception as exc:  # pandera raises SchemaErrors
-                        raise SchemaValidationError(
-                            f"Input DataFrame failed schema validation: {exc}",
-                            context={"function": func.__name__},
-                        ) from exc
-                else:
-                    if not isinstance(df_value, pd.DataFrame):
-                        raise SchemaValidationError(
-                            "Input is not a pandas DataFrame and pandera is unavailable",
-                            context={"function": func.__name__},
-                        )
+        def _validate_input(df_value: Any) -> None:
+            if input_schema is None:
+                return
+            if pa is not None and hasattr(input_schema, "validate"):
+                try:
+                    input_schema.validate(df_value, lazy=not strict)
+                except Exception as exc:  # pandera raises SchemaErrors
+                    raise SchemaValidationError(
+                        f"Input DataFrame failed schema validation: {exc}",
+                        context={"function": func.__name__},
+                    ) from exc
+            else:
+                if not isinstance(df_value, pd.DataFrame):
+                    raise SchemaValidationError(
+                        "Input is not a pandas DataFrame and pandera is unavailable",
+                        context={"function": func.__name__},
+                    )
 
-            result = func(*args, **kwargs)
-
-            # Output validation
-            if output_schema is not None:
-                if pa is not None and hasattr(output_schema, "validate"):
-                    try:
-                        output_schema.validate(result, lazy=not strict)
-                    except Exception as exc:  # pandera raises SchemaErrors
-                        raise SchemaValidationError(
-                            f"Output DataFrame failed schema validation: {exc}",
-                            context={"function": func.__name__},
-                        ) from exc
-                else:
-                    if not isinstance(result, pd.DataFrame):
-                        raise SchemaValidationError(
-                            "Output is not a pandas DataFrame and pandera is unavailable",
-                            context={"function": func.__name__},
-                        )
-
+        def _validate_output(result: Any) -> Any:
+            if output_schema is None:
+                return result
+            if pa is not None and hasattr(output_schema, "validate"):
+                try:
+                    output_schema.validate(result, lazy=not strict)
+                except Exception as exc:  # pandera raises SchemaErrors
+                    raise SchemaValidationError(
+                        f"Output DataFrame failed schema validation: {exc}",
+                        context={"function": func.__name__},
+                    ) from exc
+            else:
+                if not isinstance(result, pd.DataFrame):
+                    raise SchemaValidationError(
+                        "Output is not a pandas DataFrame and pandera is unavailable",
+                        context={"function": func.__name__},
+                    )
             return result
 
-        return cast("F", wrapper)
+        @functools.wraps(func)
+        async def async_wrapper(*args: Any, **kwargs: Any):
+            df_value = _resolve_df(args, kwargs)
+            if input_schema is not None:
+                _validate_input(df_value)
+            result = await func(*args, **kwargs)  # type: ignore[misc]
+            if output_schema is not None:
+                _validate_output(result)
+            return result
+
+        @functools.wraps(func)
+        def sync_wrapper(*args: Any, **kwargs: Any):
+            df_value = _resolve_df(args, kwargs)
+            if input_schema is not None:
+                _validate_input(df_value)
+            result = func(*args, **kwargs)
+            if output_schema is not None:
+                _validate_output(result)
+            return result
+
+        if inspect.iscoroutinefunction(func):
+            return cast("F", async_wrapper)
+        return cast("F", sync_wrapper)
 
     return decorator
 
@@ -316,25 +336,24 @@ def guard_dataframe_nulls(
     columns: list[str] | None = None,
     mode: str = "raise",  # "raise" | "warn" | "fill"
     fill_value: float | int | str | None = 0,
+    arg_index: int = 0,
 ) -> Callable[[F], F]:
-    """Check a pandas DataFrame argument (first positional) for nulls/NaN/Inf.
+    """Check a pandas DataFrame argument for nulls/NaN/Inf.
 
+    arg_index selects which positional argument is the DataFrame (0 for functions where df is first, 1 for instance methods).
     If columns is provided, restrict checks to those columns.
     """
 
     def decorator(func: F) -> F:  # type: ignore[override]
-        @functools.wraps(func)
-        def wrapper(df: pd.DataFrame, *args: Any, **kwargs: Any):
+        def _check(df: pd.DataFrame) -> pd.DataFrame:
             if not isinstance(df, pd.DataFrame):
                 raise DataValidationError(
-                    "First argument must be a pandas DataFrame",
+                    "Target argument must be a pandas DataFrame",
                     context={"function": func.__name__},
                 )
-
             selected = df if columns is None else df[columns]
             num_nan = int(selected.isna().sum().sum())
             num_inf = int(np.isinf(selected.to_numpy()).sum())
-
             if num_nan or num_inf:
                 msg = (
                     f"DataFrame has {num_nan} NaN and {num_inf} Inf values in {func.__name__}"
@@ -348,10 +367,25 @@ def guard_dataframe_nulls(
                     df[selected.columns] = (
                         selected.replace([np.inf, -np.inf], fill_value).fillna(fill_value)
                     )
+            return df
 
-            return func(df, *args, **kwargs)
+        @functools.wraps(func)
+        async def async_wrapper(*args: Any, **kwargs: Any):
+            args_list = list(args)
+            if len(args_list) > arg_index:
+                args_list[arg_index] = _check(args_list[arg_index])
+            return await func(*tuple(args_list), **kwargs)  # type: ignore[misc]
 
-        return cast("F", wrapper)
+        @functools.wraps(func)
+        def sync_wrapper(*args: Any, **kwargs: Any):
+            args_list = list(args)
+            if len(args_list) > arg_index:
+                args_list[arg_index] = _check(args_list[arg_index])
+            return func(*tuple(args_list), **kwargs)
+
+        if inspect.iscoroutinefunction(func):
+            return cast("F", async_wrapper)
+        return cast("F", sync_wrapper)
 
     return decorator
 
@@ -403,7 +437,26 @@ def normalize_errors(
 
     def decorator(func: F) -> F:  # type: ignore[override]
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any):
+        async def async_wrapper(*args: Any, **kwargs: Any):
+            try:
+                return await func(*args, **kwargs)  # type: ignore[misc]
+            except tuple(exception_map.keys()) as exc:  # type: ignore[arg-type]
+                domain_exc_type = default_error
+                for base_exc, mapped in exception_map.items():
+                    if isinstance(exc, base_exc):
+                        domain_exc_type = mapped
+                        break
+                norm_exc = domain_exc_type(
+                    f"{func.__name__} failed: {exc}",
+                    context={"function": func.__name__},
+                )
+                logger.exception("Normalized error", extra={"correlation_id": get_correlation_id()})
+                if reraise:
+                    raise norm_exc from exc
+                return None
+
+        @functools.wraps(func)
+        def sync_wrapper(*args: Any, **kwargs: Any):
             try:
                 return func(*args, **kwargs)
             except tuple(exception_map.keys()) as exc:  # type: ignore[arg-type]
@@ -421,7 +474,9 @@ def normalize_errors(
                     raise norm_exc from exc
                 return None
 
-        return cast("F", wrapper)
+        if inspect.iscoroutinefunction(func):
+            return cast("F", async_wrapper)
+        return cast("F", sync_wrapper)
 
     return decorator
 
@@ -471,7 +526,47 @@ def with_tracing_span(
         resolved_span = span_name or func.__name__
 
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any):
+        async def async_wrapper(*args: Any, **kwargs: Any):
+            cid = ensure_correlation_id()
+            if log_args:
+                safe_args = _sanitize(args)
+                safe_kwargs = _sanitize(kwargs)
+                logger.info(
+                    f"➡️ {resolved_span} start",
+                    extra={"correlation_id": cid, "args": safe_args, "kwargs": safe_kwargs},
+                )
+            else:
+                logger.info(
+                    f"➡️ {resolved_span} start",
+                    extra={"correlation_id": cid},
+                )
+
+            result = await func(*args, **kwargs)  # type: ignore[misc]
+
+            if log_result_len_only:
+                try:
+                    length = None
+                    if hasattr(result, "__len__"):
+                        length = len(cast(Any, result))
+                    logger.info(
+                        f"✅ {resolved_span} done",
+                        extra={"correlation_id": cid, "result_len": length},
+                    )
+                except Exception:
+                    logger.info(
+                        f"✅ {resolved_span} done",
+                        extra={"correlation_id": cid},
+                    )
+            else:
+                logger.info(
+                    f"✅ {resolved_span} done",
+                    extra={"correlation_id": cid, "result": _sanitize(result)},
+                )
+
+            return result
+
+        @functools.wraps(func)
+        def sync_wrapper(*args: Any, **kwargs: Any):
             cid = ensure_correlation_id()
             if log_args:
                 safe_args = _sanitize(args)
@@ -510,7 +605,9 @@ def with_tracing_span(
 
             return result
 
-        return cast("F", wrapper)
+        if inspect.iscoroutinefunction(func):
+            return cast("F", async_wrapper)
+        return cast("F", sync_wrapper)
 
     return decorator
 

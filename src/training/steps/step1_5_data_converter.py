@@ -56,6 +56,7 @@ try:
         initialization_error,
         execution_error,
     )
+    from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 except ImportError as e:
     print(f"Warning: Could not import some modules: {e}")
     # Fallback configuration
@@ -202,6 +203,8 @@ class ParquetDatasetManager:
                 "pyarrow is required for ParquetDatasetManager operations"
             )
 
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @with_tracing_span("ParquetDatasetManager.enforce_schema", log_args=False, log_result_len_only=True)
     def enforce_schema(self, df: pd.DataFrame, schema_name: str) -> pd.DataFrame:
         """Standardize dtypes for known schemas to avoid costly inference and mismatches.
 

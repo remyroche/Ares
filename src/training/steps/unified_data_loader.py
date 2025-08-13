@@ -39,6 +39,7 @@ from src.utils.warning_symbols import (
     failed,
     missing,
 )
+from src.utils.decorators import with_tracing_span, guard_dataframe_nulls
 
 
 class UnifiedDataLoader:
@@ -561,6 +562,7 @@ class UnifiedDataLoader:
             self.logger.error(f"❌ Optimized pandas loading failed: {e}")
             return None
 
+    @with_tracing_span("UnifiedDataLoader._optimize_dataframe_memory", log_args=False)
     def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame memory usage."""
         try:
@@ -733,6 +735,7 @@ class UnifiedDataLoader:
         self.logger.error("❌ No usable data sources found")
         return None
 
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     def get_data_info(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Get information about the loaded data."""
         if df is None or df.empty:

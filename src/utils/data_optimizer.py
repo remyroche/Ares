@@ -8,7 +8,7 @@ import contextlib
 import gc
 from datetime import datetime
 from functools import lru_cache
-from typing import Any
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -19,6 +19,7 @@ from src.utils.warning_symbols import (
     initialization_error,
     missing,
 )
+from src.utils.decorators import with_tracing_span, guard_dataframe_nulls
 
 
 class DataOptimizer:
@@ -140,6 +141,8 @@ def regime_columns() -> list[str]:
             self.print(error("Error optimizing DataFrame: {e}"))
             return df
 
+    @with_tracing_span("DataOptimizer._apply_auto_optimization", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     async def _apply_auto_optimization(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply automatic optimization based on data characteristics."""
         try:
@@ -160,6 +163,8 @@ def regime_columns() -> list[str]:
             self.print(error("Error in auto optimization: {e}"))
             return df
 
+    @with_tracing_span("DataOptimizer._optimize_memory_usage", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     async def _optimize_memory_usage(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for memory usage."""
         try:
@@ -185,6 +190,8 @@ def regime_columns() -> list[str]:
             self.print(error("Error optimizing memory usage: {e}"))
             return df
 
+    @with_tracing_span("DataOptimizer._optimize_data_types", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     async def _optimize_data_types(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame data types for memory efficiency."""
         try:
@@ -231,6 +238,8 @@ def regime_columns() -> list[str]:
             self.print(error("Error applying compression: {e}"))
             return df
 
+    @with_tracing_span("DataOptimizer._remove_unnecessary_columns", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     async def _remove_unnecessary_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Remove unnecessary columns from DataFrame."""
         try:
@@ -252,6 +261,8 @@ def regime_columns() -> list[str]:
             self.print(error("Error removing unnecessary columns: {e}"))
             return df
 
+    @with_tracing_span("DataOptimizer._optimize_index", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     async def _optimize_index(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame index."""
         try:
@@ -265,6 +276,8 @@ def regime_columns() -> list[str]:
             self.print(error("Error optimizing index: {e}"))
             return df
 
+    @with_tracing_span("DataOptimizer._optimize_for_speed", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     async def _optimize_for_speed(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for processing speed."""
         try:
@@ -283,6 +296,8 @@ def regime_columns() -> list[str]:
             self.print(error("Error optimizing for speed: {e}"))
             return df
 
+    @with_tracing_span("DataOptimizer._optimize_for_vectorization", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     async def _optimize_for_vectorization(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for vectorized operations."""
         try:
@@ -383,6 +398,8 @@ def regime_columns() -> list[str]:
             self.print(error("Error in cached optimization: {e}"))
             return {}
 
+    @with_tracing_span("DataOptimizer.optimize_market_data", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)
     async def optimize_market_data(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """Optimize market data specifically for trading operations."""
         try:

@@ -36,6 +36,7 @@ try:
         handle_errors,
     )
     from src.utils.logger import setup_logging, system_logger
+    from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 except ImportError as e:
     print(f"Warning: Could not import some modules: {e}")
     # Fallback configuration
@@ -355,6 +356,8 @@ def _load_existing_data(
     return existing_df, existing_ids
 
 
+@with_tracing_span("data_collection._process_single_file", log_args=False)
+@guard_dataframe_nulls(mode="warn", arg_index=0)
 def _process_single_file(
     file_path: str, index_col: str, unique_col: str, dtype: dict | None = None
 ) -> pd.DataFrame | None:
@@ -438,6 +441,8 @@ def _process_single_file(
         return None
 
 
+@with_tracing_span("data_collection._process_file_chunk", log_args=False)
+@guard_dataframe_nulls(mode="warn", arg_index=0)
 def _process_file_chunk(
     chunk_files: list[str],
     index_col: str,
@@ -527,6 +532,8 @@ def _save_consolidated_data(
     logger.info(f"📋 Final columns: {list(combined_df.columns)}")
 
 
+@with_tracing_span("data_collection.consolidate_files", log_args=False)
+@guard_dataframe_nulls(mode="warn", arg_index=0)
 def consolidate_files(
     pattern: str,
     consolidated_filepath: str,

@@ -1176,8 +1176,8 @@ class MetaLabelingSystem:
                     "signal_count": tactician_labels.get("signal_count", 0),
                     "labels": summaries,
                 })
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"Failed to log tactician label summary: {e}")
             return tactician_labels
 
         except Exception as e:

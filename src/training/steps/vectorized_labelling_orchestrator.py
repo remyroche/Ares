@@ -590,14 +590,41 @@ class VectorizedLabellingOrchestrator:
             self.logger.info(
                 f"🎉 Vectorized labeling and feature engineering completed! Final shape: {final_data.shape}",
             )
+            # Summarize score-like columns
+            try:
+                cols = [
+                    c for c in final_data.columns
+                    if any(k in c.lower() for k in ("confidence", "intensity", "score", "weight"))
+                ]
+                if cols:
+                    summary = {}
+                    for c in cols[:50]:  # cap to avoid oversized logs
+                        s = pd.to_numeric(final_data[c], errors="coerce")
+                        if s.notna().any():
+                            summary[c] = {
+                                "mean": float(s.mean()),
+                                "min": float(s.min()),
+                                "p50": float(s.quantile(0.5)),
+                                "p90": float(s.quantile(0.9)),
+                                "max": float(s.max()),
+                            }
+                    self.logger.info({"msg": "score_like_columns_summary", "columns": list(summary.keys()), "stats": summary})
+            except Exception:
+                pass
 
             return {
                 "data": final_data,
                 "metadata": {
-                    "total_features": len(final_data.columns),
-                    "total_samples": len(final_data),
-                    "feature_engineering_completed": self.advanced_feature_engineer is not None,
                     "labeling_completed": True,
+                    "shapes": {
+                        "final": final_data.shape,
+                        "engineered": advanced_features.shape if self.advanced_feature_engineer is not None else None,
+                        "autoencoder": autoencoder_features.shape if self.autoencoder_generator is not None else None,
+                        "normalized": combined_data.shape if self.enable_data_normalization else None,
+                        "selected": selected.shape if self.enable_feature_selection else None,
+                        "context": {c: final_data[c].nunique() for c in context_cols},
+                    },
+                    "feature_engineering_completed": self.advanced_feature_engineer is not None,
                     "autoencoder_features_generated": self.autoencoder_generator is not None,
                     "stationary_checks_performed": self.enable_stationary_checks,
                     "data_normalized": self.enable_data_normalization,

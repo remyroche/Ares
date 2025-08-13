@@ -402,24 +402,31 @@ class MarketRegimeClassificationStep:
                 target_low = float(target_range[0])
                 target_high = float(target_range[1])
                 it = 0
+
+                _ADX_LOWER_BOUND = 5.0
+                _ADX_UPPER_BOUND = 60.0
+                _EMA_SEP_LOWER_BOUND = 0.0
+                _EMA_SEP_UPPER_BOUND = 0.02
+                _ADX_THRESHOLD_GAP = 1.0
+
                 while (sideways_ratio < target_low or sideways_ratio > target_high) and it < max_calibration_iters:
                     # Adjust thresholds to move ratio toward band
                     if sideways_ratio > target_high:
                         # Too much SIDEWAYS -> make trend easier
-                        adx_trend_threshold = max(5.0, adx_trend_threshold - adx_trend_step)
-                        adx_sideways_threshold = max(5.0, adx_sideways_threshold - adx_sideways_step)
-                        ema_sep_min_ratio = max(0.0, ema_sep_min_ratio - ema_sep_step)
+                        adx_trend_threshold = max(_ADX_LOWER_BOUND, adx_trend_threshold - adx_trend_step)
+                        adx_sideways_threshold = max(_ADX_LOWER_BOUND, adx_sideways_threshold - adx_sideways_step)
+                        ema_sep_min_ratio = max(_EMA_SEP_LOWER_BOUND, ema_sep_min_ratio - ema_sep_step)
                     else:
                         # Too little SIDEWAYS -> make trend harder / expand sideways
-                        adx_trend_threshold = min(60.0, adx_trend_threshold + adx_trend_step)
+                        adx_trend_threshold = min(_ADX_UPPER_BOUND, adx_trend_threshold + adx_trend_step)
                         adx_sideways_threshold = min(
-                            adx_trend_threshold - 1.0,
+                            adx_trend_threshold - _ADX_THRESHOLD_GAP,
                             adx_sideways_threshold + adx_sideways_step,
                         )
-                        ema_sep_min_ratio = min(0.02, ema_sep_min_ratio + ema_sep_step)
+                        ema_sep_min_ratio = min(_EMA_SEP_UPPER_BOUND, ema_sep_min_ratio + ema_sep_step)
 
                     # Enforce relationship
-                    adx_sideways_threshold = min(adx_sideways_threshold, adx_trend_threshold - 1.0)
+                    adx_sideways_threshold = min(adx_sideways_threshold, adx_trend_threshold - _ADX_THRESHOLD_GAP)
 
                     regimes, confidences, sideways_ratio = classify_and_ratio(
                         ema_fast,
@@ -432,17 +439,14 @@ class MarketRegimeClassificationStep:
 
                     it += 1
 
-                calibrated_params = {
-                    "ema_fast": ema_fast,
-                    "ema_slow": ema_slow,
-                    "adx_period": adx_period,
+                calibrated_params.update({
                     "adx_trend_threshold": adx_trend_threshold,
                     "adx_sideways_threshold": adx_sideways_threshold,
                     "ema_sep_min_ratio": ema_sep_min_ratio,
                     "target_sideways_range": [target_low, target_high],
                     "achieved_sideways_ratio": sideways_ratio,
                     "calibration_iters": it,
-                }
+                })
 
             # Build results
             from collections import Counter

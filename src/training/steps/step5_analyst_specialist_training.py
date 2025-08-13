@@ -610,11 +610,10 @@ class AnalystSpecialistTrainingStep:
                             lr_k.fit(Xtr_k, ytr_k)
                             proba = lr_k.predict_proba(Xoo_k)
                             # Convert to logits for residualization
-                            import numpy as _np
                             eps = 1e-6
                             p1 = proba[:, 1].clip(eps, 1 - eps)
                             p0 = proba[:, 0].clip(eps, 1 - eps)
-                            logit = _np.log(p1 / p0)
+                            logit = np.log(p1 / p0)
                             logits.append(pd.DataFrame({"timestamp": Xoo_k.index, "p_long": p1, "p_short": p0, "logit": logit}))
                         if logits:
                             oof = pd.concat(logits, axis=0).sort_values("timestamp")

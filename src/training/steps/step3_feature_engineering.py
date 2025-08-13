@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 from src.utils.logger import system_logger
+import pickle
 
 
 async def run_step(
@@ -65,6 +66,37 @@ async def run_step(
         X_tr = pd.DataFrame(feats_tr).reindex(price_tr.index)
         X_vl = pd.DataFrame(feats_vl).reindex(price_vl.index)
         X_te = pd.DataFrame(feats_te).reindex(price_te.index)
+
+        # 4b) Optionally augment with Autoencoder features
+        def _augment_with_autoencoder(features_df: pd.DataFrame, split: str) -> pd.DataFrame:
+            try:
+                from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
+            except Exception as e:
+                logger.warning(f"Autoencoder unavailable for Step 3 augmentation: {e}")
+                return features_df
+            try:
+                ae = AutoencoderFeatureGenerator({})
+                y = None
+                try:
+                    y = labeled[split]["label"].astype(int).values if "label" in labeled[split].columns else np.zeros(len(features_df))
+                except Exception:
+                    y = np.zeros(len(features_df))
+                ae_input = features_df.copy()
+                ae_df = ae.generate_features(ae_input, f"step3_{split}", y)
+                if isinstance(ae_df, pd.DataFrame) and not ae_df.empty:
+                    ae_df = ae_df.reindex(features_df.index)
+                    merged = pd.concat([features_df, ae_df], axis=1)
+                    logger.info(f"Augmented {split} with Autoencoder features: +{ae_df.shape[1]} cols")
+                    return merged
+                return features_df
+            except Exception as e:
+                logger.warning(f"Autoencoder augmentation skipped for {split}: {e}")
+                return features_df
+
+        if bool(kwargs.get("enable_autoencoder_features", True)):
+            X_tr = _augment_with_autoencoder(X_tr, "train")
+            X_vl = _augment_with_autoencoder(X_vl, "validation")
+            X_te = _augment_with_autoencoder(X_te, "test")
 
         # 5) Basic sanitization: drop constant columns, handle inf/nan
         def _sanitize(df: pd.DataFrame) -> pd.DataFrame:
@@ -161,14 +193,32 @@ async def run_step(
         os.makedirs(data_dir, exist_ok=True)
         mem_mgr = MemoryEfficientDataManager()
 
-        def _save(name: str, df: pd.DataFrame):
-            path = f"{data_dir}/{exchange}_{symbol}_features_{name}.parquet"
-            mem_mgr.save_to_parquet(mem_mgr.optimize_dataframe(df.copy()), path)
-            logger.info(f"✅ Saved features {name}: {len(df)} rows, {df.shape[1]} cols -> {path}")
+        def _attach_timestamp(df_features: pd.DataFrame, labeled_df: pd.DataFrame) -> pd.DataFrame:
+            try:
+                if "timestamp" in labeled_df.columns and "timestamp" not in df_features.columns:
+                    df_features = df_features.copy()
+                    df_features["timestamp"] = labeled_df["timestamp"].values
+            except Exception:
+                pass
+            return df_features
 
-        _save("train", X_tr)
-        _save("validation", X_vl)
-        _save("test", X_te)
+        def _save(name: str, df: pd.DataFrame, labeled_df: pd.DataFrame):
+            df_out = _attach_timestamp(df, labeled_df)
+            path_parquet = f"{data_dir}/{exchange}_{symbol}_features_{name}.parquet"
+            mem_mgr.save_to_parquet(mem_mgr.optimize_dataframe(df_out.copy()), path_parquet)
+            logger.info(f"✅ Saved features {name}: {len(df_out)} rows, {df_out.shape[1]} cols -> {path_parquet}")
+            # Also save PKL for downstream steps expecting PKL
+            try:
+                path_pkl = f"{data_dir}/{exchange}_{symbol}_features_{name}.pkl"
+                with open(path_pkl, "wb") as f:
+                    pickle.dump(df_out, f)
+                logger.info(f"✅ Saved features {name} (PKL): {path_pkl}")
+            except Exception as e:
+                logger.warning(f"Unable to save PKL features for {name}: {e}")
+
+        _save("train", X_tr, labeled["train"])
+        _save("validation", X_vl, labeled["validation"])
+        _save("test", X_te, labeled["test"])
 
         # Save feature lists per split
         feature_lists = {

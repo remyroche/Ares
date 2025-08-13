@@ -891,7 +891,7 @@ class AnalystSpecialistTrainingStep:
 
             # Train multiple models for ensemble
             models = {}
-            expert_power_score: float = 0.0
+            power_scores: list[float] = []
 
             # Train Random Forest
             try:
@@ -904,7 +904,7 @@ class AnalystSpecialistTrainingStep:
                 if rf_model:
                     models["random_forest"] = rf_model
                     try:
-                        expert_power_score = max(expert_power_score, float(rf_model.get("accuracy", 0.0)))
+                        power_scores.append(float(rf_model.get("accuracy", 0.0)))
                     except Exception:
                         pass
                     try:
@@ -925,7 +925,7 @@ class AnalystSpecialistTrainingStep:
                 if lgb_model:
                     models["lightgbm"] = lgb_model
                     try:
-                        expert_power_score = max(expert_power_score, float(lgb_model.get("accuracy", 0.0)))
+                        power_scores.append(float(lgb_model.get("accuracy", 0.0)))
                     except Exception:
                         pass
                     try:
@@ -946,7 +946,7 @@ class AnalystSpecialistTrainingStep:
                 if xgb_model:
                     models["xgboost"] = xgb_model
                     try:
-                        expert_power_score = max(expert_power_score, float(xgb_model.get("accuracy", 0.0)))
+                        power_scores.append(float(xgb_model.get("accuracy", 0.0)))
                     except Exception:
                         pass
                     try:
@@ -967,7 +967,7 @@ class AnalystSpecialistTrainingStep:
                     if nn_model:
                         models["neural_network"] = nn_model
                         try:
-                            expert_power_score = max(expert_power_score, float(nn_model.get("accuracy", 0.0)))
+                            power_scores.append(float(nn_model.get("accuracy", 0.0)))
                         except Exception:
                             pass
                 except Exception as e:
@@ -984,7 +984,7 @@ class AnalystSpecialistTrainingStep:
                     if svm_model:
                         models["svm"] = svm_model
                         try:
-                            expert_power_score = max(expert_power_score, float(svm_model.get("accuracy", 0.0)))
+                            power_scores.append(float(svm_model.get("accuracy", 0.0)))
                         except Exception:
                             pass
                 except Exception as e:
@@ -992,8 +992,8 @@ class AnalystSpecialistTrainingStep:
 
             self.logger.info(f"✅ Trained {len(models)} models for regime: {regime_name}")
 
-            # Attach aggregate predictive power score for this expert (held-out accuracy proxy)
-            models["_expert_power_score"] = expert_power_score
+            # Attach aggregate predictive power score for this expert (ensemble average accuracy)
+            models["_expert_power_score"] = float(np.mean(power_scores)) if power_scores else 0.0
             return models
 
         except Exception as e:

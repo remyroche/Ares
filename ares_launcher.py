@@ -1656,10 +1656,8 @@ class AresLauncher:
 
             # When forcing, set env flags and clear progress/checkpoints from the start step
             if force_rerun:
-                # Both env vars are set intentionally: EnhancedTrainingManager reads either
-                # FORCE or FORCE_RERUN for backward compatibility with older integrations.
+                # Set FORCE for fresh runs; EnhancedTrainingManager recognizes this env flag.
                 os.environ["FORCE"] = "1"
-                os.environ["FORCE_RERUN"] = "1"
                 self._force_fresh_start_from_step(orchestrator, start_step)
                 self._clear_checkpoint_files(symbol, exchange, timeframe="1m")
 

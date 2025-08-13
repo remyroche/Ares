@@ -530,12 +530,7 @@ class AnalystSpecialistTrainingStep:
             # Update pipeline state
             pipeline_state["analyst_models"] = training_results
 
-            # Update pipeline_state success flags for validators
-            pipeline_state["analyst_specialist_training"] = {
-                "status": "SUCCESS",
-                "success": True,
-                "completed": True,
-            }
+
             return {
                 "analyst_models": training_results,
                 "models_dir": models_dir,
@@ -1302,7 +1297,7 @@ class AnalystSpecialistTrainingStep:
         try:
             import xgboost as xgb
             from sklearn.metrics import accuracy_score
- 
+
             # Train model
             # Explicitly map labels to contiguous 0..K-1 for XGBoost. Preserve semantic order [-1, 0, 1].
             base_order = [-1, 0, 1]

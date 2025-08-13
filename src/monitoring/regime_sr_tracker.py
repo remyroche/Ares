@@ -17,6 +17,8 @@ from typing import Any
 
 import pandas as pd
 from scipy import stats
+import numpy as np
+import os
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
@@ -277,6 +279,17 @@ class RegimeSRTracker:
             "enable_performance_analysis",
             True,
         )
+        # Dispatcher integration (Method A)
+        self.enable_dispatcher = bool(self.tracker_config.get("enable_dispatcher", True))
+        self.dispatcher_manifest_path = self.tracker_config.get("dispatcher_manifest_path", None)
+        self.dispatcher_manifest: dict[str, Any] | None = None
+        if self.enable_dispatcher and self.dispatcher_manifest_path and os.path.exists(self.dispatcher_manifest_path):
+            try:
+                with open(self.dispatcher_manifest_path, "r") as jf:
+                    self.dispatcher_manifest = json.load(jf)
+                self.logger.info(f"Loaded dispatcher manifest: {self.dispatcher_manifest_path}")
+            except Exception as _e:
+                self.logger.warning(f"Failed to load dispatcher manifest: {_e}")
 
         # Detection parameters
         self.regime_detection_interval = self.tracker_config.get(
@@ -1537,6 +1550,35 @@ class RegimeSRTracker:
 
         except Exception as e:
             self.logger.exception(failed("Failed to cleanup Regime and S/R Tracker: {e}"))
+
+    def combine_expert_predictions(
+        self,
+        expert_predictions: dict[str, float],
+        strengths: dict[str, float] | None = None,
+    ) -> float:
+        """Combine expert predictions via simple or strength-weighted averaging.
+
+        Args:
+            expert_predictions: mapping expert_name->prediction value
+            strengths: optional mapping expert_name->strength in [0,1]
+
+        Returns:
+            Combined prediction value.
+        """
+        try:
+            if not expert_predictions:
+                return 0.0
+            if strengths and len(strengths) == len(expert_predictions):
+                weights = {k: max(0.0, float(strengths.get(k, 0.0))) for k in expert_predictions}
+                total = sum(weights.values())
+                if total <= 0:
+                    # fallback to simple average
+                    return float(np.mean(list(expert_predictions.values())))
+                return float(sum(expert_predictions[k] * weights[k] for k in expert_predictions) / total)
+            # Simple average
+            return float(np.mean(list(expert_predictions.values())))
+        except Exception:
+            return float(np.mean(list(expert_predictions.values()))) if expert_predictions else 0.0
 
 
 # Setup function for integration

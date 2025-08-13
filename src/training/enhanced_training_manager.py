@@ -1055,21 +1055,28 @@ class EnhancedTrainingManager:
                     "result": {"message": "Using pre-consolidated data"},
                 }
 
-            # Step 2: Market Regime Classification
-            step_start = time.time()
-            self.logger.info("🎭 STEP 2: Market Regime Classification...")
-            self.logger.info(
-                "   🧠 Analyzing market regimes and volatility patterns..."
-            )
-
-            from src.training.steps import step2_market_regime_classification
-
-            step2_success = await step2_market_regime_classification.run_step(
-                symbol=symbol,
-                data_dir=data_dir,
-                timeframe=timeframe,
-                exchange=exchange,
-            )
+            # Step 2: Market Regime Classification or L0/L1/L2/L3 (toggle)
+            self._heartbeat("Step 2: Market Regime Classification")
+            try:
+                pipeline_cfg = self.config.get("pipeline", {})
+                method_a_cfg = pipeline_cfg.get("method_a", {})
+                use_alt_step2 = bool(method_a_cfg.get("step2_is_leveling", False))
+                if use_alt_step2:
+                    # Run Step4 early to materialize L0/L1/L2/L3 before regime split
+                    from src.training.steps import step4_analyst_labeling_feature_engineering
+                    step2_success = await step4_analyst_labeling_feature_engineering.run_step(
+                        symbol=symbol,
+                        data_dir=data_dir,
+                    )
+                else:
+                    from src.training.steps import step2_market_regime_classification
+                    step2_success = await step2_market_regime_classification.run_step(
+                        symbol=symbol,
+                        data_dir=data_dir,
+                    )
+            except Exception as e:
+                self.logger.error(f"❌ Error in Step 2: {e}")
+                step2_success = False
 
             if not step2_success:
                 self._log_step_completion(
@@ -1098,21 +1105,23 @@ class EnhancedTrainingManager:
             # Save checkpoint after step 2
             self._save_checkpoint("step2_market_regime_classification", pipeline_state)
 
-            # Step 3: Regime Data Splitting
-            step_start = time.time()
-            self.logger.info("📊 STEP 3: Regime Data Splitting...")
-            self.logger.info(
-                "   📈 Splitting data by market regimes for specialized training..."
-            )
-
-            from src.training.steps import step3_regime_data_splitting
-
-            step3_success = await step3_regime_data_splitting.run_step(
-                symbol=symbol,
-                data_dir=data_dir,
-                timeframe=timeframe,
-                exchange=exchange,
-            )
+            # Step 3: Regime Data Splitting (allow meta-label regimes)
+            self._heartbeat("Step 3: Regime Data Splitting")
+            try:
+                from src.training.steps import step3_regime_data_splitting
+                step3_kwargs = {}
+                pipeline_cfg = self.config.get("pipeline", {})
+                method_a_cfg = pipeline_cfg.get("method_a", {})
+                regime_basis = str(method_a_cfg.get("regime_basis", "bull_bear_sideways")).lower()
+                step3_kwargs["regime_basis"] = regime_basis
+                step3_success = await step3_regime_data_splitting.run_step(
+                    symbol=symbol,
+                    data_dir=data_dir,
+                    **step3_kwargs,
+                )
+            except Exception as e:
+                self.logger.error(f"❌ Error in Step 3: {e}")
+                step3_success = False
 
             if not step3_success:
                 self._log_step_completion(
@@ -1141,69 +1150,86 @@ class EnhancedTrainingManager:
             # Save checkpoint after step 3
             self._save_checkpoint("step3_regime_data_splitting", pipeline_state)
 
-            # Step 4: Analyst Labeling & Feature Engineering
-            with self._timed_step(
-                "Step 4: Analyst Labeling & Feature Engineering", step_times
-            ):
-                self.logger.info("🧠 STEP 4: Analyst Labeling & Feature Engineering...")
-
-                from src.training.steps import (
-                    step4_analyst_labeling_feature_engineering,
-                )
-
-                step4_success = (
-                    await step4_analyst_labeling_feature_engineering.run_step(
-                        symbol=symbol,
-                        data_dir=data_dir,
-                        timeframe=timeframe,
-                        exchange=exchange,
+            # Step 4: Analyst Labeling & Feature Engineering (skip if already run as Step2 alt)
+            self._heartbeat("Step 4: Analyst Labeling & Feature Engineering")
+            try:
+                pipeline_cfg = self.config.get("pipeline", {})
+                method_a_cfg = pipeline_cfg.get("method_a", {})
+                use_alt_step2 = bool(method_a_cfg.get("step2_is_leveling", False))
+                if not use_alt_step2:
+                    from src.training.steps import step4_analyst_labeling_feature_engineering
+                    step4_success = (
+                        await step4_analyst_labeling_feature_engineering.run_step(
+                            symbol=symbol,
+                            data_dir=data_dir,
+                        )
                     )
+                else:
+                    step4_success = True
+            except Exception as e:
+                self.logger.error(f"❌ Error in Step 4: {e}")
+                step4_success = False
+
+            if not step4_success:
+                self._log_step_completion(
+                    "Step 4: Analyst Labeling & Feature Engineering",
+                    step_start,
+                    step_times,
+                    success=False,
                 )
+                return False
 
-                if not step4_success:
-                    return False
-                # Provide explicit success indicators for validators
-                pipeline_state["analyst_labeling_feature_engineering"] = {
-                    "status": "SUCCESS" if step4_success else "FAILED",
-                    "success": bool(step4_success),
-                    "completed": bool(step4_success),
-                }
-                self._save_checkpoint(
-                    "step4_analyst_labeling_feature_engineering", pipeline_state
-                )
-                self._optimize_memory_usage()
+            # Provide explicit success indicators for validators
+            pipeline_state["analyst_labeling_feature_engineering"] = {
+                "status": "SUCCESS" if step4_success else "FAILED",
+                "success": bool(step4_success),
+                "completed": bool(step4_success),
+            }
+            self._save_checkpoint(
+                "step4_analyst_labeling_feature_engineering", pipeline_state
+            )
+            self._optimize_memory_usage()
 
-                # Run validator for Step 4
-                await self._run_step_validator(
-                    "step4_analyst_labeling_feature_engineering",
-                    training_input,
-                    pipeline_state,
-                )
+            # Run validator for Step 4
+            await self._run_step_validator(
+                "step4_analyst_labeling_feature_engineering",
+                training_input,
+                pipeline_state,
+            )
 
-            # Step 5: Analyst Specialist Training
-            with self._timed_step("Step 5: Analyst Specialist Training", step_times):
-                self.logger.info("🎯 STEP 5: Analyst Specialist Training...")
-
+            # Step 5: Analyst Specialist Training (enable Method A experts via config)
+            self._heartbeat("Step 5: Analyst Specialist Training")
+            try:
                 from src.training.steps import step5_analyst_specialist_training
-
+                method_a_cfg = self.config.get("method_a_mixture_of_experts", {})
                 step5_success = await step5_analyst_specialist_training.run_step(
                     symbol=symbol,
                     data_dir=data_dir,
-                    timeframe=timeframe,
-                    exchange=exchange,
+                    method_a_mixture_of_experts=method_a_cfg,
                 )
-                if not step5_success:
-                    return False
-                pipeline_state["analyst_specialist_training"] = {
-                    "status": "SUCCESS" if step5_success else "FAILED",
-                    "success": bool(step5_success),
-                    "completed": bool(step5_success),
-                }
+            except Exception as e:
+                self.logger.error(f"❌ Error in Step 5: {e}")
+                step5_success = False
 
-                # Run validator for Step 5
-                await self._run_step_validator(
-                    "step5_analyst_specialist_training", training_input, pipeline_state
+            if not step5_success:
+                self._log_step_completion(
+                    "Step 5: Analyst Specialist Training",
+                    step_start,
+                    step_times,
+                    success=False,
                 )
+                return False
+
+            pipeline_state["analyst_specialist_training"] = {
+                "status": "SUCCESS" if step5_success else "FAILED",
+                "success": bool(step5_success),
+                "completed": bool(step5_success),
+            }
+
+            # Run validator for Step 5
+            await self._run_step_validator(
+                "step5_analyst_specialist_training", training_input, pipeline_state
+            )
 
             # Step 6: Analyst Enhancement
             with self._timed_step("Step 6: Analyst Enhancement", step_times):

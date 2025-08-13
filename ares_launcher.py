@@ -292,7 +292,7 @@ class AresLauncher:
             if target_file.exists():
                 target_file.unlink()
                 self.logger.info(f"🗑️  Cleared checkpoint: {target_file}")
-        except (IOError, OSError) as e:
+        except (OSError, IOError) as e:
             self.logger.warning(f"Failed to clear checkpoint: {e}")
 
     def _force_fresh_start_from_step(self, orchestrator, start_step: str) -> None:
@@ -310,7 +310,7 @@ class AresLauncher:
             self.logger.info(
                 f"🧹 Cleared progress for steps from '{start_step}' to the end of the pipeline"
             )
-        except Exception as e:
+        except (OSError, IOError) as e:
             self.logger.warning(f"Failed clearing progress from step '{start_step}': {e}")
 
     def _run_unified_training(
@@ -1265,102 +1265,14 @@ class AresLauncher:
         self.logger.info(
             f"🚀 Running enhanced 16-step training pipeline for {symbol} on {exchange}"
         )
-        start_step = self._normalize_step_name(start_step)
-        self.logger.info(f"Starting from step: {start_step}")
-
-        # Ensure BLANK_TRAINING_MODE is set for step-based blank training
-        import os
-
-        os.environ["BLANK_TRAINING_MODE"] = "1"
-        os.environ["FULL_TRAINING_MODE"] = "0"
-        self.logger.info(
-            "🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training"
+        return self._run_step_pipeline(
+            symbol=symbol,
+            exchange=exchange,
+            start_step=start_step,
+            force_rerun=force_rerun,
+            with_gui=with_gui,
+            training_mode="blank",
         )
-
-        # Prevent blank mode from being used with step1_data_collection
-        if start_step == "step1_data_collection":
-            # Check if we're in blank mode (30 days lookback)
-            blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
-            if blank_mode:
-                self.logger.error("❌ Cannot use blank mode with step1_data_collection")
-                self.logger.error(
-                    "Blank mode is designed for quick testing with limited data"
-                )
-                self.logger.error(
-                    "step1_data_collection processes all available data files"
-                )
-                self.logger.error("Use one of the following instead:")
-                self.logger.error(
-                    "  - python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE (for full data)"
-                )
-                self.logger.error(
-                    "  - python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering (for blank mode)"
-                )
-                return False
-
-        if with_gui:
-            if not self.launch_gui("training", symbol, exchange):
-                return False
-
-        try:
-            # Import the step orchestrator
-            import os
-            from src.training.step_orchestrator import StepOrchestrator
-            from src.config import CONFIG
-
-            # Initialize step orchestrator
-            orchestrator = StepOrchestrator(symbol, exchange)
-
-            # When forcing, set env flags and clear progress/checkpoints from the start step
-            if force_rerun:
-                os.environ["FORCE_RERUN"] = "1"
-                os.environ["FORCE"] = "1"
-                self._force_fresh_start_from_step(orchestrator, start_step)
-                self._clear_checkpoint_files(symbol, exchange, timeframe="1m")
-
-            # Check if starting from step2, use pre-consolidated data
-            if start_step in (
-                "step2_market_regime_classification",
-                "step2_processing_labeling_feature_engineering",
-            ):
-                self.logger.info("📁 Using pre-consolidated data for step2")
-
-                # Check for consolidated data file
-                consolidated_file = (
-                    f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
-                )
-                if not os.path.exists(consolidated_file):
-                    self.logger.error(
-                        f"❌ Consolidated data file not found: {consolidated_file}"
-                    )
-                    self.logger.error(
-                        "Please run data loading first or ensure consolidated data exists"
-                    )
-                    return False
-
-                self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
-
-            # Run the step-based training using the orchestrator
-            import asyncio
-
-            success = asyncio.run(
-                orchestrator.execute_from_step(
-                    start_step=start_step, config=CONFIG, force_rerun=force_rerun
-                )
-            )
-
-            if success:
-                self.logger.info(
-                    "✅ Enhanced 16-step training pipeline completed successfully"
-                )
-                return True
-            else:
-                self.logger.error("❌ Enhanced 16-step training pipeline failed")
-                return False
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to run enhanced training pipeline: {e}")
-            return False
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1379,77 +1291,17 @@ class AresLauncher:
         self.logger.info(
             f"🚀 Running step-based full training for {symbol} on {exchange}"
         )
-        start_step = self._normalize_step_name(start_step)
-        self.logger.info(f"Starting from step: {start_step}")
         self.logger.info(
             "📊 Using full parameters (730 days lookback, full training parameters)"
         )
-
-        if with_gui:
-            if not self.launch_gui("training", symbol, exchange):
-                return False
-
-        try:
-            # Import the step orchestrator
-            import os
-            from src.training.step_orchestrator import StepOrchestrator
-            from src.config import CONFIG
-
-            # Set environment variable for full training mode
-            os.environ["FULL_TRAINING_MODE"] = "1"
-            os.environ["BLANK_TRAINING_MODE"] = "0"  # Ensure blank mode is off
-
-            # Initialize step orchestrator
-            orchestrator = StepOrchestrator(symbol, exchange)
-
-            # When forcing, set env flags and clear progress/checkpoints from the start step
-            if force_rerun:
-                os.environ["FORCE_RERUN"] = "1"
-                os.environ["FORCE"] = "1"
-                self._force_fresh_start_from_step(orchestrator, start_step)
-                self._clear_checkpoint_files(symbol, exchange, timeframe="1m")
-
-            # Check if starting from step2, use pre-consolidated data
-            if start_step in (
-                "step2_market_regime_classification",
-                "step2_processing_labeling_feature_engineering",
-            ):
-                self.logger.info("📁 Using pre-consolidated data for step2")
-
-                # Check for consolidated data file
-                consolidated_file = (
-                    f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
-                )
-                if not os.path.exists(consolidated_file):
-                    self.logger.error(
-                        f"❌ Consolidated data file not found: {consolidated_file}"
-                    )
-                    self.logger.error(
-                        "Please run data loading first or ensure consolidated data exists"
-                    )
-                    return False
-
-                self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
-
-            # Run the step-based training
-            import asyncio
-
-            success = asyncio.run(
-                orchestrator.execute_from_step(
-                    start_step=start_step, config=CONFIG, force_rerun=force_rerun
-                )
-            )
-
-            if success:
-                self.logger.info("✅ Step-based full training completed successfully")
-                return True
-            else:
-                self.logger.error("❌ Step-based full training failed")
-                return False
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to run step-based full training: {e}")
-            return False
+        return self._run_step_pipeline(
+            symbol=symbol,
+            exchange=exchange,
+            start_step=start_step,
+            force_rerun=force_rerun,
+            with_gui=with_gui,
+            training_mode="full",
+        )
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1746,6 +1598,108 @@ class AresLauncher:
         except Exception as e:
             self.logger.error(f"❌ Failed to run regime operations: {e}")
             print(f"❌ Failed to run regime operations: {e}")
+            return False
+
+    def _run_step_pipeline(
+        self,
+        symbol: str,
+        exchange: str,
+        start_step: str,
+        force_rerun: bool,
+        with_gui: bool,
+        training_mode: str,
+    ) -> bool:
+        """Common implementation for step-based training (blank/full) to reduce duplication."""
+        # Normalize and log step
+        start_step = self._normalize_step_name(start_step)
+        self.logger.info(f"Starting from step: {start_step}")
+
+        import os
+        from src.training.step_orchestrator import StepOrchestrator
+        from src.config import CONFIG
+
+        # Set training mode environment
+        if training_mode == "blank":
+            os.environ["BLANK_TRAINING_MODE"] = "1"
+            os.environ["FULL_TRAINING_MODE"] = "0"
+            self.logger.info(
+                "🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training"
+            )
+        else:
+            os.environ["FULL_TRAINING_MODE"] = "1"
+            os.environ["BLANK_TRAINING_MODE"] = "0"
+            self.logger.info(
+                "📊 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1 for step-based training"
+            )
+
+        # Prevent blank mode with step1 data collection
+        if training_mode == "blank" and start_step == "step1_data_collection":
+            self.logger.error("❌ Cannot use blank mode with step1_data_collection")
+            self.logger.error("Blank mode is designed for quick testing with limited data")
+            self.logger.error("step1_data_collection processes all available data files")
+            self.logger.error("Use one of the following instead:")
+            self.logger.error(
+                "  - python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE (for full data)"
+            )
+            self.logger.error(
+                "  - python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering (for blank mode)"
+            )
+            return False
+
+        if with_gui:
+            if not self.launch_gui("training", symbol, exchange):
+                return False
+
+        try:
+            # Initialize step orchestrator
+            orchestrator = StepOrchestrator(symbol, exchange)
+
+            # When forcing, set env flags and clear progress/checkpoints from the start step
+            if force_rerun:
+                # Both env vars are set intentionally: EnhancedTrainingManager reads either
+                # FORCE or FORCE_RERUN for backward compatibility with older integrations.
+                os.environ["FORCE"] = "1"
+                os.environ["FORCE_RERUN"] = "1"
+                self._force_fresh_start_from_step(orchestrator, start_step)
+                self._clear_checkpoint_files(symbol, exchange, timeframe="1m")
+
+            # Check for pre-consolidated data if starting from step 2
+            if start_step in (
+                "step2_market_regime_classification",
+                "step2_processing_labeling_feature_engineering",
+            ):
+                self.logger.info("📁 Using pre-consolidated data for step2")
+                consolidated_file = (
+                    f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+                )
+                if not os.path.exists(consolidated_file):
+                    self.logger.error(
+                        f"❌ Consolidated data file not found: {consolidated_file}"
+                    )
+                    self.logger.error(
+                        "Please run data loading first or ensure consolidated data exists"
+                    )
+                    return False
+                self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
+
+            # Run the step-based training using the orchestrator
+            import asyncio
+
+            success = asyncio.run(
+                orchestrator.execute_from_step(
+                    start_step=start_step, config=CONFIG, force_rerun=force_rerun
+                )
+            )
+
+            if success:
+                self.logger.info("✅ Step-based training pipeline completed successfully")
+                return True
+            else:
+                self.logger.error("❌ Step-based training pipeline failed")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to run step-based training pipeline: {e}")
             return False
 
 

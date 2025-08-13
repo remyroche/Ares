@@ -372,7 +372,7 @@ class RegimeSpecificTPSLOptimizer:
             }
 
         except Exception as e:
-            self.print(error("Error identifying regime: {e}"))
+            self.print(error(f"Error identifying regime: {e}"))
             return "SIDEWAYS_RANGE", 0.5, {"method": "fallback", "error": str(e)}
 
     @handle_errors(

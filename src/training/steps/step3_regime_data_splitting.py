@@ -23,7 +23,7 @@ from src.training.steps.unified_data_loader import get_unified_data_loader
 
 
 class RegimeDataSplittingStep:
-    """Step 3: Regime Data Splitting - Separate data by market regimes."""
+    """Step 3: Data Splitting for Training - separate data by regimes or meta-labels."""
 
     def __init__(self, config: dict[str, Any]):
         self.config = config

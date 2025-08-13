@@ -267,6 +267,52 @@ class AresLauncher:
         )
         return True
 
+    def _normalize_step_name(self, step_name: str | None) -> str | None:
+        """Normalize legacy step names to the current ones used by the orchestrator."""
+        if not step_name:
+            return None
+        mapping = {
+            # Legacy -> Current
+            "step2_market_regime_classification": "step2_processing_labeling_feature_engineering",
+            "step3_regime_data_splitting": "step4_regime_data_splitting",
+            "step4_analyst_labeling_feature_engineering": "step2_processing_labeling_feature_engineering",
+        }
+        normalized = mapping.get(step_name, step_name)
+        if normalized != step_name:
+            self.logger.info(
+                f"🔁 Normalized requested step '{step_name}' -> '{normalized}'"
+            )
+        return normalized
+
+    def _clear_checkpoint_files(self, symbol: str, exchange: str, timeframe: str = "1m") -> None:
+        """Remove enhanced training checkpoints to guarantee a fresh start."""
+        try:
+            ns_dir = Path("checkpoints") / exchange / symbol / timeframe
+            target_file = ns_dir / "training_progress.json"
+            if target_file.exists():
+                target_file.unlink()
+                self.logger.info(f"🗑️  Cleared checkpoint: {target_file}")
+        except (OSError, IOError) as e:
+            self.logger.warning(f"Failed to clear checkpoint: {e}")
+
+    def _force_fresh_start_from_step(self, orchestrator, start_step: str) -> None:
+        """Clear progress from the specified start step onward to enforce a fresh run."""
+        try:
+            steps = orchestrator.list_available_steps()
+            if start_step not in steps:
+                self.logger.warning(
+                    f"Cannot clear progress: step '{start_step}' is not in available steps"
+                )
+                return
+            start_idx = steps.index(start_step)
+            for step in steps[start_idx:]:
+                orchestrator.clear_progress(step)
+            self.logger.info(
+                f"🧹 Cleared progress for steps from '{start_step}' to the end of the pipeline"
+            )
+        except (OSError, IOError) as e:
+            self.logger.warning(f"Failed clearing progress from step '{start_step}': {e}")
+
     def _run_unified_training(
         self,
         symbol: str,
@@ -1211,7 +1257,7 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        start_step: str = "step2_market_regime_classification",
+        start_step: str = "step2_processing_labeling_feature_engineering",
         force_rerun: bool = False,
         with_gui: bool = False,
     ):
@@ -1219,91 +1265,14 @@ class AresLauncher:
         self.logger.info(
             f"🚀 Running enhanced 16-step training pipeline for {symbol} on {exchange}"
         )
-        self.logger.info(f"Starting from step: {start_step}")
-
-        # Ensure BLANK_TRAINING_MODE is set for step-based blank training
-        import os
-
-        os.environ["BLANK_TRAINING_MODE"] = "1"
-        os.environ["FULL_TRAINING_MODE"] = "0"
-        self.logger.info(
-            "🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training"
+        return self._run_step_pipeline(
+            symbol=symbol,
+            exchange=exchange,
+            start_step=start_step,
+            force_rerun=force_rerun,
+            with_gui=with_gui,
+            training_mode="blank",
         )
-
-        # Prevent blank mode from being used with step1_data_collection
-        if start_step == "step1_data_collection":
-            # Check if we're in blank mode (30 days lookback)
-            blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
-            if blank_mode:
-                self.logger.error("❌ Cannot use blank mode with step1_data_collection")
-                self.logger.error(
-                    "Blank mode is designed for quick testing with limited data"
-                )
-                self.logger.error(
-                    "step1_data_collection processes all available data files"
-                )
-                self.logger.error("Use one of the following instead:")
-                self.logger.error(
-                    "  - python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE (for full data)"
-                )
-                self.logger.error(
-                    "  - python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification (for blank mode)"
-                )
-                return False
-
-        if with_gui:
-            if not self.launch_gui("training", symbol, exchange):
-                return False
-
-        try:
-            # Import the step orchestrator
-            import os
-            from src.training.step_orchestrator import StepOrchestrator
-            from src.config import CONFIG
-
-            # Check if starting from step2, use pre-consolidated data
-            if start_step == "step2_market_regime_classification":
-                self.logger.info("📁 Using pre-consolidated data for step2")
-
-                # Check for consolidated data file
-                consolidated_file = (
-                    f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
-                )
-                if not os.path.exists(consolidated_file):
-                    self.logger.error(
-                        f"❌ Consolidated data file not found: {consolidated_file}"
-                    )
-                    self.logger.error(
-                        "Please run data loading first or ensure consolidated data exists"
-                    )
-                    return False
-
-                self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
-
-            # Initialize step orchestrator
-            orchestrator = StepOrchestrator(symbol, exchange)
-
-            # Run the step-based training using the orchestrator
-            import asyncio
-
-            success = asyncio.run(
-                orchestrator.execute_from_step(
-                    start_step=start_step, config=CONFIG, force_rerun=force_rerun
-                )
-            )
-
-            if success:
-                self.logger.info(
-                    "✅ Enhanced 16-step training pipeline completed successfully"
-                )
-                return True
-            else:
-                self.logger.error("❌ Enhanced 16-step training pipeline failed")
-                return False
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to run enhanced training pipeline: {e}")
-            return False
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1314,7 +1283,7 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        start_step: str = "step2_market_regime_classification",
+        start_step: str = "step2_processing_labeling_feature_engineering",
         force_rerun: bool = False,
         with_gui: bool = False,
     ):
@@ -1322,66 +1291,17 @@ class AresLauncher:
         self.logger.info(
             f"🚀 Running step-based full training for {symbol} on {exchange}"
         )
-        self.logger.info(f"Starting from step: {start_step}")
         self.logger.info(
             "📊 Using full parameters (730 days lookback, full training parameters)"
         )
-
-        if with_gui:
-            if not self.launch_gui("training", symbol, exchange):
-                return False
-
-        try:
-            # Import the step orchestrator
-            import os
-            from src.training.step_orchestrator import StepOrchestrator
-            from src.config import CONFIG
-
-            # Set environment variable for full training mode
-            os.environ["FULL_TRAINING_MODE"] = "1"
-            os.environ["BLANK_TRAINING_MODE"] = "0"  # Ensure blank mode is off
-
-            # Initialize step orchestrator
-            orchestrator = StepOrchestrator(symbol, exchange)
-
-            # Check if starting from step2, use pre-consolidated data
-            if start_step == "step2_market_regime_classification":
-                self.logger.info("📁 Using pre-consolidated data for step2")
-
-                # Check for consolidated data file
-                consolidated_file = (
-                    f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
-                )
-                if not os.path.exists(consolidated_file):
-                    self.logger.error(
-                        f"❌ Consolidated data file not found: {consolidated_file}"
-                    )
-                    self.logger.error(
-                        "Please run data loading first or ensure consolidated data exists"
-                    )
-                    return False
-
-                self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
-
-            # Run the step-based training
-            import asyncio
-
-            success = asyncio.run(
-                orchestrator.execute_from_step(
-                    start_step=start_step, config=CONFIG, force_rerun=force_rerun
-                )
-            )
-
-            if success:
-                self.logger.info("✅ Step-based full training completed successfully")
-                return True
-            else:
-                self.logger.error("❌ Step-based full training failed")
-                return False
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to run step-based full training: {e}")
-            return False
+        return self._run_step_pipeline(
+            symbol=symbol,
+            exchange=exchange,
+            start_step=start_step,
+            force_rerun=force_rerun,
+            with_gui=with_gui,
+            training_mode="full",
+        )
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1680,6 +1600,106 @@ class AresLauncher:
             print(f"❌ Failed to run regime operations: {e}")
             return False
 
+    def _run_step_pipeline(
+        self,
+        symbol: str,
+        exchange: str,
+        start_step: str,
+        force_rerun: bool,
+        with_gui: bool,
+        training_mode: str,
+    ) -> bool:
+        """Common implementation for step-based training (blank/full) to reduce duplication."""
+        # Normalize and log step
+        start_step = self._normalize_step_name(start_step)
+        self.logger.info(f"Starting from step: {start_step}")
+
+        import os
+        from src.training.step_orchestrator import StepOrchestrator
+        from src.config import CONFIG
+
+        # Set training mode environment
+        if training_mode == "blank":
+            os.environ["BLANK_TRAINING_MODE"] = "1"
+            os.environ["FULL_TRAINING_MODE"] = "0"
+            self.logger.info(
+                "🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training"
+            )
+        else:
+            os.environ["FULL_TRAINING_MODE"] = "1"
+            os.environ["BLANK_TRAINING_MODE"] = "0"
+            self.logger.info(
+                "📊 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1 for step-based training"
+            )
+
+        # Prevent blank mode with step1 data collection
+        if training_mode == "blank" and start_step == "step1_data_collection":
+            self.logger.error("❌ Cannot use blank mode with step1_data_collection")
+            self.logger.error("Blank mode is designed for quick testing with limited data")
+            self.logger.error("step1_data_collection processes all available data files")
+            self.logger.error("Use one of the following instead:")
+            self.logger.error(
+                "  - python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE (for full data)"
+            )
+            self.logger.error(
+                "  - python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering (for blank mode)"
+            )
+            return False
+
+        if with_gui:
+            if not self.launch_gui("training", symbol, exchange):
+                return False
+
+        try:
+            # Initialize step orchestrator
+            orchestrator = StepOrchestrator(symbol, exchange)
+
+            # When forcing, set env flags and clear progress/checkpoints from the start step
+            if force_rerun:
+                # Set FORCE for fresh runs; EnhancedTrainingManager recognizes this env flag.
+                os.environ["FORCE"] = "1"
+                self._force_fresh_start_from_step(orchestrator, start_step)
+                self._clear_checkpoint_files(symbol, exchange, timeframe="1m")
+
+            # Check for pre-consolidated data if starting from step 2
+            if start_step in (
+                "step2_market_regime_classification",
+                "step2_processing_labeling_feature_engineering",
+            ):
+                self.logger.info("📁 Using pre-consolidated data for step2")
+                consolidated_file = (
+                    f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+                )
+                if not os.path.exists(consolidated_file):
+                    self.logger.error(
+                        f"❌ Consolidated data file not found: {consolidated_file}"
+                    )
+                    self.logger.error(
+                        "Please run data loading first or ensure consolidated data exists"
+                    )
+                    return False
+                self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
+
+            # Run the step-based training using the orchestrator
+            import asyncio
+
+            success = asyncio.run(
+                orchestrator.execute_from_step(
+                    start_step=start_step, config=CONFIG, force_rerun=force_rerun
+                )
+            )
+
+            if success:
+                self.logger.info("✅ Step-based training pipeline completed successfully")
+                return True
+            else:
+                self.logger.error("❌ Step-based training pipeline failed")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to run step-based training pipeline: {e}")
+            return False
+
 
 def parse_arguments() -> argparse.Namespace:
     """Parse and validate command line arguments."""
@@ -1691,11 +1711,11 @@ Examples:
   python ares_launcher.py paper --symbol ETHUSDT --exchange BINANCE
   python ares_launcher.py backtest --symbol ETHUSDT --exchange BINANCE --gui
   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --gui
-  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step3_regime_data_splitting
+  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step3_regime_data_splitting
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step4_analyst_labeling_feature_engineering
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step3_feature_engineering
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_analyst_specialist_training
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step6_analyst_enhancement
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step7_analyst_ensemble_creation
@@ -1708,9 +1728,8 @@ Examples:
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step14_monte_carlo_validation
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step15_ab_testing
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step16_saving
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_market_regime_classification --force-rerun
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_analyst_specialist_training --force-rerun --gui
-  python ares_launcher.py model_trainer --symbol ETHUSDT --exchange BINANCE --step step4_analyst_labeling_feature_engineering
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering --force
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_analyst_specialist_training --force --gui
   python ares_launcher.py live --symbol ETHUSDT --exchange BINANCE
   python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE
   python ares_launcher.py load --symbol ETHUSDT --exchange MEXC
@@ -1811,13 +1830,23 @@ Examples:
     parser.add_argument(
         "--step",
         type=str,
-        help="Start training from a specific step (e.g., step2_market_regime_classification)",
+        help=(
+            "Start training from a specific step (e.g., step2_processing_labeling_feature_engineering). "
+            "Legacy names like step3_regime_data_splitting are accepted and auto-normalized."
+        ),
     )
 
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force a fresh run starting from the specified step (clears progress and checkpoints from that step)",
+    )
+
+    # Backward compatibility alias
+    parser.add_argument(
         "--force-rerun",
         action="store_true",
-        help="Force rerun of completed steps",
+        help="[Deprecated] Use --force instead. Force rerun of completed steps",
     )
 
     return parser.parse_args()
@@ -1866,6 +1895,10 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
     print(f"🔍 DEBUG: Executing command: {args.command}")
     print(f"🔍 DEBUG: Symbol: {args.symbol}, Exchange: {args.exchange}")
 
+    # Normalize input step name to current naming, and collapse force flags
+    normalized_step = launcher._normalize_step_name(getattr(args, "step", None))
+    force_flag = bool(getattr(args, "force", False) or getattr(args, "force_rerun", False))
+
     command_handlers = {
         "backtest": lambda: launcher.run_backtesting(
             args.symbol,
@@ -1885,15 +1918,15 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
         "blank": lambda: launcher.run_step_based_training(
             args.symbol,
             args.exchange,
-            start_step=args.step or "step2_market_regime_classification",
-            force_rerun=args.force_rerun,
+            start_step=normalized_step or "step2_processing_labeling_feature_engineering",
+            force_rerun=force_flag,
             with_gui=args.gui,
         ),
         "full": lambda: launcher.run_step_based_full_training(
             args.symbol,
             args.exchange,
-            start_step=args.step or "step2_market_regime_classification",
-            force_rerun=args.force_rerun,
+            start_step=normalized_step or "step2_processing_labeling_feature_engineering",
+            force_rerun=force_flag,
             with_gui=args.gui,
         ),
         "live": lambda: launcher.run_live_trading(

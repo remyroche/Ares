@@ -3202,6 +3202,114 @@ class AnalystEnhancementStep:
             self.logger.error(f"❌ Pre-feature selection failed: {e}")
             return feature_columns  # Return original features if selection fails
 
+    async def _hpo_random_forest(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series,
+    ) -> tuple[dict[str, Any], float]:
+        """Optuna HPO for RandomForest; returns (best_params, best_score)."""
+        try:
+            from sklearn.ensemble import RandomForestClassifier
+            import optuna
+
+            def objective(trial: optuna.Trial) -> float:
+                params = {
+                    "n_estimators": trial.suggest_int("n_estimators", 100, 800, step=100),
+                    "max_depth": trial.suggest_int("max_depth", 4, 20),
+                    "min_samples_split": trial.suggest_int("min_samples_split", 2, 10),
+                    "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 5),
+                    "max_features": trial.suggest_float("max_features", 0.3, 1.0),
+                }
+                model = RandomForestClassifier(random_state=42, n_jobs=-1, **params)
+                # Subsample training for speed
+                frac = min(1.0, 30000 / max(1, len(X_train)))
+                Xs = X_train.sample(frac=frac, random_state=42) if frac < 1.0 else X_train
+                ys = y_train.loc[Xs.index]
+                model.fit(Xs, ys)
+                pred = model.predict(X_val)
+                return float((pred == y_val).mean())
+
+            study = optuna.create_study(direction="maximize")
+            study.optimize(objective, n_trials=25)
+            return study.best_params, float(study.best_value)
+        except Exception as e:
+            self.logger.warning(f"RF HPO failed: {e}")
+            return {}, 0.0
+
+    async def _hpo_logistic_regression(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series,
+    ) -> tuple[dict[str, Any], float]:
+        """Optuna HPO for Logistic Regression; returns (best_params, best_score)."""
+        try:
+            from sklearn.linear_model import LogisticRegression
+            import optuna
+
+            def objective(trial: optuna.Trial) -> float:
+                penalty = trial.suggest_categorical("penalty", ["l2", "l1"])  # elastic net optional
+                C = trial.suggest_float("C", 1e-3, 10.0, log=True)
+                solver = "liblinear" if penalty in ("l1", "l2") else "saga"
+                class_weight = trial.suggest_categorical("class_weight", [None, "balanced"])
+                model = LogisticRegression(C=C, penalty=penalty, solver=solver, max_iter=1000, class_weight=class_weight, random_state=42)
+                # Subsample
+                frac = min(1.0, 50000 / max(1, len(X_train)))
+                Xs = X_train.sample(frac=frac, random_state=42) if frac < 1.0 else X_train
+                ys = y_train.loc[Xs.index]
+                model.fit(Xs, ys)
+                pred = model.predict(X_val)
+                return float((pred == y_val).mean())
+
+            study = optuna.create_study(direction="maximize")
+            study.optimize(objective, n_trials=25)
+            return study.best_params, float(study.best_value)
+        except Exception as e:
+            self.logger.warning(f"Logistic HPO failed: {e}")
+            return {}, 0.0
+
+    async def _hpo_svm_proxy(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series,
+    ) -> tuple[dict[str, Any], float]:
+        """Optuna HPO for SVM proxy (RBFSampler + LinearSVC)."""
+        try:
+            from sklearn.svm import LinearSVC
+            from sklearn.kernel_approximation import RBFSampler
+            from sklearn.pipeline import make_pipeline
+            from sklearn.preprocessing import StandardScaler
+            import optuna
+
+            def objective(trial: optuna.Trial) -> float:
+                gamma = trial.suggest_float("gamma", 1e-4, 1.0, log=True)
+                n_components = trial.suggest_int("n_components", 1000, 5000, step=500)
+                C = trial.suggest_float("C", 0.1, 10.0, log=True)
+                pipe = make_pipeline(
+                    StandardScaler(),
+                    RBFSampler(gamma=gamma, n_components=n_components, random_state=42),
+                    LinearSVC(C=C, tol=1e-3, random_state=42),
+                )
+                # Subsample
+                frac = min(1.0, 30000 / max(1, len(X_train)))
+                Xs = X_train.sample(frac=frac, random_state=42) if frac < 1.0 else X_train
+                ys = y_train.loc[Xs.index]
+                pipe.fit(Xs, ys)
+                pred = pipe.predict(X_val)
+                return float((pred == y_val).mean())
+
+            study = optuna.create_study(direction="maximize")
+            study.optimize(objective, n_trials=25)
+            return study.best_params, float(study.best_value)
+        except Exception as e:
+            self.logger.warning(f"SVM-proxy HPO failed: {e}")
+            return {}, 0.0
+
 
 async def run_step(
     symbol: str,

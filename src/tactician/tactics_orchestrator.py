@@ -95,11 +95,8 @@ class DecisionPolicy:
                 approved = False
 
             # Require SR recommendation alignment when near SR
-            if near_sr and approved:
-                if target_direction == "long" and sr_reco not in ("BREAKOUT_LIKELY", "BOUNCE_LIKELY"):
-                    approved = False
-                if target_direction == "short" and sr_reco not in ("BREAKOUT_LIKELY", "BOUNCE_LIKELY"):
-                    approved = False
+            if near_sr and approved and sr_reco not in ("BREAKOUT_LIKELY", "BOUNCE_LIKELY"):
+                approved = False
 
             action = (
                 ("OPEN_LONG" if target_direction == "long" else "OPEN_SHORT")

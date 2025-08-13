@@ -441,14 +441,7 @@ class ConfidenceCalibrationStep:
                         continue
                     X_val, y_val = self._extract_features(regime_df, base_model)
                     # Baseline metrics before calibration
-                    base_metrics = {}
-                    try:
-                        base_pred = base_model.predict(X_val)
-                        base_acc = accuracy_score(y_val, base_pred)
-                        base_f1 = f1_score(y_val, base_pred, average="weighted")
-                        base_metrics = {"accuracy": float(base_acc), "f1": float(base_f1)}
-                    except Exception:
-                        base_metrics = {}
+                    base_metrics = self._calculate_base_metrics(base_model, X_val, y_val)
                     calibrator = CalibratedClassifierCV(
                         base_estimator=base_model,
                         cv="prefit",
@@ -504,14 +497,7 @@ class ConfidenceCalibrationStep:
                     continue
                 X_val, y_val = self._extract_features(generic_val, base_model)
                 # Baseline metrics
-                base_metrics = {}
-                try:
-                    base_pred = base_model.predict(X_val)
-                    base_acc = accuracy_score(y_val, base_pred)
-                    base_f1 = f1_score(y_val, base_pred, average="weighted")
-                    base_metrics = {"accuracy": float(base_acc), "f1": float(base_f1)}
-                except Exception:
-                    base_metrics = {}
+                base_metrics = self._calculate_base_metrics(base_model, X_val, y_val)
                 calibrator = CalibratedClassifierCV(
                     base_estimator=base_model,
                     cv="prefit",
@@ -576,15 +562,7 @@ class ConfidenceCalibrationStep:
             try:
                 X_val, y_val = self._extract_features(regime_df, ensemble_obj)
                 # Baseline metrics
-                base_metrics = {}
-                try:
-                    if hasattr(ensemble_obj, "predict"):
-                        base_pred = ensemble_obj.predict(X_val)
-                        base_acc = accuracy_score(y_val, base_pred)
-                        base_f1 = f1_score(y_val, base_pred, average="weighted")
-                        base_metrics = {"accuracy": float(base_acc), "f1": float(base_f1)}
-                except Exception:
-                    base_metrics = {}
+                base_metrics = self._calculate_base_metrics(ensemble_obj, X_val, y_val)
                 wrapper = _PrefitWrapper(ensemble_obj)
                 calibrator = CalibratedClassifierCV(
                     base_estimator=wrapper,
@@ -637,15 +615,7 @@ class ConfidenceCalibrationStep:
             try:
                 X_val, y_val = self._extract_features(generic_val, ensemble_obj)
                 # Baseline metrics
-                base_metrics = {}
-                try:
-                    if hasattr(ensemble_obj, "predict"):
-                        base_pred = ensemble_obj.predict(X_val)
-                        base_acc = accuracy_score(y_val, base_pred)
-                        base_f1 = f1_score(y_val, base_pred, average="weighted")
-                        base_metrics = {"accuracy": float(base_acc), "f1": float(base_f1)}
-                except Exception:
-                    base_metrics = {}
+                base_metrics = self._calculate_base_metrics(ensemble_obj, X_val, y_val)
                 wrapper = _PrefitWrapper(ensemble_obj)
                 calibrator = CalibratedClassifierCV(
                     base_estimator=wrapper,
@@ -679,14 +649,51 @@ class ConfidenceCalibrationStep:
         return results
 
     def _summarize_calibration(self, results: dict[str, Any]) -> dict[str, Any]:
-        summary = {"generated_at": datetime.now().isoformat(), "sections": {}}
-        for key, section in results.items():
-            summary["sections"][key] = {
-                "items": sum(len(v) for v in section.values())
-                if isinstance(section, dict)
-                else 0,
+        summary: dict[str, Any] = {}
+        # Analyst models
+        analyst = results.get("analyst_models", {})
+        summary["analyst_models"] = {
+            regime: {
+                name: data.get("metrics", {}) for name, data in models.items()
             }
+            for regime, models in analyst.items()
+        }
+        # Tactician models
+        tact_models = results.get("tactician_models", {})
+        summary["tactician_models"] = {
+            name: data.get("metrics", {}) for name, data in tact_models.items()
+        }
+        # Analyst ensembles
+        analyst_ens = results.get("analyst_ensembles", {})
+        summary["analyst_ensembles"] = {
+            regime: data.get("metrics", {}) for regime, data in analyst_ens.items()
+        }
+        # Tactician ensembles
+        tact_ens = results.get("tactician_ensembles", {})
+        summary["tactician_ensembles"] = {
+            etype: data.get("metrics", {}) for etype, data in tact_ens.items()
+        }
         return summary
+
+    def _calculate_base_metrics(self, model: Any, X_val, y_val) -> dict:
+        """Helper to calculate baseline accuracy and F1 score for a model/ensemble.
+        Returns {} if metrics cannot be computed.
+        """
+        try:
+            if not hasattr(model, "predict"):
+                return {}
+            base_pred = model.predict(X_val)
+            base_acc = accuracy_score(y_val, base_pred)
+            base_f1 = f1_score(y_val, base_pred, average="weighted")
+            return {"accuracy": float(base_acc), "f1": float(base_f1)}
+        except Exception as e:
+            try:
+                self.logger.warning(
+                    f"Could not calculate base metrics for {type(model).__name__}: {e}"
+                )
+            except Exception:
+                pass
+            return {}
 
 
 class _PrefitWrapper:

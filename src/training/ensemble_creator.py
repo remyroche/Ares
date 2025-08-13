@@ -545,8 +545,8 @@ class EnsembleCreator:
                         "threshold": float(self.ensemble_config.correlation_threshold),
                     }
                     self.logger.info({"msg": "prediction_correlation_summary", "summary": corr_summary})
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"Failed to summarize correlation metrics: {e}")
             self.logger.info(f"Ensemble diversity metrics: {diversity_metrics}")
             return correlation_matrix
         except Exception as e:

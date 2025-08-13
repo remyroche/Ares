@@ -165,12 +165,67 @@ class MetaLabelingSystem:
         default_return={},
         context="pattern features calculation",
     )
+    def _prepare_returns_data(self, price_data: pd.DataFrame) -> pd.DataFrame:
+        """Convert price data to returns (stationary data) for analysis."""
+        try:
+            if price_data.empty or "close" not in price_data.columns:
+                return pd.DataFrame()
+            
+            # Calculate returns from close prices
+            returns_data = price_data.copy()
+            returns_data["returns"] = price_data["close"].pct_change()
+            
+            # Calculate log returns for better statistical properties
+            returns_data["log_returns"] = np.log(price_data["close"] / price_data["close"].shift(1))
+            
+            # Calculate rolling returns for different periods
+            for period in [5, 10, 20]:
+                returns_data[f"returns_{period}"] = price_data["close"].pct_change(period)
+                returns_data[f"log_returns_{period}"] = np.log(price_data["close"] / price_data["close"].shift(period))
+            
+            # Remove NaN values
+            returns_data = returns_data.dropna()
+            
+            return returns_data
+            
+        except Exception as e:
+            self.logger.exception(f"Error preparing returns data: {e}")
+            return pd.DataFrame()
+
+    def _prepare_stationary_data(self, price_data: pd.DataFrame, volume_data: pd.DataFrame = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Convert price and volume data to stationary data for analysis."""
+        try:
+            # Prepare price returns
+            returns_data = self._prepare_returns_data(price_data)
+            
+            # Prepare volume stationary data
+            stationary_volume = pd.DataFrame(index=price_data.index)
+            if volume_data is not None and not volume_data.empty and "volume" in volume_data.columns:
+                volume_series = volume_data["volume"]
+                # Use log changes for volume (stationary)
+                stationary_volume["volume_log_returns"] = np.log(volume_series / volume_series.shift(1))
+                stationary_volume["volume_pct_change"] = volume_series.pct_change()
+                
+                # Calculate rolling volume changes
+                for period in [5, 10, 20]:
+                    stationary_volume[f"volume_log_returns_{period}"] = np.log(volume_series / volume_series.shift(period))
+                    stationary_volume[f"volume_pct_change_{period}"] = volume_series.pct_change(period)
+                
+                # Remove NaN values
+                stationary_volume = stationary_volume.dropna()
+            
+            return returns_data, stationary_volume
+            
+        except Exception as e:
+            self.logger.exception(f"Error preparing stationary data: {e}")
+            return pd.DataFrame(), pd.DataFrame()
+
     async def _calculate_pattern_features(
         self,
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame,
     ) -> dict[str, Any]:
-        """Calculate comprehensive pattern features for label generation."""
+        """Calculate comprehensive pattern features for label generation using returns data."""
         try:
             if price_data.empty:
                 self.logger.warning(
@@ -205,39 +260,48 @@ class MetaLabelingSystem:
                 )
                 return {}
 
+            # Prepare stationary data for analysis
+            returns_data, stationary_volume = self._prepare_stationary_data(price_data, volume_data)
+            if returns_data.empty:
+                self.logger.warning("Could not prepare returns data, using raw price data")
+                returns_data = price_data
+            if stationary_volume.empty:
+                self.logger.warning("Could not prepare stationary volume data, using raw volume data")
+                stationary_volume = volume_data
+
             features = {}
 
-            # Technical indicators with error handling
+            # Technical indicators with error handling (using raw OHLCV data)
             try:
                 features.update(self._calculate_technical_indicators(price_data))
             except Exception as e:
                 self.logger.exception(f"Error calculating technical indicators: {e}")
 
-            # Volume analysis with error handling
+            # Volume analysis with error handling (using stationary volume data)
             try:
-                features.update(self._calculate_volume_features(volume_data))
+                features.update(self._calculate_volume_features(stationary_volume))
             except Exception as e:
                 self.logger.exception(f"Error calculating volume features: {e}")
 
-            # Price action patterns with error handling
+            # Price action patterns with error handling (using returns)
             try:
-                features.update(self._calculate_price_action_patterns(price_data))
+                features.update(self._calculate_price_action_patterns(returns_data))
             except Exception as e:
                 self.logger.exception(f"Error calculating price action patterns: {e}")
 
-            # Volatility patterns with error handling
+            # Volatility patterns with error handling (using returns)
             try:
-                features.update(self._calculate_volatility_patterns(price_data))
+                features.update(self._calculate_volatility_patterns(returns_data))
             except Exception as e:
                 self.logger.exception(f"Error calculating volatility patterns: {e}")
 
-            # Momentum patterns with error handling
+            # Momentum patterns with error handling (using returns)
             try:
-                features.update(self._calculate_momentum_patterns(price_data))
+                features.update(self._calculate_momentum_patterns(returns_data))
             except Exception as e:
                 self.logger.exception(f"Error calculating momentum patterns: {e}")
 
-            # Support/Resistance levels
+            # Support/Resistance levels (using raw price data for levels)
             try:
                 features.update(self._calculate_sr_levels(price_data))
             except Exception as e:
@@ -377,39 +441,103 @@ class MetaLabelingSystem:
             return {}
 
     def _calculate_volume_features(self, data: pd.DataFrame) -> dict[str, float]:
-        """Calculate volume-based features."""
+        """Calculate volume-based features using stationary data."""
         try:
             features = {}
 
-            if "volume" in data.columns:
-                features["volume_sma"] = (
-                    data["volume"].rolling(20).mean().iloc[-1]
-                    if len(data) >= 20
-                    else data["volume"].iloc[-1]
-                )
-                features["volume_ratio"] = (
-                    data["volume"].iloc[-1] / features["volume_sma"]
-                    if features["volume_sma"] > 0
-                    else 1.0
-                )
+            # Check if we have stationary volume data
+            if "volume_log_returns" in data.columns:
+                # Use pre-calculated stationary volume data
+                volume_log_returns = data["volume_log_returns"].dropna()
+                
+                if len(volume_log_returns) < 5:
+                    self.logger.warning("Insufficient stationary volume data for feature calculation")
+                    return features
+
+                # Volume trend using log returns (stationary)
                 features["volume_trend"] = (
-                    data["volume"].rolling(10).mean().diff().iloc[-1]
-                    if len(data) >= 10
+                    volume_log_returns.rolling(10).mean().iloc[-1]
+                    if len(volume_log_returns) >= 10
+                    else volume_log_returns.mean()
+                )
+
+                # Volume volatility (stationary)
+                features["volume_volatility"] = (
+                    volume_log_returns.rolling(20).std().iloc[-1]
+                    if len(volume_log_returns) >= 20
+                    else volume_log_returns.std()
+                )
+
+                # Volume momentum (stationary)
+                features["volume_momentum"] = (
+                    volume_log_returns.rolling(5).mean().iloc[-1]
+                    if len(volume_log_returns) >= 5
+                    else volume_log_returns.mean()
+                )
+
+                # Volume acceleration (stationary)
+                features["volume_acceleration"] = (
+                    volume_log_returns.rolling(5).mean().diff().iloc[-1]
+                    if len(volume_log_returns) >= 5
                     else 0
                 )
 
-                # VWAP
-                vwap = (data["close"] * data["volume"]).rolling(20).sum() / data[
-                    "volume"
-                ].rolling(20).sum()
-                features["vwap"] = (
-                    vwap.iloc[-1] if not vwap.empty else data["close"].iloc[-1]
+                # Additional stationary volume features
+                if "volume_pct_change" in data.columns:
+                    volume_pct_change = data["volume_pct_change"].dropna()
+                    features["volume_pct_change"] = volume_pct_change.iloc[-1] if len(volume_pct_change) > 0 else 0
+
+            elif "volume" in data.columns:
+                # Fallback to raw volume data if stationary data not available
+                volume_data = data["volume"].copy()
+                volume_log_returns = np.log(volume_data / volume_data.shift(1))
+                volume_log_returns = volume_log_returns.dropna()
+
+                if len(volume_log_returns) < 5:
+                    self.logger.warning("Insufficient volume data for feature calculation")
+                    return features
+
+                # Volume trend using log returns (stationary)
+                features["volume_trend"] = (
+                    volume_log_returns.rolling(10).mean().iloc[-1]
+                    if len(volume_log_returns) >= 10
+                    else volume_log_returns.mean()
                 )
-                features["price_vwap_ratio"] = (
-                    data["close"].iloc[-1] / features["vwap"]
-                    if features["vwap"] > 0
-                    else 1.0
+
+                # Volume volatility (stationary)
+                features["volume_volatility"] = (
+                    volume_log_returns.rolling(20).std().iloc[-1]
+                    if len(volume_log_returns) >= 20
+                    else volume_log_returns.std()
                 )
+
+                # Volume momentum (stationary)
+                features["volume_momentum"] = (
+                    volume_log_returns.rolling(5).mean().iloc[-1]
+                    if len(volume_log_returns) >= 5
+                    else volume_log_returns.mean()
+                )
+
+                # Volume acceleration (stationary)
+                features["volume_acceleration"] = (
+                    volume_log_returns.rolling(5).mean().diff().iloc[-1]
+                    if len(volume_log_returns) >= 5
+                    else 0
+                )
+
+                # Volume ratio (using raw volume for ratio calculations)
+                if len(volume_data) >= 20:
+                    volume_sma = volume_data.rolling(20).mean().iloc[-1]
+                    current_volume = volume_data.iloc[-1]
+                    features["volume_ratio"] = (
+                        current_volume / volume_sma if volume_sma > 0 else 1.0
+                    )
+                else:
+                    features["volume_ratio"] = 1.0
+
+            else:
+                self.logger.warning("No volume data available for volume features")
+                return features
 
             return features
 
@@ -418,52 +546,87 @@ class MetaLabelingSystem:
             return {}
 
     def _calculate_price_action_patterns(self, data: pd.DataFrame) -> dict[str, float]:
-        """Calculate price action pattern features."""
+        """Calculate price action pattern features using returns data."""
         try:
             features = {}
 
-            # Support and resistance levels
-            features["recent_high"] = (
-                data["high"].rolling(20).max().iloc[-1]
-                if len(data) >= 20
-                else data["high"].iloc[-1]
-            )
-            features["recent_low"] = (
-                data["low"].rolling(20).min().iloc[-1]
-                if len(data) >= 20
-                else data["low"].iloc[-1]
-            )
-            features["price_position"] = (
-                (data["close"].iloc[-1] - features["recent_low"])
-                / (features["recent_high"] - features["recent_low"])
-                if features["recent_high"] != features["recent_low"]
-                else 0.5
-            )
+            # Use returns data if available, otherwise fall back to price data
+            if "returns" in data.columns:
+                returns = data["returns"]
+                # For returns-based analysis, we focus on returns patterns rather than price levels
+                features["returns_momentum_5"] = (
+                    returns.rolling(5).mean().iloc[-1] if len(returns) >= 5 else 0
+                )
+                features["returns_momentum_10"] = (
+                    returns.rolling(10).mean().iloc[-1] if len(returns) >= 10 else 0
+                )
+                features["returns_acceleration"] = (
+                    returns.rolling(5).mean().diff().iloc[-1] if len(returns) >= 5 else 0
+                )
+                
+                # Returns-based position (relative to recent returns range)
+                if len(returns) >= 20:
+                    recent_high = returns.rolling(20).max().iloc[-1]
+                    recent_low = returns.rolling(20).min().iloc[-1]
+                    current_return = returns.iloc[-1]
+                    features["returns_position"] = (
+                        (current_return - recent_low) / (recent_high - recent_low)
+                        if recent_high != recent_low
+                        else 0.5
+                    )
+                else:
+                    features["returns_position"] = 0.5
 
-            # Price momentum
-            features["price_momentum_5"] = (
-                data["close"].pct_change(5).iloc[-1] if len(data) >= 5 else 0
-            )
-            features["price_momentum_10"] = (
-                data["close"].pct_change(10).iloc[-1] if len(data) >= 10 else 0
-            )
-            features["price_acceleration"] = (
-                data["close"].pct_change(5).diff().iloc[-1] if len(data) >= 5 else 0
-            )
+            elif "close" in data.columns:
+                # Fallback to price-based patterns if returns not available
+                required_columns = ["open", "high", "low", "close"]
+                if not all(col in data.columns for col in required_columns):
+                    missing_cols = [col for col in required_columns if col not in data.columns]
+                    self.logger.warning(f"Missing required columns for price action patterns: {missing_cols}")
+                    return features
 
-            # Candlestick patterns
-            features["body_size"] = (
-                np.abs(data["close"].iloc[-1] - data["open"].iloc[-1])
-                / data["close"].iloc[-1]
-            )
-            features["upper_shadow"] = (
-                data["high"].iloc[-1]
-                - np.maximum(data["open"].iloc[-1], data["close"].iloc[-1])
-            ) / data["close"].iloc[-1]
-            features["lower_shadow"] = (
-                np.minimum(data["open"].iloc[-1], data["close"].iloc[-1])
-                - data["low"].iloc[-1]
-            ) / data["close"].iloc[-1]
+                # Support and resistance levels
+                features["recent_high"] = (
+                    data["high"].rolling(20).max().iloc[-1]
+                    if len(data) >= 20
+                    else data["high"].iloc[-1]
+                )
+                features["recent_low"] = (
+                    data["low"].rolling(20).min().iloc[-1]
+                    if len(data) >= 20
+                    else data["low"].iloc[-1]
+                )
+                features["price_position"] = (
+                    (data["close"].iloc[-1] - features["recent_low"])
+                    / (features["recent_high"] - features["recent_low"])
+                    if features["recent_high"] != features["recent_low"]
+                    else 0.5
+                )
+
+                # Price momentum
+                features["price_momentum_5"] = (
+                    data["close"].pct_change(5).iloc[-1] if len(data) >= 5 else 0
+                )
+                features["price_momentum_10"] = (
+                    data["close"].pct_change(10).iloc[-1] if len(data) >= 10 else 0
+                )
+                features["price_acceleration"] = (
+                    data["close"].pct_change(5).diff().iloc[-1] if len(data) >= 5 else 0
+                )
+
+                # Candlestick patterns
+                features["body_size"] = (
+                    np.abs(data["close"].iloc[-1] - data["open"].iloc[-1])
+                    / data["close"].iloc[-1]
+                )
+                features["upper_shadow"] = (
+                    data["high"].iloc[-1]
+                    - np.maximum(data["open"].iloc[-1], data["close"].iloc[-1])
+                ) / data["close"].iloc[-1]
+                features["lower_shadow"] = (
+                    np.minimum(data["open"].iloc[-1], data["close"].iloc[-1])
+                    - data["low"].iloc[-1]
+                ) / data["close"].iloc[-1]
 
             return features
 
@@ -472,17 +635,33 @@ class MetaLabelingSystem:
             return {}
 
     def _calculate_volatility_patterns(self, data: pd.DataFrame) -> dict[str, float]:
-        """Calculate volatility pattern features."""
+        """Calculate volatility pattern features using returns data."""
         try:
             features = {}
 
-            # Volatility measures
-            returns = data["close"].pct_change()
+            # Use returns data if available, otherwise fall back to price data
+            if "returns" in data.columns:
+                returns = data["returns"]
+            elif "log_returns" in data.columns:
+                returns = data["log_returns"]
+            elif "close" in data.columns:
+                returns = data["close"].pct_change()
+            else:
+                self.logger.warning("No returns or close data available for volatility patterns")
+                return features
+
+            # Remove NaN values
+            returns = returns.dropna()
+            if len(returns) < 10:
+                self.logger.warning("Insufficient returns data for volatility calculation")
+                return features
+
+            # Volatility measures using returns
             features["volatility_20"] = (
-                returns.rolling(20).std().iloc[-1] if len(data) >= 20 else returns.std()
+                returns.rolling(20).std().iloc[-1] if len(returns) >= 20 else returns.std()
             )
             features["volatility_10"] = (
-                returns.rolling(10).std().iloc[-1] if len(data) >= 10 else returns.std()
+                returns.rolling(10).std().iloc[-1] if len(returns) >= 10 else returns.std()
             )
             features["volatility_ratio"] = (
                 features["volatility_10"] / features["volatility_20"]
@@ -495,15 +674,18 @@ class MetaLabelingSystem:
                 1 if features["volatility_20"] > self.volatility_threshold else 0
             )
 
-            # Bollinger Band width
-            sma20 = data["close"].rolling(20).mean()
-            std20 = data["close"].rolling(20).std()
-            bb_width = (sma20 + (std20 * 2)) - (sma20 - (std20 * 2))
-            features["bb_width"] = (
-                bb_width.iloc[-1] / sma20.iloc[-1]
-                if not sma20.empty and sma20.iloc[-1] > 0
-                else 0
-            )
+            # Returns-based Bollinger Band width (using returns instead of price)
+            if len(returns) >= 20:
+                returns_sma20 = returns.rolling(20).mean()
+                returns_std20 = returns.rolling(20).std()
+                bb_width = (returns_sma20 + (returns_std20 * 2)) - (returns_sma20 - (returns_std20 * 2))
+                features["bb_width"] = (
+                    bb_width.iloc[-1] / returns_sma20.iloc[-1]
+                    if not returns_sma20.empty and returns_sma20.iloc[-1] > 0
+                    else 0
+                )
+            else:
+                features["bb_width"] = 0
 
             return features
 
@@ -512,24 +694,52 @@ class MetaLabelingSystem:
             return {}
 
     def _calculate_momentum_patterns(self, data: pd.DataFrame) -> dict[str, float]:
-        """Calculate momentum pattern features."""
+        """Calculate momentum pattern features using returns data."""
         try:
             features = {}
 
-            # RSI momentum
+            # Use returns data if available, otherwise fall back to price data
+            if "returns" in data.columns:
+                returns = data["returns"]
+            elif "log_returns" in data.columns:
+                returns = data["log_returns"]
+            elif "close" in data.columns:
+                returns = data["close"].pct_change()
+            else:
+                self.logger.warning("No returns or close data available for momentum patterns")
+                return {"MOMENTUM_IGNITION": 0}
+
+            # Remove NaN values
+            returns = returns.dropna()
+            if len(returns) < 5:
+                self.logger.warning("Insufficient returns data for momentum calculation")
+                return {"MOMENTUM_IGNITION": 0}
+
+            # Returns-based momentum
             features["rsi_momentum"] = (
-                data["close"].pct_change(5).iloc[-1] if len(data) >= 5 else 0
+                returns.rolling(5).mean().iloc[-1] if len(returns) >= 5 else 0
             )
 
-            # MACD momentum
-            ema12 = data["close"].ewm(span=12).mean()
-            ema26 = data["close"].ewm(span=26).mean()
+            # MACD momentum using returns
+            ema12 = returns.ewm(span=12).mean()
+            ema26 = returns.ewm(span=26).mean()
             macd = ema12 - ema26
             features["macd_momentum"] = macd.diff().iloc[-1] if not macd.empty else 0
 
-            # Price momentum
+            # Returns momentum regime
             features["momentum_regime"] = (
                 1 if abs(features["rsi_momentum"]) > self.momentum_threshold else 0
+            )
+
+            # Additional returns-based momentum features
+            features["returns_momentum_5"] = (
+                returns.rolling(5).mean().iloc[-1] if len(returns) >= 5 else 0
+            )
+            features["returns_momentum_10"] = (
+                returns.rolling(10).mean().iloc[-1] if len(returns) >= 10 else 0
+            )
+            features["returns_acceleration"] = (
+                returns.rolling(5).mean().diff().iloc[-1] if len(returns) >= 5 else 0
             )
 
             return features
@@ -1791,13 +2001,14 @@ class MetaLabelingSystem:
         label_names: list[str],
         thresholds_grid: list[float] | None = None,
     ) -> dict[str, dict[str, float]]:
-        """Derive activation thresholds per label using triple-barrier outcomes.
+        """Derive activation thresholds per label using triple-barrier outcomes with stationary data.
 
         Returns a dict per label with stats: threshold, hit_rate, frequency, profit_factor, avg_return.
         """
         try:
             if thresholds_grid is None:
                 thresholds_grid = [round(x, 2) for x in np.linspace(0.1, 0.9, 9)]
+            
             # Prepare outcomes and proxy returns if needed
             labels_series = triple_barrier_df.get("label", pd.Series(index=price_data.index, dtype=float)).reindex(price_data.index).fillna(0).astype(int)
             # If available, use realized return; else next-bar return as proxy
@@ -1814,13 +2025,20 @@ class MetaLabelingSystem:
                 for i in range(len(price_data)):
                     p_slice = price_data.iloc[: i + 1]
                     v_slice = volume_data.iloc[: i + 1]
+                    
+                    # Prepare stationary data for feature calculation
+                    returns_data = self._prepare_returns_data(p_slice)
+                    if returns_data.empty:
+                        returns_data = p_slice  # Fallback to raw data
+                    
                     feats = {}
                     try:
-                        feats.update(self._calculate_technical_indicators(p_slice))
-                        feats.update(self._calculate_volume_features(v_slice))
-                        feats.update(self._calculate_price_action_patterns(p_slice))
-                        feats.update(self._calculate_volatility_patterns(p_slice))
-                        feats.update(self._calculate_momentum_patterns(p_slice))
+                        # Use stationary data for pattern analysis
+                        feats.update(self._calculate_technical_indicators(p_slice))  # Keep raw for technical indicators
+                        feats.update(self._calculate_volume_features(v_slice))  # Uses stationary volume data
+                        feats.update(self._calculate_price_action_patterns(returns_data))  # Uses returns
+                        feats.update(self._calculate_volatility_patterns(returns_data))  # Uses returns
+                        feats.update(self._calculate_momentum_patterns(returns_data))  # Uses returns
                     except Exception:
                         pass
                     scores.append(self._compute_label_intensity(label, p_slice, v_slice, feats))

@@ -36,61 +36,120 @@ def compute_adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return adx.fillna(25)
 
 
-def compute_ema_adx_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute EMA(21), EMA(55) on close and ADX(14) from OHLC.
+def compute_ema_adx_features(
+    df: pd.DataFrame,
+    ema_fast: int = 21,
+    ema_slow: int = 55,
+    adx_period: int = 14,
+) -> pd.DataFrame:
+    """Compute EMA(fast), EMA(slow) on close and ADX(period) from OHLC.
 
     Expects columns: 'open','high','low','close','volume'.
     """
     out = df.copy()
-    out["ema_21"] = out["close"].ewm(span=21, adjust=False).mean()
-    out["ema_55"] = out["close"].ewm(span=55, adjust=False).mean()
-    out["adx"] = compute_adx(out, period=14)
+    fast_col = f"ema_{ema_fast}"
+    slow_col = f"ema_{ema_slow}"
+    out[fast_col] = out["close"].ewm(span=ema_fast, adjust=False).mean()
+    out[slow_col] = out["close"].ewm(span=ema_slow, adjust=False).mean()
+    out["adx"] = compute_adx(out, period=adx_period)
     return out
 
 
-def classify_regime_series(df: pd.DataFrame) -> Tuple[List[str], List[float]]:
+def classify_regime_series(
+    df: pd.DataFrame,
+    *,
+    ema_fast: int = 21,
+    ema_slow: int = 55,
+    adx_period: int = 14,
+    adx_trend_threshold: float = 25.0,
+    adx_sideways_threshold: float = 20.0,
+    ema_sep_min_ratio: float = 0.0,
+) -> Tuple[List[str], List[float]]:
     """Classify regime for each row using EMA/ADX rules.
 
-    Rules:
-      - Bull: EMA(21) > EMA(55) AND ADX > 25
-      - Bear: EMA(21) < EMA(55) AND ADX > 25
-      - Sideways: if neither Bull nor Bear OR ADX < 20
+    Rules (parameterized):
+      - Trend condition: ADX >= adx_trend_threshold AND normalized EMA separation >= ema_sep_min_ratio
+      - Bull: EMA(fast) > EMA(slow) AND Trend condition
+      - Bear: EMA(fast) < EMA(slow) AND Trend condition
+      - Sideways: otherwise OR ADX <= adx_sideways_threshold
 
     Returns:
       regimes: list[str] of 'BULL'|'BEAR'|'SIDEWAYS'
       confidences: list[float] in [0,1]
     """
-    feats = compute_ema_adx_features(df)
+    feats = compute_ema_adx_features(
+        df,
+        ema_fast=ema_fast,
+        ema_slow=ema_slow,
+        adx_period=adx_period,
+    )
 
-    bull = (feats["ema_21"] > feats["ema_55"]) & (feats["adx"] > 25)
-    bear = (feats["ema_21"] < feats["ema_55"]) & (feats["adx"] > 25)
+    fast_col = f"ema_{ema_fast}"
+    slow_col = f"ema_{ema_slow}"
 
-    regimes = np.where(bull, "BULL", np.where(bear, "BEAR", "SIDEWAYS")).tolist()
+    # Normalized EMA separation relative to a smoothed price level
+    ema_sep = (feats[fast_col] - feats[slow_col]).abs()
+    ema_sep_norm = (
+        ema_sep / feats["close"].rolling(max(ema_slow, 2)).mean()
+    ).fillna(0.0)
 
-    ema_sep = (feats["ema_21"] - feats["ema_55"]).abs()
-    ema_sep_norm = (ema_sep / feats["close"].rolling(55).mean()).fillna(0.0)
+    # Trend condition with tunable thresholds
+    meets_adx = feats["adx"] >= adx_trend_threshold
+    meets_sep = ema_sep_norm >= max(ema_sep_min_ratio, 0.0)
+    trend_condition = meets_adx & meets_sep
 
-    sideways = ~(bull | bear)
+    bull = (feats[fast_col] > feats[slow_col]) & trend_condition
+    bear = (feats[fast_col] < feats[slow_col]) & trend_condition
 
-    # Vectorized confidence calculation
-    # Sideways confidence
-    conf_sideways = np.clip((20 - feats["adx"]) / 20, 0.2, 1.0)
+    # Explicit sideways if ADX is below the sideways threshold
+    forced_sideways = feats["adx"] <= adx_sideways_threshold
 
-    # Trend confidence
-    adx_component = np.clip((feats["adx"] - 20) / 30, 0.0, 1.0)
-    sep_component = np.clip(ema_sep_norm * 10, 0.0, 1.0)
+    regimes = np.where(
+        forced_sideways,
+        "SIDEWAYS",
+        np.where(bull, "BULL", np.where(bear, "BEAR", "SIDEWAYS")),
+    ).tolist()
+
+    sideways_mask = np.array(regimes, dtype=object) == "SIDEWAYS"
+
+    # Confidence calculation (parameter-aware)
+    # Sideways confidence increases as ADX drops below the sideways threshold
+    denom_sw = max(adx_sideways_threshold, 1e-6)
+    conf_sideways = np.clip((adx_sideways_threshold - feats["adx"]) / denom_sw, 0.2, 1.0)
+
+    # Trend confidence increases with ADX above sideways threshold and EMA separation
+    denom_tr = max(adx_trend_threshold - adx_sideways_threshold, 1e-6)
+    adx_component = np.clip((feats["adx"] - adx_sideways_threshold) / denom_tr, 0.0, 1.0)
+    sep_component = np.clip(ema_sep_norm * 10.0, 0.0, 1.0)
     conf_trend = np.clip(0.5 * adx_component + 0.5 * sep_component, 0.2, 1.0)
 
-    confidences = np.where(sideways, conf_sideways, conf_trend).tolist()
+    confidences = np.where(sideways_mask, conf_sideways, conf_trend).tolist()
     return regimes, confidences
 
 
-def classify_last(df: pd.DataFrame) -> Tuple[str, float]:
+def classify_last(
+    df: pd.DataFrame,
+    *,
+    ema_fast: int = 21,
+    ema_slow: int = 55,
+    adx_period: int = 14,
+    adx_trend_threshold: float = 25.0,
+    adx_sideways_threshold: float = 20.0,
+    ema_sep_min_ratio: float = 0.0,
+) -> Tuple[str, float]:
     """Classify the last row regime and confidence using EMA/ADX rules.
 
     Returns ('BULL'|'BEAR'|'SIDEWAYS', confidence)
     """
     if df is None or df.empty:
         return "SIDEWAYS", 0.5
-    regimes, confidences = classify_regime_series(df)
+    regimes, confidences = classify_regime_series(
+        df,
+        ema_fast=ema_fast,
+        ema_slow=ema_slow,
+        adx_period=adx_period,
+        adx_trend_threshold=adx_trend_threshold,
+        adx_sideways_threshold=adx_sideways_threshold,
+        ema_sep_min_ratio=ema_sep_min_ratio,
+    )
     return regimes[-1], confidences[-1]

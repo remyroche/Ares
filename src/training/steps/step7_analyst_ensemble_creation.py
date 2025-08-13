@@ -380,6 +380,9 @@ class AnalystEnsembleCreationStep:
                             regime_name,
                             regime_training_data,
                             regime_validation_data,
+                            data_dir,
+                            exchange,
+                            symbol,
                         )
 
                     # Cache the ensemble for future use
@@ -999,198 +1002,76 @@ class AnalystEnsembleCreationStep:
             self.print(error("Error loading training data: {e}"))
             return None, None
 
-    async def _create_regime_ensemble(
-        self,
-        models: dict[str, Any],
-        regime_name: str,
-        training_data: pd.DataFrame,
-        validation_data: pd.DataFrame,
-    ) -> dict[str, Any]:
-        """
-        Create ensemble for a specific regime with real data.
-
-        Args:
-            models: Enhanced models for the regime
-            regime_name: Name of the regime
-            training_data: Training data for the regime
-            validation_data: Validation data for the regime
-
-        Returns:
-            Dict containing ensemble model
-        """
-        try:
-            self.logger.info(f"Creating ensemble for regime: {regime_name}")
-
-            # Extract models and prepare data
-            model_list = []
-            model_names = []
-            model_performances = {}
-
-            for model_name, model_data in models.items():
-                model_list.append(model_data["model"])
-                model_names.append(model_name)
-
-                # Calculate model performance on validation data
-                if not validation_data.empty and "label" in validation_data.columns:
-                    X_val = validation_data.drop("label", axis=1)
-                    y_val = validation_data["label"]
-
-                    try:
-                        predictions = model_data["model"].predict(X_val)
-                        accuracy = accuracy_score(y_val, predictions)
-                        precision = precision_score(
-                            y_val,
-                            predictions,
-                            average="weighted",
-                            zero_division=0,
-                        )
-                        recall = recall_score(
-                            y_val,
-                            predictions,
-                            average="weighted",
-                            zero_division=0,
-                        )
-                        f1 = f1_score(
-                            y_val,
-                            predictions,
-                            average="weighted",
-                            zero_division=0,
-                        )
-
-                        model_performances[model_name] = {
-                            "accuracy": accuracy,
-                            "precision": precision,
-                            "recall": recall,
-                            "f1": f1,
-                        }
-                    except Exception as e:
-                        self.logger.warning(
-                            f"Could not evaluate model {model_name}: {e}",
-                        )
-                        model_performances[model_name] = {
-                            "accuracy": 0.5,
-                            "precision": 0.5,
-                            "recall": 0.5,
-                            "f1": 0.5,
-                        }
-
-            # Create different ensemble types
-            ensemble_results = {}
-
-            # 1. StackingCV Ensemble with proper meta-learner
-            stacking_ensemble = await self._create_stacking_ensemble(
-                model_list,
-                model_names,
-                regime_name,
-                training_data,
-                validation_data,
-            )
-            ensemble_results["stacking_cv"] = stacking_ensemble
-
-            # 2. Dynamic Performance-Weighted Ensemble using Sharpe Ratio
-            dynamic_ensemble = await self._create_dynamic_weighting_ensemble(
-                model_list,
-                model_names,
-                regime_name,
-                training_data,
-                validation_data,
-                model_performances,
-            )
-            ensemble_results["dynamic_weighting"] = dynamic_ensemble
-
-            # 3. Voting Ensemble
-            voting_ensemble = await self._create_voting_ensemble(
-                model_list,
-                model_names,
-                regime_name,
-            )
-            ensemble_results["voting"] = voting_ensemble
-
-            return ensemble_results
-
-        except Exception as e:
-            self.logger.exception(
-                f"Error creating ensemble for regime {regime_name}: {e}",
-            )
-            raise
-
     async def _create_stacking_ensemble(
         self,
         models: list[Any],
         model_names: list[str],
-        regime_name: str,
         training_data: pd.DataFrame,
         validation_data: pd.DataFrame,
     ) -> dict[str, Any]:
-        """Create enhanced StackingCV ensemble with proper meta-learner."""
+        """Create enhanced StackingCV ensemble with proper meta-learner.
+        Extended to optionally include general model probabilities if available in validation_data.
+        """
         try:
             if training_data.empty or "label" not in training_data.columns:
-                msg = "Training data is empty or missing labels"
-                raise ValueError(msg)
+                self.logger.warning("Training data is empty or missing 'label' column for stacking ensemble")
+                return {}
 
-            X_train = training_data.drop("label", axis=1)
+            X_train = training_data.drop(columns=["label"], errors="ignore").select_dtypes(include=[np.number])
             y_train = training_data["label"]
+
+            # Include general proba/logit as additional base features if present
+            extra_cols = [c for c in ["general_p_long", "general_p_short", "general_logit"] if c in training_data.columns]
+            if extra_cols:
+                X_train = pd.concat([X_train, training_data[extra_cols]], axis=1)
 
             # Create estimators for stacking
             estimators = list(zip(model_names, models, strict=False))
 
-            # Use stratified k-fold for better validation
+            # Meta-learner configuration
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.model_selection import StratifiedKFold, cross_val_score
+
+            meta_learner = LogisticRegression(max_iter=200, class_weight="balanced")
             cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
-            # Create meta-learner with regularization
-            meta_learner = LogisticRegression(
-                random_state=42,
-                max_iter=1000,
-                C=1.0,  # Regularization strength
-                penalty="l2",
-                solver="lbfgs",
-            )
-
             # Create stacking classifier
+            from sklearn.ensemble import StackingClassifier
             stacking_classifier = StackingClassifier(
                 estimators=estimators,
                 final_estimator=meta_learner,
                 cv=cv,
                 stack_method="predict_proba",
                 n_jobs=-1,
-                passthrough=False,  # Don't pass original features to meta-learner
+                passthrough=False,
             )
 
             # Fit the stacking classifier
             stacking_classifier.fit(X_train, y_train)
 
             # Evaluate on validation data
-            validation_metrics = {}
-            if not validation_data.empty and "label" in validation_data.columns:
-                X_val = validation_data.drop("label", axis=1)
+            validation_metrics = None
+            if isinstance(validation_data, pd.DataFrame) and not validation_data.empty and "label" in validation_data.columns:
+                X_val = validation_data.drop(columns=["label"], errors="ignore").select_dtypes(include=[np.number])
+                # Append general features if present
+                extrav = [c for c in ["general_p_long", "general_p_short", "general_logit"] if c in validation_data.columns]
+                if extrav:
+                    X_val = pd.concat([X_val, validation_data[extrav]], axis=1)
                 y_val = validation_data["label"]
 
                 val_predictions = stacking_classifier.predict(X_val)
                 stacking_classifier.predict_proba(X_val)
 
+                from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
                 validation_metrics = {
-                    "accuracy": accuracy_score(y_val, val_predictions),
-                    "precision": precision_score(
-                        y_val,
-                        val_predictions,
-                        average="weighted",
-                        zero_division=0,
-                    ),
-                    "recall": recall_score(
-                        y_val,
-                        val_predictions,
-                        average="weighted",
-                        zero_division=0,
-                    ),
-                    "f1": f1_score(
-                        y_val,
-                        val_predictions,
-                        average="weighted",
-                        zero_division=0,
-                    ),
+                    "accuracy": float(accuracy_score(y_val, val_predictions)),
+                    "f1_score": float(f1_score(y_val, val_predictions, average="macro")),
+                    "precision": float(precision_score(y_val, val_predictions, average="macro")),
+                    "recall": float(recall_score(y_val, val_predictions, average="macro")),
                 }
 
             # Cross-validation scores
+            from sklearn.model_selection import cross_val_score
             cv_scores = cross_val_score(
                 stacking_classifier,
                 X_train,
@@ -1205,27 +1086,201 @@ class AnalystEnsembleCreationStep:
                 "ensemble_type": "StackingCV",
                 "base_models": model_names,
                 "meta_learner": "LogisticRegression",
-                "cv_folds": 5,
-                "regime": regime_name,
-                "creation_date": datetime.now().isoformat(),
                 "validation_metrics": validation_metrics,
-                "cv_scores": {
-                    "mean": cv_scores.mean(),
-                    "std": cv_scores.std(),
-                    "scores": cv_scores.tolist(),
-                },
-                "features": {
-                    "use_probabilities": True,
-                    "use_raw_predictions": False,
-                    "passthrough": False,
-                },
+                "cv_scores": cv_scores.tolist(),
             }
-
         except Exception as e:
             self.logger.exception(
                 f"Error creating stacking ensemble for {regime_name}: {e}",
             )
             raise
+
+    async def _create_residual_combiner(
+        self,
+        base_general_oof: pd.DataFrame | None,
+        expert_predictions: dict[str, pd.DataFrame],
+        gating: pd.DataFrame | None,
+        reliability: dict[str, float] | None,
+        coverage: dict[str, float] | None,
+        floors: float = 0.1,
+        shrinkage: float = 0.5,
+    ) -> pd.DataFrame | None:
+        """Combine general logits with expert deltas using gating weights.
+
+        Returns a DataFrame with columns: timestamp, combined_logit, combined_p_long, combined_p_short.
+        """
+        try:
+            if base_general_oof is None or base_general_oof.empty:
+                return None
+            df = base_general_oof.copy()
+            if "timestamp" not in df.columns:
+                return None
+            df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+            df = df.dropna(subset=["timestamp"]).sort_values("timestamp")
+            df = df.rename(columns={"logit": "general_logit", "p_long": "general_p_long", "p_short": "general_p_short"})
+            df = df[["timestamp", "general_logit", "general_p_long", "general_p_short"]]
+
+            # Initialize combined logit with general
+            combined = df.copy()
+            combined["combined_logit"] = combined["general_logit"].astype(float)
+
+            # Prepare gating weights
+            gating_w = None
+            if gating is not None and not gating.empty:
+                g = gating.copy()
+                if "timestamp" in g.columns:
+                    g["timestamp"] = pd.to_datetime(g["timestamp"], errors="coerce")
+                    g = g.dropna(subset=["timestamp"]).sort_values("timestamp")
+                    gating_w = g
+
+            # Apply expert deltas
+            for expert_name, preds in expert_predictions.items():
+                if preds is None or preds.empty:
+                    continue
+                p = preds.copy()
+                if "timestamp" not in p.columns:
+                    continue
+                p["timestamp"] = pd.to_datetime(p["timestamp"], errors="coerce")
+                p = p.dropna(subset=["timestamp"]).sort_values("timestamp")
+                # Expect expert to provide delta_logit or proba; derive delta_logit if needed
+                if "delta_logit" in p.columns:
+                    delta = p[["timestamp", "delta_logit"]]
+                elif {"p_long", "p_short"}.issubset(p.columns):
+                    import numpy as _np
+                    eps = 1e-6
+                    p1 = p["p_long"].clip(eps, 1 - eps)
+                    p0 = p["p_short"].clip(eps, 1 - eps)
+                    delta = p[["timestamp"]].copy()
+                    delta["delta_logit"] = _np.log(p1 / p0)
+                else:
+                    continue
+                # Join on timestamp
+                combined = combined.merge(delta, on="timestamp", how="left")
+                # Weight by gating (if available) and reliability/coverage
+                w = 1.0
+                if gating_w is not None:
+                    # Map expert_name to a gating column if present, else use average
+                    if expert_name in gating_w.columns:
+                        gcol = gating_w[["timestamp", expert_name]].rename(columns={expert_name: "gw"})
+                        combined = combined.merge(gcol, on="timestamp", how="left")
+                        w = combined.pop("gw").fillna(0.0)
+                    else:
+                        w = 0.0
+                # Apply floors and shrinkage via reliability/coverage
+                rel = float(reliability.get(expert_name, 1.0)) if reliability else 1.0
+                cov = float(coverage.get(expert_name, 1.0)) if coverage else 1.0
+                eff_w = (w.astype(float) if hasattr(w, "astype") else float(w))
+                # floors: ensure minimum general weight; here floors applies to expert: cap min at 0
+                # shrinkage: shrink by reliability/coverage
+                if hasattr(eff_w, "__mul__"):
+                    eff_w = eff_w * max(0.0, min(1.0, rel)) * max(0.0, min(1.0, cov)) * float(shrinkage)
+                else:
+                    eff_w = float(eff_w) * max(0.0, min(1.0, rel)) * max(0.0, min(1.0, cov)) * float(shrinkage)
+                # Add weighted delta to combined logit
+                if hasattr(eff_w, "__len__"):
+                    combined["combined_logit"] = combined["combined_logit"] + eff_w.fillna(0.0) * combined["delta_logit"].fillna(0.0)
+                else:
+                    combined["combined_logit"] = combined["combined_logit"] + float(eff_w) * combined["delta_logit"].fillna(0.0)
+                # Drop helper delta column to avoid accumulation
+                combined = combined.drop(columns=["delta_logit"], errors="ignore")
+
+            # Convert combined_logit back to probabilities
+            import numpy as _np
+            eps = 1e-6
+            lg = combined["combined_logit"].astype(float)
+            p1 = 1.0 / (1.0 + _np.exp(-lg))
+            p0 = 1.0 - p1
+            combined["combined_p_long"] = p1.clip(eps, 1 - eps)
+            combined["combined_p_short"] = p0.clip(eps, 1 - eps)
+            return combined
+        except Exception as e:
+            self.logger.warning(f"Residual combiner failed: {e}")
+            return None
+
+    async def _create_regime_ensemble(
+        self,
+        models: dict[str, Any],
+        regime_name: str,
+        training_data: pd.DataFrame,
+        validation_data: pd.DataFrame,
+        data_dir: str,
+        exchange: str,
+        symbol: str,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """Create both stacking ensemble and residual combiner outputs for a regime.
+        Returns (stacking_result, residual_result)
+        """
+        try:
+            # Prepare model list and names
+            model_list = []
+            model_names = []
+            for name, obj in models.items():
+                if not isinstance(obj, dict):
+                    continue
+                est = obj.get("model") or obj
+                if hasattr(est, "predict_proba"):
+                    model_list.append(est)
+                    model_names.append(name)
+
+            # Load general OOF and gating/reliability
+            general_oof = None
+            try:
+                gpath = f"{data_dir}/{exchange}_{symbol}_general_oof.parquet"
+                if os.path.exists(gpath):
+                    general_oof = pd.read_parquet(gpath)
+            except Exception:
+                general_oof = None
+            gating = None
+            try:
+                gmpath = os.path.join(data_dir, "gating", f"{exchange}_{symbol}_gating.parquet")
+                if os.path.exists(gmpath):
+                    gating = pd.read_parquet(gmpath)
+            except Exception:
+                gating = None
+            reliability = {}
+            try:
+                rpath = f"{data_dir}/{exchange}_{symbol}_label_reliability.json"
+                if os.path.exists(rpath):
+                    with open(rpath, "r") as f:
+                        reliability = json.load(f)
+            except Exception:
+                reliability = {}
+
+            # Build coverage proxy from training_data counts per expert if available
+            coverage = {regime_name: float(len(training_data))}
+
+            # Create stacking ensemble
+            stacking_result = await self._create_stacking_ensemble(
+                model_list, model_names, training_data, validation_data
+            )
+
+            # Create residual combiner baseline (requires expert predictions; placeholder empty mapping here)
+            residual_result = None
+            try:
+                expert_preds: dict[str, pd.DataFrame] = {}
+                residual_df = await self._create_residual_combiner(
+                    base_general_oof=general_oof,
+                    expert_predictions=expert_preds,
+                    gating=gating,
+                    reliability=reliability,
+                    coverage=coverage,
+                )
+                if residual_df is not None:
+                    residual_result = {
+                        "residual_combined": residual_df.tail(1000).to_dict(orient="list")[
+                            # Store only minimal preview
+                            "combined_p_long"
+                        ]
+                    }
+            except Exception:
+                residual_result = None
+
+            return stacking_result, residual_result
+        except Exception as e:
+            self.logger.exception(
+                f"Error creating regime ensemble for {regime_name}: {e}",
+            )
+            return None, None
 
     async def _create_dynamic_weighting_ensemble(
         self,

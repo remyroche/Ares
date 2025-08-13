@@ -141,8 +141,8 @@ class CachedBacktester:
         if cache_key in self.cache:
             try:
                 self.logger.info(f"Backtest cache hit: score={float(self.cache[cache_key]):.4f}")
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"Failed to log cache hit info: {e}")
             return self.cache[cache_key]
 
         # Run simplified backtest using precomputed indicators

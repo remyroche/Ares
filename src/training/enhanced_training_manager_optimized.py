@@ -263,15 +263,14 @@ class ParallelBacktester:
         results = [future.result() for future in futures]
         try:
             if results:
-                import numpy as _np
                 self.logger.info(
                     {
                         "msg": "parallel_batch_scores",
                         "count": len(results),
-                        "mean": float(_np.mean(results)),
-                        "min": float(_np.min(results)),
-                        "p90": float(_np.percentile(results, 90)),
-                        "max": float(_np.max(results)),
+                        "mean": float(np.mean(results)),
+                        "min": float(np.min(results)),
+                        "p90": float(np.percentile(results, 90)),
+                        "max": float(np.max(results)),
                     }
                 )
         except Exception:

@@ -81,6 +81,17 @@ class MetaLabelingSystem:
         self.lookback_price_position = self.pattern_config.get("lookback_price_position", 20)
         self.lookback_poc_bins = self.pattern_config.get("lookback_poc_bins", 20)
         self.lookback_poc_window = self.pattern_config.get("lookback_poc_window", 1440)
+        # Support/Resistance parameters
+        self.sr_lookback = self.pattern_config.get("sr_lookback", 50)
+        self.sr_near_pct = self.pattern_config.get("sr_near_pct", 0.003)  # 0.3%
+        self.sr_break_pct = self.pattern_config.get("sr_break_pct", 0.0005)
+        # Liquidity shift parameters
+        self.liquidity_drain_ratio = self.pattern_config.get("liquidity_drain_ratio", 0.6)
+        self.wall_removal_drop = self.pattern_config.get("wall_removal_drop", 0.5)
+        self.stacking_increase = self.pattern_config.get("stacking_increase", 0.5)
+        # Volume profile dynamics
+        self.poc_shift_threshold = self.pattern_config.get("poc_shift_threshold", 0.002)
+        self.hvn_percentile = self.pattern_config.get("hvn_percentile", 80)
         # Ignition range thresholds
         self.ignition_narrow_env = self.pattern_config.get("ignition_narrow_env", 0.02)
         # Micro breakout window
@@ -104,6 +115,32 @@ class MetaLabelingSystem:
             "compression_streak": 0,
             "trend_cont_streak": 0,
         }
+
+        # Canonical label list (single source of truth)
+        self.all_labels: list[str] = [
+            # Trend/price action
+            "STRONG_TREND_CONTINUATION","EXHAUSTION_REVERSAL","RANGE_MEAN_REVERSION",
+            "BREAKOUT_SUCCESS","BREAKOUT_FAILURE","FLAG_FORMATION","TRIANGLE_FORMATION","RECTANGLE_FORMATION",
+            "MOMENTUM_IGNITION","IGNITION_BAR","MICRO_MOMENTUM_DIVERGENCE",
+            # Volatility
+            "VOLATILITY_COMPRESSION","VOLATILITY_EXPANSION","FLASH_CRASH_PATTERN",
+            # Volume profile & auction
+            "PRICE_AT_POC","PRICE_REJECTING_VAH","PRICE_REJECTING_VAL","LVN_TRANSIT","POC_SHIFT","HIGH_VOLUME_NODE_REJECTION",
+            # S/R related
+            "SR_TOUCH","SR_BOUNCE","SR_BREAK","SR_FAKE_BREAK",
+            # Liquidity & market depth
+            "BID_ASK_COMPRESSION","ICE_BERG_ORDERS","LIQUIDITY_DRAIN","BID_WALL_REMOVAL","OFFER_STACKING",
+            # Traps & false signals
+            "BULL_TRAP","BEAR_TRAP","FAKE_BREAKOUT",
+            # Regime transitions
+            "VOLATILITY_REGIME_CHANGE","TREND_TO_RANGE_TRANSITION",
+            # Risk/conviction
+            "CHOP_WARNING","FAKE_OUT_RISK_HIGH","LOW_CONVICTION_SETUP","HIGH_CONVICTION_SETUP",
+            # Sentiment/momentum refinements
+            "MOMENTUM_ACCELERATION","MOMENTUM_DECELERATION","CAPITULATION_SELLING","EUPHORIC_BUYING",
+            # Order flow/stop dynamics
+            "STOP_HUNT_BELOW_LOW","STOP_HUNT_ABOVE_HIGH","PASSIVE_ABSORPTION_BID","PASSIVE_ABSORPTION_ASK",
+        ]
 
     @handle_errors(
         exceptions=(Exception,),
@@ -199,6 +236,12 @@ class MetaLabelingSystem:
                 features.update(self._calculate_momentum_patterns(price_data))
             except Exception as e:
                 self.logger.exception(f"Error calculating momentum patterns: {e}")
+
+            # Support/Resistance levels
+            try:
+                features.update(self._calculate_sr_levels(price_data))
+            except Exception as e:
+                self.logger.exception(f"Error calculating S/R levels: {e}")
 
             # Expose current values for entry and meta usage
             try:
@@ -620,267 +663,127 @@ class MetaLabelingSystem:
             except Exception:
                 patterns["MICRO_MOMENTUM_DIVERGENCE"] = 0
 
-            # 7) FAILED_RETEST
+            # 7) S/R related labels (using rolling extremes as SR proxies)
             try:
-                # Identify prior significant high/low in last 50 bars excluding current bar
-                lookback = 50
-                prior_high = float(high.rolling(lookback, min_periods=5).max().shift(1).iloc[-1]) if len(high) >= 5 else float(high.iloc[-1])
-                prior_low = float(low.rolling(lookback, min_periods=5).min().shift(1).iloc[-1]) if len(low) >= 5 else float(low.iloc[-1])
+                sr_res = float(features.get("resistance_level", high.max()))
+                sr_sup = float(features.get("support_level", low.min()))
                 cp = float(close.iloc[-1])
-                within_up = abs(cp - prior_high) / max(1e-12, prior_high) <= 0.0015
-                within_dn = abs(cp - prior_low) / max(1e-12, prior_low) <= 0.0015
-                # Volume comparison: current vs volume at original break (approximate via max range bar around prior extreme)
-                vol_series = vol if not vol.empty else pd.Series([1.0]*len(close), index=close.index)
-                # Find index of prior extreme
-                try:
-                    idx_high = int(high.shift(1).rolling(lookback, min_periods=5).apply(lambda s: np.argmax(s), raw=True).iloc[-1])
-                except Exception:
-                    idx_high = None
-                try:
-                    idx_low = int(low.shift(1).rolling(lookback, min_periods=5).apply(lambda s: np.argmin(s), raw=True).iloc[-1])
-                except Exception:
-                    idx_low = None
-                vol_at_break_high = float(vol_series.iloc[idx_high]) if idx_high is not None and -len(vol_series) <= idx_high < len(vol_series) else float(vol_series.iloc[-2] if len(vol_series) >= 2 else 1.0)
-                vol_at_break_low = float(vol_series.iloc[idx_low]) if idx_low is not None and -len(vol_series) <= idx_low < len(vol_series) else float(vol_series.iloc[-2] if len(vol_series) >= 2 else 1.0)
-                current_vol = float(vol_series.iloc[-1]) if len(vol_series) else 1.0
-                vol_ok_up = current_vol < 0.6 * max(1e-12, vol_at_break_high)
-                vol_ok_dn = current_vol < 0.6 * max(1e-12, vol_at_break_low)
-                # Reversal within 5 bars > 0.25%
-                rev_window = min(5, len(close))
-                future_move_up = False
-                future_move_dn = False
-                if rev_window >= 2:
-                    # Use last 5 bars change from the level proxy: compare last vs min/max over last 5
-                    recent_max = float(close.tail(rev_window).max())
-                    recent_min = float(close.tail(rev_window).min())
-                    if within_up:
-                        future_move_dn = (prior_high - recent_min) / max(1e-12, prior_high) > 0.0025
-                    if within_dn:
-                        future_move_up = (recent_max - prior_low) / max(1e-12, prior_low) > 0.0025
-                failed_retest = (within_up and vol_ok_up and future_move_dn) or (within_dn and vol_ok_dn and future_move_up)
-                patterns["FAILED_RETEST"] = 1 if failed_retest else 0
+                near_res = abs(cp - sr_res) / max(1e-12, cp) <= self.sr_near_pct
+                near_sup = abs(cp - sr_sup) / max(1e-12, cp) <= self.sr_near_pct
+                prev_cp = float(close.iloc[-2]) if len(close) >= 2 else cp
+                broke_res = (prev_cp <= sr_res) and (cp > sr_res * (1 + self.sr_break_pct))
+                broke_sup = (prev_cp >= sr_sup) and (cp < sr_sup * (1 - self.sr_break_pct))
+                bounce_res = (near_res and cp < sr_res)
+                bounce_sup = (near_sup and cp > sr_sup)
+                patterns["SR_TOUCH"] = 1 if (near_res or near_sup) else 0
+                patterns["SR_BOUNCE"] = 1 if (bounce_res or bounce_sup) else 0
+                patterns["SR_BREAK"] = 1 if (broke_res or broke_sup) else 0
+                # SR_FAKE_BREAK: pierce and close back inside within last 3 bars
+                recent = close.tail(3)
+                fake_up = (recent.max() > sr_res * (1 + self.sr_break_pct)) and (cp < sr_res)
+                fake_dn = (recent.min() < sr_sup * (1 - self.sr_break_pct)) and (cp > sr_sup)
+                patterns["SR_FAKE_BREAK"] = 1 if (fake_up or fake_dn) else 0
             except Exception:
-                patterns["FAILED_RETEST"] = 0
+                patterns["SR_TOUCH"] = patterns.get("SR_TOUCH", 0)
+                patterns["SR_BOUNCE"] = patterns.get("SR_BOUNCE", 0)
+                patterns["SR_BREAK"] = patterns.get("SR_BREAK", 0)
+                patterns["SR_FAKE_BREAK"] = patterns.get("SR_FAKE_BREAK", 0)
 
-            # 8) ICE_BERG_ORDERS (order flow dependent; heuristic proxies)
+            # 8) Liquidity shifts & market depth (requires order_flow_data; use proxies if limited)
             try:
-                iceberg = 0
-                if order_flow_data is not None:
-                    of = order_flow_data.tail(50)
-                    if {"bid_size", "ask_size"}.issubset(of.columns):
-                        avg_bid = float(of["bid_size"].rolling(20, min_periods=5).mean().iloc[-1])
-                        avg_ask = float(of["ask_size"].rolling(20, min_periods=5).mean().iloc[-1])
-                        big_bid = float(of["bid_size"].iloc[-1]) > 10 * max(1e-12, avg_bid)
-                        big_ask = float(of["ask_size"].iloc[-1]) > 10 * max(1e-12, avg_ask)
-                        # Replenishing when hit: rising size over last 3 while price tests same level band
-                        price_band = 0.0005 * float(close.iloc[-1])
-                        repeated_tests = (high.tail(10).max() - low.tail(10).min()) / max(1e-12, float(close.iloc[-1])) < 0.003
-                        replenishing_bid = big_bid and of["bid_size"].tail(3).diff().fillna(0).sum() > 0 and repeated_tests
-                        replenishing_ask = big_ask and of["ask_size"].tail(3).diff().fillna(0).sum() > 0 and repeated_tests
-                        # Volume at level high but no progression
-                        vol_spike_lvl = vol_ratio > 1.5
-                        momentum_decreasing = abs(momentum_5) < abs(momentum_10)
-                        iceberg = 1 if ((replenishing_bid or replenishing_ask) and vol_spike_lvl and momentum_decreasing) else 0
-                patterns["ICE_BERG_ORDERS"] = iceberg
-            except Exception:
-                patterns["ICE_BERG_ORDERS"] = 0
-
-            # 9) Momentum & Sentiment Refinements
-            try:
-                # MOMENTUM_ACCELERATION
-                roc5 = float(close.pct_change(5).iloc[-1]) if len(close) >= 6 else 0.0
-                prev_roc5 = float(close.pct_change(5).shift(1).iloc[-1]) if len(close) >= 7 else 0.0
-                momentum_accel = (roc5 > prev_roc5) and ((roc5 - prev_roc5) > 0)
-                above_ma = float(close.iloc[-1]) > float(features.get("sma_20", close.iloc[-1]))
-                vol_increasing = float(vol.tail(2).iloc[-1] / max(1e-12, vol.tail(2).iloc[0])) > 1.1 if len(vol) >= 2 else False
-                patterns["MOMENTUM_ACCELERATION"] = 1 if (momentum_accel and above_ma and vol_increasing) else 0
-
-                # MOMENTUM_DECELERATION
-                decel = False
-                if len(close) >= 7:
-                    roc_series = close.pct_change(5)
-                    d_roc = roc_series.diff()
-                    neg_slope = (d_roc.tail(2) < 0).all()
-                    uptrend = float(close.iloc[-1]) > float(features.get("sma_20", close.iloc[-1]))
-                    decel = ((roc5 > 0 and prev_roc5 > 0 and neg_slope and uptrend) or
-                             (roc5 < 0 and prev_roc5 < 0 and (d_roc.tail(2) > 0).all() and not uptrend))
-                patterns["MOMENTUM_DECELERATION"] = 1 if decel else 0
-
-                # CAPITULATION_SELLING
-                drop1 = float((close.iloc[-1] / close.iloc[-2]) - 1.0) <= -0.015 if len(close) >= 2 else False
-                drop3 = float(close.pct_change(3).iloc[-1]) <= -0.025 if len(close) >= 4 else False
-                vol2x = vol_ratio > 2.0
-                rsi14 = float(features.get("rsi", 50))
-                bearish_seq = int((close.diff() < 0).tail(7).sum()) >= 5 if len(close) >= 7 else False
-                patterns["CAPITULATION_SELLING"] = 1 if ((drop1 or drop3) and vol2x and rsi14 < 25 and bearish_seq) else 0
-
-                # EUPHORIC_BUYING
-                up1 = float((close.iloc[-1] / close.iloc[-2]) - 1.0) >= 0.015 if len(close) >= 2 else False
-                up3 = float(close.pct_change(3).iloc[-1]) >= 0.025 if len(close) >= 4 else False
-                bull_seq = int((close.diff() > 0).tail(7).sum()) >= 5 if len(close) >= 7 else False
-                patterns["EUPHORIC_BUYING"] = 1 if ((up1 or up3) and vol2x and rsi14 > 75 and bull_seq) else 0
-
-                # DULL_MARKET
-                atr20 = float(features.get("atr_20", features.get("atr", 0.0)))
-                atr100 = float(features.get("atr_100", atr20 if atr20 else 1.0))
-                bb_width_recent = float(((high - low).rolling(20, min_periods=5).mean() / close).iloc[-1]) if len(close) >= 5 else 0.0
-                hl_range = float((high.iloc[-1] - low.iloc[-1]) / max(1e-12, close.iloc[-1]))
-                recent_range_avg = float(((high - low).rolling(20, min_periods=5).mean()).iloc[-1] / max(1e-12, close.iloc[-1])) if len(close) >= 20 else hl_range
-                no_large_bars = True
-                if len(data) >= 10:
-                    oc_moves = (np.abs(data["close"] - data["open"]) / data["open"]).tail(10)
-                    no_large_bars = (oc_moves < 0.003).all()
-                patterns["DULL_MARKET"] = 1 if (
-                    (atr20 < 0.6 * atr100)
-                    and (vol_ratio < 0.8)
-                    and (hl_range < 0.4 * max(1e-12, recent_range_avg))
-                    and no_large_bars
-                ) else 0
-            except Exception:
-                patterns["MOMENTUM_ACCELERATION"] = patterns.get("MOMENTUM_ACCELERATION", 0)
-                patterns["MOMENTUM_DECELERATION"] = patterns.get("MOMENTUM_DECELERATION", 0)
-                patterns["CAPITULATION_SELLING"] = patterns.get("CAPITULATION_SELLING", 0)
-                patterns["EUPHORIC_BUYING"] = patterns.get("EUPHORIC_BUYING", 0)
-                patterns["DULL_MARKET"] = patterns.get("DULL_MARKET", 0)
-
-            # 10) Microstructure Enhancements
-            try:
-                # BID_ASK_COMPRESSION
-                spread_ok = False
-                ob_build = False
-                coil = False
-                if order_flow_data is not None and {"best_bid", "best_ask", "bid_depth", "ask_depth"}.issubset(order_flow_data.columns):
-                    of = order_flow_data
-                    spread = (of["best_ask"].iloc[-1] - of["best_bid"].iloc[-1]) / max(1e-12, of["best_bid"].iloc[-1])
-                    avg_spread = (of["best_ask"] - of["best_bid"]).rolling(20, min_periods=5).mean().iloc[-1] / max(1e-12, of["best_bid"].rolling(20, min_periods=5).mean().iloc[-1])
-                    spread_ok = spread < 0.7 * max(1e-12, avg_spread)
-                    depth_now = float(of[["bid_depth", "ask_depth"]].iloc[-1].sum())
-                    depth_avg = float(of[["bid_depth", "ask_depth"]].rolling(20, min_periods=5).mean().iloc[-1].sum())
-                    ob_build = depth_now > 1.4 * max(1e-12, depth_avg)
-                coil = (high.tail(5).max() - low.tail(5).min()) / max(1e-12, float(close.iloc[-1])) < 0.002 if len(close) >= 5 else False
-                patterns["BID_ASK_COMPRESSION"] = 1 if (spread_ok and ob_build and coil) else 0
-
-                # TAPE_PAINTING (heuristics: many small trades, high trade count but low volume; requires trade data if present)
-                try:
-                    if order_flow_data is not None and {"trade_count", "trade_volume", "avg_trade_size"}.issubset(order_flow_data.columns):
-                        tc = float(order_flow_data["trade_count"].iloc[-1])
-                        tv = float(order_flow_data["trade_volume"].iloc[-1])
-                        ats = float(order_flow_data["avg_trade_size"].iloc[-1])
-                        tc_avg = float(order_flow_data["trade_count"].rolling(20, min_periods=5).mean().iloc[-1])
-                        tv_avg = float(order_flow_data["trade_volume"].rolling(20, min_periods=5).mean().iloc[-1])
-                        ratio = (tc / max(1e-12, tv)) / (tc_avg / max(1e-12, tv_avg)) if tv_avg > 0 else 0
-                        patterns["TAPE_PAINTING"] = 1 if (ats < max(1.0, ats) and ratio > 1.5) else 0
+                # LIQUIDITY_DRAIN: total depth falls below x% of its rolling mean
+                if order_flow_data is not None and {"bid_depth", "ask_depth"}.issubset(order_flow_data.columns):
+                    bd = order_flow_data["bid_depth"].reindex(close.index, method="ffill").fillna(0)
+                    ad = order_flow_data["ask_depth"].reindex(close.index, method="ffill").fillna(0)
+                    tot = bd + ad
+                    ma = tot.rolling(20, min_periods=5).mean()
+                    drain = float(tot.iloc[-1] / max(1e-12, ma.iloc[-1])) < self.liquidity_drain_ratio
+                    patterns["LIQUIDITY_DRAIN"] = 1 if drain else 0
+                    # BID_WALL_REMOVAL: large drop in bid wall size
+                    if "bid_size" in order_flow_data.columns:
+                        bs = order_flow_data["bid_size"].reindex(close.index, method="ffill").fillna(0)
+                        drop = (bs.diff().iloc[-1] < -abs(bs.rolling(10, min_periods=3).mean().iloc[-1] * self.wall_removal_drop))
+                        patterns["BID_WALL_REMOVAL"] = 1 if drop else 0
                     else:
-                        patterns["TAPE_PAINTING"] = 0
-                except Exception:
-                    patterns["TAPE_PAINTING"] = 0
-
-                # ICEBERG_MELT
-                try:
-                    if order_flow_data is not None and {"iceberg_size", "iceberg_price"}.issubset(order_flow_data.columns):
-                        ice = order_flow_data.tail(10)
-                        decreasing = (ice["iceberg_size"].diff() < 0).sum() >= 3
-                        level_held = (np.abs(float(close.iloc[-1]) - float(ice["iceberg_price"].iloc[-1])) / max(1e-12, float(close.iloc[-1]))) < 0.0015
-                        slow_prog = abs(momentum_5) < 0.002
-                        patterns["ICEBERG_MELT"] = 1 if (decreasing and level_held and slow_prog) else 0
+                        patterns["BID_WALL_REMOVAL"] = 0
+                    # OFFER_STACKING: rapid increase in ask depth
+                    if "ask_size" in order_flow_data.columns:
+                        aS = order_flow_data["ask_size"].reindex(close.index, method="ffill").fillna(0)
+                        inc = (aS.diff().iloc[-1] > abs(aS.rolling(10, min_periods=3).mean().iloc[-1] * self.stacking_increase))
+                        patterns["OFFER_STACKING"] = 1 if inc else 0
                     else:
-                        patterns["ICEBERG_MELT"] = 0
-                except Exception:
-                    patterns["ICEBERG_MELT"] = 0
-
-                # SIZE_SHOWING_BID/ASK
-                try:
-                    if order_flow_data is not None and {"bid_size", "ask_size"}.issubset(order_flow_data.columns):
-                        of = order_flow_data
-                        bid_sz = float(of["bid_size"].iloc[-1])
-                        ask_sz = float(of["ask_size"].iloc[-1])
-                        bid_avg = float(of["bid_size"].rolling(20, min_periods=5).mean().iloc[-1])
-                        ask_avg = float(of["ask_size"].rolling(20, min_periods=5).mean().iloc[-1])
-                        price_reacting = (np.abs(float(close.iloc[-1]) - float(open_.iloc[-1])) / max(1e-12, float(open_.iloc[-1]))) > 0.001
-                        patterns["SIZE_SHOWING_BID"] = 1 if (bid_sz > 5 * max(1e-12, bid_avg) and price_reacting) else 0
-                        patterns["SIZE_SHOWING_ASK"] = 1 if (ask_sz > 5 * max(1e-12, ask_avg) and price_reacting) else 0
-                    else:
-                        patterns["SIZE_SHOWING_BID"] = 0
-                        patterns["SIZE_SHOWING_ASK"] = 0
-                except Exception:
-                    patterns["SIZE_SHOWING_BID"] = 0
-                    patterns["SIZE_SHOWING_ASK"] = 0
-
-                # FLASH_CRASH_PATTERN
-                try:
-                    one_min_drop = (len(close) >= 2) and ((close.iloc[-1] / close.iloc[-2]) - 1.0) <= -0.01
-                    vol_spike5x = vol_ratio > 5.0
-                    # Immediate recovery > 50% of drop within 5 minutes
-                    rec = False
-                    if len(close) >= 6 and one_min_drop:
-                        drop_amt = float(close.iloc[-2] - close.iloc[-1])
-                        rec_amt = float(close.iloc[-1] - close.tail(6).min())
-                        rec = drop_amt > 0 and (rec_amt / max(1e-12, drop_amt)) >= 0.5
-                    # Order book thin proxy
-                    thin_ob = False
-                    if order_flow_data is not None and {"depth_ratio"}.issubset(order_flow_data.columns):
-                        thin_ob = float(order_flow_data["depth_ratio"].iloc[-1]) < 0.3
-                    patterns["FLASH_CRASH_PATTERN"] = 1 if (one_min_drop and vol_spike5x and rec and (thin_ob or True)) else 0
-                except Exception:
-                    patterns["FLASH_CRASH_PATTERN"] = 0
+                        patterns["OFFER_STACKING"] = 0
+                else:
+                    patterns.setdefault("LIQUIDITY_DRAIN", 0)
+                    patterns.setdefault("BID_WALL_REMOVAL", 0)
+                    patterns.setdefault("OFFER_STACKING", 0)
             except Exception:
-                patterns["BID_ASK_COMPRESSION"] = patterns.get("BID_ASK_COMPRESSION", 0)
-                patterns["TAPE_PAINTING"] = patterns.get("TAPE_PAINTING", 0)
-                patterns["ICEBERG_MELT"] = patterns.get("ICEBERG_MELT", 0)
-                patterns["SIZE_SHOWING_BID"] = patterns.get("SIZE_SHOWING_BID", 0)
-                patterns["SIZE_SHOWING_ASK"] = patterns.get("SIZE_SHOWING_ASK", 0)
-                patterns["FLASH_CRASH_PATTERN"] = patterns.get("FLASH_CRASH_PATTERN", 0)
+                patterns["LIQUIDITY_DRAIN"] = patterns.get("LIQUIDITY_DRAIN", 0)
+                patterns["BID_WALL_REMOVAL"] = patterns.get("BID_WALL_REMOVAL", 0)
+                patterns["OFFER_STACKING"] = patterns.get("OFFER_STACKING", 0)
 
-            # 11) Risk Management States
+            # 9) False signals & traps
             try:
+                recent_high = float(high.rolling(self.lookback_breakout, min_periods=5).max().shift(1).iloc[-1]) if len(high) else float(high.iloc[-1])
+                recent_low = float(low.rolling(self.lookback_breakout, min_periods=5).min().shift(1).iloc[-1]) if len(low) else float(low.iloc[-1])
+                broke_up = float(close.iloc[-1]) > recent_high
+                broke_dn = float(close.iloc[-1]) < recent_low
+                mom = float(features.get("price_momentum_5", 0.0))
+                # Trap if break occurs but momentum negative (bull trap) or positive (bear trap) and reversal fast
+                rev5 = float(close.pct_change(5).iloc[-1]) if len(close) >= 6 else 0.0
+                patterns["BULL_TRAP"] = 1 if (broke_up and mom < 0 and rev5 < 0) else 0
+                patterns["BEAR_TRAP"] = 1 if (broke_dn and mom > 0 and rev5 > 0) else 0
+                # Fake breakout: break then bb_position retreats to mid within 5 bars
+                bb_pos = float(features.get("bb_position", 0.5))
+                patterns["FAKE_BREAKOUT"] = 1 if ((broke_up or broke_dn) and 0.3 < bb_pos < 0.7) else 0
+            except Exception:
+                patterns["BULL_TRAP"] = patterns.get("BULL_TRAP", 0)
+                patterns["BEAR_TRAP"] = patterns.get("BEAR_TRAP", 0)
+                patterns["FAKE_BREAKOUT"] = patterns.get("FAKE_BREAKOUT", 0)
+
+            # 10) Volume profile & auction dynamics extensions
+            try:
+                # POC_SHIFT: change in POC level vs prior window
+                window = min(self.lookback_poc_window, len(close))
+                if window >= 50:
+                    seg = close.tail(window).values
+                    hist, edges = np.histogram(seg, bins=self.lookback_poc_bins)
+                    poc_idx = int(np.argmax(hist))
+                    poc = float((edges[poc_idx] + edges[poc_idx + 1]) / 2.0)
+                    # Prior window
+                    prev_seg = close.tail(window + 50).head(window).values if len(close) >= window + 50 else seg
+                    prev_hist, prev_edges = np.histogram(prev_seg, bins=self.lookback_poc_bins)
+                    prev_poc_idx = int(np.argmax(prev_hist))
+                    prev_poc = float((prev_edges[prev_poc_idx] + prev_edges[prev_poc_idx + 1]) / 2.0)
+                    patterns["POC_SHIFT"] = 1 if (abs(poc - prev_poc) / max(1e-12, prev_poc) >= self.poc_shift_threshold) else 0
+                    # HVN rejection: current price near HVN bin edge then reverse
+                    hvn_cut = np.percentile(hist, self.hvn_percentile)
+                    current = float(close.iloc[-1])
+                    cur_bin = int(np.searchsorted(edges, current) - 1)
+                    hvn_hit = 0 <= cur_bin < len(hist) and hist[cur_bin] >= hvn_cut
+                    patterns["HIGH_VOLUME_NODE_REJECTION"] = 1 if (hvn_hit and (abs(float(close.pct_change(3).iloc[-1]) if len(close) >= 4 else 0.0) > 0)) else 0
+                else:
+                    patterns.setdefault("POC_SHIFT", 0)
+                    patterns.setdefault("HIGH_VOLUME_NODE_REJECTION", 0)
+            except Exception:
+                patterns["POC_SHIFT"] = patterns.get("POC_SHIFT", 0)
+                patterns["HIGH_VOLUME_NODE_REJECTION"] = patterns.get("HIGH_VOLUME_NODE_REJECTION", 0)
+
+            # 11) Market regime transitions
+            try:
+                vol20 = float(features.get("volatility_20", 0.0))
+                vol10 = float(features.get("volatility_10", 0.0))
+                prev_regime = int(self.state.get("vol_regime", 0))
+                curr_regime = 1 if vol20 > self.volatility_threshold else 0
+                patterns["VOLATILITY_REGIME_CHANGE"] = 1 if curr_regime != prev_regime else 0
+                self.state["vol_regime"] = curr_regime
+                # Trend-to-range transition: ADX falls and bb_width expands into mid
                 adx = float(features.get("adx", 20.0))
-                bb_upper = float(features.get("bb_upper", close.iloc[-1]))
-                bb_lower = float(features.get("bb_lower", close.iloc[-1]))
-                sma20 = float(features.get("sma_20", close.iloc[-1]))
-                price = float(close.iloc[-1])
-                bb_width_rel = (bb_upper - bb_lower) / max(1e-12, sma20)
-                hist_bb_width = float(
-                    (data["close"].rolling(100, min_periods=20).std() * 2).iloc[-1]
-                ) if len(data) >= 20 else bb_width_rel
-                # CHOP_WARNING
-                dir_changes = int(np.sign(close.diff().fillna(0)).tail(10).diff().fillna(0).ne(0).sum()) if len(close) >= 10 else 0
-                small_ranges = True
-                if len(data) >= 8:
-                    small_ranges = (((high - low) / close).tail(8) < 0.004).all()
-                patterns["CHOP_WARNING"] = 1 if (
-                    adx < 20 and bb_width_rel < 0.8 * hist_bb_width and dir_changes >= 5 and small_ranges
-                ) else 0
-
-                # FAKE_OUT_RISK_HIGH (heuristics)
-                recent_failed = int(pd.Series([
-                    patterns.get("BREAKOUT_FAILURE", 0),
-                    patterns.get("STOP_HUNT_BELOW_LOW", 0),
-                    patterns.get("STOP_HUNT_ABOVE_HIGH", 0),
-                    patterns.get("PRICE_REJECTING_VAH", 0),
-                    patterns.get("PRICE_REJECTING_VAL", 0),
-                ]).rolling(20, min_periods=1).sum().iloc[-1]) if len(close) else 0
-                fakeout = (recent_failed >= 2) and (bb_width_rel < 0.06) and (vol_ratio > 1.0)
-                patterns["FAKE_OUT_RISK_HIGH"] = 1 if fakeout else 0
-
-                # LOW_CONVICTION_SETUP / HIGH_CONVICTION_SETUP
-                # Count signals across categories
-                signal_keys = [
-                    "STRONG_TREND_CONTINUATION", "EXHAUSTION_REVERSAL", "RANGE_MEAN_REVERSION",
-                    "BREAKOUT_SUCCESS", "VOLATILITY_COMPRESSION", "VOLATILITY_EXPANSION",
-                    "FLAG_FORMATION", "TRIANGLE_FORMATION", "RECTANGLE_FORMATION",
-                    "MOMENTUM_IGNITION", "FAILED_RETEST", "BID_ASK_COMPRESSION",
-                    "CAPITULATION_SELLING", "EUPHORIC_BUYING"
-                ]
-                confluent = int(sum(int(features.get(k, 0) or patterns.get(k, 0)) for k in signal_keys))
-                low_conv = (confluent <= 1) or (vol_ratio < 1.0) or (adx < 25)
-                high_conv = (confluent >= 3) and (vol_ratio > 1.2) and ((adx > 30) or (abs((price / max(1e-12, sma20)) - 1) > 0.02))
-                patterns["LOW_CONVICTION_SETUP"] = 1 if low_conv else 0
-                patterns["HIGH_CONVICTION_SETUP"] = 1 if high_conv else 0
+                bb_width = float(features.get("bb_width", 0.0))
+                patterns["TREND_TO_RANGE_TRANSITION"] = 1 if (adx < 20 and bb_width > self.bb_width_compression) else 0
             except Exception:
-                patterns["CHOP_WARNING"] = patterns.get("CHOP_WARNING", 0)
-                patterns["FAKE_OUT_RISK_HIGH"] = patterns.get("FAKE_OUT_RISK_HIGH", 0)
-                patterns["LOW_CONVICTION_SETUP"] = patterns.get("LOW_CONVICTION_SETUP", 0)
-                patterns["HIGH_CONVICTION_SETUP"] = patterns.get("HIGH_CONVICTION_SETUP", 0)
+                patterns["VOLATILITY_REGIME_CHANGE"] = patterns.get("VOLATILITY_REGIME_CHANGE", 0)
+                patterns["TREND_TO_RANGE_TRANSITION"] = patterns.get("TREND_TO_RANGE_TRANSITION", 0)
 
             return patterns
 
@@ -1946,3 +1849,19 @@ class MetaLabelingSystem:
         except Exception as e:
             self.logger.warning(f"Activation threshold fitting failed: {e}")
             return {}
+
+    def _calculate_sr_levels(self, data: pd.DataFrame) -> dict[str, float]:
+        """Compute simple S/R levels using rolling extremes as proxies and their distances."""
+        out: dict[str, float] = {}
+        look = max(5, int(self.sr_lookback))
+        high_roll = data["high"].rolling(look, min_periods=5).max().shift(1)
+        low_roll = data["low"].rolling(look, min_periods=5).min().shift(1)
+        try:
+            out["resistance_level"] = float(high_roll.iloc[-1]) if not high_roll.empty else float(data["high"].iloc[-1])
+            out["support_level"] = float(low_roll.iloc[-1]) if not low_roll.empty else float(data["low"].iloc[-1])
+            cp = float(data["close"].iloc[-1])
+            out["dist_to_resistance_pct"] = float(abs(cp - out["resistance_level"]) / max(1e-12, cp))
+            out["dist_to_support_pct"] = float(abs(cp - out["support_level"]) / max(1e-12, cp))
+        except Exception:
+            pass
+        return out

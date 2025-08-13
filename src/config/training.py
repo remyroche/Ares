@@ -79,6 +79,33 @@ def get_training_config() -> dict[str, Any]:
             "enable_computational_optimization": True,  # Enable computational optimization strategies
             "enable_validators": True,  # Enable step validators
         },
+        # --- Method A: Mixture of Experts Pipeline Controls ---
+        "pipeline": {
+            "method_a": {
+                # If True, Step2 runs Step4 early to materialize L0/L1/L2/L3 before splitting
+                "step2_is_leveling": False,
+                # What to use for regime splitting in Step3: 'bull_bear_sideways' or 'meta_labels'
+                "regime_basis": "bull_bear_sideways",
+            }
+        },
+        # --- Method A: Expert Training Configuration ---
+        "method_a_mixture_of_experts": {
+            "enabled": False,
+            # Regime source for expert datasets: 'step2_bull_bear_sideways' or 'meta_labels'
+            "regime_source": "step2_bull_bear_sideways",
+            # When using meta_labels, which columns to use as regimes
+            "meta_label_columns": [
+                # Examples: 'VOLATILITY_COMPRESSION', 'FLAG_FORMATION', 'sr_breakout_up', 'sr_bounce_down'
+            ],
+            # Minimum rows required to train a given expert
+            "min_rows_per_expert": 5000,
+            # Whether to use strength-weighted combining in live dispatcher
+            "use_strength_weighting": True,
+            # Mapping from regime/meta to strength column name (if available)
+            "strength_columns": {
+                # e.g., "BREAKOUT": "breakout_strength", "SIDEWAYS": "confidence"
+            },
+        },
         # --- Multi-Timeframe Training Configuration ---
         "MULTI_TIMEFRAME_TRAINING": {
             "enable_parallel_training": True,  # Train timeframes in parallel

@@ -808,7 +808,7 @@ class TacticianSpecialistTrainingStep:
                     pred = model.predict(X_test)
                     return float((pred == y_test).mean())
 
-                study = optuna.create_study(direction="maximize")
+                study = optuna.create_study(direction="maximize", pruner=optuna.pruners.MedianPruner(n_warmup_steps=5))
                 study.optimize(_objective, n_trials=15)
                 best_params = study.best_params
             except Exception:

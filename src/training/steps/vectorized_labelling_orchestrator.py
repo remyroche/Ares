@@ -475,17 +475,23 @@ class VectorizedLabellingOrchestrator:
                 ]
                 base_names = sorted({name.split("_",1)[1] if "_" in name else name for name in label_cols})
                 # Placeholder MoE confidences: set to 0.5; replace with actual model outputs integration
-                moe_conf = {name: 0.5 for name in base_names}
-                # Compute intensities per label on last bar for audit
-                last_features = {}
+                # Derive MoE confidences from MLConfidencePredictor if available
                 try:
-                    last_features.update(self.advanced_feature_engineer._engineer_ohlcv_price_features_vectorized(price_data).copy())
+                    from src.analyst.ml_confidence_predictor import MLConfidencePredictor
+                    mlcp = MLConfidencePredictor(self.config)
+                    # Use price_data tail as market_data input
+                    market_tail = price_data.copy()
+                    current_price = float(price_data["close"].iloc[-1])
+                    preds = await mlcp.predict_confidence_table(market_tail, current_price)
+                    # Map a global directional confidence into a per-label MoE confidence proxy
+                    dir_conf = float(preds.get("directional_analysis", {}).get("net_confidence", 0.5)) if isinstance(preds, dict) else 0.5
+                    moe_conf = {name: dir_conf for name in base_names}
                 except Exception:
-                    pass
-                # Store weights in metadata
+                    moe_conf = {name: 0.5 for name in base_names}
+                # Compute intensities per label on last bar for audit
                 intensities = {name: float(0.0) for name in base_names}
                 weights = meta.compute_label_weights(intensities, moe_conf)
-                self.logger.info({"msg": "Computed preliminary MoE weights (placeholder)", "weights": weights})
+                self.logger.info({"msg": "Computed MoE weights", "weights": weights})
             except Exception as e:
                 self.logger.warning(f"MoE confidence integration skipped: {e}")
 

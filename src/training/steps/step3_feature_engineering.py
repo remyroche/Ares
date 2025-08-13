@@ -96,8 +96,66 @@ async def run_step(
             X_vl = X_vl.drop(columns=drop_tr, errors="ignore")
             X_te = X_te.drop(columns=drop_tr, errors="ignore")
 
-        # 7) Mutual information screen placeholder: keep as-is for speed (could integrate as needed)
-        # 8) VIF reduction placeholder: kept for future integration to mirror Step 4 behavior
+        # 7) Mutual information screen (classification target 'label')
+        try:
+            from sklearn.feature_selection import mutual_info_classif
+            y = None
+            if "label" in labeled["train"].columns:
+                # Use classification labels from Step 2
+                y = labeled["train"]["label"].astype(int).values
+            if y is not None and len(np.unique(y)) > 1 and not X_tr.empty:
+                numX = X_tr.select_dtypes(include=[np.number])
+                if not numX.empty:
+                    mi = mutual_info_classif(numX.values, y, discrete_features=False, random_state=42)
+                    mi_s = pd.Series(mi, index=numX.columns).sort_values(ascending=False)
+                    # Persist MI scores
+                    os.makedirs("log/mi", exist_ok=True)
+                    with open(f"log/mi/{exchange}_{symbol}_step3_mi.json", "w") as f:
+                        json.dump({"mi": mi_s.to_dict()}, f, indent=2)
+                    # Selection policy: keep top-k if provided; otherwise drop bottom quantile
+                    mi_top_k = int(kwargs.get("mi_top_k", 0) or 0)
+                    if mi_top_k > 0:
+                        keep_cols = list(mi_s.head(mi_top_k).index)
+                    else:
+                        mi_quantile = float(kwargs.get("mi_quantile", 0.20))
+                        thr = mi_s.quantile(mi_quantile)
+                        keep_cols = list(mi_s[mi_s >= thr].index)
+                    # Apply keep set
+                    X_tr = X_tr[keep_cols]
+                    X_vl = X_vl[keep_cols]
+                    X_te = X_te[keep_cols]
+                    logger.info(f"MI kept {len(keep_cols)} features (top_k={mi_top_k} quantile={kwargs.get('mi_quantile', 0.20)})")
+        except Exception as e:
+            logger.warning(f"MI screening skipped: {e}")
+
+        # 8) VIF reduction (iterative)
+        try:
+            from statsmodels.stats.outliers_influence import variance_inflation_factor
+            vif_thr = float(kwargs.get("vif_threshold", 5.0))
+            max_iter = int(kwargs.get("max_vif_iterations", 10))
+            num_cols = list(X_tr.select_dtypes(include=[np.number]).columns)
+            it = 0
+            while it < max_iter and len(num_cols) > 1:
+                it += 1
+                Xn = X_tr[num_cols].astype(float).fillna(0.0)
+                # Standardize to stabilize VIF
+                std = Xn.std(ddof=0).replace(0, 1.0)
+                Xn = (Xn - Xn.mean()) / std
+                vif_vals = pd.Series([variance_inflation_factor(Xn.values, i) for i in range(Xn.shape[1])], index=num_cols)
+                max_vif = float(vif_vals.max()) if not vif_vals.empty else 0.0
+                if max_vif <= vif_thr:
+                    break
+                drop_col = str(vif_vals.idxmax())
+                logger.info(f"VIF prune: dropping {drop_col} (VIF={max_vif:.2f})")
+                num_cols.remove(drop_col)
+            # Apply final VIF-selected set
+            if num_cols:
+                X_tr = X_tr[num_cols]
+                X_vl = X_vl[num_cols]
+                X_te = X_te[num_cols]
+                logger.info(f"VIF kept {len(num_cols)} features (threshold={vif_thr})")
+        except Exception as e:
+            logger.warning(f"VIF reduction skipped: {e}")
 
         # 9) Save features and selected feature lists
         os.makedirs(data_dir, exist_ok=True)

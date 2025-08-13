@@ -51,12 +51,40 @@ class MetaLabelingSystem:
 
         # Pattern detection parameters
         self.pattern_config = self.labeling_config.get("pattern_detection", {})
-        self.volatility_threshold = self.pattern_config.get(
-            "volatility_threshold",
-            0.02,
-        )
+        # Centralized thresholds with defaults
+        self.volatility_threshold = self.pattern_config.get("volatility_threshold", 0.02)
         self.momentum_threshold = self.pattern_config.get("momentum_threshold", 0.01)
         self.volume_threshold = self.pattern_config.get("volume_threshold", 1.5)
+        # Bollinger thresholds
+        self.bb_edge_low = self.pattern_config.get("bb_edge_low", 0.2)
+        self.bb_edge_high = self.pattern_config.get("bb_edge_high", 0.8)
+        self.bb_mid_low = self.pattern_config.get("bb_mid_low", 0.3)
+        self.bb_mid_high = self.pattern_config.get("bb_mid_high", 0.7)
+        self.bb_width_compression = self.pattern_config.get("bb_width_compression", 0.05)
+        self.bb_width_triangle = self.pattern_config.get("bb_width_triangle", 0.03)
+        # Momentum thresholds
+        self.trend_momentum_strong = self.pattern_config.get("trend_momentum_strong", 0.02)
+        self.breakout_momentum = self.pattern_config.get("breakout_momentum", 0.01)
+        self.failed_break_momentum = self.pattern_config.get("failed_break_momentum", 0.005)
+        # RSI thresholds
+        self.rsi_overbought = self.pattern_config.get("rsi_overbought", 70)
+        self.rsi_oversold = self.pattern_config.get("rsi_oversold", 30)
+        self.rsi_momentum_hi = self.pattern_config.get("rsi_momentum_hi", 60)
+        self.rsi_momentum_lo = self.pattern_config.get("rsi_momentum_lo", 40)
+        # Volume ratios
+        self.absorption_volume_spike = self.pattern_config.get("absorption_volume_spike", 1.5)
+        self.stop_hunt_volume_spike = self.pattern_config.get("stop_hunt_volume_spike", 2.0)
+        self.ignition_volume_spike = self.pattern_config.get("ignition_volume_spike", 3.0)
+        # Lookbacks
+        self.lookback_breakout = self.pattern_config.get("lookback_breakout", 20)
+        self.lookback_stop_hunt = self.pattern_config.get("lookback_stop_hunt", 15)
+        self.lookback_price_position = self.pattern_config.get("lookback_price_position", 20)
+        self.lookback_poc_bins = self.pattern_config.get("lookback_poc_bins", 20)
+        self.lookback_poc_window = self.pattern_config.get("lookback_poc_window", 1440)
+        # Ignition range thresholds
+        self.ignition_narrow_env = self.pattern_config.get("ignition_narrow_env", 0.02)
+        # Micro breakout window
+        self.micro_breakout_window = self.pattern_config.get("micro_breakout_window", 3)
 
         # Entry prediction parameters
         self.entry_config = self.labeling_config.get("entry_prediction", {})
@@ -70,6 +98,12 @@ class MetaLabelingSystem:
         )
 
         self.is_initialized = False
+
+        # Simple state for evolving patterns
+        self.state: dict[str, Any] = {
+            "compression_streak": 0,
+            "trend_cont_streak": 0,
+        }
 
     @handle_errors(
         exceptions=(Exception,),
@@ -166,6 +200,19 @@ class MetaLabelingSystem:
             except Exception as e:
                 self.logger.exception(f"Error calculating momentum patterns: {e}")
 
+            # Expose current values for entry and meta usage
+            try:
+                features["current_price"] = float(price_data["close"].iloc[-1])
+            except Exception:
+                pass
+            try:
+                if "volume" in volume_data.columns:
+                    vol_ma10 = volume_data["volume"].rolling(10, min_periods=1).mean().iloc[-1]
+                    last_vol = volume_data["volume"].iloc[-1]
+                    features["volume_spike"] = float(last_vol / vol_ma10) if vol_ma10 else 1.0
+            except Exception:
+                pass
+
             return features
 
         except Exception as e:
@@ -198,10 +245,11 @@ class MetaLabelingSystem:
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             # Handle division by zero in RSI: if loss==0, set rs to a large finite value
-            rs = gain / loss.replace(0, np.nan)
+            rs = (gain / loss.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan)
+            rs = rs.clip(upper=1e6)  # cap extreme ratios to avoid inf
             rsi_series = 100 - (100 / (1 + rs))
             if rsi_series.replace([np.inf, -np.inf], np.nan).notna().any():
-                features["rsi"] = float(rsi_series.replace([np.inf, -np.inf], np.nan).fillna(100).iloc[-1])
+                features["rsi"] = float(rsi_series.replace([np.inf, -np.inf], np.nan).fillna(100.0).iloc[-1])
             else:
                 features["rsi"] = 50
 
@@ -868,9 +916,9 @@ class MetaLabelingSystem:
             bb_position = features.get("bb_position", 0.5)
 
             # Conditions for strong trend continuation
-            is_uptrend = trend_strength > 0.02  # Strong upward momentum
-            is_pullback = 0.3 < bb_position < 0.7  # Price in middle of BB
-            is_healthy_rsi = 40 < rsi < 70  # Not overbought/oversold
+            is_uptrend = trend_strength > self.trend_momentum_strong
+            is_pullback = self.bb_mid_low < bb_position < self.bb_mid_high
+            is_healthy_rsi = (self.rsi_oversold + 10) < rsi < (self.rsi_overbought)
 
             strong_trend_continuation = is_uptrend and is_pullback and is_healthy_rsi
 
@@ -899,8 +947,8 @@ class MetaLabelingSystem:
             momentum = features.get("price_momentum_5", 0)
 
             # Conditions for exhaustion reversal
-            is_overbought = rsi > 70 or bb_position > 0.8
-            is_weakening = momentum < 0  # Momentum turning negative
+            is_overbought = rsi > self.rsi_overbought or bb_position > self.bb_edge_high
+            is_weakening = momentum < 0
             is_high_volume = volume_ratio > self.volume_threshold
 
             exhaustion_reversal = is_overbought and is_weakening and is_high_volume
@@ -929,9 +977,9 @@ class MetaLabelingSystem:
             features.get("price_position", 0.5)
 
             # Conditions for range mean reversion
-            is_at_edge = bb_position < 0.2 or bb_position > 0.8
+            is_at_edge = bb_position < self.bb_edge_low or bb_position > self.bb_edge_high
             is_low_volatility = volatility < self.volatility_threshold
-            is_sideways = abs(features.get("price_momentum_10", 0)) < 0.01
+            is_sideways = abs(features.get("price_momentum_10", 0)) < self.momentum_threshold
 
             range_mean_reversion = is_at_edge and is_low_volatility and is_sideways
 
@@ -969,13 +1017,13 @@ class MetaLabelingSystem:
             )
 
             # Breakout success: price breaks prior level and continues with momentum and volume
-            is_breakout_up = current_price > recent_high and momentum > 0.01
-            is_breakout_down = current_price < recent_low and momentum < -0.01
+            is_breakout_up = current_price > recent_high and momentum > self.breakout_momentum
+            is_breakout_down = current_price < recent_low and momentum < -self.breakout_momentum
             is_high_volume = volume_ratio > self.volume_threshold
             breakout_success = (is_breakout_up or is_breakout_down) and is_high_volume
 
             # Breakout failure: price pushes to BB extremes but lacks follow-through
-            is_failed_breakout = (bb_position > 0.8 or bb_position < 0.2) and abs(momentum) < 0.005
+            is_failed_breakout = (bb_position > self.bb_edge_high or bb_position < self.bb_edge_low) and abs(momentum) < self.failed_break_momentum
 
             return {
                 "BREAKOUT_SUCCESS": 1 if breakout_success else 0,
@@ -1003,7 +1051,7 @@ class MetaLabelingSystem:
             volume_ratio = features.get("volume_ratio", 1.0)
 
             # Volatility compression: BB width narrowing
-            is_compression = bb_width < 0.05 and volatility_ratio < 0.8
+            is_compression = bb_width < self.bb_width_compression and volatility_ratio < 0.8
 
             # Volatility expansion: sudden increase in volatility
             is_expansion = (
@@ -1041,7 +1089,7 @@ class MetaLabelingSystem:
 
             # Triangle formation: narrowing price range
             bb_width = features.get("bb_width", 0.1)
-            is_triangle = bb_width < 0.03
+            is_triangle = bb_width < self.bb_width_triangle
             patterns["TRIANGLE_FORMATION"] = 1 if is_triangle else 0
 
             # Rectangle formation: horizontal consolidation
@@ -1074,7 +1122,7 @@ class MetaLabelingSystem:
             momentum = features.get("price_momentum_5", 0)
 
             is_momentum_ignition = (
-                (rsi > 60 or rsi < 40)
+                (rsi > self.rsi_momentum_hi or rsi < self.rsi_momentum_lo)
                 and abs(macd_hist) > 0.001
                 and abs(momentum) > self.momentum_threshold
             )
@@ -1207,43 +1255,32 @@ class MetaLabelingSystem:
 
     def _detect_entry_signals(
         self,
-        data: pd.DataFrame,
-        volume_data: pd.DataFrame,
+        features: dict[str, Any],
         order_flow_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
         """Detect various entry signals."""
         try:
             signals = {}
 
-            # VWAP reversion entry (use 20-bar rolling VWAP)
-            window = min(20, len(data))
-            current_price = float(data["close"].iloc[-1])
-            if window >= 1 and "volume" in volume_data.columns:
-                pv = float((data["close"].tail(window) * volume_data["volume"].tail(window)).sum())
-                v = float(volume_data["volume"].tail(window).sum())
-                vwap = float(pv / v) if v > 0 else current_price
-            else:
-                vwap = current_price
+            # VWAP reversion entry (use rolling VWAP from features if available)
+            current_price = float(features.get("current_price", 0.0) or features.get("close", 0.0) or 0.0)
+            vwap = float(features.get("vwap", current_price))
             price_vwap_ratio = current_price / vwap if vwap != 0 else 1.0
             is_vwap_reversion = abs(price_vwap_ratio - 1.0) < 0.01
             signals["VWAP_REVERSION_ENTRY"] = 1 if is_vwap_reversion else 0
 
             # Market order now: aggressive momentum with volume spike
-            momentum = float(
-                data["close"].pct_change().rolling(3, min_periods=1).sum().iloc[-1]
-            ) if len(data) else 0.0
-            volume_spike = float(
-                volume_data["volume"].iloc[-1] / volume_data["volume"].rolling(10, min_periods=1).mean().iloc[-1]
-            ) if (len(volume_data) and "volume" in volume_data.columns) else 1.0
+            momentum = float(features.get("price_momentum_5", 0.0))
+            volume_spike = float(features.get("volume_spike", features.get("volume_ratio", 1.0)))
             is_market_order = (
                 abs(momentum) > self.momentum_threshold * 2
                 and volume_spike > self.volume_threshold
             )
             signals["MARKET_ORDER_NOW"] = 1 if is_market_order else 0
 
-            # Chase micro breakout: break last 2 bars' high/low
-            prev_high = float(data["high"].rolling(2, min_periods=1).max().shift(1).iloc[-1]) if len(data) >= 2 else current_price
-            prev_low = float(data["low"].rolling(2, min_periods=1).min().shift(1).iloc[-1]) if len(data) >= 2 else current_price
+            # Chase micro breakout: break last N bars' high/low
+            prev_high = float(features.get("recent_high", current_price))
+            prev_low = float(features.get("recent_low", current_price))
             is_micro_breakout = (current_price > prev_high) or (current_price < prev_low)
             signals["CHASE_MICRO_BREAKOUT"] = 1 if is_micro_breakout else 0
 
@@ -1417,6 +1454,7 @@ class MetaLabelingSystem:
                     "timeframe": timeframe,
                     "timestamp": pd.Timestamp.now().isoformat(),
                     "features_used": list(features.keys()),
+                    "compression_streak": int(self.state.get("compression_streak", 0)),
                     "label_count": len(
                         [
                             v
@@ -1477,8 +1515,7 @@ class MetaLabelingSystem:
 
             # Entry signals
             entry_signals = self._detect_entry_signals(
-                price_data,
-                volume_data,
+                entry_features,
                 order_flow_data,
             )
             tactician_labels.update(entry_signals)

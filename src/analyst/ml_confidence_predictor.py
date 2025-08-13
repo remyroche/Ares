@@ -3035,6 +3035,29 @@ class MLConfidencePredictor:
                 confidences[label] = 0.5
         return confidences
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="multi-timeframe label-level confidence prediction",
+    )
+    async def predict_label_confidences_mtf(
+        self,
+        market_data: pd.DataFrame,
+        timeframes: list[str] | None = None,
+    ) -> dict[str, float]:
+        """Predict timeframe-aware label confidences.
+
+        Returns a flat dict mapping "<tf>_<LABEL>" -> confidence.
+        Defaults to self.analyst_timeframes if timeframes not provided.
+        """
+        tf_list = timeframes or list(self.analyst_timeframes)
+        all_conf: dict[str, float] = {}
+        for tf in tf_list:
+            confs = await self.predict_label_confidences(market_data, timeframe=tf)
+            for label, val in confs.items():
+                all_conf[f"{tf}_{label}"] = float(val)
+        return all_conf
+
 
 @handle_errors(
     exceptions=(Exception,),

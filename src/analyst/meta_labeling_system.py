@@ -1151,30 +1151,31 @@ class MetaLabelingSystem:
                 },
             )
 
-            self.logger.info(
-                f"Generated {tactician_labels.get('signal_count', 0)} tactician labels for {timeframe}",
-            )
-            # Log each tactician label key with a compact summary
+            # Single consolidated log with compact summaries for all tactician labels
             try:
+                summaries: dict[str, dict[str, int | float | str]] = {}
                 for k, v in tactician_labels.items():
                     if k in ("timeframe", "timestamp", "features_used", "signal_count"):
                         continue
-                    summary = None
                     try:
                         if isinstance(v, (np.ndarray, pd.Series)):
                             arr = v if isinstance(v, np.ndarray) else v.to_numpy()
-                            # count positives or non-zero entries
-                            summary = {
+                            summaries[k] = {
                                 "nonzero": int(np.count_nonzero(arr)),
                                 "len": int(arr.size),
                             }
                         elif isinstance(v, (int, float)):
-                            summary = {"value": float(v)}
+                            summaries[k] = {"value": float(v)}
                         else:
-                            summary = {"type": type(v).__name__}
+                            summaries[k] = {"type": type(v).__name__}
                     except Exception:
-                        summary = {"summary": "unavailable"}
-                    self.logger.info({"tactician_label": k, "summary": summary, "timeframe": timeframe})
+                        summaries[k] = {"summary": "unavailable"}
+                self.logger.info({
+                    "msg": f"Tactician labels summary for {timeframe}",
+                    "timeframe": timeframe,
+                    "signal_count": tactician_labels.get("signal_count", 0),
+                    "labels": summaries,
+                })
             except Exception:
                 pass
             return tactician_labels

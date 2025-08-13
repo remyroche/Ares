@@ -846,8 +846,25 @@ class AnalystLabelingFeatureEngineeringStep:
             sup_tol = np.maximum(touch_tol_pct, 0.5 * sup_band)
             res_tol = np.maximum(touch_tol_pct, 0.5 * res_band)
 
-            touch_sup_raw = (~np.isnan(sup_center)) & (np.abs(low - sup_center) / np.maximum(1e-12, close) <= sup_tol)
-            touch_res_raw = (~np.isnan(res_center)) & (np.abs(res_center - high) / np.maximum(1e-12, close) <= res_tol)
+            # Treat S/R as bands when widths are available; fallback to point tolerance otherwise
+            sup_band_half = np.maximum(touch_tol_pct * close, 0.5 * sup_band * close)
+            res_band_half = np.maximum(touch_tol_pct * close, 0.5 * res_band * close)
+            # Band-based proximity (price touching within the band around the center)
+            touch_sup_band = (
+                (~np.isnan(sup_center))
+                & (low >= (sup_center - sup_band_half))
+                & (low <= (sup_center + sup_band_half))
+            )
+            touch_res_band = (
+                (~np.isnan(res_center))
+                & (high >= (res_center - res_band_half))
+                & (high <= (res_center + res_band_half))
+            )
+            # Point-based proximity as a fallback/augmenter
+            touch_sup_point = (~np.isnan(sup_center)) & (np.abs(low - sup_center) / np.maximum(1e-12, close) <= sup_tol)
+            touch_res_point = (~np.isnan(res_center)) & (np.abs(res_center - high) / np.maximum(1e-12, close) <= res_tol)
+            touch_sup_raw = touch_sup_band | touch_sup_point
+            touch_res_raw = touch_res_band | touch_res_point
 
             if min_consecutive > 1:
                 sup_roll = pd.Series(touch_sup_raw, index=df.index).rolling(min_consecutive, min_periods=min_consecutive).sum() >= min_consecutive
@@ -947,6 +964,15 @@ class AnalystLabelingFeatureEngineeringStep:
                         f"SR-event ambiguous cases likely due to simultaneous away+breakout signals within horizon; "
                         f"consider increasing horizon or tightening bounce/breakout thresholds."
                     )
+                # Band-aware debug snapshot
+                try:
+                    avg_sup_band_bp = float(np.nanmean(sup_band) * 1e4)
+                    avg_res_band_bp = float(np.nanmean(res_band) * 1e4)
+                except Exception:
+                    avg_sup_band_bp = avg_res_band_bp = float("nan")
+                self.logger.info(
+                    f"SR bands avg width (bp): support={avg_sup_band_bp:.1f}, resistance={avg_res_band_bp:.1f}"
+                )
             except Exception:
                 pass
  

@@ -91,8 +91,8 @@ def classify_regime_series(
     meets_sep = ema_sep_norm >= max(ema_sep_min_ratio, 0.0)
     trend_condition = meets_adx & meets_sep
 
-    bull = (feats["ema_21"] > feats["ema_55"]) & trend_condition
-    bear = (feats["ema_21"] < feats["ema_55"]) & trend_condition
+    bull = (feats[f"ema_{ema_fast}"] > feats[f"ema_{ema_slow}"]) & trend_condition
+    bear = (feats[f"ema_{ema_fast}"] < feats[f"ema_{ema_slow}"]) & trend_condition
 
     # Explicit sideways if ADX is below the sideways threshold
     forced_sideways = feats["adx"] <= adx_sideways_threshold

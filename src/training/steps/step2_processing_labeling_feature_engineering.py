@@ -1,12 +1,21 @@
 # src/training/steps/step2_processing_labeling_feature_engineering.py
 
 import asyncio
+import os
+import json
 from typing import Any
 import os
 import pandas as pd
 
+import pandas as pd
+
 from src.utils.logger import system_logger as _logger
 from src.training.steps.unified_data_loader import get_unified_data_loader
+from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+    OptimizedTripleBarrierLabeling,
+)
+from src.training.steps.vectorized_labelling_orchestrator import (
+    VectorizedLabellingOrchestrator,
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
 )
@@ -24,82 +33,128 @@ async def run_step(
     force_rerun: bool = False,
     pipeline_config: dict[str, Any] | None = None,
 ) -> bool:
-    _logger.info("🚀 Running Step 2: Processing, labeling, meta-labeling & feature engineering...")
+    _logger.info(
+        "🚀 Running Step 2: Processing, labeling, meta-labeling & feature engineering...",
+    )
 
     actual_exchange = exchange if exchange != "BINANCE" else exchange_name
 
     try:
         # 1) Load unified OHLCV data
-        cfg = pipeline_config or {}
-        data_loader = get_unified_data_loader(cfg)
-        lookback_days = cfg.get("lookback_days", 180)
-        ohlcv = await data_loader.load_unified_data(
+        config: dict[str, Any] = {
+            "symbol": symbol,
+            "exchange": actual_exchange,
+            "data_dir": data_dir,
+            "timeframe": timeframe,
+        }
+        if pipeline_config:
+            config.update({"vectorized_labelling_orchestrator": pipeline_config.get("vectorized_labelling_orchestrator", {})})
+
+        data_loader = get_unified_data_loader(config)
+        lookback_days = config.get("lookback_days", 180)
+        df = await data_loader.load_unified_data(
             symbol=symbol,
             exchange=actual_exchange,
             timeframe=timeframe,
             lookback_days=lookback_days,
             use_streaming=True,
         )
-        if ohlcv is None or ohlcv.empty:
-            _logger.error("❌ Step 2: No unified OHLCV data available")
-            return False
+        if df is None or df.empty:
+            raise ValueError(f"No data found for {symbol} on {actual_exchange}")
 
-        # 2) Minimal labeling: create a simple classification target if absent
-        df = ohlcv.copy()
-        if "close" not in df.columns:
-            _logger.error("❌ Step 2: 'close' column missing in OHLCV data")
-            return False
-        df["return_1"] = df["close"].pct_change().fillna(0.0)
-        df["label"] = (df["return_1"] > 0).astype(int)
+        # Ensure timestamp column exists and is datetime
+        if "timestamp" not in df.columns and isinstance(df.index, pd.DatetimeIndex):
+            df = df.reset_index().rename(columns={"index": "timestamp"})
+        if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+            df["timestamp"] = pd.to_datetime(df["timestamp"])  # best-effort cast
+        df = df.sort_values("timestamp").reset_index(drop=True)
 
-        # 3) Split into train/validation/test by chronological order (70/15/15)
-        n = len(df)
+        # 2) Compute triple-barrier labels (binary) while preserving OHLCV
+        lbl = OptimizedTripleBarrierLabeling(binary_classification=True)
+        labeled = lbl.apply_triple_barrier_labeling_vectorized(
+            df[[c for c in ["open", "high", "low", "close", "volume", "timestamp"] if c in df.columns]].set_index("timestamp")
+        )
+        labeled = labeled.reset_index()  # bring timestamp back as column
+
+        # 3) Split into train/validation/test by time (70/15/15)
+        n = len(labeled)
         if n < 100:
-            _logger.error("❌ Step 2: Not enough data for splits")
-            return False
-        tr_end = int(n * 0.7)
-        vl_end = int(n * 0.85)
-        tr = df.iloc[:tr_end].copy()
-        vl = df.iloc[tr_end:vl_end].copy()
-        te = df.iloc[vl_end:].copy()
+            _logger.warning("⚠️ Very little data for step 2; proceeding with minimal splits")
+        cut1 = int(n * 0.70)
+        cut2 = int(n * 0.85)
+        labeled_train = labeled.iloc[:cut1].copy()
+        labeled_val = labeled.iloc[cut1:cut2].copy()
+        labeled_test = labeled.iloc[cut2:].copy()
 
-        # 4) Engineer features using vectorized advanced FE
-        fe = VectorizedAdvancedFeatureEngineering(cfg.get("vectorized_labelling_orchestrator", {}))
-        await fe.initialize()
-
-        def _extract_inputs(x: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-            price_cols = [c for c in ["open", "high", "low", "close", "volume"] if c in x.columns]
-            price = x[price_cols].copy()
-            if "volume" in price.columns:
-                vol = price[["volume"]].copy()
-            else:
-                _logger.warning("Volume data not found. Using a placeholder value of 1.0 for volume. This may affect feature quality.")
-                vol = pd.DataFrame({"volume": 1.0}, index=price.index)
-            return price, vol
-
-        p_tr, v_tr = _extract_inputs(tr)
-        p_vl, v_vl = _extract_inputs(vl)
-        p_te, v_te = _extract_inputs(te)
-
-        X_tr = pd.DataFrame(await fe.engineer_features(p_tr, v_tr)).reindex(p_tr.index)
-        X_vl = pd.DataFrame(await fe.engineer_features(p_vl, v_vl)).reindex(p_vl.index)
-        X_te = pd.DataFrame(await fe.engineer_features(p_te, v_te)).reindex(p_te.index)
-
-        # 5) Persist labeled splits for Step 3 compatibility
+        # 4) Persist labeled parquet artifacts expected by later steps
         os.makedirs(data_dir, exist_ok=True)
-        mem = MemoryEfficientDataManager()
+        paths = {
+            "train": f"{data_dir}/{actual_exchange}_{symbol}_labeled_train.parquet",
+            "validation": f"{data_dir}/{actual_exchange}_{symbol}_labeled_validation.parquet",
+            "test": f"{data_dir}/{actual_exchange}_{symbol}_labeled_test.parquet",
+        }
+        labeled_train.to_parquet(paths["train"], index=False)
+        labeled_val.to_parquet(paths["validation"], index=False)
+        labeled_test.to_parquet(paths["test"], index=False)
+        _logger.info(
+            f"✅ Wrote labeled splits: train={len(labeled_train)} val={len(labeled_val)} test={len(labeled_test)}",
+        )
 
-        def _save(name: str, base: pd.DataFrame, feats: pd.DataFrame):
-            out = base.join(feats, how="left")
-            path = f"{data_dir}/{actual_exchange}_{symbol}_labeled_{name}.parquet"
-            mem.save_to_parquet(mem.optimize_dataframe(out), path)
-            _logger.info(f"✅ Step 2: wrote {name} labeled parquet -> {path}")
+        # 5) Run vectorized orchestrator to derive feature space + meta strengths, and persist strengths snapshot
+        try:
+            orchestrator = VectorizedLabellingOrchestrator(config)
+            ok = await orchestrator.initialize()
+            if ok:
+                # Prepare price/volume inputs for orchestrator
+                price_cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+                price_data = df[["timestamp"] + price_cols].set_index("timestamp")
+                volume_data = price_data[["volume"]] if "volume" in price_data.columns else pd.DataFrame(index=price_data.index)
+                result = await orchestrator.orchestrate_labeling_and_feature_engineering(price_data, volume_data)
+                final_df: pd.DataFrame | None = None
+                if isinstance(result, dict) and isinstance(result.get("data"), pd.DataFrame):
+                    final_df = result["data"]
+                # Persist meta strengths if available (columns starting with 'sr_')
+                if final_df is not None and not final_df.empty:
+                    strength_cols = [c for c in final_df.columns if c.lower().startswith("sr_")]
+                    if strength_cols:
+                        strengths = final_df[strength_cols].copy()
+                        strengths["timestamp"] = strengths.index
+                        strengths = strengths.reset_index(drop=True)
+                        strengths_path = f"{data_dir}/{actual_exchange}_{symbol}_meta_strengths.parquet"
+                        strengths.to_parquet(strengths_path, index=False)
+                        _logger.info(
+                            f"✅ Saved meta strengths snapshot with {len(strength_cols)} cols to {strengths_path}",
+                        )
+        except Exception as e:
+            _logger.warning(f"Meta strengths persistence skipped: {e}")
 
-        _save("train", tr, X_tr)
-        _save("validation", vl, X_vl)
-        _save("test", te, X_te)
+        # 6) Persist label distribution per split for diagnostics
+        try:
+            dist = {
+                "train": labeled_train.get("label", pd.Series(dtype=int)).value_counts(dropna=False).to_dict(),
+                "validation": labeled_val.get("label", pd.Series(dtype=int)).value_counts(dropna=False).to_dict(),
+                "test": labeled_test.get("label", pd.Series(dtype=int)).value_counts(dropna=False).to_dict(),
+            }
+            with open(
+                f"{data_dir}/{actual_exchange}_{symbol}_label_distribution.json",
+                "w",
+            ) as f:
+                json.dump(dist, f, indent=2)
+        except Exception as e:
+            _logger.warning(f"Label distribution persistence skipped: {e}")
 
-        _logger.info("✅ Step 2 completed successfully (labels + features saved)")
+        # 7) Persist label reliability (if available) for downstream gating/stacking
+        try:
+            from src.training.enhanced_training_manager import EnhancedTrainingManager
+
+            etm = EnhancedTrainingManager(config)
+            reliability = etm.get_label_reliability()
+            with open(f"{data_dir}/{actual_exchange}_{symbol}_label_reliability.json", "w") as f:
+                json.dump(reliability, f, indent=2)
+        except Exception as e:
+            _logger.warning(f"Label reliability persistence skipped: {e}")
+
+ 
         return True
 
     except Exception as e:

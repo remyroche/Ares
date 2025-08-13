@@ -136,39 +136,53 @@ class AnalystSpecialistTrainingStep:
             except Exception:
                 pass
 
-            # Check if feature files exist
+            # Check if feature files exist; if missing, fall back to parquet
             missing_files = [f for f in feature_files if not os.path.exists(f)]
+            features_from_pickle = True
             if missing_files:
-                msg = f"Missing feature files: {missing_files}. Step 5 requires features from Step 4."
-                try:
-                    self.logger.error(msg)
-                    print(
-                        f"Step5Monitor ▶ Missing features: {[os.path.basename(p) for p in missing_files]}",
-                        flush=True,
-                    )
-                except Exception:
-                    pass
-                raise ValueError(msg)
+                features_from_pickle = False
+                self.logger.warning(
+                    f"⚠️ Missing feature pickles; falling back to Parquet for: {missing_files}",
+                )
 
             # Load and combine all feature data
-            all_data = []
-            for file_path in feature_files:
-                with open(file_path, "rb") as f:
-                    data = pickle.load(f)
-                    all_data.append(data)
-                    try:
-                        self.logger.info(
-                            f"Loaded features file {file_path}: type={type(data).__name__}, shape={getattr(data, 'shape', None)}",
-                        )
-                        print(
-                            f"Step5Monitor ▶ Loaded {os.path.basename(file_path)} shape={getattr(data, 'shape', None)}",
-                            flush=True,
-                        )
-                    except Exception:
-                        pass
+            all_data: list[pd.DataFrame] = []
+            if features_from_pickle:
+                for file_path in feature_files:
+                    with open(file_path, "rb") as f:
+                        data = pickle.load(f)
+                        # Ensure DataFrame
+                        if not isinstance(data, pd.DataFrame):
+                            data = pd.DataFrame(data)
+                        # Use timestamp as index when present
+                        if "timestamp" in data.columns:
+                            data["timestamp"] = pd.to_datetime(data["timestamp"], errors="coerce")
+                            data = data.dropna(subset=["timestamp"]).set_index("timestamp").sort_index()
+                        all_data.append(data)
+                        try:
+                            self.logger.info(
+                                f"Loaded features file {file_path}: shape={getattr(data, 'shape', None)}",
+                            )
+                        except Exception:
+                            pass
+            else:
+                # Fallback to Parquet written by Step 3
+                for split in ("train", "validation", "test"):
+                    p = f"{data_dir}/{exchange}_{symbol}_features_{split}.parquet"
+                    if os.path.exists(p):
+                        dfp = pd.read_parquet(p)
+                        if "timestamp" in dfp.columns:
+                            dfp["timestamp"] = pd.to_datetime(dfp["timestamp"], errors="coerce")
+                            dfp = dfp.dropna(subset=["timestamp"]).set_index("timestamp").sort_index()
+                        all_data.append(dfp)
+                        self.logger.info(f"Loaded features parquet {p}: shape={dfp.shape}")
+                    else:
+                        self.logger.error(f"Features parquet missing: {p}")
+                if not all_data:
+                    raise ValueError("No features found in pickle or parquet format")
 
             # Combine all data
-            combined_data = pd.concat(all_data, ignore_index=True)
+            combined_data = pd.concat(all_data, axis=0).sort_index()
             self.logger.info(f"✅ Loaded combined feature data: {combined_data.shape}")
             try:
                 print(
@@ -192,45 +206,62 @@ class AnalystSpecialistTrainingStep:
 
             dispatcher_manifest: dict[str, Any] = {}
 
-            if enable_experts:
-                try:
-                    # Load labeled datasets to align indices/timestamps for regime joins
-                    labeled_pkls = [
-                        f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl",
-                        f"{data_dir}/{exchange}_{symbol}_labeled_validation.pkl",
-                        f"{data_dir}/{exchange}_{symbol}_labeled_test.pkl",
-                    ]
-                    labeled_frames = []
-                    for p in labeled_pkls:
-                        if os.path.exists(p):
-                            with open(p, "rb") as f:
-                                labeled_frames.append(pickle.load(f))
+            # Load labeled datasets and optional weights
+            labeled_all: pd.DataFrame | None = None
+            sample_weights_ts: pd.DataFrame | None = None
+            try:
+                labeled_pkls = [
+                    f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl",
+                    f"{data_dir}/{exchange}_{symbol}_labeled_validation.pkl",
+                    f"{data_dir}/{exchange}_{symbol}_labeled_test.pkl",
+                ]
+                labeled_frames = []
+                for p in labeled_pkls:
+                    if os.path.exists(p):
+                        with open(p, "rb") as f:
+                            labeled_frames.append(pickle.load(f))
+                if not labeled_frames:
+                    # Fall back to Parquet if pickle not present
+                    for split in ("train", "validation", "test"):
+                        pp = f"{data_dir}/{exchange}_{symbol}_labeled_{split}.parquet"
+                        if os.path.exists(pp):
+                            labeled_frames.append(pd.read_parquet(pp))
+                if labeled_frames:
                     labeled_all = pd.concat(labeled_frames, axis=0, ignore_index=False)
-                    # Ensure timestamp present for joins; if missing, synthesize from index when DatetimeIndex
                     if "timestamp" not in labeled_all.columns and isinstance(labeled_all.index, pd.DatetimeIndex):
                         labeled_all = labeled_all.copy()
                         labeled_all["timestamp"] = labeled_all.index
-                    # Feature columns to train on: use combined selected features
+
+                # Load optional regime weights (from Step 4) for sample_weight
+                wpath = f"{data_dir}/{exchange}_{symbol}_regime_weights.parquet"
+                if os.path.exists(wpath):
+                    sw = pd.read_parquet(wpath)
+                    sw["timestamp"] = pd.to_datetime(sw["timestamp"], errors="coerce")
+                    sample_weights_ts = sw[["timestamp", "regime", "sample_weight"]]
+            except Exception as e:
+                self.logger.warning(f"Failed to load labeled data or weights: {e}")
+
+            if enable_experts:
+                try:
+                    # Feature columns to train on: numeric features only (exclude label)
                     feature_cols = [c for c in combined_data.columns if c != "label"]
 
                     # Choose regime definition
                     expert_datasets: dict[str, pd.DataFrame] = {}
                     if regime_source == "step2_bull_bear_sideways":
-                        # Load Step3 regime splits to fetch labels/strength
                         regime_dir = os.path.join(data_dir, "regime_data")
                         if os.path.isdir(regime_dir):
                             for file in os.listdir(regime_dir):
                                 if file.endswith(".parquet"):
                                     regime_name = os.path.splitext(file)[0]
                                     df_reg = pd.read_parquet(os.path.join(regime_dir, file))
-                                    # Align to combined_data rows via timestamp
                                     if "timestamp" not in df_reg.columns and isinstance(df_reg.index, pd.DatetimeIndex):
-                                        df_reg = df_reg.reset_index()
-                                        df_reg.rename(columns={"index": "timestamp"}, inplace=True)
+                                        df_reg = df_reg.reset_index().rename(columns={"index": "timestamp"})
                                     cols_keep = [c for c in ["timestamp", "regime", "confidence"] if c in df_reg.columns]
                                     df_reg = df_reg[cols_keep]
+                                    if labeled_all is None:
+                                        continue
                                     merged = labeled_all.merge(df_reg, on="timestamp", how="inner")
-                                    # Restrict to selected features + label
                                     cols = [c for c in feature_cols + ["label"] if c in merged.columns]
                                     regime_df = merged[cols].dropna(subset=["label"]) if "label" in cols else merged[cols]
                                     if len(regime_df) >= min_rows_per_expert:
@@ -240,10 +271,8 @@ class AnalystSpecialistTrainingStep:
                             "weights": "confidence",
                         }
                     elif regime_source == "meta_labels":
-                        # Use provided meta label columns as regimes (binary or categorical)
-                        present_metas = [c for c in meta_label_columns if c in labeled_all.columns]
+                        present_metas = [c for c in meta_label_columns if labeled_all is not None and c in labeled_all.columns]
                         for meta in present_metas:
-                            # Expert dataset: rows where meta label is active (non-zero / True)
                             active_mask = labeled_all[meta].astype(float).fillna(0) != 0
                             df_meta = labeled_all.loc[active_mask]
                             cols = [c for c in feature_cols + ["label"] if c in df_meta.columns]
@@ -251,7 +280,7 @@ class AnalystSpecialistTrainingStep:
                             if len(df_meta) >= min_rows_per_expert:
                                 expert_datasets[meta] = df_meta.copy()
                         # Default SR strength source if available
-                        if "sr_zone_strength" in labeled_all.columns:
+                        if labeled_all is not None and "sr_zone_strength" in labeled_all.columns:
                             for k in expert_datasets.keys():
                                 strength_columns.setdefault(k, "sr_zone_strength")
                         dispatcher_manifest["gating"] = {
@@ -272,6 +301,89 @@ class AnalystSpecialistTrainingStep:
 
             training_results = {}
 
+            # Helper: derive sample_weight series aligned to X_train index when available
+            def _derive_sample_weight(df: pd.DataFrame, regime_key: str | None) -> pd.Series | None:
+                try:
+                    # Prefer explicit per-row strength columns in df
+                    if regime_key and regime_key in strength_columns:
+                        s_col = strength_columns.get(regime_key)
+                        if s_col and s_col in df.columns:
+                            sw = df[s_col].astype(float).abs().clip(0.0, 1.0)
+                            return sw.reindex(df.index).fillna(0.0)
+                    # Else, use regime confidence if present
+                    if "confidence" in df.columns:
+                        return df["confidence"].astype(float).clip(0.0, 1.0).reindex(df.index).fillna(0.0)
+                    # Else, merge from external regime weights snapshot by timestamp
+                    if sample_weights_ts is not None and "timestamp" in df.columns:
+                        tmp = df[["timestamp"]].copy()
+                        swm = tmp.merge(sample_weights_ts, on="timestamp", how="left").get("sample_weight", pd.Series(index=df.index, dtype=float))
+                        return swm.fillna(0.0)
+                except Exception as e:
+                    self.logger.warning(f"Failed to derive sample weight: {e}")
+                    return None
+                return None
+
+            # Time-aware train/test split helper
+            def _time_aware_split(X: pd.DataFrame, y: pd.Series, test_frac: float = 0.2):
+                if isinstance(X.index, pd.DatetimeIndex):
+                    n = len(X)
+                    cut = int(n * (1.0 - test_frac))
+                    return X.iloc[:cut], X.iloc[cut:], y.iloc[:cut], y.iloc[cut:]
+                else:
+                    from sklearn.model_selection import train_test_split
+                    return train_test_split(X, y, test_size=test_frac, random_state=42, stratify=y)
+
+            # Place just above the per-regime loop: compact helper to reduce duplication
+            async def _train_and_optionally_refit(
+                model_key: str,
+                train_coro,
+                X_train: pd.DataFrame,
+                X_test: pd.DataFrame,
+                y_train: pd.Series,
+                y_test: pd.Series,
+                regime_name: str,
+                sample_weight: pd.Series | None,
+            ) -> tuple[str, dict[str, Any] | None]:
+                """Train a model using provided coroutine, then optionally refit with sample weights.
+                Returns (model_key, model_package_or_None)."""
+                try:
+                    pkg = await train_coro(X_train, X_test, y_train, y_test, regime_name)
+                    if not pkg:
+                        return model_key, None
+                    # Optional sample-weighted refit where supported
+                    if sample_weight is not None:
+                        try:
+                            estimator = pkg.get("model") if isinstance(pkg, dict) else None
+                            if estimator is not None and hasattr(estimator, "fit"):
+                                # Try to find a label mapping from the package; fallback to identity
+                                label_mapping = None
+                                for k in (
+                                    "xgb_label_mapping",
+                                    "lgb_label_mapping",
+                                    "rf_label_mapping",
+                                    "nn_label_mapping",
+                                    "svm_label_mapping",
+                                ):
+                                    if isinstance(pkg, dict) and k in pkg and isinstance(pkg[k], dict):
+                                        label_mapping = pkg[k]
+                                        break
+                                y_fit = y_train
+                                if label_mapping is not None:
+                                    y_fit = y_train.map(label_mapping).astype(int)
+                                # Align and apply sample weights if estimator supports it
+                                sw_aligned = sample_weight.reindex(X_train.index).fillna(0.0)
+                                try:
+                                    estimator.fit(X_train, y_fit, sample_weight=sw_aligned)
+                                except TypeError:
+                                    # Estimator may not support sample_weight; ignore
+                                    pass
+                        except Exception as refit_e:
+                            self.logger.debug(f"Sample-weighted refit skipped for {model_key}: {refit_e}")
+                    return model_key, pkg
+                except Exception as e:
+                    self.logger.warning(f"{model_key} training failed for {regime_name}: {e}")
+                    return model_key, None
+            
             for regime_name, regime_data in labeled_data.items():
                 self.logger.info(
                     f"Training specialist models for regime: {regime_name}",
@@ -287,11 +399,103 @@ class AnalystSpecialistTrainingStep:
                 # Memory cleanup before training
                 gc.collect()
 
-                # Train models for this regime
-                regime_models = await self._train_regime_models(
-                    regime_data,
+                # Prepare features/target
+                data = regime_data.copy()
+                if "timestamp" in data.columns:
+                    data["timestamp"] = pd.to_datetime(data["timestamp"], errors="coerce")
+                    data = data.dropna(subset=["timestamp"]).set_index("timestamp").sort_index()
+                target_columns = ["label", "regime"]
+                y = data.get("label", pd.Series(index=data.index, dtype=int))
+                # Remove HOLD (0) if present
+                data = data[y != 0]
+                y = y[y != 0]
+                if len(data) < 10:
+                    self.logger.warning(
+                        f"Insufficient data after hold filtering: {len(data)} samples for {regime_name}",
+                    )
+                    continue
+                # Non-numeric and target exclusions
+                excluded_columns = target_columns
+                data = data.drop(columns=[c for c in data.select_dtypes(include=["object"]).columns], errors="ignore")
+                feature_columns = [c for c in data.columns if c not in excluded_columns]
+                feature_columns = [c for c in feature_columns if "timestamp" not in c.lower()]
+                X = data[feature_columns]
+                y = y.astype(int)
+                # Time-aware split
+                X_train, X_test, y_train, y_test = _time_aware_split(X, y, test_frac=0.2)
+                # Sample weights
+                sw = _derive_sample_weight(data.reset_index().reindex(X_train.index), regime_name)
+
+                regime_models = {}
+
+                # Use the helper for each model to avoid duplication
+                key, pkg = await _train_and_optionally_refit(
+                    "random_forest",
+                    self._train_random_forest,
+                    X_train,
+                    X_test,
+                    y_train,
+                    y_test,
                     regime_name,
+                    sw,
                 )
+                if pkg:
+                    regime_models[key] = pkg
+
+                key, pkg = await _train_and_optionally_refit(
+                    "lightgbm",
+                    self._train_lightgbm,
+                    X_train,
+                    X_test,
+                    y_train,
+                    y_test,
+                    regime_name,
+                    sw,
+                )
+                if pkg:
+                    regime_models[key] = pkg
+
+                key, pkg = await _train_and_optionally_refit(
+                    "xgboost",
+                    self._train_xgboost,
+                    X_train,
+                    X_test,
+                    y_train,
+                    y_test,
+                    regime_name,
+                    sw,
+                )
+                if pkg:
+                    regime_models[key] = pkg
+
+                # Neural network (skip refit if sample_weight unsupported)
+                key, pkg = await _train_and_optionally_refit(
+                    "neural_network",
+                    self._train_neural_network,
+                    X_train,
+                    X_test,
+                    y_train,
+                    y_test,
+                    regime_name,
+                    sw,
+                )
+                if pkg and len(feature_columns) <= 100:
+                    regime_models[key] = pkg
+
+                # SVM (only when feature count is small)
+                key, pkg = await _train_and_optionally_refit(
+                    "svm",
+                    self._train_svm,
+                    X_train,
+                    X_test,
+                    y_train,
+                    y_test,
+                    regime_name,
+                    sw,
+                )
+                if pkg and len(feature_columns) <= 50:
+                    regime_models[key] = pkg
+
                 training_results[regime_name] = regime_models
                 try:
                     print(
@@ -300,39 +504,7 @@ class AnalystSpecialistTrainingStep:
                     )
                 except Exception:
                     pass
-
-                # Memory cleanup after training
                 gc.collect()
-
-                # Performance stratification placeholder: basic label distribution under this regime
-                try:
-                    os.makedirs("log/experts", exist_ok=True)
-                    if "label" in regime_data.columns:
-                        stats = regime_data["label"].value_counts(dropna=False).to_dict()
-                        with open(f"log/experts/{regime_name}_label_distribution.json", "w") as jf:
-                            json.dump({"counts": {str(k): int(v) for k, v in stats.items()}}, jf, indent=2)
-                except Exception:
-                    pass
-
-                # Contextual SHAP (best-effort, optional)
-                try:
-                    import shap  # type: ignore
-                    os.makedirs("log/experts", exist_ok=True)
-                    # Choose the first model artifact
-                    first_key = next(iter(regime_models))
-                    artifact = regime_models[first_key]
-                    est = self._extract_estimator_from_artifact(artifact)
-                    X_sample = regime_data.drop(columns=[c for c in ["label"] if c in regime_data.columns]).select_dtypes(include=[np.number]).tail(2000)
-                    if hasattr(est, "predict_proba") and hasattr(est, "fit"):
-                        explainer = shap.Explainer(est, X_sample, feature_names=list(X_sample.columns))
-                        shap_vals = explainer(X_sample, check_additivity=False)
-                        # Save mean |SHAP| values
-                        mean_abs = np.abs(shap_vals.values).mean(axis=0)
-                        shap_importance = {f: float(v) for f, v in zip(X_sample.columns, mean_abs, strict=False)}
-                        with open(f"log/experts/{regime_name}_shap_importance.json", "w") as jf:
-                            json.dump(shap_importance, jf, indent=2)
-                except Exception:
-                    pass
 
             # Save the main analyst model (use the first available model)
             main_model_artifact = None
@@ -340,17 +512,14 @@ class AnalystSpecialistTrainingStep:
 
             for regime_name, models in training_results.items():
                 if models:  # If there are models in this regime
-                    # Use the first available model as the main model
                     main_model_name = list(models.keys())[0]
                     main_model_artifact = models[main_model_name]
                     break
 
             if main_model_artifact is not None:
-                # Ensure we save the underlying estimator, not the wrapper dict
                 main_estimator = self._extract_estimator_from_artifact(
                     main_model_artifact,
                 )
-                # Save the main analyst model file that the validator expects
                 main_model_file = f"{data_dir}/{exchange}_{symbol}_analyst_model.pkl"
                 with open(main_model_file, "wb") as f:
                     pickle.dump(main_estimator, f)
@@ -443,233 +612,121 @@ class AnalystSpecialistTrainingStep:
                     json.dump(training_history, f, indent=2)
                 self.logger.info(f"✅ Saved training history to {history_file}")
 
-            # Also save detailed results to subdirectories for compatibility
-            models_dir = f"{data_dir}/analyst_models"
+            # Dispatcher manifest enrichment
+            if enable_experts:
+                try:
+                    # Provide gating and coverage hints
+                    gating_info = dispatcher_manifest.get("gating", {})
+                    gating_info["coverage"] = {k: float(len(v)) for k, v in training_results.items()}
+                    dispatcher_manifest["gating"] = gating_info
+                except Exception:
+                    pass
+
+            # AFTER specialists: train a general model on the combined dataset and emit OOF predictions
+            try:
+                from sklearn.linear_model import LogisticRegression
+                general_path = f"{data_dir}/{exchange}_{symbol}_analyst_general_model.pkl"
+
+                # Build X,y from combined_data
+                df_all = combined_data.copy()
+                if "timestamp" in df_all.columns:
+                    df_all["timestamp"] = pd.to_datetime(df_all["timestamp"], errors="coerce")
+                    df_all = df_all.dropna(subset=["timestamp"]).set_index("timestamp").sort_index()
+                y_all = df_all.get("label", pd.Series(index=df_all.index, dtype=int))
+                df_all = df_all.drop(columns=[c for c in ["label", "regime"] if c in df_all.columns])
+                # Remove non-numeric
+                df_all = df_all.select_dtypes(include=[np.number]).fillna(0.0)
+                # Filter holds
+                mask = y_all != 0
+                X_all = df_all.loc[mask]
+                y_all = y_all.loc[mask].astype(int)
+                if len(X_all) >= 100 and X_all.shape[1] >= 2:
+                    # Simple time-aware split
+                    def _split(X: pd.DataFrame, y: pd.Series):
+                        n = len(X)
+                        cut = int(n * 0.8)
+                        return X.iloc[:cut], X.iloc[cut:], y.iloc[:cut], y.iloc[cut:]
+                    Xtr, Xte, ytr, yte = _split(X_all, y_all)
+                    # Fit LR on standardized features
+                    from sklearn.preprocessing import StandardScaler
+                    from sklearn.pipeline import make_pipeline
+                    lr = make_pipeline(StandardScaler(with_mean=False), LogisticRegression(max_iter=200, class_weight="balanced"))
+                    lr.fit(Xtr, ytr)
+                    with open(general_path, "wb") as f:
+                        pickle.dump(lr, f)
+                    self.logger.info(f"✅ Saved general model to {general_path}")
+                    # OOF-style predictions on full set via rolling split
+                    try:
+                        logits = []
+                        chunks = 5
+                        n = len(X_all)
+                        for k in range(chunks):
+                            s = int(n * k / chunks)
+                            e = int(n * (k + 1) / chunks)
+                            Xtr_k = X_all.iloc[:s]
+                            Xoo_k = X_all.iloc[s:e]
+                            ytr_k = y_all.iloc[:s]
+                            if len(Xtr_k) < 50 or len(Xoo_k) == 0:
+                                continue
+                            lr_k = make_pipeline(StandardScaler(with_mean=False), LogisticRegression(max_iter=200, class_weight="balanced"))
+                            lr_k.fit(Xtr_k, ytr_k)
+                            proba = lr_k.predict_proba(Xoo_k)
+                            # Convert to logits for residualization
+                            eps = 1e-6
+                            p1 = proba[:, 1].clip(eps, 1 - eps)
+                            p0 = proba[:, 0].clip(eps, 1 - eps)
+                            logit = np.log(p1 / p0)
+                            logits.append(pd.DataFrame({"timestamp": Xoo_k.index, "p_long": p1, "p_short": p0, "logit": logit}))
+                        if logits:
+                            oof = pd.concat(logits, axis=0).sort_values("timestamp")
+                            oof_path = f"{data_dir}/{exchange}_{symbol}_general_oof.parquet"
+                            oof.to_parquet(oof_path, index=False)
+                            self.logger.info(f"✅ Wrote general OOF predictions to {oof_path}")
+                    except Exception as oofe:
+                        self.logger.warning(f"General OOF generation skipped: {oofe}")
+            except Exception as ge:
+                self.logger.warning(f"General model training skipped: {ge}")
+
+            # Build return payload
+            models_dir = f"{data_dir}/{exchange}_{symbol}_analyst_models"
             os.makedirs(models_dir, exist_ok=True)
 
-            for regime_name, models in training_results.items():
-                regime_models_dir = f"{models_dir}/{regime_name}"
-                os.makedirs(regime_models_dir, exist_ok=True)
-
-                for model_name, model_data in models.items():
-                    model_file = f"{regime_models_dir}/{model_name}.pkl"
-                    with open(model_file, "wb") as f:
-                        pickle.dump(model_data, f)
-                    try:
-                        self.logger.info(f"Saved regime model: {model_file}")
-                        print(
-                            f"Step5Monitor ▶ Saved regime model: {regime_name}/{model_name}.pkl",
-                            flush=True,
-                        )
-                    except Exception:
-                        pass
-
-            # Train and save S/R models
+            # Persist per-regime models under models_dir/{regime}/
             try:
-                sr_models = await self._train_sr_models(combined_data)
-                if sr_models:
-                    sr_dir = f"{models_dir}/SR"
-                    os.makedirs(sr_dir, exist_ok=True)
-                    for name, model in sr_models.items():
-                        with open(f"{sr_dir}/{name}.pkl", "wb") as f:
-                            pickle.dump(model, f)
-                    training_results["SR"] = sr_models
-                    self.logger.info(f"✅ Trained and saved {len(sr_models)} S/R models")
-                    try:
-                        print(
-                            f"Step5Monitor ▶ Saved {len(sr_models)} SR models",
-                            flush=True,
-                        )
-                    except Exception:
-                        pass
-                    # Train SR score regressors if scores available
-                    try:
-                        have_scores = all(c in combined_data.columns for c in ["sr_breakout_score", "sr_bounce_score"])
-                        if have_scores:
-                            from sklearn.model_selection import train_test_split
-                            from sklearn.ensemble import RandomForestRegressor
-                            from sklearn.metrics import r2_score
-                            # Feature space mirrors SR models
-                            X_num = combined_data.select_dtypes(include=[np.number]).drop(columns=[c for c in ["label", "regime", "sr_event_label", "sr_breakout_score", "sr_bounce_score"] if c in combined_data.columns], errors="ignore")
-                            # Breakout strength regressor (train only where breakout happened)
-                            mask_bk = (combined_data.get("sr_event_label", 0) == -1)
-                            if mask_bk.any() and not X_num.empty:
-                                Xb = X_num.loc[mask_bk]
-                                yb = combined_data.loc[mask_bk, "sr_breakout_score"].astype(float)
-                                if len(Xb) >= 50 and yb.sum() > 0:
-                                    Xtr, Xte, ytr, yte = train_test_split(Xb, yb, test_size=0.2, random_state=42)
-                                    rf_reg_bk = RandomForestRegressor(n_estimators=300, max_depth=12, random_state=42, n_jobs=-1)
-                                    rf_reg_bk.fit(Xtr, ytr)
-                                    sr_models["sr_breakout_strength_rf"] = rf_reg_bk
-                                    with open(f"{sr_dir}/sr_breakout_strength_rf.pkl", "wb") as f:
-                                        pickle.dump(rf_reg_bk, f)
-                            # Bounce strength regressor (train only where bounce happened)
-                            mask_bo = (combined_data.get("sr_event_label", 0) == 1)
-                            if mask_bo.any() and not X_num.empty:
-                                Xo = X_num.loc[mask_bo]
-                                yo = combined_data.loc[mask_bo, "sr_bounce_score"].astype(float)
-                                if len(Xo) >= 50 and yo.sum() > 0:
-                                    Xtr, Xte, ytr, yte = train_test_split(Xo, yo, test_size=0.2, random_state=42)
-                                    rf_reg_bo = RandomForestRegressor(n_estimators=300, max_depth=12, random_state=42, n_jobs=-1)
-                                    rf_reg_bo.fit(Xtr, ytr)
-                                    sr_models["sr_bounce_strength_rf"] = rf_reg_bo
-                                    with open(f"{sr_dir}/sr_bounce_strength_rf.pkl", "wb") as f:
-                                        pickle.dump(rf_reg_bo, f)
-                            self.logger.info("✅ Trained SR strength regressors where data allowed")
-                            # Generate OOF predictions for strength to support blending
-                            try:
-                                import numpy as _np
-                                from sklearn.model_selection import KFold
-                                kf = KFold(n_splits=3, shuffle=True, random_state=42)
-                                oof_bk = pd.Series(0.0, index=combined_data.index, name="sr_pred_breakout_strength")
-                                oof_bo = pd.Series(0.0, index=combined_data.index, name="sr_pred_bounce_strength")
-                                if mask_bk.any() and "sr_breakout_strength_rf" in sr_models:
-                                    model_bk = sr_models["sr_breakout_strength_rf"]
-                                    for tr_idx, te_idx in kf.split(Xb):
-                                        Xtr, Xte = Xb.iloc[tr_idx], Xb.iloc[te_idx]
-                                        ytr = yb.iloc[tr_idx]
-                                        m = RandomForestRegressor(n_estimators=model_bk.n_estimators, max_depth=model_bk.max_depth, random_state=42, n_jobs=-1)
-                                        m.fit(Xtr, ytr)
-                                        oof_bk.iloc[Xb.iloc[te_idx].index] = m.predict(Xte)
-                                if mask_bo.any() and "sr_bounce_strength_rf" in sr_models:
-                                    model_bo = sr_models["sr_bounce_strength_rf"]
-                                    for tr_idx, te_idx in kf.split(Xo):
-                                        Xtr, Xte = Xo.iloc[tr_idx], Xo.iloc[te_idx]
-                                        ytr = yo.iloc[tr_idx]
-                                        m = RandomForestRegressor(n_estimators=model_bo.n_estimators, max_depth=model_bo.max_depth, random_state=42, n_jobs=-1)
-                                        m.fit(Xtr, ytr)
-                                        oof_bo.iloc[Xo.iloc[te_idx].index] = m.predict(Xte)
-                                strength_oof = pd.DataFrame({"timestamp": combined_data.get("timestamp", pd.RangeIndex(len(combined_data))), oof_bk.name: oof_bk.values, oof_bo.name: oof_bo.values})
-                                out_path = f"{data_dir}/{exchange}_{symbol}_sr_strength_oof.parquet"
-                                strength_oof.to_parquet(out_path, index=False)
-                                self.logger.info(f"✅ Wrote SR strength OOF predictions for blending: {out_path}")
-                                try:
-                                    print(
-                                        f"Step5Monitor ▶ Wrote SR OOF: {os.path.basename(out_path)}",
-                                        flush=True,
-                                    )
-                                except Exception:
-                                    pass
-                            except Exception as _oofe:
-                                self.logger.warning(f"SR strength OOF generation skipped: {_oofe}")
-                    except Exception as _ers:
-                        self.logger.warning(f"SR strength regressors skipped: {_ers}")
-            except Exception as _e:
-                self.logger.warning(f"S/R model training skipped due to error: {_e}")
+                for regime_name, models in training_results.items():
+                    regime_models_dir = f"{models_dir}/{regime_name}"
+                    os.makedirs(regime_models_dir, exist_ok=True)
+                    for model_name, model_data in models.items():
+                        model_file = f"{regime_models_dir}/{model_name}.pkl"
+                        with open(model_file, "wb") as f:
+                            pickle.dump(model_data, f)
+                        try:
+                            self.logger.info(f"Saved regime model: {model_file}")
+                        except Exception:
+                            pass
+            except Exception as pe:
+                self.logger.warning(f"Persisting per-regime models skipped: {pe}")
 
-            # Save training summary
-            summary_file = (
-                f"{data_dir}/{exchange}_{symbol}_analyst_training_summary.json"
-            )
-
-            # Create JSON-serializable summary (without model objects)
-            summary_data = {
-                "regimes_trained": list(training_results.keys()),
-                "models_per_regime": {},
-                "sr_features": [
-                    "dist_to_support_pct",
-                    "dist_to_resistance_pct",
-                    "sr_zone_position",
-                    "nearest_support_center",
-                    "nearest_resistance_center",
-                    "nearest_support_score",
-                    "nearest_resistance_score",
-                    "nearest_support_band_pct",
-                    "nearest_resistance_band_pct",
-                    "sr_breakout_up",
-                    "sr_breakout_down",
-                    "sr_bounce_up",
-                    "sr_bounce_down",
-                    "sr_touch",
-                    "sr_breakout_score",
-                    "sr_bounce_score",
-                ],
-                "sr_score_distribution": {
-                    "sr_breakout_score": {
-                        "count": int(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).count()) if isinstance(combined_data, pd.DataFrame) else 0,
-                        "mean": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).mean() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
-                        "std": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).std() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
-                        "p50": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).quantile(0.5) or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
-                        "p90": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).quantile(0.9) or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
-                        "max": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).max() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
-                    },
-                    "sr_bounce_score": {
-                        "count": int(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).count()) if isinstance(combined_data, pd.DataFrame) else 0,
-                        "mean": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).mean() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
-                        "std": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).std() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
-                        "p50": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).quantile(0.5) or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
-                        "p90": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).quantile(0.9) or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
-                        "max": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).max() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
-                    },
-                },
-                "training_metadata": {
-                    "total_regimes": len(training_results),
-                    "total_models": sum(
-                        len(models) for models in training_results.values()
-                    ),
+            # Save training summary JSON
+            try:
+                summary_file = f"{data_dir}/{exchange}_{symbol}_analyst_training_summary.json"
+                summary_data = {
+                    "regimes_trained": list(training_results.keys()),
+                    "models_per_regime": {rn: list(models.keys()) for rn, models in training_results.items()},
                     "training_date": datetime.now().isoformat(),
                     "symbol": symbol,
                     "exchange": exchange,
-                },
-            }
-
-            # Add model metadata for each regime
-            for regime_name, models in training_results.items():
-                summary_data["models_per_regime"][regime_name] = {
-                    "model_count": len(models),
-                    "model_types": list(models.keys()),
-                    "model_files": [],
                 }
-
-                # Add file paths for each model
-                regime_models_dir = f"{models_dir}/{regime_name}"
-                for model_name in models:
-                    model_file = f"{regime_models_dir}/{model_name}.pkl"
-                    summary_data["models_per_regime"][regime_name][
-                        "model_files"
-                    ].append(model_file)
-
-            with open(summary_file, "w") as f:
-                json.dump(summary_data, f, indent=2)
-
-            self.logger.info(
-                f"✅ Analyst specialist training completed. Results saved to {models_dir}",
-            )
-            try:
-                print(
-                    f"Step5Monitor ▶ Training complete. Models saved to {models_dir}",
-                    flush=True,
-                )
-            except Exception:
-                pass
-
-            # Update pipeline state
-            pipeline_state["analyst_models"] = training_results
-
-            # Save dispatcher manifest for Method A
-            if enable_experts:
-                try:
-                    manifest = {
-                        "experts": list(training_results.keys()),
-                        "gating": dispatcher_manifest.get("gating", {}),
-                        "expert_power": dispatcher_manifest.get("expert_power", {}),
-                        "regime_source": regime_source,
-                        "min_rows_per_expert": min_rows_per_expert,
-                        "use_strength_weighting": use_strength_weighting,
-                        "strength_columns": strength_columns,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                    manifest_path = f"{data_dir}/{exchange}_{symbol}_analyst_dispatcher.json"
-                    with open(manifest_path, "w") as jf:
-                        json.dump(manifest, jf, indent=2)
-                    self.logger.info(f"✅ Saved dispatcher manifest to {manifest_path}")
-                except Exception as _mf:
-                    self.logger.warning(f"Failed to save dispatcher manifest: {_mf}")
+                with open(summary_file, "w") as f:
+                    json.dump(summary_data, f, indent=2)
+                self.logger.info(f"✅ Saved training summary to {summary_file}")
+            except Exception as se:
+                self.logger.warning(f"Training summary write skipped: {se}")
 
             return {
                 "analyst_models": training_results,
                 "models_dir": models_dir,
-                "duration": 0.0,  # Will be calculated in actual implementation
+                "duration": 0.0,
                 "status": "SUCCESS",
                 "dispatcher": dispatcher_manifest if enable_experts else None,
             }

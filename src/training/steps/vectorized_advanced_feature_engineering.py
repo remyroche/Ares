@@ -1000,6 +1000,66 @@ class VectorizedAdvancedFeatureEngineering:
             long = volume_data["volume"].rolling(50, min_periods=1).mean().replace(0, np.nan)
             features["market_depth_imbalance"] = ((short - long) / long).replace([np.inf, -np.inf], np.nan).fillna(0)
 
+            # Additional kline/aggTrades-based proxies
+            try:
+                # BB z-score
+                close = price_data["close"].astype(float)
+                sma20 = close.rolling(20, min_periods=5).mean()
+                std20 = close.rolling(20, min_periods=5).std().replace(0, np.nan)
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    features["bb_zscore_20"] = ((close - sma20) / std20).replace([np.inf, -np.inf], np.nan).fillna(0)
+                # MA slopes (first difference per bar)
+                ema20 = close.ewm(span=20, adjust=False).mean()
+                sma50 = close.rolling(50, min_periods=5).mean()
+                features["ema20_slope"] = ema20.diff().fillna(0)
+                features["sma50_slope"] = sma50.diff().fillna(0)
+            except Exception:
+                pass
+
+            # Trade imbalance and bid/ask delta proxy from aggTrades
+            try:
+                # Expect optional aggTrades-like columns on volume_data: trade_count, taker_buy_volume, taker_sell_volume, is_buyer_maker_share
+                tv = volume_data.get("taker_buy_volume", None)
+                sv = volume_data.get("taker_sell_volume", None)
+                if tv is not None and sv is not None:
+                    denom = (tv + sv).replace(0, np.nan)
+                    tri = ((tv - sv) / denom).replace([np.inf, -np.inf], np.nan).fillna(0)
+                    features["trade_volume_imbalance"] = tri
+                # If only is_buyer_maker share exists
+                if "is_buyer_maker_share" in volume_data.columns:
+                    bm = volume_data["is_buyer_maker_share"].astype(float)
+                    features["bid_ask_delta_proxy"] = (bm - 0.5).fillna(0)
+            except Exception:
+                pass
+
+            # Short-term volume profile (volume-weighted bins over last N bars)
+            try:
+                N = 50
+                window = min(N, len(price_data))
+                if window >= 20 and "volume" in volume_data.columns:
+                    seg_p = close.tail(window).values
+                    seg_v = volume_data["volume"].tail(window).values
+                    bins = 20
+                    hist, edges = np.histogram(seg_p, bins=bins, weights=seg_v)
+                    features["vpoc_price"] = float((edges[np.argmax(hist)] + edges[np.argmax(hist) + 1]) / 2.0)
+                    # LVN/HVN scores
+                    hvn = np.percentile(hist, 80)
+                    lvn = np.percentile(hist, 20)
+                    current = float(close.iloc[-1])
+                    current_bin = int(np.searchsorted(edges, current) - 1)
+                    features["lvn_score"] = float(1.0 if 0 <= current_bin < len(hist) and hist[current_bin] <= lvn else 0.0)
+                    features["hvn_score"] = float(1.0 if 0 <= current_bin < len(hist) and hist[current_bin] >= hvn else 0.0)
+            except Exception:
+                pass
+
+            # Liquidity pockets proxy: identify price gaps in recent range (no prints region via low volume bin)
+            try:
+                if window >= 20:
+                    zero_bins = (hist <= lvn)
+                    features["liquidity_pocket_near"] = float(1.0 if zero_bins.any() else 0.0)
+            except Exception:
+                pass
+ 
             return features
 
         except Exception as e:

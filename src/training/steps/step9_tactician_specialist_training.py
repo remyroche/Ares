@@ -76,75 +76,75 @@ class TacticianSpecialistTrainingStep:
                 f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl"
             )
 
-            if os.path.exists(labeled_file_parquet):
-                # Prefer partitioned dataset scan from labeled store if available
-                try:
-                    from src.training.enhanced_training_manager_optimized import (
-                        ParquetDatasetManager,
-                    )
-
-                    pdm = ParquetDatasetManager(logger=self.logger)
-                    part_base = os.path.join(data_dir, "parquet", "labeled")
-                    if os.path.isdir(part_base):
-                        filters = [
-                            ("exchange", "==", exchange),
-                            ("symbol", "==", symbol),
-                            ("timeframe", "==", training_input.get("timeframe", "1m")),
-                            ("split", "==", "train"),
-                        ]
-                        # Reader shortcut: prefer materialized projection if available
-                        feat_cols = training_input.get(
-                            "model_feature_columns"
-                        ) or training_input.get("feature_columns")
-                        label_col = training_input.get("label_column", "label")
-                        proj_base = os.path.join(
-                            "data_cache",
-                            "parquet",
-                            f"proj_features_{training_input.get('model_name', 'default')}",
+            if os.path.exists(labeled_file_parquet) or os.path.exists(labeled_file_pickle):
+                if os.path.exists(labeled_file_parquet):
+                    # Prefer dataset scan if labeled partition exists
+                    try:
+                        from src.training.enhanced_training_manager_optimized import (
+                            ParquetDatasetManager,
                         )
-                        if (
-                            isinstance(feat_cols, list)
-                            and len(feat_cols) > 0
-                            and os.path.isdir(proj_base)
-                        ):
-                            proj_filters = [
+
+                        pdm = ParquetDatasetManager(logger=self.logger)
+                        part_base = os.path.join(data_dir, "parquet", "labeled")
+                        if os.path.isdir(part_base):
+                            filters = [
                                 ("exchange", "==", exchange),
                                 ("symbol", "==", symbol),
-                                (
-                                    "timeframe",
-                                    "==",
-                                    training_input.get("timeframe", "1m"),
-                                ),
+                                ("timeframe", "==", training_input.get("timeframe", "1m")),
                                 ("split", "==", "train"),
                             ]
-                            cols = ["timestamp", *feat_cols, label_col]
-                            labeled_data = pdm.cached_projection(
-                                base_dir=proj_base,
-                                filters=proj_filters,
-                                columns=cols,
-                                cache_dir="data_cache/projections",
-                                cache_key_prefix=f"proj_features_{training_input.get('model_name','default')}_{exchange}_{symbol}_{training_input.get('timeframe','1m')}_train",
-                                snapshot_version="v1",
-                                ttl_seconds=3600,
-                                batch_size=131072,
+                            # Reader shortcut: prefer materialized projection if available
+                            feat_cols = training_input.get(
+                                "model_feature_columns"
+                            ) or training_input.get("feature_columns")
+                            label_col = training_input.get("label_column", "label")
+                            proj_base = os.path.join(
+                                "data_cache",
+                                "parquet",
+                                f"proj_features_{training_input.get('model_name', 'default')}",
                             )
-                        else:
-                            cache_key = f"labeled_{exchange}_{symbol}_{training_input.get('timeframe','1m')}_train"
-                            from src.utils.logger import heartbeat
-                            with heartbeat(self.logger, name="Step9 load_labeled_projection", interval_seconds=60.0):
+                            if (
+                                isinstance(feat_cols, list)
+                                and len(feat_cols) > 0
+                                and os.path.isdir(proj_base)
+                            ):
+                                proj_filters = [
+                                    ("exchange", "==", exchange),
+                                    ("symbol", "==", symbol),
+                                    (
+                                        "timeframe",
+                                        "==",
+                                        training_input.get("timeframe", "1m"),
+                                    ),
+                                    ("split", "==", "train"),
+                                ]
+                                cols = ["timestamp", *feat_cols, label_col]
                                 labeled_data = pdm.cached_projection(
-                                    base_dir=part_base,
-                                    filters=filters,
-                                    columns=[],
+                                    base_dir=proj_base,
+                                    filters=proj_filters,
+                                    columns=cols,
                                     cache_dir="data_cache/projections",
-                                    cache_key_prefix=cache_key,
+                                    cache_key_prefix=f"proj_features_{training_input.get('model_name','default')}_{exchange}_{symbol}_{training_input.get('timeframe','1m')}_train",
                                     snapshot_version="v1",
                                     ttl_seconds=3600,
                                     batch_size=131072,
-                                    arrow_transform=lambda tbl: (
-                                        (lambda _t: _t)(
-                                            (
-                                                lambda _pa, pc: (
+                                )
+                            else:
+                                cache_key = f"labeled_{exchange}_{symbol}_{training_input.get('timeframe','1m')}_train"
+                                from src.utils.logger import heartbeat
+                                with heartbeat(self.logger, name="Step9 load_labeled_projection", interval_seconds=60.0):
+                                    labeled_data = pdm.cached_projection(
+                                        base_dir=part_base,
+                                        filters=filters,
+                                        columns=[],
+                                        cache_dir="data_cache/projections",
+                                        cache_key_prefix=cache_key,
+                                        snapshot_version="v1",
+                                        ttl_seconds=3600,
+                                        batch_size=131072,
+                                        arrow_transform=lambda tbl: (
+                                            (lambda _t: _t)(
+                                                (
                                                     _t := tbl,
                                                     (
                                                         _t := _t.set_column(
@@ -176,16 +176,51 @@ class TacticianSpecialistTrainingStep:
                                         )
                                     ),
                                 )
-                    else:
+                        else:
+                            try:
+                                feat_cols = training_input.get(
+                                    "model_feature_columns"
+                                ) or training_input.get("feature_columns")
+                                label_col = training_input.get("label_column", "label")
+                                from src.utils.logger import (
+                                    log_io_operation,
+                                    log_dataframe_overview,
+                                )
+
+                                if isinstance(feat_cols, list) and len(feat_cols) > 0:
+                                    with log_io_operation(
+                                        self.logger,
+                                        "read_parquet",
+                                        labeled_file_parquet,
+                                        columns=True,
+                                    ):
+                                        labeled_data = pd.read_parquet(
+                                            labeled_file_parquet,
+                                            columns=["timestamp", *feat_cols, label_col],
+                                        )
+                                else:
+                                    with log_io_operation(
+                                        self.logger, "read_parquet", labeled_file_parquet
+                                    ):
+                                        labeled_data = pd.read_parquet(labeled_file_parquet)
+                                try:
+                                    log_dataframe_overview(
+                                        self.logger, labeled_data, name="labeled_data"
+                                    )
+                                except Exception:
+                                    pass
+                            except Exception:
+                                with log_io_operation(
+                                    self.logger, "read_parquet", labeled_file_parquet
+                                ):
+                                    labeled_data = pd.read_parquet(labeled_file_parquet)
+                    except Exception:
                         try:
                             feat_cols = training_input.get(
                                 "model_feature_columns"
                             ) or training_input.get("feature_columns")
                             label_col = training_input.get("label_column", "label")
-                            from src.utils.logger import (
-                                log_io_operation,
-                                log_dataframe_overview,
-                            )
+                            from src.utils.logger import log_io_operation
 
                             if isinstance(feat_cols, list) and len(feat_cols) > 0:
                                 with log_io_operation(
@@ -203,55 +238,66 @@ class TacticianSpecialistTrainingStep:
                                     self.logger, "read_parquet", labeled_file_parquet
                                 ):
                                     labeled_data = pd.read_parquet(labeled_file_parquet)
-                            try:
-                                log_dataframe_overview(
-                                    self.logger, labeled_data, name="labeled_data"
-                                )
-                            except Exception:
-                                pass
                         except Exception:
                             with log_io_operation(
                                 self.logger, "read_parquet", labeled_file_parquet
                             ):
                                 labeled_data = pd.read_parquet(labeled_file_parquet)
-                except Exception:
+                else:
                     try:
-                        feat_cols = training_input.get(
-                            "model_feature_columns"
-                        ) or training_input.get("feature_columns")
-                        label_col = training_input.get("label_column", "label")
-                        from src.utils.logger import log_io_operation
-
-                        if isinstance(feat_cols, list) and len(feat_cols) > 0:
-                            with log_io_operation(
-                                self.logger,
-                                "read_parquet",
-                                labeled_file_parquet,
-                                columns=True,
-                            ):
-                                labeled_data = pd.read_parquet(
-                                    labeled_file_parquet,
-                                    columns=["timestamp", *feat_cols, label_col],
-                                )
-                        else:
-                            with log_io_operation(
-                                self.logger, "read_parquet", labeled_file_parquet
-                            ):
-                                labeled_data = pd.read_parquet(labeled_file_parquet)
+                        with open(labeled_file_pickle, "rb") as f:
+                            labeled_data = pickle.load(f)
                     except Exception:
-                        with log_io_operation(
-                            self.logger, "read_parquet", labeled_file_parquet
-                        ):
-                            labeled_data = pd.read_parquet(labeled_file_parquet)
-            elif os.path.exists(labeled_file_pickle):
-                with open(labeled_file_pickle, "rb") as f:
-                    labeled_data = pickle.load(f)
+                        pass
             else:
                 msg = (
                     "Tactician labeled data not found: "
                     f"{labeled_file_parquet} or {labeled_file_pickle}. Step 9 requires labeled data from Step 8."
                 )
                 raise FileNotFoundError(msg)
+
+            # Integrate engineered features from Step 3 if available
+            try:
+                feat_dir = data_dir
+                feat_train = os.path.join(feat_dir, f"{exchange}_{symbol}_features_train.pkl")
+                feat_val = os.path.join(feat_dir, f"{exchange}_{symbol}_features_validation.pkl")
+                feat_test = os.path.join(feat_dir, f"{exchange}_{symbol}_features_test.pkl")
+                # Choose appropriate split by inferring from labeled_data
+                if isinstance(labeled_data, pd.DataFrame) and not labeled_data.empty:
+                    # Align by timestamp if present; else index length heuristic
+                    feat_path = None
+                    if "split" in labeled_data.columns:
+                        split_name = str(labeled_data["split"].mode().iloc[0]).lower()
+                        if split_name.startswith("train") and os.path.exists(feat_train):
+                            feat_path = feat_train
+                        elif split_name.startswith("val") and os.path.exists(feat_val):
+                            feat_path = feat_val
+                        elif split_name.startswith("test") and os.path.exists(feat_test):
+                            feat_path = feat_test
+                    if feat_path is None:
+                        # default to train features for augmentation when unknown
+                        feat_path = feat_train if os.path.exists(feat_train) else None
+                    if feat_path is not None:
+                        with open(feat_path, "rb") as f:
+                            feat_df = pickle.load(f)
+                        if isinstance(feat_df, pd.DataFrame) and not feat_df.empty:
+                            # Drop any raw OHLCV in features to avoid duplication
+                            feat_df = feat_df.drop(columns=[c for c in ["open","high","low","close","volume"] if c in feat_df.columns], errors="ignore")
+                            # Align on timestamp when available
+                            if "timestamp" in labeled_data.columns and "timestamp" in feat_df.columns:
+                                merged = labeled_data.merge(
+                                    feat_df, on="timestamp", how="left"
+                                )
+                            else:
+                                # Fallback: align by index size
+                                feat_df = feat_df.reindex(labeled_data.index)
+                                merged = pd.concat([labeled_data, feat_df], axis=1)
+                            labeled_data = merged
+                            self.logger.info(
+                                f"✅ Augmented tactician labeled data with engineered features: +{feat_df.shape[1]} cols"
+                            )
+            except Exception as _afe:
+                self.logger.warning(f"Unable to augment tactician data with engineered features: {_afe}")
 
             # Convert to DataFrame if needed
             if not isinstance(labeled_data, pd.DataFrame):

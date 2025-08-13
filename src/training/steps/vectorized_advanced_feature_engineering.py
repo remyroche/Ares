@@ -1000,6 +1000,66 @@ class VectorizedAdvancedFeatureEngineering:
             long = volume_data["volume"].rolling(50, min_periods=1).mean().replace(0, np.nan)
             features["market_depth_imbalance"] = ((short - long) / long).replace([np.inf, -np.inf], np.nan).fillna(0)
 
+            # Additional kline/aggTrades-based proxies
+            try:
+                # BB z-score
+                close = price_data["close"].astype(float)
+                sma20 = close.rolling(20, min_periods=5).mean()
+                std20 = close.rolling(20, min_periods=5).std().replace(0, np.nan)
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    features["bb_zscore_20"] = ((close - sma20) / std20).replace([np.inf, -np.inf], np.nan).fillna(0)
+                # MA slopes (first difference per bar)
+                ema20 = close.ewm(span=20, adjust=False).mean()
+                sma50 = close.rolling(50, min_periods=5).mean()
+                features["ema20_slope"] = ema20.diff().fillna(0)
+                features["sma50_slope"] = sma50.diff().fillna(0)
+            except Exception:
+                pass
+
+            # Trade imbalance and bid/ask delta proxy from aggTrades
+            try:
+                # Expect optional aggTrades-like columns on volume_data: trade_count, taker_buy_volume, taker_sell_volume, is_buyer_maker_share
+                tv = volume_data.get("taker_buy_volume", None)
+                sv = volume_data.get("taker_sell_volume", None)
+                if tv is not None and sv is not None:
+                    denom = (tv + sv).replace(0, np.nan)
+                    tri = ((tv - sv) / denom).replace([np.inf, -np.inf], np.nan).fillna(0)
+                    features["trade_volume_imbalance"] = tri
+                # If only is_buyer_maker share exists
+                if "is_buyer_maker_share" in volume_data.columns:
+                    bm = volume_data["is_buyer_maker_share"].astype(float)
+                    features["bid_ask_delta_proxy"] = (bm - 0.5).fillna(0)
+            except Exception:
+                pass
+
+            # Short-term volume profile (volume-weighted bins over last N bars)
+            try:
+                N = 50
+                window = min(N, len(price_data))
+                if window >= 20 and "volume" in volume_data.columns:
+                    seg_p = close.tail(window).values
+                    seg_v = volume_data["volume"].tail(window).values
+                    bins = 20
+                    hist, edges = np.histogram(seg_p, bins=bins, weights=seg_v)
+                    features["vpoc_price"] = float((edges[np.argmax(hist)] + edges[np.argmax(hist) + 1]) / 2.0)
+                    # LVN/HVN scores
+                    hvn = np.percentile(hist, 80)
+                    lvn = np.percentile(hist, 20)
+                    current = float(close.iloc[-1])
+                    current_bin = int(np.searchsorted(edges, current) - 1)
+                    features["lvn_score"] = float(1.0 if 0 <= current_bin < len(hist) and hist[current_bin] <= lvn else 0.0)
+                    features["hvn_score"] = float(1.0 if 0 <= current_bin < len(hist) and hist[current_bin] >= hvn else 0.0)
+            except Exception:
+                pass
+
+            # Liquidity pockets proxy: identify price gaps in recent range (no prints region via low volume bin)
+            try:
+                if window >= 20:
+                    zero_bins = (hist <= lvn)
+                    features["liquidity_pocket_near"] = float(1.0 if zero_bins.any() else 0.0)
+            except Exception:
+                pass
+ 
             return features
 
         except Exception as e:
@@ -1658,7 +1718,6 @@ class VectorizedAdvancedFeatureEngineering:
         - TRIANGLE_FORMATION
         - RECTANGLE_FORMATION
         - MOMENTUM_IGNITION
-        - GRADUAL_MOMENTUM_FADE
 
         Notes:
         - Uses only past/current information (rolling stats) and aligns labels to the next base bar to avoid lookahead.
@@ -1775,9 +1834,118 @@ class VectorizedAdvancedFeatureEngineering:
 
             # MOMENTUM patterns
             momentum_ignition = ((rsi > 60) | (rsi < 40)) & (abs(macd_hist) > 0.001) & (abs(momentum_5) > momentum_threshold)
-            gradual_fade = (abs(momentum_5) < abs(momentum_10)) & (abs(momentum_5) < momentum_threshold)
             momentum_ignition = momentum_ignition.fillna(False).astype(int)
-            gradual_fade = gradual_fade.fillna(False).astype(int)
+
+            # Additional labels (vectorized, OHLCV-based)
+            o = resampled_price["open"]
+            h = resampled_price["high"]
+            l = resampled_price["low"]
+            c = resampled_price["close"]
+            v = resampled_volume["volume"]
+
+            # ATR and ADX approximations
+            tr = (h - l).to_frame("hl")
+            tr["hc"] = (h - c.shift()).abs()
+            tr["lc"] = (l - c.shift()).abs()
+            true_range = tr.max(axis=1).fillna(0)
+            atr20 = true_range.rolling(20, min_periods=5).mean().fillna(method="ffill").fillna(0)
+            atr100 = true_range.rolling(100, min_periods=10).mean().fillna(method="ffill").fillna(atr20)
+            up_move = h.diff()
+            down_move = -l.diff()
+            plus_dm = ((up_move > down_move) & (up_move > 0)).astype(float) * up_move.fillna(0)
+            minus_dm = ((down_move > up_move) & (down_move > 0)).astype(float) * down_move.fillna(0)
+            atr14 = true_range.rolling(14, min_periods=5).mean().replace(0, np.nan)
+            plus_di = 100 * (plus_dm.rolling(14, min_periods=5).mean() / atr14)
+            minus_di = 100 * (minus_dm.rolling(14, min_periods=5).mean() / atr14)
+            dx = 100 * ((plus_di - minus_di).abs() / (plus_di + minus_di))
+            adx = dx.rolling(14, min_periods=5).mean().replace([np.inf, -np.inf], np.nan).fillna(20)
+
+            # FAILED_RETEST (uses slight forward look, aligned later)
+            prior_high50 = h.rolling(50, min_periods=5).max().shift(1)
+            prior_low50 = l.rolling(50, min_periods=5).min().shift(1)
+            within_up = ((c - prior_high50).abs() / prior_high50.replace(0, np.nan)) <= 0.0015
+            within_dn = ((c - prior_low50).abs() / prior_low50.replace(0, np.nan)) <= 0.0015
+            vol50max = v.rolling(50, min_periods=5).max().shift(1)
+            vol_ok_up = v < (0.6 * vol50max)
+            vol_ok_dn = v < (0.6 * vol50max)
+            fwd_min5 = c.shift(-1).rolling(5, min_periods=1).min()
+            fwd_max5 = c.shift(-1).rolling(5, min_periods=1).max()
+            reverse_ok_up = ((prior_high50 - fwd_min5) / prior_high50.replace(0, np.nan)) > 0.0025
+            reverse_ok_dn = ((fwd_max5 - prior_low50) / prior_low50.replace(0, np.nan)) > 0.0025
+            failed_retest = ((within_up & vol_ok_up & reverse_ok_up) | (within_dn & vol_ok_dn & reverse_ok_dn)).fillna(False).astype(int)
+
+            # ICE_BERG_ORDERS (proxy without order book): repeated tests, decreasing momentum, high volume, no break
+            near_recent_high = ((c - recent_high.shift(1)).abs() / recent_high.shift(1).replace(0, np.nan)) <= 0.0005
+            near_recent_low = ((c - recent_low.shift(1)).abs() / recent_low.shift(1).replace(0, np.nan)) <= 0.0005
+            tests_high = near_recent_high.rolling(20, min_periods=5).sum() >= 3
+            tests_low = near_recent_low.rolling(20, min_periods=5).sum() >= 3
+            dec_mom = momentum_5.diff().rolling(3, min_periods=2).sum() < 0
+            vol_high = volume_ratio > max(1.5, volume_threshold)
+            no_break_high = c <= recent_high
+            no_break_low = c >= recent_low
+            iceberg_orders = (((tests_high & dec_mom & vol_high & no_break_high) | (tests_low & dec_mom & vol_high & no_break_low)).fillna(False)).astype(int)
+
+            # MOMENTUM_ACCELERATION / DECELERATION
+            roc5 = c.pct_change(5)
+            prev_roc5 = roc5.shift(1)
+            d_roc = roc5.diff()
+            vol_inc = v > 1.1 * v.shift(1)
+            accel_dir = ((c > sma20) & (roc5 > 0)) | ((c < sma20) & (roc5 < 0))
+            momentum_accel = ((roc5 > prev_roc5) & (d_roc > 0) & accel_dir & vol_inc).fillna(False).astype(int)
+            decel_up = (roc5 > 0) & (prev_roc5 > 0) & (d_roc < 0) & (d_roc.shift(1) < 0) & (c > sma20)
+            decel_dn = (roc5 < 0) & (prev_roc5 < 0) & (d_roc > 0) & (d_roc.shift(1) > 0) & (c < sma20)
+            momentum_decel = ((decel_up | decel_dn).fillna(False)).astype(int)
+
+            # CAPITULATION_SELLING / EUPHORIC_BUYING
+            p1 = c.pct_change(1)
+            p3 = c.pct_change(3)
+            vol2x = volume_ratio > 2.0
+            rsi14 = rsi
+            bearish_seq = (c.diff() < 0).rolling(7, min_periods=3).sum() >= 5
+            bull_seq = (c.diff() > 0).rolling(7, min_periods=3).sum() >= 5
+            capitulation = (((p1 <= -0.015) | (p3 <= -0.025)) & vol2x & (rsi14 < 25) & bearish_seq).fillna(False).astype(int)
+            euphoric = (((p1 >= 0.015) | (p3 >= 0.025)) & vol2x & (rsi14 > 75) & bull_seq).fillna(False).astype(int)
+
+            # DULL_MARKET
+            vol_ma50 = v.rolling(50, min_periods=10).mean().replace(0, np.nan)
+            vol_low_5 = (v < 0.8 * vol_ma50).rolling(5, min_periods=5).sum() == 5
+            hl = h - l
+            hl_avg20 = hl.rolling(20, min_periods=5).mean()
+            range_ok = hl < 0.4 * hl_avg20
+            oc_move = (c - o).abs() / o.replace(0, np.nan)
+            no_large_bars_10 = oc_move.rolling(10, min_periods=5).max() < 0.003
+            dull_market = ((atr20 < 0.6 * atr100) & vol_low_5 & range_ok & no_large_bars_10).fillna(False).astype(int)
+
+            # FLASH_CRASH_PATTERN (uses forward recovery window, aligned later)
+            drop = p1 <= -0.01
+            vol_spike5x = volume_ratio >= 5.0
+            prev_close = c.shift(1)
+            drop_amt = (prev_close - c).clip(lower=0)
+            fwd_max5_close = c.shift(-1).rolling(5, min_periods=1).max()
+            recovery = (fwd_max5_close - c) >= (0.5 * drop_amt)
+            flash_crash = (drop & vol_spike5x & recovery).fillna(False).astype(int)
+
+            # CHOP_WARNING
+            bb_width_rel = ((bb_upper - bb_lower) / sma20.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan).fillna(0)
+            hist_bb_avg = bb_width_rel.rolling(100, min_periods=20).mean().fillna(method="ffill").fillna(bb_width_rel)
+            dir_changes = (np.sign(c.diff()).diff().abs() > 0).rolling(10, min_periods=5).sum() >= 5
+            small_ranges_8 = (hl / c.replace(0, np.nan)).rolling(8, min_periods=5).max() < 0.004
+            chop_warning = ((adx < 20) & (bb_width_rel < 0.8 * hist_bb_avg) & dir_changes & small_ranges_8).fillna(False).astype(int)
+
+            # FAKE_OUT_RISK_HIGH
+            failed_20 = breakout_failure.rolling(20, min_periods=5).sum() >= 2
+            compression_then_expansion = (volatility_ratio > 1.5) & (bb_width_rel.shift(5) < 0.05)
+            near_sr = ((c - recent_high.shift(1)).abs() / recent_high.shift(1).replace(0, np.nan) < 0.005) | ((c - recent_low.shift(1)).abs() / recent_low.shift(1).replace(0, np.nan) < 0.005)
+            mixed_vol = (volume_ratio > 0.8) & (volume_ratio < 1.2)
+            fakeout_risk = ((failed_20 & compression_then_expansion & near_sr & mixed_vol)).fillna(False).astype(int)
+
+            # Confluence based confidence states
+            base_signals = [strong_trend, exhaustion, range_mr, breakout_success, volatility_ratio > 1.5, (bb_upper - bb_lower) / sma20.replace(0, np.nan) < 0.05, flag_formation, triangle_formation, rectangle_formation, momentum_ignition, failed_retest, capitulation, euphoric]
+            confluent_count = sum([(s.astype(bool) if isinstance(s, pd.Series) else s) for s in base_signals])
+            # Ensure type
+            confluent_count = pd.Series(confluent_count, index=c.index) if not isinstance(confluent_count, pd.Series) else confluent_count
+            low_conv = ((confluent_count <= 1) & ((volume_ratio < 1.0) | (adx < 25) | (np.sign(momentum_5) != np.sign(momentum_10)))).fillna(False).astype(int)
+            high_conv = ((confluent_count >= 3) & (volume_ratio > 1.2) & ((adx > 30) | ((c / sma20.replace(0, np.nan) - 1).abs() > 0.02))).fillna(False).astype(int)
 
             # Align back to base index without lookahead: shift by +1 base bar after reindex
             base_index = price_data.index if isinstance(price_data.index, pd.DatetimeIndex) else pd.RangeIndex(start=0, stop=len(price_data))
@@ -1797,7 +1965,18 @@ class VectorizedAdvancedFeatureEngineering:
                 f"{timeframe}_TRIANGLE_FORMATION": _align(triangle_formation),
                 f"{timeframe}_RECTANGLE_FORMATION": _align(rectangle_formation),
                 f"{timeframe}_MOMENTUM_IGNITION": _align(momentum_ignition),
-                f"{timeframe}_GRADUAL_MOMENTUM_FADE": _align(gradual_fade),
+                f"{timeframe}_FAILED_RETEST": _align(failed_retest),
+                f"{timeframe}_ICE_BERG_ORDERS": _align(iceberg_orders),
+                f"{timeframe}_MOMENTUM_ACCELERATION": _align(momentum_accel),
+                f"{timeframe}_MOMENTUM_DECELERATION": _align(momentum_decel),
+                f"{timeframe}_CAPITULATION_SELLING": _align(capitulation),
+                f"{timeframe}_EUPHORIC_BUYING": _align(euphoric),
+                f"{timeframe}_DULL_MARKET": _align(dull_market),
+                f"{timeframe}_FLASH_CRASH_PATTERN": _align(flash_crash),
+                f"{timeframe}_CHOP_WARNING": _align(chop_warning),
+                f"{timeframe}_FAKE_OUT_RISK_HIGH": _align(fakeout_risk),
+                f"{timeframe}_LOW_CONVICTION_SETUP": _align(low_conv),
+                f"{timeframe}_HIGH_CONVICTION_SETUP": _align(high_conv),
             }
 
             self.logger.info(
@@ -1806,7 +1985,9 @@ class VectorizedAdvancedFeatureEngineering:
                 f"BO_S={(breakout_success==1).sum()}, BO_F={(breakout_failure==1).sum()}, "
                 f"VOL_C={(vol_compression==1).sum()}, VOL_E={(vol_expansion==1).sum()}, "
                 f"FLAG={(flag_formation==1).sum()}, TRI={(triangle_formation==1).sum()}, REC={(rectangle_formation==1).sum()}, "
-                f"IGN={(momentum_ignition==1).sum()}, FADE={(gradual_fade==1).sum()}"
+                f"IGN={(momentum_ignition==1).sum()}, FR={(failed_retest==1).sum()}, MOM_ACC={(momentum_accel==1).sum()}, MOM_DEC={(momentum_decel==1).sum()}, "
+                f"CAP={(capitulation==1).sum()}, EUP={(euphoric==1).sum()}, DULL={(dull_market==1).sum()}, FC={(flash_crash==1).sum()}, CHOP={(chop_warning==1).sum()}, FOUT={(fakeout_risk==1).sum()}, "
+                f"LOWC={(low_conv==1).sum()}, HIGHC={(high_conv==1).sum()}"
             )
             return labels
 
@@ -1842,7 +2023,18 @@ class VectorizedAdvancedFeatureEngineering:
                 "TRIANGLE_FORMATION",
                 "RECTANGLE_FORMATION",
                 "MOMENTUM_IGNITION",
-                "GRADUAL_MOMENTUM_FADE",
+                "FAILED_RETEST",
+                "ICE_BERG_ORDERS",
+                "MOMENTUM_ACCELERATION",
+                "MOMENTUM_DECELERATION",
+                "CAPITULATION_SELLING",
+                "EUPHORIC_BUYING",
+                "DULL_MARKET",
+                "FLASH_CRASH_PATTERN",
+                "CHOP_WARNING",
+                "FAKE_OUT_RISK_HIGH",
+                "LOW_CONVICTION_SETUP",
+                "HIGH_CONVICTION_SETUP",
             ]
 
             # Sampling configuration

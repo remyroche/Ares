@@ -1208,7 +1208,6 @@ class AdvancedFeatureEngineering:
             "CLIMACTIC_REVERSAL",
             "VOLATILITY_EXPANSION",
             "MOMENTUM_IGNITION",
-            "GRADUAL_MOMENTUM_FADE",
             "TRIANGLE_FORMATION",
             "RECTANGLE_FORMATION",
             "LIQUIDITY_GRAB",
@@ -1861,8 +1860,7 @@ class AdvancedFeatureEngineering:
                 )
                 labels.update(
                     self.meta_labeling_system._detect_entry_signals(
-                        price_data,
-                        volume_data,
+                        {**pattern_features, **entry_features},
                         order_flow_data,
                     ),
                 )

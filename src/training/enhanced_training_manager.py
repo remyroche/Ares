@@ -210,6 +210,19 @@ class EnhancedTrainingManager:
             "verbosity", "info"
         )  # "info" or "debug"
 
+        # MoE label expert artifacts and persistence
+        self.label_expert_models: dict[str, dict[str, Any]] = {}
+        self.label_expert_calibrators: dict[str, Any] = {}
+        self.label_reliability: dict[str, float] = {}
+        self.activation_thresholds: dict[str, float] = {}
+        self.artifacts_dir: Path = Path(self.enhanced_training_config.get("artifacts_dir", "artifacts/meta_labeling"))
+        self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+        # Force rerun flag (env or config)
+        env_force = os.getenv("FORCE_RERUN", "0") == "1" or os.getenv("FORCE", "0") == "1"
+        self.force_rerun: bool = bool(self.enhanced_training_config.get("force_rerun", env_force))
+
+        self.logger.info("Loaded optimization configuration")
+
     def _load_optimization_config(self):
         """Load optimization configuration from enhanced_training_manager_optimized."""
         # Caching configuration
@@ -2651,6 +2664,89 @@ class EnhancedTrainingManager:
         top_features = feature_variance.nlargest(max_features).index.tolist()
         
         return selected_features[top_features]
+
+    # ===== Label Expert Artifacts API =====
+    def get_label_expert_models(self) -> dict[str, dict[str, Any]]:
+        return self.label_expert_models
+
+    def get_label_expert_calibrators(self) -> dict[str, Any]:
+        return self.label_expert_calibrators
+
+    def get_label_reliability(self) -> dict[str, float]:
+        if not self.label_reliability:
+            self._load_label_reliability()
+        return self.label_reliability
+
+    def get_activation_thresholds(self) -> dict[str, float]:
+        if not self.activation_thresholds:
+            self._load_activation_thresholds()
+        return self.activation_thresholds
+
+    def save_activation_thresholds(self, thresholds: dict[str, Any]) -> None:
+        try:
+            target = self.artifacts_dir / "thresholds.json"
+            tmp = self.artifacts_dir / "thresholds.json.tmp"
+            with open(tmp, "w") as f:
+                json.dump(thresholds, f, indent=2)
+            os.replace(tmp, target)
+            # Also cache in memory (flatten thresholds mapping label->threshold)
+            flat: dict[str, float] = {}
+            try:
+                for k, v in thresholds.items():
+                    if isinstance(v, dict) and "threshold" in v:
+                        flat[k] = float(v.get("threshold", 0.5))
+            except Exception:
+                pass
+            if flat:
+                self.activation_thresholds.update(flat)
+            self.logger.info(f"Saved activation thresholds to {target}")
+        except Exception as e:
+            self.logger.warning(f"Failed to save activation thresholds: {e}")
+
+    def _load_activation_thresholds(self) -> None:
+        if self.force_rerun:
+            self.logger.info("Force rerun enabled; skipping loading persisted activation thresholds")
+            return
+        try:
+            path = self.artifacts_dir / "thresholds.json"
+            if path.exists():
+                with open(path, "r") as f:
+                    data = json.load(f)
+                flat: dict[str, float] = {}
+                for k, v in data.items():
+                    if isinstance(v, dict) and "threshold" in v:
+                        flat[k] = float(v.get("threshold", 0.5))
+                    elif isinstance(v, (int, float)):
+                        flat[k] = float(v)
+                self.activation_thresholds = flat
+                self.logger.info(f"Loaded activation thresholds from {path}")
+        except Exception as e:
+            self.logger.warning(f"Failed to load activation thresholds: {e}")
+
+    def save_label_reliability(self, reliability: dict[str, float]) -> None:
+        try:
+            target = self.artifacts_dir / "reliability.json"
+            tmp = self.artifacts_dir / "reliability.json.tmp"
+            with open(tmp, "w") as f:
+                json.dump(reliability, f, indent=2)
+            os.replace(tmp, target)
+            self.label_reliability.update({k: float(v) for k, v in reliability.items()})
+            self.logger.info(f"Saved label reliability to {target}")
+        except Exception as e:
+            self.logger.warning(f"Failed to save label reliability: {e}")
+
+    def _load_label_reliability(self) -> None:
+        if self.force_rerun:
+            self.logger.info("Force rerun enabled; skipping loading persisted reliability")
+            return
+        try:
+            path = self.artifacts_dir / "reliability.json"
+            if path.exists():
+                with open(path, "r") as f:
+                    self.label_reliability = {k: float(v) for k, v in json.load(f).items()}
+                self.logger.info(f"Loaded label reliability from {path}")
+        except Exception as e:
+            self.logger.warning(f"Failed to load label reliability: {e}")
 
 
 @handle_errors(

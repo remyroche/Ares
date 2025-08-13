@@ -177,13 +177,20 @@ class MLConfidencePredictor:
             "TRIANGLE_FORMATION",
             "RECTANGLE_FORMATION",
             "MOMENTUM_IGNITION",
-            "GRADUAL_MOMENTUM_FADE",
-            "LIQUIDITY_GRAB",
-            "ABSORPTION_AT_LEVEL",
-            "TRENDING_RANGE",
-            "MOVING_AVERAGE_BOUNCE",
-            "HEAD_AND_SHOULDERS",
-            "DOUBLE_TOP_BOTTOM",
+            # Newly supported advanced labels
+            "FAILED_RETEST",
+            "ICE_BERG_ORDERS",
+            "MOMENTUM_ACCELERATION",
+            "MOMENTUM_DECELERATION",
+            "CAPITULATION_SELLING",
+            "EUPHORIC_BUYING",
+            "DULL_MARKET",
+            "FLASH_CRASH_PATTERN",
+            "CHOP_WARNING",
+            "FAKE_OUT_RISK_HIGH",
+            "LOW_CONVICTION_SETUP",
+            "HIGH_CONVICTION_SETUP",
+            # Legacy/fallback
             "CLIMACTIC_REVERSAL",
             "NO_SETUP",
         ]
@@ -203,6 +210,13 @@ class MLConfidencePredictor:
         # Enhanced order manager for tactician
         self.enhanced_order_manager = None
         self.order_manager_config = config.get("enhanced_order_manager", {})
+
+        # Label-expert (MoE) containers
+        self.label_expert_models: dict[str, dict[str, Any]] = {}  # {label: {timeframe: model}}
+        self.label_expert_calibrators: dict[str, Any] = {}  # {label: calibrator or {timeframe: calibrator}}
+        self.label_reliability: dict[str, float] = {}  # {label: reliability_score}
+        self.label_expert_feature_specs: dict[str, Any] = {}  # Optional feature schemas per label
+        self.label_timeframes: list[str] = ["30m", "15m", "5m", "1m"]
 
     @handle_specific_errors(
         error_handlers={
@@ -1088,6 +1102,7 @@ class MLConfidencePredictor:
             self._load_calibrated_models()
             self._load_regime_models()
             self._load_multi_timeframe_models()
+            self._load_label_expert_models()
 
             # Log summary of loaded models
             self._log_model_loading_summary()
@@ -1214,6 +1229,48 @@ class MLConfidencePredictor:
                 self.logger.debug("No multi-timeframe models available")
         except Exception as e:
             self.print(warning("Could not load multi-timeframe models: {e}"))
+
+    def _load_label_expert_models(self) -> None:
+        """Load label-level expert ensembles, calibrators, and reliability scores if provided by the training manager."""
+        try:
+            etm = self.enhanced_training_manager
+            if etm is None:
+                return
+            # Models
+            if hasattr(etm, "label_expert_models") and isinstance(etm.label_expert_models, dict):
+                self.label_expert_models = etm.label_expert_models
+            elif hasattr(etm, "get_label_expert_models"):
+                try:
+                    self.label_expert_models = etm.get_label_expert_models() or {}
+                except Exception:
+                    self.label_expert_models = {}
+            # Calibrators
+            if hasattr(etm, "label_expert_calibrators") and isinstance(etm.label_expert_calibrators, dict):
+                self.label_expert_calibrators = etm.label_expert_calibrators
+            elif hasattr(etm, "get_label_expert_calibrators"):
+                try:
+                    self.label_expert_calibrators = etm.get_label_expert_calibrators() or {}
+                except Exception:
+                    self.label_expert_calibrators = {}
+            # Reliability
+            if hasattr(etm, "label_reliability") and isinstance(etm.label_reliability, dict):
+                self.label_reliability = etm.label_reliability
+            elif hasattr(etm, "get_label_reliability"):
+                try:
+                    self.label_reliability = etm.get_label_reliability() or {}
+                except Exception:
+                    self.label_reliability = {}
+            # Feature specs
+            if hasattr(etm, "label_expert_feature_specs") and isinstance(etm.label_expert_feature_specs, dict):
+                self.label_expert_feature_specs = etm.label_expert_feature_specs
+            self.logger.info(
+                {
+                    "msg": "Loaded label expert artifacts",
+                    "labels": list(self.label_expert_models.keys())[:10],
+                },
+            )
+        except Exception as e:
+            self.logger.warning(f"Could not load label expert models: {e}")
 
     def _log_model_loading_summary(self) -> None:
         """Log a summary of all loaded models."""
@@ -2907,6 +2964,179 @@ class MLConfidencePredictor:
             results[member] = acc
         self.logger.info(f"Ablation study results: {results}")
         return results
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="label-level MoE confidence prediction",
+    )
+    async def predict_label_confidences(
+        self,
+        market_data: pd.DataFrame,
+        timeframe: str | None = None,
+    ) -> dict[str, float]:
+        """Predict per-label confidences using label-specific MoE models.
+
+        Returns a dict mapping label name -> confidence in [0,1]. Falls back to 0.5 if model unavailable.
+        """
+        # Ensure models are ready
+        if not await self._prepare_for_prediction():
+            return {label: 0.5 for label in self.analyst_labels}
+        # Build features according to predictor's schema
+        features = await self._prepare_prediction_features(market_data)
+        if features is None or features.empty:
+            return {label: 0.5 for label in self.analyst_labels}
+
+        tf = timeframe or (self.analyst_timeframes[0] if self.analyst_timeframes else "30m")
+        confidences: dict[str, float] = {}
+        for label in self.analyst_labels:
+            try:
+                # Select model for label/timeframe
+                model = None
+                if label in self.label_expert_models:
+                    model_map = self.label_expert_models[label]
+                    if isinstance(model_map, dict):
+                        if tf in model_map:
+                            model = model_map[tf]
+                        elif len(model_map) > 0:
+                            # fallback to any available timeframe
+                            model = next(iter(model_map.values()))
+                    else:
+                        model = model_map  # single model for all timeframes
+                if model is None:
+                    confidences[label] = 0.5
+                    continue
+                # Predict probability/confidence
+                if hasattr(model, "predict_proba"):
+                    proba = model.predict_proba(features)
+                    # assume binary classifier: take positive class probability
+                    if isinstance(proba, (list, np.ndarray)) and np.ndim(proba) == 2 and proba.shape[1] >= 2:
+                        conf_val = float(proba[-1, 1])
+                    else:
+                        conf_val = float(np.clip(np.mean(proba), 0.0, 1.0))
+                elif hasattr(model, "predict"):
+                    pred = model.predict(features)
+                    # Map prediction to [0,1]
+                    conf_val = float(np.clip(np.mean(pred), 0.0, 1.0))
+                else:
+                    conf_val = 0.5
+                # Apply calibrator if present
+                calibrator = self.label_expert_calibrators.get(label)
+                if calibrator is not None:
+                    try:
+                        if hasattr(calibrator, "predict_proba"):
+                            conf_val = float(np.clip(calibrator.predict_proba([[conf_val]])[0][-1], 0.0, 1.0))
+                        elif hasattr(calibrator, "predict"):
+                            conf_val = float(np.clip(calibrator.predict([[conf_val]])[0], 0.0, 1.0))
+                    except Exception:
+                        pass
+                confidences[label] = float(np.clip(conf_val, 0.0, 1.0))
+            except Exception:
+                confidences[label] = 0.5
+        return confidences
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="multi-timeframe label-level confidence prediction",
+    )
+    async def predict_label_confidences_mtf(
+        self,
+        market_data: pd.DataFrame,
+        timeframes: list[str] | None = None,
+    ) -> dict[str, float]:
+        """Predict timeframe-aware label confidences.
+
+        Returns a flat dict mapping "<tf>_<LABEL>" -> confidence.
+        Defaults to self.analyst_timeframes if timeframes not provided.
+        """
+        tf_list = timeframes or list(self.analyst_timeframes)
+        all_conf: dict[str, float] = {}
+        for tf in tf_list:
+            confs = await self.predict_label_confidences(market_data, timeframe=tf)
+            for label, val in confs.items():
+                all_conf[f"{tf}_{label}"] = float(val)
+        return all_conf
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="tactician label-level confidence prediction",
+    )
+    async def predict_tactician_label_confidences(
+        self,
+        market_data: pd.DataFrame,
+        timeframe: str | None = None,
+    ) -> dict[str, float]:
+        """Predict per-label confidences for tactician (1m) labels.
+
+        Uses label-specific MoE models if available; falls back to 0.5 per label.
+        """
+        if not await self._prepare_for_prediction():
+            return {label: 0.5 for label in self.tactician_labels}
+        features = await self._prepare_prediction_features(market_data)
+        if features is None or features.empty:
+            return {label: 0.5 for label in self.tactician_labels}
+        tf = timeframe or (self.tactician_timeframes[0] if self.tactician_timeframes else "1m")
+        confidences: dict[str, float] = {}
+        for label in self.tactician_labels:
+            try:
+                model = None
+                if label in self.label_expert_models:
+                    model_map = self.label_expert_models[label]
+                    if isinstance(model_map, dict):
+                        if tf in model_map:
+                            model = model_map[tf]
+                        elif len(model_map) > 0:
+                            model = next(iter(model_map.values()))
+                    else:
+                        model = model_map
+                if model is None:
+                    confidences[label] = 0.5
+                    continue
+                if hasattr(model, "predict_proba"):
+                    proba = model.predict_proba(features)
+                    if isinstance(proba, (list, np.ndarray)) and np.ndim(proba) == 2 and proba.shape[1] >= 2:
+                        conf_val = float(proba[-1, 1])
+                    else:
+                        conf_val = float(np.clip(np.mean(proba), 0.0, 1.0))
+                elif hasattr(model, "predict"):
+                    pred = model.predict(features)
+                    conf_val = float(np.clip(np.mean(pred), 0.0, 1.0))
+                else:
+                    conf_val = 0.5
+                calibrator = self.label_expert_calibrators.get(label)
+                if calibrator is not None:
+                    try:
+                        if hasattr(calibrator, "predict_proba"):
+                            conf_val = float(np.clip(calibrator.predict_proba([[conf_val]])[0][-1], 0.0, 1.0))
+                        elif hasattr(calibrator, "predict"):
+                            conf_val = float(np.clip(calibrator.predict([[conf_val]])[0], 0.0, 1.0))
+                    except Exception:
+                        pass
+                confidences[label] = float(np.clip(conf_val, 0.0, 1.0))
+            except Exception:
+                confidences[label] = 0.5
+        return confidences
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="multi-timeframe tactician label-level confidence prediction",
+    )
+    async def predict_tactician_label_confidences_mtf(
+        self,
+        market_data: pd.DataFrame,
+        timeframes: list[str] | None = None,
+    ) -> dict[str, float]:
+        """Predict timeframe-aware confidences for tactician labels (e.g., include "1m")."""
+        tf_list = timeframes or list(self.tactician_timeframes)
+        all_conf: dict[str, float] = {}
+        for tf in tf_list:
+            confs = await self.predict_tactician_label_confidences(market_data, timeframe=tf)
+            for label, val in confs.items():
+                all_conf[f"{tf}_{label}"] = float(val)
+        return all_conf
 
 
 @handle_errors(

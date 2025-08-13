@@ -533,15 +533,13 @@ class EnsembleCreator:
             diversity_metrics = self._calculate_diversity_metrics(pred_df)
             # Correlation summary (upper triangle, excluding diagonal)
             try:
-                import numpy as _np
-
-                abs_corr = _np.abs(correlation_matrix.values)
-                mask = _np.triu(_np.ones_like(abs_corr, dtype=bool), k=1)
+                abs_corr = np.abs(correlation_matrix.values)
+                mask = np.triu(np.ones_like(abs_corr, dtype=bool), k=1)
                 upper_vals = abs_corr[mask]
                 if upper_vals.size:
                     corr_summary = {
-                        "mean_abs": float(_np.mean(upper_vals)),
-                        "max_abs": float(_np.max(upper_vals)),
+                        "mean_abs": float(np.mean(upper_vals)),
+                        "max_abs": float(np.max(upper_vals)),
                         "threshold": float(self.ensemble_config.correlation_threshold),
                     }
                     self.logger.info({"msg": "prediction_correlation_summary", "summary": corr_summary})

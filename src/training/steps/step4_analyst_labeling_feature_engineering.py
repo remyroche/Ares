@@ -1698,6 +1698,49 @@ class AnalystLabelingFeatureEngineeringStep:
                     OptimizedTripleBarrierLabeling,
                 )
                 tb_config = self.config.get("vectorized_labelling_orchestrator", {})
+                # Optional: quick parameter search to define optimal TB params before labeling
+                def _evaluate_tb_params(pt, sl, tb_min, max_look):
+                    try:
+                        _lab = OptimizedTripleBarrierLabeling(
+                            profit_take_multiplier=pt,
+                            stop_loss_multiplier=sl,
+                            time_barrier_minutes=tb_min,
+                            max_lookahead=max_look,
+                        ).apply_triple_barrier_labeling_vectorized(
+                            price_data[["open", "high", "low", "close", "volume"]].copy()
+                        )
+                        if _lab.empty or "label" not in _lab.columns:
+                            return -1e9
+                        # Proxy score: absolute mean of next-bar returns on labeled rows
+                        close_arr = price_data.loc[_lab.index, "close"].to_numpy()
+                        nxt = np.diff(close_arr, append=close_arr[-1]) / np.maximum(close_arr, 1e-9)
+                        return float(np.nanmean(np.abs(nxt)))
+                    except Exception:
+                        return -1e9
+
+                if bool(tb_config.get("optimize_triple_barrier_params", False)):
+                    pts = tb_config.get("pt_candidates", [0.0015, 0.002, 0.003])
+                    sls = tb_config.get("sl_candidates", [0.001, 0.0015, 0.002])
+                    tbs = tb_config.get("time_barrier_candidates", [15, 30, 60])
+                    mls = tb_config.get("max_lookahead_candidates", [50, 100, 150])
+                    best = (None, -1e18)
+                    for _pt in pts:
+                        for _sl in sls:
+                            for _tb in tbs:
+                                for _ml in mls:
+                                    score = _evaluate_tb_params(_pt, _sl, _tb, _ml)
+                                    if score > best[1]:
+                                        best = (((_pt, _sl, _tb, _ml)), score)
+                    if best[0] is not None:
+                        pt_b, sl_b, tb_b, ml_b = best[0]
+                        self.logger.info(f"Step4 TB param search selected pt={pt_b} sl={sl_b} tb_min={tb_b} max_look={ml_b} (score={best[1]:.6f})")
+                        tb_config = {
+                            **tb_config,
+                            "profit_take_multiplier": pt_b,
+                            "stop_loss_multiplier": sl_b,
+                            "time_barrier_minutes": tb_b,
+                            "max_lookahead": ml_b,
+                        }
                 labeler = OptimizedTripleBarrierLabeling(
                     profit_take_multiplier=tb_config.get("profit_take_multiplier", 0.002),
                     stop_loss_multiplier=tb_config.get("stop_loss_multiplier", 0.001),
@@ -3599,6 +3642,7 @@ async def run_step(
     timeframe: str = "1m",
     exchange: str = "BINANCE",
     force_rerun: bool = False,
+    pipeline_config: dict[str, Any] | None = None,
 ) -> bool:
     """
     Run analyst labeling and feature engineering step using vectorized orchestrator.
@@ -3628,6 +3672,11 @@ async def run_step(
             "data_dir": data_dir,
             "timeframe": timeframe,
         }
+        if pipeline_config:
+            # Shallow-merge selected pipeline keys to make TB config available
+            for k in ("vectorized_labelling_orchestrator",):
+                if k in pipeline_config:
+                    config[k] = pipeline_config[k]
         step = AnalystLabelingFeatureEngineeringStep(config)
         await step.initialize()
 

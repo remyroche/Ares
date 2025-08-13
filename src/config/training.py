@@ -79,6 +79,21 @@ def get_training_config() -> dict[str, Any]:
             "enable_computational_optimization": True,  # Enable computational optimization strategies
             "enable_validators": True,  # Enable step validators
         },
+        # --- Labeling & Feature Pipeline Parameters ---
+        "vectorized_labelling_orchestrator": {
+            # Optimize Triple Barrier parameters before labeling (grid search)
+            "optimize_triple_barrier_params": False,
+            # Default Triple Barrier parameters
+            "profit_take_multiplier": 0.002,
+            "stop_loss_multiplier": 0.001,
+            "time_barrier_minutes": 30,
+            "max_lookahead": 100,
+            # Optional search spaces when optimization is enabled
+            "pt_candidates": [0.0015, 0.002, 0.003],
+            "sl_candidates": [0.001, 0.0015, 0.002],
+            "time_barrier_candidates": [15, 30, 60],
+            "max_lookahead_candidates": [50, 100, 150]
+        },
         # --- Method A: Mixture of Experts Pipeline Controls ---
         "pipeline": {
             "method_a": {

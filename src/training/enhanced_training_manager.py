@@ -1067,6 +1067,7 @@ class EnhancedTrainingManager:
                     step2_success = await step4_analyst_labeling_feature_engineering.run_step(
                         symbol=symbol,
                         data_dir=data_dir,
+                        pipeline_config=self.config,
                     )
                 else:
                     from src.training.steps import step2_market_regime_classification
@@ -1162,6 +1163,7 @@ class EnhancedTrainingManager:
                         await step4_analyst_labeling_feature_engineering.run_step(
                             symbol=symbol,
                             data_dir=data_dir,
+                            pipeline_config=self.config,
                         )
                     )
                 else:

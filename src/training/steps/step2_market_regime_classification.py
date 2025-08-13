@@ -105,8 +105,6 @@ class MarketRegimeClassificationStep:
         data_dir = training_input.get("data_dir", "data/training")
         timeframe = training_input.get("timeframe", "1m")
 
-        # No ML classifier initialization required
-
         # Use unified data loader to get data
         self.logger.info("🔄 Loading data using unified data loader...")
         data_loader = get_unified_data_loader(self.config)
@@ -156,6 +154,7 @@ class MarketRegimeClassificationStep:
             historical_data,
             symbol,
             exchange,
+            training_input=training_input,
         )
 
         # Save regime classification results
@@ -275,6 +274,8 @@ class MarketRegimeClassificationStep:
         data: pd.DataFrame,
         symbol: str,
         exchange: str,
+        *,
+        training_input: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Classify market regimes using simplified EMA/ADX rules on raw OHLCV.
@@ -313,7 +314,135 @@ class MarketRegimeClassificationStep:
                 data = data.sort_values("timestamp").reset_index(drop=True)
 
             df = data.copy()
-            regimes, confidences = classify_regime_series(df)
+
+            # Resolve parameter overrides (training_input > config > defaults)
+            regime_cfg = (self.config or {}).get("regime_classification", {}) if isinstance(self.config, dict) else {}
+            overrides = (training_input or {}).get("regime_params", {}) if isinstance(training_input, dict) else {}
+
+            ema_fast = overrides.get("ema_fast", regime_cfg.get("ema_fast", 21))
+            ema_slow = overrides.get("ema_slow", regime_cfg.get("ema_slow", 55))
+            adx_period = overrides.get("adx_period", regime_cfg.get("adx_period", 14))
+            adx_trend_threshold = overrides.get(
+                "adx_trend_threshold", regime_cfg.get("adx_trend_threshold", 25.0)
+            )
+            adx_sideways_threshold = overrides.get(
+                "adx_sideways_threshold", regime_cfg.get("adx_sideways_threshold", 20.0)
+            )
+            ema_sep_min_ratio = overrides.get(
+                "ema_sep_min_ratio", regime_cfg.get("ema_sep_min_ratio", 0.0)
+            )
+
+            # Optional auto-calibration to hit target SIDEWAYS band
+            target_range = overrides.get(
+                "target_sideways_range", regime_cfg.get("target_sideways_range")
+            )  # e.g., (0.2, 0.4)
+            auto_calibrate = overrides.get(
+                "auto_calibrate_sideways",
+                regime_cfg.get("auto_calibrate_sideways", False),
+            )
+            max_calibration_iters = int(
+                overrides.get(
+                    "max_calibration_iters", regime_cfg.get("max_calibration_iters", 6)
+                )
+            )
+            # Step sizes
+            adx_trend_step = float(
+                overrides.get("adx_trend_step", regime_cfg.get("adx_trend_step", 2.0))
+            )
+            adx_sideways_step = float(
+                overrides.get(
+                    "adx_sideways_step", regime_cfg.get("adx_sideways_step", 1.0)
+                )
+            )
+            ema_sep_step = float(
+                overrides.get("ema_sep_step", regime_cfg.get("ema_sep_step", 0.0005))
+            )
+
+            def classify_and_ratio(
+                fast: int,
+                slow: int,
+                adx_p: int,
+                adx_tr: float,
+                adx_sw: float,
+                ema_sep_min: float,
+            ) -> tuple[list[str], list[float], float]:
+                r, c = classify_regime_series(
+                    df,
+                    ema_fast=fast,
+                    ema_slow=slow,
+                    adx_period=adx_p,
+                    adx_trend_threshold=adx_tr,
+                    adx_sideways_threshold=adx_sw,
+                    ema_sep_min_ratio=ema_sep_min,
+                )
+                if len(r) == 0:
+                    return r, c, 0.0
+                sideways_ratio = float(np.mean(np.array(r, dtype=object) == "SIDEWAYS"))
+                return r, c, sideways_ratio
+
+            regimes, confidences, sideways_ratio = classify_and_ratio(
+                ema_fast,
+                ema_slow,
+                adx_period,
+                adx_trend_threshold,
+                adx_sideways_threshold,
+                ema_sep_min_ratio,
+            )
+
+            calibrated_params = {
+                "ema_fast": ema_fast,
+                "ema_slow": ema_slow,
+                "adx_period": adx_period,
+                "adx_trend_threshold": adx_trend_threshold,
+                "adx_sideways_threshold": adx_sideways_threshold,
+                "ema_sep_min_ratio": ema_sep_min_ratio,
+            }
+
+            if auto_calibrate and target_range and isinstance(target_range, (list, tuple)) and len(target_range) == 2:
+                target_low = float(target_range[0])
+                target_high = float(target_range[1])
+                it = 0
+                while (sideways_ratio < target_low or sideways_ratio > target_high) and it < max_calibration_iters:
+                    # Adjust thresholds to move ratio toward band
+                    if sideways_ratio > target_high:
+                        # Too much SIDEWAYS -> make trend easier
+                        adx_trend_threshold = max(5.0, adx_trend_threshold - adx_trend_step)
+                        adx_sideways_threshold = max(5.0, adx_sideways_threshold - adx_sideways_step)
+                        ema_sep_min_ratio = max(0.0, ema_sep_min_ratio - ema_sep_step)
+                    else:
+                        # Too little SIDEWAYS -> make trend harder / expand sideways
+                        adx_trend_threshold = min(60.0, adx_trend_threshold + adx_trend_step)
+                        adx_sideways_threshold = min(
+                            adx_trend_threshold - 1.0,
+                            adx_sideways_threshold + adx_sideways_step,
+                        )
+                        ema_sep_min_ratio = min(0.02, ema_sep_min_ratio + ema_sep_step)
+
+                    # Enforce relationship
+                    adx_sideways_threshold = min(adx_sideways_threshold, adx_trend_threshold - 1.0)
+
+                    regimes, confidences, sideways_ratio = classify_and_ratio(
+                        ema_fast,
+                        ema_slow,
+                        adx_period,
+                        adx_trend_threshold,
+                        adx_sideways_threshold,
+                        ema_sep_min_ratio,
+                    )
+
+                    it += 1
+
+                calibrated_params = {
+                    "ema_fast": ema_fast,
+                    "ema_slow": ema_slow,
+                    "adx_period": adx_period,
+                    "adx_trend_threshold": adx_trend_threshold,
+                    "adx_sideways_threshold": adx_sideways_threshold,
+                    "ema_sep_min_ratio": ema_sep_min_ratio,
+                    "target_sideways_range": [target_low, target_high],
+                    "achieved_sideways_ratio": sideways_ratio,
+                    "calibration_iters": it,
+                }
 
             # Build results
             from collections import Counter
@@ -329,11 +458,17 @@ class MarketRegimeClassificationStep:
                 "regime_transitions": [],
                 "confidence_scores": confidences,
                 "metadata": {
-                    "classifier_version": "ema_adx_rules_v1",
-                    "classification_method": "EMA21_EMA55_ADX",
-                    "ema_periods": {"fast": 21, "slow": 55},
-                    "adx_thresholds": {"directional": 25, "sideways": 20},
+                    "classifier_version": "ema_adx_rules_v2",
+                    "classification_method": "EMA_ADX_PARAMETERIZED",
+                    "ema_periods": {"fast": ema_fast, "slow": ema_slow},
+                    "adx": {
+                        "period": adx_period,
+                        "trend_threshold": adx_trend_threshold,
+                        "sideways_threshold": adx_sideways_threshold,
+                    },
+                    "ema_sep_min_ratio": ema_sep_min_ratio,
                     "timeframe": "1h",
+                    "calibrated_params": calibrated_params,
                 },
             }
 

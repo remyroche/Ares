@@ -70,7 +70,11 @@ async def run_step(
         def _extract_inputs(x: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             price_cols = [c for c in ["open", "high", "low", "close", "volume"] if c in x.columns]
             price = x[price_cols].copy()
-            vol = price[["volume"]].copy() if "volume" in price.columns else pd.DataFrame({"volume": 1.0}, index=price.index)
+            if "volume" in price.columns:
+                vol = price[["volume"]].copy()
+            else:
+                _logger.warning("Volume data not found. Using a placeholder value of 1.0 for volume. This may affect feature quality.")
+                vol = pd.DataFrame({"volume": 1.0}, index=price.index)
             return price, vol
 
         p_tr, v_tr = _extract_inputs(tr)

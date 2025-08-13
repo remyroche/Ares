@@ -460,13 +460,13 @@ class MetaLabelingSystem:
                 patterns["PASSIVE_ABSORPTION_BID"] = 0
                 patterns["PASSIVE_ABSORPTION_ASK"] = 0
 
-            # 3) STOP_HUNT_* (poke beyond recent extreme and close back)
+            # 3) STOP_HUNT_* (poke beyond prior extreme and close back inside)
             try:
                 M = 15
-                recent_low = float(low.tail(M).min()) if len(low) >= M else float(low.iloc[-1])
-                recent_high = float(high.tail(M).max()) if len(high) >= M else float(high.iloc[-1])
-                broke_low = float(low.iloc[-1]) < recent_low and float(close.iloc[-1]) > recent_low
-                broke_high = float(high.iloc[-1]) > recent_high and float(close.iloc[-1]) < recent_high
+                prior_recent_low = float(low.rolling(M, min_periods=1).min().shift(1).iloc[-1]) if len(low) >= 2 else float(low.iloc[-1])
+                prior_recent_high = float(high.rolling(M, min_periods=1).max().shift(1).iloc[-1]) if len(high) >= 2 else float(high.iloc[-1])
+                broke_low = float(low.iloc[-1]) < prior_recent_low and float(close.iloc[-1]) > prior_recent_low
+                broke_high = float(high.iloc[-1]) > prior_recent_high and float(close.iloc[-1]) < prior_recent_high
                 vol_spike2 = vol_ratio > 2.0
                 patterns["STOP_HUNT_BELOW_LOW"] = 1 if (broke_low and vol_spike2) else 0
                 patterns["STOP_HUNT_ABOVE_HIGH"] = 1 if (broke_high and vol_spike2) else 0
@@ -493,8 +493,9 @@ class MetaLabelingSystem:
                     val_idx = int(np.searchsorted(cdf, 0.15))
                     vah = float(edges[min(vah_idx, bins - 1)])
                     val = float(edges[max(val_idx, 0)])
-                    rejecting_vah = current > vah and float(close.iloc[-1]) < vah
-                    rejecting_val = current < val and float(close.iloc[-1]) > val
+                    # Reject VAH/VAL: intrabar breach and close back inside
+                    rejecting_vah = (float(high.iloc[-1]) > vah) and (float(close.iloc[-1]) < vah)
+                    rejecting_val = (float(low.iloc[-1]) < val) and (float(close.iloc[-1]) > val)
                     patterns["PRICE_REJECTING_VAH"] = 1 if rejecting_vah else 0
                     patterns["PRICE_REJECTING_VAL"] = 1 if rejecting_val else 0
                     # LVN transit: current in low histogram bin region
@@ -524,10 +525,19 @@ class MetaLabelingSystem:
             # 6) MICRO_MOMENTUM_DIVERGENCE
             try:
                 made_higher_high = len(high) >= 10 and float(high.iloc[-1]) > float(high.iloc[-10:-1].max())
-                rsi_short = float(features.get("rsi", 50))  # reuse RSI; for true 5-period RSI, optionally compute separately
-                # Simple divergence proxy: price higher high while RSI lower than its 10-bar max
-                rsi_window_max = float(pd.Series([features.get("rsi", 50)] + [50]).max())  # placeholder safe default
-                patterns["MICRO_MOMENTUM_DIVERGENCE"] = 1 if (made_higher_high and rsi_short < rsi_window_max) else 0
+                # Compute a short RSI window to detect micro divergence
+                delta = close.diff()
+                gain = delta.where(delta > 0, 0.0).rolling(5, min_periods=1).mean()
+                loss = (-delta.where(delta < 0, 0.0)).rolling(5, min_periods=1).mean()
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    rs = gain / loss.replace(0, np.nan)
+                    rsi_short_series = 100 - (100 / (1 + rs))
+                rsi_short_series = rsi_short_series.fillna(50)
+                rsi_short_now = float(rsi_short_series.iloc[-1]) if len(rsi_short_series) else 50.0
+                rsi_window_max = float(
+                    rsi_short_series.rolling(10, min_periods=2).max().shift(1).iloc[-1]
+                ) if len(rsi_short_series) >= 2 else 50.0
+                patterns["MICRO_MOMENTUM_DIVERGENCE"] = 1 if (made_higher_high and rsi_short_now < rsi_window_max) else 0
             except Exception:
                 patterns["MICRO_MOMENTUM_DIVERGENCE"] = 0
 
@@ -653,28 +663,31 @@ class MetaLabelingSystem:
             bb_position = features.get("bb_position", 0.5)
             volume_ratio = features.get("volume_ratio", 1.0)
             momentum = features.get("price_momentum_5", 0)
-            recent_high = features.get("recent_high", data["close"].iloc[-1])
-            recent_low = features.get("recent_low", data["close"].iloc[-1])
-            current_price = data["close"].iloc[-1]
+            current_price = float(data["close"].iloc[-1])
 
-            # Breakout success: price breaks level and continues
+            # Use rolling highs/lows excluding current bar to avoid lookahead
+            rolling_high = data["high"].rolling(20, min_periods=1).max().shift(1)
+            rolling_low = data["low"].rolling(20, min_periods=1).min().shift(1)
+            recent_high = (
+                float(rolling_high.iloc[-1]) if not rolling_high.empty else current_price
+            )
+            recent_low = (
+                float(rolling_low.iloc[-1]) if not rolling_low.empty else current_price
+            )
+
+            # Breakout success: price breaks prior level and continues with momentum and volume
             is_breakout_up = current_price > recent_high and momentum > 0.01
             is_breakout_down = current_price < recent_low and momentum < -0.01
             is_high_volume = volume_ratio > self.volume_threshold
-
             breakout_success = (is_breakout_up or is_breakout_down) and is_high_volume
 
-            # Breakout failure: price breaks level but reverses
-            is_failed_breakout = (bb_position > 0.8 or bb_position < 0.2) and abs(
-                momentum,
-            ) < 0.005
+            # Breakout failure: price pushes to BB extremes but lacks follow-through
+            is_failed_breakout = (bb_position > 0.8 or bb_position < 0.2) and abs(momentum) < 0.005
 
             return {
                 "BREAKOUT_SUCCESS": 1 if breakout_success else 0,
                 "BREAKOUT_FAILURE": 1 if is_failed_breakout else 0,
-                "breakout_confidence": min(volume_ratio / 2, 1.0)
-                if breakout_success
-                else 0,
+                "breakout_confidence": min(volume_ratio / 2, 1.0) if breakout_success else 0,
             }
 
         except Exception as e:
@@ -764,12 +777,12 @@ class MetaLabelingSystem:
 
             # Momentum ignition: momentum indicators breaking out
             rsi = features.get("rsi", 50)
-            macd = features.get("macd", 0)
+            macd_hist = features.get("macd_histogram", 0)
             momentum = features.get("price_momentum_5", 0)
 
             is_momentum_ignition = (
                 (rsi > 60 or rsi < 40)
-                and abs(macd) > 0.001
+                and abs(macd_hist) > 0.001
                 and abs(momentum) > self.momentum_threshold
             )
             patterns["MOMENTUM_IGNITION"] = 1 if is_momentum_ignition else 0
@@ -917,38 +930,55 @@ class MetaLabelingSystem:
         try:
             signals = {}
 
-            # VWAP reversion entry
-            features = {}
-            vwap = float(data["close"].iloc[-1])
+            # VWAP reversion entry (use 20-bar rolling VWAP)
+            window = min(20, len(data))
             current_price = float(data["close"].iloc[-1])
-            price_vwap_ratio = 1.0
-
+            if window >= 1 and "volume" in volume_data.columns:
+                pv = float((data["close"].tail(window) * volume_data["volume"].tail(window)).sum())
+                v = float(volume_data["volume"].tail(window).sum())
+                vwap = float(pv / v) if v > 0 else current_price
+            else:
+                vwap = current_price
+            price_vwap_ratio = current_price / vwap if vwap != 0 else 1.0
             is_vwap_reversion = abs(price_vwap_ratio - 1.0) < 0.01
             signals["VWAP_REVERSION_ENTRY"] = 1 if is_vwap_reversion else 0
 
-            # Market order now: aggressive momentum
-            momentum = 0.0
-            volume_spike = 1.0
-
+            # Market order now: aggressive momentum with volume spike
+            momentum = float(
+                data["close"].pct_change().rolling(3, min_periods=1).sum().iloc[-1]
+            ) if len(data) else 0.0
+            volume_spike = float(
+                volume_data["volume"].iloc[-1] / volume_data["volume"].rolling(10, min_periods=1).mean().iloc[-1]
+            ) if (len(volume_data) and "volume" in volume_data.columns) else 1.0
             is_market_order = (
                 abs(momentum) > self.momentum_threshold * 2
                 and volume_spike > self.volume_threshold
             )
             signals["MARKET_ORDER_NOW"] = 1 if is_market_order else 0
 
-            # Chase micro breakout
-            recent_high = current_price
-            is_micro_breakout = False
+            # Chase micro breakout: break last 2 bars' high/low
+            prev_high = float(data["high"].rolling(3, min_periods=2).max().shift(1).iloc[-1]) if len(data) >= 2 else current_price
+            prev_low = float(data["low"].rolling(3, min_periods=2).min().shift(1).iloc[-1]) if len(data) >= 2 else current_price
+            is_micro_breakout = (current_price > prev_high) or (current_price < prev_low)
             signals["CHASE_MICRO_BREAKOUT"] = 1 if is_micro_breakout else 0
 
-            # Order book imbalance flip
-            order_imbalance = 0.0
+            # Order book imbalance flip (requires order flow)
             is_imbalance_flip = False
+            if order_flow_data is not None and {"bid_volume", "ask_volume"}.issubset(order_flow_data.columns):
+                try:
+                    last_b = float(order_flow_data["bid_volume"].iloc[-1])
+                    last_a = float(order_flow_data["ask_volume"].iloc[-1])
+                    prev_b = float(order_flow_data["bid_volume"].iloc[-2]) if len(order_flow_data) >= 2 else last_b
+                    prev_a = float(order_flow_data["ask_volume"].iloc[-2]) if len(order_flow_data) >= 2 else last_a
+                    prev_imb = (prev_b - prev_a) / max(1e-12, (prev_b + prev_a))
+                    last_imb = (last_b - last_a) / max(1e-12, (last_b + last_a))
+                    is_imbalance_flip = (prev_imb > 0 and last_imb < 0) or (prev_imb < 0 and last_imb > 0)
+                except Exception:
+                    is_imbalance_flip = False
             signals["ORDERBOOK_IMBALANCE_FLIP"] = 1 if is_imbalance_flip else 0
 
             # Aggressive taker spike
-            volume_ratio = features.get("volume_ratio", 1.0)
-            is_taker_spike = volume_ratio > self.volume_threshold * 2
+            is_taker_spike = volume_spike > (self.volume_threshold * 2)
             signals["AGGRESSIVE_TAKER_SPIKE"] = 1 if is_taker_spike else 0
 
             return signals

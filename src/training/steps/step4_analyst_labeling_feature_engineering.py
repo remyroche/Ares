@@ -704,6 +704,61 @@ class AnalystLabelingFeatureEngineeringStep:
             sup_width_map = {c["center"]: abs(c.get("width", 0.0)) for c in sup}
             res_width_map = {c["center"]: abs(c.get("width", 0.0)) for c in res}
 
+            # Compute extended band widths per level using strength and nearby weaker/smaller levels
+            def _compute_extended_band_map(levels: np.ndarray, score_map: dict[float, float], width_map: dict[float, float]) -> dict[float, float]:
+                if levels.size == 0:
+                    return {}
+                # Normalize strengths for scaling (avoid reliance on absolute score scale)
+                scores = np.array([score_map.get(float(l), 0.0) for l in levels], dtype=float)
+                s_ref = np.nanpercentile(scores[scores > 0], 95) if np.any(scores > 0) else 1.0
+                s_ref = s_ref if np.isfinite(s_ref) and s_ref > 0 else 1.0
+                gamma = 1.0  # scaling factor for strength influence
+                ext_map: dict[float, float] = {}
+                # Precompute initial half-widths per level
+                half_map: dict[float, float] = {}
+                for l in levels:
+                    w = float(width_map.get(float(l), 0.0))
+                    s = float(score_map.get(float(l), 0.0))
+                    norm = max(0.0, min(1.0, s / s_ref))
+                    half_map[float(l)] = 0.5 * w * (1.0 + gamma * norm)
+
+                # Extend each level's band to include close, weaker, smaller neighbors
+                for l in levels:
+                    lc = float(l)
+                    base_half = half_map.get(lc, 0.0)
+                    low = lc - base_half
+                    high = lc + base_half
+                    base_w = float(width_map.get(lc, 0.0))
+                    base_s = float(score_map.get(lc, 0.0))
+                    changed = True
+                    visited: set[float] = set([lc])
+                    while changed:
+                        changed = False
+                        for c in levels:
+                            cc = float(c)
+                            if cc in visited:
+                                continue
+                            cw = float(width_map.get(cc, 0.0))
+                            cs = float(score_map.get(cc, 0.0))
+                            # Only extend to weaker (<=) and smaller (<=) levels
+                            if cs > base_s or cw > base_w:
+                                continue
+                            ch = half_map.get(cc, 0.0)
+                            # Overlap or near-overlap criteria based on widths (no fixed % thresholds)
+                            c_low, c_high = cc - ch, cc + ch
+                            # If intervals overlap or touch within a gap <= min(base_half, ch), merge
+                            gap = max(0.0, max(c_low - high, low - c_high))
+                            if gap <= max(1e-12, min(base_half, ch)):
+                                low = min(low, c_low)
+                                high = max(high, c_high)
+                                visited.add(cc)
+                                changed = True
+                    ext_map[lc] = max(0.0, high - low)  # full width
+                return ext_map
+
+            sup_ext_width_map = _compute_extended_band_map(sup_levels, sup_score_map, sup_width_map)
+            res_ext_width_map = _compute_extended_band_map(res_levels, res_score_map, res_width_map)
+
             # For each bar, nearest support below and resistance above
             sup_arr = np.full(len(df), np.nan)
             res_arr = np.full(len(df), np.nan)
@@ -718,16 +773,18 @@ class AnalystLabelingFeatureEngineeringStep:
                         sel = below[np.argmin(cp - below)]
                         sup_arr[i] = sel
                         sup_score_arr[i] = float(sup_score_map.get(sel, 0.0))
-                        width = float(sup_width_map.get(sel, 0.0))
-                        sup_band_pct_arr[i] = float(width / max(1e-8, cp))
+                        base_w = float(sup_width_map.get(sel, 0.0))
+                        ext_w = float(sup_ext_width_map.get(sel, base_w))
+                        sup_band_pct_arr[i] = float(ext_w / max(1e-8, cp))
                 if res_levels.size:
                     above = res_levels[res_levels >= cp]
                     if above.size:
                         sel = above[np.argmin(above - cp)]
                         res_arr[i] = sel
                         res_score_arr[i] = float(res_score_map.get(sel, 0.0))
-                        width = float(res_width_map.get(sel, 0.0))
-                        res_band_pct_arr[i] = float(width / max(1e-8, cp))
+                        base_w = float(res_width_map.get(sel, 0.0))
+                        ext_w = float(res_ext_width_map.get(sel, base_w))
+                        res_band_pct_arr[i] = float(ext_w / max(1e-8, cp))
 
             sup_series = pd.Series(sup_arr, index=df.index)
             res_series = pd.Series(res_arr, index=df.index)

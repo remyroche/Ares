@@ -292,7 +292,7 @@ class AresLauncher:
             if target_file.exists():
                 target_file.unlink()
                 self.logger.info(f"🗑️  Cleared checkpoint: {target_file}")
-        except Exception as e:
+        except (IOError, OSError) as e:
             self.logger.warning(f"Failed to clear checkpoint: {e}")
 
     def _force_fresh_start_from_step(self, orchestrator, start_step: str) -> None:

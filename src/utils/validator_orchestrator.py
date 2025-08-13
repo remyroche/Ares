@@ -216,7 +216,8 @@ class ValidatorOrchestrator:
 
         module_path = f"src.training.steps.{validator_module_name}"
         try:
-            self.logger.debug(f"Importing validator module: {module_path}")
+            # Import the validator module
+            module_path = f"src.training.steps.{validator_module_name}"
             validator_module = importlib.import_module(module_path)
             # Cache module for potential reuse
             self.validators[step_name] = validator_module

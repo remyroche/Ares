@@ -16,7 +16,6 @@ from src.utils.warning_symbols import (
     error,
     failed,
 )
-from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 
 
@@ -708,14 +707,6 @@ class AnalystSpecialistTrainingStep:
             except Exception as pe:
                 self.logger.warning(f"Persisting per-regime models skipped: {pe}")
 
-<<<<<<< HEAD
-            # Save training summary JSON
-            try:
-                summary_file = f"{data_dir}/{exchange}_{symbol}_analyst_training_summary.json"
-                summary_data = {
-                    "regimes_trained": list(training_results.keys()),
-                    "models_per_regime": {rn: list(models.keys()) for rn, models in training_results.items()},
-=======
             # Train label expert models for Analyst (5m/15m/30m)
             try:
                 label_expert_dir = await self._train_label_experts(
@@ -777,11 +768,12 @@ class AnalystSpecialistTrainingStep:
                     "total_models": sum(
                         len(models) for models in training_results.values()
                     ),
->>>>>>> 9e66259 (Add label expert training and dynamic model selection for analysts)
                     "training_date": datetime.now().isoformat(),
                     "symbol": symbol,
                     "exchange": exchange,
                 }
+            }
+            try:
                 with open(summary_file, "w") as f:
                     json.dump(summary_data, f, indent=2)
                 self.logger.info(f"✅ Saved training summary to {summary_file}")
@@ -1894,7 +1886,11 @@ class AnalystSpecialistTrainingStep:
 
         Returns the directory where experts are saved.
         """
-        from src.config.label_model_mapping import select_model_for_label_timeframe
+        try:
+            from src.config.label_model_mapping import select_model_for_label_timeframe
+        except ImportError:
+            self.logger.warning("label_model_mapping not available, skipping label expert training")
+            return ""
         import pickle
         import os
         from sklearn.model_selection import train_test_split

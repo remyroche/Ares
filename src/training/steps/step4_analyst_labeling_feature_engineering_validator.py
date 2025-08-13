@@ -20,7 +20,7 @@ from src.config import CONFIG
 
 
 class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
-    """Validator for Step 4: Analyst Labeling and Feature Engineering."""
+    """Validator for analyst labeling and feature engineering (used for Step 2 and Step 3)."""
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__("step4_analyst_labeling_feature_engineering", config)
@@ -45,9 +45,8 @@ class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
         Returns:
             bool: True if validation passed, False otherwise
         """
-        self.logger.info(
-            "🔍 Validating analyst labeling and feature engineering step..."
-        )
+        self.logger.info("🔍 Validating labeling + feature engineering outputs (Steps 2/3)...")
+        print("Validator ▶ Step2/3 start")
 
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
@@ -68,9 +67,7 @@ class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
             return False
 
         # 2. Validate feature engineering outputs (CRITICAL - blocks process)
-        features_passed = self._validate_feature_engineering_outputs(
-            symbol, exchange, data_dir
-        )
+        features_passed = self._validate_feature_engineering_outputs(symbol, exchange, data_dir)
         if not features_passed:
             self.logger.error(
                 "❌ Feature engineering outputs validation failed - stopping process"
@@ -139,11 +136,11 @@ class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
             bool: True if outputs are valid
         """
         try:
-            # Expected feature engineering output files
+            # Expected feature engineering output files (Parquet preferred)
             expected_files = [
-                f"{data_dir}/{exchange}_{symbol}_features_train.pkl",
-                f"{data_dir}/{exchange}_{symbol}_features_validation.pkl",
-                f"{data_dir}/{exchange}_{symbol}_features_test.pkl",
+                f"{data_dir}/{exchange}_{symbol}_features_train.parquet",
+                f"{data_dir}/{exchange}_{symbol}_features_validation.parquet",
+                f"{data_dir}/{exchange}_{symbol}_features_test.parquet",
             ]
 
             missing_files = []
@@ -163,11 +160,7 @@ class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
             # Validate feature data quality
             for file_path in expected_files:
                 try:
-                    with open(file_path, "rb") as f:
-                        feature_data = pickle.load(f)
-
-                    if not isinstance(feature_data, pd.DataFrame):
-                        feature_data = pd.DataFrame(feature_data)
+                    feature_data = pd.read_parquet(file_path)
 
                     # Validate feature data quality
                     quality_passed, quality_metrics = self.validate_data_quality(
@@ -186,6 +179,7 @@ class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
                     return False
 
             self.logger.info("✅ Feature engineering outputs validation passed")
+            print("Validator ▶ Step3 features ok")
             return True
 
         except Exception as e:
@@ -211,9 +205,9 @@ class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
         try:
             # Load labeled data files
             labeled_files = [
-                f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl",
-                f"{data_dir}/{exchange}_{symbol}_labeled_validation.pkl",
-                f"{data_dir}/{exchange}_{symbol}_labeled_test.pkl",
+                f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet",
+                f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
+                f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet",
             ]
 
             for file_path in labeled_files:
@@ -224,11 +218,7 @@ class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
                     continue
 
                 try:
-                    with open(file_path, "rb") as f:
-                        labeled_data = pickle.load(f)
-
-                    if not isinstance(labeled_data, pd.DataFrame):
-                        labeled_data = pd.DataFrame(labeled_data)
+                    labeled_data = pd.read_parquet(file_path)
 
                     # Check for label column
                     if "label" not in labeled_data.columns:
@@ -301,6 +291,7 @@ class Step4AnalystLabelingFeatureEngineeringValidator(BaseValidator):
                     return False
 
             self.logger.info("✅ Labeling quality validation passed")
+            print("Validator ▶ Step2 labels ok")
             return True
 
         except Exception as e:

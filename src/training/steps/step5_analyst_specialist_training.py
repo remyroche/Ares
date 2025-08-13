@@ -786,7 +786,7 @@ class AnalystSpecialistTrainingStep:
                 "duration": 0.0,
                 "status": "SUCCESS",
                 "dispatcher": dispatcher_manifest if enable_experts else None,
-                "label_experts_dir": label_expert_dir if 'label_expert_dir' in locals() else None,
+                "label_experts_dir": label_expert_dir,
             }
 
         except Exception as e:

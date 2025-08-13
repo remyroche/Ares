@@ -214,7 +214,7 @@ class LiveRegimeCalculator:
         # Momentum
         features["price_momentum_5"] = float(close.pct_change(5).iloc[-1]) if len(close) >= 5 else 0.0
         features["price_momentum_10"] = float(close.pct_change(10).iloc[-1]) if len(close) >= 10 else 0.0
-        features["price_acceleration"] = float(close.pct_change(5).diff().iloc[-1]) if len(close) >= 6 else 0.0
+        features["price_acceleration"] = float(close.pct_change(5).diff().iloc[-1]) if len(close) >= 7 else 0.0
 
         # Simple S/R proxy and distances
         high_roll = high.rolling(max(5, self.sr_lookback), min_periods=5).max().shift(1)
@@ -352,7 +352,7 @@ class LiveRegimeCalculator:
             return {"features": feats}
 
         # Flatten key conveniences
-        summary: RegimeSummary = flags.get("summary")  # type: ignore[assignment]
+        summary: RegimeSummary | None = flags.get("summary")
         out: dict[str, Any] = {
             "features": feats,
             "flags": flags,

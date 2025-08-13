@@ -156,15 +156,9 @@ class ValidatorOrchestrator:
                     "step5_analyst_specialist_training_validator"
                 ),
                 "step6_analyst_enhancement": "step6_analyst_enhancement_validator",
-                "step7_analyst_ensemble_creation": (
-                    "step7_analyst_ensemble_creation_validator"
-                ),
                 "step8_tactician_labeling": "step8_tactician_labeling_validator",
                 "step9_tactician_specialist_training": (
                     "step9_tactician_specialist_training_validator"
-                ),
-                "step10_tactician_ensemble_creation": (
-                    "step10_tactician_ensemble_creation_validator"
                 ),
                 "step11_confidence_calibration": (
                     "step11_confidence_calibration_validator"

@@ -502,7 +502,7 @@ class EnhancedTrainingManager:
                 "step7_analyst_ensemble_creation": 12,
                 "step8_tactician_labeling": 5,
                 "step9_tactician_specialist_training": 10,
-                "step10_tactician_ensemble_creation": 12,
+                
                 "step11_confidence_calibration": 3,
                 "step12_final_parameters_optimization": 15,
                 "step13_walk_forward_validation": 8,
@@ -521,7 +521,7 @@ class EnhancedTrainingManager:
                 "step7_analyst_ensemble_creation": 35,
                 "step8_tactician_labeling": 15,
                 "step9_tactician_specialist_training": 30,
-                "step10_tactician_ensemble_creation": 35,
+                
                 "step11_confidence_calibration": 10,
                 "step12_final_parameters_optimization": 240,
                 "step13_walk_forward_validation": 60,
@@ -1257,37 +1257,7 @@ class EnhancedTrainingManager:
                     "step6_analyst_enhancement", training_input, pipeline_state
                 )
 
-            # Step 7: Analyst Ensemble Creation
-            step_start = time.time()
-            self.logger.info("🎲 STEP 7: Analyst Ensemble Creation...")
-
-            from src.training.steps import step7_analyst_ensemble_creation
-
-            step7_success = await step7_analyst_ensemble_creation.run_step(
-                symbol=symbol,
-                data_dir=data_dir,
-                timeframe=timeframe,
-                exchange=exchange,
-            )
-
-            if not step7_success:
-                self.logger.error("❌ Step 7: Analyst Ensemble Creation failed")
-                return False
-
-            self.logger.info(
-                "✅ Step 7: Analyst Ensemble Creation completed successfully"
-            )
-            self.logger.info(
-                "   ✅ Step 7: Analyst Ensemble Creation completed successfully"
-            )
-
-            # Run validator for Step 7
-            await self._run_step_validator(
-                "step7_analyst_ensemble_creation", training_input, pipeline_state
-            )
-
-            if not step7_success:
-                raise RuntimeError("Step 7: Analyst Ensemble Creation failed")
+            # Step 7: (Obsolete) Analyst Ensemble Creation skipped
 
             # Step 8: Tactician Labeling
             with self._timed_step("Step 8: Tactician Labeling", step_times):
@@ -1423,24 +1393,7 @@ class EnhancedTrainingManager:
                     pipeline_state,
                 )
 
-            # Step 10: Tactician Ensemble Creation
-            with self._timed_step("Step 10: Tactician Ensemble Creation", step_times):
-                self.logger.info("🎲 STEP 10: Tactician Ensemble Creation...")
-                from src.training.steps import step10_tactician_ensemble_creation
-
-                step10_success = await step10_tactician_ensemble_creation.run_step(
-                    symbol=symbol,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    exchange=exchange,
-                )
-                if not step10_success:
-                    return False
-
-                # Run validator for Step 10
-                await self._run_step_validator(
-                    "step10_tactician_ensemble_creation", training_input, pipeline_state
-                )
+            # Step 10: (Obsolete) Tactician Ensemble Creation skipped
 
             # Step 11: Confidence Calibration
             with self._timed_step("Step 11: Confidence Calibration", step_times):

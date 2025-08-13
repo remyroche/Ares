@@ -47,8 +47,10 @@ def compute_ema_adx_features(
     Expects columns: 'open','high','low','close','volume'.
     """
     out = df.copy()
-    out[f"ema_{ema_fast}"] = out["close"].ewm(span=ema_fast, adjust=False).mean()
-    out[f"ema_{ema_slow}"] = out["close"].ewm(span=ema_slow, adjust=False).mean()
+    fast_col = f"ema_{ema_fast}"
+    slow_col = f"ema_{ema_slow}"
+    out[fast_col] = out["close"].ewm(span=ema_fast, adjust=False).mean()
+    out[slow_col] = out["close"].ewm(span=ema_slow, adjust=False).mean()
     out["adx"] = compute_adx(out, period=adx_period)
     return out
 
@@ -82,17 +84,22 @@ def classify_regime_series(
         adx_period=adx_period,
     )
 
+    fast_col = f"ema_{ema_fast}"
+    slow_col = f"ema_{ema_slow}"
+
     # Normalized EMA separation relative to a smoothed price level
-    ema_sep = (feats[f"ema_{ema_fast}"] - feats[f"ema_{ema_slow}"]).abs()
-    ema_sep_norm = (ema_sep / feats["close"].rolling(max(ema_slow, 2)).mean()).fillna(0.0)
+    ema_sep = (feats[fast_col] - feats[slow_col]).abs()
+    ema_sep_norm = (
+        ema_sep / feats["close"].rolling(max(ema_slow, 2)).mean()
+    ).fillna(0.0)
 
     # Trend condition with tunable thresholds
     meets_adx = feats["adx"] >= adx_trend_threshold
     meets_sep = ema_sep_norm >= max(ema_sep_min_ratio, 0.0)
     trend_condition = meets_adx & meets_sep
 
-    bull = (feats[f"ema_{ema_fast}"] > feats[f"ema_{ema_slow}"]) & trend_condition
-    bear = (feats[f"ema_{ema_fast}"] < feats[f"ema_{ema_slow}"]) & trend_condition
+    bull = (feats[fast_col] > feats[slow_col]) & trend_condition
+    bear = (feats[fast_col] < feats[slow_col]) & trend_condition
 
     # Explicit sideways if ADX is below the sideways threshold
     forced_sideways = feats["adx"] <= adx_sideways_threshold

@@ -1151,9 +1151,33 @@ class MetaLabelingSystem:
                 },
             )
 
-            self.logger.info(
-                f"Generated {tactician_labels.get('signal_count', 0)} tactician labels for {timeframe}",
-            )
+            # Single consolidated log with compact summaries for all tactician labels
+            try:
+                summaries: dict[str, dict[str, int | float | str]] = {}
+                for k, v in tactician_labels.items():
+                    if k in ("timeframe", "timestamp", "features_used", "signal_count"):
+                        continue
+                    try:
+                        if isinstance(v, (np.ndarray, pd.Series)):
+                            arr = v if isinstance(v, np.ndarray) else v.to_numpy()
+                            summaries[k] = {
+                                "nonzero": int(np.count_nonzero(arr)),
+                                "len": int(arr.size),
+                            }
+                        elif isinstance(v, (int, float)):
+                            summaries[k] = {"value": float(v)}
+                        else:
+                            summaries[k] = {"type": type(v).__name__}
+                    except Exception:
+                        summaries[k] = {"summary": "unavailable"}
+                self.logger.info({
+                    "msg": f"Tactician labels summary for {timeframe}",
+                    "timeframe": timeframe,
+                    "signal_count": tactician_labels.get("signal_count", 0),
+                    "labels": summaries,
+                })
+            except Exception as e:
+                self.logger.warning(f"Failed to log tactician label summary: {e}")
             return tactician_labels
 
         except Exception as e:

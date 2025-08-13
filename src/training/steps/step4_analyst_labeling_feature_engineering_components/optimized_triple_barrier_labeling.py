@@ -191,6 +191,11 @@ class OptimizedTripleBarrierLabeling:
         self.logger.info(
             f"   Filtering ratio: {hold_samples/original_count:.1%} HOLD samples removed"
         )
+        if self.binary_classification:
+            self.logger.info(
+                "   Reason: binary_classification=True. HOLDs occur when neither profit-take nor stop-loss was hit before the time barrier;"
+                " removing them balances the dataset for BUY vs SELL classification."
+            )
 
         # Diagnostics: distribution and basic directional alignment with next-bar return
         distribution = dict(pd.Series(labeled_data["label"]).value_counts())
@@ -230,6 +235,11 @@ class OptimizedTripleBarrierLabeling:
                 else None,
                 "overall_nextbar_agree": round(overall_agree, 4),
             },
+        )
+        self.logger.info(
+            "Diagnostics meaning: 'distribution' is BUY/SELL counts after HOLD removal;"
+            " '*_nextbar_agree' is the fraction of signals whose direction matches the immediate next-bar return;"
+            " 'overall' aggregates both sides."
         )
         return labeled_data
 

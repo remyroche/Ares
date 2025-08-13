@@ -293,12 +293,27 @@ class SRBreakoutPredictor:
                 confidence,
             )
 
+            # Annotate near-level proximity based on configured threshold
+            try:
+                prox = self.sr_proximity_threshold
+                ns = float(sr_context.get("nearest_support", current_price) or current_price)
+                nr = float(sr_context.get("nearest_resistance", current_price) or current_price)
+                near_support = abs(current_price - ns) / max(current_price, 1e-9) <= prox
+                near_resistance = abs(nr - current_price) / max(current_price, 1e-9) <= prox
+                is_near_level = bool(near_support or near_resistance)
+            except (AttributeError, ValueError, TypeError):
+                is_near_level = False
+
+            # Enrich sr_context
+            sr_context_enriched = dict(sr_context or {})
+            sr_context_enriched["is_near_level"] = is_near_level
+
             return {
                 "breakout_probability": breakout_prob,
                 "bounce_probability": bounce_prob,
                 "confidence": confidence,
                 "recommendation": recommendation,
-                "sr_context": sr_context,
+                "sr_context": sr_context_enriched,
                 "predictions": predictions,
                 "timestamp": datetime.now(),
             }

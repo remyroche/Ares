@@ -84,7 +84,19 @@ class DecisionPolicy:
             risk_score = max(market_risk, strategist_risk)
 
             # Decision gates (only confidence product + positive size)
+            # Standard SR/tactics gating layered on top of confidence product
+            sr_reco = str(sr.get("recommendation", "")).upper()
+            sr_strength = float(sr.get("confidence", 0.0) or 0.0)
+            near_sr = bool(sr.get("sr_context", {}).get("is_near_level", False))
+            min_sr_strength = float(self.config.get("tactics_orchestrator", {}).get("min_sr_strength", 0.6))
+
             approved = (confidence_product > self.min_conf_product) and (final_size > 0)
+            if near_sr and sr_strength < min_sr_strength:
+                approved = False
+
+            # Require SR recommendation alignment when near SR
+            if near_sr and approved and sr_reco not in ("BREAKOUT_LIKELY", "BOUNCE_LIKELY"):
+                approved = False
 
             action = (
                 ("OPEN_LONG" if target_direction == "long" else "OPEN_SHORT")
@@ -103,6 +115,10 @@ class DecisionPolicy:
                     "confidence_product": confidence_product,
                     "directional_confidence": directional_conf,
                     "sr_breakout_strength": sr_score,
+                    "sr_recommendation": sr_reco,
+                    "sr_confidence": sr_strength,
+                    "near_sr": near_sr,
+                    "min_sr_strength": min_sr_strength,
                     "risk_score": risk_score,
                     "final_position_size": final_size,
                     "recommended_leverage": leverage_val,

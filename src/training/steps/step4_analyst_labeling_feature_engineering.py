@@ -928,12 +928,31 @@ class AnalystLabelingFeatureEngineeringStep:
                 self.logger.info(
                     f"SR-event labeling diagnostics: touches={int(np.sum(touch_sup) + np.sum(touch_res))}, ambiguous={ambiguous_count}"
                 )
+                # Additional diagnostics for ambiguous cases and touch density
+                total_bars = n
+                touch_total = int(np.sum(touch_sup) + np.sum(touch_res))
+                touch_rate = (touch_total / max(1, total_bars))
+                sup_touch = int(np.sum(touch_sup))
+                res_touch = int(np.sum(touch_res))
+                self.logger.info(
+                    f"SR-event details: touch_rate={touch_rate:.4f} (sup={sup_touch}, res={res_touch}), "
+                    f"min_hist_touches={min_hist_touches}, dedup_window_bars={dedup_window_bars}, horizon={horizon}"
+                )
+                if touch_rate > 0.05:
+                    self.logger.info(
+                        "High touch density detected (>5%). Common causes: tight touch tolerance, narrow band widths, or prolonged consolidation."
+                    )
+                if ambiguous_count > 0:
+                    self.logger.info(
+                        f"SR-event ambiguous cases likely due to simultaneous away+breakout signals within horizon; "
+                        f"consider increasing horizon or tightening bounce/breakout thresholds."
+                    )
             except Exception:
                 pass
-
-            df["sr_breakout_score"] = pd.Series(breakout_score, index=df.index)
-            df["sr_bounce_score"] = pd.Series(bounce_score, index=df.index)
-            return pd.Series(labels, index=df.index, dtype=int)
+ 
+             df["sr_breakout_score"] = pd.Series(breakout_score, index=df.index)
+             df["sr_bounce_score"] = pd.Series(bounce_score, index=df.index)
+             return pd.Series(labels, index=df.index, dtype=int)
         except Exception:
             return pd.Series(0, index=df.index, dtype=int)
 
@@ -1376,6 +1395,32 @@ class AnalystLabelingFeatureEngineeringStep:
             if inserted_rows > 0:
                 self.logger.warning(f"Time index had gaps; inserted {inserted_rows} missing rows during reindex")
 
+            # Skip edge days with excessive missing data (>1%) on first/second or last/second-last day
+            try:
+                if isinstance(price_data.index, pd.DatetimeIndex) and not price_data.empty:
+                    # Compute missing fraction per day based on NaNs in a key column (e.g., 'close') after reindex
+                    key_col = "close" if "close" in price_data.columns else price_data.columns[0]
+                    day_key = price_data.index.to_series().dt.floor("D")
+                    expected_per_day = 24 * 60  # approximation; acceptable for skip heuristic
+                    present_per_day = (~price_data[key_col].isna()).groupby(day_key).sum().sort_index()
+                    missing_pct_by_day = 1.0 - (present_per_day / max(1, expected_per_day))
+                    if len(missing_pct_by_day) >= 2:
+                        day_index = missing_pct_by_day.index
+                        edge_days = [day_index.min(), (day_index.sort_values()[1] if len(day_index) > 1 else None), day_index.max(), (day_index.sort_values()[-2] if len(day_index) > 1 else None)]
+                        edge_days = [d for d in edge_days if d is not None]
+                        excessive_edges = [d for d in edge_days if missing_pct_by_day.get(d, 0.0) > 0.01]
+                        if excessive_edges:
+                            before_rows = len(price_data)
+                            mask_keep = ~price_data.index.floor("D").isin(excessive_edges)
+                            price_data = price_data.loc[mask_keep]
+                            after_rows = len(price_data)
+                            self.logger.warning(
+                                f"Edge-day skip: removed {len(excessive_edges)} day(s) with >1% missing among first/second/last/prev-last; "
+                                f"days={[str(d.date()) for d in excessive_edges]} | rows {before_rows}->{after_rows}"
+                            )
+            except Exception as _ed:
+                self.logger.warning(f"Edge-day skip heuristic failed (non-fatal): {_ed}")
+
             # Dual-pipeline feature engineering
             self.logger.info("🔀 Building Pipeline A (Stationary) and Pipeline B (OHLCV->Stationary)...")
             from src.utils.logger import heartbeat
@@ -1484,6 +1529,28 @@ class AnalystLabelingFeatureEngineeringStep:
                             pass
                     self.logger.info(f"Step4: merged explicit meta-labels: {list(explicit_meta.keys())}")
 
+                # Also generate additional analyst meta-labels for 15m and 5m timeframes
+                try:
+                    extra_tfs = ["15m", "5m"]
+                    extra_explicit = {}
+                    for tf in extra_tfs:
+                        lab = await vafe._generate_explicit_meta_labels_vectorized(
+                            price_data,
+                            price_data[["volume"]] if "volume" in price_data.columns else pd.DataFrame({"volume": pd.Series(1.0, index=price_data.index)}),
+                            timeframe=tf,
+                        )
+                        if lab:
+                            extra_explicit[tf] = list(lab.keys())
+                            for name, arr in lab.items():
+                                try:
+                                    combined_features[name] = pd.Series(arr, index=price_data.index, name=name)
+                                except Exception:
+                                    continue
+                    if extra_explicit:
+                        self.logger.info(f"Step4: merged extra analyst meta-labels: {extra_explicit}")
+                except Exception as _ee:
+                    self.logger.warning(f"Step4: extra analyst meta-label generation skipped: {_ee}")
+
                 # Surface tactician meta labels as features (only aligned series/arrays; skip scalars to avoid constant features)
                 try:
                     meta_sys = MetaLabelingSystem(self.config)
@@ -1502,6 +1569,12 @@ class AnalystLabelingFeatureEngineeringStep:
                             # Skip scalars and mismatched shapes
                         except Exception:
                             continue
+                    # Log individual tactician label entries (names only to avoid huge logs)
+                    try:
+                        keys_to_log = [k for k, v in tact_labels.items() if not isinstance(v, (str, int, float))]
+                        self.logger.info(f"Tactician labels materialized on 1m: count={len(keys_to_log)} | names={keys_to_log}")
+                    except Exception:
+                        pass
                 except Exception as _et:
                     self.logger.warning(f"Step4: tactician meta label surfacing skipped: {_et}")
             except Exception as _e:
@@ -1573,7 +1646,7 @@ class AnalystLabelingFeatureEngineeringStep:
                 leak_cols = [c for c in labeled_data.columns if _is_label_like(c)]
                 if leak_cols:
                     labeled_data = labeled_data.drop(columns=leak_cols, errors="ignore")
-                    self.logger.warning(f"🚩 Removed {len(leak_cols)} label-like columns to prevent leakage: {leak_cols[:50]}{' ...' if len(leak_cols)>50 else ''}")
+                    self.logger.info(f"🚩 Removed {len(leak_cols)} label-like columns to prevent leakage: {leak_cols[:50]}{' ...' if len(leak_cols)>50 else ''}")
             except Exception as e:
                 self.logger.error(f"Triple barrier labeling failed: {e}")
                 return {
@@ -1601,7 +1674,7 @@ class AnalystLabelingFeatureEngineeringStep:
             leak_cols = [c for c in labeled_data.columns if _is_label_like(c)]
             if leak_cols:
                 labeled_data = labeled_data.drop(columns=leak_cols, errors="ignore")
-                self.logger.warning(f"🚩 Removed {len(leak_cols)} label-like columns to prevent leakage: {leak_cols[:50]}{' ...' if len(leak_cols)>50 else ''}")
+                self.logger.info(f"🚩 Removed {len(leak_cols)} label-like columns to prevent leakage: {leak_cols[:50]}{' ...' if len(leak_cols)>50 else ''}")
             # Monitor state after leakage filter
             try:
                 self.logger.info(

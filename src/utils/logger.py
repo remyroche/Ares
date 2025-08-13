@@ -25,6 +25,63 @@ from .warning_symbols import (
 )
 
 
+class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
+    """Filter to suppress noisy TensorFlow TPU client fallback warning.
+
+    Suppresses messages like:
+    "Falling back to TensorFlow client; we recommended you install the Cloud TPU client directly with pip install cloud-tpu-client."
+    """
+
+    TARGET_SUBSTRING = (
+        "Falling back to TensorFlow client; we recommended you install the Cloud TPU client"
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:  # type: ignore[override]
+        try:
+            if record and isinstance(record.msg, str):
+                msg_text = record.getMessage()
+                if record.name.startswith("tensorflow") and self.TARGET_SUBSTRING in msg_text:
+                    return False
+        except Exception:
+            # On any failure, do not drop the log
+            return True
+        return True
+
+
+def _configure_tensorflow_logging_suppression(system_logger: logging.Logger | None) -> None:
+    """Reduce TensorFlow logger verbosity and suppress specific TPU fallback warning.
+
+    This avoids requiring cloud-tpu-client installation when TPU is not needed.
+    """
+    try:
+        # Reduce TF logger chatter globally
+        tf_logger = logging.getLogger("tensorflow")
+        tf_logger.setLevel(logging.ERROR)
+        # Ensure TF logs do not propagate at lower levels
+        tf_logger.propagate = True  # Still allow our filter to catch any bubbled logs
+
+        # Attach suppressor to our handlers so bubbled TF logs are filtered
+        suppress_filter = _SuppressTensorFlowTPUWarningFilter()
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers:
+            try:
+                handler.addFilter(suppress_filter)
+            except Exception:
+                pass
+        if system_logger is not None:
+            for handler in getattr(system_logger, "handlers", [])[:]:
+                try:
+                    handler.addFilter(suppress_filter)
+                except Exception:
+                    pass
+
+        # Also set TF CPP log level to suppress INFO/DEBUG C++ logs
+        os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # 2=WARNING, 3=ERROR
+    except Exception:
+        # Non-fatal: continue without suppression
+        pass
+
+
 class EnhancedLogger:
     """
     Enhanced logger utility with comprehensive error handling and type safety.
@@ -434,6 +491,8 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
 
             if success:
                 system_logger = enhanced_logger.get_logger("System")
+                # Configure TensorFlow TPU warning suppression without requiring external installs
+                _configure_tensorflow_logging_suppression(system_logger)
                 return system_logger
             # Fallback to basic logger
             system_logger = logging.getLogger("System")
@@ -447,12 +506,16 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
             console_handler.setFormatter(formatter)
             system_logger.addHandler(console_handler)
 
+            # Also configure TensorFlow TPU warning suppression for fallback path
+            _configure_tensorflow_logging_suppression(system_logger)
+
             return system_logger
         except Exception as e:
             print(f"Error in logger initialization: {e}")
             # Fallback to basic logger
             system_logger = logging.getLogger("System")
             system_logger.setLevel(logging.INFO)
+            _configure_tensorflow_logging_suppression(system_logger)
             return system_logger
 
     except Exception as e:
@@ -460,6 +523,7 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
         # Fallback to basic logger
         system_logger = logging.getLogger("System")
         system_logger.setLevel(logging.INFO)
+        _configure_tensorflow_logging_suppression(system_logger)
         return system_logger
 
 

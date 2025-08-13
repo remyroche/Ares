@@ -1162,6 +1162,12 @@ class EnhancedTrainingManager:
 
                 if not step4_success:
                     return False
+                # Provide explicit success indicators for validators
+                pipeline_state["analyst_labeling_feature_engineering"] = {
+                    "status": "SUCCESS" if step4_success else "FAILED",
+                    "success": bool(step4_success),
+                    "completed": bool(step4_success),
+                }
                 self._save_checkpoint(
                     "step4_analyst_labeling_feature_engineering", pipeline_state
                 )
@@ -1173,8 +1179,6 @@ class EnhancedTrainingManager:
                     training_input,
                     pipeline_state,
                 )
-
-
 
             # Step 5: Analyst Specialist Training
             with self._timed_step("Step 5: Analyst Specialist Training", step_times):
@@ -1190,6 +1194,11 @@ class EnhancedTrainingManager:
                 )
                 if not step5_success:
                     return False
+                pipeline_state["analyst_specialist_training"] = {
+                    "status": "SUCCESS" if step5_success else "FAILED",
+                    "success": bool(step5_success),
+                    "completed": bool(step5_success),
+                }
 
                 # Run validator for Step 5
                 await self._run_step_validator(

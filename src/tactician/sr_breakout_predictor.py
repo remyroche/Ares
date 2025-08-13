@@ -301,7 +301,7 @@ class SRBreakoutPredictor:
                 near_support = abs(current_price - ns) / max(current_price, 1e-9) <= prox
                 near_resistance = abs(nr - current_price) / max(current_price, 1e-9) <= prox
                 is_near_level = bool(near_support or near_resistance)
-            except Exception:
+            except (AttributeError, ValueError, TypeError):
                 is_near_level = False
 
             # Enrich sr_context

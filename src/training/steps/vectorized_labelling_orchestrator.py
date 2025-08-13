@@ -481,11 +481,7 @@ class VectorizedLabellingOrchestrator:
                     mlcp = MLConfidencePredictor(self.config)
                     # Use price_data tail as market_data input
                     market_tail = price_data.copy()
-                    current_price = float(price_data["close"].iloc[-1])
-                    preds = await mlcp.predict_confidence_table(market_tail, current_price)
-                    # Map a global directional confidence into a per-label MoE confidence proxy
-                    dir_conf = float(preds.get("directional_analysis", {}).get("net_confidence", 0.5)) if isinstance(preds, dict) else 0.5
-                    moe_conf = {name: dir_conf for name in base_names}
+                    moe_conf = await mlcp.predict_label_confidences(market_tail, timeframe=self.orchestrator_config.get("analyst_timeframe", "30m"))
                 except Exception:
                     moe_conf = {name: 0.5 for name in base_names}
                 # Compute intensities per label on last bar for audit

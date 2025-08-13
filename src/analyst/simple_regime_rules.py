@@ -83,7 +83,7 @@ def classify_regime_series(
     )
 
     # Normalized EMA separation relative to a smoothed price level
-    ema_sep = (feats["ema_21"] - feats["ema_55"]).abs()
+    ema_sep = (feats[f"ema_{ema_fast}"] - feats[f"ema_{ema_slow}"]).abs()
     ema_sep_norm = (ema_sep / feats["close"].rolling(max(ema_slow, 2)).mean()).fillna(0.0)
 
     # Trend condition with tunable thresholds

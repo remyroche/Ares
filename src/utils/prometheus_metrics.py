@@ -4,13 +4,21 @@ Prometheus metrics collection utility for training step validators.
 
 import logging
 
-from prometheus_client import (
-    Counter,
-    Gauge,
-    Histogram,
-    generate_latest,
-)
-from prometheus_client.exposition import start_http_server
+try:
+    from prometheus_client import (
+        Counter,
+        Gauge,
+        Histogram,
+        generate_latest,
+    )
+    from prometheus_client.exposition import start_http_server
+    _PROM_AVAILABLE = True
+except Exception as e:  # pragma: no cover - optional dependency fallback
+    Counter = Gauge = Histogram = None  # type: ignore[assignment]
+    generate_latest = None  # type: ignore[assignment]
+    start_http_server = None  # type: ignore[assignment]
+    _PROM_IMPORT_ERROR = e
+    _PROM_AVAILABLE = False
 
 from src.utils.warning_symbols import (
     failed,
@@ -25,6 +33,26 @@ class PrometheusMetrics:
     def __init__(self, port: int = 9000):
         self.port = port
         self.metrics_initialized = False
+
+        if not _PROM_AVAILABLE:
+            logger.info(
+                "Prometheus client not available; metrics disabled. Error: %s",
+                str(_PROM_IMPORT_ERROR),
+            )
+            # Create no-op attribute placeholders to avoid attribute errors
+            self.step_execution_duration = None
+            self.step_success_counter = None
+            self.step_failure_counter = None
+            self.data_quality_score = None
+            self.data_size_gauge = None
+            self.data_completeness = None
+            self.model_accuracy = None
+            self.model_loss = None
+            self.memory_usage = None
+            self.cpu_usage = None
+            self.validation_passed = None
+            self.validation_failed = None
+            return
 
         # Step execution metrics
         self.step_execution_duration = Histogram(
@@ -107,15 +135,19 @@ class PrometheusMetrics:
 
     def _start_metrics_server(self):
         """Start the Prometheus metrics server."""
+        if not _PROM_AVAILABLE:
+            return
         try:
             start_http_server(self.port)
             logger.info(f"Prometheus metrics server started on port {self.port}")
             self.metrics_initialized = True
-        except Exception:
-            print(failed("Failed to start Prometheus metrics server: {e}"))
+        except Exception as e:
+            print(failed(f"Failed to start Prometheus metrics server: {e}"))
 
     def record_step_execution(self, step_name: str, duration: float, status: str):
         """Record step execution metrics."""
+        if not _PROM_AVAILABLE:
+            return
         self.step_execution_duration.labels(step_name=step_name, status=status).observe(
             duration,
         )
@@ -130,12 +162,16 @@ class PrometheusMetrics:
 
     def record_data_quality(self, step_name: str, data_type: str, quality_score: float):
         """Record data quality metrics."""
+        if not _PROM_AVAILABLE:
+            return
         self.data_quality_score.labels(step_name=step_name, data_type=data_type).set(
             quality_score,
         )
 
     def record_data_size(self, step_name: str, data_type: str, size: int):
         """Record data size metrics."""
+        if not _PROM_AVAILABLE:
+            return
         self.data_size_gauge.labels(step_name=step_name, data_type=data_type).set(size)
 
     def record_data_completeness(
@@ -145,6 +181,8 @@ class PrometheusMetrics:
         completeness: float,
     ):
         """Record data completeness metrics."""
+        if not _PROM_AVAILABLE:
+            return
         self.data_completeness.labels(step_name=step_name, data_type=data_type).set(
             completeness,
         )
@@ -157,6 +195,8 @@ class PrometheusMetrics:
         loss: float,
     ):
         """Record model performance metrics."""
+        if not _PROM_AVAILABLE:
+            return
         self.model_accuracy.labels(step_name=step_name, model_type=model_type).set(
             accuracy,
         )
@@ -169,6 +209,8 @@ class PrometheusMetrics:
         cpu_percent: float,
     ):
         """Record system metrics."""
+        if not _PROM_AVAILABLE:
+            return
         self.memory_usage.labels(step_name=step_name).set(memory_bytes)
         self.cpu_usage.labels(step_name=step_name).set(cpu_percent)
 
@@ -180,6 +222,8 @@ class PrometheusMetrics:
         reason: str = "",
     ):
         """Record validation results."""
+        if not _PROM_AVAILABLE:
+            return
         if passed:
             self.validation_passed.labels(
                 step_name=step_name,
@@ -194,7 +238,9 @@ class PrometheusMetrics:
 
     def get_metrics(self) -> str:
         """Get current metrics in Prometheus format."""
-        return generate_latest()
+        if not _PROM_AVAILABLE or generate_latest is None:
+            return ""
+        return generate_latest()  # type: ignore[return-value]
 
 
 # Global metrics instance

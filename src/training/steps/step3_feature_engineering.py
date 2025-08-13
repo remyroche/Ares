@@ -20,6 +20,7 @@ async def run_step(
     """
     Step 3: Engineering the features (post-labeling).
     Loads labeled parquet from Step 2 and produces robust feature parquet artifacts for train/val/test.
+    Also writes pickle copies with timestamps and a feature hash for Step 5 compatibility.
     """
     logger = system_logger.getChild("Step3.FeatureEngineering")
     try:
@@ -39,6 +40,15 @@ async def run_step(
         labeled = {name: pd.read_parquet(path) for name, path in paths.items()}
         for split, df in labeled.items():
             logger.info(f"Loaded labeled {split}: {len(df)} rows")
+
+        # Ensure timestamp present and set as index for alignment
+        for k in labeled.keys():
+            if "timestamp" not in labeled[k].columns and isinstance(labeled[k].index, pd.DatetimeIndex):
+                labeled[k] = labeled[k].reset_index().rename(columns={"index": "timestamp"})
+            if "timestamp" in labeled[k].columns:
+                labeled[k]["timestamp"] = pd.to_datetime(labeled[k]["timestamp"], errors="coerce")
+                labeled[k] = labeled[k].dropna(subset=["timestamp"]).sort_values("timestamp")
+                labeled[k] = labeled[k].set_index("timestamp")
 
         # 2) Extract OHLCV inputs
         def _extract_inputs(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -170,7 +180,7 @@ async def run_step(
         _save("validation", X_vl)
         _save("test", X_te)
 
-        # Save feature lists per split
+        # Save feature lists per split and a feature hash
         feature_lists = {
             "train": list(X_tr.columns),
             "validation": list(X_vl.columns),
@@ -179,6 +189,34 @@ async def run_step(
         }
         with open(f"{data_dir}/{exchange}_{symbol}_selected_features.json", "w") as f:
             json.dump(feature_lists, f, indent=2)
+
+        # NEW: also persist pickle copies with timestamps for Step 5 compatibility
+        try:
+            import pickle
+            for split_name, X in ("train", X_tr), ("validation", X_vl), ("test", X_te):
+                X_pick = X.copy()
+                X_pick["timestamp"] = X_pick.index
+                X_pick = X_pick.reset_index(drop=True)
+                pkl_path = f"{data_dir}/{exchange}_{symbol}_features_{split_name}.pkl"
+                with open(pkl_path, "wb") as f:
+                    pickle.dump(X_pick, f)
+                logger.info(f"✅ Wrote pickle features {split_name}: {pkl_path} rows={len(X_pick)} cols={X_pick.shape[1]}")
+
+            # Write a simple feature hash to ensure downstream consistency
+            import hashlib
+            def _hash_cols(cols: list[str]) -> str:
+                s = ",".join(cols)
+                return hashlib.sha256(s.encode("utf-8")).hexdigest()[:16]
+            hash_info = {
+                "train_hash": _hash_cols(feature_lists["train"]),
+                "validation_hash": _hash_cols(feature_lists["validation"]),
+                "test_hash": _hash_cols(feature_lists["test"]),
+                "generated_at": datetime.now().isoformat(),
+            }
+            with open(f"{data_dir}/{exchange}_{symbol}_feature_hash.json", "w") as f:
+                json.dump(hash_info, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Pickle compatibility write skipped: {e}")
 
         logger.info("✅ Step 3: Feature engineering completed successfully")
         return True

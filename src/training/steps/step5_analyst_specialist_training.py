@@ -708,12 +708,76 @@ class AnalystSpecialistTrainingStep:
             except Exception as pe:
                 self.logger.warning(f"Persisting per-regime models skipped: {pe}")
 
+<<<<<<< HEAD
             # Save training summary JSON
             try:
                 summary_file = f"{data_dir}/{exchange}_{symbol}_analyst_training_summary.json"
                 summary_data = {
                     "regimes_trained": list(training_results.keys()),
                     "models_per_regime": {rn: list(models.keys()) for rn, models in training_results.items()},
+=======
+            # Train label expert models for Analyst (5m/15m/30m)
+            try:
+                label_expert_dir = await self._train_label_experts(
+                    combined_data=combined_data,
+                    data_dir=data_dir,
+                    exchange=exchange,
+                    symbol=symbol,
+                )
+            except Exception as _lex:
+                self.logger.warning(f"Label expert training skipped: {_lex}")
+
+            # Save training summary
+            summary_file = (
+                f"{data_dir}/{exchange}_{symbol}_analyst_training_summary.json"
+            )
+
+            # Create JSON-serializable summary (without model objects)
+            summary_data = {
+                "regimes_trained": list(training_results.keys()),
+                "models_per_regime": {},
+                "sr_features": [
+                    "dist_to_support_pct",
+                    "dist_to_resistance_pct",
+                    "sr_zone_position",
+                    "nearest_support_center",
+                    "nearest_resistance_center",
+                    "nearest_support_score",
+                    "nearest_resistance_score",
+                    "nearest_support_band_pct",
+                    "nearest_resistance_band_pct",
+                    "sr_breakout_up",
+                    "sr_breakout_down",
+                    "sr_bounce_up",
+                    "sr_bounce_down",
+                    "sr_touch",
+                    "sr_breakout_score",
+                    "sr_bounce_score",
+                ],
+                "sr_score_distribution": {
+                    "sr_breakout_score": {
+                        "count": int(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).count()) if isinstance(combined_data, pd.DataFrame) else 0,
+                        "mean": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).mean() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "std": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).std() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "p50": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).quantile(0.5) or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "p90": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).quantile(0.9) or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "max": float(combined_data.get("sr_breakout_score", pd.Series(dtype=float)).max() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                    },
+                    "sr_bounce_score": {
+                        "count": int(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).count()) if isinstance(combined_data, pd.DataFrame) else 0,
+                        "mean": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).mean() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "std": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).std() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "p50": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).quantile(0.5) or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "p90": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).quantile(0.9) or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                        "max": float(combined_data.get("sr_bounce_score", pd.Series(dtype=float)).max() or 0.0) if isinstance(combined_data, pd.DataFrame) else 0.0,
+                    },
+                },
+                "training_metadata": {
+                    "total_regimes": len(training_results),
+                    "total_models": sum(
+                        len(models) for models in training_results.values()
+                    ),
+>>>>>>> 9e66259 (Add label expert training and dynamic model selection for analysts)
                     "training_date": datetime.now().isoformat(),
                     "symbol": symbol,
                     "exchange": exchange,
@@ -730,6 +794,7 @@ class AnalystSpecialistTrainingStep:
                 "duration": 0.0,
                 "status": "SUCCESS",
                 "dispatcher": dispatcher_manifest if enable_experts else None,
+                "label_experts_dir": label_expert_dir if 'label_expert_dir' in locals() else None,
             }
 
         except Exception as e:
@@ -1062,7 +1127,7 @@ class AnalystSpecialistTrainingStep:
         """Train S/R specialist models: breakout and bounce binary classifiers.
 
         - Targets derived from sr_event_label: breakout_target = 1 if -1 else 0; bounce_target = 1 if +1 else 0
-        - Features: include ALL numeric features except label targets and metadata
+        - Features: include ALL numeric features except targets/labels/metadata
         - Save models under analyst_models/SR/
         """
         try:
@@ -1815,6 +1880,134 @@ class AnalystSpecialistTrainingStep:
         except Exception as e:
             self.logger.exception(f"Error training SVM for {regime_name}: {e}")
             raise
+
+    async def _train_label_experts(
+        self,
+        combined_data: pd.DataFrame,
+        data_dir: str,
+        exchange: str,
+        symbol: str,
+    ) -> str:
+        """Train per-label expert models for analyst timeframes (5m/15m/30m) using mapping.
+
+        Returns the directory where experts are saved.
+        """
+        from src.config.label_model_mapping import select_model_for_label_timeframe
+        import pickle
+        import os
+        from sklearn.model_selection import train_test_split
+        from sklearn.metrics import accuracy_score
+
+        # Load labeled datasets to get meta-label columns
+        labeled_pkls = [
+            f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl",
+            f"{data_dir}/{exchange}_{symbol}_labeled_validation.pkl",
+            f"{data_dir}/{exchange}_{symbol}_labeled_test.pkl",
+        ]
+        frames = []
+        for p in labeled_pkls:
+            if os.path.exists(p):
+                with open(p, "rb") as f:
+                    frames.append(pickle.load(f))
+        if not frames:
+            self.logger.info("No labeled PKLs found; skipping label expert training")
+            return ""
+        labeled_all = pd.concat(frames, axis=0, ignore_index=False)
+        if "timestamp" not in labeled_all.columns and isinstance(labeled_all.index, pd.DatetimeIndex):
+            labeled_all = labeled_all.copy()
+            labeled_all["timestamp"] = labeled_all.index
+        # Align combined feature matrix on timestamp
+        features_df = combined_data.copy()
+        if "timestamp" not in features_df.columns:
+            # attempt to use index if datetime-like
+            if isinstance(features_df.index, pd.DatetimeIndex):
+                features_df = features_df.copy()
+                features_df["timestamp"] = features_df.index
+        if "timestamp" not in features_df.columns:
+            self.logger.info("No timestamp available for alignment; skipping label expert training")
+            return ""
+        # Build feature set: numeric columns excluding known metadata/labels
+        non_feature_cols = set([
+            "label", "regime", "sr_event_label", "timestamp", "exchange", "symbol", "timeframe",
+            "year", "month", "day",
+        ])
+        X_all = features_df.select_dtypes(include=[np.number]).drop(
+            columns=[c for c in non_feature_cols if c in features_df.columns], errors="ignore"
+        )
+        if X_all.empty:
+            self.logger.info("Empty feature set in combined_data; skipping label expert training")
+            return ""
+        # Join to get aligned labels
+        joined = pd.merge(
+            X_all,
+            labeled_all[[c for c in labeled_all.columns if c != "label"]],
+            on="timestamp",
+            how="inner",
+        )
+        if joined.empty:
+            self.logger.info("No overlap between features and labeled data; skipping label experts")
+            return ""
+        # Create output dirs
+        base_out = os.path.join(data_dir, "label_experts")
+        os.makedirs(base_out, exist_ok=True)
+        # Define analyst timeframes
+        analyst_tfs = ["5m", "15m", "30m"]
+        trained = 0
+        for tf in analyst_tfs:
+            tf_cols = [c for c in joined.columns if c.startswith(f"{tf}_")]
+            if not tf_cols:
+                continue
+            tf_dir = os.path.join(base_out, tf)
+            os.makedirs(tf_dir, exist_ok=True)
+            for col in tf_cols:
+                base_label = col.split("_", 1)[1].upper()
+                # Build binary target: treat >0 as 1
+                y = (joined[col].astype(float).fillna(0) > 0).astype(int)
+                # Skip severely imbalanced or tiny labels
+                pos = int(y.sum())
+                neg = int((1 - y).sum())
+                if pos < 100 or neg < 100:
+                    continue
+                X = joined[X_all.columns].astype(np.float32)
+                # Train/test split
+                try:
+                    X_tr, X_te, y_tr, y_te = train_test_split(
+                        X, y, test_size=0.2, random_state=42, stratify=y
+                    )
+                except Exception:
+                    # fallback without stratify
+                    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42)
+                # Build model per mapping
+                model = select_model_for_label_timeframe(base_label, tf)
+                # Fit
+                try:
+                    model.fit(X_tr, y_tr)
+                except Exception:
+                    # some models require dense arrays
+                    model.fit(X_tr.values, y_tr.values)
+                # Evaluate
+                try:
+                    if hasattr(model, "predict_proba"):
+                        yhat = (model.predict_proba(X_te)[:, -1] > 0.5).astype(int)
+                    else:
+                        yhat = model.predict(X_te)
+                    acc = accuracy_score(y_te, yhat)
+                except Exception:
+                    acc = 0.0
+                # Save
+                model_name = type(model).__name__
+                out_path = os.path.join(tf_dir, f"{base_label}_{model_name}.pkl")
+                with open(out_path, "wb") as f:
+                    pickle.dump(model, f)
+                trained += 1
+                try:
+                    self.logger.info(
+                        f"Label expert trained: tf={tf} label={base_label} model={model_name} acc={acc:.3f} -> {out_path}"
+                    )
+                except Exception:
+                    pass
+        self.logger.info(f"✅ Trained {trained} label expert models (analyst timeframes)")
+        return base_out
 
 
 # For backward compatibility with existing step structure

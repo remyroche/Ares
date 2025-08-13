@@ -302,10 +302,10 @@ def build_model(model_key: str, params: Dict[str, Any]):
 
                     def fit(self, X, y):
                         # Unsupervised fit for HMM, then supervised mapping to y
-                        if hasattr(X, "values"):
-                            X_arr = X.values
+                        if isinstance(X, (pd.DataFrame, pd.Series)):
+                            X_arr = X.to_numpy()
                         else:
-                            X_arr = X
+                            X_arr = np.asarray(X)
                         self.hmm.fit(X_arr)
                         states = self.hmm.predict(X_arr)
                         self.decoder.fit(states.reshape(-1, 1), y)

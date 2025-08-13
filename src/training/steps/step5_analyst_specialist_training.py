@@ -238,8 +238,8 @@ class AnalystSpecialistTrainingStep:
                     sw = pd.read_parquet(wpath)
                     sw["timestamp"] = pd.to_datetime(sw["timestamp"], errors="coerce")
                     sample_weights_ts = sw[["timestamp", "regime", "sample_weight"]]
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"Failed to load labeled data or weights: {e}")
 
             if enable_experts:
                 try:

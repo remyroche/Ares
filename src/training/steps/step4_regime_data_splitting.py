@@ -71,6 +71,9 @@ class RegimeDataSplittingStep:
                     or c.endswith("_REGIME")
                     or c.endswith("_FORMATION")
                 ]
+                # Also treat generic classification label as a meta label if present
+                if "label" in labeled_all.columns and "label" not in meta_cols:
+                    meta_cols.append("label")
                 if "timestamp" not in labeled_all.columns and isinstance(labeled_all.index, pd.DatetimeIndex):
                     labeled_all = labeled_all.reset_index().rename(columns={"index": "timestamp"})
                 if "timestamp" not in unified_data.columns and isinstance(unified_data.index, pd.DatetimeIndex):
@@ -264,6 +267,7 @@ async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
     data_dir: str = "data/training",
+    timeframe: str = "1m",
     force_rerun: bool = False,
     **kwargs,
 ) -> bool:

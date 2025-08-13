@@ -1288,6 +1288,7 @@ class MetaLabelingSystem:
         volume_data: pd.DataFrame,
         timeframe: str = "30m",
         order_flow_data: pd.DataFrame | None = None,
+        precomputed_features: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Generate analyst labels for setup identification (multi-timeframe).
@@ -1305,8 +1306,11 @@ class MetaLabelingSystem:
                 self.logger.error("Meta-labeling system not initialized")
                 return {}
 
-            # Calculate pattern features
-            features = await self._calculate_pattern_features(price_data, volume_data)
+            # Calculate or accept precomputed pattern features
+            if precomputed_features:
+                features = dict(precomputed_features)
+            else:
+                features = await self._calculate_pattern_features(price_data, volume_data)
 
             # Generate analyst-specific labels
             analyst_labels = {}
@@ -1397,6 +1401,7 @@ class MetaLabelingSystem:
         volume_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None,
         timeframe: str = "1m",
+        precomputed_features: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Generate tactician labels for entry optimization (1m timeframe).
@@ -1415,12 +1420,15 @@ class MetaLabelingSystem:
                 self.logger.error("Meta-labeling system not initialized")
                 return {}
 
-            # Calculate entry features
+            # Calculate entry features (or merge with precomputed basics)
+            base_features = dict(precomputed_features or {})
             entry_features = await self._calculate_entry_features(
                 price_data,
                 volume_data,
                 order_flow_data,
             )
+            # Merge, with entry_features taking precedence
+            entry_features = {**base_features, **entry_features}
 
             # Generate tactician-specific labels
             tactician_labels = {}
@@ -1512,6 +1520,7 @@ class MetaLabelingSystem:
         order_flow_data: pd.DataFrame | None = None,
         analyst_timeframe: str = "30m",
         tactician_timeframe: str = "1m",
+        precomputed_features: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Generate combined analyst and tactician labels.
@@ -1533,6 +1542,7 @@ class MetaLabelingSystem:
                 volume_data,
                 analyst_timeframe,
                 order_flow_data,
+                precomputed_features=precomputed_features,
             )
 
             # Generate tactician labels
@@ -1541,6 +1551,7 @@ class MetaLabelingSystem:
                 volume_data,
                 order_flow_data,
                 tactician_timeframe,
+                precomputed_features=precomputed_features,
             )
 
             # Combine labels and compute MoE-based weights placeholder

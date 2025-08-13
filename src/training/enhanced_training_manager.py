@@ -495,8 +495,8 @@ class EnhancedTrainingManager:
             return {
                 "step1_data_collection": 5,
                 "step2_market_regime_classification": 3,
-                "step3_regime_data_splitting": 2,
-                "step4_analyst_labeling_feature_engineering": 15,
+                "step4_regime_data_splitting": 2,
+                "step3_feature_engineering": 15,
                 "step5_analyst_specialist_training": 10,
                 "step6_analyst_enhancement": 8,
                 "step7_analyst_ensemble_creation": 12,
@@ -514,8 +514,8 @@ class EnhancedTrainingManager:
             return {
                 "step1_data_collection": 15,
                 "step2_market_regime_classification": 8,
-                "step3_regime_data_splitting": 5,
-                "step4_analyst_labeling_feature_engineering": 60,
+                "step4_regime_data_splitting": 5,
+                "step3_feature_engineering": 60,
                 "step5_analyst_specialist_training": 30,
                 "step6_analyst_enhancement": 25,
                 "step7_analyst_ensemble_creation": 35,
@@ -1058,6 +1058,18 @@ class EnhancedTrainingManager:
                 # Save checkpoint after data collection
                 self._save_checkpoint("step1_data_collection", pipeline_state)
                 step_times["step1_data_collection"] = time.time() - step_start
+
+                # Optionally run validator for Step 1
+                # Optionally run validator for Step 1
+                try:
+                    await self._run_step_validator(
+                        "step1_data_collection",
+                        training_input,
+                        pipeline_state,
+                    )
+                except Exception as e:
+                    # Non-fatal if validator is missing, but log for debugging.
+                    self.logger.warning(f"Validator for step1_data_collection failed but is non-fatal: {e}")
             else:
                 self.logger.info(
                     "⏭️  Skipping Step 1: Data Collection (using pre-consolidated data)"
@@ -1079,18 +1091,31 @@ class EnhancedTrainingManager:
                     from src.training.steps import step2_processing_labeling_feature_engineering
                     step2_success = await step2_processing_labeling_feature_engineering.run_step(
                         symbol=symbol,
+                        exchange_name=exchange,
                         data_dir=data_dir,
+                        timeframe=timeframe,
+                        exchange=exchange,
+                        force_rerun=self.force_rerun,
                         pipeline_config=self.config,
                     )
+                    validator_step_name = "step2_processing_labeling_feature_engineering"
                 else:
                     from src.training.steps import step2_market_regime_classification
                     step2_success = await step2_market_regime_classification.run_step(
                         symbol=symbol,
+                        exchange=exchange,
                         data_dir=data_dir,
+                        timeframe=timeframe,
+                        force_rerun=self.force_rerun,
                     )
+                    validator_step_name = "step2_market_regime_classification"
             except Exception as e:
                 self.logger.error(f"❌ Error in Step 2: {e}")
                 step2_success = False
+                validator_step_name = "step2_market_regime_classification"
+
+            # Record which Step 2 branch was attempted
+            used_alt_step2 = (validator_step_name == "step2_processing_labeling_feature_engineering")
 
             if not step2_success:
                 self._log_step_completion(
@@ -1107,9 +1132,9 @@ class EnhancedTrainingManager:
                 "success": step2_success,
             }
 
-            # Run validator for Step 2
+            # Run validator for Step 2 (match orchestrator mapping)
             validation_result = await self._run_step_validator(
-                "step2_processing_labeling", training_input, pipeline_state
+                validator_step_name, training_input, pipeline_state
             )
 
             self._log_step_completion(
@@ -1125,7 +1150,9 @@ class EnhancedTrainingManager:
                 from src.training.steps import step3_feature_engineering
                 step3_success = await step3_feature_engineering.run_step(
                     symbol=symbol,
+                    exchange=exchange,
                     data_dir=data_dir,
+                    timeframe=timeframe,
                 )
             except Exception as e:
                 self.logger.error(f"❌ Error in Step 3: {e}")
@@ -1146,7 +1173,7 @@ class EnhancedTrainingManager:
                 "success": step3_success,
             }
 
-            # Run validator for Step 3
+            # Run validator for Step 3 (uses step4_analyst_labeling_feature_engineering_validator)
             validation_result = await self._run_step_validator(
                 "step3_feature_engineering", training_input, pipeline_state
             )
@@ -1161,15 +1188,21 @@ class EnhancedTrainingManager:
             # Step 4: Data Splitting for Training (regimes or meta-labels)
             self._heartbeat("Step 4: Data Splitting for Training")
             try:
-                from src.training.steps import step3_regime_data_splitting as _split
+                from src.training.steps import step4_regime_data_splitting as _split
                 step4_kwargs = {}
                 pipeline_cfg = self.config.get("pipeline", {})
                 method_a_cfg = pipeline_cfg.get("method_a", {})
                 regime_basis = str(method_a_cfg.get("regime_basis", "bull_bear_sideways")).lower()
+                # If Step 2 alt produced labeled splits, prefer meta_labels for splitting
+                if used_alt_step2:
+                    regime_basis = "meta_labels"
                 step4_kwargs["regime_basis"] = regime_basis
                 step4_success = await _split.run_step(
                     symbol=symbol,
+                    exchange=exchange,
                     data_dir=data_dir,
+                    timeframe=timeframe,
+                    force_rerun=self.force_rerun,
                     **step4_kwargs,
                 )
             except Exception as e:
@@ -1192,13 +1225,13 @@ class EnhancedTrainingManager:
                 "completed": bool(step4_success),
             }
             self._save_checkpoint(
-                "step4_data_splitting", pipeline_state
+                "step4_regime_data_splitting", pipeline_state
             )
             self._optimize_memory_usage()
 
-            # Run validator for Step 4
+            # Run validator for Step 4 (match orchestrator mapping)
             await self._run_step_validator(
-                "step4_data_splitting",
+                "step4_regime_data_splitting",
                 training_input,
                 pipeline_state,
             )

@@ -1032,31 +1032,30 @@ class VectorizedAdvancedFeatureEngineering:
             except Exception:
                 pass
 
-            # Short-term volume profile (volume-weighted bins over last N bars)
+            # Short-term volume profile (series features) and iceberg absorption
             try:
-                N = 50
-                window = min(N, len(price_data))
-                if window >= 20 and "volume" in volume_data.columns:
-                    seg_p = close.tail(window).values
-                    seg_v = volume_data["volume"].tail(window).values
-                    bins = 20
-                    hist, edges = np.histogram(seg_p, bins=bins, weights=seg_v)
-                    features["vpoc_price"] = float((edges[np.argmax(hist)] + edges[np.argmax(hist) + 1]) / 2.0)
-                    # LVN/HVN scores
-                    hvn = np.percentile(hist, 80)
-                    lvn = np.percentile(hist, 20)
-                    current = float(close.iloc[-1])
-                    current_bin = int(np.searchsorted(edges, current) - 1)
-                    features["lvn_score"] = float(1.0 if 0 <= current_bin < len(hist) and hist[current_bin] <= lvn else 0.0)
-                    features["hvn_score"] = float(1.0 if 0 <= current_bin < len(hist) and hist[current_bin] >= hvn else 0.0)
+                if "volume" in volume_data.columns and len(price_data) >= 20:
+                    stvp = self._compute_short_term_volume_profile_series(
+                        close=close,
+                        volume=volume_data["volume"].astype(float),
+                        window=50,
+                        bins=20,
+                        stride=5,
+                    )
+                    if stvp:
+                        features.update(stvp)
+                        # Liquidity pocket risk proxy via LVN presence density
+                        features["liquidity_pocket_risk"] = (
+                            pd.Series(stvp.get("stvp_is_lvn", pd.Series(index=price_data.index))).rolling(5, min_periods=1).max().fillna(0)
+                        )
             except Exception:
                 pass
 
-            # Liquidity pockets proxy: identify price gaps in recent range (no prints region via low volume bin)
+            # Iceberg absorption detection (proxy without full order book)
             try:
-                if window >= 20:
-                    zero_bins = (hist <= lvn)
-                    features["liquidity_pocket_near"] = float(1.0 if zero_bins.any() else 0.0)
+                ice = self._compute_iceberg_absorption_series(price_data, volume_data, window=20)
+                if ice:
+                    features.update(ice)
             except Exception:
                 pass
  
@@ -1129,6 +1128,208 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.error(f"Error calculating order flow imbalance: {e}")
             return pd.Series(np.zeros(len(price_data)), index=price_data.index)
+
+    def _compute_short_term_volume_profile_series(
+        self,
+        close: pd.Series,
+        volume: pd.Series,
+        window: int = 50,
+        bins: int = 20,
+        stride: int = 5,
+    ) -> dict[str, pd.Series]:
+        try:
+            n = len(close)
+            idx = close.index
+            arr_vpoc_dist = np.full(n, np.nan, dtype=float)
+            arr_is_hvn = np.full(n, np.nan, dtype=float)
+            arr_is_lvn = np.full(n, np.nan, dtype=float)
+            arr_va_pos = np.full(n, np.nan, dtype=float)
+            arr_va_width = np.full(n, np.nan, dtype=float)
+            arr_curr_bin_pct = np.full(n, np.nan, dtype=float)
+            arr_skew = np.full(n, np.nan, dtype=float)
+            arr_kurt = np.full(n, np.nan, dtype=float)
+
+            step = max(1, int(stride))
+            start = max(0, int(window) - 1)
+            for i in range(start, n, step):
+                seg_p = close.iloc[max(0, i - window + 1): i + 1].to_numpy(dtype=float)
+                seg_v = volume.iloc[max(0, i - window + 1): i + 1].to_numpy(dtype=float)
+                if seg_p.size < 5:
+                    continue
+                seg_v = np.nan_to_num(seg_v, nan=0.0)
+                if np.all(seg_v == 0):
+                    continue
+                try:
+                    hist, edges = np.histogram(seg_p, bins=int(bins), weights=seg_v)
+                except Exception:
+                    continue
+                if hist.sum() <= 0 or len(edges) < 2:
+                    continue
+
+                k = int(np.argmax(hist))
+                vpoc = float((edges[k] + edges[k + 1]) / 2.0)
+                current = float(close.iat[i])
+                denom_price = current if abs(current) > 1e-12 else (vpoc if abs(vpoc) > 1e-12 else 1.0)
+                arr_vpoc_dist[i] = abs(current - vpoc) / max(denom_price, 1e-12)
+
+                # HVN/LVN thresholds and current bin
+                hvn_thr = np.percentile(hist, 80)
+                lvn_thr = np.percentile(hist, 20)
+                cb = int(np.searchsorted(edges, current, side="right") - 1)
+                cb = max(0, min(cb, len(hist) - 1))
+                arr_is_hvn[i] = 1.0 if hist[cb] >= hvn_thr else 0.0
+                arr_is_lvn[i] = 1.0 if hist[cb] <= lvn_thr else 0.0
+
+                # Value area (≈70% around VPOC)
+                total = float(hist.sum())
+                left = right = k
+                cum = float(hist[k])
+                while cum < 0.7 * total and (left > 0 or right < len(hist) - 1):
+                    left_val = hist[left - 1] if left > 0 else -1
+                    right_val = hist[right + 1] if right < len(hist) - 1 else -1
+                    if right_val >= left_val:
+                        if right < len(hist) - 1:
+                            right += 1
+                            cum += hist[right]
+                        elif left > 0:
+                            left -= 1
+                            cum += hist[left]
+                        else:
+                            break
+                    else:
+                        if left > 0:
+                            left -= 1
+                            cum += hist[left]
+                        elif right < len(hist) - 1:
+                            right += 1
+                            cum += hist[right]
+                        else:
+                            break
+                VAL = float(edges[left])
+                VAH = float(edges[right + 1])
+                width = VAH - VAL
+                if width <= 0:
+                    arr_va_pos[i] = 0.5
+                    arr_va_width[i] = 0.0
+                else:
+                    arr_va_pos[i] = float(np.clip((current - VAL) / width, 0.0, 1.0))
+                    arr_va_width[i] = float(width / max(denom_price, 1e-12))
+
+                # Current bin volume share
+                arr_curr_bin_pct[i] = float(hist[cb] / total) if total > 0 else 0.0
+
+                # Distribution shape (weighted moments)
+                mids = 0.5 * (edges[:-1] + edges[1:])
+                p = hist.astype(float) / total if total > 0 else np.zeros_like(hist, dtype=float)
+                mu = float((p * mids).sum())
+                variance = float((p * (mids - mu) ** 2).sum())
+                if variance > 1e-12:
+                    m3 = float((p * (mids - mu) ** 3).sum())
+                    m4 = float((p * (mids - mu) ** 4).sum())
+                    arr_skew[i] = float(m3 / (variance ** 1.5))
+                    arr_kurt[i] = float(m4 / (variance ** 2))
+                else:
+                    arr_skew[i] = 0.0
+                    arr_kurt[i] = 3.0
+
+            # Convert to Series and forward-fill between stride updates
+            s_vpoc_dist = pd.Series(arr_vpoc_dist, index=idx).fillna(method="ffill")
+            s_is_hvn = pd.Series(arr_is_hvn, index=idx).fillna(method="ffill").fillna(0.0)
+            s_is_lvn = pd.Series(arr_is_lvn, index=idx).fillna(method="ffill").fillna(0.0)
+            s_va_pos = pd.Series(arr_va_pos, index=idx).fillna(method="ffill")
+            s_va_width = pd.Series(arr_va_width, index=idx).fillna(method="ffill")
+            s_curr_bin = pd.Series(arr_curr_bin_pct, index=idx).fillna(method="ffill")
+            s_skew = pd.Series(arr_skew, index=idx).fillna(method="ffill")
+            s_kurt = pd.Series(arr_kurt, index=idx).fillna(method="ffill")
+
+            return {
+                "stvp_vpoc_dist_pct": s_vpoc_dist,
+                "stvp_is_hvn": s_is_hvn,
+                "stvp_is_lvn": s_is_lvn,
+                "stvp_value_area_pos": s_va_pos,
+                "stvp_value_area_width_pct": s_va_width,
+                "stvp_current_bin_volume_pct": s_curr_bin,
+                "stvp_profile_skewness": s_skew,
+                "stvp_profile_kurtosis": s_kurt,
+            }
+        except Exception as e:
+            self.logger.warning(f"Short-term volume profile series failed: {e}")
+            return {}
+
+    def _compute_iceberg_absorption_series(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        window: int = 20,
+    ) -> dict[str, pd.Series]:
+        try:
+            idx = price_data.index
+            close = price_data["close"].astype(float)
+            high = price_data["high"].astype(float)
+            low = price_data["low"].astype(float)
+            open_ = price_data["open"].astype(float)
+            vol = (
+                volume_data["volume"].astype(float)
+                if "volume" in volume_data.columns
+                else pd.Series(np.ones(len(price_data)), index=idx, dtype=float)
+            )
+
+            # ATR-based tolerance (adaptive)
+            tr = pd.concat([
+                high - low,
+                (high - close.shift()).abs(),
+                (low - close.shift()).abs(),
+            ], axis=1).max(axis=1).fillna(0)
+            atr14 = tr.rolling(14, min_periods=5).mean().fillna(method="ffill").fillna(0)
+            recent_high = close.rolling(window, min_periods=1).max()
+            recent_low = close.rolling(window, min_periods=1).min()
+            with np.errstate(divide='ignore', invalid='ignore'):
+                tol_base = (atr14 / close.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan).fillna(0)
+            tol_pct = (0.25 * tol_base).clip(lower=0.0003, upper=0.005)  # 3-50 bps
+            near_high = (((close - recent_high.shift(1)).abs() / close.replace(0, np.nan)) <= tol_pct).fillna(False)
+            near_low = (((close - recent_low.shift(1)).abs() / close.replace(0, np.nan)) <= tol_pct).fillna(False)
+            tests_high = (near_high.rolling(window, min_periods=5).sum() / window).clip(0, 1)
+            tests_low = (near_low.rolling(window, min_periods=5).sum() / window).clip(0, 1)
+
+            # Wick absorption intensity, weighted by volume spike
+            upper_wick = (high - np.maximum(open_, close)).clip(lower=0)
+            lower_wick = (np.minimum(open_, close) - low).clip(lower=0)
+            true_range = (high - low).replace(0, np.nan)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                wick_up_ratio = (upper_wick / true_range).replace([np.inf, -np.inf], np.nan).fillna(0)
+                wick_dn_ratio = (lower_wick / true_range).replace([np.inf, -np.inf], np.nan).fillna(0)
+            vol_ma = vol.rolling(window, min_periods=5).mean().replace(0, np.nan)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                volume_ratio = (vol / vol_ma).replace([np.inf, -np.inf], np.nan).fillna(0)
+            up_intensity = (wick_up_ratio * volume_ratio).rolling(5, min_periods=3).mean().fillna(0)
+            dn_intensity = (wick_dn_ratio * volume_ratio).rolling(5, min_periods=3).mean().fillna(0)
+
+            # Rolling z-scores for stabilization
+            def _zscore(s: pd.Series, w: int = 50) -> pd.Series:
+                mu = s.rolling(w, min_periods=max(5, w // 5)).mean()
+                sd = s.rolling(w, min_periods=max(5, w // 5)).std().replace(0, np.nan)
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    z = ((s - mu) / sd).replace([np.inf, -np.inf], np.nan).fillna(0)
+                return z
+
+            up_z = _zscore(up_intensity, w=50).clip(lower=-3, upper=3)
+            dn_z = _zscore(dn_intensity, w=50).clip(lower=-3, upper=3)
+
+            # Combine signals (no break condition to avoid counting true breaks as absorption)
+            no_break_high = (close <= recent_high).astype(float)
+            no_break_low = (close >= recent_low).astype(float)
+            score_up = (tests_high * 0.5 + ((up_z + 3) / 6) * 0.5) * no_break_high
+            score_dn = (tests_low * 0.5 + ((dn_z + 3) / 6) * 0.5) * no_break_low
+            iceberg_score = pd.Series(np.maximum(score_up, score_dn), index=idx).clip(0, 1).fillna(0)
+            iceberg_detected = (iceberg_score > 0.6).astype(int)
+
+            return {
+                "iceberg_absorption_score": iceberg_score,
+                "iceberg_detected": iceberg_detected,
+            }
+        except Exception as e:
+            self.logger.warning(f"Iceberg absorption series failed: {e}")
+            return {}
 
     def _calculate_bid_ask_spread_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
         """Estimate relative bid-ask spread using Corwin–Schultz with Roll as fallback (per-row)."""

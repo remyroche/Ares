@@ -133,8 +133,8 @@ async def run_step(
                 "w",
             ) as f:
                 json.dump(dist, f, indent=2)
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.warning(f"Label distribution persistence skipped: {e}")
 
         # 7) Persist label reliability (if available) for downstream gating/stacking
         try:

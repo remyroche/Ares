@@ -90,7 +90,7 @@ class RegimeDataSplittingStep:
 
                 # NEW: Emit gating matrix from meta label strengths if available
                 try:
-                    strengths_path = f"data/training/{self.config['exchange']}_{self.config['symbol']}_meta_strengths.parquet"
+                    strengths_path = os.path.join(self.config.get("data_dir", "data/training"), f"{self.config['exchange']}_{self.config['symbol']}_meta_strengths.parquet")
                     gating_dir = os.path.join(self.config.get("data_dir", "data/training"), "gating")
                     os.makedirs(gating_dir, exist_ok=True)
                     if os.path.exists(strengths_path):

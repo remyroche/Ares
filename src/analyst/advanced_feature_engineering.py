@@ -1860,8 +1860,7 @@ class AdvancedFeatureEngineering:
                 )
                 labels.update(
                     self.meta_labeling_system._detect_entry_signals(
-                        price_data,
-                        volume_data,
+                        {**pattern_features, **entry_features},
                         order_flow_data,
                     ),
                 )

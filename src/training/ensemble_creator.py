@@ -464,6 +464,18 @@ class EnsembleCreator:
                             f"Removed underperforming model for {timeframe} (performance: {performance:.3f})",
                         )
 
+            # Log performance summary and threshold
+            try:
+                self.logger.info(
+                    {
+                        "msg": "model_performance_pruning",
+                        "threshold": float(self.ensemble_config.model_performance_threshold),
+                        "performances": {k: float(v) for k, v in model_performances.items()},
+                    }
+                )
+            except Exception:
+                pass
+
             # Step 3: Correlation-based pruning
             if len(pruned_data["predictions"]) > 1:
                 correlation_matrix = self._calculate_prediction_correlations(
@@ -519,6 +531,20 @@ class EnsembleCreator:
             correlation_matrix = pred_df.corr()
             # Diversity metrics
             diversity_metrics = self._calculate_diversity_metrics(pred_df)
+            # Correlation summary (upper triangle, excluding diagonal)
+            try:
+                abs_corr = np.abs(correlation_matrix.values)
+                mask = np.triu(np.ones_like(abs_corr, dtype=bool), k=1)
+                upper_vals = abs_corr[mask]
+                if upper_vals.size:
+                    corr_summary = {
+                        "mean_abs": float(np.mean(upper_vals)),
+                        "max_abs": float(np.max(upper_vals)),
+                        "threshold": float(self.ensemble_config.correlation_threshold),
+                    }
+                    self.logger.info({"msg": "prediction_correlation_summary", "summary": corr_summary})
+            except Exception as e:
+                self.logger.warning(f"Failed to summarize correlation metrics: {e}")
             self.logger.info(f"Ensemble diversity metrics: {diversity_metrics}")
             return correlation_matrix
         except Exception as e:
@@ -600,6 +626,14 @@ class EnsembleCreator:
                     del ensemble_data["features"][model]
                 if model in ensemble_data["targets"]:
                     del ensemble_data["targets"][model]
+
+            # Log kept vs removed
+            try:
+                kept = list(ensemble_data.get("models", {}).keys())
+                removed = list(models_to_remove)
+                self.logger.info({"msg": "correlation_pruning_result", "kept": kept, "removed": removed})
+            except Exception:
+                pass
 
             return ensemble_data
 

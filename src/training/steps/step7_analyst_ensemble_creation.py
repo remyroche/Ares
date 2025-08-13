@@ -1360,15 +1360,62 @@ class AnalystEnsembleCreationStep:
                     model_sharpe_ratios[name] = 0.0
                     model_weights[name] = 0.0
 
+            # Log raw Sharpe ratios and raw weights prior to normalization
+            try:
+                self.logger.info(
+                    {
+                        "msg": "dynamic_weights_raw",
+                        "regime": regime_name,
+                        "sharpe": {k: float(v) for k, v in model_sharpe_ratios.items()},
+                        "weights_raw": {k: float(v) for k, v in model_weights.items()},
+                    }
+                )
+            except Exception:
+                pass
+
             # Normalize weights so they sum to 1
             total_weight = sum(model_weights.values())
             if total_weight > 0:
                 for name in model_weights:
                     model_weights[name] /= total_weight
+                try:
+                    self.logger.info(
+                        {
+                            "msg": "dynamic_weights_normalized",
+                            "regime": regime_name,
+                            "weights": {k: float(v) for k, v in model_weights.items()},
+                            "weights_sum": float(sum(model_weights.values())),
+                        }
+                    )
+                except Exception:
+                    pass
             else:
                 # If all weights are 0, assign equal weights
                 for name in model_weights:
                     model_weights[name] = 1.0 / len(model_weights)
+                try:
+                    self.logger.info(
+                        {
+                            "msg": "dynamic_weights_equal_fallback",
+                            "regime": regime_name,
+                            "weights": {k: float(v) for k, v in model_weights.items()},
+                        }
+                    )
+                except Exception:
+                    pass
+
+            # Log top-weighted models for visibility
+            try:
+                top_weights = sorted(model_weights.items(), key=lambda x: x[1], reverse=True)[:5]
+                self.logger.info(
+                    {
+                        "msg": "dynamic_weights_top",
+                        "regime": regime_name,
+                        "top": [(n, float(w)) for n, w in top_weights],
+                    }
+                )
+            except Exception:
+                pass
 
             # Use proximity-weighted ensemble if SR features available
             use_sr_blend = all(k in X_val.columns for k in ["dist_to_support_pct", "dist_to_resistance_pct"]) or "sr_touch" in X_val.columns
@@ -1421,6 +1468,21 @@ class AnalystEnsembleCreationStep:
                                             best_score = avg
                                             best_cfg = cfg
                 self.logger.info(f"SR blending tuned best score={best_score:.4f} cfg={best_cfg}")
+                # Summarize SR weights under best configuration on the validation frame
+                try:
+                    tmp = ProximityWeightedEnsemble(models, model_names, model_weights, cfg=best_cfg)
+                    sr_weight = tmp._compute_sr_weights(X_val)
+                    if isinstance(sr_weight, np.ndarray) and sr_weight.size > 0:
+                        sr_summary = {
+                            "mean": float(np.mean(sr_weight)),
+                            "min": float(np.min(sr_weight)),
+                            "p50": float(np.percentile(sr_weight, 50)),
+                            "p90": float(np.percentile(sr_weight, 90)),
+                            "max": float(np.max(sr_weight)),
+                        }
+                        self.logger.info({"msg": "sr_weight_summary", "regime": regime_name, "summary": sr_summary})
+                except Exception:
+                    pass
                 ensemble = ProximityWeightedEnsemble(models, model_names, model_weights, cfg=best_cfg)
             else:
                 ensemble = DynamicWeightedEnsemble(models, model_names, model_weights)

@@ -297,6 +297,14 @@ class ConfidenceCalibrationStep:
                 pickle.dump(calibration_results, f)
             try:
                 self.logger.info(f"Saved calibration results: {calibration_file}")
+                # Compact summary of counts for quick troubleshooting
+                summary_counts = {
+                    "analyst_models": sum(len(v or {}) for v in calibration_results.get("analyst_models", {}).values()),
+                    "tactician_models": len(calibration_results.get("tactician_models", {})),
+                    "analyst_ensembles": len(calibration_results.get("analyst_ensembles", {})),
+                    "tactician_ensembles": len(calibration_results.get("tactician_ensembles", {})),
+                }
+                self.logger.info({"msg": "calibration_saved_summary", "counts": summary_counts})
                 print(
                     f"Step11Monitor ▶ Saved calibration: {os.path.basename(calibration_file)}",
                     flush=True,
@@ -432,6 +440,8 @@ class ConfidenceCalibrationStep:
                     if base_model is None:
                         continue
                     X_val, y_val = self._extract_features(regime_df, base_model)
+                    # Baseline metrics before calibration
+                    base_metrics = self._calculate_base_metrics(base_model, X_val, y_val)
                     calibrator = CalibratedClassifierCV(
                         base_estimator=base_model,
                         cv="prefit",
@@ -443,9 +453,23 @@ class ConfidenceCalibrationStep:
                     regime_res[model_name] = {
                         "calibrated_model": calibrator,
                         "metrics": {"accuracy": acc, "f1": f1},
+                        "base_metrics": base_metrics,
                         "calibration_method": "isotonic_prefit",
                         "regime": regime_name,
                     }
+                    # Log comparison
+                    try:
+                        self.logger.info(
+                            {
+                                "msg": "calibration_model_metrics",
+                                "regime": regime_name,
+                                "model": model_name,
+                                "base": base_metrics,
+                                "calibrated": {"accuracy": float(acc), "f1": float(f1)},
+                            }
+                        )
+                    except Exception:
+                        pass
                 except Exception as e:
                     self.logger.warning(
                         f"Calibration failed for analyst model {model_name} in {regime_name}: {e}",
@@ -472,6 +496,8 @@ class ConfidenceCalibrationStep:
                 if base_model is None:
                     continue
                 X_val, y_val = self._extract_features(generic_val, base_model)
+                # Baseline metrics
+                base_metrics = self._calculate_base_metrics(base_model, X_val, y_val)
                 calibrator = CalibratedClassifierCV(
                     base_estimator=base_model,
                     cv="prefit",
@@ -483,8 +509,20 @@ class ConfidenceCalibrationStep:
                 results[model_name] = {
                     "calibrated_model": calibrator,
                     "metrics": {"accuracy": acc, "f1": f1},
+                    "base_metrics": base_metrics,
                     "calibration_method": "isotonic_prefit",
                 }
+                try:
+                    self.logger.info(
+                        {
+                            "msg": "calibration_tactician_model_metrics",
+                            "model": model_name,
+                            "base": base_metrics,
+                            "calibrated": {"accuracy": float(acc), "f1": float(f1)},
+                        }
+                    )
+                except Exception:
+                    pass
             except Exception as e:
                 self.logger.warning(
                     f"Calibration failed for tactician model {model_name}: {e}",
@@ -523,6 +561,8 @@ class ConfidenceCalibrationStep:
                 continue
             try:
                 X_val, y_val = self._extract_features(regime_df, ensemble_obj)
+                # Baseline metrics
+                base_metrics = self._calculate_base_metrics(ensemble_obj, X_val, y_val)
                 wrapper = _PrefitWrapper(ensemble_obj)
                 calibrator = CalibratedClassifierCV(
                     base_estimator=wrapper,
@@ -535,8 +575,20 @@ class ConfidenceCalibrationStep:
                 results[regime_name] = {
                     "calibrated_ensemble": calibrator,
                     "metrics": {"accuracy": acc, "f1": f1},
+                    "base_metrics": base_metrics,
                     "calibration_method": "isotonic_prefit",
                 }
+                try:
+                    self.logger.info(
+                        {
+                            "msg": "calibration_analyst_ensemble_metrics",
+                            "regime": regime_name,
+                            "base": base_metrics,
+                            "calibrated": {"accuracy": float(acc), "f1": float(f1)},
+                        }
+                    )
+                except Exception:
+                    pass
             except Exception as e:
                 self.logger.warning(
                     f"Calibration failed for analyst ensemble in {regime_name}: {e}",
@@ -562,6 +614,8 @@ class ConfidenceCalibrationStep:
                 continue
             try:
                 X_val, y_val = self._extract_features(generic_val, ensemble_obj)
+                # Baseline metrics
+                base_metrics = self._calculate_base_metrics(ensemble_obj, X_val, y_val)
                 wrapper = _PrefitWrapper(ensemble_obj)
                 calibrator = CalibratedClassifierCV(
                     base_estimator=wrapper,
@@ -574,8 +628,20 @@ class ConfidenceCalibrationStep:
                 results[ensemble_type] = {
                     "calibrated_ensemble": calibrator,
                     "metrics": {"accuracy": acc, "f1": f1},
+                    "base_metrics": base_metrics,
                     "calibration_method": "isotonic_prefit",
                 }
+                try:
+                    self.logger.info(
+                        {
+                            "msg": "calibration_tactician_ensemble_metrics",
+                            "type": ensemble_type,
+                            "base": base_metrics,
+                            "calibrated": {"accuracy": float(acc), "f1": float(f1)},
+                        }
+                    )
+                except Exception:
+                    pass
             except Exception as e:
                 self.logger.warning(
                     f"Calibration failed for tactician ensemble {ensemble_type}: {e}",
@@ -583,14 +649,51 @@ class ConfidenceCalibrationStep:
         return results
 
     def _summarize_calibration(self, results: dict[str, Any]) -> dict[str, Any]:
-        summary = {"generated_at": datetime.now().isoformat(), "sections": {}}
-        for key, section in results.items():
-            summary["sections"][key] = {
-                "items": sum(len(v) for v in section.values())
-                if isinstance(section, dict)
-                else 0,
+        summary: dict[str, Any] = {}
+        # Analyst models
+        analyst = results.get("analyst_models", {})
+        summary["analyst_models"] = {
+            regime: {
+                name: data.get("metrics", {}) for name, data in models.items()
             }
+            for regime, models in analyst.items()
+        }
+        # Tactician models
+        tact_models = results.get("tactician_models", {})
+        summary["tactician_models"] = {
+            name: data.get("metrics", {}) for name, data in tact_models.items()
+        }
+        # Analyst ensembles
+        analyst_ens = results.get("analyst_ensembles", {})
+        summary["analyst_ensembles"] = {
+            regime: data.get("metrics", {}) for regime, data in analyst_ens.items()
+        }
+        # Tactician ensembles
+        tact_ens = results.get("tactician_ensembles", {})
+        summary["tactician_ensembles"] = {
+            etype: data.get("metrics", {}) for etype, data in tact_ens.items()
+        }
         return summary
+
+    def _calculate_base_metrics(self, model: Any, X_val, y_val) -> dict:
+        """Helper to calculate baseline accuracy and F1 score for a model/ensemble.
+        Returns {} if metrics cannot be computed.
+        """
+        try:
+            if not hasattr(model, "predict"):
+                return {}
+            base_pred = model.predict(X_val)
+            base_acc = accuracy_score(y_val, base_pred)
+            base_f1 = f1_score(y_val, base_pred, average="weighted")
+            return {"accuracy": float(base_acc), "f1": float(base_f1)}
+        except Exception as e:
+            try:
+                self.logger.warning(
+                    f"Could not calculate base metrics for {type(model).__name__}: {e}"
+                )
+            except Exception:
+                pass
+            return {}
 
 
 class _PrefitWrapper:

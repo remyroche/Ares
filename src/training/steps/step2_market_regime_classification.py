@@ -334,11 +334,11 @@ class MarketRegimeClassificationStep:
 
             # Optional auto-calibration to hit target SIDEWAYS band
             target_range = overrides.get(
-                "target_sideways_range", regime_cfg.get("target_sideways_range")
-            )  # e.g., (0.2, 0.4)
+                "target_sideways_range", regime_cfg.get("target_sideways_range", [0.25, 0.35])
+            )  # default 25–35%
             auto_calibrate = overrides.get(
                 "auto_calibrate_sideways",
-                regime_cfg.get("auto_calibrate_sideways", False),
+                regime_cfg.get("auto_calibrate_sideways", True),
             )
             max_calibration_iters = int(
                 overrides.get(

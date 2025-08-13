@@ -226,13 +226,23 @@ def enforce_ndarray(
     def decorator(func: F) -> F:  # type: ignore[override]
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any):
-            args_list = list(args)
+            sig = inspect.signature(func)
             try:
-                value = args_list[arg_index]
+                bound_args = sig.bind(*args, **kwargs)
+                bound_args.apply_defaults()
+            except TypeError as exc:
+                raise VectorizationError(
+                    f"Could not bind arguments for {func.__name__}: {exc}",
+                ) from exc
+
+            try:
+                param_name = list(sig.parameters.keys())[arg_index]
             except IndexError as exc:
                 raise VectorizationError(
                     f"Argument index {arg_index} out of range for {func.__name__}",
                 ) from exc
+
+            value = bound_args.arguments.get(param_name)
 
             if forbid_lists and isinstance(value, list):
                 raise VectorizationError(
@@ -247,8 +257,8 @@ def enforce_ndarray(
                     context={"function": func.__name__},
                 )
 
-            args_list[arg_index] = coerced
-            return func(*tuple(args_list), **kwargs)
+            bound_args.arguments[param_name] = coerced
+            return func(*bound_args.args, **bound_args.kwargs)
 
         return cast("F", wrapper)
 
@@ -298,33 +308,77 @@ def guard_array_nan_inf(
     def decorator(func: F) -> F:  # type: ignore[override]
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any):
-            args_list = list(args)
+            sig = inspect.signature(func)
+            try:
+                bound_args = sig.bind(*args, **kwargs)
+                bound_args.apply_defaults()
+            except TypeError as exc:
+                raise DataValidationError(
+                    f"Could not bind arguments for {func.__name__}: {exc}",
+                    context={"function": func.__name__},
+                ) from exc
+
+            param_names = list(sig.parameters.keys())
+
             for index in arg_indices:
-                if index >= len(args_list):
+                if index >= len(param_names):
                     continue
-                value = args_list[index]
-                if isinstance(value, pd.Series) or isinstance(value, pd.DataFrame):
+                param_name = param_names[index]
+                value = bound_args.arguments.get(param_name)
+                if value is None:
+                    continue
+
+                # Convert to numpy for checking
+                if isinstance(value, (pd.Series, pd.DataFrame)):
                     data = value.to_numpy()
                 else:
                     data = np.asarray(value)
+
+                # Only attempt numeric checks
+                try:
+                    is_numeric = np.issubdtype(data.dtype, np.number)
+                except Exception:
+                    is_numeric = False
+
+                if not is_numeric:
+                    continue
 
                 has_nan = np.isnan(data).any()
                 has_inf = np.isinf(data).any()
                 if has_nan or has_inf:
                     msg = (
                         f"Detected {'NaN' if has_nan else ''}{' and ' if has_nan and has_inf else ''}"
-                        f"{'Inf' if has_inf else ''} in argument {index} for {func.__name__}"
+                        f"{'Inf' if has_inf else ''} in argument '{param_name}' (index {index}) for {func.__name__}"
                     )
                     if mode == "raise":
                         raise DataValidationError(msg, context={"function": func.__name__})
                     if mode == "warn":
                         logger.warning(msg)
                     if mode == "coerce":
-                        coerced = np.asarray(value, dtype=float)
-                        coerced = np.nan_to_num(coerced, nan=coerce_value, posinf=coerce_value, neginf=coerce_value)
-                        args_list[index] = coerced
+                        coerced_array = np.asarray(value, dtype=float)
+                        coerced_array = np.nan_to_num(
+                            coerced_array,
+                            nan=coerce_value,
+                            posinf=coerce_value,
+                            neginf=coerce_value,
+                        )
+                        if isinstance(value, pd.DataFrame):
+                            coerced_value = pd.DataFrame(
+                                coerced_array,
+                                index=value.index,
+                                columns=value.columns,
+                            )
+                        elif isinstance(value, pd.Series):
+                            coerced_value = pd.Series(
+                                coerced_array,
+                                index=value.index,
+                                name=value.name,
+                            )
+                        else:
+                            coerced_value = coerced_array
+                        bound_args.arguments[param_name] = coerced_value
 
-            return func(*tuple(args_list), **kwargs)
+            return func(*bound_args.args, **bound_args.kwargs)
 
         return cast("F", wrapper)
 
@@ -371,17 +425,27 @@ def guard_dataframe_nulls(
 
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any):
-            args_list = list(args)
-            if len(args_list) > arg_index:
-                args_list[arg_index] = _check(args_list[arg_index])
-            return await func(*tuple(args_list), **kwargs)  # type: ignore[misc]
+            sig = inspect.signature(func)
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+            param_names = list(sig.parameters.keys())
+            if arg_index < len(param_names):
+                param_name = param_names[arg_index]
+                if param_name in bound_args.arguments:
+                    bound_args.arguments[param_name] = _check(bound_args.arguments[param_name])
+            return await func(*bound_args.args, **bound_args.kwargs)  # type: ignore[misc]
 
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any):
-            args_list = list(args)
-            if len(args_list) > arg_index:
-                args_list[arg_index] = _check(args_list[arg_index])
-            return func(*tuple(args_list), **kwargs)
+            sig = inspect.signature(func)
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+            param_names = list(sig.parameters.keys())
+            if arg_index < len(param_names):
+                param_name = param_names[arg_index]
+                if param_name in bound_args.arguments:
+                    bound_args.arguments[param_name] = _check(bound_args.arguments[param_name])
+            return func(*bound_args.args, **bound_args.kwargs)
 
         if inspect.iscoroutinefunction(func):
             return cast("F", async_wrapper)

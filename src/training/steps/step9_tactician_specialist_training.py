@@ -539,6 +539,14 @@ class TacticianSpecialistTrainingStep:
                 exchange,
             )
 
+            # 3b. CatBoost (HPO)
+            try:
+                best_cb = await self._hpo_catboost(X_train, X_test, y_train, y_test)
+                if best_cb:
+                    models["catboost"] = best_cb
+            except Exception:
+                pass
+
             # 4. Random Forest (additional model)
             models["random_forest"] = await self._train_random_forest(
                 X_train,
@@ -720,37 +728,81 @@ class TacticianSpecialistTrainingStep:
             import xgboost as xgb
             from sklearn.metrics import accuracy_score
 
-            # Train model with adaptive regularization
+            # Lightweight HPO for XGBoost (subsampled)
+            try:
+                import optuna
+
+                def _objective(trial: optuna.Trial) -> float:
+                    params = dict(
+                        n_estimators=trial.suggest_int("n_estimators", 100, 600, step=100),
+                        max_depth=trial.suggest_int("max_depth", 3, 8),
+                        learning_rate=trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+                        subsample=trial.suggest_float("subsample", 0.6, 1.0),
+                        colsample_bytree=trial.suggest_float("colsample_bytree", 0.6, 1.0),
+                        reg_alpha=trial.suggest_float("reg_alpha", 1e-8, 1e-1, log=True),
+                        reg_lambda=trial.suggest_float("reg_lambda", 1e-8, 1e-1, log=True),
+                    )
+                    model = xgb.XGBClassifier(
+                        **params,
+                        random_state=42,
+                        eval_metric="logloss",
+                        tree_method="hist",
+                        verbosity=0,
+                    )
+                    # Subsample for speed
+                    frac = min(1.0, 20000 / max(1, len(X_train)))
+                    Xs = X_train.sample(frac=frac, random_state=42) if frac < 1.0 else X_train
+                    ys = y_train.loc[Xs.index]
+                    model.fit(Xs, ys)
+                    # Use holdout for eval
+                    pred = model.predict(X_test)
+                    return float((pred == y_test).mean())
+
+                study = optuna.create_study(direction="maximize")
+                study.optimize(_objective, n_trials=15)
+                best_params = study.best_params
+            except Exception:
+                best_params = {
+                    "n_estimators": 200,
+                    "max_depth": 6,
+                    "learning_rate": 0.05,
+                    "subsample": 0.8,
+                    "colsample_bytree": 0.8,
+                    "reg_alpha": 0.01,
+                    "reg_lambda": 0.01,
+                }
+
+            # Train best model on full data
             # Calculate adaptive regularization based on data characteristics
             n_samples, n_features = X_train.shape
             overfitting_risk = n_features / n_samples if n_samples > 0 else 1.0
 
             # Adaptive regularization parameters
             if overfitting_risk > 0.1:  # High overfitting risk
-                reg_alpha = 0.1
-                reg_lambda = 0.1
+                reg_alpha = max(0.1, best_params.get("reg_alpha", 0.1))
+                reg_lambda = max(0.1, best_params.get("reg_lambda", 0.1))
                 min_child_weight = 10
                 subsample = 0.7
             elif overfitting_risk > 0.05:  # Medium overfitting risk
-                reg_alpha = 0.05
-                reg_lambda = 0.05
+                reg_alpha = max(0.05, best_params.get("reg_alpha", 0.05))
+                reg_lambda = max(0.05, best_params.get("reg_lambda", 0.05))
                 min_child_weight = 5
                 subsample = 0.8
             else:  # Low overfitting risk
-                reg_alpha = 0.01
-                reg_lambda = 0.01
+                reg_alpha = best_params.get("reg_alpha", 0.01)
+                reg_lambda = best_params.get("reg_lambda", 0.01)
                 min_child_weight = 1
                 subsample = 0.9
 
             model = xgb.XGBClassifier(
-                n_estimators=200,
-                max_depth=6,
-                learning_rate=0.05,
+                n_estimators=best_params.get("n_estimators", 200),
+                max_depth=best_params.get("max_depth", 6),
+                learning_rate=best_params.get("learning_rate", 0.05),
                 reg_alpha=reg_alpha,  # Adaptive L1 regularization
                 reg_lambda=reg_lambda,  # Adaptive L2 regularization
                 min_child_weight=min_child_weight,
-                subsample=subsample,
-                colsample_bytree=0.8,
+                subsample=best_params.get("subsample", subsample),
+                colsample_bytree=best_params.get("colsample_bytree", 0.8),
                 random_state=42,
                 eval_metric="logloss",
                 early_stopping_rounds=50,
@@ -779,18 +831,68 @@ class TacticianSpecialistTrainingStep:
                 "symbol": symbol,
                 "exchange": exchange,
                 "training_date": datetime.now().isoformat(),
-                "hyperparameters": {
-                    "n_estimators": 200,
-                    "max_depth": 6,
-                    "learning_rate": 0.05,
-                    "reg_alpha": 0.1,
-                    "reg_lambda": 0.1,
-                },
+                "hyperparameters": best_params,
             }
 
         except Exception:
             self.print(error("Error training XGBoost: {e}"))
             raise
+
+    async def _hpo_catboost(
+        self,
+        X_train: pd.DataFrame,
+        X_test: pd.DataFrame,
+        y_train: pd.Series,
+        y_test: pd.Series,
+    ) -> dict[str, Any] | None:
+        """Lightweight HPO for CatBoost; returns trained model package or None."""
+        try:
+            from catboost import CatBoostClassifier
+            import optuna
+            from sklearn.metrics import accuracy_score
+
+            def _objective(trial: optuna.Trial) -> float:
+                params = dict(
+                    iterations=trial.suggest_int("iterations", 200, 800, step=100),
+                    learning_rate=trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+                    depth=trial.suggest_int("depth", 4, 10),
+                    l2_leaf_reg=trial.suggest_float("l2_leaf_reg", 1.0, 10.0),
+                    random_seed=42,
+                    verbose=False,
+                )
+                model = CatBoostClassifier(**params)
+                # Subsample for speed
+                frac = min(1.0, 20000 / max(1, len(X_train)))
+                Xs = X_train.sample(frac=frac, random_state=42) if frac < 1.0 else X_train
+                ys = y_train.loc[Xs.index]
+                model.fit(Xs, ys)
+                pred = model.predict(X_test)
+                return float((pred == y_test).mean())
+
+            study = optuna.create_study(direction="maximize")
+            study.optimize(_objective, n_trials=15)
+            best = study.best_params
+            model = CatBoostClassifier(**best)
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_test)
+            acc = accuracy_score(y_test, y_pred)
+            feature_importance = {}
+            try:
+                feature_importance = dict(zip(X_train.columns, model.get_feature_importance(), strict=False))
+            except Exception:
+                pass
+            return {
+                "model": model,
+                "accuracy": float(acc),
+                "feature_importance": feature_importance,
+                "model_type": "CatBoost",
+                "symbol": self.config.get("symbol", ""),
+                "exchange": self.config.get("exchange", ""),
+                "training_date": datetime.now().isoformat(),
+                "hyperparameters": best,
+            }
+        except Exception:
+            return None
 
     async def _train_random_forest(
         self,

@@ -150,8 +150,8 @@ class CachedBacktester:
         self.cache[cache_key] = result
         try:
             self.logger.info(f"Backtest cache miss: computed score={float(result):.4f}")
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.warning(f"Failed to log cache miss info: {e}")
         return result
 
     def _generate_cache_key(self, params: Dict[str, Any]) -> str:
@@ -199,8 +199,8 @@ class ProgressiveEvaluator:
                         "stage_score": float(score),
                     }
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"Failed to log progressive stage info: {e}")
 
             # Early stopping if performance is poor
             if data_ratio < 1.0 and score < -0.5:
@@ -218,8 +218,8 @@ class ProgressiveEvaluator:
                     "final_score": float(final_score),
                 }
             )
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.warning(f"Failed to log progressive evaluation complete: {e}")
         return final_score
 
 

@@ -1300,7 +1300,7 @@ class AnalystSpecialistTrainingStep:
     ) -> dict[str, Any]:
         """Train XGBoost model."""
         try:
-                        import xgboost as xgb
+            import xgboost as xgb
             from sklearn.metrics import accuracy_score
  
             # Train model

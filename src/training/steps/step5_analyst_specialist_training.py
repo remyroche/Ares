@@ -758,6 +758,8 @@ class AnalystSpecialistTrainingStep:
             ]
             # Remove timestamp-like columns from features to avoid leakage and instability
             feature_columns = [c for c in feature_columns if "timestamp" not in c.lower()]
+            # Ensure 1m meta-labels are not used by Analyst models
+            feature_columns = [c for c in feature_columns if not c.startswith("1m_")]
 
             # Preserve a DatetimeIndex for leak-proof CV if available
             time_index: pd.Series | None = None

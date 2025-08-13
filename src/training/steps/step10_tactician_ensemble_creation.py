@@ -211,6 +211,19 @@ class TacticianEnsembleCreationStep:
                     batch_size=131072,
                     arrow_transform=_arrow_pre,
                 )
+                # Merge 1m meta-labels as additional validation features if present
+                try:
+                    import pickle as _pkl
+                    pkl_train = os.path.join(data_dir, f"{exchange}_{symbol}_labeled_train.pkl")
+                    if os.path.exists(pkl_train):
+                        with open(pkl_train, "rb") as _f:
+                            step4 = _pkl.load(_f)
+                        one_m_cols = [c for c in getattr(step4, 'columns', []) if isinstance(c, str) and c.startswith('1m_')]
+                        if one_m_cols and 'timestamp' in step4.columns and 'timestamp' in df.columns:
+                            df = df.merge(step4[['timestamp', *one_m_cols]], on='timestamp', how='left')
+                            self.logger.info(f"Merged {len(one_m_cols)} 1m meta-label columns into validation frame")
+                except Exception:
+                    pass
                 if (
                     isinstance(feat_cols, list)
                     and len(feat_cols) > 0

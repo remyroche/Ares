@@ -256,6 +256,25 @@ class TacticianSpecialistTrainingStep:
             # Convert to DataFrame if needed
             if not isinstance(labeled_data, pd.DataFrame):
                 labeled_data = pd.DataFrame(labeled_data)
+
+            # Merge 1m meta-labels from Step 2/4 if present (columns like '1m_<LABEL>')
+            try:
+                step4_train = f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl"
+                if os.path.exists(step4_train):
+                    with open(step4_train, "rb") as f:
+                        step4_df = pickle.load(f)
+                    one_m_cols = [c for c in getattr(step4_df, 'columns', []) if isinstance(c, str) and c.startswith('1m_')]
+                    if one_m_cols and 'timestamp' in step4_df.columns:
+                        # Ensure timestamp present in labeled_data for join
+                        if 'timestamp' not in labeled_data.columns and isinstance(labeled_data.index, pd.DatetimeIndex):
+                            labeled_data = labeled_data.copy()
+                            labeled_data['timestamp'] = labeled_data.index
+                        if 'timestamp' in labeled_data.columns:
+                            labeled_data = labeled_data.merge(step4_df[['timestamp', *one_m_cols]], on='timestamp', how='left')
+                            self.logger.info(f"Merged {len(one_m_cols)} 1m meta-label columns into tactician dataset")
+            except Exception as _merr:
+                self.logger.warning(f"Skipping 1m meta-label merge: {_merr}")
+
             try:
                 shape = getattr(labeled_data, "shape", None)
                 self.logger.info(f"Loaded tactician labeled data: shape={shape}")

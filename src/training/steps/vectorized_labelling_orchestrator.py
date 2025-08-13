@@ -365,6 +365,7 @@ class VectorizedLabellingOrchestrator:
             # 4b. Fit activation thresholds for meta-labels using triple-barrier outcomes
             try:
                 from src.analyst.meta_labeling_system import MetaLabelingSystem
+                from src.training.enhanced_training_manager import EnhancedTrainingManager
                 meta = MetaLabelingSystem(self.config)
                 await meta.initialize()
                 # Build minimal OHLCV frames for intensity calculation
@@ -385,6 +386,12 @@ class VectorizedLabellingOrchestrator:
                 base_label_names = sorted({name.split("_",1)[1] if "_" in name else name for name in label_names})
                 # Fit thresholds
                 fit_report = meta.fit_activation_thresholds(price_min, vol_min, labeled_data, base_label_names)
+                # Persist thresholds for reuse
+                try:
+                    etm = EnhancedTrainingManager(self.config)
+                    etm.save_activation_thresholds(fit_report)
+                except Exception:
+                    pass
                 # Persist a report for audit
                 os.makedirs("log/meta_label_thresholds", exist_ok=True)
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -459,8 +466,17 @@ class VectorizedLabellingOrchestrator:
             # 6c. Integrate MoE confidences and pre-compute weights
             try:
                 from src.analyst.meta_labeling_system import MetaLabelingSystem
+                from src.training.enhanced_training_manager import EnhancedTrainingManager
                 meta = MetaLabelingSystem(self.config)
                 await meta.initialize()
+                # Load reliability scores if available and set them in MetaLabelingSystem
+                try:
+                    etm = EnhancedTrainingManager(self.config)
+                    reliability = etm.get_label_reliability()
+                    for k, v in reliability.items():
+                        meta.set_reliability_score(k, float(v))
+                except Exception:
+                    pass
                 # Determine base label names (strip timeframe prefixes)
                 label_cols = [
                     c for c in combined_data.columns if any(
@@ -474,7 +490,6 @@ class VectorizedLabellingOrchestrator:
                     )
                 ]
                 base_names = sorted({name.split("_",1)[1] if "_" in name else name for name in label_cols})
-                # Placeholder MoE confidences: set to 0.5; replace with actual model outputs integration
                 # Derive MoE confidences from MLConfidencePredictor if available
                 try:
                     from src.analyst.ml_confidence_predictor import MLConfidencePredictor

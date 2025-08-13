@@ -88,6 +88,11 @@ def get_training_config() -> dict[str, Any]:
             "stop_loss_multiplier": 0.001,
             "time_barrier_minutes": 30,
             "max_lookahead": 100,
+            # Ensure binary labels and parquet saving are enabled by default
+            "enable_parquet_saving": True,
+            "enable_feature_selection": True,
+            "enable_data_normalization": True,
+            "enable_stationary_checks": True,
             # Optional search spaces when optimization is enabled
             "pt_candidates": [0.0015, 0.002, 0.003],
             "sl_candidates": [0.001, 0.0015, 0.002],
@@ -100,17 +105,21 @@ def get_training_config() -> dict[str, Any]:
                 # If True, Step2 runs Step4 early to materialize L0/L1/L2/L3 before splitting
                 "step2_is_leveling": True,
                 # What to use for regime splitting in Step3: 'bull_bear_sideways' or 'meta_labels'
-                "regime_basis": "bull_bear_sideways",
+                "regime_basis": "meta_labels",
             }
         },
         # --- Method A: Expert Training Configuration ---
         "method_a_mixture_of_experts": {
-            "enabled": False,
+            "enabled": True,
             # Regime source for expert datasets: 'step2_bull_bear_sideways' or 'meta_labels'
-            "regime_source": "step2_bull_bear_sideways",
+            "regime_source": "meta_labels",
             # When using meta_labels, which columns to use as regimes
             "meta_label_columns": [
-                # Examples: 'VOLATILITY_COMPRESSION', 'FLAG_FORMATION', 'sr_breakout_up', 'sr_bounce_down'
+                # Example defaults (adjust per asset):
+                "sr_breakout_up",
+                "sr_breakout_down",
+                "sr_bounce_up",
+                "sr_bounce_down",
             ],
             # Minimum rows required to train a given expert
             "min_rows_per_expert": 5000,
@@ -118,7 +127,10 @@ def get_training_config() -> dict[str, Any]:
             "use_strength_weighting": True,
             # Mapping from regime/meta to strength column name (if available)
             "strength_columns": {
-                # e.g., "BREAKOUT": "breakout_strength", "SIDEWAYS": "confidence"
+                "sr_breakout_up": "sr_zone_strength",
+                "sr_breakout_down": "sr_zone_strength",
+                "sr_bounce_up": "sr_zone_strength",
+                "sr_bounce_down": "sr_zone_strength",
             },
         },
         # --- Multi-Timeframe Training Configuration ---

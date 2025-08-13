@@ -98,7 +98,7 @@ def get_training_config() -> dict[str, Any]:
         "pipeline": {
             "method_a": {
                 # If True, Step2 runs Step4 early to materialize L0/L1/L2/L3 before splitting
-                "step2_is_leveling": False,
+                "step2_is_leveling": True,
                 # What to use for regime splitting in Step3: 'bull_bear_sideways' or 'meta_labels'
                 "regime_basis": "bull_bear_sideways",
             }

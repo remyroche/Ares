@@ -515,9 +515,27 @@ class MLConfidencePredictor:
                 meta_labels = await self._generate_tactician_meta_labels(market_data)
 
             # Combine predictions with meta-labels
+            # Determine routing: if no meta labels active, mark as generalist route
+            # Count only domain labels (exclude metadata and NO_SETUP)
+            label_whitelist = self.analyst_labels if model_type == "analyst" else self.tactician_labels
+            active_meta = 0
+            if isinstance(meta_labels, dict):
+                for k in label_whitelist:
+                    if k == "NO_SETUP":
+                        continue
+                    try:
+                        if float(meta_labels.get(k, 0) or 0) > 0:
+                            active_meta += 1
+                    except (ValueError, TypeError):
+                        continue
+            routing = {
+                "route": "generalist" if active_meta == 0 else "experts",
+                "active_meta_count": active_meta,
+            }
             combined_predictions = {
                 **base_predictions,
                 "meta_labels": meta_labels,
+                "routing": routing,
                 "model_type": model_type,
                 "timestamp": datetime.now().isoformat(),
             }

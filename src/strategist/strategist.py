@@ -413,10 +413,17 @@ class Strategist:
         )
 
         # Run ML confidence prediction
-        ml_predictions = await self.ml_confidence_predictor.predict_confidence_table(
+        # Prefer predictions augmented with meta-labels for routing/gating
+        ml_predictions = await self.ml_confidence_predictor.predict_with_meta_labeling(
             market_data,
             current_price,
+            model_type="analyst",
         )
+        if not ml_predictions:
+            ml_predictions = await self.ml_confidence_predictor.predict_confidence_table(
+                market_data,
+                current_price,
+            )
 
         if ml_predictions:
             # Add regime-specific adjustments

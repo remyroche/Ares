@@ -3078,6 +3078,130 @@ class AnalystEnhancementStep:
 
     # VIF/CPA utilities are handled in Step 4; removed from Step 6
 
+    async def _hpo_catboost(
+        self,
+        model_name: str,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series,
+    ) -> tuple[dict[str, Any], float]:
+        """Lightweight CatBoost HPO using Optuna; returns (best_params, best_score)."""
+        try:
+            from catboost import CatBoostClassifier
+            import optuna
+
+            def objective(trial: optuna.Trial) -> float:
+                params = {
+                    "iterations": trial.suggest_int("iterations", 300, 1500, step=300),
+                    "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+                    "depth": trial.suggest_int("depth", 4, 10),
+                    "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0),
+                }
+                model = CatBoostClassifier(random_seed=42, verbose=False, **params)
+                # Subsample for speed
+                frac = min(1.0, 30000 / max(1, len(X_train)))
+                if frac < 1.0:
+                    Xs = X_train.sample(frac=frac, random_state=42)
+                    ys = y_train.loc[Xs.index]
+                else:
+                    Xs, ys = X_train, y_train
+                model.fit(Xs, ys)
+                pred = model.predict(X_val)
+                return float((pred == y_val).mean())
+
+            study = optuna.create_study(direction="maximize")
+            study.optimize(objective, n_trials=25)
+            best = study.best_params
+            return best, float(study.best_value)
+        except Exception as e:
+            self.logger.warning(f"CatBoost HPO failed: {e}")
+            return {}, 0.0
+
+    async def _apply_pre_feature_selection(self, data: pd.DataFrame, feature_columns: list, regime_name: str) -> list:
+        """Apply pre-feature selection for large feature sets to reduce dimensionality before training."""
+        try:
+            self.logger.info(f"🔍 Applying pre-feature selection for {len(feature_columns)} features...")
+            
+            # Load feature selection configuration
+            feature_config = self.config.get("feature_interactions", {})
+            selection_tiers = feature_config.get("feature_selection_tiers", {})
+            
+            # Get tiered selection parameters
+            tier_1_count = selection_tiers.get("tier_1_base_features", 80)
+            tier_2_count = selection_tiers.get("tier_2_normalized_features", 40)
+            tier_3_count = selection_tiers.get("tier_3_interaction_features", 60)
+            tier_4_count = selection_tiers.get("tier_4_lagged_features", 40)
+            tier_5_count = selection_tiers.get("tier_5_causality_features", 20)
+            total_max_features = selection_tiers.get("total_max_features", 240)
+            
+            # Categorize features by tier
+            feature_categories = self._categorize_features_by_tier(feature_columns)
+            
+            selected_features = []
+            
+            # Tier 1: Core features (technical indicators, basic liquidity)
+            tier_1_features = self._select_tier_1_features_pre_training(
+                data, feature_categories["tier_1"], tier_1_count
+            )
+            selected_features.extend(tier_1_features)
+            self.logger.info(f"   ✅ Tier 1: Selected {len(tier_1_features)} core features")
+            
+            # Tier 2: Normalized features (z-scores, changes, accelerations)
+            tier_2_features = self._select_tier_2_features_pre_training(
+                data, feature_categories["tier_2"], tier_2_count
+            )
+            selected_features.extend(tier_2_features)
+            self.logger.info(f"   ✅ Tier 2: Selected {len(tier_2_features)} normalized features")
+            
+            # Tier 3: Interaction features (spread*volume, etc.)
+            tier_3_features = self._select_tier_3_features_pre_training(
+                data, feature_categories["tier_3"], tier_3_count
+            )
+            selected_features.extend(tier_3_features)
+            self.logger.info(f"   ✅ Tier 3: Selected {len(tier_3_features)} interaction features")
+            
+            # Tier 4: Lagged features (lagged interactions)
+            tier_4_features = self._select_tier_4_features_pre_training(
+                data, feature_categories["tier_4"], tier_4_count
+            )
+            selected_features.extend(tier_4_features)
+            self.logger.info(f"   ✅ Tier 4: Selected {len(tier_4_features)} lagged features")
+            
+            # Tier 5: Causality features (market microstructure causality)
+            tier_5_features = self._select_tier_5_features_pre_training(
+                data, feature_categories["tier_5"], tier_5_count
+            )
+            selected_features.extend(tier_5_features)
+            self.logger.info(f"   ✅ Tier 5: Selected {len(tier_5_features)} causality features")
+            
+            # Aggressive MI pruning if still too large
+            try:
+                if len(selected_features) > total_max_features:
+                    from sklearn.feature_selection import mutual_info_classif
+                    X = data[selected_features].select_dtypes(include=[np.number]).fillna(0)
+                    y = data.get("label")
+                    if y is not None and not X.empty:
+                        mi = mutual_info_classif(X.values, y.values if hasattr(y, "values") else y, random_state=42)
+                        keep_idx = np.argsort(mi)[-total_max_features:]
+                        selected_features = [list(X.columns)[i] for i in keep_idx]
+                        self.logger.info(f"   🔧 Aggressive MI pruning: Reduced to {len(selected_features)} features")
+            except Exception as e:
+                self.logger.warning(f"Aggressive MI pruning failed: {e}")
+            
+            # Apply final pruning if we exceed total_max_features
+            if len(selected_features) > total_max_features:
+                selected_features = self._apply_final_pruning_pre_training(
+                    data, selected_features, total_max_features
+                )
+            self.logger.info(f"   🔧 Final pruning: Reduced to {len(selected_features)} features")
+            
+            return selected_features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Pre-feature selection failed: {e}")
+            return feature_columns  # Return original features if selection fails
+
 
 async def run_step(
     symbol: str,

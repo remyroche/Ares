@@ -4,11 +4,10 @@
 Regime-Specific SL/TP Optimizer
 
 This module provides regime-specific optimization of Stop Loss (SL) and Take Profit (TP)
-parameters based on the current market regime identified by the HMM classifier.
+parameters based on the current market context identified by the meta-labeling system.
 
-The optimizer uses the timeframe analysis results to determine optimal SL/TP levels
-for each market regime, considering the average duration and success rates from
-the analysis.
+The optimizer uses meta-label intensities and activations to determine optimal SL/TP levels
+for each label-driven regime, considering success proxies from backtest simulations.
 """
 
 import os
@@ -25,7 +24,7 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
+from src.analyst.meta_labeling_system import MetaLabelingSystem
 from src.config import CONFIG
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
@@ -39,10 +38,10 @@ from src.utils.warning_symbols import (
 
 class RegimeSpecificTPSLOptimizer:
     """
-    Optimizes Take Profit (TP) and Stop Loss (SL) parameters based on market regime.
+    Optimizes Take Profit (TP) and Stop Loss (SL) parameters based on label-driven market context.
 
-    This optimizer uses the HMM regime classifier to identify the current market regime
-    and then applies regime-specific optimization based on the timeframe analysis results.
+    This optimizer uses the MetaLabelingSystem to identify the current dominant meta label
+    and then applies label-specific optimization based on backtest performance.
     """
 
     def __init__(self, config: dict[str, Any]):
@@ -54,28 +53,105 @@ class RegimeSpecificTPSLOptimizer:
         """
         self.config = config
         self.logger = system_logger.getChild("RegimeSpecificTPSLOptimizer")
+        self.print = self.logger.info
 
-        # Initialize Unified regime classifier
-        self.regime_classifier = UnifiedRegimeClassifier(config, "UNKNOWN", "UNKNOWN")
+        # Initialize Meta-Labeling system
+        self.meta_labeling_system = MetaLabelingSystem(config)
 
-        # Regime-specific parameters from timeframe analysis
+        # Regime-specific parameters (seeded defaults) for key meta-labels
         self.regime_parameters = {
-            "BULL_TREND": {
+            # Trend/price action
+            "STRONG_TREND_CONTINUATION": {
+                "target_pct": 0.5,
+                "stop_pct": 0.2,
+                "risk_reward_ratio": 2.5,
+                "avg_duration_minutes": 45.0,
+                "success_rate": 7.0,
+                "frequency_score": 100.0,
+            },
+            "EXHAUSTION_REVERSAL": {
+                "target_pct": 0.4,
+                "stop_pct": 0.15,
+                "risk_reward_ratio": 2.67,
+                "avg_duration_minutes": 35.0,
+                "success_rate": 6.5,
+                "frequency_score": 80.0,
+            },
+            "RANGE_MEAN_REVERSION": {
+                "target_pct": 0.3,
+                "stop_pct": 0.2,
+                "risk_reward_ratio": 1.5,
+                "avg_duration_minutes": 60.0,
+                "success_rate": 7.5,
+                "frequency_score": 100.0,
+            },
+            "BREAKOUT_SUCCESS": {
+                "target_pct": 0.6,
+                "stop_pct": 0.15,
+                "risk_reward_ratio": 4.0,
+                "avg_duration_minutes": 30.0,
+                "success_rate": 6.0,
+                "frequency_score": 70.0,
+            },
+            "BREAKOUT_FAILURE": {
+                "target_pct": 0.35,
+                "stop_pct": 0.2,
+                "risk_reward_ratio": 1.75,
+                "avg_duration_minutes": 25.0,
+                "success_rate": 5.5,
+                "frequency_score": 60.0,
+            },
+            "MOMENTUM_IGNITION": {
+                "target_pct": 0.5,
+                "stop_pct": 0.15,
+                "risk_reward_ratio": 3.33,
+                "avg_duration_minutes": 20.0,
+                "success_rate": 5.5,
+                "frequency_score": 70.0,
+            },
+            # Volatility regimes
+            "VOLATILITY_COMPRESSION": {
+                "target_pct": 0.25,
+                "stop_pct": 0.2,
+                "risk_reward_ratio": 1.25,
+                "avg_duration_minutes": 90.0,
+                "success_rate": 6.0,
+                "frequency_score": 90.0,
+            },
+            "VOLATILITY_EXPANSION": {
+                "target_pct": 0.5,
+                "stop_pct": 0.25,
+                "risk_reward_ratio": 2.0,
+                "avg_duration_minutes": 35.0,
+                "success_rate": 5.8,
+                "frequency_score": 70.0,
+            },
+            # S/R and high impact candle analogs
+            "SR_TOUCH": {
                 "target_pct": 0.4,
                 "stop_pct": 0.2,
                 "risk_reward_ratio": 2.0,
-                "avg_duration_minutes": 37.2,
-                "success_rate": 6.99,
-                "frequency_score": 100.0,
+                "avg_duration_minutes": 40.0,
+                "success_rate": 6.8,
+                "frequency_score": 85.0,
             },
-            "BEAR_TREND": {
-                "target_pct": 0.4,
+            "SR_BREAK": {
+                "target_pct": 0.5,
                 "stop_pct": 0.2,
-                "risk_reward_ratio": 2.0,
-                "avg_duration_minutes": 37.2,
-                "success_rate": 6.99,
+                "risk_reward_ratio": 2.5,
+                "avg_duration_minutes": 35.0,
+                "success_rate": 6.2,
+                "frequency_score": 75.0,
+            },
+            "IGNITION_BAR": {
+                "target_pct": 0.6,
+                "stop_pct": 0.1,
+                "risk_reward_ratio": 6.0,
+                "avg_duration_minutes": 15.0,
+                "success_rate": 6.0,
                 "frequency_score": 100.0,
             },
+            # Fallbacks (legacy names kept for compatibility)
             "SIDEWAYS_RANGE": {
                 "target_pct": 0.5,
                 "stop_pct": 0.3,
@@ -84,20 +160,12 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 7.81,
                 "frequency_score": 100.0,
             },
-            "SR_ZONE_ACTION": {
+            "DEFAULT": {
                 "target_pct": 0.4,
                 "stop_pct": 0.2,
                 "risk_reward_ratio": 2.0,
-                "avg_duration_minutes": 37.2,
-                "success_rate": 6.99,
-                "frequency_score": 100.0,
-            },
-            "HIGH_IMPACT_CANDLE": {
-                "target_pct": 0.6,
-                "stop_pct": 0.1,
-                "risk_reward_ratio": 6.0,
-                "avg_duration_minutes": 14.7,
-                "success_rate": 1.06,
+                "avg_duration_minutes": 40.0,
+                "success_rate": 6.5,
                 "frequency_score": 100.0,
             },
         }
@@ -110,9 +178,35 @@ class RegimeSpecificTPSLOptimizer:
             "optimization_metric",
             "sharpe_ratio",
         )
+        # Candidate meta-labels to consider as regimes
+        self.candidate_labels: list[str] = self.optimization_config.get(
+            "candidate_labels",
+            [
+                "STRONG_TREND_CONTINUATION",
+                "EXHAUSTION_REVERSAL",
+                "RANGE_MEAN_REVERSION",
+                "BREAKOUT_SUCCESS",
+                "BREAKOUT_FAILURE",
+                "MOMENTUM_IGNITION",
+                "VOLATILITY_COMPRESSION",
+                "VOLATILITY_EXPANSION",
+                "SR_TOUCH",
+                "SR_BOUNCE",
+                "SR_BREAK",
+                "IGNITION_BAR",
+            ],
+        )
+        # Timeframe used to identify meta label context
+        self.analysis_timeframe: str = self.optimization_config.get(
+            "analysis_timeframe",
+            "30m",
+        )
 
         # Model storage
         self.model_dir = os.path.join(CONFIG["CHECKPOINT_DIR"], "regime_tpsl_models")
+        # De-duplicate S/R variants
+        if "SR_TOUCH" in self.regime_parameters:
+            self.regime_parameters["SR_BOUNCE"] = self.regime_parameters["SR_TOUCH"]
         os.makedirs(self.model_dir, exist_ok=True)
 
         # Optimization results cache
@@ -138,11 +232,11 @@ class RegimeSpecificTPSLOptimizer:
             bool: True if initialization successful, False otherwise
         """
         try:
-            self.logger.info("Initializing Regime-Specific TP/SL Optimizer...")
+            self.logger.info("Initializing Regime-Specific TP/SL Optimizer (Meta-Label)...")
 
-            # Initialize HMM classifier
-            if not await self._initialize_regime_classifier():
-                self.print(failed("Failed to initialize HMM classifier"))
+            # Initialize Meta-Labeling system
+            if not await self._initialize_meta_label_system():
+                self.print(failed("Failed to initialize Meta-Labeling system"))
                 return False
 
             # Load existing optimization results
@@ -159,36 +253,22 @@ class RegimeSpecificTPSLOptimizer:
             )
             return False
 
-    async def _initialize_regime_classifier(self) -> bool:
+    async def _initialize_meta_label_system(self) -> bool:
         """
-        Initialize the HMM regime classifier.
+        Initialize the MetaLabelingSystem.
 
         Returns:
             bool: True if initialization successful, False otherwise
         """
         try:
-            # Try to load existing HMM model
-            model_path = os.path.join(
-                CONFIG["CHECKPOINT_DIR"],
-                "analyst_models",
-                "hmm_regime_classifier_1h.joblib",
-            )
-
-            if os.path.exists(model_path):
-                if self.regime_classifier.load_models():
-                    self.logger.info("✅ Loaded existing HMM regime classifier")
-                    return True
-                self.logger.warning(
-                    "Failed to load existing HMM model, will train new one",
-                )
-
-            self.logger.info(
-                "HMM classifier not trained yet, will be trained when data is available",
-            )
-            return True
-
-        except Exception:
-            self.print(initialization_error("Error initializing HMM classifier: {e}"))
+            ok = await self.meta_labeling_system.initialize()
+            if ok:
+                self.logger.info("✅ Meta-Labeling system initialized for regime identification")
+                return True
+            self.logger.warning("Meta-Labeling system failed to initialize")
+            return False
+        except Exception as e:
+            self.print(initialization_error(f"Error initializing Meta-Labeling system: {e}"))
             return False
 
     async def _load_optimization_results(self) -> None:
@@ -232,29 +312,62 @@ class RegimeSpecificTPSLOptimizer:
         current_data: pd.DataFrame,
     ) -> tuple[str, float, dict[str, Any]]:
         """
-        Identify the current market regime using the HMM classifier.
+        Identify the current dominant meta-label driven market regime.
 
         Args:
-            current_data: Current market data (must be 1h timeframe)
+            current_data: Current market OHLCV data
 
         Returns:
-            Tuple of (regime, confidence, additional_info)
+            Tuple of (regime_label, confidence, additional_info)
         """
         try:
-            if not self.regime_classifier.trained:
-                self.print(warning("HMM classifier not trained, using default regime"))
+            # Require meta-labeling to be initialized
+            if not getattr(self.meta_labeling_system, "is_initialized", False):
+                self.print(warning("Meta-Labeling system not initialized, using default regime"))
                 return "SIDEWAYS_RANGE", 0.5, {"method": "default"}
 
-            regime, confidence, info = self.regime_classifier.predict_regime(
-                current_data,
+            # Use the same frame for price and volume; expect OHLCV input
+            labels = await self.meta_labeling_system.generate_analyst_labels(
+                price_data=current_data,
+                volume_data=current_data,
+                timeframe=self.analysis_timeframe,
             )
+
+            # Build intensity map for candidate labels
+            intensities: dict[str, float] = {}
+            actives: dict[str, int] = {}
+            for label in self.candidate_labels:
+                intensities[label] = float(labels.get(f"intensity_{label}", 0.0))
+                actives[label] = int(labels.get(f"active_{label}", labels.get(label, 0)))
+
+            # Choose the dominant label by intensity, breaking ties by active flag
+            best_label = max(
+                self.candidate_labels,
+                key=lambda k: (intensities.get(k, 0.0), actives.get(k, 0)),
+                default="SIDEWAYS_RANGE",
+            )
+            confidence = float(intensities.get(best_label, 0.0))
+
+            # Log and return with compact info
+            top3 = sorted(((k, intensities.get(k, 0.0)) for k in self.candidate_labels), key=lambda x: x[1], reverse=True)[:3]
             self.logger.info(
-                f"Identified regime: {regime} (confidence: {confidence:.2f})",
+                {
+                    "msg": "Identified label-driven regime",
+                    "regime": best_label,
+                    "confidence": round(confidence, 3),
+                    "top3": [(k, round(v, 3)) for k, v in top3],
+                    "timeframe": self.analysis_timeframe,
+                }
             )
-            return regime, confidence, info
+            return best_label, confidence, {
+                "method": "meta_labeling",
+                "timeframe": self.analysis_timeframe,
+                "top3": top3,
+                "actives": {k: actives.get(k, 0) for k in self.candidate_labels},
+            }
 
         except Exception as e:
-            self.print(error("Error identifying regime: {e}"))
+            self.print(error(f"Error identifying regime: {e}"))
             return "SIDEWAYS_RANGE", 0.5, {"method": "fallback", "error": str(e)}
 
     @handle_errors(
@@ -269,10 +382,10 @@ class RegimeSpecificTPSLOptimizer:
         current_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """
-        Optimize TP/SL parameters for a specific market regime.
+        Optimize TP/SL parameters for a specific label-driven market regime.
 
         Args:
-            regime: Market regime to optimize for
+            regime: Regime/meta-label to optimize for
             historical_data: Historical data for optimization
             current_data: Current market data
 
@@ -327,7 +440,7 @@ class RegimeSpecificTPSLOptimizer:
             return optimized_params
 
         except Exception:
-            self.print(error("Error optimizing TP/SL for regime {regime}: {e}"))
+            self.print(error(f"Error optimizing TP/SL for regime {regime}: {e}"))
             return self.regime_parameters.get(
                 regime,
                 self.regime_parameters["SIDEWAYS_RANGE"],
@@ -399,7 +512,7 @@ class RegimeSpecificTPSLOptimizer:
             return score
 
         except Exception:
-            self.print(error("Error in parameter evaluation: {e}"))
+            self.print(error(f"Error in parameter evaluation: {e}"))
             return -1.0
 
     def _simulate_trades(
@@ -479,10 +592,10 @@ class RegimeSpecificTPSLOptimizer:
         force_optimization: bool = False,
     ) -> dict[str, Any]:
         """
-        Get optimized TP/SL parameters for the current market regime.
+        Get optimized TP/SL parameters for the current label-driven market regime.
 
         Args:
-            current_data: Current market data (1h timeframe)
+            current_data: Current market data (OHLCV)
             historical_data: Historical data for optimization
             force_optimization: Force re-optimization even if cached
 
@@ -490,7 +603,7 @@ class RegimeSpecificTPSLOptimizer:
             Dictionary with optimized TP/SL parameters
         """
         try:
-            # Identify current regime
+            # Identify current regime via meta-labels
             regime, confidence, regime_info = await self.identify_current_regime(
                 current_data,
             )
@@ -521,7 +634,7 @@ class RegimeSpecificTPSLOptimizer:
             }
 
         except Exception as e:
-            self.print(error("Error getting optimized TP/SL: {e}"))
+            self.print(error(f"Error getting optimized TP/SL: {e}"))
             # Return default parameters
             return {
                 **self.regime_parameters["SIDEWAYS_RANGE"],

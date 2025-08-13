@@ -1646,11 +1646,12 @@ class MetaLabelingSystem:
             moe_confidences: dict[str, float] = {k: 0.5 for k in label_keys}  # placeholder; replace with real MoE output
             weights = self.compute_label_weights(intensities, moe_confidences)
 
+            avg_conf = float(np.mean(list(weights.values()))) if weights else 0.0
             combined_labels = {
                 "analyst_labels": analyst_labels,
                 "tactician_labels": tactician_labels,
                 "weights": weights,
-                "combined_confidence": float(np.clip(sum(weights.values()), 0.0, 1.0)),
+                "combined_confidence": avg_conf,
                 "combined_timestamp": pd.Timestamp.now().isoformat(),
                 "total_labels": (
                     analyst_labels.get("label_count", 0)

@@ -1208,7 +1208,6 @@ class AdvancedFeatureEngineering:
             "CLIMACTIC_REVERSAL",
             "VOLATILITY_EXPANSION",
             "MOMENTUM_IGNITION",
-            "GRADUAL_MOMENTUM_FADE",
             "TRIANGLE_FORMATION",
             "RECTANGLE_FORMATION",
             "LIQUIDITY_GRAB",

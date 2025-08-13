@@ -177,7 +177,6 @@ class MLConfidencePredictor:
             "TRIANGLE_FORMATION",
             "RECTANGLE_FORMATION",
             "MOMENTUM_IGNITION",
-            "GRADUAL_MOMENTUM_FADE",
             "LIQUIDITY_GRAB",
             "ABSORPTION_AT_LEVEL",
             "TRENDING_RANGE",

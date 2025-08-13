@@ -248,6 +248,36 @@ class MetaLabelingSystem:
                 if len(data) >= 14
                 else true_range.iloc[-1]
             )
+            # Extended ATR windows
+            try:
+                features["atr_20"] = (
+                    true_range.rolling(20).mean().iloc[-1]
+                    if len(data) >= 20
+                    else features["atr"]
+                )
+                features["atr_100"] = (
+                    true_range.rolling(100).mean().iloc[-1]
+                    if len(data) >= 100
+                    else features["atr_20"]
+                )
+            except Exception:
+                features.setdefault("atr_20", features.get("atr", 0.0))
+                features.setdefault("atr_100", features.get("atr_20", 0.0))
+
+            # ADX(14)
+            try:
+                up_move = data["high"].diff()
+                down_move = -data["low"].diff()
+                plus_dm = ((up_move > down_move) & (up_move > 0)).astype(float) * up_move
+                minus_dm = ((down_move > up_move) & (down_move > 0)).astype(float) * down_move
+                atr14 = true_range.rolling(14).mean()
+                plus_di = 100 * (plus_dm.rolling(14).mean() / atr14.replace(0, np.nan))
+                minus_di = 100 * (minus_dm.rolling(14).mean() / atr14.replace(0, np.nan))
+                dx = 100 * (np.abs(plus_di - minus_di) / (plus_di + minus_di).replace(0, np.nan))
+                adx = dx.rolling(14).mean().replace([np.inf, -np.inf], np.nan).fillna(20)
+                features["adx"] = float(adx.iloc[-1])
+            except Exception:
+                features["adx"] = 20.0
 
             return features
 
@@ -415,12 +445,13 @@ class MetaLabelingSystem:
 
         except Exception as e:
             self.logger.exception(f"Error calculating momentum patterns: {e}")
-            return {"MOMENTUM_IGNITION": 0, "GRADUAL_MOMENTUM_FADE": 0}
+            return {"MOMENTUM_IGNITION": 0}
 
     def _detect_additional_analyst_patterns(
         self,
         data: pd.DataFrame,
         features: dict[str, Any],
+        order_flow_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
         """Detect additional analyst patterns requested by user.
 
@@ -540,6 +571,268 @@ class MetaLabelingSystem:
                 patterns["MICRO_MOMENTUM_DIVERGENCE"] = 1 if (made_higher_high and rsi_short_now < rsi_window_max) else 0
             except Exception:
                 patterns["MICRO_MOMENTUM_DIVERGENCE"] = 0
+
+            # 7) FAILED_RETEST
+            try:
+                # Identify prior significant high/low in last 50 bars excluding current bar
+                lookback = 50
+                prior_high = float(high.rolling(lookback, min_periods=5).max().shift(1).iloc[-1]) if len(high) >= 5 else float(high.iloc[-1])
+                prior_low = float(low.rolling(lookback, min_periods=5).min().shift(1).iloc[-1]) if len(low) >= 5 else float(low.iloc[-1])
+                cp = float(close.iloc[-1])
+                within_up = abs(cp - prior_high) / max(1e-12, prior_high) <= 0.0015
+                within_dn = abs(cp - prior_low) / max(1e-12, prior_low) <= 0.0015
+                # Volume comparison: current vs volume at original break (approximate via max range bar around prior extreme)
+                vol_series = vol if not vol.empty else pd.Series([1.0]*len(close), index=close.index)
+                # Find index of prior extreme
+                try:
+                    idx_high = int(high.shift(1).rolling(lookback, min_periods=5).apply(lambda s: np.argmax(s), raw=True).iloc[-1])
+                except Exception:
+                    idx_high = None
+                try:
+                    idx_low = int(low.shift(1).rolling(lookback, min_periods=5).apply(lambda s: np.argmin(s), raw=True).iloc[-1])
+                except Exception:
+                    idx_low = None
+                vol_at_break_high = float(vol_series.iloc[idx_high]) if idx_high is not None and -len(vol_series) <= idx_high < len(vol_series) else float(vol_series.iloc[-2] if len(vol_series) >= 2 else 1.0)
+                vol_at_break_low = float(vol_series.iloc[idx_low]) if idx_low is not None and -len(vol_series) <= idx_low < len(vol_series) else float(vol_series.iloc[-2] if len(vol_series) >= 2 else 1.0)
+                current_vol = float(vol_series.iloc[-1]) if len(vol_series) else 1.0
+                vol_ok_up = current_vol < 0.6 * max(1e-12, vol_at_break_high)
+                vol_ok_dn = current_vol < 0.6 * max(1e-12, vol_at_break_low)
+                # Reversal within 5 bars > 0.25%
+                rev_window = min(5, len(close))
+                future_move_up = False
+                future_move_dn = False
+                if rev_window >= 2:
+                    # Use last 5 bars change from the level proxy: compare last vs min/max over last 5
+                    recent_max = float(close.tail(rev_window).max())
+                    recent_min = float(close.tail(rev_window).min())
+                    if within_up:
+                        future_move_dn = (prior_high - recent_min) / max(1e-12, prior_high) > 0.0025
+                    if within_dn:
+                        future_move_up = (recent_max - prior_low) / max(1e-12, prior_low) > 0.0025
+                failed_retest = (within_up and vol_ok_up and future_move_dn) or (within_dn and vol_ok_dn and future_move_up)
+                patterns["FAILED_RETEST"] = 1 if failed_retest else 0
+            except Exception:
+                patterns["FAILED_RETEST"] = 0
+
+            # 8) ICE_BERG_ORDERS (order flow dependent; heuristic proxies)
+            try:
+                iceberg = 0
+                if order_flow_data is not None:
+                    of = order_flow_data.tail(50)
+                    if {"bid_size", "ask_size"}.issubset(of.columns):
+                        avg_bid = float(of["bid_size"].rolling(20, min_periods=5).mean().iloc[-1])
+                        avg_ask = float(of["ask_size"].rolling(20, min_periods=5).mean().iloc[-1])
+                        big_bid = float(of["bid_size"].iloc[-1]) > 10 * max(1e-12, avg_bid)
+                        big_ask = float(of["ask_size"].iloc[-1]) > 10 * max(1e-12, avg_ask)
+                        # Replenishing when hit: rising size over last 3 while price tests same level band
+                        price_band = 0.0005 * float(close.iloc[-1])
+                        repeated_tests = (high.tail(10).max() - low.tail(10).min()) / max(1e-12, float(close.iloc[-1])) < 0.003
+                        replenishing_bid = big_bid and of["bid_size"].tail(3).diff().fillna(0).sum() > 0 and repeated_tests
+                        replenishing_ask = big_ask and of["ask_size"].tail(3).diff().fillna(0).sum() > 0 and repeated_tests
+                        # Volume at level high but no progression
+                        vol_spike_lvl = vol_ratio > 1.5
+                        momentum_decreasing = abs(momentum_5) < abs(momentum_10)
+                        iceberg = 1 if ((replenishing_bid or replenishing_ask) and vol_spike_lvl and momentum_decreasing) else 0
+                patterns["ICE_BERG_ORDERS"] = iceberg
+            except Exception:
+                patterns["ICE_BERG_ORDERS"] = 0
+
+            # 9) Momentum & Sentiment Refinements
+            try:
+                # MOMENTUM_ACCELERATION
+                roc5 = float(close.pct_change(5).iloc[-1]) if len(close) >= 6 else 0.0
+                prev_roc5 = float(close.pct_change(5).shift(1).iloc[-1]) if len(close) >= 7 else 0.0
+                momentum_accel = (roc5 > prev_roc5) and ((roc5 - prev_roc5) > 0)
+                above_ma = float(close.iloc[-1]) > float(features.get("sma_20", close.iloc[-1]))
+                vol_increasing = float(vol.tail(2).iloc[-1] / max(1e-12, vol.tail(2).iloc[0])) > 1.1 if len(vol) >= 2 else False
+                patterns["MOMENTUM_ACCELERATION"] = 1 if (momentum_accel and above_ma and vol_increasing) else 0
+
+                # MOMENTUM_DECELERATION
+                decel = False
+                if len(close) >= 7:
+                    roc_series = close.pct_change(5)
+                    d_roc = roc_series.diff()
+                    neg_slope = (d_roc.tail(2) < 0).all()
+                    uptrend = float(close.iloc[-1]) > float(features.get("sma_20", close.iloc[-1]))
+                    decel = ((roc5 > 0 and prev_roc5 > 0 and neg_slope and uptrend) or
+                             (roc5 < 0 and prev_roc5 < 0 and (d_roc.tail(2) > 0).all() and not uptrend))
+                patterns["MOMENTUM_DECELERATION"] = 1 if decel else 0
+
+                # CAPITULATION_SELLING
+                drop1 = float((close.iloc[-1] / close.iloc[-2]) - 1.0) <= -0.015 if len(close) >= 2 else False
+                drop3 = float(close.pct_change(3).iloc[-1]) <= -0.025 if len(close) >= 4 else False
+                vol2x = vol_ratio > 2.0
+                rsi14 = float(features.get("rsi", 50))
+                bearish_seq = int((close.diff() < 0).tail(7).sum()) >= 5 if len(close) >= 7 else False
+                patterns["CAPITULATION_SELLING"] = 1 if ((drop1 or drop3) and vol2x and rsi14 < 25 and bearish_seq) else 0
+
+                # EUPHORIC_BUYING
+                up1 = float((close.iloc[-1] / close.iloc[-2]) - 1.0) >= 0.015 if len(close) >= 2 else False
+                up3 = float(close.pct_change(3).iloc[-1]) >= 0.025 if len(close) >= 4 else False
+                bull_seq = int((close.diff() > 0).tail(7).sum()) >= 5 if len(close) >= 7 else False
+                patterns["EUPHORIC_BUYING"] = 1 if ((up1 or up3) and vol2x and rsi14 > 75 and bull_seq) else 0
+
+                # DULL_MARKET
+                atr20 = float(features.get("atr_20", features.get("atr", 0.0)))
+                atr100 = float(features.get("atr_100", atr20 if atr20 else 1.0))
+                bb_width_recent = float(((high - low).rolling(20, min_periods=5).mean() / close).iloc[-1]) if len(close) >= 5 else 0.0
+                hl_range = float((high.iloc[-1] - low.iloc[-1]) / max(1e-12, close.iloc[-1]))
+                recent_range_avg = float(((high - low).rolling(20, min_periods=5).mean()).iloc[-1] / max(1e-12, close.iloc[-1])) if len(close) >= 20 else hl_range
+                no_large_bars = True
+                if len(data) >= 10:
+                    oc_moves = (np.abs(data["close"] - data["open"]) / data["open"]).tail(10)
+                    no_large_bars = (oc_moves < 0.003).all()
+                patterns["DULL_MARKET"] = 1 if (
+                    (atr20 < 0.6 * atr100)
+                    and (vol_ratio < 0.8)
+                    and (hl_range < 0.4 * max(1e-12, recent_range_avg))
+                    and no_large_bars
+                ) else 0
+            except Exception:
+                patterns["MOMENTUM_ACCELERATION"] = patterns.get("MOMENTUM_ACCELERATION", 0)
+                patterns["MOMENTUM_DECELERATION"] = patterns.get("MOMENTUM_DECELERATION", 0)
+                patterns["CAPITULATION_SELLING"] = patterns.get("CAPITULATION_SELLING", 0)
+                patterns["EUPHORIC_BUYING"] = patterns.get("EUPHORIC_BUYING", 0)
+                patterns["DULL_MARKET"] = patterns.get("DULL_MARKET", 0)
+
+            # 10) Microstructure Enhancements
+            try:
+                # BID_ASK_COMPRESSION
+                spread_ok = False
+                ob_build = False
+                coil = False
+                if order_flow_data is not None and {"best_bid", "best_ask", "bid_depth", "ask_depth"}.issubset(order_flow_data.columns):
+                    of = order_flow_data
+                    spread = (of["best_ask"].iloc[-1] - of["best_bid"].iloc[-1]) / max(1e-12, of["best_bid"].iloc[-1])
+                    avg_spread = (of["best_ask"] - of["best_bid"]).rolling(20, min_periods=5).mean().iloc[-1] / max(1e-12, of["best_bid"].rolling(20, min_periods=5).mean().iloc[-1])
+                    spread_ok = spread < 0.7 * max(1e-12, avg_spread)
+                    depth_now = float(of[["bid_depth", "ask_depth"]].iloc[-1].sum())
+                    depth_avg = float(of[["bid_depth", "ask_depth"]].rolling(20, min_periods=5).mean().iloc[-1].sum())
+                    ob_build = depth_now > 1.4 * max(1e-12, depth_avg)
+                coil = (high.tail(5).max() - low.tail(5).min()) / max(1e-12, float(close.iloc[-1])) < 0.002 if len(close) >= 5 else False
+                patterns["BID_ASK_COMPRESSION"] = 1 if (spread_ok and ob_build and coil) else 0
+
+                # TAPE_PAINTING (heuristics: many small trades, high trade count but low volume; requires trade data if present)
+                try:
+                    if order_flow_data is not None and {"trade_count", "trade_volume", "avg_trade_size"}.issubset(order_flow_data.columns):
+                        tc = float(order_flow_data["trade_count"].iloc[-1])
+                        tv = float(order_flow_data["trade_volume"].iloc[-1])
+                        ats = float(order_flow_data["avg_trade_size"].iloc[-1])
+                        tc_avg = float(order_flow_data["trade_count"].rolling(20, min_periods=5).mean().iloc[-1])
+                        tv_avg = float(order_flow_data["trade_volume"].rolling(20, min_periods=5).mean().iloc[-1])
+                        ratio = (tc / max(1e-12, tv)) / (tc_avg / max(1e-12, tv_avg)) if tv_avg > 0 else 0
+                        patterns["TAPE_PAINTING"] = 1 if (ats < max(1.0, ats) and ratio > 1.5) else 0
+                    else:
+                        patterns["TAPE_PAINTING"] = 0
+                except Exception:
+                    patterns["TAPE_PAINTING"] = 0
+
+                # ICEBERG_MELT
+                try:
+                    if order_flow_data is not None and {"iceberg_size", "iceberg_price"}.issubset(order_flow_data.columns):
+                        ice = order_flow_data.tail(10)
+                        decreasing = (ice["iceberg_size"].diff() < 0).sum() >= 3
+                        level_held = (np.abs(float(close.iloc[-1]) - float(ice["iceberg_price"].iloc[-1])) / max(1e-12, float(close.iloc[-1]))) < 0.0015
+                        slow_prog = abs(momentum_5) < 0.002
+                        patterns["ICEBERG_MELT"] = 1 if (decreasing and level_held and slow_prog) else 0
+                    else:
+                        patterns["ICEBERG_MELT"] = 0
+                except Exception:
+                    patterns["ICEBERG_MELT"] = 0
+
+                # SIZE_SHOWING_BID/ASK
+                try:
+                    if order_flow_data is not None and {"bid_size", "ask_size"}.issubset(order_flow_data.columns):
+                        of = order_flow_data
+                        bid_sz = float(of["bid_size"].iloc[-1])
+                        ask_sz = float(of["ask_size"].iloc[-1])
+                        bid_avg = float(of["bid_size"].rolling(20, min_periods=5).mean().iloc[-1])
+                        ask_avg = float(of["ask_size"].rolling(20, min_periods=5).mean().iloc[-1])
+                        price_reacting = (np.abs(float(close.iloc[-1]) - float(open_.iloc[-1])) / max(1e-12, float(open_.iloc[-1]))) > 0.001
+                        patterns["SIZE_SHOWING_BID"] = 1 if (bid_sz > 5 * max(1e-12, bid_avg) and price_reacting) else 0
+                        patterns["SIZE_SHOWING_ASK"] = 1 if (ask_sz > 5 * max(1e-12, ask_avg) and price_reacting) else 0
+                    else:
+                        patterns["SIZE_SHOWING_BID"] = 0
+                        patterns["SIZE_SHOWING_ASK"] = 0
+                except Exception:
+                    patterns["SIZE_SHOWING_BID"] = 0
+                    patterns["SIZE_SHOWING_ASK"] = 0
+
+                # FLASH_CRASH_PATTERN
+                try:
+                    one_min_drop = (len(close) >= 2) and ((close.iloc[-1] / close.iloc[-2]) - 1.0) <= -0.01
+                    vol_spike5x = vol_ratio > 5.0
+                    # Immediate recovery > 50% of drop within 5 minutes
+                    rec = False
+                    if len(close) >= 6 and one_min_drop:
+                        drop_amt = float(close.iloc[-2] - close.iloc[-1])
+                        rec_amt = float(close.iloc[-1] - close.tail(6).min())
+                        rec = drop_amt > 0 and (rec_amt / max(1e-12, drop_amt)) >= 0.5
+                    # Order book thin proxy
+                    thin_ob = False
+                    if order_flow_data is not None and {"depth_ratio"}.issubset(order_flow_data.columns):
+                        thin_ob = float(order_flow_data["depth_ratio"].iloc[-1]) < 0.3
+                    patterns["FLASH_CRASH_PATTERN"] = 1 if (one_min_drop and vol_spike5x and rec and (thin_ob or True)) else 0
+                except Exception:
+                    patterns["FLASH_CRASH_PATTERN"] = 0
+            except Exception:
+                patterns["BID_ASK_COMPRESSION"] = patterns.get("BID_ASK_COMPRESSION", 0)
+                patterns["TAPE_PAINTING"] = patterns.get("TAPE_PAINTING", 0)
+                patterns["ICEBERG_MELT"] = patterns.get("ICEBERG_MELT", 0)
+                patterns["SIZE_SHOWING_BID"] = patterns.get("SIZE_SHOWING_BID", 0)
+                patterns["SIZE_SHOWING_ASK"] = patterns.get("SIZE_SHOWING_ASK", 0)
+                patterns["FLASH_CRASH_PATTERN"] = patterns.get("FLASH_CRASH_PATTERN", 0)
+
+            # 11) Risk Management States
+            try:
+                adx = float(features.get("adx", 20.0))
+                bb_upper = float(features.get("bb_upper", close.iloc[-1]))
+                bb_lower = float(features.get("bb_lower", close.iloc[-1]))
+                sma20 = float(features.get("sma_20", close.iloc[-1]))
+                price = float(close.iloc[-1])
+                bb_width_rel = (bb_upper - bb_lower) / max(1e-12, sma20)
+                hist_bb_width = float(
+                    (data["close"].rolling(100, min_periods=20).std() * 2).iloc[-1]
+                ) if len(data) >= 20 else bb_width_rel
+                # CHOP_WARNING
+                dir_changes = int(np.sign(close.diff().fillna(0)).tail(10).diff().fillna(0).ne(0).sum()) if len(close) >= 10 else 0
+                small_ranges = True
+                if len(data) >= 8:
+                    small_ranges = (((high - low) / close).tail(8) < 0.004).all()
+                patterns["CHOP_WARNING"] = 1 if (
+                    adx < 20 and bb_width_rel < 0.8 * hist_bb_width and dir_changes >= 5 and small_ranges
+                ) else 0
+
+                # FAKE_OUT_RISK_HIGH (heuristics)
+                recent_failed = int(pd.Series([
+                    patterns.get("BREAKOUT_FAILURE", 0),
+                    patterns.get("STOP_HUNT_BELOW_LOW", 0),
+                    patterns.get("STOP_HUNT_ABOVE_HIGH", 0),
+                    patterns.get("PRICE_REJECTING_VAH", 0),
+                    patterns.get("PRICE_REJECTING_VAL", 0),
+                ]).rolling(20, min_periods=1).sum().iloc[-1]) if len(close) else 0
+                fakeout = (recent_failed >= 2) and (bb_width_rel < 0.06) and (vol_ratio > 1.0)
+                patterns["FAKE_OUT_RISK_HIGH"] = 1 if fakeout else 0
+
+                # LOW_CONVICTION_SETUP / HIGH_CONVICTION_SETUP
+                # Count signals across categories
+                signal_keys = [
+                    "STRONG_TREND_CONTINUATION", "EXHAUSTION_REVERSAL", "RANGE_MEAN_REVERSION",
+                    "BREAKOUT_SUCCESS", "VOLATILITY_COMPRESSION", "VOLATILITY_EXPANSION",
+                    "FLAG_FORMATION", "TRIANGLE_FORMATION", "RECTANGLE_FORMATION",
+                    "MOMENTUM_IGNITION", "FAILED_RETEST", "BID_ASK_COMPRESSION",
+                    "CAPITULATION_SELLING", "EUPHORIC_BUYING"
+                ]
+                confluent = int(sum(int(features.get(k, 0) or patterns.get(k, 0)) for k in signal_keys))
+                low_conv = (confluent <= 1) or (vol_ratio < 1.0) or (adx < 25)
+                high_conv = (confluent >= 3) and (vol_ratio > 1.2) and ((adx > 30) or (abs((price / max(1e-12, sma20)) - 1) > 0.02))
+                patterns["LOW_CONVICTION_SETUP"] = 1 if low_conv else 0
+                patterns["HIGH_CONVICTION_SETUP"] = 1 if high_conv else 0
+            except Exception:
+                patterns["CHOP_WARNING"] = patterns.get("CHOP_WARNING", 0)
+                patterns["FAKE_OUT_RISK_HIGH"] = patterns.get("FAKE_OUT_RISK_HIGH", 0)
+                patterns["LOW_CONVICTION_SETUP"] = patterns.get("LOW_CONVICTION_SETUP", 0)
+                patterns["HIGH_CONVICTION_SETUP"] = patterns.get("HIGH_CONVICTION_SETUP", 0)
 
             return patterns
 
@@ -787,19 +1080,11 @@ class MetaLabelingSystem:
             )
             patterns["MOMENTUM_IGNITION"] = 1 if is_momentum_ignition else 0
 
-            # Gradual momentum fade: declining momentum
-            momentum_10 = features.get("price_momentum_10", 0)
-            is_fade = (
-                abs(momentum) < abs(momentum_10)
-                and abs(momentum) < self.momentum_threshold
-            )
-            patterns["GRADUAL_MOMENTUM_FADE"] = 1 if is_fade else 0
-
             return patterns
 
         except Exception as e:
             self.logger.exception(f"Error detecting momentum patterns: {e}")
-            return {"MOMENTUM_IGNITION": 0, "GRADUAL_MOMENTUM_FADE": 0}
+            return {"MOMENTUM_IGNITION": 0}
 
     # Tactician Label Detection Methods
 
@@ -1062,6 +1347,7 @@ class MetaLabelingSystem:
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame,
         timeframe: str = "30m",
+        order_flow_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
         """
         Generate analyst labels for setup identification (multi-timeframe).
@@ -1117,7 +1403,7 @@ class MetaLabelingSystem:
             analyst_labels.update(momentum_patterns)
 
             # Additional analyst patterns requested by user
-            additional_patterns = self._detect_additional_analyst_patterns(price_data, features)
+            additional_patterns = self._detect_additional_analyst_patterns(price_data, features, order_flow_data)
             analyst_labels.update(additional_patterns)
 
             # If no patterns detected, generate NO_SETUP label
@@ -1297,6 +1583,7 @@ class MetaLabelingSystem:
                 price_data,
                 volume_data,
                 analyst_timeframe,
+                order_flow_data,
             )
 
             # Generate tactician labels

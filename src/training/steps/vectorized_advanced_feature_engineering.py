@@ -1718,13 +1718,24 @@ class VectorizedAdvancedFeatureEngineering:
             macd_signal = macd.ewm(span=9, adjust=False).mean()
             macd_hist = macd - macd_signal
 
-            # Thresholds (align with MetaLabelingSystem defaults)
-            volatility_threshold = 0.02
-            momentum_threshold = 0.01
-            volume_threshold = 1.5
+            # Adaptive thresholds to avoid degenerate constant outputs
+            # Use rolling percentiles over a month-equivalent window on the resampled timeframe
+            win = 30  # bars at resampled timeframe
+            def _pct(s: pd.Series, q: float, default: float) -> float:
+                try:
+                    v = float(s.rolling(win, min_periods=max(5, win//3)).quantile(q).iloc[-1])
+                    if np.isfinite(v):
+                        return v
+                except Exception:
+                    pass
+                return default
+
+            volatility_threshold = _pct(vol_20, 0.6, 0.02)
+            momentum_threshold = _pct(abs(momentum_5), 0.6, 0.01)
+            volume_threshold = _pct(volume_ratio.replace([np.inf, -np.inf], np.nan).fillna(0), 0.6, 1.5)
 
             # STRONG_TREND_CONTINUATION
-            is_uptrend = momentum_10 > 0.02
+            is_uptrend = momentum_10 > max(0.005, momentum_threshold)
             is_pullback = (bb_pos > 0.3) & (bb_pos < 0.7)
             is_healthy_rsi = (rsi > 40) & (rsi < 70)
             strong_trend = (is_uptrend & is_healthy_rsi & is_pullback).astype(int)
@@ -1732,7 +1743,7 @@ class VectorizedAdvancedFeatureEngineering:
             # EXHAUSTION_REVERSAL
             is_overbought = (rsi > 70) | (bb_pos > 0.8)
             is_weakening = momentum_5 < 0
-            is_high_volume = volume_ratio > volume_threshold
+            is_high_volume = volume_ratio > max(1.1, volume_threshold)
             exhaustion = (is_overbought & is_weakening & is_high_volume).astype(int)
 
             # RANGE_MEAN_REVERSION

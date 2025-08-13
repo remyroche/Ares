@@ -130,50 +130,52 @@ class TacticianSpecialistTrainingStep:
                             )
                         else:
                             cache_key = f"labeled_{exchange}_{symbol}_{training_input.get('timeframe','1m')}_train"
-                            labeled_data = pdm.cached_projection(
-                                base_dir=part_base,
-                                filters=filters,
-                                columns=[],
-                                cache_dir="data_cache/projections",
-                                cache_key_prefix=cache_key,
-                                snapshot_version="v1",
-                                ttl_seconds=3600,
-                                batch_size=131072,
-                                arrow_transform=lambda tbl: (
-                                    (lambda _t: _t)(
-                                        (
-                                            lambda _pa, pc: (
-                                                _t := tbl,
-                                                (
-                                                    _t := _t.set_column(
-                                                        _t.schema.get_field_index(
-                                                            "timestamp"
-                                                        ),
-                                                        "timestamp",
-                                                        pc.cast(
-                                                            _t.column("timestamp"),
-                                                            _pa.int64(),
-                                                        ),
+                            from src.utils.logger import heartbeat
+                            with heartbeat(self.logger, name="Step9 load_labeled_projection", interval_seconds=60.0):
+                                labeled_data = pdm.cached_projection(
+                                    base_dir=part_base,
+                                    filters=filters,
+                                    columns=[],
+                                    cache_dir="data_cache/projections",
+                                    cache_key_prefix=cache_key,
+                                    snapshot_version="v1",
+                                    ttl_seconds=3600,
+                                    batch_size=131072,
+                                    arrow_transform=lambda tbl: (
+                                        (lambda _t: _t)(
+                                            (
+                                                lambda _pa, pc: (
+                                                    _t := tbl,
+                                                    (
+                                                        _t := _t.set_column(
+                                                            _t.schema.get_field_index(
+                                                                "timestamp"
+                                                            ),
+                                                            "timestamp",
+                                                            pc.cast(
+                                                                _t.column("timestamp"),
+                                                                _pa.int64(),
+                                                            ),
+                                                        )
                                                     )
-                                                )
-                                                if (
-                                                    "timestamp" in _t.schema.names
-                                                    and not _pa.types.is_int64(
-                                                        _t.schema.field(
-                                                            "timestamp"
-                                                        ).type
+                                                    if (
+                                                        "timestamp" in _t.schema.names
+                                                        and not _pa.types.is_int64(
+                                                            _t.schema.field(
+                                                                "timestamp"
+                                                            ).type
+                                                        )
                                                     )
+                                                    else None,
+                                                    _t,
                                                 )
-                                                else None,
-                                                _t,
+                                            )(
+                                                __import__("pyarrow"),
+                                                __import__("pyarrow.compute"),
                                             )
-                                        )(
-                                            __import__("pyarrow"),
-                                            __import__("pyarrow.compute"),
                                         )
-                                    )
-                                ),
-                            )
+                                    ),
+                                )
                     else:
                         try:
                             feat_cols = training_input.get(
@@ -350,11 +352,13 @@ class TacticianSpecialistTrainingStep:
                 self.logger.warning(f"Unable to drop raw SR features: {_ed}")
 
             # Train tactician specialist models
-            training_results = await self._train_tactician_models(
-                labeled_data,
-                training_input,
-                pipeline_state,
-            )
+            from src.utils.logger import heartbeat
+            with heartbeat(self.logger, name="Step9 train_tactician_models", interval_seconds=60.0):
+                training_results = await self._train_tactician_models(
+                    labeled_data,
+                    training_input,
+                    pipeline_state,
+                )
 
             # Save training results
             models_dir = f"{data_dir}/tactician_models"

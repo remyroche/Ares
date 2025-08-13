@@ -21,9 +21,14 @@ from sklearn.model_selection import TimeSeriesSplit
 
 from src.training.data_cleaning import handle_missing_data
 from src.training.feature_engineering import FeatureGenerator
-from src.training.steps.step12_final_parameters_optimization.optimized_optuna_optimization import (
-    AdvancedOptunaManager,
-)
+from typing import TYPE_CHECKING
+
+# Avoid importing heavy optional dependencies (e.g., xgboost) at module import time.
+# Import HPO manager lazily inside the method when HPO is actually used.
+if TYPE_CHECKING:  # for type checkers only; won't execute at runtime
+    from src.training.steps.step12_final_parameters_optimization.optimized_optuna_optimization import (
+        AdvancedOptunaManager as _AdvancedOptunaManagerType,
+    )
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
@@ -281,7 +286,20 @@ class RayModelTrainer:
                     model_type=hpo_model_type,
                     run_id=run.info.run_id,
                 )
-                if use_hpo:
+                do_hpo = use_hpo
+                if do_hpo:
+                    try:
+                        from src.training.steps.step12_final_parameters_optimization.optimized_optuna_optimization import (
+                            AdvancedOptunaManager,
+                        )
+                    except Exception as e:  # ImportError or dependency issues
+                        self.logger.warning(
+                            "HPO manager unavailable (%s). Proceeding without HPO.",
+                            e,
+                        )
+                        do_hpo = False
+
+                if do_hpo:
                     self.logger.info("🔍 Running Optuna HPO before model training...")
                     tactician_data = training_data.get("tactician_1m")
                     if tactician_data is None:

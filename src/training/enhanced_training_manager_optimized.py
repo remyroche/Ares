@@ -485,7 +485,11 @@ class MemoryEfficientDataManager:
             if df[col].nunique() / len(df) < 0.5:  # If less than 50% unique values
                 df[col] = df[col].astype("category")
 
-        self.logger.info(f"Optimized DataFrame memory usage")
+        # Reduce noise: use debug and include basic shape
+        try:
+            self.logger.debug(f"Optimized DataFrame memory usage: shape={df.shape}")
+        except Exception:
+            pass
         return df
 
     def _normalize_timestamp_column(

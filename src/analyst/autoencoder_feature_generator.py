@@ -18,14 +18,14 @@ try:
     try:
         import tensorflow as tf
         from optuna.integration import TFKerasPruningCallback
-        from tensorflow.keras import Model, layers, regularizers
-        from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+        from tensorflow.keras import Model, layers, regularizers  # type: ignore[import-not-found]
+        from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, Callback  # type: ignore[import-not-found]
         TF_AVAILABLE = True
     except Exception as _tf_e:
         TF_AVAILABLE = False
         tf = None  # type: ignore
         TFKerasPruningCallback = object  # type: ignore
-        Model = layers = regularizers = EarlyStopping = ReduceLROnPlateau = object  # type: ignore
+        Model = layers = regularizers = EarlyStopping = ReduceLROnPlateau = Callback = object  # type: ignore
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
 
@@ -42,7 +42,7 @@ except ImportError as e:
     print("   pip install numpy pandas scikit-learn tensorflow optuna shap pyyaml")
 
 # Set up comprehensive logging
-from src.utils.logger import setup_logging
+from src.utils.logger import setup_logging, heartbeat, log_dataframe_overview
 from src.utils.warning_symbols import (
     error,
 )
@@ -84,6 +84,21 @@ class AutoencoderConfig:
                 f"📋 Configuration loaded successfully from {self.config_path}"
             )
             self.logger.info(f"📊 Configuration sections: {list(config.keys())}")
+            try:
+                seq_cfg = config.get("sequence", {}) or {}
+                tr_cfg = config.get("training", {}) or {}
+                ae_cfg = config.get("autoencoder", {}) or {}
+                self.logger.info(
+                    f"⚙️ Key params: timesteps={seq_cfg.get('timesteps', 'n/a')}, overlap={seq_cfg.get('overlap','n/a')}"
+                )
+                self.logger.info(
+                    f"⚙️ Training params: n_trials={tr_cfg.get('n_trials','n/a')}, n_jobs={tr_cfg.get('n_jobs','n/a')}, epoch_logging_interval={tr_cfg.get('epoch_logging_interval','n/a')}"
+                )
+                self.logger.info(
+                    f"⚙️ AE params: epochs={ae_cfg.get('epochs','n/a')}, early_stopping_patience={ae_cfg.get('early_stopping_patience','n/a')}, reduce_lr_patience={ae_cfg.get('reduce_lr_patience','n/a')}"
+                )
+            except Exception:
+                pass
             return config
         except Exception:
             self.logger.exception(
@@ -113,7 +128,15 @@ class AutoencoderConfig:
                 "reduce_lr_patience": 5,
                 "min_lr": 1e-6,
             },
-            "training": {"n_trials": 50, "n_jobs": 1, "pruning_enabled": True},
+            "training": {
+                "n_trials": 50,
+                "n_jobs": 1,
+                "pruning_enabled": True,
+                # Controls how often we log epoch progress (every N epochs)
+                "epoch_logging_interval": 1,
+                # Warn if a single epoch exceeds this duration (seconds)
+                "max_epoch_time_warn_seconds": 60,
+            },
             "feature_filtering": {
                 "n_estimators": 100,
                 "max_depth": 10,
@@ -1649,7 +1672,45 @@ class SequenceAwareAutoencoder:
         reduce_lr_patience = self.config.get("autoencoder.reduce_lr_patience", 5)
         min_lr = self.config.get("autoencoder.min_lr", 1e-6)
 
-        callbacks = [
+        class _EpochTimingCallback(Callback):
+            def __init__(self, logger: logging.Logger, interval: int, warn_after_s: float) -> None:
+                super().__init__()
+                self.logger = logger
+                self.interval = max(1, int(interval))
+                self.warn_after_s = float(warn_after_s)
+                self._epoch_start: float | None = None
+
+            def on_train_begin(self, logs=None):  # type: ignore[override]
+                self.logger.info("🏁 Keras training begin")
+
+            def on_train_end(self, logs=None):  # type: ignore[override]
+                self.logger.info("🏁 Keras training end")
+
+            def on_epoch_begin(self, epoch, logs=None):  # type: ignore[override]
+                self._epoch_start = time.time()
+
+            def on_epoch_end(self, epoch, logs=None):  # type: ignore[override]
+                try:
+                    elapsed = (time.time() - self._epoch_start) if self._epoch_start else None
+                    if (epoch + 1) % self.interval == 0:
+                        msg = {
+                            "epoch": int(epoch + 1),
+                            "loss": float(logs.get("loss", float("nan"))) if logs else None,
+                            "val_loss": float(logs.get("val_loss", float("nan"))) if logs else None,
+                            "mae": float(logs.get("mae", float("nan"))) if logs else None,
+                            "val_mae": float(logs.get("val_mae", float("nan"))) if logs else None,
+                            "elapsed_s": float(elapsed) if elapsed is not None else None,
+                        }
+                        self.logger.info(f"📈 Epoch progress: {msg}")
+                    if elapsed is not None and elapsed > self.warn_after_s:
+                        self.logger.warning(
+                            f"⏱️ Slow epoch detected: epoch={epoch+1} elapsed={elapsed:.2f}s (> {self.warn_after_s}s)"
+                        )
+                except Exception:
+                    # Never fail due to logging
+                    pass
+
+        callbacks: list[Any] = [
             EarlyStopping(
                 monitor="val_loss",
                 patience=early_stopping_patience,
@@ -1659,6 +1720,11 @@ class SequenceAwareAutoencoder:
                 monitor="val_loss",
                 patience=reduce_lr_patience,
                 min_lr=min_lr,
+            ),
+            _EpochTimingCallback(
+                logger=self.logger,
+                interval=self.config.get("training.epoch_logging_interval", 1),
+                warn_after_s=self.config.get("training.max_epoch_time_warn_seconds", 60),
             ),
         ]
 
@@ -1693,15 +1759,16 @@ class SequenceAwareAutoencoder:
         # Track training time
         start_time = time.time()
 
-        history = self.autoencoder.fit(
-            X_train,
-            y_train,
-            validation_data=(X_val, y_val),
-            epochs=epochs,
-            batch_size=batch_size,
-            callbacks=callbacks,
-            verbose=0,
-        )
+        with heartbeat(self.logger, name="Autoencoder.fit", interval_seconds=30.0):
+            history = self.autoencoder.fit(
+                X_train,
+                y_train,
+                validation_data=(X_val, y_val),
+                epochs=epochs,
+                batch_size=batch_size,
+                callbacks=callbacks,
+                verbose=0,
+            )
 
         training_time = time.time() - start_time
 
@@ -2635,21 +2702,25 @@ class AutoencoderFeatureGenerator:
                 return features_df
 
             # NEW STEP: Convert price features to returns for better autoencoder training
-            self.logger.info(
-                "🔄 NEW STEP: Converting price features to returns for autoencoder training..."
-            )
-            price_converter = PriceReturnConverter(self.config)
-            features_df = price_converter.convert_price_features_to_returns(features_df)
-            self.logger.info(
-                f"✅ Price return conversion completed. Features shape: {features_df.shape}"
-            )
+            with heartbeat(self.logger, name="AE price_return_conversion", interval_seconds=30.0):
+                self.logger.info(
+                    "🔄 NEW STEP: Converting price features to returns for autoencoder training..."
+                )
+                price_converter = PriceReturnConverter(self.config)
+                features_df = price_converter.convert_price_features_to_returns(features_df)
+                log_dataframe_overview(self.logger, features_df, name="post_price_return_features", sample_rows=2)
+                self.logger.info(
+                    f"✅ Price return conversion completed. Features shape: {features_df.shape}"
+                )
 
             # Step 1: Filter features using Random Forest + SHAP
             self.logger.info("🔄 Step 1/5: Feature filtering with Random Forest + SHAP")
             self.logger.info(f"📊 Starting with {features_df.shape[1]} input features")
 
             feature_filter = FeatureFilter(self.config)
-            filtered_features = feature_filter.filter_features(features_df, labels)
+            with heartbeat(self.logger, name="AE feature_filtering", interval_seconds=30.0):
+                filtered_features = feature_filter.filter_features(features_df, labels)
+                log_dataframe_overview(self.logger, filtered_features, name="filtered_features", sample_rows=2)
 
             # Check if features_df has any columns to avoid division by zero
             if features_df.shape[1] == 0:
@@ -2724,23 +2795,25 @@ class AutoencoderFeatureGenerator:
             self.logger.info("🔧 Initializing data preprocessor...")
             preprocessor = ImprovedAutoencoderPreprocessor(self.config)
 
-            self.logger.info("🔧 Fitting preprocessor on filtered features...")
-            preprocessor.fit(filtered_features)
+            with heartbeat(self.logger, name="AE preprocessing_fit_transform", interval_seconds=20.0):
+                self.logger.info("🔧 Fitting preprocessor on filtered features...")
+                preprocessor.fit(filtered_features)
 
-            self.logger.info("🔧 Transforming features for autoencoder input...")
-            X_processed = preprocessor.transform(filtered_features)
-            self.logger.info(f"✅ Preprocessing completed successfully")
-            self.logger.info(f"📊 Processed data shape: {X_processed.shape}")
+                self.logger.info("🔧 Transforming features for autoencoder input...")
+                X_processed = preprocessor.transform(filtered_features)
+                self.logger.info(f"✅ Preprocessing completed successfully")
+                self.logger.info(f"📊 Processed data shape: {X_processed.shape}")
 
             # Sequence creation
             timesteps = self.config.get("sequence.timesteps", 10)
             self.logger.info(f"📊 Creating sequences with {timesteps} timesteps...")
 
-            X_sequences, y_targets, target_indices = create_sequences_with_index(
-                X_processed,
-                timesteps,
-                filtered_features.index,
-            )
+            with heartbeat(self.logger, name="AE sequence_creation", interval_seconds=20.0):
+                X_sequences, y_targets, target_indices = create_sequences_with_index(
+                    X_processed,
+                    timesteps,
+                    filtered_features.index,
+                )
 
             self.logger.info(f"✅ Sequence creation completed successfully")
             self.logger.info(
@@ -2798,7 +2871,8 @@ class AutoencoderFeatureGenerator:
                 f"📊 Search space: filters=[16,32,64], kernel_size=[3-7], dropout=[0.1-0.5], lr=[1e-4-1e-2], encoding_dim=[8-64]"
             )
 
-            best_params = self._run_optuna_optimization(X_train, y_train, X_val, y_val)
+            with heartbeat(self.logger, name="AE optuna_optimization", interval_seconds=60.0):
+                best_params = self._run_optuna_optimization(X_train, y_train, X_val, y_val)
             self.config.config["best_params"] = (
                 best_params  # Store best params for final training
             )
@@ -2821,7 +2895,8 @@ class AutoencoderFeatureGenerator:
             final_autoencoder.build_model(X_sequences.shape[1:])
 
             self.logger.info("🔧 Training final autoencoder model...")
-            training_history = final_autoencoder.fit(X_train, y_train, X_val, y_val)
+            with heartbeat(self.logger, name="AE final_training", interval_seconds=30.0):
+                training_history = final_autoencoder.fit(X_train, y_train, X_val, y_val)
 
             # Extract training metrics
             if hasattr(training_history, "history"):
@@ -2836,13 +2911,14 @@ class AutoencoderFeatureGenerator:
 
             # Generate encoded features and reconstructions
             self.logger.info("🔧 Generating encoded features and reconstructions...")
-            self.logger.info("📊 Using encoder to extract latent representations...")
-            encoded_features = final_autoencoder.encoder.predict(X_sequences, verbose=0)
-
-            self.logger.info("📊 Using full autoencoder to generate reconstructions...")
-            reconstructed = final_autoencoder.autoencoder.predict(
-                X_sequences, verbose=0
-            )
+            with heartbeat(self.logger, name="AE predict_encoded", interval_seconds=20.0):
+                self.logger.info("📊 Using encoder to extract latent representations...")
+                encoded_features = final_autoencoder.encoder.predict(X_sequences, verbose=0)
+            with heartbeat(self.logger, name="AE predict_reconstructions", interval_seconds=20.0):
+                self.logger.info("📊 Using full autoencoder to generate reconstructions...")
+                reconstructed = final_autoencoder.autoencoder.predict(
+                    X_sequences, verbose=0
+                )
 
             self.logger.info(f"✅ Feature generation completed successfully")
             self.logger.info(f"📊 Encoded features shape: {encoded_features.shape}")
@@ -2886,12 +2962,14 @@ class AutoencoderFeatureGenerator:
 
             # Merge with original features
             self.logger.info("📊 Merging encoded features with original features...")
-            result_df = features_df.merge(
-                encoded_df,
-                left_index=True,
-                right_index=True,
-                how="left",
-            )
+            with heartbeat(self.logger, name="AE merge_features", interval_seconds=10.0):
+                result_df = features_df.merge(
+                    encoded_df,
+                    left_index=True,
+                    right_index=True,
+                    how="left",
+                )
+                log_dataframe_overview(self.logger, result_df, name="result_df", sample_rows=2)
 
             # Identify autoencoder columns and handle missing values
             autoencoder_cols = [
@@ -3044,11 +3122,12 @@ class AutoencoderFeatureGenerator:
         # Track optimization progress
         start_time = time.time()
 
-        study.optimize(
-            objective,
-            n_trials=n_trials,
-            n_jobs=n_jobs,  # Default to 1 for GPU
-        )
+        with heartbeat(self.logger, name="AE optuna_study.optimize", interval_seconds=60.0):
+            study.optimize(
+                objective,
+                n_trials=n_trials,
+                n_jobs=n_jobs,  # Default to 1 for GPU
+            )
 
         optimization_time = time.time() - start_time
 

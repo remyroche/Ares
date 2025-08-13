@@ -43,6 +43,10 @@ class ComprehensiveLogger:
 
         self._setup_loggers()
 
+        # Prepare a single, unified "full run" log that aggregates all output
+        # across all loggers (including legacy ones) to a single file.
+        self._setup_full_run_log()
+
     def _setup_loggers(self):
         """Setup all loggers with file handlers."""
         # Prevent logging from raising exceptions on broken pipes
@@ -91,6 +95,9 @@ class ComprehensiveLogger:
                 "INFO",
             )
 
+        # Persist timestamp for unified log path computation
+        self._timestamp = timestamp
+
     def _create_logger(self, name: str, log_file: Path, level: str) -> logging.Logger:
         """
         Create a logger with file and console handlers.
@@ -137,6 +144,62 @@ class ComprehensiveLogger:
 
         return logger
 
+    def _setup_full_run_log(self) -> None:
+        """Attach a unified file handler that captures all log records.
+
+        - Creates `ares_full_<timestamp>.log` under the configured log dir
+        - Attaches the handler to the root logger to capture most records
+        - Also attaches to the legacy `AresTradingSystem` logger to ensure
+          records with `propagate=False` are captured as well
+        """
+        try:
+            # Route Python warnings through logging system so they get captured too
+            logging.captureWarnings(True)
+
+            # Resolve path and handler
+            full_log_path = self.log_dir / f"ares_full_{getattr(self, '_timestamp', datetime.now().strftime('%Y%m%d_%H%M%S'))}.log"
+            full_handler = logging.handlers.RotatingFileHandler(
+                full_log_path,
+                maxBytes=self.log_config.get("max_file_size", 10 * 1024 * 1024),
+                backupCount=self.log_config.get("backup_count", 5),
+            )
+
+            formatter = get_json_formatter()
+            full_handler.setFormatter(formatter)
+
+            # Enrich with correlation IDs
+            correlation_filter = CorrelationIdFilter()
+            full_handler.addFilter(correlation_filter)
+
+            # Attach to root logger to aggregate everything that propagates
+            root_logger = logging.getLogger()
+            # Avoid duplicate handler attachment
+            if not any(
+                isinstance(h, logging.handlers.RotatingFileHandler)
+                and getattr(h, 'baseFilename', None) == str(full_log_path)
+                for h in root_logger.handlers
+            ):
+                root_logger.addHandler(full_handler)
+                # Ensure root level is permissive so we don't miss records
+                if root_logger.level > logging.DEBUG:
+                    root_logger.setLevel(logging.DEBUG)
+
+            # Also attach directly to the legacy enhanced logger if present,
+            # because it sets propagate=False by design.
+            legacy_logger = logging.getLogger("AresTradingSystem")
+            if not any(
+                isinstance(h, logging.handlers.RotatingFileHandler)
+                and getattr(h, 'baseFilename', None) == str(full_log_path)
+                for h in legacy_logger.handlers
+            ):
+                legacy_logger.addHandler(full_handler)
+
+            # Stash path for external access (e.g., launcher banner)
+            self._full_log_path = full_log_path
+        except Exception:
+            # Never fail logging setup due to aggregation handler issues
+            self._full_log_path = None
+
     def get_global_logger(self) -> logging.Logger:
         """Get the global logger that captures all logs."""
         return self.global_logger
@@ -170,6 +233,13 @@ class ComprehensiveLogger:
         if self.global_logger:
             return self.global_logger.getChild(component_name)
         return logging.getLogger(component_name)
+
+    def get_full_log_path(self) -> str | None:
+        """Return the absolute path to the unified full-run log file, if set."""
+        try:
+            return str(self._full_log_path) if getattr(self, "_full_log_path", None) else None
+        except Exception:
+            return None
 
     def log_global(self, message: str, level: str = "INFO"):
         """

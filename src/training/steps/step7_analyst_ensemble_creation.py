@@ -276,11 +276,13 @@ class AnalystEnsembleCreationStep:
             data_dir = training_input.get("data_dir", "data/training")
 
             # Load training and validation data
-            training_data, validation_data = await self._load_training_data(
-                symbol,
-                exchange,
-                data_dir,
-            )
+            from src.utils.logger import heartbeat
+            with heartbeat(self.logger, name="Step7 load_training_data", interval_seconds=60.0):
+                training_data, validation_data = await self._load_training_data(
+                    symbol,
+                    exchange,
+                    data_dir,
+                )
             try:
                 self.logger.info(
                     f"Loaded data: training={getattr(training_data, 'keys', lambda: [])() if hasattr(training_data, 'keys') else type(training_data).__name__}, validation={getattr(validation_data, 'keys', lambda: [])() if hasattr(validation_data, 'keys') else type(validation_data).__name__}",
@@ -351,8 +353,10 @@ class AnalystEnsembleCreationStep:
                 regime_models = {}
 
                 # Use streaming to load models in batches
-                for model_name, model in self._stream_models(regime_path, batch_size=3):
-                    regime_models[model_name] = model
+                from src.utils.logger import heartbeat
+                with heartbeat(self.logger, name=f"Step7 stream_models[{regime_name}]", interval_seconds=60.0):
+                    for model_name, model in self._stream_models(regime_path, batch_size=3):
+                        regime_models[model_name] = model
 
                     # Check cache for existing ensemble
                     cache_key = self._generate_cache_key(
@@ -369,12 +373,14 @@ class AnalystEnsembleCreationStep:
 
                 # Create ensemble for this regime (with caching)
                 if "regime_ensemble" not in locals():
-                    regime_ensemble = await self._create_regime_ensemble(
-                        regime_models,
-                        regime_name,
-                        regime_training_data,
-                        regime_validation_data,
-                    )
+                    from src.utils.logger import heartbeat
+                    with heartbeat(self.logger, name=f"Step7 create_ensemble[{regime_name}]", interval_seconds=60.0):
+                        regime_ensemble = await self._create_regime_ensemble(
+                            regime_models,
+                            regime_name,
+                            regime_training_data,
+                            regime_validation_data,
+                        )
 
                     # Cache the ensemble for future use
                     cache_key = self._generate_cache_key(

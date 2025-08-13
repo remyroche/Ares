@@ -86,21 +86,34 @@ class FinalParametersOptimizationStep:
             data_dir = training_input.get("data_dir", "data/training")
 
             # Load calibration results
-            calibration_results = await self._load_calibration_results(
-                symbol,
-                exchange,
-                data_dir,
-            )
+            from src.utils.logger import heartbeat
+            with heartbeat(self.logger, name="Step12 load_calibration_results", interval_seconds=60.0):
+                calibration_results = await self._load_calibration_results(
+                    symbol,
+                    exchange,
+                    data_dir,
+                )
             if not calibration_results:
                 msg = "Calibration results not found"
                 raise FileNotFoundError(msg)
+            try:
+                self.logger.info(
+                    f"Loaded calibration results for {exchange}/{symbol}: sections={list(calibration_results.keys())[:10]}"
+                )
+                print(
+                    f"Step12Monitor ▶ Calibration loaded: sections={len(calibration_results) if isinstance(calibration_results, dict) else 'n/a'}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Load previous optimization results for warm start
-            previous_results = await self._load_previous_optimization_results(
-                symbol,
-                exchange,
-                data_dir,
-            )
+            with heartbeat(self.logger, name="Step12 load_previous_optimization", interval_seconds=60.0):
+                previous_results = await self._load_previous_optimization_results(
+                    symbol,
+                    exchange,
+                    data_dir,
+                )
             try:
 
                 def _summ(obj):
@@ -112,14 +125,19 @@ class FinalParametersOptimizationStep:
                 self.logger.info(
                     f"Inputs summary — calibration_results: type={type(calibration_results).__name__}, size={_summ(calibration_results)}; previous_results: type={type(previous_results).__name__}, size={_summ(previous_results)}",
                 )
+                print(
+                    f"Step12Monitor ▶ Inputs: prev_results={'yes' if previous_results else 'no'}",
+                    flush=True,
+                )
             except Exception:
                 pass
 
             # Perform comprehensive parameter optimization
-            optimization_results = await self._optimize_all_parameters(
-                calibration_results,
-                previous_results,
-            )
+            with heartbeat(self.logger, name="Step12 optimize_all_parameters", interval_seconds=60.0):
+                optimization_results = await self._optimize_all_parameters(
+                    calibration_results,
+                    previous_results,
+                )
             try:
                 keys = (
                     list(optimization_results.keys())
@@ -129,31 +147,52 @@ class FinalParametersOptimizationStep:
                 self.logger.info(
                     f"Optimization finished. Result keys: {keys[:20]} (total={len(keys) if keys else 'n/a'})",
                 )
+                print(
+                    f"Step12Monitor ▶ Optimization sections: {len(keys)}",
+                    flush=True,
+                )
             except Exception:
                 pass
 
             # Validate optimization results
-            validation_passed = await self._validate_optimization_results(
-                optimization_results,
-            )
+            with heartbeat(self.logger, name="Step12 validate_optimization", interval_seconds=60.0):
+                validation_passed = await self._validate_optimization_results(
+                    optimization_results,
+                )
             if not validation_passed:
                 self.logger.warning(
                     "⚠️ Optimization results validation failed, using fallback parameters",
                 )
 
             # Save optimization results
-            await self._save_optimization_results(
-                optimization_results,
-                symbol,
-                exchange,
-                data_dir,
-            )
+            with heartbeat(self.logger, name="Step12 save_results", interval_seconds=60.0):
+                await self._save_optimization_results(
+                    optimization_results,
+                    symbol,
+                    exchange,
+                    data_dir,
+                )
+            try:
+                print(
+                    f"Step12Monitor ▶ Saved optimization results",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Generate optimization report
-            report = await self._generate_optimization_report(
-                optimization_results,
-                start_time,
-            )
+            with heartbeat(self.logger, name="Step12 generate_report", interval_seconds=60.0):
+                report = await self._generate_optimization_report(
+                    optimization_results,
+                    start_time,
+                )
+            try:
+                print(
+                    f"Step12Monitor ▶ Generated optimization report",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             # Update pipeline state
             pipeline_state["final_parameters"] = optimization_results
@@ -163,6 +202,13 @@ class FinalParametersOptimizationStep:
             self.logger.info(
                 f"✅ Final parameters optimization completed in {duration:.2f}s",
             )
+            try:
+                print(
+                    f"Step12Monitor ▶ Done in {duration:.2f}s",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             return {
                 "final_parameters": optimization_results,
@@ -367,6 +413,7 @@ class FinalParametersOptimizationStep:
                     -metrics.get("max_drawdown", 0.1),
                 )
 
+            self.logger.info("Step12: Starting Optuna study for confidence thresholds (multi-objective)")
             study = optuna.create_study(
                 directions=["maximize", "maximize", "minimize", "maximize", "minimize"],
                 sampler=optuna.samplers.TPESampler(seed=42),
@@ -381,6 +428,7 @@ class FinalParametersOptimizationStep:
                 if prev_params:
                     study.enqueue_trial(prev_params)
 
+            self.logger.info("Step12: Optimizing confidence thresholds (n_trials=40)")
             study.optimize(objective, n_trials=40)
 
             pareto_front = study.best_trials
@@ -452,6 +500,7 @@ class FinalParametersOptimizationStep:
                     calibration_results,
                 )
 
+            self.logger.info("Step12: Starting Optuna study for volatility parameters")
             study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
             if previous_results and "volatility_parameters" in previous_results:
@@ -460,6 +509,7 @@ class FinalParametersOptimizationStep:
                 )
                 if prev_params:
                     study.enqueue_trial(prev_params)
+            self.logger.info("Step12: Optimizing volatility parameters (n_trials=50)")
             study.optimize(objective, n_trials=50)
 
             return {
@@ -540,6 +590,7 @@ class FinalParametersOptimizationStep:
                     calibration_results,
                 )
 
+            self.logger.info("Step12: Starting Optuna study for position sizing parameters")
             study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
             if previous_results and "position_sizing_parameters" in previous_results:
@@ -548,6 +599,7 @@ class FinalParametersOptimizationStep:
                 )
                 if prev_params:
                     study.enqueue_trial(prev_params)
+            self.logger.info("Step12: Optimizing position sizing parameters (n_trials=60)")
             study.optimize(objective, n_trials=60)
 
             return {
@@ -623,6 +675,7 @@ class FinalParametersOptimizationStep:
                     calibration_results,
                 )
 
+            self.logger.info("Step12: Starting Optuna study for risk management parameters")
             study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
             if previous_results and "risk_management_parameters" in previous_results:
@@ -631,6 +684,7 @@ class FinalParametersOptimizationStep:
                 )
                 if prev_params:
                     study.enqueue_trial(prev_params)
+            self.logger.info("Step12: Optimizing risk management parameters (n_trials=50)")
             study.optimize(objective, n_trials=50)
 
             return {
@@ -695,6 +749,7 @@ class FinalParametersOptimizationStep:
 
                 return self._evaluate_ensemble_performance(params, calibration_results)
 
+            self.logger.info("Step12: Starting Optuna study for ensemble parameters")
             study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
             if previous_results and "ensemble_parameters" in previous_results:
@@ -703,6 +758,7 @@ class FinalParametersOptimizationStep:
                 )
                 if prev_params:
                     study.enqueue_trial(prev_params)
+            self.logger.info("Step12: Optimizing ensemble parameters (n_trials=40)")
             study.optimize(objective, n_trials=40)
 
             return {
@@ -767,6 +823,7 @@ class FinalParametersOptimizationStep:
 
                 return self._evaluate_regime_performance(params, calibration_results)
 
+            self.logger.info("Step12: Starting Optuna study for regime-specific parameters")
             study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
             if previous_results and "regime_specific_parameters" in previous_results:
@@ -775,6 +832,7 @@ class FinalParametersOptimizationStep:
                 )
                 if prev_params:
                     study.enqueue_trial(prev_params)
+            self.logger.info("Step12: Optimizing regime-specific parameters (n_trials=30)")
             study.optimize(objective, n_trials=30)
 
             return {
@@ -846,6 +904,7 @@ class FinalParametersOptimizationStep:
 
                 return self._evaluate_timing_performance(params, calibration_results)
 
+            self.logger.info("Step12: Starting Optuna study for timing parameters")
             study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
             if previous_results and "timing_parameters" in previous_results:
@@ -854,6 +913,7 @@ class FinalParametersOptimizationStep:
                 )
                 if prev_params:
                     study.enqueue_trial(prev_params)
+            self.logger.info("Step12: Optimizing timing parameters (n_trials=30)")
             study.optimize(objective, n_trials=30)
 
             return {

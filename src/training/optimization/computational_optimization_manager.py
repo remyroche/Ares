@@ -841,7 +841,11 @@ class MemoryEfficientData:
         for col in df.select_dtypes(include=["int64"]).columns:
             df[col] = pd.to_numeric(df[col], downcast="integer")
 
-        self.logger.info("Optimized DataFrame memory usage")
+       # Reduce noise: move to debug and include shape
+        try:
+            self.logger.debug(f"Optimized DataFrame memory usage: shape={df.shape}")
+        except Exception:
+           pass
         return df
 
     def get_subset(self, start_idx: int, end_idx: int) -> np.ndarray:

@@ -64,6 +64,12 @@ class AnalystLabelingFeatureEngineeringStep:
             + self._RAW_MICROSTRUCTURE_COLUMNS
             + ["funding_rate"]
         )
+        # Processed L1 context columns (stationary/normalized raw preserved for context only)
+        self._PROCESSED_CONTEXT_COLUMNS = [
+            "volume_returns",
+            "weekly_prev_close",
+            "close_returns",
+        ]
         # Metadata/non-feature columns
         self._METADATA_COLUMNS = [
             "year",
@@ -541,6 +547,13 @@ class AnalystLabelingFeatureEngineeringStep:
             is_at_support.name: is_at_support.fillna(0),
             is_at_resistance.name: is_at_resistance.fillna(0),
             **final_loc,
+            # SR zone-strength meta score (0..1): combine normalized score and band_pct proximity
+            # Not intended as a feature; excluded by _is_non_feature
+            "sr_zone_strength": (
+                0.5 * (pd.Series(final_loc.get("nearest_support_score", pd.Series(0.0, index=df.index))).abs() \
+                       + pd.Series(final_loc.get("nearest_resistance_score", pd.Series(0.0, index=df.index))).abs())
+                .astype(float)
+            ).clip(0, None).fillna(0.0),
         }
 
     def _unified_sr_zones(
@@ -1830,6 +1843,52 @@ class AnalystLabelingFeatureEngineeringStep:
 
             # Standardized Feature Selection Pipeline (Step 4)
             try:
+                # Column-level hierarchy classification and meta-label MI diagnostics
+                try:
+                    def _get_column_level(name: str) -> str:
+                        n = name.lower()
+                        if name in self._RAW_CONTEXT_COLUMNS:
+                            return "L0_raw"
+                        if name in getattr(self, "_PROCESSED_CONTEXT_COLUMNS", []):
+                            return "L1_processed"
+                        if n.startswith("sr_") or "support" in n or "resistance" in n or "pivot" in n:
+                            return "L2_meta"
+                        if name == self._LABEL_NAME or name in self._METADATA_COLUMNS:
+                            return "metadata_or_label"
+                        return "L3_engineered"
+                    levels = {"L0_raw": [], "L1_processed": [], "L2_meta": [], "L3_engineered": [], "metadata_or_label": []}
+                    for col in labeled_data.columns:
+                        lvl = _get_column_level(col)
+                        levels.setdefault(lvl, []).append(col)
+                    # Persist classification for traceability
+                    try:
+                        os.makedirs(data_dir, exist_ok=True)
+                        with open(f"{data_dir}/{exchange}_{symbol}_column_levels.json", "w") as jf:
+                            json.dump(levels, jf, indent=2)
+                        self.logger.info(f"Saved column level classification to {data_dir}/{exchange}_{symbol}_column_levels.json")
+                    except Exception as e:
+                        self.logger.warning(f"Could not persist column level classification: {e}")
+                    # Meta-label MI diagnostics (L2_meta vs. target label)
+                    try:
+                        meta_cols = [c for c in levels.get("L2_meta", []) if c in labeled_data.columns]
+                        if meta_cols:
+                            meta_num = labeled_data[meta_cols].select_dtypes(include=[np.number])
+                        else:
+                            meta_num = pd.DataFrame(index=labeled_data.index)
+                        if not meta_num.empty and labeled_data['label'].nunique() > 1:
+                            mi_vals = mutual_info_classif(meta_num.values, labeled_data['label'].values, discrete_features=False, random_state=42)
+                            meta_mi = pd.Series(mi_vals, index=meta_num.columns).sort_values(ascending=False)
+                            # Log top results
+                            self.logger.info(f"Meta-label MI (top 20): {meta_mi.head(20).to_dict()}")
+                            # Persist to log directory
+                            os.makedirs('log/mi', exist_ok=True)
+                            with open(f"log/mi/{exchange}_{symbol}_step4_meta_mi.json", 'w') as jf:
+                                json.dump({"mi": meta_mi.to_dict()}, jf, indent=2)
+                    except Exception as _emi:
+                        self.logger.warning(f"Meta-label MI diagnostics failed: {_emi}")
+                except Exception as e:
+                    self.logger.warning(f"Column-level hierarchy classification and MI diagnostics failed: {e}")
+
                 # Exclude raw/context/meta and known label-like columns from feature selection
                 def _is_non_feature(col: str) -> bool:
                     name = col
@@ -1839,20 +1898,24 @@ class AnalystLabelingFeatureEngineeringStep:
                         return True
                     if name in self._METADATA_COLUMNS:
                         return True
-                    # Raw context columns
+                    # Raw context columns (L0)
                     if name in set(self._RAW_CONTEXT_COLUMNS):
                         return True
-                    # Known label-like or event columns
+                    # Processed context columns (L1) to preserve as context only
+                    if name in set(getattr(self, "_PROCESSED_CONTEXT_COLUMNS", [])):
+                        return True
+                    # Known label-like or event columns and SR meta markers (L2)
                     if any(s in uname for s in [
                         "_NEXT_", "BREAKOUT", "EXHAUSTION", "RANGE_MEAN_REVERSION", "STRONG_TREND_CONTINUATION",
                         "MOMENTUM_IGNITION", "GRADUAL_MOMENTUM_FADE", "VOLATILITY_COMPRESSION", "VOLATILITY_EXPANSION",
                         "FLAG_FORMATION", "TRIANGLE_FORMATION", "RECTANGLE_FORMATION", "ABSORPTION", "LIQUIDITY_GRAB",
                         "LOWEST_PRICE_NEXT", "HIGHEST_PRICE_NEXT", "LIMIT_ORDER_RETURN", "ORDERBOOK_IMBALANCE_FLIP",
                         "VWAP_REVERSION_ENTRY", "MARKET_ORDER_NOW", "CHASE_MICRO_BREAKOUT", "ABORT_ENTRY_SIGNAL", "BOUNCE",
-                        "SR_EVENT_LABEL", "SR_TOUCH"
+                        "SR_EVENT_LABEL", "SR_TOUCH", "SR_ZONE_POSITION", "IS_AT_SUPPORT", "IS_AT_RESISTANCE",
+                        "DIST_TO_SUPPORT_PCT", "DIST_TO_RESISTANCE_PCT"
                     ]):
                         return True
-                    # Support/Resistance structural helpers not for model ingestion
+                    # Support/Resistance structural helpers and context distances not for model ingestion (L2)
                     if (
                         lname.startswith("distance_to_pivot_")
                         or "nearest_support_center" in lname
@@ -1861,6 +1924,9 @@ class AnalystLabelingFeatureEngineeringStep:
                         or "nearest_resistance_score" in lname
                         or "nearest_support_band_pct" in lname
                         or "nearest_resistance_band_pct" in lname
+                        or "nearest_support_distance" in lname
+                        or "nearest_resistance_distance" in lname
+                        or lname.startswith("sr_")
                     ):
                         return True
                     # Skip scalar meta summaries inadvertently surfaced
@@ -2131,6 +2197,18 @@ class AnalystLabelingFeatureEngineeringStep:
                 with open(trace_path, "w") as jf:
                     json.dump(selected_features, jf, indent=2)
                 self.logger.info(f"🔎 Saved feature lists to {trace_path}")
+                # Save per-split level classification for auditing
+                try:
+                    def _classify_levels(cols: list[str]) -> dict[str, list[str]]:
+                        levels: dict[str, list[str]] = {"L0_raw": [], "L1_processed": [], "L2_meta": [], "L3_engineered": [], "metadata_or_label": []}
+                        for name in cols:
+                            lvl = _get_column_level(name)
+                            levels.setdefault(lvl, []).append(name)
+                        return levels
+                    for split_name, cols in selected_features.items():
+                        lvl_path = f"{data_dir}/{exchange}_{symbol}_{split_name}_column_levels.json"
+                        with open(lvl_path, "w") as jf:
+                            json.dump(_classify_levels(cols), jf, indent=2)
             except Exception as e:
                 self.logger.warning(f"Could not persist selected feature lists: {e}")
 

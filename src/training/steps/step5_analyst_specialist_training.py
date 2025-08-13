@@ -178,8 +178,94 @@ class AnalystSpecialistTrainingStep:
             except Exception:
                 pass
 
-            # Use combined data as the main dataset for training
+            # Default: single combined dataset
             labeled_data = {"combined": combined_data}
+
+            # Method A: Mixture of Experts (regime-specific) - optional
+            expert_cfg = training_input.get("method_a_mixture_of_experts", self.config.get("method_a_mixture_of_experts", {}))
+            enable_experts: bool = bool(expert_cfg.get("enabled", False))
+            regime_source: str = str(expert_cfg.get("regime_source", "step2_bull_bear_sideways")).lower()
+            meta_label_columns: list[str] = list(expert_cfg.get("meta_label_columns", []))
+            min_rows_per_expert: int = int(expert_cfg.get("min_rows_per_expert", 5000))
+            use_strength_weighting: bool = bool(expert_cfg.get("use_strength_weighting", True))
+            strength_columns: dict[str, str] = dict(expert_cfg.get("strength_columns", {}))  # map regime->col
+
+            dispatcher_manifest: dict[str, Any] = {}
+
+            if enable_experts:
+                try:
+                    # Load labeled datasets to align indices/timestamps for regime joins
+                    labeled_pkls = [
+                        f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl",
+                        f"{data_dir}/{exchange}_{symbol}_labeled_validation.pkl",
+                        f"{data_dir}/{exchange}_{symbol}_labeled_test.pkl",
+                    ]
+                    labeled_frames = []
+                    for p in labeled_pkls:
+                        if os.path.exists(p):
+                            with open(p, "rb") as f:
+                                labeled_frames.append(pickle.load(f))
+                    labeled_all = pd.concat(labeled_frames, axis=0, ignore_index=False)
+                    # Ensure timestamp present for joins; if missing, synthesize from index when DatetimeIndex
+                    if "timestamp" not in labeled_all.columns and isinstance(labeled_all.index, pd.DatetimeIndex):
+                        labeled_all = labeled_all.copy()
+                        labeled_all["timestamp"] = labeled_all.index
+                    # Feature columns to train on: use combined selected features
+                    feature_cols = [c for c in combined_data.columns if c != "label"]
+
+                    # Choose regime definition
+                    expert_datasets: dict[str, pd.DataFrame] = {}
+                    if regime_source == "step2_bull_bear_sideways":
+                        # Load Step3 regime splits to fetch labels/strength
+                        regime_dir = os.path.join(data_dir, "regime_data")
+                        if os.path.isdir(regime_dir):
+                            for file in os.listdir(regime_dir):
+                                if file.endswith(".parquet"):
+                                    regime_name = os.path.splitext(file)[0]
+                                    df_reg = pd.read_parquet(os.path.join(regime_dir, file))
+                                    # Align to combined_data rows via timestamp
+                                    if "timestamp" not in df_reg.columns and isinstance(df_reg.index, pd.DatetimeIndex):
+                                        df_reg = df_reg.reset_index()
+                                        df_reg.rename(columns={"index": "timestamp"}, inplace=True)
+                                    cols_keep = [c for c in ["timestamp", "regime", "confidence"] if c in df_reg.columns]
+                                    df_reg = df_reg[cols_keep]
+                                    merged = labeled_all.merge(df_reg, on="timestamp", how="inner")
+                                    # Restrict to selected features + label
+                                    cols = [c for c in feature_cols + ["label"] if c in merged.columns]
+                                    regime_df = merged[cols].dropna(subset=["label"]) if "label" in cols else merged[cols]
+                                    if len(regime_df) >= min_rows_per_expert:
+                                        expert_datasets[regime_name] = regime_df.copy()
+                        dispatcher_manifest["gating"] = {
+                            "type": "step2_regime",
+                            "weights": "confidence",
+                        }
+                    elif regime_source == "meta_labels":
+                        # Use provided meta label columns as regimes (binary or categorical)
+                        present_metas = [c for c in meta_label_columns if c in labeled_all.columns]
+                        for meta in present_metas:
+                            # Expert dataset: rows where meta label is active (non-zero / True)
+                            active_mask = labeled_all[meta].astype(float).fillna(0) != 0
+                            df_meta = labeled_all.loc[active_mask]
+                            cols = [c for c in feature_cols + ["label"] if c in df_meta.columns]
+                            df_meta = df_meta[cols].dropna(subset=["label"]) if "label" in cols else df_meta[cols]
+                            if len(df_meta) >= min_rows_per_expert:
+                                expert_datasets[meta] = df_meta.copy()
+                        # Default SR strength source if available
+                        if "sr_zone_strength" in labeled_all.columns:
+                            for k in expert_datasets.keys():
+                                strength_columns.setdefault(k, "sr_zone_strength")
+                        dispatcher_manifest["gating"] = {
+                            "type": "meta_labels",
+                            "weights": strength_columns,  # optional per-meta strength source
+                        }
+                    else:
+                        self.logger.warning(f"Unknown regime_source '{regime_source}', falling back to combined training")
+
+                    if expert_datasets:
+                        labeled_data = expert_datasets
+                        self.logger.info(f"Method A enabled: {len(labeled_data)} experts will be trained: {list(labeled_data.keys())[:20]}")
+                except Exception as _ex:
+                    self.logger.warning(f"Mixture-of-Experts setup failed, training single combined model: {_ex}")
 
             # Train specialist models for each regime with memory management
             import gc
@@ -217,6 +303,36 @@ class AnalystSpecialistTrainingStep:
 
                 # Memory cleanup after training
                 gc.collect()
+
+                # Performance stratification placeholder: basic label distribution under this regime
+                try:
+                    os.makedirs("log/experts", exist_ok=True)
+                    if "label" in regime_data.columns:
+                        stats = regime_data["label"].value_counts(dropna=False).to_dict()
+                        with open(f"log/experts/{regime_name}_label_distribution.json", "w") as jf:
+                            json.dump({"counts": {str(k): int(v) for k, v in stats.items()}}, jf, indent=2)
+                except Exception:
+                    pass
+
+                # Contextual SHAP (best-effort, optional)
+                try:
+                    import shap  # type: ignore
+                    os.makedirs("log/experts", exist_ok=True)
+                    # Choose the first model artifact
+                    first_key = next(iter(regime_models))
+                    artifact = regime_models[first_key]
+                    est = self._extract_estimator_from_artifact(artifact)
+                    X_sample = regime_data.drop(columns=[c for c in ["label"] if c in regime_data.columns]).select_dtypes(include=[np.number]).tail(2000)
+                    if hasattr(est, "predict_proba") and hasattr(est, "fit"):
+                        explainer = shap.Explainer(est, X_sample, feature_names=list(X_sample.columns))
+                        shap_vals = explainer(X_sample, check_additivity=False)
+                        # Save mean |SHAP| values
+                        mean_abs = np.abs(shap_vals.values).mean(axis=0)
+                        shap_importance = {f: float(v) for f, v in zip(X_sample.columns, mean_abs, strict=False)}
+                        with open(f"log/experts/{regime_name}_shap_importance.json", "w") as jf:
+                            json.dump(shap_importance, jf, indent=2)
+                except Exception:
+                    pass
 
             # Save the main analyst model (use the first available model)
             main_model_artifact = None
@@ -530,12 +646,32 @@ class AnalystSpecialistTrainingStep:
             # Update pipeline state
             pipeline_state["analyst_models"] = training_results
 
+            # Save dispatcher manifest for Method A
+            if enable_experts:
+                try:
+                    manifest = {
+                        "experts": list(training_results.keys()),
+                        "gating": dispatcher_manifest.get("gating", {}),
+                        "expert_power": dispatcher_manifest.get("expert_power", {}),
+                        "regime_source": regime_source,
+                        "min_rows_per_expert": min_rows_per_expert,
+                        "use_strength_weighting": use_strength_weighting,
+                        "strength_columns": strength_columns,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                    manifest_path = f"{data_dir}/{exchange}_{symbol}_analyst_dispatcher.json"
+                    with open(manifest_path, "w") as jf:
+                        json.dump(manifest, jf, indent=2)
+                    self.logger.info(f"✅ Saved dispatcher manifest to {manifest_path}")
+                except Exception as _mf:
+                    self.logger.warning(f"Failed to save dispatcher manifest: {_mf}")
 
             return {
                 "analyst_models": training_results,
                 "models_dir": models_dir,
                 "duration": 0.0,  # Will be calculated in actual implementation
                 "status": "SUCCESS",
+                "dispatcher": dispatcher_manifest if enable_experts else None,
             }
 
         except Exception as e:
@@ -755,6 +891,7 @@ class AnalystSpecialistTrainingStep:
 
             # Train multiple models for ensemble
             models = {}
+            power_scores: list[float] = []
 
             # Train Random Forest
             try:
@@ -766,6 +903,10 @@ class AnalystSpecialistTrainingStep:
                     )
                 if rf_model:
                     models["random_forest"] = rf_model
+                    try:
+                        power_scores.append(float(rf_model.get("accuracy", 0.0)))
+                    except Exception:
+                        pass
                     try:
                         print("Step5Monitor ▶ RF: done", flush=True)
                     except Exception:
@@ -784,6 +925,10 @@ class AnalystSpecialistTrainingStep:
                 if lgb_model:
                     models["lightgbm"] = lgb_model
                     try:
+                        power_scores.append(float(lgb_model.get("accuracy", 0.0)))
+                    except Exception:
+                        pass
+                    try:
                         print("Step5Monitor ▶ LGBM: done", flush=True)
                     except Exception:
                         pass
@@ -801,6 +946,10 @@ class AnalystSpecialistTrainingStep:
                 if xgb_model:
                     models["xgboost"] = xgb_model
                     try:
+                        power_scores.append(float(xgb_model.get("accuracy", 0.0)))
+                    except Exception:
+                        pass
+                    try:
                         print("Step5Monitor ▶ XGB: done", flush=True)
                     except Exception:
                         pass
@@ -817,6 +966,10 @@ class AnalystSpecialistTrainingStep:
                         )
                     if nn_model:
                         models["neural_network"] = nn_model
+                        try:
+                            power_scores.append(float(nn_model.get("accuracy", 0.0)))
+                        except Exception:
+                            pass
                 except Exception as e:
                     self.logger.warning(f"Neural Network training failed: {e}")
 
@@ -830,11 +983,17 @@ class AnalystSpecialistTrainingStep:
                         )
                     if svm_model:
                         models["svm"] = svm_model
+                        try:
+                            power_scores.append(float(svm_model.get("accuracy", 0.0)))
+                        except Exception:
+                            pass
                 except Exception as e:
                     self.logger.warning(f"SVM training failed: {e}")
 
             self.logger.info(f"✅ Trained {len(models)} models for regime: {regime_name}")
 
+            # Attach aggregate predictive power score for this expert (ensemble average accuracy)
+            models["_expert_power_score"] = float(np.mean(power_scores)) if power_scores else 0.0
             return models
 
         except Exception as e:

@@ -68,33 +68,73 @@ class RegimeDataSplittingStep:
                 f"   Has futures data: {hasattr(unified_data, 'futures') and unified_data.futures is not None}"
             )
 
-            # Load regime classification results
-            regime_file = f"data/training/{self.config['exchange']}_{self.config['symbol']}_regime_classification.parquet"
-            self.logger.info(
-                f"📁 Loading regime classification results from: {regime_file}"
-            )
-
-            # Use a more robust approach to load the parquet file
-            regime_data = self._load_regime_data_safely(regime_file)
-
-            if regime_data is None:
-                self.logger.error(
-                    f"❌ Failed to load regime classification data from {regime_file}"
+            regime_basis = str(self.config.get("regime_basis", "bull_bear_sideways")).lower()
+            if regime_basis == "meta_labels":
+                self.logger.info("Using meta-label columns from Step4 to form regimes (Method A)")
+                # Load Step4 labeled data to access meta columns
+                labeled_files = [
+                    f"data/training/{self.config['exchange']}_{self.config['symbol']}_labeled_train.parquet",
+                    f"data/training/{self.config['exchange']}_{self.config['symbol']}_labeled_validation.parquet",
+                    f"data/training/{self.config['exchange']}_{self.config['symbol']}_labeled_test.parquet",
+                ]
+                labeled_frames = []
+                for p in labeled_files:
+                    if os.path.exists(p):
+                        try:
+                            labeled_frames.append(pd.read_parquet(p))
+                        except Exception:
+                            pass
+                if not labeled_frames:
+                    self.logger.error("No labeled parquet files found for meta-label regime splitting")
+                    return {"success": False, "error": "Missing labeled data"}
+                labeled_all = pd.concat(labeled_frames, axis=0, ignore_index=False)
+                # Identify candidate meta-label columns (heuristic: sr_*, *_REGIME, *_FORMATION)
+                meta_cols = [
+                    c for c in labeled_all.columns
+                    if c.lower().startswith("sr_")
+                    or c.endswith("_REGIME")
+                    or c.endswith("_FORMATION")
+                ]
+                if "timestamp" not in labeled_all.columns and isinstance(labeled_all.index, pd.DatetimeIndex):
+                    labeled_all = labeled_all.reset_index().rename(columns={"index": "timestamp"})
+                if "timestamp" not in unified_data.columns and isinstance(unified_data.index, pd.DatetimeIndex):
+                    unified_data = unified_data.reset_index().rename(columns={"index": "timestamp"})
+                # Merge minute-level raw with labeled columns via timestamp
+                merged = unified_data.merge(
+                    labeled_all[[c for c in meta_cols + ["timestamp"] if c in labeled_all.columns]],
+                    on="timestamp",
+                    how="left",
                 )
-                return {
-                    "success": False,
-                    "error": "Failed to load regime classification data",
-                }
-
-            self.logger.info(
-                f"✅ Loaded regime classification data: {len(regime_data)} rows"
-            )
-            self.logger.info(
-                f"   Regimes found: {regime_data['regime'].unique().tolist()}"
-            )
-
-            # Split data by regimes
-            regime_splits = self._split_data_by_regimes(unified_data, regime_data)
+                # One split per meta column where value is active (non-zero)
+                regime_splits = {}
+                for meta in meta_cols:
+                    active = merged[merged[meta].fillna(0) != 0].copy()
+                    if not active.empty:
+                        regime_splits[meta] = active
+                self.logger.info(f"✅ Built {len(regime_splits)} meta-label regime splits")
+            else:
+                # Load regime classification results (bull/bear/sideways)
+                regime_file = f"data/training/{self.config['exchange']}_{self.config['symbol']}_regime_classification.parquet"
+                self.logger.info(
+                    f"📁 Loading regime classification results from: {regime_file}"
+                )
+                regime_data = self._load_regime_data_safely(regime_file)
+                if regime_data is None:
+                    self.logger.error(
+                        f"❌ Failed to load regime classification data from {regime_file}"
+                    )
+                    return {
+                        "success": False,
+                        "error": "Failed to load regime classification data",
+                    }
+                self.logger.info(
+                    f"✅ Loaded regime classification data: {len(regime_data)} rows"
+                )
+                self.logger.info(
+                    f"   Regimes found: {regime_data['regime'].unique().tolist()}"
+                )
+                # Split data by regimes
+                regime_splits = self._split_data_by_regimes(unified_data, regime_data)
 
             # Save regime splits
             self._save_regime_splits(regime_splits)

@@ -50,7 +50,7 @@ def aggregate_directional_confidences(
     Logic:
     - If models point in the same direction, confidences are added then averaged
     - If models point in opposite directions, confidences are subtracted then averaged
-    - For N models, compute the signed average: sum(sign_i * conf_i) / N_active
+    - For N models, compute the signed average: sum(sign_i * conf_i * w_i) / sum(w_i)
     - Result direction sign determines LONG/SHORT; magnitude in [0,1] is confidence
 
     Args:
@@ -60,6 +60,7 @@ def aggregate_directional_confidences(
         dict with {"direction": "LONG"|"SHORT"|"HOLD", "confidence": float, "signed_value": float, "count": int}
     """
     signed_sum: float = 0.0
+    total_weight: float = 0.0
     count_active: int = 0
     for m in models:
         if not isinstance(m, dict):
@@ -74,13 +75,14 @@ def aggregate_directional_confidences(
         if weight <= 0.0:
             continue
         signed_sum += sign * conf * weight
-        count_active += int(weight > 0)
+        total_weight += weight
+        count_active += 1
 
-    if count_active == 0:
+    if count_active == 0 or total_weight == 0.0:
         return {"direction": "HOLD", "confidence": 0.0, "signed_value": 0.0, "count": 0}
 
-    # Average by active model count (per requirement: addition/subtraction then averaged)
-    signed_avg = signed_sum / count_active
+    # Weighted average by total weight (per review suggestion)
+    signed_avg = signed_sum / total_weight
     final_direction = "LONG" if signed_avg > 0 else ("SHORT" if signed_avg < 0 else "HOLD")
     final_confidence = _clamp01(abs(signed_avg))
 

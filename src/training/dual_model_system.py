@@ -524,7 +524,7 @@ class DualModelSystem:
             # Calculate final confidence using the specified formula
             final_conf_agg = aggregate_directional_confidences([
                 {"direction": analyst_decision.get("direction", "HOLD"), "confidence": float(analyst_decision.get("confidence", 0.0))},
-                {"direction": analyst_decision.get("direction", "HOLD") if tactician_decision.get("should_execute") else "HOLD", "confidence": float(tactician_decision.get("confidence", 0.0))},
+                {"direction": (analyst_decision.get("direction", "HOLD") if tactician_decision.get("should_execute") else "HOLD"), "confidence": float(tactician_decision.get("confidence", 0.0))},
             ])
             final_confidence = float(final_conf_agg.get("confidence", 0.0))
             final_direction = final_conf_agg.get("direction", analyst_decision.get("direction", "HOLD"))

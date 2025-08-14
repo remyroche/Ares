@@ -2607,11 +2607,30 @@ class VectorizedSRDistanceCalculator:
             else:
                 dists = np.vstack([np.abs(close.values - lvl) / np.where(close.values!=0, close.values, np.nan) for lvl in resistance_levels])
                 nrd = pd.Series(np.nanmin(dists, axis=0), index=close.index)
+            # Compute proximity and gating
+            orch_cfg = self.config.get("vectorized_labelling_orchestrator", {})
+            scale = float(orch_cfg.get("sr_distance_scale", 0.01))  # 1% default scale
+            threshold = float(orch_cfg.get("sr_proximity_threshold", 0.02))  # 2% threshold
+            no_any = (len(support_levels) == 0 and len(resistance_levels) == 0)
+            nsd_f = nsd.fillna(method="ffill").fillna(method="bfill").fillna(0)
+            nrd_f = nrd.fillna(method="ffill").fillna(method="bfill").fillna(0)
+            if no_any:
+                nearest = pd.Series(np.full(len(close), 1.0), index=close.index)
+                prox_series = pd.Series(np.zeros(len(close)), index=close.index)
+                nearby = pd.Series(np.zeros(len(close), dtype=int), index=close.index)
+            else:
+                nearest = pd.concat([nsd_f, nrd_f], axis=1).min(axis=1)
+                # Exponential decay proximity score; near=1, far~0
+                prox_series = np.exp(-nearest / max(scale, 1e-6))
+                nearby = (nearest <= threshold).astype(int)
             return {
-                "nearest_support_distance": nsd.fillna(method="ffill").fillna(method="bfill").fillna(0).values,
-                "nearest_resistance_distance": nrd.fillna(method="ffill").fillna(method="bfill").fillna(0).values,
+                "nearest_support_distance": nsd_f.values,
+                "nearest_resistance_distance": nrd_f.values,
                 "support_levels_count": pd.Series(np.full(len(close), len(support_levels)), index=close.index).values,
                 "resistance_levels_count": pd.Series(np.full(len(close), len(resistance_levels)), index=close.index).values,
+                "nearest_sr_distance": nearest.values,
+                "sr_proximity_score": pd.Series(prox_series, index=close.index).values,
+                "sr_nearby": pd.Series(nearby, index=close.index).values,
             }
         except Exception as e:
             self.logger.error(f"Error calculating S/R distances: {e}")

@@ -9,6 +9,34 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 
+try:
+    import numba  # type: ignore
+except Exception:  # pragma: no cover
+    numba = None  # type: ignore
+
+if 'numba' in globals() and numba is not None:
+    @numba.jit(nopython=True, cache=True)
+    def _numba_triple_barrier_labels(close: np.ndarray, high: np.ndarray, low: np.ndarray, pt_mult: float, sl_mult: float, end_idx_arr: np.ndarray) -> np.ndarray:
+        labels = np.zeros(close.shape[0], dtype=np.int8)
+        n = close.shape[0]
+        for i in range(n - 1):
+            profit_barrier = close[i] * (1.0 + pt_mult)
+            stop_barrier = close[i] * (1.0 - sl_mult)
+            end_idx = int(end_idx_arr[i])
+            if end_idx <= i + 1:
+                labels[i] = 0
+                continue
+            lab = 0
+            for j in range(i + 1, end_idx):
+                # Profit check first to match tie handling with vectorized baseline
+                if high[j] >= profit_barrier:
+                    lab = 1
+                    break
+                if low[j] <= stop_barrier:
+                    lab = -1
+                    break
+            labels[i] = lab
+        return labels
 
 class OptimizedTripleBarrierLabeling:
     """
@@ -36,7 +64,7 @@ class OptimizedTripleBarrierLabeling:
             time_barrier_minutes: Time barrier in minutes (default: 30)
             max_lookahead: Maximum number of points to look ahead (default: 100)
             binary_classification: If True, only generate buy (1) and sell (-1) labels,
-                                 no hold (0) labels. If False, include hold labels (default: True)
+                                  no hold (0) labels. If False, include hold labels (default: True)
 
         Note:
             binary_classification=True is now the default to address label imbalance issues.
@@ -142,41 +170,53 @@ class OptimizedTripleBarrierLabeling:
                 )
                 use_time_barrier = False
 
-        def compute_end_index(i: int) -> int:
-            # exclusive end index
-            end_by_lookahead = min(n, i + 1 + self.max_lookahead)
-            if use_time_barrier:
-                end_time = idx[i] + timedelta(minutes=self.time_barrier_minutes)
-                end_by_time = idx.searchsorted(end_time, side="right")
-                return min(end_by_lookahead, end_by_time)
-            return end_by_lookahead
+        # Precompute end indices (exclusive) for each i for efficient scanning
+        arange_n = np.arange(n, dtype=np.int64)
+        end_by_lookahead = np.minimum(arange_n + 1 + int(self.max_lookahead), n)
+        if use_time_barrier:
+            try:
+                idx_ns = idx.view(np.int64)
+                delta_ns = np.int64(self.time_barrier_minutes) * np.int64(60_000_000_000)
+                end_times = idx_ns + delta_ns
+                end_by_time = np.searchsorted(idx_ns, end_times, side="right")
+            except Exception:
+                end_by_time = end_by_lookahead
+        else:
+            end_by_time = end_by_lookahead
+        end_idx_arr = np.minimum(end_by_lookahead, end_by_time).astype(np.int64)
 
-        labels = np.zeros(n, dtype=np.int8)
-        pt_mult = self.profit_take_multiplier
-        sl_mult = self.stop_loss_multiplier
+        pt_mult = float(self.profit_take_multiplier)
+        sl_mult = float(self.stop_loss_multiplier)
 
-        for i in range(n - 1):
-            profit_barrier = close[i] * (1.0 + pt_mult)
-            stop_barrier = close[i] * (1.0 - sl_mult)
-            end_idx = compute_end_index(i)
-            if end_idx <= i + 1:
-                labels[i] = 0  # Time barrier hit - mark as HOLD
-                continue
-            win_high = high[i + 1 : end_idx]
-            win_low = low[i + 1 : end_idx]
-
-            profit_hits = np.where(win_high >= profit_barrier)[0]
-            stop_hits = np.where(win_low <= stop_barrier)[0]
-            if profit_hits.size == 0 and stop_hits.size == 0:
-                labels[i] = 0  # No barrier hit - mark as HOLD
-                continue
-            if profit_hits.size == 0:
-                labels[i] = -1  # Stop loss hit
-                continue
-            if stop_hits.size == 0:
-                labels[i] = 1  # Profit take hit
-                continue
-            labels[i] = 1 if profit_hits[0] <= stop_hits[0] else -1
+        labels: np.ndarray
+        use_numba = 'numba' in globals() and numba is not None and callable(globals().get('_numba_triple_barrier_labels'))
+        if use_numba and n >= 512:
+            self.logger.info("⚡ Using Numba-accelerated triple barrier labeling")
+            labels = _numba_triple_barrier_labels(close.astype(np.float64), high.astype(np.float64), low.astype(np.float64), pt_mult, sl_mult, end_idx_arr.astype(np.int64))
+        else:
+            # Fallback to vectorized Python implementation
+            labels = np.zeros(n, dtype=np.int8)
+            for i in range(n - 1):
+                profit_barrier = close[i] * (1.0 + pt_mult)
+                stop_barrier = close[i] * (1.0 - sl_mult)
+                end_idx = int(end_idx_arr[i])
+                if end_idx <= i + 1:
+                    labels[i] = 0
+                    continue
+                win_high = high[i + 1 : end_idx]
+                win_low = low[i + 1 : end_idx]
+                profit_hits = np.where(win_high >= profit_barrier)[0]
+                stop_hits = np.where(win_low <= stop_barrier)[0]
+                if profit_hits.size == 0 and stop_hits.size == 0:
+                    labels[i] = 0
+                    continue
+                if profit_hits.size == 0:
+                    labels[i] = -1
+                    continue
+                if stop_hits.size == 0:
+                    labels[i] = 1
+                    continue
+                labels[i] = 1 if profit_hits[0] <= stop_hits[0] else -1
 
         labeled_data["label"] = labels
 

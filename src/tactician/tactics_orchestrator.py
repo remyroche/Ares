@@ -581,13 +581,13 @@ class TacticsOrchestrator:
                             target_dir = "long" if roll_pred.get("side") == "long" else "short"
                             p_path = roll_pred.get("p_path_class", {})
                             fav = max(float(p_path.get("continuation", 0.0)), float(p_path.get("beginning_of_trend", 0.0)))
-                            # Use fav as a tactician_confidence hint if larger than current
+                            # Update tactician_confidence in tactics_input so it propagates to decision_context
                             tactician_confidence = max(float(tactician_confidence), float(fav))
+                            tactics_input["tactician_confidence"] = tactician_confidence
                             tactics_input["target_direction"] = target_dir
                             ml_predictions["directional_confidence"] = {"long": float(roll_pred.get("p_direction_up_" + str(roll_pred.get("horizon", 0)), 0.5))}
-                            # If exit flag is strong, override to no open
-                            if roll_pred.get("exit_flag"):
-                                sizing_results["final_position_size"] = 0.0
+                            # Expose exit flag to decision policy instead of overriding size
+                            tactics_input["rolling_exit_flag"] = bool(roll_pred.get("exit_flag", False))
             except Exception:
                 pass
 

@@ -350,12 +350,10 @@ async def run_step(
 		# Build per-block feature matrices with robust scaling and selection
 		block_features: dict[str, pd.DataFrame] = {}
 		for blk in BLOCKS:
-			X_blk_raw = _select_block_features(features_df, blk.name, blk.max_features)
-			if X_blk_raw.empty:
+			X_blk = _select_block_features(features_df, blk.name, blk.max_features)
+			if X_blk.empty:
 				logger.warning(f"Block '{blk.name}' has no features after selection — skipping")
 				continue
-			# Final robust scaling
-			X_blk = _robust_scale(X_blk_raw)
 			block_features[blk.name] = X_blk
 
 		if not block_features:

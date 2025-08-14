@@ -68,7 +68,7 @@ class MultiTaskRandomForest:
 
     def _cap(self, X: pd.DataFrame, y: pd.Series) -> Tuple[pd.DataFrame, pd.Series]:
         if len(X) > self.cfg.max_train_samples:
-            return X.iloc[-self.cfg.max_train_samples:], y.iloc[-self.cfg.max_train_samples:]
+            return X.iloc[-self.cfg.max_train_samples :], y.iloc[-self.cfg.max_train_samples :]
         return X, y
 
     def _best_f1_threshold(self, y_true: np.ndarray, y_score: np.ndarray) -> float:
@@ -100,7 +100,7 @@ class MultiTaskRandomForest:
         y_pc = pd.Series([str(s.get("path_class", "end_of_trend")) for s in samples])
         X_pc, y_pc = self._cap(X, y_pc)
         Xtr, Xva, ytr, yva = train_test_split(
-            X_pc, y_pc, test_size=0.2, random_state=self.cfg.random_state, stratify=y_pc
+            X_pc, y_pc, test_size=0.2, random_state=self.cfg.random_state, shuffle=False
         )
         pc_model = RandomForestClassifier(
             n_estimators=self.cfg.n_estimators,
@@ -143,7 +143,7 @@ class MultiTaskRandomForest:
                 continue
             Xh, yh = self._cap(X, y)
             Xtr, Xva, ytr, yva = train_test_split(
-                Xh, yh, test_size=0.2, random_state=self.cfg.random_state, stratify=yh
+                Xh, yh, test_size=0.2, random_state=self.cfg.random_state, shuffle=False
             )
             clf = RandomForestClassifier(
                 n_estimators=self.cfg.n_estimators,
@@ -184,7 +184,7 @@ class MultiTaskRandomForest:
             if y_nr.nunique() >= 2:
                 X_nr, y_nr = self._cap(X, y_nr)
                 Xtr, Xva, ytr, yva = train_test_split(
-                    X_nr, y_nr, test_size=0.2, random_state=self.cfg.random_state, stratify=y_nr
+                    X_nr, y_nr, test_size=0.2, random_state=self.cfg.random_state, shuffle=False
                 )
                 nr_model = RandomForestClassifier(
                     n_estimators=self.cfg.n_estimators,
@@ -225,7 +225,7 @@ class MultiTaskRandomForest:
                 continue
             Xh, yh = self._cap(X, y)
             Xtr, Xva, ytr, yva = train_test_split(
-                Xh, yh, test_size=0.2, random_state=self.cfg.random_state, stratify=yh
+                Xh, yh, test_size=0.2, random_state=self.cfg.random_state, shuffle=False
             )
             clf = RandomForestClassifier(
                 n_estimators=self.cfg.n_estimators,
@@ -255,7 +255,7 @@ class MultiTaskRandomForest:
                 if y.empty:
                     continue
                 Xh, yh = self._cap(X, y)
-                Xtr, Xva, ytr, yva = train_test_split(Xh, yh, test_size=0.2, random_state=self.cfg.random_state)
+                Xtr, Xva, ytr, yva = train_test_split(Xh, yh, test_size=0.2, random_state=self.cfg.random_state, shuffle=False)
                 reg = RandomForestRegressor(
                     n_estimators=max(200, self.cfg.n_estimators // 2),
                     max_depth=self.cfg.max_depth,
@@ -352,6 +352,7 @@ class MultiTaskRandomForest:
                     out[name] = {str(c): proba[:, i].tolist() for i, c in enumerate(classes)}
                 else:
                     out[name] = model.predict(X).tolist()
-            except Exception:
+            except Exception as e:
+                self.logger.warning(f"Prediction failed for model '{name}': {e}", exc_info=True)
                 out[name] = []
         return out

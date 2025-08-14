@@ -469,6 +469,7 @@ class VectorizedLabellingOrchestrator:
             try:
                 from src.analyst.meta_labeling_system import MetaLabelingSystem
                 from src.training.enhanced_training_manager import EnhancedTrainingManager
+                t0_weights = time.time()
                 meta = MetaLabelingSystem(self.config)
                 await meta.initialize()
                 # Load reliability scores if available and set them in MetaLabelingSystem
@@ -538,6 +539,16 @@ class VectorizedLabellingOrchestrator:
                     pass
                 intensities = meta.compute_intensity_scores(price_data, volume_data, features_dict, base_names)
                 weights = meta.compute_label_weights(intensities, moe_conf)
+                try:
+                    self.logger.info({
+                        "msg": "moe_weighting_summary",
+                        "labels": len(weights),
+                        "max_weight": float(max(weights.values()) if weights else 0.0),
+                        "nonzero": int(sum(1 for v in weights.values() if v > 0)),
+                        "duration_ms": int((time.time() - t0_weights) * 1000),
+                    })
+                except Exception:
+                    pass
                 # Attach to combined_data tail for downstream consumers
                 try:
                     tail_idx = combined_data.index[-1]
@@ -1349,22 +1360,23 @@ class VectorizedLabellingOrchestrator:
         except Exception as e:
             self.logger.warning(f"Failed to write feature format report: {e}")
 
-    def _choose_volume_context_column(self, volume_df: pd.DataFrame) -> str:
-        """Choose which volume representation to preserve as context based on configuration and availability."""
-        available = set(getattr(volume_df, 'columns', []))
-        priority_map = {
+    def _choose_volume_context_column(self, df: pd.DataFrame) -> str:
+        """Local helper to choose volume context column in normalizer consistent with orchestrator settings."""
+        available = set(df.columns)
+        pref = self.volume_representation
+        order_map = {
             "returns": ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"],
             "normalized": ["volume_normalized", "volume_returns", "volume_log", "volume_detrended", "volume"],
             "log": ["volume_log", "volume_returns", "volume_normalized", "volume_detrended", "volume"],
             "detrended": ["volume_detrended", "volume_returns", "volume_normalized", "volume_log", "volume"],
         }
-        preferred_order = priority_map.get(self.volume_representation, [])
-        for col in preferred_order:
-            if col in available:
-                return col
-        # Fallback for 'none' or any other case
-        fallback_order = ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"]
-        return next((c for c in fallback_order if c in available), "volume")
+        for c in order_map.get(pref, []) or []:
+            if c in available:
+                return c
+        for c in ["volume_returns", "volume_normalized", "volume_log", "volume_detrended", "volume"]:
+            if c in available:
+                return c
+        return "volume"
 
     def _get_present_context_columns(self, df: pd.DataFrame) -> list[str]:
         """Return the list of context columns present in a given DataFrame, according to config."""

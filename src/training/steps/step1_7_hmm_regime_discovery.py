@@ -171,11 +171,13 @@ def _posteriors(model: GMMHMM, X: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]
 
 def _build_combination_profiles(block_states: dict[str, np.ndarray], block_posteriors: dict[str, np.ndarray]) -> Tuple[pd.Series, pd.DataFrame]:
 	# combination key per row
-	keys = None
-	for b, s in block_states.items():
-		k = pd.Series([f"{b}:{int(v)}" for v in s])
-		keys = k if keys is None else keys.str.cat(k, sep="|")
-	combination_keys = keys
+	if not block_states:
+		combination_keys = pd.Series(dtype=str)
+	else:
+		key_parts = [[f"{b}:{int(v)}" for v in s] for b, s in block_states.items()]
+		# Transpose and join keys for each row
+		joined_keys = ["|".join(map(str, row)) for row in zip(*key_parts)]
+		combination_keys = pd.Series(joined_keys)
 	# profile vector: concatenated mean posteriors per block across occurrences
 	profiles = {}
 	for combo, idx in combination_keys.groupby(combination_keys).groups.items():

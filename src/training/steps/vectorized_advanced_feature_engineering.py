@@ -698,7 +698,11 @@ class VectorizedAdvancedFeatureEngineering:
             features.update(ohlcv_price_features)
 
             # S/R distance features — infer levels if not provided
-            inferred_sr = sr_levels if sr_levels else None
+            inferred_sr = sr_levels
+            if self.sr_distance_calculator and not inferred_sr:
+                inferred_sr = await self.sr_distance_calculator.infer_sr_levels(
+                    price_data,
+                )
             if self.sr_distance_calculator and inferred_sr:
                 sr_distance_features = await self.sr_distance_calculator.calculate_sr_distances(
                     price_data,
@@ -2557,6 +2561,31 @@ class VectorizedSRDistanceCalculator:
         except Exception as e:
             self.logger.error(f"❌ Error initializing S/R distance calculator: {e}")
             return False
+
+    async def infer_sr_levels(self, price_data: pd.DataFrame) -> dict[str, Any]:
+        """Infer basic support/resistance levels from price data when explicit levels are not provided."""
+        try:
+            low = price_data["low"].astype(float)
+            high = price_data["high"].astype(float)
+            window = min(len(low), 1000)
+            if window <= 0:
+                return {"support_levels": [], "resistance_levels": []}
+            low_tail = low.tail(window).dropna()
+            high_tail = high.tail(window).dropna()
+            if len(low_tail) == 0 or len(high_tail) == 0:
+                return {"support_levels": [], "resistance_levels": []}
+            # Percentile-based candidate levels (robust and fast)
+            support_ps = [5, 15, 30]
+            resistance_ps = [70, 85, 95]
+            supports = np.percentile(low_tail.values, support_ps).tolist()
+            resistances = np.percentile(high_tail.values, resistance_ps).tolist()
+            # Deduplicate and sort for stability
+            support_levels = sorted(float(x) for x in set(round(v, 8) for v in supports))
+            resistance_levels = sorted(float(x) for x in set(round(v, 8) for v in resistances))
+            return {"support_levels": support_levels, "resistance_levels": resistance_levels}
+        except Exception as e:
+            self.logger.warning(f"Failed to infer S/R levels from price data: {e}")
+            return {"support_levels": [], "resistance_levels": []}
 
     async def calculate_sr_distances(
         self,

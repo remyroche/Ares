@@ -697,16 +697,11 @@ class VectorizedAdvancedFeatureEngineering:
             ohlcv_price_features = self._engineer_ohlcv_price_features_vectorized(price_data)
             features.update(ohlcv_price_features)
 
-            # S/R distance features — infer levels if not provided
-            inferred_sr = sr_levels
-            if self.sr_distance_calculator and not inferred_sr:
-                inferred_sr = await self.sr_distance_calculator.infer_sr_levels(
-                    price_data,
-                )
-            if self.sr_distance_calculator and inferred_sr:
+            # S/R distance features — requires provided sr_levels
+            if self.sr_distance_calculator and sr_levels:
                 sr_distance_features = await self.sr_distance_calculator.calculate_sr_distances(
                     price_data,
-                    inferred_sr,
+                    sr_levels,
                 )
                 features.update(sr_distance_features)
 
@@ -2562,30 +2557,7 @@ class VectorizedSRDistanceCalculator:
             self.logger.error(f"❌ Error initializing S/R distance calculator: {e}")
             return False
 
-    async def infer_sr_levels(self, price_data: pd.DataFrame) -> dict[str, Any]:
-        """Infer basic support/resistance levels from price data when explicit levels are not provided."""
-        try:
-            low = price_data["low"].astype(float)
-            high = price_data["high"].astype(float)
-            window = min(len(low), 1000)
-            if window <= 0:
-                return {"support_levels": [], "resistance_levels": []}
-            low_tail = low.tail(window).dropna()
-            high_tail = high.tail(window).dropna()
-            if len(low_tail) == 0 or len(high_tail) == 0:
-                return {"support_levels": [], "resistance_levels": []}
-            # Percentile-based candidate levels (robust and fast)
-            support_ps = [5, 15, 30]
-            resistance_ps = [70, 85, 95]
-            supports = np.percentile(low_tail.values, support_ps).tolist()
-            resistances = np.percentile(high_tail.values, resistance_ps).tolist()
-            # Deduplicate and sort for stability
-            support_levels = sorted(float(x) for x in set(round(v, 8) for v in supports))
-            resistance_levels = sorted(float(x) for x in set(round(v, 8) for v in resistances))
-            return {"support_levels": support_levels, "resistance_levels": resistance_levels}
-        except Exception as e:
-            self.logger.warning(f"Failed to infer S/R levels from price data: {e}")
-            return {"support_levels": [], "resistance_levels": []}
+    # Note: S/R levels should be provided by upstream pipeline with price, strength, and optional range
 
     async def calculate_sr_distances(
         self,
@@ -2595,8 +2567,17 @@ class VectorizedSRDistanceCalculator:
         """Calculate per-row distances to nearest support/resistance levels."""
         try:
             close = price_data["close"].astype(float)
-            support_levels = sr_levels.get("support_levels", []) or []
-            resistance_levels = sr_levels.get("resistance_levels", []) or []
+            # Accept list of level dicts with 'price' and optional 'strength', or raw floats
+            def _extract_prices(levels):
+                prices = []
+                for lv in levels or []:
+                    if isinstance(lv, (int, float)):
+                        prices.append(float(lv))
+                    elif isinstance(lv, dict) and "price" in lv:
+                        prices.append(float(lv.get("price")))
+                return prices
+            support_levels = _extract_prices(sr_levels.get("support_levels"))
+            resistance_levels = _extract_prices(sr_levels.get("resistance_levels"))
             if len(support_levels) == 0:
                 nsd = pd.Series(np.full(len(close), np.nan), index=close.index)
             else:
@@ -2611,6 +2592,9 @@ class VectorizedSRDistanceCalculator:
             orch_cfg = self.config.get("vectorized_labelling_orchestrator", {})
             scale = float(orch_cfg.get("sr_distance_scale", 0.01))  # 1% default scale
             threshold = float(orch_cfg.get("sr_proximity_threshold", 0.02))  # 2% threshold
+            # Use level strengths if provided to modulate proximity (cap to [0,1])
+            sup_strengths = [float(l.get("strength", 1.0)) if isinstance(l, dict) else 1.0 for l in (sr_levels.get("support_levels") or [])]
+            res_strengths = [float(l.get("strength", 1.0)) if isinstance(l, dict) else 1.0 for l in (sr_levels.get("resistance_levels") or [])]
             no_any = (len(support_levels) == 0 and len(resistance_levels) == 0)
             nsd_f = nsd.fillna(method="ffill").fillna(method="bfill").fillna(0)
             nrd_f = nrd.fillna(method="ffill").fillna(method="bfill").fillna(0)
@@ -2621,7 +2605,13 @@ class VectorizedSRDistanceCalculator:
             else:
                 nearest = pd.concat([nsd_f, nrd_f], axis=1).min(axis=1)
                 # Exponential decay proximity score; near=1, far~0
-                prox_series = np.exp(-nearest / max(scale, 1e-6))
+                base_prox = np.exp(-nearest / max(scale, 1e-6))
+                # Strength factor: max of provided strengths, fallback 1.0
+                strength_factor = 1.0
+                if sup_strengths or res_strengths:
+                    strength_factor = max([0.0] + sup_strengths + res_strengths)
+                    strength_factor = float(np.clip(strength_factor, 0.0, 1.0))
+                prox_series = base_prox * strength_factor
                 nearby = (nearest <= threshold).astype(int)
             return {
                 "nearest_support_distance": nsd_f.values,

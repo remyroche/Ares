@@ -182,8 +182,8 @@ class MetaLabelingSystem:
                 self.load_activation_thresholds_from_artifacts()
                 self.load_reliability_from_artifacts()
                 self.load_active_labels_from_artifacts()
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"Could not load artifacts during initialization: {e}")
             self.logger.info("✅ Meta-labeling system initialized successfully")
             return True
         except Exception as e:

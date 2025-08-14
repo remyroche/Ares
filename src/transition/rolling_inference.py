@@ -157,6 +157,23 @@ class RollingMTInference:
                     pass
             out["horizon"] = H
 
+        # Next regime (multiclass)
+        nr = self.models.get("next_regime")
+        if nr is not None:
+            try:
+                proba = nr.predict_proba(X)[0]
+                classes = list(getattr(nr, "classes_", []))
+                p_nr = {}
+                for i, c in enumerate(classes):
+                    p_adj = self._apply_reliability("next_regime", float(proba[i]), cls=str(c))
+                    p_nr[str(c)] = p_adj
+                s = float(sum(p_nr.values()))
+                if s > 0:
+                    p_nr = {k: v / s for k, v in p_nr.items()}
+                out["p_next_regime"] = p_nr
+            except Exception:
+                pass
+
         # Decisions
         # Entry: favor beginning/continuation crossings; fallback to onset
         allow = False

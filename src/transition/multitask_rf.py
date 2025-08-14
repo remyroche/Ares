@@ -165,6 +165,58 @@ class MultiTaskRandomForest:
             except Exception:
                 pass
 
+        # 2b) Next regime head (multiclass): majority regime in Y_post_states
+        try:
+            regimes = []
+            for s in samples:
+                y_states = s.get("Y_post_states")
+                if isinstance(y_states, pd.DataFrame) and "regime" in y_states.columns:
+                    vals = [str(v) for v in y_states["regime"].tolist() if isinstance(v, (str, int))]
+                    if vals:
+                        # majority label
+                        from collections import Counter
+                        regimes.append(Counter(vals).most_common(1)[0][0])
+                    else:
+                        regimes.append("SIDEWAYS")
+                else:
+                    regimes.append("SIDEWAYS")
+            y_nr = pd.Series(regimes)
+            if y_nr.nunique() >= 2:
+                X_nr, y_nr = self._cap(X, y_nr)
+                Xtr, Xva, ytr, yva = train_test_split(
+                    X_nr, y_nr, test_size=0.2, random_state=self.cfg.random_state, stratify=y_nr
+                )
+                nr_model = RandomForestClassifier(
+                    n_estimators=self.cfg.n_estimators,
+                    max_depth=self.cfg.max_depth,
+                    min_samples_leaf=self.cfg.min_samples_leaf,
+                    random_state=self.cfg.random_state,
+                    n_jobs=-1,
+                )
+                nr_model.fit(Xtr, ytr)
+                self.models["next_regime"] = nr_model
+                results["next_regime"] = {
+                    "report": classification_report(yva, nr_model.predict(Xva), output_dict=True, zero_division=0),
+                    "classes": list(nr_model.classes_),
+                }
+                # thresholds are not used for multiclass here; reliability scale
+                try:
+                    proba = nr_model.predict_proba(Xva)
+                    classes = list(nr_model.classes_)
+                    val_true = yva.values
+                    scales: Dict[str, float] = {}
+                    for i, c in enumerate(classes):
+                        p = proba[:, i].astype(float)
+                        y_bin = (val_true == c).astype(int)
+                        mean_p = float(np.clip(np.mean(p), 1e-6, 1.0))
+                        mean_y = float(np.mean(y_bin))
+                        scales[str(c)] = float(np.clip(mean_y / mean_p, 0.5, 1.5))
+                    reliability["next_regime"] = scales
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         # 3) Direction heads per horizon (binary)
         for H in self.horizons:
             head = f"direction_up_{H}"

@@ -92,7 +92,18 @@ class TransitionRandomForest:
         # Eval
         y_pred = mdl.predict(X_val)
         rep = classification_report(y_val, y_pred, output_dict=True, zero_division=0)
+        # Validation probabilities for reliability calibration
+        try:
+            proba = mdl.predict_proba(X_val)
+            classes = list(mdl.classes_)
+            # Build per-class prob list and true labels
+            val_true = list(map(str, y_val.values))
+            val_proba = {str(c): proba[:, i].tolist() for i, c in enumerate(classes)}
+        except Exception:
+            classes, val_true, val_proba = [], [], {}
         result = {"trained": True, "report": rep}
+        if classes:
+            result.update({"val_true": val_true, "val_proba": val_proba, "classes": classes})
         # SHAP (optional)
         if self.cfg.enable_shap and shap is not None:
             try:

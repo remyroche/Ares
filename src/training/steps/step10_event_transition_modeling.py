@@ -110,6 +110,38 @@ async def run_step(
     if "shap_top_features" in rf_result:
         logger.info({"msg": "Top SHAP features", "features": rf_result["shap_top_features"]})
 
+    # 4a) Reliability calibration (reuse existing infrastructure): bin predicted prob vs empirical outcomes
+    try:
+        if rf_result.get("val_true") and rf_result.get("val_proba"):
+            from src.training.calibration_manager import CalibrationManager
+            cm = CalibrationManager(cfg)
+            await cm.initialize()
+            # Build a minimal structure expected by our combiner: per timeframe/class scalers
+            # For now, compute a simple scaling factor per class by comparing mean predicted vs observed frequency
+            val_true = rf_result["val_true"]
+            val_proba = rf_result["val_proba"]  # {class: [p,...]}
+            classes = list(rf_result.get("classes", []))
+            import numpy as _np
+            scalers: dict[str, dict[str, float]] = {"1m": {}}
+            for c in classes:
+                preds = _np.array(val_proba.get(str(c), []), dtype=float)
+                obs = _np.array([1.0 if t == str(c) else 0.0 for t in val_true], dtype=float)
+                if preds.size and obs.size:
+                    mean_p = float(_np.clip(_np.mean(preds), 1e-6, 1.0))
+                    mean_y = float(_np.mean(obs))
+                    scale = float(_np.clip(mean_y / mean_p, 0.5, 1.5))
+                    scalers["1m"][str(c)] = scale
+            # Persist to seq2seq artifact dir for combiner
+            seq_cfg = (cfg.get("TRANSITION_MODELING", {})).get("seq2seq", {})
+            artifact_dir = str(seq_cfg.get("artifact_dir_models", "checkpoints/transition_models"))
+            os.makedirs(artifact_dir, exist_ok=True)
+            with open(os.path.join(artifact_dir, "reliability.json"), "w") as f:
+                import json as _json
+                f.write(_json.dumps(scalers, indent=2))
+            logger.info({"msg": "Saved reliability scalers", "path": os.path.join(artifact_dir, "reliability.json")})
+    except Exception as e:
+        logger.warning(f"Reliability calibration skipped due to error: {e}")
+
     # 4b) Optional Seq2Seq training (compact Transformer) for temporal modeling
     try:
         seq_cfg = (cfg.get("TRANSITION_MODELING", {})).get("seq2seq", {})

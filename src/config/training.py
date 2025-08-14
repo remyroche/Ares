@@ -409,7 +409,16 @@ def get_training_config() -> dict[str, Any]:
                 "onset_window_bars": 8
             },
             # Storage
-            "artifacts_dir": "checkpoints/transition_datasets"
+            "artifacts_dir": "checkpoints/transition_datasets",
+            # Optional compact seq2seq (Transformer/TCN-like) training
+            "seq2seq": {
+                "enabled": False,
+                "d_model": 128,
+                "nhead": 4,
+                "num_layers": 2,
+                "max_epochs": 15,
+                "lr": 0.001
+            }
         },
     }
 

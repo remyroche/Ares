@@ -110,6 +110,33 @@ async def run_step(
     if "shap_top_features" in rf_result:
         logger.info({"msg": "Top SHAP features", "features": rf_result["shap_top_features"]})
 
+    # 4b) Optional Seq2Seq training (compact Transformer) for temporal modeling
+    try:
+        seq_cfg = (cfg.get("TRANSITION_MODELING", {})).get("seq2seq", {})
+        if bool(seq_cfg.get("enabled", False)):
+            from src.transition.seq2seq_trainer import train_seq2seq
+            post_window = int(cfg.get("TRANSITION_MODELING", {}).get("post_window", 20))
+            hmm_vocab = int(cfg.get("TRANSITION_MODELING", {}).get("hmm_n_states", 5))
+            d_model = int(seq_cfg.get("d_model", 128))
+            nhead = int(seq_cfg.get("nhead", 4))
+            num_layers = int(seq_cfg.get("num_layers", 2))
+            max_epochs = int(seq_cfg.get("max_epochs", 15))
+            lr = float(seq_cfg.get("lr", 1e-3))
+            _ = train_seq2seq(
+                samples=samples,
+                label_index=dataset.get("label_index", []),
+                numeric_feature_names=dataset.get("numeric_feature_names", []),
+                post_window=post_window,
+                hmm_vocab=hmm_vocab,
+                d_model=d_model,
+                nhead=nhead,
+                num_layers=num_layers,
+                max_epochs=max_epochs,
+                lr=lr,
+            )
+    except Exception as e:
+        logger.warning(f"Seq2Seq training skipped due to error: {e}")
+
     # 5) Save compact artifacts
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     # Save event index

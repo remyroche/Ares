@@ -74,7 +74,7 @@ class EventWindowDatasetBuilder:
     ) -> dict[str, Any]:
         """
         Returns a dict with:
-          - samples: list of dicts with keys {event_label, t0_time, X_pre_states, Y_post_returns, Y_post_states, multi_hot_labels, rf_features}
+          - samples: list of dicts with keys {event_label, t0_time, X_pre_states, X_pre_numeric, Y_post_returns, Y_post_states, multi_hot_labels, rf_features}
           - tensors: optional stacked arrays for model consumption (can be large; we keep lightweight here)
         """
         if klines_df.empty or combined_df.empty or event_index.empty:
@@ -87,6 +87,12 @@ class EventWindowDatasetBuilder:
         # Merge numeric features if present in combined_df for RF pooling
         # Align indices
         combined_num = combined_df.reindex(klines_df.index)
+        # Define a compact numeric feature set if present
+        candidate_numeric = [
+            "close_returns","volatility_20","volume_ratio","rsi","macd","macd_signal",
+            "macd_histogram","bb_position","bb_width","atr","volatility_regime","volatility_acceleration"
+        ]
+        present_numeric = [c for c in candidate_numeric if c in combined_num.columns]
 
         pre = self.ds_cfg.pre_window
         post = self.ds_cfg.post_window
@@ -116,6 +122,11 @@ class EventWindowDatasetBuilder:
             post_slice = slice(i0 + 1, i0 + 1 + post)
             X_states = states_df.iloc[pre_slice]
             Y_states = states_df.iloc[post_slice]
+            # Numeric sequence (compact set)
+            if present_numeric:
+                X_num = pd.to_numeric(combined_num[present_numeric].iloc[pre_slice], errors="coerce").fillna(0.0).to_numpy(dtype=float)
+            else:
+                X_num = np.zeros((pre, 0), dtype=float)
             # Targets: returns and next states
             close = pd.to_numeric(klines_df["close"], errors="coerce").values
             ret_seq = (close[i0 + 1 : i0 + 1 + post] / close[i0] - 1.0).astype(float)
@@ -135,6 +146,7 @@ class EventWindowDatasetBuilder:
                 "event_label": ev["event_label"],
                 "t0_time": t0,
                 "X_pre_states": X_states[["hmm_state_id","regime"]].copy(),
+                "X_pre_numeric": X_num,
                 "Y_post_returns": ret_seq.copy(),
                 "Y_post_states": Y_states[["hmm_state_id","regime"]].copy(),
                 "multi_hot_labels": mh.copy(),
@@ -164,4 +176,4 @@ class EventWindowDatasetBuilder:
                     vectors.append(v)
             samples = kept
 
-        return {"samples": samples, "label_index": all_labels}
+        return {"samples": samples, "label_index": all_labels, "numeric_feature_names": present_numeric}

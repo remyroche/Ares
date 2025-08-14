@@ -874,31 +874,21 @@ class MetaLabelingSystem:
             except Exception:
                 patterns["MICRO_MOMENTUM_DIVERGENCE"] = 0
 
-            # 7) S/R related labels (using rolling extremes as SR proxies)
+            # 7) S/R proximity labels (using rolling extremes as SR proxies)
             try:
                 sr_res = float(features.get("resistance_level", high.max()))
                 sr_sup = float(features.get("support_level", low.min()))
                 cp = float(close.iloc[-1])
                 near_res = abs(cp - sr_res) / max(1e-12, cp) <= self.sr_near_pct
                 near_sup = abs(cp - sr_sup) / max(1e-12, cp) <= self.sr_near_pct
-                prev_cp = float(close.iloc[-2]) if len(close) >= 2 else cp
-                broke_res = (prev_cp <= sr_res) and (cp > sr_res * (1 + self.sr_break_pct))
-                broke_sup = (prev_cp >= sr_sup) and (cp < sr_sup * (1 - self.sr_break_pct))
-                bounce_res = (near_res and cp < sr_res)
-                bounce_sup = (near_sup and cp > sr_sup)
                 patterns["SR_TOUCH"] = 1 if (near_res or near_sup) else 0
-                patterns["SR_BOUNCE"] = 1 if (bounce_res or bounce_sup) else 0
-                patterns["SR_BREAK"] = 1 if (broke_res or broke_sup) else 0
-                # SR_FAKE_BREAK: pierce and close back inside within last 3 bars
-                recent = close.tail(3)
-                fake_up = (recent.max() > sr_res * (1 + self.sr_break_pct)) and (cp < sr_res)
-                fake_dn = (recent.min() < sr_sup * (1 - self.sr_break_pct)) and (cp > sr_sup)
-                patterns["SR_FAKE_BREAK"] = 1 if (fake_up or fake_dn) else 0
+                # Provide distances for ML models to infer bounce/break nuances downstream
+                patterns["SR_DISTANCE_RESISTANCE_PCT"] = float(abs(cp - sr_res) / max(1e-12, cp))
+                patterns["SR_DISTANCE_SUPPORT_PCT"] = float(abs(cp - sr_sup) / max(1e-12, cp))
             except Exception:
                 patterns["SR_TOUCH"] = patterns.get("SR_TOUCH", 0)
-                patterns["SR_BOUNCE"] = patterns.get("SR_BOUNCE", 0)
-                patterns["SR_BREAK"] = patterns.get("SR_BREAK", 0)
-                patterns["SR_FAKE_BREAK"] = patterns.get("SR_FAKE_BREAK", 0)
+                patterns["SR_DISTANCE_RESISTANCE_PCT"] = patterns.get("SR_DISTANCE_RESISTANCE_PCT", 1.0)
+                patterns["SR_DISTANCE_SUPPORT_PCT"] = patterns.get("SR_DISTANCE_SUPPORT_PCT", 1.0)
 
             # 8) Liquidity shifts & market depth (requires order_flow_data; use proxies if limited)
             try:
@@ -1561,8 +1551,9 @@ class MetaLabelingSystem:
             try:
                 sr_only = {}
                 sr_only.update(self._detect_sr_touch_bounce_break(price_data, features))
-                # Retain only S/R keys
-                sr_keep = {k: v for k, v in sr_only.items() if k in ("SR_TOUCH","SR_BOUNCE","SR_BREAK","SR_FAKE_BREAK")}
+                # Retain only proximity SR labels for downstream ML
+                sr_keys = ("SR_TOUCH", "SR_DISTANCE_RESISTANCE_PCT", "SR_DISTANCE_SUPPORT_PCT")
+                sr_keep = {k: features.get(k) for k in sr_keys if k in features}
                 analyst_labels.update(sr_keep)
             except Exception:
                 pass

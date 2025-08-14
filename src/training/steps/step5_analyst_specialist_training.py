@@ -286,6 +286,11 @@ class AnalystSpecialistTrainingStep:
                         dispatcher_manifest["gating"] = {
                             "type": "meta_labels",
                             "weights": strength_columns,  # optional per-meta strength source
+                            "moe": {
+                                "w_min": float(self.config.get("meta_labeling", {}).get("aggregation", {}).get("w_min", 0.05)),
+                                "w_max": float(self.config.get("meta_labeling", {}).get("aggregation", {}).get("w_max", 0.85)),
+                                "top_k": int(self.config.get("meta_labeling", {}).get("aggregation", {}).get("top_k", 2)),
+                            },
                         }
                     else:
                         self.logger.warning(f"Unknown regime_source '{regime_source}', falling back to combined training")

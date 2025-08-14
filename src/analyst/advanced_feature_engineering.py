@@ -2263,37 +2263,48 @@ class AdvancedFeatureEngineering:
             ohlc = price_data[["open","high","low","close","volume"]].copy()
             rule = "1H" if timeframe == "1h" else timeframe.upper()
             ohlc_tf = ohlc.resample(rule).agg({"open":"first","high":"max","low":"min","close":"last","volume":"sum"}).dropna()
-            # Initialize URC for macro
+            # Initialize URC for macro and try to load existing models only
             urc = UnifiedRegimeClassifier(self.config, exchange="UNKNOWN", symbol="UNKNOWN")
-            awaitable = getattr(urc, "initialize", None)
-            if callable(awaitable):
-                import asyncio
-                loop = asyncio.get_event_loop()
-                loop.run_until_complete(urc.initialize())
-            # Train HMM labeler if needed
-            trainable = getattr(urc, "train_hmm_labeler", None)
-            if callable(trainable) and not getattr(urc, "trained", False):
-                import asyncio
-                loop = asyncio.get_event_loop()
-                loop.run_until_complete(urc.train_hmm_labeler(ohlc_tf))
-            # Compute features and predict states
-            feats = urc._calculate_features(ohlc_tf)
-            X = feats[[
-                "log_returns","volatility_20","volume_ratio","rsi","macd","macd_signal",
-                "macd_histogram","bb_position","bb_width","atr","volatility_regime","volatility_acceleration"
-            ]].fillna(0)
-            if urc.scaler is not None:
-                Xs = urc.scaler.transform(X)
-            else:
-                from sklearn.preprocessing import StandardScaler
-                urc.scaler = StandardScaler().fit(X)
-                Xs = urc.scaler.transform(X)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(urc.initialize())
             hmm = urc.hmm_model
-            if hmm is None:
-                # Fallback: SIDEWAYS state id 1
-                states_tf = pd.Series(np.ones(len(X), dtype=int), index=feats.index)
-            else:
+            states_tf: pd.Series
+            if hmm is not None:
+                # Compute features and predict states
+                feats = urc._calculate_features(ohlc_tf)
+                X = feats[[
+                    "log_returns","volatility_20","volume_ratio","rsi","macd","macd_signal",
+                    "macd_histogram","bb_position","bb_width","atr","volatility_regime","volatility_acceleration"
+                ]].fillna(0)
+                if urc.scaler is not None:
+                    Xs = urc.scaler.transform(X)
+                else:
+                    from sklearn.preprocessing import StandardScaler
+                    urc.scaler = StandardScaler().fit(X)
+                    Xs = urc.scaler.transform(X)
                 states_tf = pd.Series(hmm.predict(Xs).astype(int), index=feats.index)
+            else:
+                # Rule-based fallback using EMA50 and ADX on 1h
+                ema = ohlc_tf["close"].ewm(span=50).mean()
+                # Simple ADX proxy: use rolling range/volatility on 14
+                high_low = ohlc_tf["high"] - ohlc_tf["low"]
+                high_close = (ohlc_tf["high"] - ohlc_tf["close"].shift()).abs()
+                low_close = (ohlc_tf["low"] - ohlc_tf["close"].shift()).abs()
+                tr = (pd.concat([high_low, high_close, low_close], axis=1)).max(axis=1)
+                adx_proxy = tr.rolling(14, min_periods=5).mean()
+                adx_thr = float(getattr(urc, "adx_sideways_threshold", 18))
+                # Map to regimes: BULL=2, SIDEWAYS=1, BEAR=0
+                regimes = []
+                for t in ohlc_tf.index:
+                    c = float(ohlc_tf.loc[t, "close"])
+                    e = float(ema.loc[t]) if not pd.isna(ema.loc[t]) else c
+                    a = float(adx_proxy.loc[t]) if not pd.isna(adx_proxy.loc[t]) else 0.0
+                    if a < adx_thr:
+                        regimes.append(1)
+                    else:
+                        regimes.append(2 if c >= e else 0)
+                states_tf = pd.Series(regimes, index=ohlc_tf.index)
             # Map back to base index via forward fill
             states_base = states_tf.reindex(price_data.index, method="ffill").fillna(1).astype(int)
             return states_base.rename(f"{timeframe}_hmm_state")

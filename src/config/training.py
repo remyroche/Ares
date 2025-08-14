@@ -389,6 +389,15 @@ def get_training_config() -> dict[str, Any]:
                 "enable_dataset_cache": True,
                 "cache_dir": "checkpoints/transition_cache"
             },
+            # Multi-timeframe context features
+            "context_features": {
+                "enable_macro_context": True,
+                "macro_timeframe": "1h",
+                "include_price_over_ema50": True,
+                "include_atr_pct": True,
+                "include_macro_hmm_state": True,
+                "also_include_4h": False
+            },
             # Efficiency and pruning
             "early_pruning": {
                 "prefilter_with_vectorized_labels": True,
@@ -439,12 +448,32 @@ def get_training_config() -> dict[str, Any]:
                 "cv_folds": 3,
                 "artifact_dir_models": "checkpoints/transition_models"
             },
-            # Inference gating thresholds per timeframe
+            # Inference gating thresholds per timeframe and macro-regime
             "inference": {
                 "path_class_thresholds": {
                     "1m": {"continuation": 0.75, "beginning_of_trend": 0.75},
                     "5m": {"continuation": 0.70, "beginning_of_trend": 0.70}
+                },
+                "macro_regime_thresholds": {
+                    "BULL": {
+                        "1m": {"continuation": 0.70, "beginning_of_trend": 0.70},
+                        "5m": {"continuation": 0.68, "beginning_of_trend": 0.68}
+                    },
+                    "BEAR": {
+                        "1m": {"continuation": 0.80, "beginning_of_trend": 0.85},
+                        "5m": {"continuation": 0.78, "beginning_of_trend": 0.82}
+                    },
+                    "SIDEWAYS": {
+                        "1m": {"continuation": 0.78, "beginning_of_trend": 0.80},
+                        "5m": {"continuation": 0.75, "beginning_of_trend": 0.78}
+                    }
                 }
+            },
+            # Optional lightweight validation on higher timeframes
+            "htf_validation": {
+                "enabled": False,
+                "timeframes": ["15m", "1h"],
+                "run_seq2seq": False
             }
         },
     }

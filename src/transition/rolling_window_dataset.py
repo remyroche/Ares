@@ -13,6 +13,21 @@ from src.transition.path_targets import PathTargetEngineer
 from src.utils.logger import system_logger
 
 
+FEATURE_POOL_COLUMNS = [
+    "log_returns",
+    "volatility_20",
+    "volume_ratio",
+    "rsi",
+    "macd",
+    "macd_signal",
+    "macd_histogram",
+    "bb_position",
+    "bb_width",
+    "atr",
+    "volatility_regime",
+    "volatility_acceleration",
+]
+
 @dataclass
 class RollingWindowConfig:
     pre_window: int
@@ -54,18 +69,11 @@ class RollingWindowDatasetBuilder:
         return await self.state_builder.initialize()
 
     def _compact_numeric_names(self, combined_df: pd.DataFrame) -> List[str]:
-        candidates = [
-            "close_returns","volatility_20","volume_ratio","rsi","macd","macd_signal",
-            "macd_histogram","bb_position","bb_width","atr","volatility_regime","volatility_acceleration",
-        ]
-        return [c for c in candidates if c in combined_df.columns]
+        return [c for c in FEATURE_POOL_COLUMNS if c in combined_df.columns]
 
     def _rf_pooled_features(self, seq_df: pd.DataFrame) -> Dict[str, float]:
         out: Dict[str, float] = {}
-        for col in [
-            "log_returns","volatility_20","volume_ratio","rsi","macd","macd_signal",
-            "macd_histogram","bb_position","bb_width","atr","volatility_regime","volatility_acceleration",
-        ]:
+        for col in FEATURE_POOL_COLUMNS:
             if col in seq_df.columns:
                 s = pd.to_numeric(seq_df[col], errors="coerce")
                 out[f"mean_{col}"] = float(np.nanmean(s.values))
@@ -92,6 +100,11 @@ class RollingWindowDatasetBuilder:
         end = N - post - 1
         if end <= start:
             return {"samples": [], "numeric_feature_names": numeric_cols}
+        # If max_samples is set, prefer the most recent windows
+        loop_start = start
+        if self.rw_cfg.max_samples:
+            recent_start = end - int(self.rw_cfg.max_samples) + 1
+            loop_start = max(start, recent_start)
 
         close = pd.to_numeric(klines_df.get("close"), errors="coerce").values
         # Precompute per-t path class to enable onset/end targets later
@@ -99,7 +112,7 @@ class RollingWindowDatasetBuilder:
 
         # First pass: compute core sample info and immediate path class
         samples: List[dict[str, Any]] = []
-        for t in range(start, end + 1):
+        for t in range(loop_start, end + 1):
             pre_slice = slice(t - pre, t)
             post_slice = slice(t + 1, t + 1 + post)
             X_states = states_df.iloc[pre_slice][["hmm_state_id","regime"]].copy()
@@ -111,7 +124,6 @@ class RollingWindowDatasetBuilder:
             # Path class at t
             sample_tmp = {
                 "X_pre_states": X_states,
-                "X_pre_numeric": np.zeros((pre, 0), dtype=float),
                 "Y_post_states": Y_states,
                 "Y_post_returns": y_rets.copy(),
                 "rf_features": rf_feats,
@@ -134,14 +146,12 @@ class RollingWindowDatasetBuilder:
                 "t0_time": klines_df.index[t],
                 "path_class": pc,
                 "X_pre_states": X_states,
-                "X_pre_numeric": np.zeros((pre, 0), dtype=float),
                 "Y_post_states": Y_states,
                 "Y_post_returns": y_rets.copy(),
                 "rf_features": rf_feats,
                 **dir_targets,
             })
-            if self.rw_cfg.max_samples and len(samples) >= self.rw_cfg.max_samples:
-                break
+            # No break; recent windowing handled by loop_start
 
         # Second pass: derive onset/end targets off path_classes
         K = self.rw_cfg.onset_horizon_bars

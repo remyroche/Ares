@@ -345,7 +345,9 @@ class ConfidenceCalibrationStep:
                                     if isinstance(res, dict) and "accuracy" in res:
                                         acc_map[name] = float(res.get("accuracy", 0.0))
                     except Exception as e:
-                        self.logger.warning(f"Error during reliability fallback calculation: {e}")
+                        self.logger.warning(
+                            f"Error during reliability fallback calculation: {e}",
+                        )
                     reliability = acc_map
                 with open(os.path.join(artifacts_dir, "reliability.json"), "w") as f:
                     json.dump(reliability, f, indent=2)

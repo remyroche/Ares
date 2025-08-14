@@ -2228,8 +2228,8 @@ class MetaLabelingSystem:
                     data = json.load(f)
                 for k, v in data.items():
                     self.set_reliability_score(str(k), float(v))
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.warning(f"Could not load reliability from artifacts: {e}")
 
     def load_active_labels_from_artifacts(self, artifacts_dir: str | None = None) -> None:
         """Load active/inactive labels to enforce complementarity-aware removal."""

@@ -368,7 +368,7 @@ def get_training_config() -> dict[str, Any]:
         },
         # --- Event-centric Transition Modeling (new, additive) ---
         "TRANSITION_MODELING": {
-            "enabled": False,
+            "enabled": True,
             # HMM/Regime
             "hmm_n_states": 5,
             "use_existing_urc_models": True,
@@ -423,13 +423,13 @@ def get_training_config() -> dict[str, Any]:
             "artifacts_dir": "checkpoints/transition_datasets",
             # Optional compact seq2seq (Transformer/TCN-like) training
             "seq2seq": {
-                "enabled": False,
-                "model_type": "transformer",  # or "tcn"
+                "enabled": True,
+                "model_type": "tcn",
                 "precision": "16-mixed",
                 "d_model": 128,
                 "nhead": 4,
                 "num_layers": 2,
-                "max_epochs": 15,
+                "max_epochs": 10,
                 "lr": 0.001,
                 "teacher_forcing_ratio": 1.0,
                 "scheduled_sampling": {"start": 1.0, "end": 0.5, "epochs": 10},

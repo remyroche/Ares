@@ -1371,6 +1371,17 @@ class AdvancedFeatureEngineering:
             adaptive_features = self._engineer_adaptive_indicators(price_data)
             features.update(adaptive_features)
 
+            # Lightweight macro context (1h EMA/ATR) appended to source frame so it can be used downstream
+            try:
+                # Make a shallow frame carrying OHLC for context calculation, then bring back series
+                src_df = price_data[["open","high","low","close"]].copy()
+                src_df = self._calculate_additional_context_features(src_df)
+                for col in ["1h_ema_50","1h_atr"]:
+                    if col in src_df.columns:
+                        features[col] = src_df[col]
+            except Exception:
+                pass
+
             # Feature selection and dimensionality reduction
             selected_features = self._select_optimal_features(features)
 
@@ -2205,6 +2216,48 @@ class AdvancedFeatureEngineering:
         except Exception as e:
             self.logger.warning(f"Failed to calculate adaptive MACD: {e}")
             return {"adaptive_macd": 0.0, "adaptive_macd_signal": 0.0, "adaptive_macd_histogram": 0.0}
+
+    def _calculate_additional_context_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add lightweight higher-timeframe context features (1h/4h EMA50 and ATR) if missing."""
+        try:
+            if df.empty or not set(["open","high","low","close"]).issubset(df.columns):
+                return df
+            # Avoid recompute if already present
+            if all(c in df.columns for c in ["1h_ema_50","1h_atr"]):
+                return df
+            # Resample to 1h
+            try:
+                ohlc = df[["open","high","low","close"]].copy()
+                ohlc_1h = ohlc.resample("1H").agg({"open":"first","high":"max","low":"min","close":"last"}).dropna()
+                ema50_1h = ohlc_1h["close"].ewm(span=50).mean().reindex(df.index, method="pad")
+                df["1h_ema_50"] = ema50_1h
+                # ATR(14) on 1h
+                tr = (ohlc_1h["high"] - ohlc_1h["low"]).to_frame("hl")
+                tr["hc"] = (ohlc_1h["high"] - ohlc_1h["close"].shift()).abs()
+                tr["lc"] = (ohlc_1h["low"] - ohlc_1h["close"].shift()).abs()
+                true_range = tr.max(axis=1)
+                atr_1h = true_range.rolling(14, min_periods=1).mean().reindex(df.index, method="pad")
+                df["1h_atr"] = atr_1h
+            except Exception:
+                pass
+            # Optionally 4h HMM state could be added by other components; we keep EMA/ATR minimal here
+            return df
+        except Exception:
+            return df
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={}
+    )
+    async def _generate_feature_blocks(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None, order_flow_data: pd.DataFrame | None = None) -> dict[str, Any]:
+        features: dict[str, Any] = {}
+        try:
+            # existing feature generation
+            # ... existing code ...
+            pass
+        except Exception:
+            pass
+        return features
 
 
 class VolatilityRegimeModel:

@@ -25,6 +25,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.analyst.meta_labeling_system import MetaLabelingSystem
+from src.analyst.regime_runtime import get_current_regime_info
 from src.config import CONFIG
 from src.training.steps.analyst_training_components.regime_specific_tpsl_optimizer import (
     RegimeSpecificTPSLOptimizer,
@@ -224,33 +225,32 @@ class MultiTimeframeRegimeIntegration:
                     volume_data=data_1h,
                     timeframe=self.analysis_timeframe,
                 )
-                intensities: dict[str, float] = {}
-                actives: dict[str, int] = {}
-                for label in self.candidate_labels:
-                    intensities[label] = float(labels.get(f"intensity_{label}", 0.0))
-                    actives[label] = int(labels.get(f"active_{label}", labels.get(label, 0)))
-                best_label = max(
-                    self.candidate_labels,
-                    key=lambda k: (intensities.get(k, 0.0), actives.get(k, 0)),
-                    default="SIDEWAYS_RANGE",
-                )
-                confidence = float(intensities.get(best_label, 0.0))
-                top3 = sorted(((k, intensities.get(k, 0.0)) for k in self.candidate_labels), key=lambda x: x[1], reverse=True)[:3]
+                # Use HMM composite cluster as regime; fetch runtime intensities and probabilities
+                cluster_id = int(labels.get("HMM_COMPOSITE_CLUSTER", -1))
+                # Fetch runtime calibrated signals
+                try:
+                    rr = get_current_regime_info(self.exchange, self.symbol, self.analysis_timeframe)
+                except Exception:
+                    rr = {"cluster_id": cluster_id, "intensities": {}, "p_emerge": {}, "exit_hazard": None}
+                confidence = float(rr.get("intensities", {}).get(cluster_id, 0.0)) if cluster_id >= 0 else 0.0
                 info = {
-                    "method": "meta_labeling",
+                    "method": "hmm_composite",
                     "timeframe": self.analysis_timeframe,
-                    "top3": top3,
-                    "actives": {k: actives.get(k, 0) for k in self.candidate_labels},
+                    "cluster_id": cluster_id,
+                    "intensity": confidence,
+                    "intensities": rr.get("intensities", {}),
+                    "p_emerge": rr.get("p_emerge", {}),
+                    "exit_hazard": rr.get("exit_hazard", None),
                 }
 
                 # Update cache
-                self.current_regime = best_label
+                self.current_regime = f"CLUSTER_{cluster_id}" if cluster_id >= 0 else "SIDEWAYS_RANGE"
                 self.regime_confidence = confidence
                 self.regime_info = info
                 self.last_regime_update = datetime.now()
 
                 self.logger.info(
-                    f"🔄 Updated regime context: {best_label} (confidence: {confidence:.2f})",
+                    f"🔄 Updated regime context: CLUSTER_{cluster_id} (intensity: {confidence:.2f})",
                 )
             else:
                 self.logger.info(

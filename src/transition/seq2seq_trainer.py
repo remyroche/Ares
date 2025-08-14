@@ -18,6 +18,12 @@ except Exception:  # pragma: no cover
 
 from src.utils.logger import system_logger
 
+# Hint to speed CPU matmul on Apple Accelerate
+try:
+    torch.set_float32_matmul_precision("high")
+except Exception:
+    pass
+
 
 def _to_tensor(x: np.ndarray, dtype: torch.dtype = torch.float32) -> torch.Tensor:
     return torch.as_tensor(x, dtype=dtype)
@@ -174,6 +180,31 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         return {"optimizer": opt, "lr_scheduler": {"scheduler": sch, "monitor": "val_loss"}}
 
 
+class SmallTCN(SmallTransformer):
+    def __init__(self, hmm_vocab: int, num_features: int, post_len: int, d_model: int = 128, layers: int = 4, dropout: float = 0.1, lr: float = 1e-3, path_class_weights: dict[str,float] | None = None, focal_gamma: float = 0.0):
+        super().__init__(hmm_vocab, num_features, post_len, d_model=d_model, nhead=1, num_layers=1, dropout=dropout, lr=lr, path_class_weights=path_class_weights, focal_gamma=focal_gamma)
+        # Replace encoder with TCN
+        blocks: list[nn.Module] = []
+        for i in range(layers):
+            dilation = 2 ** i
+            blocks.append(nn.Sequential(
+                nn.Conv1d(d_model, d_model, kernel_size=3, padding=dilation, dilation=dilation),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Conv1d(d_model, d_model, kernel_size=1),
+            ))
+        self.tcn = nn.ModuleList(blocks)
+
+    def forward(self, hmm_ids: torch.Tensor, x_num: torch.Tensor) -> torch.Tensor:
+        x = self.hmm_emb(hmm_ids) + self.num_proj(x_num)  # [B,L,D]
+        y = x.transpose(1, 2)  # [B,D,L]
+        for block in self.tcn:
+            y = y + block(y)
+        h = y.transpose(1, 2)  # [B,L,D]
+        cls = h.mean(dim=1)
+        return h, cls
+
+
 def build_dataloaders(samples: List[dict[str, Any]], numeric_dim: int, label_index: List[str], post_len: int, batch_size: int = 128, seed: int = 42) -> Tuple[DataLoader, DataLoader]:
     # Split by time order: 80/20
     n = len(samples)
@@ -185,8 +216,10 @@ def build_dataloaders(samples: List[dict[str, Any]], numeric_dim: int, label_ind
     return train_loader, val_loader
 
 
-def evaluate_samples(model: SmallTransformer, dataloader: DataLoader, pt_mult: float, device: str = "cpu") -> dict[str, float]:
-    model.eval()
+def evaluate_samples(model: SmallTransformer, dataloader: DataLoader, pt_mult: float, device: str | None = None) -> dict[str, float]:
+    if device is None:
+        device = "mps" if torch.backends.mps.is_available() else "cpu"
+    model.eval().to(device)
     mse_list: list[float] = []
     dtw_list: list[float] = []
     acc_list: list[float] = []
@@ -231,16 +264,21 @@ def evaluate_samples(model: SmallTransformer, dataloader: DataLoader, pt_mult: f
     }
 
 
-def train_seq2seq(samples: List[dict[str, Any]], label_index: List[str], numeric_feature_names: List[str], post_window: int, hmm_vocab: int = 5, d_model: int = 128, nhead: int = 4, num_layers: int = 2, max_epochs: int = 25, lr: float = 1e-3, path_class_weights: dict[str,float] | None = None, focal_gamma: float = 0.0, precision: str = "32", artifact_dir_models: str | None = None, cv_folds: int = 1, pt_mult: float = 0.002) -> dict[str, Any]:
+def train_seq2seq(samples: List[dict[str, Any]], label_index: List[str], numeric_feature_names: List[str], post_window: int, hmm_vocab: int = 5, d_model: int = 128, nhead: int = 4, num_layers: int = 2, max_epochs: int = 25, lr: float = 1e-3, path_class_weights: dict[str,float] | None = None, focal_gamma: float = 0.0, precision: str = "32", artifact_dir_models: str | None = None, cv_folds: int = 1, pt_mult: float = 0.002, model_type: str = "transformer") -> dict[str, Any]:
     logger = system_logger.getChild("TransitionSeq2SeqTrainer")
     if pl is None:
         logger.warning("PyTorch Lightning not available; skip seq2seq training.")
         return {"trained": False}
     numeric_dim = len(numeric_feature_names)
 
+    def _make_model() -> SmallTransformer:
+        if model_type.lower() == "tcn":
+            return SmallTCN(hmm_vocab=hmm_vocab, num_features=numeric_dim, post_len=post_window, d_model=d_model, layers=max(2, num_layers), lr=lr, path_class_weights=path_class_weights, focal_gamma=focal_gamma)
+        return SmallTransformer(hmm_vocab=hmm_vocab, num_features=numeric_dim, post_len=post_window, d_model=d_model, nhead=nhead, num_layers=num_layers, lr=lr, path_class_weights=path_class_weights, focal_gamma=focal_gamma)
+
     def _train_one(train_s: List[dict[str, Any]]) -> tuple[SmallTransformer, dict]:
         train_loader, val_loader = build_dataloaders(train_s, numeric_dim, label_index, post_window)
-        model = SmallTransformer(hmm_vocab=hmm_vocab, num_features=numeric_dim, post_len=post_window, d_model=d_model, nhead=nhead, num_layers=num_layers, lr=lr, path_class_weights=path_class_weights, focal_gamma=focal_gamma)
+        model = _make_model()
         callbacks = []
         if artifact_dir_models:
             try:
@@ -252,7 +290,6 @@ def train_seq2seq(samples: List[dict[str, Any]], label_index: List[str], numeric
                 pass
         trainer = pl.Trainer(max_epochs=max_epochs, accelerator="auto", devices="auto", precision=precision, gradient_clip_val=1.0, log_every_n_steps=50, callbacks=callbacks)
         trainer.fit(model, train_loader, val_loader)
-        # Save last checkpoint
         try:
             if artifact_dir_models:
                 import os
@@ -260,8 +297,7 @@ def train_seq2seq(samples: List[dict[str, Any]], label_index: List[str], numeric
                 trainer.save_checkpoint(os.path.join(artifact_dir_models, "last.ckpt"))
         except Exception:
             pass
-        # Evaluate
-        metrics = evaluate_samples(model, val_loader, pt_mult=pt_mult, device="cpu")
+        metrics = evaluate_samples(model, val_loader, pt_mult=pt_mult)
         return model, metrics
 
     if cv_folds and cv_folds > 1:

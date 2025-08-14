@@ -27,6 +27,7 @@ pandas-ta = "^0.3.14b0"
 arch = "^7.2.0"
 pytorch-tabnet = "^4.1.0"
 hmmlearn = "^0.3.0"
+hdbscan = "^0.8.36"
 
 # Enhanced hyperparameter optimization dependencies
 scikit-optimize = "^0.10.2"  # Bayesian optimization

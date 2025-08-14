@@ -35,6 +35,7 @@ class StepOrchestrator:
         self.available_steps = [
             "step1_data_collection",
             "step1_5_data_converter",  # NEW STEP
+            "step1_7_hmm_regime_discovery",  # NEW STEP: Block HMMs + Composite Clusters
             "step2_processing_labeling_feature_engineering",
             "step3_feature_engineering",
             "step4_regime_data_splitting",

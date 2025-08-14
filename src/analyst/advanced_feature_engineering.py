@@ -27,6 +27,7 @@ from src.utils.warning_symbols import (
     initialization_error,
     execution_error,
 )
+from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 
 
 class CandlestickPatternAnalyzer:
@@ -1382,6 +1383,14 @@ class AdvancedFeatureEngineering:
             except Exception:
                 pass
 
+            # Macro HMM state (1h)
+            try:
+                hmm_1h = self._compute_macro_hmm_state(price_data, timeframe="1h")
+                if hmm_1h is not None and hmm_1h.size:
+                    features["1h_hmm_state"] = hmm_1h
+            except Exception:
+                pass
+
             # Feature selection and dimensionality reduction
             selected_features = self._select_optimal_features(features)
 
@@ -2244,6 +2253,52 @@ class AdvancedFeatureEngineering:
             return df
         except Exception:
             return df
+
+    def _compute_macro_hmm_state(self, price_data: pd.DataFrame, timeframe: str = "1h") -> pd.Series:
+        """Compute macro HMM state on resampled data and align to base index (safe default to SIDEWAYS state=1)."""
+        try:
+            if price_data.empty or "close" not in price_data.columns:
+                return pd.Series(index=price_data.index, dtype=float)
+            # Resample to requested timeframe
+            ohlc = price_data[["open","high","low","close","volume"]].copy()
+            rule = "1H" if timeframe == "1h" else timeframe.upper()
+            ohlc_tf = ohlc.resample(rule).agg({"open":"first","high":"max","low":"min","close":"last","volume":"sum"}).dropna()
+            # Initialize URC for macro
+            urc = UnifiedRegimeClassifier(self.config, exchange="UNKNOWN", symbol="UNKNOWN")
+            awaitable = getattr(urc, "initialize", None)
+            if callable(awaitable):
+                import asyncio
+                loop = asyncio.get_event_loop()
+                loop.run_until_complete(urc.initialize())
+            # Train HMM labeler if needed
+            trainable = getattr(urc, "train_hmm_labeler", None)
+            if callable(trainable) and not getattr(urc, "trained", False):
+                import asyncio
+                loop = asyncio.get_event_loop()
+                loop.run_until_complete(urc.train_hmm_labeler(ohlc_tf))
+            # Compute features and predict states
+            feats = urc._calculate_features(ohlc_tf)
+            X = feats[[
+                "log_returns","volatility_20","volume_ratio","rsi","macd","macd_signal",
+                "macd_histogram","bb_position","bb_width","atr","volatility_regime","volatility_acceleration"
+            ]].fillna(0)
+            if urc.scaler is not None:
+                Xs = urc.scaler.transform(X)
+            else:
+                from sklearn.preprocessing import StandardScaler
+                urc.scaler = StandardScaler().fit(X)
+                Xs = urc.scaler.transform(X)
+            hmm = urc.hmm_model
+            if hmm is None:
+                # Fallback: SIDEWAYS state id 1
+                states_tf = pd.Series(np.ones(len(X), dtype=int), index=feats.index)
+            else:
+                states_tf = pd.Series(hmm.predict(Xs).astype(int), index=feats.index)
+            # Map back to base index via forward fill
+            states_base = states_tf.reindex(price_data.index, method="ffill").fillna(1).astype(int)
+            return states_base.rename(f"{timeframe}_hmm_state")
+        except Exception:
+            return pd.Series(index=price_data.index, dtype=float)
 
     @handle_errors(
         exceptions=(Exception,),

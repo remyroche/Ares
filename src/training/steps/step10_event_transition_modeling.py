@@ -92,11 +92,18 @@ async def run_step(
             horizons = list((tm_cfg.get("rolling", {}) or {}).get("direction_horizons", [5, 15]))
             mtrf = MultiTaskRandomForest(cfg, horizons=horizons)
             result = mtrf.fit(samples)
-            # Save a compact report
+            # Save models & report
+            model_dir = os.path.join(artifacts_dir, "models")
+            save_info = mtrf.save(model_dir, prefix=f"{symbol}_{timeframe}_rolling_mtrf")
             rep_path = os.path.join(artifacts_dir, f"{symbol}_{timeframe}_rolling_mtrf_report.json")
             with open(rep_path, "w") as f:
                 json.dump(result, f, indent=2)
-            logger.info({"msg": "Rolling multitask RF trained", "report_path": rep_path})
+            logger.info({
+                "msg": "Rolling multitask RF trained",
+                "report_path": rep_path,
+                "models": list(save_info.get("models", {}).keys()),
+                "models_dir": model_dir,
+            })
             return True
         except Exception as e:
             logger.warning(f"Rolling mode failed; falling back to event-triggered pipeline: {e}")

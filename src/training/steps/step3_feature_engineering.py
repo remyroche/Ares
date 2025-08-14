@@ -82,6 +82,7 @@ async def run_step(
 
         # 4a) Join HMM composite clusters (Step 1_7) if available
         try:
+            import os
             comp_path = os.path.join(data_dir, f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet")
             if os.path.exists(comp_path):
                 comp_df = pd.read_parquet(comp_path)

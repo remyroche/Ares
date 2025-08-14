@@ -1114,6 +1114,13 @@ class EnhancedTrainingManager:
                 )
                 # Non-fatal: proceed but warn
                 self.logger.warning("⚠️ Proceeding without Step 1_7 artifacts (no-fatal)")
+            else:
+                self._log_step_completion(
+                    "Step 1_7: HMM Regime Discovery",
+                    step_start_1_7,
+                    step_times,
+                    success=True,
+                )
 
             pipeline_state["hmm_regime_discovery"] = {
                 "status": "SUCCESS" if step1_7_success else "FAILED",
@@ -1312,7 +1319,7 @@ class EnhancedTrainingManager:
                 "completed": bool(step1_8_success),
             }
             self._save_checkpoint("step1_8_regime_forecasting", pipeline_state)
-            step_times["step1_8_regime_forecasting"] = time.time() - step_start_1_8
+            self._log_step_completion("Step 1_8: Regime Forecasting", step_start_1_8, step_times, success=bool(step1_8_success))
             # Non-fatal on failure; continue pipeline
 
             # Step 5: Analyst Specialist Training (enable Method A experts via config)

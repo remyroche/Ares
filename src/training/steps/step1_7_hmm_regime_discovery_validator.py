@@ -30,10 +30,10 @@ def run_validator(training_input: dict[str, Any], pipeline_state: dict[str, Any]
 			try:
 				df_b = pd.read_parquet(block_path)
 				df_c = pd.read_parquet(comp_path)
-				req_cols = [c for c in df_b.columns if c.endswith("_state_id")] + ["combination_id", "composite_cluster_id"]
-				if df_c is not None:
-					req_cols = [c for c in req_cols if c in (list(df_b.columns) + list(df_c.columns))]
-				if req_cols:
+				block_cols_ok = any(c.endswith("_state_id") for c in df_b.columns)
+				composite_cols_ok = all(c in df_c.columns for c in ["combination_id", "composite_cluster_id"])
+
+				if block_cols_ok and composite_cols_ok:
 					found_any = True
 					messages.append(f"OK {tf}: artifacts present, rows={len(df_b)}")
 				else:

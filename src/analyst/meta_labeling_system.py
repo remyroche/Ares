@@ -1591,9 +1591,19 @@ class MetaLabelingSystem:
             analyst_labels.update({f"intensity_{k}": float(intensities.get(k, 0.0)) for k in label_keys})
             analyst_labels.update({f"active_{k}": int(activations.get(k, 0)) for k in label_keys})
 
-            self.logger.info(
-                f"Generated {analyst_labels.get('label_count', 0)} analyst labels for {timeframe}",
-            )
+            try:
+                # Summarize analyst label activations once per timeframe
+                summary_parts = []
+                for k in sorted(label_keys):
+                    val = analyst_labels.get(k, 0)
+                    summary_parts.append(f"{k}={int(val)}")
+                self.logger.info(
+                    f"Analyst labels [{timeframe}] count={analyst_labels.get('label_count', 0)} | " + ", ".join(summary_parts[:20]) + (" ..." if len(summary_parts) > 20 else "")
+                )
+            except Exception:
+                self.logger.info(
+                    f"Analyst labels [{timeframe}] count={analyst_labels.get('label_count', 0)}"
+                )
             return analyst_labels
 
         except Exception as e:

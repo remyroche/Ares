@@ -768,6 +768,20 @@ class VectorizedAdvancedFeatureEngineering:
                         except Exception:
                             pass
                 if added_tf:
+                    # Summarize meta-label prevalence across timeframes in one line per timeframe
+                    try:
+                        for tf, meta in explicit_by_tf.items():
+                            summary_parts = []
+                            for k, v in meta.items():
+                                if isinstance(v, (pd.Series, np.ndarray, list)):
+                                    arr = np.asarray(v)
+                                    ones = int(np.nansum(arr == 1))
+                                    zeros = int(np.nansum(arr == 0))
+                                    summary_parts.append(f"{k}:1={ones},0={zeros}")
+                            if summary_parts:
+                                self.logger.info(f"Explicit meta-labels [{tf}]: " + "; ".join(summary_parts[:20]) + (" ..." if len(summary_parts) > 20 else ""))
+                    except Exception:
+                        pass
                     self.logger.info(f"Added explicit meta-labels for timeframes: {added_tf}")
                 # Guardrail cross-check against MetaLabelingSystem if available
                 try:
@@ -3371,8 +3385,7 @@ class VectorizedWaveletTransformAnalyzer:
                 self.computation_times["dwt"] = time.time() - dwt_start
                 self.feature_counts["dwt"] = len(dwt_features)
                 total_features += len(dwt_features)
-                self.logger.info(f"✅ DWT completed: {len(dwt_features)} features in {self.computation_times['dwt']:.2f}s")
-
+                self.logger.info(f"✅ DWT completed: {len(dwt_features)} features in {self.computation_times['dwt']:.2f}s. DWT yields many features due to multiple wavelet types, levels, and series; selection later downsamples to top-k.")
             # 3. Continuous Wavelet Transform (CWT) analysis
             if self.enable_continuous_wavelet:
                 cwt_start = time.time()
@@ -3384,7 +3397,7 @@ class VectorizedWaveletTransformAnalyzer:
                 self.computation_times["cwt"] = time.time() - cwt_start
                 self.feature_counts["cwt"] = len(cwt_features)
                 total_features += len(cwt_features)
-                self.logger.info(f"✅ CWT completed: {len(cwt_features)} features in {self.computation_times['cwt']:.2f}s")
+                self.logger.info(f"✅ CWT completed: {len(cwt_features)} features in {self.computation_times['cwt']:.2f}s. CWT yields fewer features due to scale selection and TS aggregation.")
 
             # 4. Wavelet Packet analysis
             if self.enable_wavelet_packet:
@@ -3397,7 +3410,7 @@ class VectorizedWaveletTransformAnalyzer:
                 self.computation_times["packet"] = time.time() - packet_start
                 self.feature_counts["packet"] = len(packet_features)
                 total_features += len(packet_features)
-                self.logger.info(f"✅ Wavelet packets completed: {len(packet_features)} features in {self.computation_times['packet']:.2f}s")
+                self.logger.info(f"✅ Wavelet packets completed: {len(packet_features)} features in {self.computation_times['packet']:.2f}s. Packets limited to simplified single-level for large datasets.")
 
             # 5. Wavelet Denoising analysis
             if self.enable_denoising:
@@ -3410,7 +3423,7 @@ class VectorizedWaveletTransformAnalyzer:
                 self.computation_times["denoising"] = time.time() - denoising_start
                 self.feature_counts["denoising"] = len(denoising_features)
                 total_features += len(denoising_features)
-                self.logger.info(f"✅ Wavelet denoising completed: {len(denoising_features)} features in {self.computation_times['denoising']:.2f}s")
+                self.logger.info(f"✅ Wavelet denoising completed: {len(denoising_features)} features in {self.computation_times['denoising']:.2f}s. Denoising emits TS residuals/signals only (low feature count).")
 
             # 6. Multi-wavelet analysis
             multi_start = time.time()
@@ -3422,7 +3435,7 @@ class VectorizedWaveletTransformAnalyzer:
             self.computation_times["multi_wavelet"] = time.time() - multi_start
             self.feature_counts["multi_wavelet"] = len(multi_wavelet_features)
             total_features += len(multi_wavelet_features)
-            self.logger.info(f"✅ Multi-wavelet completed: {len(multi_wavelet_features)} features in {self.computation_times['multi_wavelet']:.2f}s")
+            self.logger.info(f"✅ Multi-wavelet completed: {len(multi_wavelet_features)} features in {self.computation_times['multi_wavelet']:.2f}s. Few features due to limited wavelet types and levels for efficiency.")
 
             # 7. Volume wavelet analysis
             if volume_data is not None and not volume_data.empty:
@@ -3435,7 +3448,7 @@ class VectorizedWaveletTransformAnalyzer:
                 self.computation_times["volume_wavelet"] = time.time() - volume_start
                 self.feature_counts["volume_wavelet"] = len(volume_wavelet_features)
                 total_features += len(volume_wavelet_features)
-                self.logger.info(f"✅ Volume wavelet completed: {len(volume_wavelet_features)} features in {self.computation_times['volume_wavelet']:.2f}s")
+                self.logger.info(f"✅ Volume wavelet completed: {len(volume_wavelet_features)} features in {self.computation_times['volume_wavelet']:.2f}s. Volume analysis uses simple single-level decomposition (low feature count).")
 
             # 8. Feature selection and dimensionality reduction
             self.logger.info("🔄 Selecting optimal wavelet features...")

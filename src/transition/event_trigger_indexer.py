@@ -134,30 +134,20 @@ class EventTriggerIndexer:
         # Try to compute intensities using MetaLabelingSystem
         try:
             meta = MetaLabelingSystem(self.config)
-            # Build features incrementally over time may be expensive; for efficiency, compute on whole series
-            # and rely on meta to use rolling windows internally.
-            # We will compute intensities for known labels in MetaLabelingSystem
             labels = candidate_labels
             if labels is None:
                 labels = meta.all_labels
-            # Prepare outputs
             out = combined_df.copy()
-            # For each timestamp, compute intensities is heavy; we approximate by computing features and using _compute_label_intensity at the last bar,
-            # but to keep per-bar, we vectorize with a rolling approach would be complex. As a compromise, compute on per-row loop with minimal set.
-            # For computational safety, restrict to a subset of labels if too many.
-            max_labels = 50
-            labels = list(labels)[:max_labels]
-            # Precompute features only once per bar is not easy here; use a simple heuristic: reuse intensities from MetaLabelingSystem.fit_activation_thresholds style is heavy too.
-            # Instead, as a fallback, if active_ columns exist, use them as binary intensities.
+            # Fallback to active_ columns if present (binary intensities)
             act_cols = [c for c in combined_df.columns if c.startswith("active_")]
             if act_cols:
                 for ac in act_cols:
                     out[ac.replace("active_", "intensity_")] = combined_df[ac].astype(float)
                 return out
-            # If we have price/volume, compute coarse proxy intensities per label using _compute_label_intensity applied in a rolling way
+            # Coarse proxy intensities if price/volume provided
             if price_data is not None and not price_data.empty and volume_data is not None:
-                # Compute once per bar
-                # Warning: O(N * |labels|); acceptable for moderate N
+                max_labels = 50
+                labels = list(labels)[:max_labels]
                 for lab in labels:
                     vals: list[float] = []
                     for i in range(len(price_data)):
@@ -166,17 +156,33 @@ class EventTriggerIndexer:
                         feats = {}
                         try:
                             feats.update(meta._calculate_technical_indicators(p_slice))
+                        except Exception as e:
+                            self.logger.warning(f"Technical indicators failed at i={i} for {lab}: {e}")
+                        try:
                             feats.update(meta._calculate_volume_features(v_slice))
+                        except Exception as e:
+                            self.logger.warning(f"Volume features failed at i={i} for {lab}: {e}")
+                        try:
                             feats.update(meta._calculate_price_action_patterns(p_slice))
+                        except Exception as e:
+                            self.logger.warning(f"Price action patterns failed at i={i} for {lab}: {e}")
+                        try:
                             feats.update(meta._calculate_volatility_patterns(p_slice))
+                        except Exception as e:
+                            self.logger.warning(f"Volatility patterns failed at i={i} for {lab}: {e}")
+                        try:
                             feats.update(meta._calculate_momentum_patterns(p_slice))
-                        except Exception:
-                            pass
-                        vals.append(meta._compute_label_intensity(lab, p_slice, v_slice, feats))
+                        except Exception as e:
+                            self.logger.warning(f"Momentum patterns failed at i={i} for {lab}: {e}")
+                        try:
+                            vals.append(meta._compute_label_intensity(lab, p_slice, v_slice, feats))
+                        except Exception as e:
+                            self.logger.warning(f"Intensity computation failed at i={i} for {lab}: {e}")
+                            vals.append(0.0)
                     out[f"intensity_{lab}"] = pd.Series(vals, index=price_data.index).reindex(out.index).fillna(0.0)
                 return out
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.warning(f"Intensity backfill failed: {e}")
         return combined_df
 
     def build_event_index(
@@ -228,6 +234,8 @@ class EventTriggerIndexer:
             else:
                 edges = series >= thr
             trigger_idx = np.where(edges.values)[0]
+            # Pre-extract intensity columns for secondary lookup to avoid constructing Series repeatedly
+            secondary_cols = {other_lab: f"intensity_{other_lab}" for other_lab in labels if other_lab != lab and f"intensity_{other_lab}" in combined_df.columns}
             for ridx in trigger_idx:
                 ts = base_index[ridx]
                 intensity = float(series.iat[ridx])
@@ -235,10 +243,8 @@ class EventTriggerIndexer:
                 # Collect secondary co-occurring labels above threshold at the same row
                 secondary: list[str] = []
                 if self.event_cfg.preserve_secondary_labels:
-                    for other_lab in labels:
-                        if other_lab == lab:
-                            continue
-                        inten2 = float(combined_df.get(f"intensity_{other_lab}", pd.Series(0, index=base_index)).iat[ridx])
+                    for other_lab, colname in secondary_cols.items():
+                        inten2 = float(combined_df[colname].iat[ridx])
                         thr2 = float(self.activation_thresholds.get(other_lab, 0.5))
                         if inten2 >= thr2:
                             secondary.append(other_lab)

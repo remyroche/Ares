@@ -68,7 +68,7 @@ class MultiTaskRandomForest:
 
     def _cap(self, X: pd.DataFrame, y: pd.Series) -> Tuple[pd.DataFrame, pd.Series]:
         if len(X) > self.cfg.max_train_samples:
-            return X.iloc[: self.cfg.max_train_samples], y.iloc[: self.cfg.max_train_samples]
+            return X.iloc[-self.cfg.max_train_samples:], y.iloc[-self.cfg.max_train_samples:]
         return X, y
 
     def _best_f1_threshold(self, y_true: np.ndarray, y_score: np.ndarray) -> float:

@@ -430,6 +430,48 @@ async def run_step(
 		_persist_dataframe(composite_df, composite_out_path)
 		logger.info(f"💾 Saved composite clusters -> {composite_out_path} ({len(composite_df)} rows)")
 
+		# Compute cluster centroids and per-timestamp intensity scores in concatenated posterior space
+		# Build gamma concat matrix in a stable column order
+		gamma_cols: list[str] = []
+		for blk in BLOCKS:
+			if blk.name not in block_posteriors:
+				continue
+			# columns were written as {blk}_p_state_{i}; ensure order by state index
+			n_states_blk = block_posteriors[blk.name].shape[1]
+			for i in range(n_states_blk):
+				col = f"{blk.name}_p_state_{i}"
+				if col in block_df.columns:
+					gamma_cols.append(col)
+		gamma_concat = block_df[gamma_cols].values.astype(float)
+		# Normalize rows
+		norms = np.linalg.norm(gamma_concat, axis=1, keepdims=True) + 1e-12
+		gamma_norm = gamma_concat / norms
+		# Centroids per cluster (exclude noise -1)
+		unique_clusters = sorted(int(c) for c in np.unique(cluster_series.values) if int(c) >= 0)
+		cluster_centroids: dict[int, list[float]] = {}
+		centroid_norms: dict[int, np.ndarray] = {}
+		for cid in unique_clusters:
+			mask = (cluster_series.values == cid)
+			if not np.any(mask):
+				continue
+			centroid = gamma_norm[mask].mean(axis=0)
+			c_norm = np.linalg.norm(centroid) + 1e-12
+			centroid = centroid / c_norm
+			cluster_centroids[int(cid)] = centroid.tolist()
+			centroid_norms[int(cid)] = centroid
+		# Intensities: cosine similarity to each centroid
+		intensity_data: dict[str, np.ndarray] = {}
+		for cid, cvec in centroid_norms.items():
+			vals = np.dot(gamma_norm, cvec.reshape(-1,))
+			intensity_data[f"intensity_cluster_{cid}"] = vals
+		intensity_df = pd.DataFrame(intensity_data, index=out_idx)
+		intensity_out_path = os.path.join(
+			data_dir,
+			f"{exchange}_{symbol}_hmm_composite_intensity_{tf}.parquet",
+		)
+		_persist_dataframe(intensity_df, intensity_out_path)
+		logger.info(f"💾 Saved composite intensities -> {intensity_out_path} ({len(intensity_df)} rows, {len(intensity_df.columns)} clusters)")
+
 		# Persist meta (state medians, frequencies, profiles)
 		# Derive human-readable names per block
 		state_names: dict[str, dict[int, str]] = {}
@@ -444,6 +486,7 @@ async def run_step(
 			"blocks": [{"name": b.name, "n_states": b.n_states} for b in BLOCKS],
 			"state_feature_medians": state_feature_medians,
 			"state_names": state_names,
+			"cluster_centroids": cluster_centroids,
 			"combination_counts": counts.to_dict(),
 			"kept_combinations": list(map(str, keep_combos)),
 			"cluster_labels": labels.astype(int).to_dict(),

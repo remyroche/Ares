@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import os
 import json
+import time
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -129,6 +130,9 @@ class MetaLabelingSystem:
         self.artifacts_dir = self.labeling_config.get("artifacts_dir", "artifacts/meta_labeling")
         # Active labels set for complementarity-aware pruning
         self.active_labels: set[str] = set()
+        # Debug/performance logging controls
+        self.debug_logging: bool = bool(self.labeling_config.get("debug_logging", False))
+        self.perf_logging: bool = bool(self.labeling_config.get("perf_logging", True))
 
         self.is_initialized = False
 
@@ -1995,6 +1999,7 @@ class MetaLabelingSystem:
     ) -> dict[str, float]:
         if not hasattr(self, "reliability_scores"):
             self._init_thresholds_and_reliability()
+        t0 = time.time()
         alpha = getattr(self, "alpha", 1.0)
         beta = getattr(self, "beta", 1.0)
         gamma = getattr(self, "gamma", 1.0)
@@ -2004,6 +2009,18 @@ class MetaLabelingSystem:
         normalize = bool(getattr(self, "normalize_weights", False))
 
         scores: dict[str, float] = {}
+        if self.debug_logging:
+            self.logger.info({
+                "msg": "compute_label_weights_start",
+                "labels": len(intensity_scores),
+                "alpha": alpha,
+                "beta": beta,
+                "gamma": gamma,
+                "top_k": top_k,
+                "w_min": w_min,
+                "w_max": w_max,
+                "normalize": normalize,
+            })
         for label, intensity in intensity_scores.items():
             conf = float(np.clip((moe_confidences or {}).get(label, 0.5), 0.0, 1.0))
             rel = float(np.clip(self.reliability_scores.get(label, 1.0), 0.0, 1.0))
@@ -2013,12 +2030,30 @@ class MetaLabelingSystem:
                 * np.power(rel, gamma)
             )
             scores[label] = float(np.clip(s, 0.0, 1.0))
+            if self.debug_logging:
+                try:
+                    self.logger.info({
+                        "msg": "mixture_components",
+                        "label": label,
+                        "intensity": float(intensity),
+                        "confidence": float(conf),
+                        "reliability": float(rel),
+                        "mixture_score": float(scores[label]),
+                    })
+                except Exception:
+                    pass
 
         if top_k > 0 and len(scores) > top_k:
             ranked = sorted(scores.items(), key=lambda t: t[1], reverse=True)
             keep = {k for k, _ in ranked[:top_k]}
         else:
             keep = set(scores.keys())
+        if self.debug_logging:
+            try:
+                kept = sorted(list(keep))
+                self.logger.info({"msg": "top_k_selection", "kept_count": len(kept), "kept_labels": kept[:20]})
+            except Exception:
+                pass
 
         weights: dict[str, float] = {}
         for label, s in scores.items():
@@ -2026,6 +2061,8 @@ class MetaLabelingSystem:
                 # Enforce complementarity-aware active label filter if available
                 if self.active_labels and (label not in self.active_labels):
                     weights[label] = 0.0
+                    if self.debug_logging:
+                        self.logger.info({"msg": "inactive_label_zeroed", "label": label})
                     continue
                 lo = w_min if w_min > 0 else 0.0
                 hi = w_max if w_max < 1.0 else 1.0
@@ -2038,6 +2075,13 @@ class MetaLabelingSystem:
             total = float(sum(weights.values()))
             if total > 0:
                 weights = {k: float(v / total) for k, v in weights.items()}
+        if self.perf_logging:
+            dt_ms = int((time.time() - t0) * 1000)
+            try:
+                vmax = max(weights.values()) if weights else 0.0
+            except Exception:
+                vmax = 0.0
+            self.logger.info({"msg": "compute_label_weights_end", "duration_ms": dt_ms, "labels": len(weights), "max_weight": float(vmax)})
 
         return weights
 
@@ -2054,6 +2098,7 @@ class MetaLabelingSystem:
         Returns a dict per label with stats: threshold, hit_rate, frequency, profit_factor, avg_return.
         """
         try:
+            t0 = time.time()
             if thresholds_grid is None:
                 thresholds_grid = [round(x, 2) for x in np.linspace(0.1, 0.9, 9)]
             
@@ -2120,8 +2165,26 @@ class MetaLabelingSystem:
                             "profit_factor": float(profit_factor),
                             "avg_return": float(avg_return),
                         }
+                    if self.debug_logging:
+                        try:
+                            self.logger.info({
+                                "msg": "threshold_eval",
+                                "label": label,
+                                "thr": float(thr),
+                                "freq": float(freq),
+                                "hit_rate": float(hit_rate),
+                                "profit_factor": float(profit_factor),
+                                "avg_return": float(avg_return),
+                            })
+                        except Exception:
+                            pass
                 self.set_activation_threshold(label, best_threshold)
                 best[label] = best_stats
+                if self.perf_logging:
+                    self.logger.info({"msg": "best_threshold", "label": label, **best_stats})
+            if self.perf_logging:
+                dt_ms = int((time.time() - t0) * 1000)
+                self.logger.info({"msg": "fit_activation_thresholds_complete", "labels": len(label_names), "duration_ms": dt_ms})
             return best
         except Exception as e:
             self.logger.warning(f"Activation threshold fitting failed: {e}")

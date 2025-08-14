@@ -127,6 +127,8 @@ class MetaLabelingSystem:
 
         # Artifacts directory for persisted thresholds/reliability
         self.artifacts_dir = self.labeling_config.get("artifacts_dir", "artifacts/meta_labeling")
+        # Active labels set for complementarity-aware pruning
+        self.active_labels: set[str] = set()
 
         self.is_initialized = False
 
@@ -175,6 +177,7 @@ class MetaLabelingSystem:
             try:
                 self.load_activation_thresholds_from_artifacts()
                 self.load_reliability_from_artifacts()
+                self.load_active_labels_from_artifacts()
             except Exception:
                 pass
             self.logger.info("✅ Meta-labeling system initialized successfully")
@@ -685,7 +688,7 @@ class MetaLabelingSystem:
             self.logger.exception(f"Error calculating volatility patterns: {e}")
             return {}
 
-    def _calculate_momentum_patterns(self, data: pd.DataFrame) -> dict[str, float]:
+    def _calculate_momentum_patterns(self, data: pd.DataFrame) -> dict[str, Any]:
         """Calculate momentum pattern features using returns data."""
         try:
             features = {}
@@ -2020,6 +2023,10 @@ class MetaLabelingSystem:
         weights: dict[str, float] = {}
         for label, s in scores.items():
             if label in keep:
+                # Enforce complementarity-aware active label filter if available
+                if self.active_labels and (label not in self.active_labels):
+                    weights[label] = 0.0
+                    continue
                 lo = w_min if w_min > 0 else 0.0
                 hi = w_max if w_max < 1.0 else 1.0
                 w = float(np.clip(s, lo, hi))
@@ -2158,5 +2165,18 @@ class MetaLabelingSystem:
                     data = json.load(f)
                 for k, v in data.items():
                     self.set_reliability_score(str(k), float(v))
+        except Exception:
+            pass
+
+    def load_active_labels_from_artifacts(self, artifacts_dir: str | None = None) -> None:
+        """Load active/inactive labels to enforce complementarity-aware removal."""
+        try:
+            path = os.path.join(artifacts_dir or self.artifacts_dir, "active_labels.json")
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    data = json.load(f)
+                active = data.get("active_labels", []) if isinstance(data, dict) else []
+                if isinstance(active, list):
+                    self.active_labels = {str(x) for x in active}
         except Exception:
             pass

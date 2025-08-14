@@ -1523,43 +1523,66 @@ class MetaLabelingSystem:
             else:
                 features = await self._calculate_pattern_features(price_data, volume_data)
 
-            # Generate analyst-specific labels
-            analyst_labels = {}
+            # 1) Prefer HMM composite regime labels over meta labels, but preserve S/R labels
+            analyst_labels: dict[str, Any] = {}
+            try:
+                # Resolve exchange/symbol from config or features context
+                exchange = str(self.config.get("EXCHANGE", self.config.get("exchange", "BINANCE")))
+                symbol = str(self.config.get("SYMBOL", self.config.get("symbol", "ETHUSDT")))
+                data_dir = str(self.config.get("DATA_DIR", "data/training"))
+                comp_path = os.path.join(data_dir, f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet")
+                if os.path.exists(comp_path):
+                    comp_df = pd.read_parquet(comp_path)
+                    # align last timestamp
+                    if "timestamp" in comp_df.columns:
+                        comp_df["timestamp"] = pd.to_datetime(comp_df["timestamp"], errors="coerce", utc=True)
+                        comp_df = comp_df.dropna(subset=["timestamp"]).sort_values("timestamp")
+                        comp_df = comp_df.set_index("timestamp")
+                    # Determine current timestamp context from price_data
+                    ts = None
+                    if isinstance(price_data.index, pd.DatetimeIndex) and len(price_data.index) > 0:
+                        ts = price_data.index[-1]
+                    if ts is not None and isinstance(ts, pd.Timestamp):
+                        row = comp_df.loc[comp_df.index <= ts].tail(1)
+                    else:
+                        row = comp_df.tail(1)
+                    if not row.empty:
+                        cid = int(row["composite_cluster_id"].iloc[0])
+                        analyst_labels["HMM_COMPOSITE_CLUSTER"] = cid
+                        # Expose soft probabilities via short-window EWMA of current cluster index (proxy)
+                        # Note: true p_k(t) time series can be persisted later; here we expose basic context
+                        analyst_labels["HMM_IS_ASSIGNED"] = 1 if cid >= 0 else 0
+                else:
+                    self.logger.info(f"HMM composite clusters not found for {exchange}_{symbol}_{timeframe}; using meta-only")
+            except Exception as e:
+                self.logger.warning(f"HMM composite cluster integration failed: {e}")
 
-            # Strong trend continuation
-            trend_continuation = self._detect_strong_trend_continuation(
-                price_data,
-                features,
-            )
-            analyst_labels.update(trend_continuation)
+            # 2) Always compute and include S/R related labels (must keep them)
+            try:
+                sr_only = {}
+                sr_only.update(self._detect_sr_touch_bounce_break(price_data, features))
+                # Retain only S/R keys
+                sr_keep = {k: v for k, v in sr_only.items() if k in ("SR_TOUCH","SR_BOUNCE","SR_BREAK","SR_FAKE_BREAK")}
+                analyst_labels.update(sr_keep)
+            except Exception:
+                pass
 
-            # Exhaustion reversal
-            exhaustion_reversal = self._detect_exhaustion_reversal(price_data, features)
-            analyst_labels.update(exhaustion_reversal)
-
-            # Range mean reversion
-            range_reversion = self._detect_range_mean_reversion(price_data, features)
-            analyst_labels.update(range_reversion)
-
-            # Breakout patterns
-            breakout_patterns = self._detect_breakout_patterns(price_data, features)
-            analyst_labels.update(breakout_patterns)
-
-            # Volatility patterns
-            volatility_patterns = self._detect_volatility_patterns(price_data, features)
-            analyst_labels.update(volatility_patterns)
-
-            # Chart patterns
-            chart_patterns = self._detect_chart_patterns(price_data, features)
-            analyst_labels.update(chart_patterns)
-
-            # Momentum patterns
-            momentum_patterns = self._detect_momentum_patterns(price_data, features)
-            analyst_labels.update(momentum_patterns)
-
-            # Additional analyst patterns requested by user
-            additional_patterns = self._detect_additional_analyst_patterns(price_data, features, order_flow_data)
-            analyst_labels.update(additional_patterns)
+            # 3) Optionally keep a minimal subset of meta labels complementary to HMM regimes
+            try:
+                # Keep volatility compression/expansion and momentum ignition as complementary context
+                volatility_patterns = self._detect_volatility_patterns(price_data, features)
+                momentum_patterns = self._detect_momentum_patterns(price_data, features)
+                chart_patterns = self._detect_chart_patterns(price_data, features)
+                keep_keys = {
+                    "VOLATILITY_COMPRESSION","VOLATILITY_EXPANSION","MOMENTUM_IGNITION",
+                    "BREAKOUT_SUCCESS","BREAKOUT_FAILURE","FLAG_FORMATION","TRIANGLE_FORMATION","RECTANGLE_FORMATION",
+                }
+                for d in (volatility_patterns, momentum_patterns, chart_patterns):
+                    for k, v in d.items():
+                        if k in keep_keys:
+                            analyst_labels[k] = v
+            except Exception:
+                pass
 
             # If no patterns detected, generate NO_SETUP label
             if not any(analyst_labels.values()):
@@ -1583,14 +1606,15 @@ class MetaLabelingSystem:
                 },
             )
 
-            # Compute intensities and activations
-            label_keys = [k for k, v in analyst_labels.items() if isinstance(v, (int, float)) and k.isupper() and k not in ("label_count",)]
-            intensities = self.compute_intensity_scores(price_data, volume_data, features, label_keys)
-            if not hasattr(self, "activation_thresholds"):
-                self._init_thresholds_and_reliability()
-            activations = {k: 1 if intensities.get(k, 0.0) >= self.activation_thresholds.get(k, self.default_activation_threshold) else 0 for k in label_keys}
-            analyst_labels.update({f"intensity_{k}": float(intensities.get(k, 0.0)) for k in label_keys})
-            analyst_labels.update({f"active_{k}": int(activations.get(k, 0)) for k in label_keys})
+            # Compute intensities/activations only for the kept subset (S/R + selected complementary patterns)
+            label_keys = [k for k, v in analyst_labels.items() if isinstance(v, (int, float)) and k.isupper() and k not in ("label_count", "HMM_COMPOSITE_CLUSTER", "HMM_IS_ASSIGNED")]
+            if label_keys:
+                intensities = self.compute_intensity_scores(price_data, volume_data, features, label_keys)
+                if not hasattr(self, "activation_thresholds"):
+                    self._init_thresholds_and_reliability()
+                activations = {k: 1 if intensities.get(k, 0.0) >= self.activation_thresholds.get(k, self.default_activation_threshold) else 0 for k in label_keys}
+                analyst_labels.update({f"intensity_{k}": float(intensities.get(k, 0.0)) for k in label_keys})
+                analyst_labels.update({f"active_{k}": int(activations.get(k, 0)) for k in label_keys})
 
             try:
                 # Summarize analyst label activations once per timeframe

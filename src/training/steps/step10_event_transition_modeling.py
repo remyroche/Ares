@@ -16,6 +16,8 @@ from src.transition.event_trigger_indexer import EventTriggerIndexer
 from src.transition.event_window_dataset import EventWindowDatasetBuilder
 from src.transition.path_targets import PathTargetEngineer
 from src.transition.baseline_rf import TransitionRandomForest
+from src.transition.rolling_window_dataset import RollingWindowDatasetBuilder
+from src.transition.multitask_rf import MultiTaskRandomForest
 
 
 logger = system_logger.getChild("Step10EventTransitionModeling")
@@ -75,6 +77,29 @@ async def run_step(
             return False
     else:
         klines_df = combined_df[["open","high","low","close","volume"]].copy()
+
+    # Branch: rolling triggerless vs event-triggered
+    if bool(tm_cfg.get("rolling_mode", False)):
+        try:
+            logger.info("Running Step 10 in rolling (triggerless) mode: building samples at every bar")
+            rbuilder = RollingWindowDatasetBuilder(cfg, exchange=exchange, symbol=symbol)
+            await rbuilder.initialize()
+            rds = rbuilder.build(klines_df, combined_df)
+            samples = rds.get("samples", [])
+            if not samples:
+                logger.info("No samples constructed in rolling mode.")
+                return True
+            horizons = list((tm_cfg.get("rolling", {}) or {}).get("direction_horizons", [5, 15]))
+            mtrf = MultiTaskRandomForest(cfg, horizons=horizons)
+            result = mtrf.fit(samples)
+            # Save a compact report
+            rep_path = os.path.join(artifacts_dir, f"{symbol}_{timeframe}_rolling_mtrf_report.json")
+            with open(rep_path, "w") as f:
+                json.dump(result, f, indent=2)
+            logger.info({"msg": "Rolling multitask RF trained", "report_path": rep_path})
+            return True
+        except Exception as e:
+            logger.warning(f"Rolling mode failed; falling back to event-triggered pipeline: {e}")
 
     # 1) Event index
     indexer = EventTriggerIndexer(cfg)

@@ -1569,12 +1569,8 @@ class MetaLabelingSystem:
 
             # 3) Optionally keep a minimal subset of meta labels complementary to HMM regimes
             try:
-                # Keep only breakout success/failure (closely related to S/R)
-                breakout_patterns = self._detect_breakout_patterns(price_data, features)
-                keep_keys = {"BREAKOUT_SUCCESS", "BREAKOUT_FAILURE"}
-                for k, v in breakout_patterns.items():
-                    if k in keep_keys:
-                        analyst_labels[k] = v
+                # No additional meta labels retained; S/R labels provide the structure
+                pass
             except Exception:
                 pass
 

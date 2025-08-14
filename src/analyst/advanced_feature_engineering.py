@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -2280,7 +2281,6 @@ class AdvancedFeatureEngineering:
                 if urc.scaler is not None:
                     Xs = urc.scaler.transform(X)
                 else:
-                    from sklearn.preprocessing import StandardScaler
                     urc.scaler = StandardScaler().fit(X)
                     Xs = urc.scaler.transform(X)
                 states_tf = pd.Series(hmm.predict(Xs).astype(int), index=feats.index)

@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import json
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
@@ -49,7 +50,8 @@ async def run_step(
             if files:
                 latest = max(files)
         combined_df = pd.read_parquet(os.path.join(data_dir, latest)) if latest else pd.DataFrame()
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to load combined features parquet: {e}", exc_info=True)
         combined_df = pd.DataFrame()
 
     if combined_df.empty:
@@ -190,18 +192,17 @@ async def run_step(
         event_path = os.path.join(artifacts_dir, f"{symbol}_{timeframe}_{ts}_event_index.parquet")
         event_index.to_parquet(event_path, index=False)
         logger.info(f"Saved event index: {event_path}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to save event index: {e}", exc_info=True)
     # Save RF report
     try:
-        import json
         rep_path = os.path.join(artifacts_dir, f"{symbol}_{timeframe}_{ts}_rf_report.json")
         gating = cfg.get("TRANSITION_MODELING", {}).get("inference", {}).get("path_class_thresholds", {})
         tf_ensemble = cfg.get("TRANSITION_MODELING", {}).get("timeframe_ensemble", {})
         with open(rep_path, "w") as f:
             json.dump({"rf_result": rf_result, "gating_thresholds": gating, "timeframe_ensemble": tf_ensemble}, f, indent=2)
         logger.info(f"Saved RF report: {rep_path}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to save RF report: {e}", exc_info=True)
 
     return True

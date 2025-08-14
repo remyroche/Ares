@@ -18,7 +18,7 @@ from src.utils.error_handler import handle_errors
 from src.training.steps.unified_data_loader import UnifiedDataLoader
 
 # Timeframes to process
-TIMEFRAMES: list[str] = ["1m", "5m", "15m", "30m"]
+TIMEFRAMES: list[str] = ["1m", "5m", "15m"]
 
 
 @dataclass

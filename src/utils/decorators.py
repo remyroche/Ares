@@ -588,19 +588,23 @@ def with_tracing_span(
 
     def decorator(func: F) -> F:  # type: ignore[override]
         resolved_span = span_name or func.__name__
+        # Base fallback logger on the wrapped function's module
+        module_logger = logging.getLogger(func.__module__)
 
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any):
             cid = ensure_correlation_id()
+            # Prefer instance logger if available
+            active_logger = getattr(args[0], "logger", module_logger) if args else module_logger
             if log_args:
                 safe_args = _sanitize(args)
                 safe_kwargs = _sanitize(kwargs)
-                logger.info(
+                active_logger.info(
                     f"➡️ {resolved_span} start",
                     extra={"correlation_id": cid, "args": safe_args, "kwargs": safe_kwargs},
                 )
             else:
-                logger.info(
+                active_logger.info(
                     f"➡️ {resolved_span} start",
                     extra={"correlation_id": cid},
                 )
@@ -612,17 +616,17 @@ def with_tracing_span(
                     length = None
                     if hasattr(result, "__len__"):
                         length = len(cast(Any, result))
-                    logger.info(
+                    active_logger.info(
                         f"✅ {resolved_span} done",
                         extra={"correlation_id": cid, "result_len": length},
                     )
                 except Exception:
-                    logger.info(
+                    active_logger.info(
                         f"✅ {resolved_span} done",
                         extra={"correlation_id": cid},
                     )
             else:
-                logger.info(
+                active_logger.info(
                     f"✅ {resolved_span} done",
                     extra={"correlation_id": cid, "result": _sanitize(result)},
                 )
@@ -632,15 +636,17 @@ def with_tracing_span(
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any):
             cid = ensure_correlation_id()
+            # Prefer instance logger if available
+            active_logger = getattr(args[0], "logger", module_logger) if args else module_logger
             if log_args:
                 safe_args = _sanitize(args)
                 safe_kwargs = _sanitize(kwargs)
-                logger.info(
+                active_logger.info(
                     f"➡️ {resolved_span} start",
                     extra={"correlation_id": cid, "args": safe_args, "kwargs": safe_kwargs},
                 )
             else:
-                logger.info(
+                active_logger.info(
                     f"➡️ {resolved_span} start",
                     extra={"correlation_id": cid},
                 )
@@ -652,17 +658,17 @@ def with_tracing_span(
                     length = None
                     if hasattr(result, "__len__"):
                         length = len(cast(Any, result))
-                    logger.info(
+                    active_logger.info(
                         f"✅ {resolved_span} done",
                         extra={"correlation_id": cid, "result_len": length},
                     )
                 except Exception:
-                    logger.info(
+                    active_logger.info(
                         f"✅ {resolved_span} done",
                         extra={"correlation_id": cid},
                     )
             else:
-                logger.info(
+                active_logger.info(
                     f"✅ {resolved_span} done",
                     extra={"correlation_id": cid, "result": _sanitize(result)},
                 )

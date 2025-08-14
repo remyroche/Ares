@@ -80,6 +80,36 @@ async def run_step(
         X_vl = pd.DataFrame(feats_vl).reindex(price_vl.index)
         X_te = pd.DataFrame(feats_te).reindex(price_te.index)
 
+        # 4a) Join HMM composite clusters (Step 1_7) if available
+        try:
+            comp_path = f"{data_dir}/{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
+            if os.path.exists(comp_path):
+                comp_df = pd.read_parquet(comp_path)
+                if "timestamp" in comp_df.columns:
+                    comp_df["timestamp"] = pd.to_datetime(comp_df["timestamp"], errors="coerce", utc=True)
+                    comp_df = comp_df.dropna(subset=["timestamp"]).sort_values("timestamp")
+                    comp_df = comp_df.set_index("timestamp")
+                comp_df = comp_df.rename(columns={
+                    "combination_id": "hmm_combination_id",
+                    "composite_cluster_id": "hmm_composite_cluster_id",
+                })
+                # Align to each split index
+                def _merge_clusters(base: pd.DataFrame) -> pd.DataFrame:
+                    aligned = comp_df.reindex(base.index)
+                    merged = base.copy()
+                    for c in ["hmm_combination_id", "hmm_composite_cluster_id"]:
+                        if c in aligned.columns:
+                            merged[c] = aligned[c].astype("float").fillna(-1.0)
+                    return merged
+                X_tr = _merge_clusters(X_tr)
+                X_vl = _merge_clusters(X_vl)
+                X_te = _merge_clusters(X_te)
+                logger.info("Joined HMM composite cluster features into Step 3 features")
+            else:
+                logger.info("HMM composite cluster file not found; skipping join")
+        except Exception as e:
+            logger.warning(f"Failed to join HMM composite clusters: {e}")
+
         # 4b) Optionally augment with Autoencoder features
         @with_tracing_span("Step3._augment_with_autoencoder", log_args=False)
         @guard_dataframe_nulls(mode="warn", arg_index=0)

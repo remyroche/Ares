@@ -1089,6 +1089,50 @@ class EnhancedTrainingManager:
                     "result": {"message": "Using pre-consolidated data"},
                 }
 
+            # Step 1_7: HMM Regime Discovery (block HMMs + composite clustering)
+            self._heartbeat("Step 1_7: HMM Regime Discovery")
+            step_start_1_7 = time.time()
+            try:
+                from src.training.steps import step1_7_hmm_regime_discovery as _step1_7
+                step1_7_success = await _step1_7.run_step(
+                    symbol=symbol,
+                    exchange=exchange,
+                    data_dir=data_dir,
+                    timeframe=timeframe,
+                    lookback_days=self.lookback_days,
+                )
+            except Exception as e:
+                self.logger.error(f"❌ Error in Step 1_7: {e}")
+                step1_7_success = False
+
+            if not step1_7_success:
+                self._log_step_completion(
+                    "Step 1_7: HMM Regime Discovery",
+                    step_start_1_7,
+                    step_times,
+                    success=False,
+                )
+                # Non-fatal: proceed but warn
+                self.logger.warning("⚠️ Proceeding without Step 1_7 artifacts (no-fatal)")
+
+            pipeline_state["hmm_regime_discovery"] = {
+                "status": "SUCCESS" if step1_7_success else "FAILED",
+                "success": bool(step1_7_success),
+                "completed": bool(step1_7_success),
+            }
+            self._save_checkpoint("step1_7_hmm_regime_discovery", pipeline_state)
+            step_times["step1_7_hmm_regime_discovery"] = time.time() - step_start_1_7
+
+            # Run validator for Step 1_7
+            try:
+                await self._run_step_validator(
+                    "step1_7_hmm_regime_discovery", training_input, pipeline_state
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"Validator for step1_7_hmm_regime_discovery failed but is non-fatal: {e}"
+                )
+
             # Step 2: Processing, meta-labeling, feature engineering (or legacy regime classification)
             self._heartbeat("Step 2: Processing & Labeling")
             try:

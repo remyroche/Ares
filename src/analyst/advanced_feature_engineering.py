@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -27,6 +28,7 @@ from src.utils.warning_symbols import (
     initialization_error,
     execution_error,
 )
+from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 
 
 class CandlestickPatternAnalyzer:
@@ -1371,6 +1373,25 @@ class AdvancedFeatureEngineering:
             adaptive_features = self._engineer_adaptive_indicators(price_data)
             features.update(adaptive_features)
 
+            # Lightweight macro context (1h EMA/ATR) appended to source frame so it can be used downstream
+            try:
+                # Make a shallow frame carrying OHLC for context calculation, then bring back series
+                src_df = price_data[["open","high","low","close"]].copy()
+                src_df = self._calculate_additional_context_features(src_df)
+                for col in ["1h_ema_50","1h_atr"]:
+                    if col in src_df.columns:
+                        features[col] = src_df[col]
+            except Exception:
+                pass
+
+            # Macro HMM state (1h)
+            try:
+                hmm_1h = self._compute_macro_hmm_state(price_data, timeframe="1h")
+                if hmm_1h is not None and hmm_1h.size:
+                    features["1h_hmm_state"] = hmm_1h
+            except Exception:
+                pass
+
             # Feature selection and dimensionality reduction
             selected_features = self._select_optimal_features(features)
 
@@ -2205,6 +2226,104 @@ class AdvancedFeatureEngineering:
         except Exception as e:
             self.logger.warning(f"Failed to calculate adaptive MACD: {e}")
             return {"adaptive_macd": 0.0, "adaptive_macd_signal": 0.0, "adaptive_macd_histogram": 0.0}
+
+    def _calculate_additional_context_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add lightweight higher-timeframe context features (1h/4h EMA50 and ATR) if missing."""
+        try:
+            if df.empty or not set(["open","high","low","close"]).issubset(df.columns):
+                return df
+            # Avoid recompute if already present
+            if all(c in df.columns for c in ["1h_ema_50","1h_atr"]):
+                return df
+            # Resample to 1h
+            try:
+                ohlc = df[["open","high","low","close"]].copy()
+                ohlc_1h = ohlc.resample("1H").agg({"open":"first","high":"max","low":"min","close":"last"}).dropna()
+                ema50_1h = ohlc_1h["close"].ewm(span=50).mean().reindex(df.index, method="pad")
+                df["1h_ema_50"] = ema50_1h
+                # ATR(14) on 1h
+                tr = (ohlc_1h["high"] - ohlc_1h["low"]).to_frame("hl")
+                tr["hc"] = (ohlc_1h["high"] - ohlc_1h["close"].shift()).abs()
+                tr["lc"] = (ohlc_1h["low"] - ohlc_1h["close"].shift()).abs()
+                true_range = tr.max(axis=1)
+                atr_1h = true_range.rolling(14, min_periods=1).mean().reindex(df.index, method="pad")
+                df["1h_atr"] = atr_1h
+            except Exception:
+                pass
+            # Optionally 4h HMM state could be added by other components; we keep EMA/ATR minimal here
+            return df
+        except Exception:
+            return df
+
+    def _compute_macro_hmm_state(self, price_data: pd.DataFrame, timeframe: str = "1h") -> pd.Series:
+        """Compute macro HMM state on resampled data and align to base index (safe default to SIDEWAYS state=1)."""
+        try:
+            if price_data.empty or "close" not in price_data.columns:
+                return pd.Series(index=price_data.index, dtype=float)
+            # Resample to requested timeframe
+            ohlc = price_data[["open","high","low","close","volume"]].copy()
+            rule = "1H" if timeframe == "1h" else timeframe.upper()
+            ohlc_tf = ohlc.resample(rule).agg({"open":"first","high":"max","low":"min","close":"last","volume":"sum"}).dropna()
+            # Initialize URC for macro and try to load existing models only
+            urc = UnifiedRegimeClassifier(self.config, exchange="UNKNOWN", symbol="UNKNOWN")
+            import asyncio
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(urc.initialize())
+            hmm = urc.hmm_model
+            states_tf: pd.Series
+            if hmm is not None:
+                # Compute features and predict states
+                feats = urc._calculate_features(ohlc_tf)
+                X = feats[[
+                    "log_returns","volatility_20","volume_ratio","rsi","macd","macd_signal",
+                    "macd_histogram","bb_position","bb_width","atr","volatility_regime","volatility_acceleration"
+                ]].fillna(0)
+                if urc.scaler is not None:
+                    Xs = urc.scaler.transform(X)
+                else:
+                    urc.scaler = StandardScaler().fit(X)
+                    Xs = urc.scaler.transform(X)
+                states_tf = pd.Series(hmm.predict(Xs).astype(int), index=feats.index)
+            else:
+                # Rule-based fallback using EMA50 and ADX on 1h
+                ema = ohlc_tf["close"].ewm(span=50).mean()
+                # Simple ADX proxy: use rolling range/volatility on 14
+                high_low = ohlc_tf["high"] - ohlc_tf["low"]
+                high_close = (ohlc_tf["high"] - ohlc_tf["close"].shift()).abs()
+                low_close = (ohlc_tf["low"] - ohlc_tf["close"].shift()).abs()
+                tr = (pd.concat([high_low, high_close, low_close], axis=1)).max(axis=1)
+                adx_proxy = tr.rolling(14, min_periods=5).mean()
+                adx_thr = float(getattr(urc, "adx_sideways_threshold", 18))
+                # Map to regimes: BULL=2, SIDEWAYS=1, BEAR=0
+                regimes = []
+                for t in ohlc_tf.index:
+                    c = float(ohlc_tf.loc[t, "close"])
+                    e = float(ema.loc[t]) if not pd.isna(ema.loc[t]) else c
+                    a = float(adx_proxy.loc[t]) if not pd.isna(adx_proxy.loc[t]) else 0.0
+                    if a < adx_thr:
+                        regimes.append(1)
+                    else:
+                        regimes.append(2 if c >= e else 0)
+                states_tf = pd.Series(regimes, index=ohlc_tf.index)
+            # Map back to base index via forward fill
+            states_base = states_tf.reindex(price_data.index, method="ffill").fillna(1).astype(int)
+            return states_base.rename(f"{timeframe}_hmm_state")
+        except Exception:
+            return pd.Series(index=price_data.index, dtype=float)
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={}
+    )
+    async def _generate_feature_blocks(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None, order_flow_data: pd.DataFrame | None = None) -> dict[str, Any]:
+        features: dict[str, Any] = {}
+        try:
+            # existing feature generation
+            # ... existing code ...
+            pass
+        except Exception:
+            pass
+        return features
 
 
 class VolatilityRegimeModel:

@@ -366,6 +366,121 @@ def get_training_config() -> dict[str, Any]:
                 "IGNITION_BAR",
             ],
         },
+        # --- Event-centric Transition Modeling (new, additive) ---
+        "TRANSITION_MODELING": {
+            "enabled": True,
+            # HMM/Regime
+            "hmm_n_states": 5,
+            "use_existing_urc_models": True,
+            # Windows and de-duplication
+            "pre_window": 60,
+            "post_window": 20,
+            "label_cooldown_bars": 45,
+            "window_iou_threshold": 0.5,
+            "max_events_per_label": 10000,
+            # Event selection
+            "use_reliability_weighting": True,
+            "use_rising_edge_only": True,
+            # Secondary labels as encoder context
+            "preserve_secondary_labels": True,
+            # Caching
+            "cache": {
+                "enable_state_cache": True,
+                "enable_dataset_cache": True,
+                "cache_dir": "checkpoints/transition_cache"
+            },
+            # Multi-timeframe context features
+            "context_features": {
+                "enable_macro_context": True,
+                "macro_timeframe": "1h",
+                "include_price_over_ema50": True,
+                "include_atr_pct": True,
+                "include_macro_hmm_state": True,
+                "also_include_4h": False
+            },
+            # Efficiency and pruning
+            "early_pruning": {
+                "prefilter_with_vectorized_labels": True,
+                "min_gap_between_candidates": 5,
+                "downsample_near_duplicate_sequences": True,
+                "duplicate_similarity_threshold": 0.98
+            },
+            # Baseline modeling (computationally efficient)
+            "baseline_random_forest": {
+                "enabled": True,
+                "n_estimators": 300,
+                "max_depth": 12,
+                "min_samples_leaf": 5,
+                "random_state": 42,
+                "max_train_samples": 200000
+            },
+            # SHAP explainability
+            "enable_shap": True,
+            # Targets
+            "path_class": {
+                "enable_beginning_of_trend": True,
+                "adx_sideways_threshold": 18,
+                "return_threshold": 0.001,
+                "onset_window_bars": 8
+            },
+            # Barrier aux targets (approximate time-to-PT/SL)
+            "barriers": {
+                "profit_take_multiplier": 0.002,
+                "stop_loss_multiplier": 0.001
+            },
+            # Storage
+            "artifacts_dir": "checkpoints/transition_datasets",
+            # Optional compact seq2seq (Transformer/TCN-like) training
+            "seq2seq": {
+                "enabled": True,
+                "model_type": "tcn",
+                "precision": "16-mixed",
+                "d_model": 128,
+                "nhead": 4,
+                "num_layers": 2,
+                "max_epochs": 10,
+                "lr": 0.001,
+                "teacher_forcing_ratio": 1.0,
+                "scheduled_sampling": {"start": 1.0, "end": 0.5, "epochs": 10},
+                "path_class_weights": {"continuation": 1.0, "reversal": 1.2, "end_of_trend": 0.8, "beginning_of_trend": 1.5},
+                "focal_gamma": 0.0,
+                "quantile_returns": [0.1, 0.5, 0.9],
+                "cv_folds": 3,
+                "artifact_dir_models": "checkpoints/transition_models"
+            },
+            # Inference gating thresholds per timeframe and macro-regime
+            "inference": {
+                "path_class_thresholds": {
+                    "1m": {"continuation": 0.75, "beginning_of_trend": 0.75},
+                    "5m": {"continuation": 0.70, "beginning_of_trend": 0.70}
+                },
+                "macro_regime_thresholds": {
+                    "BULL": {
+                        "1m": {"continuation": 0.70, "beginning_of_trend": 0.70},
+                        "5m": {"continuation": 0.68, "beginning_of_trend": 0.68}
+                    },
+                    "BEAR": {
+                        "1m": {"continuation": 0.80, "beginning_of_trend": 0.85},
+                        "5m": {"continuation": 0.78, "beginning_of_trend": 0.82}
+                    },
+                    "SIDEWAYS": {
+                        "1m": {"continuation": 0.78, "beginning_of_trend": 0.80},
+                        "5m": {"continuation": 0.75, "beginning_of_trend": 0.78}
+                    }
+                }
+            },
+            # Timeframe ensemble for combining predictions (weights must sum to <= 1)
+            "timeframe_ensemble": {
+                "enabled": False,
+                "weights": {"1m": 0.30, "5m": 0.30, "15m": 0.25, "30m": 0.15}
+            },
+            # Optional lightweight validation on higher timeframes
+            "htf_validation": {
+                "enabled": False,
+                "timeframes": ["15m", "1h"],
+                "run_seq2seq": False
+            }
+        },
     }
 
 

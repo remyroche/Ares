@@ -175,10 +175,7 @@ class MetaLabelingSystem:
             returns_data = price_data.copy()
             returns_data["returns"] = price_data["close"].pct_change()
             # Alias to common naming used elsewhere
-            try:
-                returns_data["close_returns"] = returns_data["returns"]
-            except Exception:
-                pass
+            returns_data["close_returns"] = returns_data["returns"]
             
             # Calculate log returns for better statistical properties
             returns_data["log_returns"] = np.log(price_data["close"] / price_data["close"].shift(1))
@@ -543,20 +540,20 @@ class MetaLabelingSystem:
                 return features
 
             # Prefer normalized volume for ratio if provided; otherwise compute from raw
+            # Set a safe default upfront and refine when possible
+            features.setdefault("volume_ratio", 1.0)
             try:
                 if "volume_normalized" in data.columns:
-                    vn = pd.to_numeric(data["volume_normalized"], errors="coerce").replace([np.inf, -np.inf], np.nan)
-                    features["volume_ratio"] = float(vn.iloc[-1]) if len(vn) else 1.0
-                elif "volume" in data.columns:
+                    vn = pd.to_numeric(data["volume_normalized"], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+                    if not vn.empty:
+                        features["volume_ratio"] = float(vn.iloc[-1])
+                elif "volume" in data.columns and len(data["volume"]) >= 20:
                     vol_series = data["volume"]
-                    vol_ma = vol_series.rolling(20).mean().iloc[-1] if len(vol_series) >= 20 else None
-                    features["volume_ratio"] = (
-                        float(vol_series.iloc[-1] / vol_ma) if vol_ma and vol_ma > 0 else 1.0
-                    )
-                else:
-                    features["volume_ratio"] = 1.0
-            except Exception:
-                features.setdefault("volume_ratio", 1.0)
+                    vol_ma = vol_series.rolling(20).mean().iloc[-1]
+                    if pd.notna(vol_ma) and vol_ma > 0:
+                        features["volume_ratio"] = float(vol_series.iloc[-1] / vol_ma)
+            except (IndexError, KeyError) as e:
+                self.logger.warning(f"Could not calculate volume_ratio due to data issue: {e}")
 
             return features
 

@@ -131,7 +131,7 @@ class MetaLabelingSystem:
         # Active labels set for complementarity-aware pruning
         self.active_labels: set[str] = set()
         # Debug/performance logging controls
-        self.debug_logging: bool = bool(self.labeling_config.get("debug_logging", False))
+        self.debug_logging: bool = bool(self.labeling_config.get("debug_logging", True))
         self.perf_logging: bool = bool(self.labeling_config.get("perf_logging", True))
 
         self.is_initialized = False

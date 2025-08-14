@@ -469,6 +469,11 @@ def get_training_config() -> dict[str, Any]:
                     }
                 }
             },
+            # Timeframe ensemble for combining predictions (weights must sum to <= 1)
+            "timeframe_ensemble": {
+                "enabled": False,
+                "weights": {"1m": 0.30, "5m": 0.30, "15m": 0.25, "30m": 0.15}
+            },
             # Optional lightweight validation on higher timeframes
             "htf_validation": {
                 "enabled": False,

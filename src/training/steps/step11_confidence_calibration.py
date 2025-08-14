@@ -329,6 +329,37 @@ class ConfidenceCalibrationStep:
             with open(summary_file, "w") as f:
                 json.dump(self._summarize_calibration(calibration_results), f, indent=2)
 
+            # NEW: Persist thresholds and reliability for MetaLabelingSystem consumption
+            try:
+                artifacts_dir = self.config.get("meta_labeling", {}).get("artifacts_dir", "artifacts/meta_labeling")
+                os.makedirs(artifacts_dir, exist_ok=True)
+                # Persist reliability if available from pipeline_state or calibration
+                reliability: dict[str, float] = pipeline_state.get("label_reliability", {}) if isinstance(pipeline_state, dict) else {}
+                if not reliability:
+                    # fallback: simple per-label accuracy proxy from analyst_models calibration if present
+                    acc_map: dict[str, float] = {}
+                    try:
+                        for regime, models in (analyst_calibration or {}).items():
+                            if isinstance(models, dict):
+                                for name, res in models.items():
+                                    if isinstance(res, dict) and "accuracy" in res:
+                                        acc_map[name] = float(res.get("accuracy", 0.0))
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Error during reliability fallback calculation: {e}",
+                        )
+                    reliability = acc_map
+                with open(os.path.join(artifacts_dir, "reliability.json"), "w") as f:
+                    json.dump(reliability, f, indent=2)
+                # Persist thresholds if provided in pipeline_state
+                thresholds = pipeline_state.get("activation_thresholds", {}) if isinstance(pipeline_state, dict) else {}
+                if thresholds:
+                    with open(os.path.join(artifacts_dir, "thresholds.json"), "w") as f:
+                        json.dump(thresholds, f, indent=2)
+                self.logger.info(f"Persisted meta-label artifacts to {artifacts_dir}")
+            except Exception as _pe:
+                self.logger.warning(f"Threshold/reliability persistence skipped: {_pe}")
+
             self.logger.info(
                 f"✅ Confidence calibration completed. Results saved to {calibration_dir}",
             )

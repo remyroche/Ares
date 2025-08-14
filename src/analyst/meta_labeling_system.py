@@ -2216,8 +2216,8 @@ class MetaLabelingSystem:
                 for k, v in data.items():
                     thr = v.get("threshold", v) if isinstance(v, dict) else v
                     self.set_activation_threshold(str(k), float(thr))
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.warning(f"Could not load activation thresholds from artifacts: {e}")
 
     def load_reliability_from_artifacts(self, artifacts_dir: str | None = None) -> None:
         """Load persisted label reliability scores from artifacts directory if available."""

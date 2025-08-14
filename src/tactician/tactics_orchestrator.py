@@ -2,6 +2,8 @@
 
 from datetime import datetime
 from typing import Any
+import os
+import pandas as pd
 
 from exchange.factory import ExchangeFactory
 from src.config.environment import get_exchange_name
@@ -205,6 +207,7 @@ class TacticsOrchestrator:
         self.ml_tactics_manager = None
         self.decision_policy: DecisionPolicy | None = None
         self.event_bus = None
+        self._rolling_infer = None
 
     @handle_specific_errors(
         error_handlers={
@@ -235,6 +238,19 @@ class TacticsOrchestrator:
 
             # Decision policy and event bus (if provided via container elsewhere)
             self.decision_policy = DecisionPolicy(self.config)
+            # Initialize rolling inference if configured
+            try:
+                tm = (self.config or {}).get("TRANSITION_MODELING", {})
+                if bool(tm.get("enabled", False)) and bool(tm.get("rolling_mode", False)):
+                    from src.transition.rolling_inference import RollingMTInference
+                    models_dir = str((tm.get("artifacts_dir", "checkpoints/transition_datasets")))
+                    models_dir = os.path.join(models_dir, "models")
+                    symbol = str(self.config.get("symbol", "UNKNOWN"))
+                    timeframe = str(self.config.get("timeframe", "1m"))
+                    self._rolling_infer = RollingMTInference(self.config, models_dir=models_dir, symbol=symbol, timeframe=timeframe)
+                    _ = self._rolling_infer.load()
+            except Exception:
+                self._rolling_infer = None
             try:
                 # Optional import to avoid hard DI coupling here
                 from src.interfaces.event_bus import event_bus as global_event_bus
@@ -551,6 +567,29 @@ class TacticsOrchestrator:
             if not ml_results:
                 self.print(failed("❌ ML tactics failed"))
                 return False
+
+            # Inject rolling inference predictions if available
+            try:
+                if self._rolling_infer is not None:
+                    # Expect a combined_df in input; if absent, skip gracefully
+                    combined_df = tactics_input.get("combined_features_frame")
+                    if isinstance(combined_df, pd.DataFrame) and not combined_df.empty:
+                        roll_pred = self._rolling_infer.predict_latest(combined_df)
+                        ml_predictions.update({"rolling": roll_pred})
+                        # Map to directional_confidence/target_direction hints
+                        if roll_pred.get("ready"):
+                            target_dir = "long" if roll_pred.get("side") == "long" else "short"
+                            p_path = roll_pred.get("p_path_class", {})
+                            fav = max(float(p_path.get("continuation", 0.0)), float(p_path.get("beginning_of_trend", 0.0)))
+                            # Update tactician_confidence in tactics_input so it propagates to decision_context
+                            tactician_confidence = max(float(tactician_confidence), float(fav))
+                            tactics_input["tactician_confidence"] = tactician_confidence
+                            tactics_input["target_direction"] = target_dir
+                            ml_predictions["directional_confidence"] = {"long": float(roll_pred.get("p_direction_up_" + str(roll_pred.get("horizon", 0)), 0.5))}
+                            # Expose exit flag to decision policy instead of overriding size
+                            tactics_input["rolling_exit_flag"] = bool(roll_pred.get("exit_flag", False))
+            except Exception:
+                pass
 
             # Decision aggregation and event publishing
             decision_context = {

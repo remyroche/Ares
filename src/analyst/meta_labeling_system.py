@@ -174,6 +174,8 @@ class MetaLabelingSystem:
             # Calculate returns from close prices
             returns_data = price_data.copy()
             returns_data["returns"] = price_data["close"].pct_change()
+            # Alias to common naming used elsewhere
+            returns_data["close_returns"] = returns_data["returns"]
             
             # Calculate log returns for better statistical properties
             returns_data["log_returns"] = np.log(price_data["close"] / price_data["close"].shift(1))
@@ -202,13 +204,19 @@ class MetaLabelingSystem:
             stationary_volume = pd.DataFrame(index=price_data.index)
             if volume_data is not None and not volume_data.empty and "volume" in volume_data.columns:
                 volume_series = volume_data["volume"]
-                # Use log changes for volume (stationary)
-                stationary_volume["volume_log_returns"] = np.log(volume_series / volume_series.shift(1))
-                stationary_volume["volume_pct_change"] = volume_series.pct_change()
+                # Primary stationary representation: percent change (aligns with VectorizedStationarityChecker)
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    stationary_volume["volume_returns"] = volume_series.pct_change()
+                # Log changes for volume (alternative stationary)
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    stationary_volume["volume_log_returns"] = np.log(volume_series / volume_series.shift(1))
+                # Also expose legacy naming
+                stationary_volume["volume_pct_change"] = stationary_volume["volume_returns"]
                 
                 # Calculate rolling volume changes
                 for period in [5, 10, 20]:
-                    stationary_volume[f"volume_log_returns_{period}"] = np.log(volume_series / volume_series.shift(period))
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        stationary_volume[f"volume_log_returns_{period}"] = np.log(volume_series / volume_series.shift(period))
                     stationary_volume[f"volume_pct_change_{period}"] = volume_series.pct_change(period)
                 
                 # Remove NaN values
@@ -445,52 +453,54 @@ class MetaLabelingSystem:
         try:
             features = {}
 
-            # Check if we have stationary volume data
-            if "volume_log_returns" in data.columns:
-                # Use pre-calculated stationary volume data
-                volume_log_returns = data["volume_log_returns"].dropna()
-                
-                if len(volume_log_returns) < 5:
-                    self.logger.warning("Insufficient stationary volume data for feature calculation")
-                    return features
+            # Prefer percent-change stationary series if available
+            ret_series = None
+            if "volume_returns" in data.columns:
+                ret_series = data["volume_returns"].dropna()
+            elif "volume_log_returns" in data.columns:
+                ret_series = data["volume_log_returns"].dropna()
+            elif "volume_pct_change" in data.columns:
+                ret_series = data["volume_pct_change"].dropna()
 
-                # Volume trend using log returns (stationary)
+            if ret_series is not None and len(ret_series) >= 5:
+                # Volume trend using stationary returns
                 features["volume_trend"] = (
-                    volume_log_returns.rolling(10).mean().iloc[-1]
-                    if len(volume_log_returns) >= 10
-                    else volume_log_returns.mean()
+                    ret_series.rolling(10).mean().iloc[-1]
+                    if len(ret_series) >= 10
+                    else ret_series.mean()
                 )
 
                 # Volume volatility (stationary)
                 features["volume_volatility"] = (
-                    volume_log_returns.rolling(20).std().iloc[-1]
-                    if len(volume_log_returns) >= 20
-                    else volume_log_returns.std()
+                    ret_series.rolling(20).std().iloc[-1]
+                    if len(ret_series) >= 20
+                    else ret_series.std()
                 )
 
                 # Volume momentum (stationary)
                 features["volume_momentum"] = (
-                    volume_log_returns.rolling(5).mean().iloc[-1]
-                    if len(volume_log_returns) >= 5
-                    else volume_log_returns.mean()
+                    ret_series.rolling(5).mean().iloc[-1]
+                    if len(ret_series) >= 5
+                    else ret_series.mean()
                 )
 
                 # Volume acceleration (stationary)
                 features["volume_acceleration"] = (
-                    volume_log_returns.rolling(5).mean().diff().iloc[-1]
-                    if len(volume_log_returns) >= 5
+                    ret_series.rolling(5).mean().diff().iloc[-1]
+                    if len(ret_series) >= 5
                     else 0
                 )
 
-                # Additional stationary volume features
+                # If an explicit pct-change column exists, expose last value
                 if "volume_pct_change" in data.columns:
-                    volume_pct_change = data["volume_pct_change"].dropna()
-                    features["volume_pct_change"] = volume_pct_change.iloc[-1] if len(volume_pct_change) > 0 else 0
+                    vpc = data["volume_pct_change"].dropna()
+                    features["volume_pct_change"] = vpc.iloc[-1] if len(vpc) > 0 else 0
 
             elif "volume" in data.columns:
-                # Fallback to raw volume data if stationary data not available
+                # Fallback: compute log returns from raw volume
                 volume_data = data["volume"].copy()
-                volume_log_returns = np.log(volume_data / volume_data.shift(1))
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    volume_log_returns = np.log(volume_data / volume_data.shift(1))
                 volume_log_returns = volume_log_returns.dropna()
 
                 if len(volume_log_returns) < 5:
@@ -525,19 +535,25 @@ class MetaLabelingSystem:
                     else 0
                 )
 
-                # Volume ratio (using raw volume for ratio calculations)
-                if len(volume_data) >= 20:
-                    volume_sma = volume_data.rolling(20).mean().iloc[-1]
-                    current_volume = volume_data.iloc[-1]
-                    features["volume_ratio"] = (
-                        current_volume / volume_sma if volume_sma > 0 else 1.0
-                    )
-                else:
-                    features["volume_ratio"] = 1.0
-
             else:
                 self.logger.warning("No volume data available for volume features")
                 return features
+
+            # Prefer normalized volume for ratio if provided; otherwise compute from raw
+            # Set a safe default upfront and refine when possible
+            features.setdefault("volume_ratio", 1.0)
+            try:
+                if "volume_normalized" in data.columns:
+                    vn = pd.to_numeric(data["volume_normalized"], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+                    if not vn.empty:
+                        features["volume_ratio"] = float(vn.iloc[-1])
+                elif "volume" in data.columns and len(data["volume"]) >= 20:
+                    vol_series = data["volume"]
+                    vol_ma = vol_series.rolling(20).mean().iloc[-1]
+                    if pd.notna(vol_ma) and vol_ma > 0:
+                        features["volume_ratio"] = float(vol_series.iloc[-1] / vol_ma)
+            except (IndexError, KeyError) as e:
+                self.logger.warning(f"Could not calculate volume_ratio due to data issue: {e}")
 
             return features
 
@@ -563,6 +579,10 @@ class MetaLabelingSystem:
                 features["returns_acceleration"] = (
                     returns.rolling(5).mean().diff().iloc[-1] if len(returns) >= 5 else 0
                 )
+                # Aliases expected downstream by detectors
+                features["price_momentum_5"] = features["returns_momentum_5"]
+                features["price_momentum_10"] = features["returns_momentum_10"]
+                features["price_acceleration"] = features["returns_acceleration"]
                 
                 # Returns-based position (relative to recent returns range)
                 if len(returns) >= 20:
@@ -644,6 +664,8 @@ class MetaLabelingSystem:
                 returns = data["returns"]
             elif "log_returns" in data.columns:
                 returns = data["log_returns"]
+            elif "close_returns" in data.columns:
+                returns = data["close_returns"]
             elif "close" in data.columns:
                 returns = data["close"].pct_change()
             else:
@@ -703,6 +725,8 @@ class MetaLabelingSystem:
                 returns = data["returns"]
             elif "log_returns" in data.columns:
                 returns = data["log_returns"]
+            elif "close_returns" in data.columns:
+                returns = data["close_returns"]
             elif "close" in data.columns:
                 returns = data["close"].pct_change()
             else:

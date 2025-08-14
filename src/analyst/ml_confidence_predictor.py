@@ -3066,6 +3066,47 @@ class MLConfidencePredictor:
                 confidences[label] = 0.5
         return confidences
 
+    # NEW: Reliability-aware mixture score helper
+    def compute_mixture_scores(
+        self,
+        intensities: dict[str, float],
+        confidences: dict[str, float],
+        reliability: dict[str, float] | None = None,
+        alpha: float = 1.0,
+        beta: float = 1.0,
+        gamma: float = 1.0,
+        top_k: int = 0,
+        w_min: float = 0.0,
+        w_max: float = 1.0,
+        normalize: bool = False,
+    ) -> dict[str, float]:
+        scores: dict[str, float] = {}
+        rel_map = reliability or {}
+        for label, inten in intensities.items():
+            c = float(np.clip(confidences.get(label, 0.5), 0.0, 1.0))
+            r = float(np.clip(rel_map.get(label, 1.0), 0.0, 1.0))
+            s = float(np.power(np.clip(float(inten), 0.0, 1.0), alpha) * np.power(c, beta) * np.power(r, gamma))
+            scores[label] = float(np.clip(s, 0.0, 1.0))
+        if top_k > 0 and len(scores) > top_k:
+            ranked = sorted(scores.items(), key=lambda t: t[1], reverse=True)
+            keep = {k for k, _ in ranked[:top_k]}
+        else:
+            keep = set(scores.keys())
+        weights: dict[str, float] = {}
+        for label, s in scores.items():
+            if label in keep:
+                lo = w_min if w_min > 0 else 0.0
+                hi = w_max if w_max < 1.0 else 1.0
+                w = float(np.clip(s, lo, hi))
+            else:
+                w = 0.0
+            weights[label] = w
+        if normalize:
+            total = float(sum(weights.values()))
+            if total > 0:
+                weights = {k: float(v / total) for k, v in weights.items()}
+        return weights
+
     @handle_errors(
         exceptions=(Exception,),
         default_return={},

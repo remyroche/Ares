@@ -15,6 +15,7 @@ import pywt
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import timedelta
 import warnings
+import time
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -500,9 +501,60 @@ class VectorizedLabellingOrchestrator:
                     moe_conf = await mlcp.predict_label_confidences(market_tail, timeframe=self.orchestrator_config.get("analyst_timeframe", "30m"))
                 except Exception:
                     moe_conf = {name: 0.5 for name in base_names}
-                # Compute intensities per label on last bar for audit
-                intensities = {name: float(0.0) for name in base_names}
+                # Compute intensities per label on last bar for audit using MetaLabelingSystem
+                try:
+                    returns_data, stationary_volume = meta._prepare_stationary_data(price_data, volume_data)
+                except Exception:
+                    returns_data, stationary_volume = price_data, volume_data
+                features_dict: dict[str, float] = {}
+                try:
+                    features_dict.update(meta._calculate_technical_indicators(price_data))
+                except Exception:
+                    pass
+                try:
+                    vol_src = stationary_volume if isinstance(stationary_volume, pd.DataFrame) and not stationary_volume.empty else volume_data
+                    if isinstance(vol_src, pd.DataFrame) and not vol_src.empty:
+                        features_dict.update(meta._calculate_volume_features(vol_src))
+                except Exception:
+                    pass
+                try:
+                    px_src = returns_data if isinstance(returns_data, pd.DataFrame) and not returns_data.empty else price_data
+                    features_dict.update(meta._calculate_price_action_patterns(px_src))
+                except Exception:
+                    pass
+                try:
+                    px_src = returns_data if isinstance(returns_data, pd.DataFrame) and not returns_data.empty else price_data
+                    features_dict.update(meta._calculate_volatility_patterns(px_src))
+                except Exception:
+                    pass
+                try:
+                    px_src = returns_data if isinstance(returns_data, pd.DataFrame) and not returns_data.empty else price_data
+                    features_dict.update(meta._calculate_momentum_patterns(px_src))
+                except Exception:
+                    pass
+                try:
+                    features_dict.update(meta._calculate_sr_levels(price_data))
+                except Exception:
+                    pass
+                intensities = meta.compute_intensity_scores(price_data, volume_data, features_dict, base_names)
                 weights = meta.compute_label_weights(intensities, moe_conf)
+                # Attach to combined_data tail for downstream consumers
+                try:
+                    tail_idx = combined_data.index[-1]
+                    for k, v in intensities.items():
+                        combined_data.loc[tail_idx, f"intensity_{k}"] = float(v)
+                    for k, v in weights.items():
+                        combined_data.loc[tail_idx, f"weight_{k}"] = float(v)
+                except Exception:
+                    pass
+                # Persist lightweight sidecar for weights
+                try:
+                    data_dir = self.config.get("data_dir", "data/training")
+                    os.makedirs(os.path.join(data_dir, "gating"), exist_ok=True)
+                    wdf = pd.DataFrame({"label": list(weights.keys()), "weight": list(weights.values())})
+                    wdf.to_parquet(os.path.join(data_dir, "gating", f"{self.config.get('exchange','EXCH')}_{self.config.get('symbol','SYMB')}_moe_weights.parquet"), index=False)
+                except Exception:
+                    pass
                 self.logger.info({"msg": "Computed MoE weights", "weights": weights})
             except Exception as e:
                 self.logger.warning(f"MoE confidence integration skipped: {e}")

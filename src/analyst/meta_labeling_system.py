@@ -1790,7 +1790,7 @@ class MetaLabelingSystem:
                 "combined_confidence": avg_conf,
                 "combined_timestamp": pd.Timestamp.now().isoformat(),
                 "total_labels": (
-                    int(analyst_labels.get("label_count", 0)) + int(tactician_labels.get("label_count", 0))
+                    int(analyst_labels.get("label_count", 0)) + int(tactician_labels.get("signal_count", 0))
                 ),
             }
 

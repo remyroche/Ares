@@ -126,6 +126,8 @@ async def run_step(
             path_class_weights = seq_cfg.get("path_class_weights", {})
             focal_gamma = float(seq_cfg.get("focal_gamma", 0.0))
             artifact_dir_models = str(seq_cfg.get("artifact_dir_models", "checkpoints/transition_models"))
+            cv_folds = int(seq_cfg.get("cv_folds", 1))
+            pt_mult = float(cfg.get("TRANSITION_MODELING", {}).get("barriers", {}).get("profit_take_multiplier", 0.002))
             _ = train_seq2seq(
                 samples=samples,
                 label_index=dataset.get("label_index", []),
@@ -141,6 +143,8 @@ async def run_step(
                 focal_gamma=focal_gamma,
                 precision=precision,
                 artifact_dir_models=artifact_dir_models,
+                cv_folds=cv_folds,
+                pt_mult=pt_mult,
             )
     except Exception as e:
         logger.warning(f"Seq2Seq training skipped due to error: {e}")

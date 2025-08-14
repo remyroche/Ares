@@ -139,7 +139,7 @@ def _select_block_features(full_df: pd.DataFrame, block: str, max_features: int)
 	return Xr[keep].fillna(0)
 
 
-def _fit_block_hmm(X: pd.DataFrame, n_states: int, random_state: int = 42) -> GMMHMM:
+def _fit_block_hmm(X: pd.DataFrame, n_states: int, random_state: int = 42) -> Tuple[GMMHMM, StandardScaler]:
 	# Use GMMHMM with diagonal covariances, 2 mixtures per state to approximate heavy tails
 	model = GMMHMM(
 		n_components=n_states,
@@ -151,31 +151,29 @@ def _fit_block_hmm(X: pd.DataFrame, n_states: int, random_state: int = 42) -> GM
 	)
 	# hmmlearn expects 2D array
 	arr = X.values.astype(float)
-	# Scale again for stability using StandardScaler (after robust scaling)
+	# Scale for stability using StandardScaler (after robust scaling)
 	scaler = StandardScaler()
 	arr_scaled = scaler.fit_transform(arr)
 	model.fit(arr_scaled)
-	return model
+	return model, scaler
 
 
-def _posteriors(model: GMMHMM, X: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+def _posteriors(model: GMMHMM, scaler: StandardScaler, X: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
 	arr = X.values.astype(float)
-	scaler = StandardScaler()
-	arr_scaled = scaler.fit_transform(arr)
+	arr_scaled = scaler.transform(arr)
 	# score_samples returns (logprob, posteriors)
-	_ = model.score(arr_scaled)
 	logprob, gamma = model.score_samples(arr_scaled)
 	states = model.predict(arr_scaled)
 	return states.astype(int), gamma
 
 
 def _build_combination_profiles(block_states: dict[str, np.ndarray], block_posteriors: dict[str, np.ndarray]) -> Tuple[pd.Series, pd.DataFrame]:
-	# combination key per row
+	# combination key per row (efficient join of key parts)
 	if not block_states:
 		combination_keys = pd.Series(dtype=str)
 	else:
 		key_parts = [[f"{b}:{int(v)}" for v in s] for b, s in block_states.items()]
-		# Transpose and join keys for each row
+		# Transpose and join
 		joined_keys = ["|".join(map(str, row)) for row in zip(*key_parts)]
 		combination_keys = pd.Series(joined_keys)
 	# profile vector: concatenated mean posteriors per block across occurrences
@@ -354,6 +352,7 @@ async def run_step(
 			if X_blk.empty:
 				logger.warning(f"Block '{blk.name}' has no features after selection — skipping")
 				continue
+			# No extra robust scaling here to avoid duplication
 			block_features[blk.name] = X_blk
 
 		if not block_features:
@@ -362,6 +361,7 @@ async def run_step(
 
 		# Fit HMMs and infer posteriors
 		block_models: dict[str, Any] = {}
+		block_scalers: dict[str, Any] = {}
 		block_states: dict[str, np.ndarray] = {}
 		block_posteriors: dict[str, np.ndarray] = {}
 		state_feature_medians: dict[str, dict[int, dict[str, float]]] = {}
@@ -371,9 +371,10 @@ async def run_step(
 			if X_blk is None or X_blk.empty:
 				continue
 			logger.info(f"🧩 Training HMM for block='{blk.name}' n_states={blk.n_states} features={list(X_blk.columns)}")
-			model = _fit_block_hmm(X_blk, blk.n_states)
-			states, gamma = _posteriors(model, X_blk)
+			model, scaler = _fit_block_hmm(X_blk, blk.n_states)
+			states, gamma = _posteriors(model, scaler, X_blk)
 			block_models[blk.name] = model
+			block_scalers[blk.name] = scaler
 			block_states[blk.name] = states
 			block_posteriors[blk.name] = gamma
 			state_feature_medians[blk.name] = _state_feature_medians(X_blk, states)

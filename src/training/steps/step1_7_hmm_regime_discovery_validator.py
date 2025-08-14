@@ -32,7 +32,6 @@ def run_validator(training_input: dict[str, Any], pipeline_state: dict[str, Any]
 				df_c = pd.read_parquet(comp_path)
 				block_cols_ok = any(c.endswith("_state_id") for c in df_b.columns)
 				composite_cols_ok = all(c in df_c.columns for c in ["combination_id", "composite_cluster_id"])
-
 				if block_cols_ok and composite_cols_ok:
 					found_any = True
 					messages.append(f"OK {tf}: artifacts present, rows={len(df_b)}")

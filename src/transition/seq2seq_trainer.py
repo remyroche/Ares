@@ -23,6 +23,20 @@ def _to_tensor(x: np.ndarray, dtype: torch.dtype = torch.float32) -> torch.Tenso
     return torch.as_tensor(x, dtype=dtype)
 
 
+def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
+    try:
+        n, m = len(a), len(b)
+        dtw = np.full((n + 1, m + 1), np.inf, dtype=float)
+        dtw[0, 0] = 0.0
+        for i in range(1, n + 1):
+            for j in range(1, m + 1):
+                cost = abs(a[i - 1] - b[j - 1])
+                dtw[i, j] = cost + min(dtw[i - 1, j], dtw[i, j - 1], dtw[i - 1, j - 1])
+        return float(dtw[n, m] / (n + m))
+    except Exception:
+        return float("nan")
+
+
 class TransitionSeqDataset(Dataset):
     def __init__(self, samples: List[dict[str, Any]], numeric_dim: int, label_index: List[str]):
         self.samples = samples
@@ -46,12 +60,15 @@ class TransitionSeqDataset(Dataset):
         # Class at t0 (path_class) if present
         path_map = {"continuation":0, "reversal":1, "end_of_trend":2, "beginning_of_trend":3}
         y_path = path_map.get(str(s.get("path_class","end_of_trend")), 2)
+        # time to pt
+        y_ttpt = int(s.get("Y_time_to_pt", -1))
         return {
             "hmm_ids": _to_tensor(hmm_ids, torch.long),
             "x_num": _to_tensor(X_num, torch.float32),
             "y_ret": _to_tensor(y_ret, torch.float32),
             "y_hmm": _to_tensor(y_hmm, torch.long),
             "y_path": _to_tensor(np.array(y_path), torch.long),
+            "y_ttpt": _to_tensor(np.array(y_ttpt), torch.float32),
         }
 
 
@@ -103,8 +120,7 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         y_hmm = batch["y_hmm"]
         y_path = batch["y_path"]
         h, cls = self(hmm_ids, x_num)
-        # Use last post_len timesteps from the end of encoder sequence as a proxy for decoder targets (simple teacher forcing omission)
-        # For strict seq2seq, introduce a decoder; here we keep it compact for speed.
+        # Use last post_len timesteps
         z = h[:, -self.post_len :, :]
         pred_ret = self.dec_ret(z).squeeze(-1)  # [B, post]
         pred_hmm = self.dec_hmm(z)  # [B, post, vocab]
@@ -145,7 +161,12 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         else:
             loss_path = self.ce(pred_path, y_path)
         loss = loss_ret * 1.0 + loss_hmm * 0.7 + loss_path * 0.5
-        self.log_dict({"val_loss": loss, "val_loss_ret": loss_ret, "val_loss_hmm": loss_hmm, "val_loss_path": loss_path}, prog_bar=True)
+        # Metrics: state accuracy, return MSE, DTW (avg over batch subset)
+        with torch.no_grad():
+            state_pred = pred_hmm.argmax(-1)
+            state_acc = (state_pred == y_hmm).float().mean()
+            mse = nn.functional.mse_loss(pred_ret, y_ret)
+        self.log_dict({"val_loss": loss, "val_state_acc": state_acc, "val_mse": mse}, prog_bar=True)
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-2)
@@ -164,23 +185,103 @@ def build_dataloaders(samples: List[dict[str, Any]], numeric_dim: int, label_ind
     return train_loader, val_loader
 
 
-def train_seq2seq(samples: List[dict[str, Any]], label_index: List[str], numeric_feature_names: List[str], post_window: int, hmm_vocab: int = 5, d_model: int = 128, nhead: int = 4, num_layers: int = 2, max_epochs: int = 25, lr: float = 1e-3, path_class_weights: dict[str,float] | None = None, focal_gamma: float = 0.0, precision: str = "32", artifact_dir_models: str | None = None) -> dict[str, Any]:
+def evaluate_samples(model: SmallTransformer, dataloader: DataLoader, pt_mult: float, device: str = "cpu") -> dict[str, float]:
+    model.eval()
+    mse_list: list[float] = []
+    dtw_list: list[float] = []
+    acc_list: list[float] = []
+    ttpt_mae_list: list[float] = []
+    with torch.no_grad():
+        for batch in dataloader:
+            hmm_ids = batch["hmm_ids"].to(device)
+            x_num = batch["x_num"].to(device)
+            y_ret = batch["y_ret"].to(device)
+            y_hmm = batch["y_hmm"].to(device)
+            y_ttpt = batch.get("y_ttpt", torch.full((y_ret.size(0),), -1.0)).to(device)
+            h, cls = model(hmm_ids, x_num)
+            z = h[:, -model.post_len :, :]
+            pred_ret = model.dec_ret(z).squeeze(-1)
+            pred_hmm = model.dec_hmm(z)
+            # Metrics
+            mse_list.append(nn.functional.mse_loss(pred_ret, y_ret).item())
+            # DTW on first 64 samples to keep it fast
+            pr = pred_ret.detach().cpu().numpy()
+            yr = y_ret.detach().cpu().numpy()
+            for i in range(min(len(pr), 64)):
+                dtw_list.append(_dtw_distance(pr[i], yr[i]))
+            acc_list.append((pred_hmm.argmax(-1) == y_hmm).float().mean().item())
+            # ttpt prediction from returns path
+            ttpt_pred = []
+            for seq in pr:
+                ttp = -1
+                for t, r in enumerate(seq, start=1):
+                    if r >= pt_mult:
+                        ttp = t
+                        break
+                ttpt_pred.append(ttp)
+            mask = (y_ttpt >= 0)
+            if mask.any():
+                mae = torch.mean(torch.abs(torch.tensor(ttpt_pred, device=device, dtype=torch.float32) - y_ttpt)[mask]).item()
+                ttpt_mae_list.append(mae)
+    return {
+        "mse": float(np.nanmean(mse_list)) if mse_list else float("nan"),
+        "dtw": float(np.nanmean(dtw_list)) if dtw_list else float("nan"),
+        "state_acc": float(np.nanmean(acc_list)) if acc_list else float("nan"),
+        "ttpt_mae": float(np.nanmean(ttpt_mae_list)) if ttpt_mae_list else float("nan"),
+    }
+
+
+def train_seq2seq(samples: List[dict[str, Any]], label_index: List[str], numeric_feature_names: List[str], post_window: int, hmm_vocab: int = 5, d_model: int = 128, nhead: int = 4, num_layers: int = 2, max_epochs: int = 25, lr: float = 1e-3, path_class_weights: dict[str,float] | None = None, focal_gamma: float = 0.0, precision: str = "32", artifact_dir_models: str | None = None, cv_folds: int = 1, pt_mult: float = 0.002) -> dict[str, Any]:
     logger = system_logger.getChild("TransitionSeq2SeqTrainer")
     if pl is None:
         logger.warning("PyTorch Lightning not available; skip seq2seq training.")
         return {"trained": False}
     numeric_dim = len(numeric_feature_names)
-    train_loader, val_loader = build_dataloaders(samples, numeric_dim, label_index, post_window)
-    model = SmallTransformer(hmm_vocab=hmm_vocab, num_features=numeric_dim, post_len=post_window, d_model=d_model, nhead=nhead, num_layers=num_layers, lr=lr, path_class_weights=path_class_weights, focal_gamma=focal_gamma)
-    callbacks = []
-    if artifact_dir_models:
+
+    def _train_one(train_s: List[dict[str, Any]]) -> tuple[SmallTransformer, dict]:
+        train_loader, val_loader = build_dataloaders(train_s, numeric_dim, label_index, post_window)
+        model = SmallTransformer(hmm_vocab=hmm_vocab, num_features=numeric_dim, post_len=post_window, d_model=d_model, nhead=nhead, num_layers=num_layers, lr=lr, path_class_weights=path_class_weights, focal_gamma=focal_gamma)
+        callbacks = []
+        if artifact_dir_models:
+            try:
+                import os
+                os.makedirs(artifact_dir_models, exist_ok=True)
+                from pytorch_lightning.callbacks import ModelCheckpoint
+                callbacks.append(ModelCheckpoint(dirpath=artifact_dir_models, save_top_k=1, monitor="val_loss", mode="min"))
+            except Exception:
+                pass
+        trainer = pl.Trainer(max_epochs=max_epochs, accelerator="auto", devices="auto", precision=precision, gradient_clip_val=1.0, log_every_n_steps=50, callbacks=callbacks)
+        trainer.fit(model, train_loader, val_loader)
+        # Save last checkpoint
         try:
-            import os
-            os.makedirs(artifact_dir_models, exist_ok=True)
-            from pytorch_lightning.callbacks import ModelCheckpoint
-            callbacks.append(ModelCheckpoint(dirpath=artifact_dir_models, save_top_k=1, monitor="val_loss", mode="min"))
+            if artifact_dir_models:
+                import os
+                os.makedirs(artifact_dir_models, exist_ok=True)
+                trainer.save_checkpoint(os.path.join(artifact_dir_models, "last.ckpt"))
         except Exception:
             pass
-    trainer = pl.Trainer(max_epochs=max_epochs, accelerator="auto", devices="auto", precision=precision, gradient_clip_val=1.0, log_every_n_steps=50, callbacks=callbacks)
-    trainer.fit(model, train_loader, val_loader)
-    return {"trained": True}
+        # Evaluate
+        metrics = evaluate_samples(model, val_loader, pt_mult=pt_mult, device="cpu")
+        return model, metrics
+
+    if cv_folds and cv_folds > 1:
+        n = len(samples)
+        fold_size = max(1, n // cv_folds)
+        all_metrics: list[dict] = []
+        best_idx = 0
+        best_mse = float("inf")
+        best_model: SmallTransformer | None = None
+        for k in range(cv_folds):
+            end = n - (cv_folds - 1 - k) * fold_size
+            start = max(0, end - fold_size)
+            fold_samples = samples[:end]
+            model, m = _train_one(fold_samples)
+            all_metrics.append(m)
+            if m.get("mse", float("inf")) < best_mse:
+                best_mse = m.get("mse", float("inf"))
+                best_idx = k
+                best_model = model
+        return {"trained": True, "cv_metrics": all_metrics, "best_fold": best_idx, "best_mse": best_mse}
+    else:
+        model, metrics = _train_one(samples)
+        return {"trained": True, "metrics": metrics}

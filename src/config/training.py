@@ -366,6 +366,51 @@ def get_training_config() -> dict[str, Any]:
                 "IGNITION_BAR",
             ],
         },
+        # --- Event-centric Transition Modeling (new, additive) ---
+        "TRANSITION_MODELING": {
+            "enabled": False,
+            # HMM/Regime
+            "hmm_n_states": 5,
+            "use_existing_urc_models": True,
+            # Windows and de-duplication
+            "pre_window": 60,
+            "post_window": 20,
+            "label_cooldown_bars": 45,
+            "window_iou_threshold": 0.5,
+            "max_events_per_label": 10000,
+            # Event selection
+            "use_reliability_weighting": True,
+            "use_rising_edge_only": True,
+            # Secondary labels as encoder context
+            "preserve_secondary_labels": True,
+            # Efficiency and pruning
+            "early_pruning": {
+                "prefilter_with_vectorized_labels": True,
+                "min_gap_between_candidates": 5,
+                "downsample_near_duplicate_sequences": True,
+                "duplicate_similarity_threshold": 0.98
+            },
+            # Baseline modeling (computationally efficient)
+            "baseline_random_forest": {
+                "enabled": True,
+                "n_estimators": 300,
+                "max_depth": 12,
+                "min_samples_leaf": 5,
+                "random_state": 42,
+                "max_train_samples": 200000
+            },
+            # SHAP explainability
+            "enable_shap": True,
+            # Targets
+            "path_class": {
+                "enable_beginning_of_trend": True,
+                "adx_sideways_threshold": 18,
+                "return_threshold": 0.001,
+                "onset_window_bars": 8
+            },
+            # Storage
+            "artifacts_dir": "checkpoints/transition_datasets"
+        },
     }
 
 

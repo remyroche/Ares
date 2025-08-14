@@ -510,8 +510,8 @@ class VectorizedLabellingOrchestrator:
                 features_dict: dict[str, float] = {}
                 try:
                     features_dict.update(meta._calculate_technical_indicators(price_data))
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.warning(f"Failed to calculate technical indicators: {e}")
                 try:
                     vol_src = stationary_volume if isinstance(stationary_volume, pd.DataFrame) and not stationary_volume.empty else volume_data
                     if isinstance(vol_src, pd.DataFrame) and not vol_src.empty:

@@ -5,6 +5,7 @@ import os
 import json
 from typing import Any
 import pandas as pd
+import numpy as np
 
 from src.utils.logger import system_logger as _logger
 from src.training.steps.unified_data_loader import get_unified_data_loader
@@ -20,6 +21,39 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
 from src.training.enhanced_training_manager_optimized import (
     MemoryEfficientDataManager,
 )
+
+
+async def _build_sr_levels(price_df: pd.DataFrame) -> dict[str, Any]:
+    try:
+        lows = price_df["low"].astype(float)
+        highs = price_df["high"].astype(float)
+        window = min(len(lows), 2000)
+        if window <= 0:
+            return {"support_levels": [], "resistance_levels": []}
+        lt = lows.tail(window).dropna()
+        ht = highs.tail(window).dropna()
+        if lt.empty or ht.empty:
+            return {"support_levels": [], "resistance_levels": []}
+        # Use robust percentiles as weak baseline levels, attach low strength
+        support_prices = np.percentile(lt.values, [5, 15, 30]).tolist()
+        resistance_prices = np.percentile(ht.values, [70, 85, 95]).tolist()
+        # Deduplicate and produce dicts with strength
+        def _mk_levels(vals, strength=0.2):
+            out = []
+            seen = set()
+            for v in vals:
+                r = round(float(v), 8)
+                if r in seen:
+                    continue
+                seen.add(r)
+                out.append({"price": r, "strength": float(strength)})
+            return out
+        return {
+            "support_levels": _mk_levels(support_prices, 0.2),
+            "resistance_levels": _mk_levels(resistance_prices, 0.2),
+        }
+    except Exception:
+        return {"support_levels": [], "resistance_levels": []}
 
 
 async def run_step(
@@ -107,7 +141,11 @@ async def run_step(
                 price_cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
                 price_data = df[["timestamp"] + price_cols].set_index("timestamp")
                 volume_data = price_data[["volume"]] if "volume" in price_data.columns else pd.DataFrame(index=price_data.index)
-                result = await orchestrator.orchestrate_labeling_and_feature_engineering(price_data, volume_data)
+
+                # Compute SR levels for the price data
+                sr_levels = await _build_sr_levels(price_data)
+
+                result = await orchestrator.orchestrate_labeling_and_feature_engineering(price_data, volume_data, None, sr_levels)
                 final_df: pd.DataFrame | None = None
                 if isinstance(result, dict) and isinstance(result.get("data"), pd.DataFrame):
                     final_df = result["data"]

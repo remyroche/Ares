@@ -122,6 +122,10 @@ async def run_step(
             num_layers = int(seq_cfg.get("num_layers", 2))
             max_epochs = int(seq_cfg.get("max_epochs", 15))
             lr = float(seq_cfg.get("lr", 1e-3))
+            precision = str(seq_cfg.get("precision", "32"))
+            path_class_weights = seq_cfg.get("path_class_weights", {})
+            focal_gamma = float(seq_cfg.get("focal_gamma", 0.0))
+            artifact_dir_models = str(seq_cfg.get("artifact_dir_models", "checkpoints/transition_models"))
             _ = train_seq2seq(
                 samples=samples,
                 label_index=dataset.get("label_index", []),
@@ -133,6 +137,10 @@ async def run_step(
                 num_layers=num_layers,
                 max_epochs=max_epochs,
                 lr=lr,
+                path_class_weights=path_class_weights,
+                focal_gamma=focal_gamma,
+                precision=precision,
+                artifact_dir_models=artifact_dir_models,
             )
     except Exception as e:
         logger.warning(f"Seq2Seq training skipped due to error: {e}")
@@ -150,8 +158,9 @@ async def run_step(
     try:
         import json
         rep_path = os.path.join(artifacts_dir, f"{symbol}_{timeframe}_{ts}_rf_report.json")
+        gating = cfg.get("TRANSITION_MODELING", {}).get("inference", {}).get("path_class_thresholds", {})
         with open(rep_path, "w") as f:
-            json.dump(rf_result, f, indent=2)
+            json.dump({"rf_result": rf_result, "gating_thresholds": gating}, f, indent=2)
         logger.info(f"Saved RF report: {rep_path}")
     except Exception:
         pass

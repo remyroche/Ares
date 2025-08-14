@@ -383,6 +383,12 @@ def get_training_config() -> dict[str, Any]:
             "use_rising_edge_only": True,
             # Secondary labels as encoder context
             "preserve_secondary_labels": True,
+            # Caching
+            "cache": {
+                "enable_state_cache": True,
+                "enable_dataset_cache": True,
+                "cache_dir": "checkpoints/transition_cache"
+            },
             # Efficiency and pruning
             "early_pruning": {
                 "prefilter_with_vectorized_labels": True,
@@ -408,16 +414,37 @@ def get_training_config() -> dict[str, Any]:
                 "return_threshold": 0.001,
                 "onset_window_bars": 8
             },
+            # Barrier aux targets (approximate time-to-PT/SL)
+            "barriers": {
+                "profit_take_multiplier": 0.002,
+                "stop_loss_multiplier": 0.001
+            },
             # Storage
             "artifacts_dir": "checkpoints/transition_datasets",
             # Optional compact seq2seq (Transformer/TCN-like) training
             "seq2seq": {
                 "enabled": False,
+                "model_type": "transformer",  # or "tcn"
+                "precision": "16-mixed",
                 "d_model": 128,
                 "nhead": 4,
                 "num_layers": 2,
                 "max_epochs": 15,
-                "lr": 0.001
+                "lr": 0.001,
+                "teacher_forcing_ratio": 1.0,
+                "scheduled_sampling": {"start": 1.0, "end": 0.5, "epochs": 10},
+                "path_class_weights": {"continuation": 1.0, "reversal": 1.2, "end_of_trend": 0.8, "beginning_of_trend": 1.5},
+                "focal_gamma": 0.0,
+                "quantile_returns": [0.1, 0.5, 0.9],
+                "cv_folds": 3,
+                "artifact_dir_models": "checkpoints/transition_models"
+            },
+            # Inference gating thresholds per timeframe
+            "inference": {
+                "path_class_thresholds": {
+                    "1m": {"continuation": 0.75, "beginning_of_trend": 0.75},
+                    "5m": {"continuation": 0.70, "beginning_of_trend": 0.70}
+                }
             }
         },
     }

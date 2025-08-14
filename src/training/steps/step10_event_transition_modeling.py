@@ -165,8 +165,9 @@ async def run_step(
         import json
         rep_path = os.path.join(artifacts_dir, f"{symbol}_{timeframe}_{ts}_rf_report.json")
         gating = cfg.get("TRANSITION_MODELING", {}).get("inference", {}).get("path_class_thresholds", {})
+        tf_ensemble = cfg.get("TRANSITION_MODELING", {}).get("timeframe_ensemble", {})
         with open(rep_path, "w") as f:
-            json.dump({"rf_result": rf_result, "gating_thresholds": gating}, f, indent=2)
+            json.dump({"rf_result": rf_result, "gating_thresholds": gating, "timeframe_ensemble": tf_ensemble}, f, indent=2)
         logger.info(f"Saved RF report: {rep_path}")
     except Exception:
         pass

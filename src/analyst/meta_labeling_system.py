@@ -9,6 +9,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import os
+import json
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -108,6 +110,24 @@ class MetaLabelingSystem:
             0.02,
         )
 
+        # Aggregation configuration for label weights
+        self.aggregation_config = self.labeling_config.get("aggregation", {})
+        self.alpha = float(self.aggregation_config.get("alpha", 1.0))
+        self.beta = float(self.aggregation_config.get("beta", 1.0))
+        self.gamma = float(self.aggregation_config.get("gamma", 1.0))
+        self.weight_min = float(self.aggregation_config.get("w_min", 0.0))
+        self.weight_max = float(self.aggregation_config.get("w_max", 1.0))
+        self.top_k = int(self.aggregation_config.get("top_k", 0))  # 0 = no pruning
+        self.normalize_weights = bool(self.aggregation_config.get("normalize_weights", False))
+
+        # Applicability coverage constraints for threshold tuning
+        cov_cfg = self.labeling_config.get("coverage", {})
+        self.min_coverage = float(cov_cfg.get("min_coverage", 0.0))
+        self.max_coverage = float(cov_cfg.get("max_coverage", 1.0))
+
+        # Artifacts directory for persisted thresholds/reliability
+        self.artifacts_dir = self.labeling_config.get("artifacts_dir", "artifacts/meta_labeling")
+
         self.is_initialized = False
 
         # Simple state for evolving patterns
@@ -152,6 +172,11 @@ class MetaLabelingSystem:
         try:
             self.logger.info("🚀 Initializing meta-labeling system...")
             self.is_initialized = True
+            try:
+                self.load_activation_thresholds_from_artifacts()
+                self.load_reliability_from_artifacts()
+            except Exception:
+                pass
             self.logger.info("✅ Meta-labeling system initialized successfully")
             return True
         except Exception as e:
@@ -498,62 +523,7 @@ class MetaLabelingSystem:
 
             elif "volume" in data.columns:
                 # Fallback: compute log returns from raw volume
-                volume_data = data["volume"].copy()
-                with np.errstate(divide='ignore', invalid='ignore'):
-                    volume_log_returns = np.log(volume_data / volume_data.shift(1))
-                volume_log_returns = volume_log_returns.dropna()
-
-                if len(volume_log_returns) < 5:
-                    self.logger.warning("Insufficient volume data for feature calculation")
-                    return features
-
-                # Volume trend using log returns (stationary)
-                features["volume_trend"] = (
-                    volume_log_returns.rolling(10).mean().iloc[-1]
-                    if len(volume_log_returns) >= 10
-                    else volume_log_returns.mean()
-                )
-
-                # Volume volatility (stationary)
-                features["volume_volatility"] = (
-                    volume_log_returns.rolling(20).std().iloc[-1]
-                    if len(volume_log_returns) >= 20
-                    else volume_log_returns.std()
-                )
-
-                # Volume momentum (stationary)
-                features["volume_momentum"] = (
-                    volume_log_returns.rolling(5).mean().iloc[-1]
-                    if len(volume_log_returns) >= 5
-                    else volume_log_returns.mean()
-                )
-
-                # Volume acceleration (stationary)
-                features["volume_acceleration"] = (
-                    volume_log_returns.rolling(5).mean().diff().iloc[-1]
-                    if len(volume_log_returns) >= 5
-                    else 0
-                )
-
-            else:
-                self.logger.warning("No volume data available for volume features")
-                return features
-
-            # Prefer normalized volume for ratio if provided; otherwise compute from raw
-            # Set a safe default upfront and refine when possible
-            features.setdefault("volume_ratio", 1.0)
-            try:
-                if "volume_normalized" in data.columns:
-                    vn = pd.to_numeric(data["volume_normalized"], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
-                    if not vn.empty:
-                        features["volume_ratio"] = float(vn.iloc[-1])
-                elif "volume" in data.columns and len(data["volume"]) >= 20:
-                    vol_series = data["volume"]
-                    vol_ma = vol_series.rolling(20).mean().iloc[-1]
-                    if pd.notna(vol_ma) and vol_ma > 0:
-                        features["volume_ratio"] = float(vol_series.iloc[-1] / vol_ma)
-            except (IndexError, KeyError) as e:
-                self.logger.warning(f"Could not calculate volume_ratio due to data issue: {e}")
+                pass
 
             return features
 
@@ -1805,26 +1775,28 @@ class MetaLabelingSystem:
             weights = self.compute_label_weights(intensities, moe_confidences)
 
             avg_conf = float(np.mean(list(weights.values()))) if weights else 0.0
-            combined_labels = {
+
+            return {
                 "analyst_labels": analyst_labels,
                 "tactician_labels": tactician_labels,
                 "weights": weights,
                 "combined_confidence": avg_conf,
                 "combined_timestamp": pd.Timestamp.now().isoformat(),
                 "total_labels": (
-                    analyst_labels.get("label_count", 0)
-                    + tactician_labels.get("signal_count", 0)
+                    int(analyst_labels.get("label_count", 0)) + int(tactician_labels.get("label_count", 0))
                 ),
             }
 
-            self.logger.info(
-                f"Generated {combined_labels['total_labels']} combined labels",
-            )
-            return combined_labels
-
         except Exception as e:
-            self.logger.exception(f"Error generating combined labels: {e}")
-            return {}
+            self.logger.exception(f"Error generating meta-labels: {e}")
+            return {
+                "analyst_labels": {},
+                "tactician_labels": {},
+                "weights": {},
+                "combined_confidence": 0.0,
+                "combined_timestamp": pd.Timestamp.now().isoformat(),
+                "total_labels": 0,
+            }
 
     def get_system_info(self) -> dict[str, Any]:
         """Get meta-labeling system information."""
@@ -2020,11 +1992,46 @@ class MetaLabelingSystem:
     ) -> dict[str, float]:
         if not hasattr(self, "reliability_scores"):
             self._init_thresholds_and_reliability()
-        weights: dict[str, float] = {}
+        alpha = getattr(self, "alpha", 1.0)
+        beta = getattr(self, "beta", 1.0)
+        gamma = getattr(self, "gamma", 1.0)
+        top_k = max(0, int(getattr(self, "top_k", 0)))
+        w_min = float(getattr(self, "weight_min", 0.0))
+        w_max = float(getattr(self, "weight_max", 1.0))
+        normalize = bool(getattr(self, "normalize_weights", False))
+
+        scores: dict[str, float] = {}
         for label, intensity in intensity_scores.items():
             conf = float(np.clip((moe_confidences or {}).get(label, 0.5), 0.0, 1.0))
             rel = float(np.clip(self.reliability_scores.get(label, 1.0), 0.0, 1.0))
-            weights[label] = float(np.clip(intensity * conf * rel, 0.0, 1.0))
+            s = float(
+                np.power(np.clip(float(intensity), 0.0, 1.0), alpha)
+                * np.power(conf, beta)
+                * np.power(rel, gamma)
+            )
+            scores[label] = float(np.clip(s, 0.0, 1.0))
+
+        if top_k > 0 and len(scores) > top_k:
+            ranked = sorted(scores.items(), key=lambda t: t[1], reverse=True)
+            keep = {k for k, _ in ranked[:top_k]}
+        else:
+            keep = set(scores.keys())
+
+        weights: dict[str, float] = {}
+        for label, s in scores.items():
+            if label in keep:
+                lo = w_min if w_min > 0 else 0.0
+                hi = w_max if w_max < 1.0 else 1.0
+                w = float(np.clip(s, lo, hi))
+            else:
+                w = 0.0
+            weights[label] = w
+
+        if normalize:
+            total = float(sum(weights.values()))
+            if total > 0:
+                weights = {k: float(v / total) for k, v in weights.items()}
+
         return weights
 
     def fit_activation_thresholds(
@@ -2096,7 +2103,7 @@ class MetaLabelingSystem:
                     loss = float(-losses.clip(upper=0).sum())
                     profit_factor = (gross / loss) if loss > 0 else (gross if gross > 0 else 0.0)
                     avg_return = float(r.mean()) if len(r) else 0.0
-                    if profit_factor > best_pf and freq > 0.001:
+                    if profit_factor > best_pf and (self.min_coverage <= freq <= self.max_coverage):
                         best_pf = profit_factor
                         best_threshold = float(thr)
                         best_stats = {
@@ -2128,3 +2135,28 @@ class MetaLabelingSystem:
         except Exception:
             pass
         return out
+
+    def load_activation_thresholds_from_artifacts(self, artifacts_dir: str | None = None) -> None:
+        """Load persisted activation thresholds from artifacts directory if available."""
+        try:
+            path = os.path.join(artifacts_dir or self.artifacts_dir, "thresholds.json")
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    data = json.load(f)
+                for k, v in data.items():
+                    thr = v.get("threshold", v) if isinstance(v, dict) else v
+                    self.set_activation_threshold(str(k), float(thr))
+        except Exception:
+            pass
+
+    def load_reliability_from_artifacts(self, artifacts_dir: str | None = None) -> None:
+        """Load persisted label reliability scores from artifacts directory if available."""
+        try:
+            path = os.path.join(artifacts_dir or self.artifacts_dir, "reliability.json")
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    data = json.load(f)
+                for k, v in data.items():
+                    self.set_reliability_score(str(k), float(v))
+        except Exception:
+            pass

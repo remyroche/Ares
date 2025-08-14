@@ -443,6 +443,16 @@ class RegimeSpecificSearchSpace(SearchSpace):
             EvaluationMetric.SHARPE_RATIO,
             EvaluationMetric.TOTAL_RETURN,
         ]
+        # Meta-label mixture defaults for downstream use (can be tuned via study-specific configs)
+        self.meta_label_mixture_defaults = {
+            "alpha": 1.0,
+            "beta": 1.0,
+            "gamma": 1.0,
+            "top_k": 2,
+            "w_min": 0.05,
+            "w_max": 0.85,
+            "normalize": False,
+        }
 
         self.parameters = {
             "bull_trend_multiplier": {

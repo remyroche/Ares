@@ -1363,6 +1363,75 @@ class EnhancedTrainingManager:
                     "step11_confidence_calibration", training_input, pipeline_state
                 )
 
+            # Save calibration summary
+            summary_file = f"{data_dir}/{exchange}_{symbol}_calibration_summary.json"
+            with open(summary_file, "w") as f:
+                json.dump(self._summarize_calibration(calibration_results), f, indent=2)
+
+            # Run meta-label relevance evaluation with complementarity and persist active labels
+            try:
+                from src.analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
+                # Load the latest processed frame if available
+                processed_path = os.path.join(data_dir, f"{exchange}_{symbol}_labeled_validation.parquet")
+                df_proc = None
+                if os.path.exists(processed_path):
+                    import pandas as _pd
+                    df_proc = _pd.read_parquet(processed_path)
+                # Fallback to generic_val
+                df_input = df_proc if isinstance(df_proc, pd.DataFrame) else generic_val
+                # Gather label names from intensity columns
+                if isinstance(df_input, pd.DataFrame):
+                    label_names = sorted({c.replace("intensity_", "") for c in df_input.columns if isinstance(c, str) and c.startswith("intensity_")})
+                    thresholds = self.get_activation_thresholds()
+                    artifacts_dir = self.config.get("meta_labeling", {}).get("artifacts_dir", "artifacts/meta_labeling")
+                    evaluator = MetaLabelRelevanceEvaluator(artifacts_dir=artifacts_dir, mi_threshold=0.01, sharpe_min_delta=0.0, synergy_mi_threshold=0.005, max_pairs=200)
+                    res = evaluator.evaluate_from_frame(df_input, label_names, thresholds, returns_col="close_returns", risk_free_rate=0.0)
+                    # Persist as part of pipeline state for traceability
+                    pipeline_state["active_meta_labels"] = res.get("active_labels", [])
+                    pipeline_state["inactive_meta_labels"] = res.get("inactive_labels", [])
+                    self.logger.info({"msg": "meta_label_relevance", "active": len(res.get("active_labels", [])), "inactive": len(res.get("inactive_labels", []))})
+            except Exception as _re:
+                self.logger.warning(f"Meta-label relevance evaluation skipped: {_re}")
+
+            # NEW: Persist thresholds and reliability for MetaLabelingSystem consumption
+            try:
+                artifacts_dir = self.config.get("meta_labeling", {}).get("artifacts_dir", "artifacts/meta_labeling")
+                os.makedirs(artifacts_dir, exist_ok=True)
+                # Persist reliability if available from pipeline_state or calibration
+                reliability: dict[str, float] = pipeline_state.get("label_reliability", {}) if isinstance(pipeline_state, dict) else {}
+                if not reliability:
+                    # fallback: simple per-label accuracy proxy from analyst_models calibration if present
+                    acc_map: dict[str, float] = {}
+                    try:
+                        for regime, models in (analyst_calibration or {}).items():
+                            if isinstance(models, dict):
+                                for name, res in models.items():
+                                    if isinstance(res, dict) and "accuracy" in res:
+                                        acc_map[name] = float(res.get("accuracy", 0.0))
+                    except Exception:
+                        pass
+                    reliability = acc_map
+                with open(os.path.join(artifacts_dir, "reliability.json"), "w") as f:
+                    json.dump(reliability, f, indent=2)
+                # Persist thresholds if provided in pipeline_state
+                thresholds = pipeline_state.get("activation_thresholds", {}) if isinstance(pipeline_state, dict) else {}
+                if thresholds:
+                    with open(os.path.join(artifacts_dir, "thresholds.json"), "w") as f:
+                        json.dump(thresholds, f, indent=2)
+                # Persist active labels if evaluated
+                try:
+                    if "active_meta_labels" in pipeline_state or "inactive_meta_labels" in pipeline_state:
+                        with open(os.path.join(artifacts_dir, "active_labels.json"), "w") as f:
+                            json.dump({
+                                "active_labels": pipeline_state.get("active_meta_labels", []),
+                                "inactive_labels": pipeline_state.get("inactive_meta_labels", []),
+                            }, f, indent=2)
+                except Exception:
+                    pass
+                self.logger.info(f"Persisted meta-label artifacts to {artifacts_dir}")
+            except Exception as _pe:
+                self.logger.warning(f"Threshold/reliability persistence skipped: {_pe}")
+
             # Step 12: Final Parameters Optimization (with computational optimization)
             with self._timed_step("Step 12: Final Parameters Optimization", step_times):
                 self.logger.info(

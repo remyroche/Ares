@@ -62,8 +62,6 @@ class TransitionRandomForest:
             # encode anchor as one-hot sparse
             rf[f"anchor_is_{s.get('event_label','')}"] = 1.0
             rows.append(rf)
-        # Targets stored temporarily in each sample under 'path_class'
-        for s in samples:
             y.append(str(s.get("path_class", "end_of_trend")))
         X = pd.DataFrame(rows)
         # fill missing with 0 for RF

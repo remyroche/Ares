@@ -83,7 +83,7 @@ class MultiTimeframeRegimeIntegration:
         )
         self.analysis_timeframe: str = self.regime_propagation_config.get(
             "analysis_timeframe",
-            "1h",
+            "15m",
         )
         self.candidate_labels: list[str] = self.regime_propagation_config.get(
             "candidate_labels",

@@ -53,7 +53,7 @@ BLOCKS: list[BlockConfig] = [
 ]
 
 # Timeframes to train on
-TIMEFRAMES: list[str] = ["1m", "5m", "15m", "30m"]
+TIMEFRAMES: list[str] = ["1m", "5m", "15m"]
 
 
 def _is_candlestick_feature(name: str) -> bool:

@@ -172,6 +172,9 @@ class ValidatorOrchestrator:
                 "step2_market_regime_classification_validator"
             ),
             # New step names
+            "step1_7_hmm_regime_discovery": (
+                "step1_7_hmm_regime_discovery_validator"
+            ),
             "step2_processing_labeling_feature_engineering": (
                 "step4_analyst_labeling_feature_engineering_validator"
             ),

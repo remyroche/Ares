@@ -874,31 +874,21 @@ class MetaLabelingSystem:
             except Exception:
                 patterns["MICRO_MOMENTUM_DIVERGENCE"] = 0
 
-            # 7) S/R related labels (using rolling extremes as SR proxies)
+            # 7) S/R proximity labels (using rolling extremes as SR proxies)
             try:
                 sr_res = float(features.get("resistance_level", high.max()))
                 sr_sup = float(features.get("support_level", low.min()))
                 cp = float(close.iloc[-1])
                 near_res = abs(cp - sr_res) / max(1e-12, cp) <= self.sr_near_pct
                 near_sup = abs(cp - sr_sup) / max(1e-12, cp) <= self.sr_near_pct
-                prev_cp = float(close.iloc[-2]) if len(close) >= 2 else cp
-                broke_res = (prev_cp <= sr_res) and (cp > sr_res * (1 + self.sr_break_pct))
-                broke_sup = (prev_cp >= sr_sup) and (cp < sr_sup * (1 - self.sr_break_pct))
-                bounce_res = (near_res and cp < sr_res)
-                bounce_sup = (near_sup and cp > sr_sup)
                 patterns["SR_TOUCH"] = 1 if (near_res or near_sup) else 0
-                patterns["SR_BOUNCE"] = 1 if (bounce_res or bounce_sup) else 0
-                patterns["SR_BREAK"] = 1 if (broke_res or broke_sup) else 0
-                # SR_FAKE_BREAK: pierce and close back inside within last 3 bars
-                recent = close.tail(3)
-                fake_up = (recent.max() > sr_res * (1 + self.sr_break_pct)) and (cp < sr_res)
-                fake_dn = (recent.min() < sr_sup * (1 - self.sr_break_pct)) and (cp > sr_sup)
-                patterns["SR_FAKE_BREAK"] = 1 if (fake_up or fake_dn) else 0
+                # Provide distances for ML models to infer bounce/break nuances downstream
+                patterns["SR_DISTANCE_RESISTANCE_PCT"] = float(abs(cp - sr_res) / max(1e-12, cp))
+                patterns["SR_DISTANCE_SUPPORT_PCT"] = float(abs(cp - sr_sup) / max(1e-12, cp))
             except Exception:
                 patterns["SR_TOUCH"] = patterns.get("SR_TOUCH", 0)
-                patterns["SR_BOUNCE"] = patterns.get("SR_BOUNCE", 0)
-                patterns["SR_BREAK"] = patterns.get("SR_BREAK", 0)
-                patterns["SR_FAKE_BREAK"] = patterns.get("SR_FAKE_BREAK", 0)
+                patterns["SR_DISTANCE_RESISTANCE_PCT"] = patterns.get("SR_DISTANCE_RESISTANCE_PCT", 1.0)
+                patterns["SR_DISTANCE_SUPPORT_PCT"] = patterns.get("SR_DISTANCE_SUPPORT_PCT", 1.0)
 
             # 8) Liquidity shifts & market depth (requires order_flow_data; use proxies if limited)
             try:
@@ -1523,43 +1513,57 @@ class MetaLabelingSystem:
             else:
                 features = await self._calculate_pattern_features(price_data, volume_data)
 
-            # Generate analyst-specific labels
-            analyst_labels = {}
+            # 1) Prefer HMM composite regime labels over meta labels, but preserve S/R labels
+            analyst_labels: dict[str, Any] = {}
+            try:
+                # Resolve exchange/symbol from config or features context
+                exchange = str(self.config.get("EXCHANGE", self.config.get("exchange", "BINANCE")))
+                symbol = str(self.config.get("SYMBOL", self.config.get("symbol", "ETHUSDT")))
+                data_dir = str(self.config.get("DATA_DIR", "data/training"))
+                comp_path = os.path.join(data_dir, f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet")
+                if os.path.exists(comp_path):
+                    comp_df = pd.read_parquet(comp_path)
+                    # align last timestamp
+                    if "timestamp" in comp_df.columns:
+                        comp_df["timestamp"] = pd.to_datetime(comp_df["timestamp"], errors="coerce", utc=True)
+                        comp_df = comp_df.dropna(subset=["timestamp"]).sort_values("timestamp")
+                        comp_df = comp_df.set_index("timestamp")
+                    # Determine current timestamp context from price_data
+                    ts = None
+                    if isinstance(price_data.index, pd.DatetimeIndex) and len(price_data.index) > 0:
+                        ts = price_data.index[-1]
+                    if ts is not None and isinstance(ts, pd.Timestamp):
+                        row = comp_df.loc[comp_df.index <= ts].tail(1)
+                    else:
+                        row = comp_df.tail(1)
+                    if not row.empty:
+                        cid = int(row["composite_cluster_id"].iloc[0])
+                        analyst_labels["HMM_COMPOSITE_CLUSTER"] = cid
+                        # Expose soft probabilities via short-window EWMA of current cluster index (proxy)
+                        # Note: true p_k(t) time series can be persisted later; here we expose basic context
+                        analyst_labels["HMM_IS_ASSIGNED"] = 1 if cid >= 0 else 0
+                else:
+                    self.logger.info(f"HMM composite clusters not found for {exchange}_{symbol}_{timeframe}; using meta-only")
+            except Exception as e:
+                self.logger.warning(f"HMM composite cluster integration failed: {e}")
 
-            # Strong trend continuation
-            trend_continuation = self._detect_strong_trend_continuation(
-                price_data,
-                features,
-            )
-            analyst_labels.update(trend_continuation)
+            # 2) Always compute and include S/R related labels (must keep them)
+            try:
+                sr_only = {}
+                sr_only.update(self._detect_sr_touch_bounce_break(price_data, features))
+                # Retain only proximity SR labels for downstream ML
+                sr_keys = ("SR_TOUCH", "SR_DISTANCE_RESISTANCE_PCT", "SR_DISTANCE_SUPPORT_PCT")
+                sr_keep = {k: features.get(k) for k in sr_keys if k in features}
+                analyst_labels.update(sr_keep)
+            except Exception:
+                pass
 
-            # Exhaustion reversal
-            exhaustion_reversal = self._detect_exhaustion_reversal(price_data, features)
-            analyst_labels.update(exhaustion_reversal)
-
-            # Range mean reversion
-            range_reversion = self._detect_range_mean_reversion(price_data, features)
-            analyst_labels.update(range_reversion)
-
-            # Breakout patterns
-            breakout_patterns = self._detect_breakout_patterns(price_data, features)
-            analyst_labels.update(breakout_patterns)
-
-            # Volatility patterns
-            volatility_patterns = self._detect_volatility_patterns(price_data, features)
-            analyst_labels.update(volatility_patterns)
-
-            # Chart patterns
-            chart_patterns = self._detect_chart_patterns(price_data, features)
-            analyst_labels.update(chart_patterns)
-
-            # Momentum patterns
-            momentum_patterns = self._detect_momentum_patterns(price_data, features)
-            analyst_labels.update(momentum_patterns)
-
-            # Additional analyst patterns requested by user
-            additional_patterns = self._detect_additional_analyst_patterns(price_data, features, order_flow_data)
-            analyst_labels.update(additional_patterns)
+            # 3) Optionally keep a minimal subset of meta labels complementary to HMM regimes
+            try:
+                # No additional meta labels retained; S/R labels provide the structure
+                pass
+            except Exception:
+                pass
 
             # If no patterns detected, generate NO_SETUP label
             if not any(analyst_labels.values()):
@@ -1583,21 +1587,11 @@ class MetaLabelingSystem:
                 },
             )
 
-            # Compute intensities and activations
-            label_keys = [k for k, v in analyst_labels.items() if isinstance(v, (int, float)) and k.isupper() and k not in ("label_count",)]
-            intensities = self.compute_intensity_scores(price_data, volume_data, features, label_keys)
-            if not hasattr(self, "activation_thresholds"):
-                self._init_thresholds_and_reliability()
-            activations = {k: 1 if intensities.get(k, 0.0) >= self.activation_thresholds.get(k, self.default_activation_threshold) else 0 for k in label_keys}
-            analyst_labels.update({f"intensity_{k}": float(intensities.get(k, 0.0)) for k in label_keys})
-            analyst_labels.update({f"active_{k}": int(activations.get(k, 0)) for k in label_keys})
+            # No intensity/activation scoring here; HMM-ML system governs regime and model activation
 
             try:
                 # Summarize analyst label activations once per timeframe
-                summary_parts = []
-                for k in sorted(label_keys):
-                    val = analyst_labels.get(k, 0)
-                    summary_parts.append(f"{k}={int(val)}")
+                summary_parts = [k for k, v in analyst_labels.items() if isinstance(v, (int, float)) and k.isupper() and v > 0]
                 self.logger.info(
                     f"Analyst labels [{timeframe}] count={analyst_labels.get('label_count', 0)} | " + ", ".join(summary_parts[:20]) + (" ..." if len(summary_parts) > 20 else "")
                 )

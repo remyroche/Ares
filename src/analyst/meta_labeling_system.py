@@ -1569,18 +1569,12 @@ class MetaLabelingSystem:
 
             # 3) Optionally keep a minimal subset of meta labels complementary to HMM regimes
             try:
-                # Keep volatility compression/expansion and momentum ignition as complementary context
-                volatility_patterns = self._detect_volatility_patterns(price_data, features)
-                momentum_patterns = self._detect_momentum_patterns(price_data, features)
-                chart_patterns = self._detect_chart_patterns(price_data, features)
-                keep_keys = {
-                    "VOLATILITY_COMPRESSION","VOLATILITY_EXPANSION","MOMENTUM_IGNITION",
-                    "BREAKOUT_SUCCESS","BREAKOUT_FAILURE","FLAG_FORMATION","TRIANGLE_FORMATION","RECTANGLE_FORMATION",
-                }
-                for d in (volatility_patterns, momentum_patterns, chart_patterns):
-                    for k, v in d.items():
-                        if k in keep_keys:
-                            analyst_labels[k] = v
+                # Keep only breakout success/failure (closely related to S/R)
+                breakout_patterns = self._detect_breakout_patterns(price_data, features)
+                keep_keys = {"BREAKOUT_SUCCESS", "BREAKOUT_FAILURE"}
+                for k, v in breakout_patterns.items():
+                    if k in keep_keys:
+                        analyst_labels[k] = v
             except Exception:
                 pass
 
@@ -1606,22 +1600,11 @@ class MetaLabelingSystem:
                 },
             )
 
-            # Compute intensities/activations only for the kept subset (S/R + selected complementary patterns)
-            label_keys = [k for k, v in analyst_labels.items() if isinstance(v, (int, float)) and k.isupper() and k not in ("label_count", "HMM_COMPOSITE_CLUSTER", "HMM_IS_ASSIGNED")]
-            if label_keys:
-                intensities = self.compute_intensity_scores(price_data, volume_data, features, label_keys)
-                if not hasattr(self, "activation_thresholds"):
-                    self._init_thresholds_and_reliability()
-                activations = {k: 1 if intensities.get(k, 0.0) >= self.activation_thresholds.get(k, self.default_activation_threshold) else 0 for k in label_keys}
-                analyst_labels.update({f"intensity_{k}": float(intensities.get(k, 0.0)) for k in label_keys})
-                analyst_labels.update({f"active_{k}": int(activations.get(k, 0)) for k in label_keys})
+            # No intensity/activation scoring here; HMM-ML system governs regime and model activation
 
             try:
                 # Summarize analyst label activations once per timeframe
-                summary_parts = []
-                for k in sorted(label_keys):
-                    val = analyst_labels.get(k, 0)
-                    summary_parts.append(f"{k}={int(val)}")
+                summary_parts = [k for k, v in analyst_labels.items() if isinstance(v, (int, float)) and k.isupper() and v > 0]
                 self.logger.info(
                     f"Analyst labels [{timeframe}] count={analyst_labels.get('label_count', 0)} | " + ", ".join(summary_parts[:20]) + (" ..." if len(summary_parts) > 20 else "")
                 )

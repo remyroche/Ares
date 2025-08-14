@@ -298,6 +298,28 @@ class Strategist:
             # Step 4: Collect volatility information for tactician
             volatility_info = await self._collect_volatility_info(market_data)
 
+            # Step 4b: Optional transition inference combiner (gating + exit bias)
+            try:
+                tm_cfg = self.config.get("TRANSITION_MODELING", {})
+                if bool(tm_cfg.get("enabled", False)):
+                    from src.transition.inference_combiner import TransitionInferenceCombiner
+                    combiner = TransitionInferenceCombiner(self.config)
+                    # Gather per-timeframe path_class probabilities if available
+                    # Expect ml_predictions to carry per-timeframe outputs when served; otherwise fallback to 1m only
+                    path_probs_by_timeframe = ml_predictions.get("path_probs_by_timeframe", {})
+                    if not path_probs_by_timeframe and "path_probs" in ml_predictions:
+                        path_probs_by_timeframe = {"1m": ml_predictions.get("path_probs", {})}
+                    combined = combiner.combine_probs(path_probs_by_timeframe)
+                    # Macro regime from 1h_hmm_state mapped to BULL/BEAR/SIDEWAYS via URC mapping (if provided in regime_info)
+                    macro_regime = regime_info.get("macro_regime") or self.current_regime
+                    gate = combiner.gate_decision(combined, timeframe="1m", macro_regime=macro_regime)
+                    ml_predictions["transition_gate"] = gate
+                    # Exit bias from 1m
+                    path_1m = path_probs_by_timeframe.get("1m", {})
+                    ml_predictions["exit_bias"] = combiner.exit_bias(path_1m)
+            except Exception:
+                pass
+
             # Step 5: Generate comprehensive strategy (volatility decisions handled by tactician)
             strategy = await self._generate_comprehensive_strategy(
                 regime_info,

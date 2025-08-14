@@ -9,7 +9,11 @@ import os
 import numpy as np
 import pandas as pd
 
+from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
 
+
+@handle_errors(exceptions=(Exception,), default_return={}, context="compute_mutual_information")
 def compute_mutual_information(
     X: pd.DataFrame,
     y: pd.Series,
@@ -27,23 +31,21 @@ def compute_mutual_information(
     Returns:
         Dict feature_name -> MI score
     """
-    try:
-        Xn = X.select_dtypes(include=[np.number]).copy()
-        if Xn.empty:
-            return {}
-        if task == "classification":
-            from sklearn.feature_selection import mutual_info_classif
-
-            mi = mutual_info_classif(Xn.fillna(0.0), y.astype(int), random_state=random_state)
-        else:
-            from sklearn.feature_selection import mutual_info_regression
-
-            mi = mutual_info_regression(Xn.fillna(0.0), y, random_state=random_state)
-        return {c: float(v) for c, v in zip(Xn.columns, mi)}
-    except Exception:
+    Xn = X.select_dtypes(include=[np.number]).copy()
+    if Xn.empty:
         return {}
+    if task == "classification":
+        from sklearn.feature_selection import mutual_info_classif
+
+        mi = mutual_info_classif(Xn.fillna(0.0), y.astype(int), random_state=random_state)
+    else:
+        from sklearn.feature_selection import mutual_info_regression
+
+        mi = mutual_info_regression(Xn.fillna(0.0), y, random_state=random_state)
+    return {c: float(v) for c, v in zip(Xn.columns, mi)}
 
 
+@handle_errors(exceptions=(Exception,), default_return=0.0, context="compute_mutual_information_pair")
 def compute_mutual_information_pair(
     Xi: pd.Series,
     Xj: pd.Series,
@@ -52,13 +54,12 @@ def compute_mutual_information_pair(
     random_state: int = 42,
 ) -> float:
     """Compute MI(y; [Xi, Xj]) for complementarity checks."""
-    try:
-        X = pd.DataFrame({"Xi": Xi.astype(float).fillna(0.0), "Xj": Xj.astype(float).fillna(0.0)})
-        return list(compute_mutual_information(X, y, task=task, random_state=random_state).values())[-1] if X.shape[1] == 1 else sum(compute_mutual_information(X, y, task=task, random_state=random_state).values())
-    except Exception:
-        return 0.0
+    X = pd.DataFrame({"Xi": Xi.astype(float).fillna(0.0), "Xj": Xj.astype(float).fillna(0.0)})
+    mi_map = compute_mutual_information(X, y, task=task, random_state=random_state)
+    return float(sum(mi_map.values()))
 
 
+@handle_errors(exceptions=(Exception,), default_return={}, context="compute_shap_importance")
 def compute_shap_importance(
     X: pd.DataFrame,
     y: pd.Series,
@@ -70,43 +71,38 @@ def compute_shap_importance(
 
     If model is None, fits a lightweight LightGBM model for speed.
     """
-    try:
-        import shap  # type: ignore
-        from lightgbm import LGBMClassifier, LGBMRegressor  # type: ignore
+    import shap  # type: ignore
+    from lightgbm import LGBMClassifier, LGBMRegressor  # type: ignore
 
-        Xn = X.select_dtypes(include=[np.number]).fillna(0.0)
-        if len(Xn) == 0:
-            return {}
-        if len(Xn) > max_samples:
-            Xn = Xn.sample(n=max_samples, random_state=1337)
-            y = y.loc[Xn.index]
-
-        if model is None:
-            if task == "classification":
-                model = LGBMClassifier(n_estimators=200, max_depth=-1, learning_rate=0.05, subsample=0.8)
-            else:
-                model = LGBMRegressor(n_estimators=200, max_depth=-1, learning_rate=0.05, subsample=0.8)
-            model.fit(Xn, y)
-
-        try:
-            explainer = shap.TreeExplainer(model)
-            sv = explainer.shap_values(Xn)
-            # For classification, sv can be a list per class; take last as positive class
-            if isinstance(sv, list) and len(sv) > 0:
-                sv = sv[-1]
-            import numpy as _np
-
-            magnitudes = _np.abs(_np.array(sv))
-            if magnitudes.ndim == 1:
-                magnitudes = magnitudes.reshape(-1, 1)
-            mean_abs = _np.mean(magnitudes, axis=0)
-            return {c: float(v) for c, v in zip(Xn.columns, mean_abs)}
-        except Exception:
-            return {}
-    except Exception:
+    Xn = X.select_dtypes(include=[np.number]).fillna(0.0)
+    if len(Xn) == 0:
         return {}
+    if len(Xn) > max_samples:
+        Xn = Xn.sample(n=max_samples, random_state=1337)
+        y = y.loc[Xn.index]
+
+    if model is None:
+        if task == "classification":
+            model = LGBMClassifier(n_estimators=200, max_depth=-1, learning_rate=0.05, subsample=0.8)
+        else:
+            model = LGBMRegressor(n_estimators=200, max_depth=-1, learning_rate=0.05, subsample=0.8)
+        model.fit(Xn, y)
+
+    explainer = shap.TreeExplainer(model)
+    sv = explainer.shap_values(Xn)
+    # For classification, sv can be a list per class; take last as positive class
+    if isinstance(sv, list) and len(sv) > 0:
+        sv = sv[-1]
+    import numpy as _np
+
+    magnitudes = _np.abs(_np.array(sv))
+    if magnitudes.ndim == 1:
+        magnitudes = magnitudes.reshape(-1, 1)
+    mean_abs = _np.mean(magnitudes, axis=0)
+    return {c: float(v) for c, v in zip(Xn.columns, mean_abs)}
 
 
+@handle_errors(exceptions=(Exception,), default_return={"sharpe_base": 0.0, "sharpe_gated": 0.0, "delta_sharpe": 0.0, "coverage": 0.0}, context="evaluate_sharpe_lift")
 def evaluate_sharpe_lift(
     returns_series: pd.Series,
     gating_series: pd.Series,
@@ -119,26 +115,23 @@ def evaluate_sharpe_lift(
         gating_series: boolean/int indicator where 1 means include trade/period
         risk_free_rate: per-period risk free
     """
-    try:
-        r = returns_series.fillna(0.0)
-        g = gating_series.fillna(0).astype(int)
-        base_excess = r - risk_free_rate
-        gated_r = r[g == 1]
-        gated_excess = gated_r - risk_free_rate
-        def _sharpe(x: pd.Series) -> float:
-            mu = float(x.mean())
-            sd = float(x.std(ddof=1))
-            return (mu / sd) if sd > 1e-12 else 0.0
-        sr_base = _sharpe(base_excess)
-        sr_gated = _sharpe(gated_excess) if len(gated_excess) > 1 else 0.0
-        return {
-            "sharpe_base": float(sr_base),
-            "sharpe_gated": float(sr_gated),
-            "delta_sharpe": float(sr_gated - sr_base),
-            "coverage": float(g.mean()),
-        }
-    except Exception:
-        return {"sharpe_base": 0.0, "sharpe_gated": 0.0, "delta_sharpe": 0.0, "coverage": 0.0}
+    r = returns_series.fillna(0.0)
+    g = gating_series.fillna(0).astype(int)
+    base_excess = r - risk_free_rate
+    gated_r = r[g == 1]
+    gated_excess = gated_r - risk_free_rate
+    def _sharpe(x: pd.Series) -> float:
+        mu = float(x.mean())
+        sd = float(x.std(ddof=1))
+        return (mu / sd) if sd > 1e-12 else 0.0
+    sr_base = _sharpe(base_excess)
+    sr_gated = _sharpe(gated_excess) if len(gated_excess) > 1 else 0.0
+    return {
+        "sharpe_base": float(sr_base),
+        "sharpe_gated": float(sr_gated),
+        "delta_sharpe": float(sr_gated - sr_base),
+        "coverage": float(g.mean()),
+    }
 
 
 class MetaLabelRelevanceEvaluator:
@@ -161,6 +154,7 @@ class MetaLabelRelevanceEvaluator:
         self.sharpe_min_delta = float(sharpe_min_delta)
         self.max_pairs = max_pairs
         os.makedirs(self.artifacts_dir, exist_ok=True)
+        self.logger = system_logger.getChild("MetaLabelRelevance")
 
     def _gating_from_intensity(
         self,
@@ -176,6 +170,7 @@ class MetaLabelRelevanceEvaluator:
                 gating[name] = (pd.to_numeric(df[col], errors="coerce").fillna(0.0) >= thr).astype(int)
         return pd.DataFrame(gating, index=df.index)
 
+    @handle_errors(exceptions=(Exception,), default_return={"active_labels": [], "inactive_labels": []}, context="evaluate_from_frame")
     def evaluate_from_frame(
         self,
         df: pd.DataFrame,
@@ -258,6 +253,7 @@ class MetaLabelRelevanceEvaluator:
         try:
             with open(os.path.join(self.artifacts_dir, "active_labels.json"), "w") as f:
                 json.dump({"active_labels": result["active_labels"], "inactive_labels": result["inactive_labels"]}, f, indent=2)
-        except Exception:
-            pass
+            self.logger.info({"msg": "active_labels_persisted", "active": len(result["active_labels"]), "inactive": len(result["inactive_labels"])})
+        except Exception as _pe:
+            self.logger.warning(f"Active labels persistence skipped: {_pe}")
         return result

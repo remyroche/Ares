@@ -1094,8 +1094,9 @@ class EnhancedTrainingManager:
             try:
                 pipeline_cfg = self.config.get("pipeline", {})
                 method_a_cfg = pipeline_cfg.get("method_a", {})
-                use_alt_step2 = bool(method_a_cfg.get("step2_is_leveling", False))
+                use_alt_step2 = bool(method_a_cfg.get("step2_is_leveling", True))
                 if use_alt_step2:
+                    self.logger.info("Step 2: using processing/labeling/feature engineering branch")
                     # Run Step 2 (processing/labeling/feature engineering)
                     from src.training.steps import step2_processing_labeling_feature_engineering
                     step2_success = await step2_processing_labeling_feature_engineering.run_step(

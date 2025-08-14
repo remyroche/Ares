@@ -1133,6 +1133,31 @@ class EnhancedTrainingManager:
                     f"Validator for step1_7_hmm_regime_discovery failed but is non-fatal: {e}"
                 )
 
+            # Step 1_8: Regime Forecasting (emergence & exit hazard)
+            self._heartbeat("Step 1_8: Regime Forecasting")
+            step_start_1_8 = time.time()
+            try:
+                from src.training.steps import step1_8_regime_forecasting as _step1_8
+                step1_8_success = await _step1_8.run_step(
+                    symbol=symbol,
+                    exchange=exchange,
+                    data_dir=data_dir,
+                    timeframe=timeframe,
+                    lookback_days=self.lookback_days,
+                )
+            except Exception as e:
+                self.logger.error(f"❌ Error in Step 1_8: {e}")
+                step1_8_success = False
+
+            pipeline_state["regime_forecasting"] = {
+                "status": "SUCCESS" if step1_8_success else "FAILED",
+                "success": bool(step1_8_success),
+                "completed": bool(step1_8_success),
+            }
+            self._save_checkpoint("step1_8_regime_forecasting", pipeline_state)
+            step_times["step1_8_regime_forecasting"] = time.time() - step_start_1_8
+            # Non-fatal on failure; continue pipeline
+
             # Step 2: Processing, meta-labeling, feature engineering (or legacy regime classification)
             self._heartbeat("Step 2: Processing & Labeling")
             try:

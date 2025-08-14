@@ -10,12 +10,14 @@ import pandas as pd
 
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from src.utils.logger import system_logger
+import os
 
 
 @dataclass
 class StateBuilderConfig:
     hmm_n_states: int
     use_existing_urc_models: bool
+    cache_dir: str | None = None
 
 
 class StateSequenceBuilder:
@@ -31,6 +33,7 @@ class StateSequenceBuilder:
         self.sb_cfg = StateBuilderConfig(
             hmm_n_states=int(tm_cfg.get("hmm_n_states", 5)),
             use_existing_urc_models=bool(tm_cfg.get("use_existing_urc_models", True)),
+            cache_dir=str((tm_cfg.get("cache", {}) or {}).get("cache_dir", "checkpoints/transition_cache")),
         )
         self.exchange = exchange
         self.symbol = symbol
@@ -66,6 +69,17 @@ class StateSequenceBuilder:
         """
         if klines_df is None or klines_df.empty:
             return pd.DataFrame(index=pd.Index([], name=getattr(klines_df, 'index', None)))
+        # Cache key: hash of index
+        cache_dir = self.sb_cfg.cache_dir
+        try:
+            if cache_dir:
+                os.makedirs(cache_dir, exist_ok=True)
+                key = f"states_{self.exchange}_{self.symbol}_{hash(tuple(klines_df.index))}.parquet"
+                path = os.path.join(cache_dir, key)
+                if os.path.exists(path):
+                    return pd.read_parquet(path)
+        except Exception:
+            pass
         # Ensure trained
         self._ensure_trained(klines_df)
         try:
@@ -99,6 +113,11 @@ class StateSequenceBuilder:
                 "hmm_state_id": state_ids.astype(int),
                 "regime": regimes,
             }, index=klines_df.index)
+            try:
+                if cache_dir:
+                    out.to_parquet(os.path.join(cache_dir, key))
+            except Exception:
+                pass
             return out
         except Exception as e:
             self.logger.warning(f"State inference failed: {e}")

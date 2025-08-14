@@ -10,6 +10,8 @@ import pandas as pd
 
 from src.transition.state_sequence_builder import StateSequenceBuilder
 from src.utils.logger import system_logger
+import os
+import json
 
 
 @dataclass
@@ -42,6 +44,10 @@ class EventWindowDatasetBuilder:
             downsample_near_duplicates=bool(tm_cfg.get("early_pruning", {}).get("downsample_near_duplicate_sequences", True)),
         )
         self.state_builder = StateSequenceBuilder(config, exchange=exchange, symbol=symbol)
+        self.cache_dir = str((tm_cfg.get("cache", {}) or {}).get("cache_dir", "checkpoints/transition_cache"))
+        bcfg = (tm_cfg.get("barriers", {}) or {})
+        self.pt_mult = float(bcfg.get("profit_take_multiplier", 0.002))
+        self.sl_mult = float(bcfg.get("stop_loss_multiplier", 0.001))
 
     async def initialize(self) -> bool:
         return await self.state_builder.initialize()
@@ -79,6 +85,22 @@ class EventWindowDatasetBuilder:
         """
         if klines_df.empty or combined_df.empty or event_index.empty:
             return {"samples": []}
+
+        # Try dataset cache
+        try:
+            if self.cache_dir:
+                os.makedirs(self.cache_dir, exist_ok=True)
+                key = f"dataset_{hash(tuple(klines_df.index))}_{len(event_index)}.npz"
+                p = os.path.join(self.cache_dir, key)
+                meta_p = os.path.join(self.cache_dir, key + ".meta.json")
+                if os.path.exists(p) and os.path.exists(meta_p):
+                    with open(meta_p, "r") as f:
+                        meta = json.load(f)
+                    # Minimal load path: return meta only; samples remain to be regenerated if needed
+                    if meta.get("label_index"):
+                        return {"samples": [], "label_index": meta.get("label_index", []), "numeric_feature_names": meta.get("numeric_feature_names", [])}
+        except Exception:
+            pass
 
         # Infer states for the entire klines_df once
         states_df = self.state_builder.infer_states(klines_df)
@@ -130,6 +152,12 @@ class EventWindowDatasetBuilder:
             # Targets: returns and next states
             close = pd.to_numeric(klines_df["close"], errors="coerce").values
             ret_seq = (close[i0 + 1 : i0 + 1 + post] / close[i0] - 1.0).astype(float)
+            # Time to PT (approx using close path)
+            tt_pt = -1
+            for t, r in enumerate(ret_seq, start=1):
+                if r >= self.pt_mult:
+                    tt_pt = t
+                    break
             # Multi-hot labels at t0
             mh = np.zeros(len(all_labels), dtype=np.float32)
             # include anchor and secondaries
@@ -149,6 +177,7 @@ class EventWindowDatasetBuilder:
                 "X_pre_numeric": X_num,
                 "Y_post_returns": ret_seq.copy(),
                 "Y_post_states": Y_states[["hmm_state_id","regime"]].copy(),
+                "Y_time_to_pt": int(tt_pt),
                 "multi_hot_labels": mh.copy(),
                 "rf_features": rf_feats,
                 "weighted_intensity": float(ev.get("weighted_intensity", ev.get("intensity", 0.0))),
@@ -176,4 +205,11 @@ class EventWindowDatasetBuilder:
                     vectors.append(v)
             samples = kept
 
+        # Save minimal meta cache
+        try:
+            if self.cache_dir:
+                with open(os.path.join(self.cache_dir, key + ".meta.json"), "w") as f:
+                    json.dump({"label_index": all_labels, "numeric_feature_names": present_numeric}, f)
+        except Exception:
+            pass
         return {"samples": samples, "label_index": all_labels, "numeric_feature_names": present_numeric}

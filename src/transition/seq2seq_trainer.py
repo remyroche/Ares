@@ -56,7 +56,7 @@ class TransitionSeqDataset(Dataset):
 
 
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
-    def __init__(self, hmm_vocab: int, num_features: int, post_len: int, d_model: int = 128, nhead: int = 4, num_layers: int = 2, dropout: float = 0.1, lr: float = 1e-3):
+    def __init__(self, hmm_vocab: int, num_features: int, post_len: int, d_model: int = 128, nhead: int = 4, num_layers: int = 2, dropout: float = 0.1, lr: float = 1e-3, path_class_weights: dict[str,float] | None = None, focal_gamma: float = 0.0):
         if pl:
             super().__init__()
         else:
@@ -75,7 +75,17 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         self.post_len = post_len
         self.lr = lr
         self.mse = nn.SmoothL1Loss()
-        self.ce = nn.CrossEntropyLoss()
+        # class weights
+        if path_class_weights:
+            w_map = {"continuation":0, "reversal":1, "end_of_trend":2, "beginning_of_trend":3}
+            w = torch.ones(4, dtype=torch.float32)
+            for k,v in path_class_weights.items():
+                if k in w_map:
+                    w[w_map[k]] = float(v)
+            self.ce = nn.CrossEntropyLoss(weight=w)
+        else:
+            self.ce = nn.CrossEntropyLoss()
+        self.focal_gamma = float(focal_gamma)
 
     def forward(self, hmm_ids: torch.Tensor, x_num: torch.Tensor) -> torch.Tensor:
         # hmm_ids: [B, L_pre] ; x_num: [B, L_pre, F]
@@ -102,7 +112,14 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         # Losses
         loss_ret = self.mse(pred_ret, y_ret)
         loss_hmm = self.ce(pred_hmm.reshape(-1, pred_hmm.size(-1)), y_hmm.reshape(-1))
-        loss_path = self.ce(pred_path, y_path)
+        # optional focal loss on path head
+        if self.focal_gamma > 0.0:
+            ce = self.ce(pred_path, y_path)
+            with torch.no_grad():
+                p = torch.softmax(pred_path, dim=-1).gather(1, y_path.view(-1,1)).clamp_min(1e-6).squeeze()
+            loss_path = ((1 - p) ** self.focal_gamma) * ce
+        else:
+            loss_path = self.ce(pred_path, y_path)
         loss = loss_ret * 1.0 + loss_hmm * 0.7 + loss_path * 0.5
         self.log_dict({"train_loss": loss, "loss_ret": loss_ret, "loss_hmm": loss_hmm, "loss_path": loss_path}, prog_bar=True)
         return loss
@@ -120,7 +137,13 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         pred_path = self.cls_path(cls)
         loss_ret = self.mse(pred_ret, y_ret)
         loss_hmm = self.ce(pred_hmm.reshape(-1, pred_hmm.size(-1)), y_hmm.reshape(-1))
-        loss_path = self.ce(pred_path, y_path)
+        if self.focal_gamma > 0.0:
+            ce = self.ce(pred_path, y_path)
+            with torch.no_grad():
+                p = torch.softmax(pred_path, dim=-1).gather(1, y_path.view(-1,1)).clamp_min(1e-6).squeeze()
+            loss_path = ((1 - p) ** self.focal_gamma) * ce
+        else:
+            loss_path = self.ce(pred_path, y_path)
         loss = loss_ret * 1.0 + loss_hmm * 0.7 + loss_path * 0.5
         self.log_dict({"val_loss": loss, "val_loss_ret": loss_ret, "val_loss_hmm": loss_hmm, "val_loss_path": loss_path}, prog_bar=True)
 
@@ -141,14 +164,23 @@ def build_dataloaders(samples: List[dict[str, Any]], numeric_dim: int, label_ind
     return train_loader, val_loader
 
 
-def train_seq2seq(samples: List[dict[str, Any]], label_index: List[str], numeric_feature_names: List[str], post_window: int, hmm_vocab: int = 5, d_model: int = 128, nhead: int = 4, num_layers: int = 2, max_epochs: int = 25, lr: float = 1e-3) -> dict[str, Any]:
+def train_seq2seq(samples: List[dict[str, Any]], label_index: List[str], numeric_feature_names: List[str], post_window: int, hmm_vocab: int = 5, d_model: int = 128, nhead: int = 4, num_layers: int = 2, max_epochs: int = 25, lr: float = 1e-3, path_class_weights: dict[str,float] | None = None, focal_gamma: float = 0.0, precision: str = "32", artifact_dir_models: str | None = None) -> dict[str, Any]:
     logger = system_logger.getChild("TransitionSeq2SeqTrainer")
     if pl is None:
         logger.warning("PyTorch Lightning not available; skip seq2seq training.")
         return {"trained": False}
     numeric_dim = len(numeric_feature_names)
     train_loader, val_loader = build_dataloaders(samples, numeric_dim, label_index, post_window)
-    model = SmallTransformer(hmm_vocab=hmm_vocab, num_features=numeric_dim, post_len=post_window, d_model=d_model, nhead=nhead, num_layers=num_layers, lr=lr)
-    trainer = pl.Trainer(max_epochs=max_epochs, accelerator="auto", devices="auto", gradient_clip_val=1.0, log_every_n_steps=50)
+    model = SmallTransformer(hmm_vocab=hmm_vocab, num_features=numeric_dim, post_len=post_window, d_model=d_model, nhead=nhead, num_layers=num_layers, lr=lr, path_class_weights=path_class_weights, focal_gamma=focal_gamma)
+    callbacks = []
+    if artifact_dir_models:
+        try:
+            import os
+            os.makedirs(artifact_dir_models, exist_ok=True)
+            from pytorch_lightning.callbacks import ModelCheckpoint
+            callbacks.append(ModelCheckpoint(dirpath=artifact_dir_models, save_top_k=1, monitor="val_loss", mode="min"))
+        except Exception:
+            pass
+    trainer = pl.Trainer(max_epochs=max_epochs, accelerator="auto", devices="auto", precision=precision, gradient_clip_val=1.0, log_every_n_steps=50, callbacks=callbacks)
     trainer.fit(model, train_loader, val_loader)
     return {"trained": True}
